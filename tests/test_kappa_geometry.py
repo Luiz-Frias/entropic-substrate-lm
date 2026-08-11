@@ -21,6 +21,7 @@ from entropic_substrate.geometry.kappa import (
     dist0,
     dist_k,
     dist_k_from_cos,
+    dist_k_from_inner,
     expmap0,
     logmap0,
     mobius_add,
@@ -265,10 +266,40 @@ def test_dist_k_from_cos_boundary_cosines() -> None:
         assert torch.isfinite(anti) and float(anti) > 0.0
 
 
+def test_scalar_reductions_run_in_fp32_under_bf16_autocast() -> None:
+    """Both scalar reductions are called from inside an attention block that may
+    be under autocast. The gyro rational functions are not conditioned for
+    bf16 operands, so they must promote to fp32 and keep gradients finite."""
+    for kappa in (-2.0, 0.0, 2.0):
+        dot = torch.tensor([0.05, -0.02], dtype=torch.bfloat16, requires_grad=True)
+        x_sq = torch.tensor([0.09, 0.09], dtype=torch.bfloat16)
+        y_sq = torch.tensor([0.16, 0.04], dtype=torch.bfloat16)
+        cos = torch.tensor([0.9, -0.9], dtype=torch.bfloat16, requires_grad=True)
+        radius = torch.tensor(0.35, dtype=torch.bfloat16)
+        k = torch.tensor(kappa, dtype=torch.bfloat16, requires_grad=True)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            inner = dist_k_from_inner(dot, x_sq, y_sq, k)
+            from_cos = dist_k_from_cos(cos, k, radius)
+        assert inner.dtype == torch.float32 and from_cos.dtype == torch.float32
+        assert torch.isfinite(inner).all() and torch.isfinite(from_cos).all()
+        (inner.sum() + from_cos.sum()).backward()
+        for leaf in (dot, cos, k):
+            assert leaf.grad is not None and torch.isfinite(leaf.grad).all(), kappa
+
+
+def test_scalar_reductions_preserve_float64() -> None:
+    """The geoopt oracle comparisons run in float64 — promotion must floor at
+    fp32, never cap there."""
+    k = torch.tensor(-1.0, dtype=torch.float64)
+    r = torch.tensor(0.35, dtype=torch.float64)
+    cos = torch.tensor([0.5], dtype=torch.float64)
+    assert dist_k_from_cos(cos, k, r).dtype == torch.float64
+    sq = torch.tensor([0.1225], dtype=torch.float64)
+    assert dist_k_from_inner(cos * sq, sq, sq, k).dtype == torch.float64
+
+
 def test_dist_k_from_inner_matches_dist_k_on_mixed_norms() -> None:
     """General scalar reduction (anchored kernel): points of DIFFERENT norms."""
-    from entropic_substrate.geometry.kappa import dist_k_from_inner
-
     torch.manual_seed(3)
     for kappa in CURVATURES:
         x, y = _point_pairs(kappa)

@@ -4,6 +4,9 @@
 # is an isometry). Per-head curvature retained, so the E3 readout survives.
 # EXECUTION GATE: run only if E3 shows per-head kappa divergence
 # (docs/e-3-instruction.md); launched as a parallel pod against the E3 winner.
+# The CLI preflights that results/e3.jsonl (results/e3-tiny.jsonl under --tiny)
+# carries a kappa readout and prints its divergence — existence is checked,
+# sufficiency is YOUR call. Override: ENTROPIC_ALLOW_UNGATED=1.
 name: e3-anchor
 
 model:

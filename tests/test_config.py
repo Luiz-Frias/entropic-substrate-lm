@@ -102,6 +102,7 @@ def test_tiny_overlay_shrinks_without_changing_the_experiment() -> None:
     # The things E3 *is* must survive the overlay.
     assert tiny.model.block == full.model.block
     assert tiny.model.norm == full.model.norm
+    assert tiny.model.attn_kernel == full.model.attn_kernel
     assert tiny.model.kappa_init == full.model.kappa_init
 
 

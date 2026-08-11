@@ -16,6 +16,8 @@
 # Local smoke:  just ladder --tiny        (CPU, minutes; skips dvc sync)
 # Extra args are passed through to every `train` invocation.
 # LADDER_SKIP_DVC=1 skips artifact sync explicitly.
+# LADDER_GPU_ID / LADDER_IMAGE set the GPU and image in the emitted (never
+# executed) pod commands.
 # =============================================================================
 set -euo pipefail
 
@@ -23,6 +25,12 @@ cd "$(dirname "$0")/.."
 
 RESULTS_DIR=${RESULTS_DIR:-results}
 PY=${LADDER_PYTHON:-python}
+GPU_ID=${LADDER_GPU_ID:-NVIDIA H100 80GB HBM3}
+IMAGE=${LADDER_IMAGE:-ghcr.io/luiz-frias/entropic-substrate-lm:latest}
+# The .dvc pointers are md5 addresses into the remote cache; without them the
+# pushed objects are unreachable. They are pod-local files, so they are also
+# collected here to ride along with any results retrieval.
+POINTER_MANIFEST="${RESULTS_DIR}/dvc-pointers.txt"
 declare -a DVC_FAILURES=()
 
 SUF=""
@@ -78,6 +86,27 @@ dvc_sync() {
   if [[ "$failed" -eq 1 ]]; then
     say "WARNING: dvc sync FAILED for ${exp} — artifacts are pod-local only"
     DVC_FAILURES+=("$exp")
+    return 0
+  fi
+  # Pointer capture: `dvc add` writes the .dvc files on the POD, and nothing
+  # here commits them to git. Echo them into the log and append them to a
+  # manifest so the md5 addresses survive the pod even if the files don't.
+  local pointer missing=0
+  for pointer in "models/${exp}-final.pt.dvc" "${RESULTS_DIR}/${exp}.jsonl.dvc"; do
+    if [[ ! -f "$pointer" ]]; then
+      say "WARNING: ${pointer} missing after a successful dvc add — those objects are unaddressable"
+      missing=1
+      continue
+    fi
+    printf '\n----- %s -----\n' "$pointer"
+    cat "$pointer"
+    {
+      printf '\n----- %s -----\n' "$pointer"
+      cat "$pointer"
+    } >>"$POINTER_MANIFEST"
+  done
+  if [[ "$missing" -eq 1 ]]; then
+    DVC_FAILURES+=("$exp")
   fi
 }
 
@@ -112,12 +141,22 @@ EOF
   say "LADDER_ACCEPT_FISHER=1 set — continuing on the pre-committed fisher arm"
 fi
 
+# The E2/E3 configs are pinned to the fisher init, so with LADDER_ACCEPT_FISHER
+# the winner and the arm downstream rungs build on are DIFFERENT numbers; the
+# gate line must not conflate them.
+WINNER_NPB=$FISH_NPB
+FISHER_NOTE=""
+if [[ "$WINNER" != "e1-fisher" ]]; then
+  WINNER_NPB=$RAND_NPB
+  FISHER_NOTE=" [E2/E3 still build on the fisher arm: ${FISH_NPB}]"
+fi
+
 # ----------------------------------------------------------------- E2 rung
 say "=== E2: hypersphere-native backbone ==="
 run_rung e2 "$@"
 dvc_sync e2
 E2_NPB=$(final_npb e2)
-say "E2 gate: ${E2_NPB} nats/byte (E1 winner was ${FISH_NPB}); if E2 converged slower, see the triage table in docs/e-3-instruction.md"
+say "E2 gate: ${E2_NPB} nats/byte vs E1 winner ${WINNER} ${WINNER_NPB}${FISHER_NOTE}; if E2 converged slower, see the triage table in docs/e-3-instruction.md"
 
 # ----------------------------------------------------------------- E3 rung
 say "=== E3: kappa-attention kernel ==="
@@ -129,10 +168,12 @@ say "E3 gate: ${E3_NPB} nats/byte vs E2 ${E2_NPB}"
 say "per-head kappa divergence report (the e3-anchor / e3-vantage execution gate):"
 "$PY" - "${RESULTS_DIR}/$(rname e3).jsonl" <<'PYEOF'
 import json
+import math
 import sys
 
+path = sys.argv[1]
 last = None
-with open(sys.argv[1], encoding="utf-8") as fh:
+with open(path, encoding="utf-8") as fh:
     for line in fh:
         rec = json.loads(line)
         if rec.get("event") == "eval":
@@ -141,9 +182,17 @@ if last is None or not last.get("kappa"):
     sys.exit("no kappa telemetry in the final eval — cannot report divergence")
 spreads = []
 for i, row in enumerate(last["kappa"]):
-    spread = max(row) - min(row)
+    if not row:
+        sys.exit(f"{path}: layer {i} has an empty kappa row — telemetry is incomplete")
+    # bool is an int subclass — a JSON `true` here is malformed telemetry, not a 1.
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in row):
+        sys.exit(f"{path}: layer {i} kappa row is not numeric: {row!r}")
+    values = [float(v) for v in row]
+    if not all(math.isfinite(v) for v in values):
+        sys.exit(f"{path}: layer {i} kappa row has non-finite values: {row!r}")
+    spread = max(values) - min(values)
     spreads.append(spread)
-    print(f"  layer {i}: {row}  (head spread {spread:.4f})")
+    print(f"  layer {i}: {values}  (head spread {spread:.4f})")
 print(f"  max within-layer head spread: {max(spreads):.4f}")
 PYEOF
 
@@ -153,18 +202,28 @@ cat <<EOF
 The ladder STOPS here by design. Review the numbers above, then decide:
 
 1) Anchored arms — execution gate is the per-head kappa divergence just
-   printed. If it fires for you, launch each in its own pod (parallel to any
-   E3 seed reruns):
-     runpodctl pod create --image ghcr.io/luiz-frias/entropic-substrate-lm:latest \\
-       # run command: python -m entropic_substrate.cli train --exp e3-anchor --device cuda
-     runpodctl pod create --image ghcr.io/luiz-frias/entropic-substrate-lm:latest \\
-       # run command: python -m entropic_substrate.cli train --exp e3-vantage --device cuda
+   printed. If it fires for you, run these to launch each in its own pod
+   (parallel to any E3 seed reruns). They are PRINTED, never executed here:
+
+     runpodctl pod create --name e3-anchor --image ${IMAGE} \\
+       --gpu-id "${GPU_ID}" \\
+       --docker-args "python -m entropic_substrate.cli train --exp e3-anchor --device cuda"
+
+     runpodctl pod create --name e3-vantage --image ${IMAGE} \\
+       --gpu-id "${GPU_ID}" \\
+       --docker-args "python -m entropic_substrate.cli train --exp e3-vantage --device cuda"
 
 2) Multi-seed: 3 seeds before believing any gap < 0.05 nats/byte
    (--seed N --results results/<exp>-sN.jsonl, sequentially on this pod).
 
 3) E4 (docs/e-4-instruction.md) — precondition: E3 concluded WITH the 3-seed
    numbers. Do not start it from a single-seed readout.
+
+4) Artifact recovery BEFORE terminating this pod: the .dvc pointers printed
+   above are the only route back to the pushed cache objects, and they live
+   only here. They are collected in ${POINTER_MANIFEST} (absent on --tiny /
+   LADDER_SKIP_DVC runs) — pull it off (runpodctl send) and commit the
+   pointers to git, or the pushed objects are orphaned.
 ===============================================================================
 EOF
 

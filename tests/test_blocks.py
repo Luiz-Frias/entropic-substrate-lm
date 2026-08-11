@@ -360,6 +360,25 @@ def test_asymmetric_anchors_break_isometry_invariance() -> None:
     assert not torch.allclose(attn(x), base, atol=1e-4)
 
 
+@pytest.mark.parametrize("magnitude", [4.0 / 3.0, 5.0])
+def test_anchors_outside_the_hyperbolic_ball_stay_finite(magnitude: float) -> None:
+    """Anchors are unconstrained parameters: nothing stops them drifting past
+    the kappa<0 ball, where mobius_add's rational form is undefined. The small
+    magnitude puts p on the singular shell |p|*|x| = 1/|kappa| for the kappa=-1
+    head at radius 0.75; the large one is far outside the ball."""
+    torch.manual_seed(0)
+    attn = _kappa_attn(anchor_mode="global", kappa_init=[-1.0])
+    assert attn.p_q is not None and attn.p_k is not None
+    with torch.no_grad():
+        attn.p_q.fill_(magnitude / attn.head_dim**0.5)
+        attn.p_k.fill_(-magnitude / attn.head_dim**0.5)
+    out = attn(torch.randn(2, 8, 32))
+    assert torch.isfinite(out).all()
+    out.square().sum().backward()
+    assert attn.p_q.grad is not None and torch.isfinite(attn.p_q.grad).all()
+    assert attn.p_k.grad is not None and torch.isfinite(attn.p_k.grad).all()
+
+
 def test_vantage_arm_global_kappa_per_head_anchors() -> None:
     """The vantage ablation arm: one shared curvature, per-head anchors."""
     torch.manual_seed(0)

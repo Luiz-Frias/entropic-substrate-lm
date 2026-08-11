@@ -109,6 +109,11 @@ and the ladder runner enforces it.
   Against `e3` (curvature only) and `e3-anchor` (curvature + shared vantage) it answers
   *is the win coming from curvature or from vantage?* It forfeits the per-head κ readout
   by design and is not a mainline rung.
+- The **CLI preflight is sanity, not judgment**: `train --exp e3-anchor|e3-vantage` refuses
+  to launch unless `results/e3.jsonl` (`results/e3-tiny.jsonl` under `--tiny`) holds an eval
+  record with κ telemetry, and prints that readout's per-head divergence before training.
+  It encodes NO threshold — whether the divergence is large enough is yours to rule.
+  `ENTROPIC_ALLOW_UNGATED=1` overrides it loudly for a deliberate ungated run.
 - Two traps, both pinned as tests so nobody re-falls into them: symmetric anchors
   (`p_q = p_k`) leave the kernel **exactly** invariant (Möbius translation is an
   isometry), and the operating radius must stay a bounded fraction of the hyperbolic

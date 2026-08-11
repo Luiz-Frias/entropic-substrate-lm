@@ -49,6 +49,9 @@ __all__ = [
     "rotary_embeddings",
 ]
 
+# inverse_softplus(1) = ln(e - 1): the tau init that makes softplus(tau) == 1.
+_INV_SOFTPLUS_1: float = math.log(math.e - 1.0)
+
 
 # --------------------------------------------------------------------- rope
 def rotary_embeddings(
@@ -159,7 +162,12 @@ class CausalSelfAttention(nn.Module):
             else:
                 values = [init[i % len(init)] for i in range(cfg.n_heads)]
             self.kappa = nn.Parameter(torch.tensor(values, dtype=torch.float32))
-            self.tau = nn.Parameter(torch.ones(cfg.n_heads, dtype=torch.float32))
+            # Temperature is stored unconstrained and read through softplus: a
+            # tau that crossed zero would invert the kernel (nearest becomes
+            # farthest). inverse_softplus(1) starts it at exactly 1.
+            self.tau = nn.Parameter(
+                torch.full((cfg.n_heads,), _INV_SOFTPLUS_1, dtype=torch.float32)
+            )
         else:
             self.register_parameter("kappa", None)
             self.register_parameter("tau", None)
@@ -213,11 +221,11 @@ class CausalSelfAttention(nn.Module):
         return self.out_proj(y)
 
     def _kappa_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        """E3 kernel: per-head logits ``−d_κ(q̂, k̂)² · τ·√head_dim / 8``.
+        """E3 kernel: per-head logits ``−d_κ(q̂, k̂)² · softplus(τ)·√head_dim / 8``.
 
-        At κ = 0 and τ = 1 this reproduces the cosine path at init exactly:
+        At κ = 0 and softplus(τ) = 1 this reproduces the cosine path at init exactly:
         ``d_0² = 8 − 8cos`` for unit vectors, so the logits are
-        ``√hd·(cos − 1)·τ`` and softmax kills the constant. All geometry runs
+        ``√hd·(cos − 1)·softplus(τ)`` and softmax kills the constant. All geometry runs
         in FP32 with autocast disabled (non-negotiable numerics).
         """
         if self.kappa is None or self.tau is None:
@@ -238,10 +246,16 @@ class CausalSelfAttention(nn.Module):
             radius = torch.where(kappa < 0, ball.clamp_max(1.0), torch.ones_like(ball))
             if self.p_q is not None and self.p_k is not None:
                 # Anchored arms: Mobius-translate q and k by their own learned
-                # anchors before measuring. Translated points lose the common
-                # radius, so the general three-scalar reduction is used.
-                q_pts = projx(mobius_add(-self.p_q.float(), radius * q32, kappa), kappa)
-                k_pts = projx(mobius_add(-self.p_k.float(), radius * k32, kappa), kappa)
+                # anchors before measuring. The anchors are unconstrained
+                # parameters, so for kappa < 0 they can drift out of the ball
+                # where mobius_add's rational form is undefined — both operands
+                # are projected in (a no-op for radius*q32, inside by
+                # construction). Translated points lose the common radius, so
+                # the general three-scalar reduction is used.
+                q_in = projx(radius * q32, kappa)
+                k_in = projx(radius * k32, kappa)
+                q_pts = projx(mobius_add(projx(-self.p_q.float(), kappa), q_in, kappa), kappa)
+                k_pts = projx(mobius_add(projx(-self.p_k.float(), kappa), k_in, kappa), kappa)
                 dot = q_pts @ k_pts.transpose(-2, -1)
                 q_sq = q_pts.pow(2).sum(-1, keepdim=True)
                 k_sq = k_pts.pow(2).sum(-1, keepdim=True).transpose(-2, -1)
@@ -249,7 +263,7 @@ class CausalSelfAttention(nn.Module):
             else:
                 cos = q32 @ k32.transpose(-2, -1)
                 dist = dist_k_from_cos(cos, kappa, radius)
-            scale = self.tau.float().view(1, -1, 1, 1) * float(self.head_dim) ** 0.5
+            scale = F.softplus(self.tau.float()).view(1, -1, 1, 1) * float(self.head_dim) ** 0.5
             logits = -dist.square() * (scale / 8.0)
             causal = torch.ones(t, t, dtype=torch.bool, device=q.device).tril()
             logits = logits.masked_fill(~causal, float("-inf"))

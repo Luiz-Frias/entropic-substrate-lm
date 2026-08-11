@@ -216,6 +216,66 @@ def test_cli_parser_exposes_the_whole_ladder() -> None:
         assert parser.parse_args(["train", "--exp", exp]).exp == exp
 
 
+# --------------------------------------------- anchored-arm preflight (E3'')
+def _anchored_argv(tmp_path: Path) -> list[str]:
+    return [
+        "train",
+        "--exp",
+        "e3-anchor",
+        "--tiny",
+        "--device",
+        "cpu",
+        "--steps",
+        "1",
+        "--results",
+        str(tmp_path / "out.jsonl"),
+        "--quiet",
+    ]
+
+
+def _e3_eval_record() -> str:
+    record = {
+        "run": "e3-tiny",
+        "step": 50,
+        "event": "eval",
+        "nats_per_byte": 1.5,
+        "kappa": [[-0.9, 0.1, 1.2, -0.4], [-0.2, 0.0, 0.3, 0.1]],
+    }
+    return json.dumps(record) + "\n"
+
+
+def test_anchored_arm_refuses_to_launch_without_the_e3_readout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Sanity, not judgment: the arm is gated on the E3 kappa readout existing
+    at all. Whether the divergence is big enough stays a human call."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    assert main(_anchored_argv(tmp_path)) == 2
+    assert "DECISION-NEEDED" in capsys.readouterr().err
+
+
+def test_anchored_arm_launches_once_the_e3_readout_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "e3-tiny.jsonl").write_text(_e3_eval_record(), encoding="utf-8")
+    assert main(_anchored_argv(tmp_path)) == 0
+    assert "head spread" in capsys.readouterr().out
+
+
+def test_anchored_arm_override_is_loud(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
+    assert main(_anchored_argv(tmp_path)) == 0
+    assert "ENTROPIC_ALLOW_UNGATED" in capsys.readouterr().err
+
+
 def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:
     """Smoke: every ladder rung must construct and take one step on CPU."""
     for exp in ("e0-byte", "e1-fisher", "e1-random", "e2", "e3"):
