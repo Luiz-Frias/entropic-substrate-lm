@@ -3,7 +3,7 @@
 # shellcheck/shfmt/bats (shell linting/testing). Mirrors doc-lora-training convention.
 [env]
 _.python.venv = { path = ".venv", create = true }
-_.file = ".env"                          # loads HF_TOKEN, WANDB_API_KEY, S3 creds, etc.
+_.file = ".env"                          # loads HF_TOKEN, WANDB_API_KEY, R2/RunPod creds, etc.
 
 [settings.python]
 uv_venv_auto = true
