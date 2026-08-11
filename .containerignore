@@ -1,0 +1,15 @@
+data/
+models/
+results/
+references/
+.venv
+.git
+.dvc/tmp
+.dvc/cache
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.env
+notebooks/

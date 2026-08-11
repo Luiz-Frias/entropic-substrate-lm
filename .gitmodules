@@ -1,0 +1,12 @@
+[submodule "references/holobyte"]
+	path = references/holobyte
+	url = https://github.com/VladimerKhasia/HoloByte.git
+[submodule "references/hnet"]
+	path = references/hnet
+	url = https://github.com/goombalab/hnet.git
+[submodule "references/ngpt"]
+	path = references/ngpt
+	url = https://github.com/NVIDIA/ngpt.git
+[submodule "references/geoopt"]
+	path = references/geoopt
+	url = https://github.com/geoopt/geoopt.git

@@ -1,0 +1,119 @@
+[project]
+name = "entropic-substrate-lm"
+version = "0.1.0"
+description = "Substrate-level symbol encoding experiments — Fisher-Rao init, nGPT hypersphere backbone, gated κ-stereographic normalization"
+requires-python = ">=3.12"
+readme = "README.md"
+# Runtime deps: geometry-aware LM stack. torch resolves the CUDA 12.4 wheel on the
+# H100 target; CPU wheel is used for local/tiny/CI runs (see Containerfile / mise).
+dependencies = [
+  "torch>=2.6.0",
+  "numpy>=1.26.0",
+  "datasets>=3.6.0",
+  "tiktoken>=0.8.0",
+  # geoopt ships fast-moving fixes on GitHub ahead of PyPI releases; its own README
+  # recommends installing straight from the repo, so we pin the git ref here too.
+  "geoopt @ git+https://github.com/geoopt/geoopt.git",
+  "pyyaml>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.11.0",
+  "basedpyright>=1.37.0",
+  "pytest>=8.4.0",
+  "pytest-asyncio>=0.26.0",
+  "dvc[s3]>=3.59.0",
+  "deptry>=0.20.0",
+  "bandit>=1.8.0",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# uv — dependency cooldown (supply-chain): hold back freshly-published releases.
+# Anchored at repo inception rather than a rolling window; the weekly sweep
+# (mirrors doc-lora-training convention) advances this date forward over time,
+# which is how security patches get pulled in without a blanket rollback.
+# ---------------------------------------------------------------------------
+[tool.uv]
+exclude-newer = "2026-08-01T00:00:00Z"
+
+# ---------------------------------------------------------------------------
+# ruff — linting + formatting (mirrors doc-lora-training convention)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["references"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+  "RUF", # ruff-specific rules
+]
+ignore = [
+  "E501",   # line too long — handled by formatter
+  "RUF001", # ambiguous unicode (strings) — math notation (κ, α, √, ×, ≈) is intentional here
+  "RUF002", # ambiguous unicode (docstrings) — ditto
+  "RUF003", # ambiguous unicode (comments) — ditto
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["entropic_substrate"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# basedpyright — strict type checking (supersedes mypy; mirrors sibling repos).
+# ---------------------------------------------------------------------------
+[tool.basedpyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["src"]
+exclude = ["**/__pycache__", "tests", "build", "references"]
+reportMissingImports = false
+reportMissingTypeStubs = false
+
+# ---------------------------------------------------------------------------
+# bandit — security linting (invoked as `bandit -c pyproject.toml -q -r src`)
+# ---------------------------------------------------------------------------
+[tool.bandit]
+exclude_dirs = ["tests", "build", ".venv", "references"]
+
+# ---------------------------------------------------------------------------
+# deptry — dependency hygiene
+# ---------------------------------------------------------------------------
+[tool.deptry]
+known_first_party = ["entropic_substrate"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["references", ".git", "__pycache__", "*.egg-info"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["--strict-markers", "--import-mode=importlib"]
+markers = [
+  "unit: fast hermetic unit tests (CPU, <60s)",
+  "integration: multi-component integration tests",
+]

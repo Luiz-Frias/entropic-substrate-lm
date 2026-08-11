@@ -1,0 +1,233 @@
+# =============================================================================
+# PRE-COMMIT CONFIGURATION
+# =============================================================================
+# Hardened quality gates for entropic-substrate-lm. Uses uv for fast Python
+# testing. Mirrors the ACN convention; adapted for this repo's flat tests/
+# layout (pytest markers `unit`/`integration` instead of tests/unit, tests/
+# integration subdirectories) and its pinned reference submodules.
+# =============================================================================
+
+minimum_pre_commit_version: "3.7.0"
+default_language_version:
+  python: python3
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+  - commit-msg
+  - prepare-commit-msg
+default_stages:
+  - pre-commit
+fail_fast: true
+ci:
+  autofix_prs: false
+  autoupdate_schedule: monthly
+  skip: []
+exclude: |
+  (?x)^(
+    \.git/|
+    \.venv/|
+    \.pytest_cache/|
+    __pycache__/|
+    \.mypy_cache/|
+    \.ruff_cache/|
+    \.coverage|
+    htmlcov/|
+    node_modules/|
+    dist/|
+    build/|
+    \.egg-info/|
+    \.tox/|
+    \.nox/|
+    \.hypothesis/|
+    \.benchmarks/|
+    references/|
+    data/|
+    models/|
+    results/|
+    \.gitattributes|
+    \.gitignore|
+    \.containerignore|
+    \.dvcignore|
+    \.env.*|
+    \.secrets|
+    \.gitleaks\.toml|
+    \.gitmessage|
+    CHANGELOG\.md|
+    LICENSE.*|
+    \.vscode/|
+    \.idea/|
+    \.DS_Store
+  )
+
+repos:
+  # =============================================================================
+  # SECURITY & SECRETS
+  # =============================================================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets scan)
+        stages: [pre-commit, pre-push]
+        args:
+          - "--no-banner"
+          - "--redact"
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - "--baseline"
+          - ".secrets.baseline"
+        exclude: \.lock$
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.2
+    hooks:
+      - id: bandit
+        args:
+          - "-c"
+          - "pyproject.toml"
+          - "-q"
+
+  # =============================================================================
+  # GENERAL HYGIENE
+  # =============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-shebang-scripts-are-executable
+      - id: check-executables-have-shebangs
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: debug-statements
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: forbid-new-submodules
+
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
+      - id: shfmt
+        args: ["-i", "2", "-ci"]
+
+  # =============================================================================
+  # PYTHON QUALITY
+  # =============================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.13
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix", "--config=pyproject.toml"]
+        exclude: ^references/
+      - id: ruff-format
+        args: ["--config=pyproject.toml"]
+        exclude: ^(tests/|build/|references/)
+
+  - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
+    rev: 1.37.1
+    hooks:
+      - id: basedpyright
+        stages: [pre-commit]
+        files: ^src/entropic_substrate/
+        exclude: ^(tests/|build/|references/)
+        args:
+          - "--pythonversion"
+          - "3.12"
+        additional_dependencies: []
+
+  # =============================================================================
+  # PYTHON TEST MATRICES (uv-run)
+  # =============================================================================
+  - repo: https://github.com/andrewaylett/pre-commit-hooks
+    rev: v0.7.1
+    hooks:
+      # Fast feedback: unit tests on every commit (CPU, hermetic)
+      - id: uv-run
+        name: python unit tests (uv)
+        stages: [pre-commit]
+        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings"]
+
+      # Pre-push: full suite (unit + integration) before code reaches remote
+      - id: uv-run
+        name: python full test suite (uv)
+        stages: [pre-push]
+        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings"]
+
+  # =============================================================================
+  # CONTAINERS
+  # =============================================================================
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint-docker
+        args: ["--ignore", "DL3008", "--ignore", "DL3013", "--ignore", "DL3009"]
+        files: Containerfile.*$
+
+  # =============================================================================
+  # YAML / JSON / GITOPS
+  # =============================================================================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: ["-c", ".yamllint.yaml"]
+        exclude: ^(charts/|templates/|\.github/workflows/)
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.36.0
+    hooks:
+      - id: check-github-workflows
+      - id: check-github-actions
+      - id: check-dependabot
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.10
+    hooks:
+      - id: actionlint
+        stages: [pre-commit]
+
+  # =============================================================================
+  # COMMITS & DOCS
+  # =============================================================================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.11.6
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+      - id: commitizen-branch
+        stages: [pre-push]
+
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+        stages: [commit-msg]
+
+  - repo: https://github.com/spinergie/pre-commit-dprint
+    rev: v0.50.1
+    hooks:
+      - id: dprint
+        name: dprint (markdown formatter)
+        types: [markdown]
+        exclude: ^(CHANGELOG\.md|LICENSE\.md|docs/.*|README\.md|references/.*)$
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.20.0 # pragma: allowlist secret
+    hooks:
+      - id: markdownlint-cli2
+        args: ["--config", ".markdownlint.yaml"]
+        exclude: ^(CHANGELOG\.md|LICENSE\.md|docs/.*|README\.md|references/.*)$

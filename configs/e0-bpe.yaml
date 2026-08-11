@@ -1,0 +1,39 @@
+# E0-bpe: matched-parameter GPT-2-BPE baseline.
+# Reported in nats/byte using the bytes/token ratio MEASURED on the eval split
+# (see data/build.py) - never the folklore 4.0.
+name: e0-bpe
+
+model:
+  d_model: 768
+  n_layers: 6
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: gpt2
+  block: baseline
+  norm: layernorm
+  embedding_init: default
+  tie_embeddings: true
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0006
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.1
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-unit:
+    name: Lint + unit tests (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false # references/ submodules are not needed for lint/unit CI
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install CPU-only torch + project deps
+        run: |
+          uv venv --python 3.12
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e . --group dev
+
+      # --no-sync everywhere: a bare `uv run` re-syncs the env from pyproject
+      # and would replace the CPU-only torch wheel installed above with the
+      # multi-GB CUDA build from the default index.
+      - name: Ruff lint
+        run: uv run --no-sync ruff check .
+
+      - name: Ruff format check
+        run: uv run --no-sync ruff format --check .
+
+      - name: Unit tests (pytest -m unit, CPU only)
+        env:
+          ENTROPIC_SUBSTRATE_DEVICE: cpu
+        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings

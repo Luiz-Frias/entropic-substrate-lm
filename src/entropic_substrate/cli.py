@@ -1,0 +1,176 @@
+"""Command line entry point: ``python -m entropic_substrate.cli``.
+
+Subcommands
+-----------
+``train``        run one rung of the experiment ladder
+``init-fisher``  precompute and cache the sqrt(p) Fisher embedding table
+``eval``         evaluate a checkpoint on its held-out split
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
+
+import torch
+
+from entropic_substrate.config import EXPERIMENTS, Config, resolve_experiment_config
+from entropic_substrate.data.build import build_corpus
+from entropic_substrate.data.enwik8 import load_enwik8_bytes
+from entropic_substrate.data.fineweb import stream_fineweb_bytes
+from entropic_substrate.data.synthetic import synthetic_text
+from entropic_substrate.init.fisher import build_fisher_init, save_init
+from entropic_substrate.train import Trainer, resolve_device
+
+__all__ = ["build_parser", "main"]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser for all subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="entropic-substrate",
+        description="Entropic substrate LM experiments (Form F(x) Labs)",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    train = sub.add_parser("train", help="train one experiment")
+    train.add_argument("--exp", choices=EXPERIMENTS, help="experiment ladder rung")
+    train.add_argument("--config", type=Path, help="explicit YAML config path")
+    train.add_argument("--device", default=None, help="cpu | cuda | cuda:N | mps | auto")
+    train.add_argument("--tiny", action="store_true", help="overlay configs/tiny.yaml")
+    train.add_argument("--steps", type=int, default=None, help="override max_steps")
+    train.add_argument("--seed", type=int, default=None, help="override the seed")
+    train.add_argument("--resume", type=Path, default=None, help="checkpoint to resume")
+    train.add_argument("--results", type=Path, default=None, help="metrics JSONL path")
+    train.add_argument("--quiet", action="store_true", help="suppress stdout logging")
+
+    fisher = sub.add_parser("init-fisher", help="build the sqrt(p) Fisher init table")
+    fisher.add_argument(
+        "--corpus",
+        default="data/enwik8/enwik8",
+        help="path to a byte corpus, or 'fineweb' / 'synthetic'",
+    )
+    fisher.add_argument("--d-model", type=int, default=768)
+    fisher.add_argument("--max-bytes", type=int, default=50_000_000)
+    fisher.add_argument("--seed", type=int, default=0)
+    fisher.add_argument("--smoothing", type=float, default=1.0)
+    # Default matches the path the e1-fisher/e2/e3 configs read
+    # (models are d_model=768 at full scale).
+    fisher.add_argument("--out", type=Path, default=Path("data/fisher_init_d768.pt"))
+
+    evaluate = sub.add_parser("eval", help="evaluate a checkpoint")
+    evaluate.add_argument("--ckpt", type=Path, required=True)
+    evaluate.add_argument("--device", default=None)
+    evaluate.add_argument("--batches", type=int, default=None)
+    evaluate.add_argument("--json", action="store_true", help="print JSON only")
+
+    return parser
+
+
+def _overrides(args: argparse.Namespace) -> dict[str, Any]:
+    train: dict[str, Any] = {}
+    if args.device is not None:
+        train["device"] = args.device
+    if args.steps is not None:
+        train["max_steps"] = args.steps
+    if args.seed is not None:
+        train["seed"] = args.seed
+    if args.resume is not None:
+        train["resume"] = str(args.resume)
+    return {"train": train} if train else {}
+
+
+def cmd_train(args: argparse.Namespace) -> int:
+    """Handle ``train``."""
+    if args.exp is None and args.config is None:
+        print("error: one of --exp or --config is required", file=sys.stderr)
+        return 2
+    cfg = resolve_experiment_config(
+        args.exp, args.config, tiny=args.tiny, overrides=_overrides(args)
+    )
+    trainer = Trainer(cfg, results_path=args.results)
+    print(
+        f"[{cfg.name}] {trainer.raw_model.num_parameters() / 1e6:.2f}M params on "
+        f"{trainer.device}; tokenizer={trainer.meta.tokenizer} "
+        f"bytes/token={trainer.meta.bytes_per_token:.4f}"
+    )
+    trainer.fit(verbose=not args.quiet)
+    print(f"metrics -> {trainer.results_path}")
+    return 0
+
+
+def cmd_init_fisher(args: argparse.Namespace) -> int:
+    """Handle ``init-fisher``."""
+    if args.corpus == "fineweb":
+        stream: Any = stream_fineweb_bytes(args.max_bytes)
+    elif args.corpus == "synthetic":
+        stream = synthetic_text(min(args.max_bytes, 5_000_000)).encode("utf-8")
+    else:
+        stream = bytes(load_enwik8_bytes(args.corpus, args.max_bytes).tobytes())
+
+    table = build_fisher_init(
+        stream,
+        args.d_model,
+        max_bytes=args.max_bytes,
+        smoothing=args.smoothing,
+        seed=args.seed,
+    )
+    path = save_init(table, args.out)
+    norms = table.norm(dim=1)
+    print(
+        f"wrote {tuple(table.shape)} Fisher init -> {path} "
+        f"(norm min={norms.min():.6f} max={norms.max():.6f})"
+    )
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Handle ``eval``."""
+    device = resolve_device(args.device or "auto")
+    state = torch.load(args.ckpt, map_location=device, weights_only=False)
+    from entropic_substrate.config import config_from_dict
+
+    cfg: Config = config_from_dict(state["config"])
+    corpus = build_corpus(cfg.data, cfg.model.tokenizer)
+    trainer = Trainer(cfg, corpus=corpus, device=device)
+    trainer.raw_model.load_state_dict(state["model"])
+    trainer.step = int(state.get("step", 0))
+    result = trainer.evaluate(args.batches)
+
+    payload = {
+        "checkpoint": str(args.ckpt),
+        "run": cfg.name,
+        "step": trainer.step,
+        "loss": result.loss,
+        "nats_per_byte": result.nats_per_byte,
+        "bits_per_byte": result.bits_per_byte,
+        "perplexity": result.perplexity,
+        "bytes_per_token": trainer.meta.bytes_per_token,
+        "kappa": result.kappa,
+        "gate_usage": result.gate_fraction,
+    }
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        for key, value in payload.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Parse ``argv`` and dispatch. Returns a process exit code."""
+    args = build_parser().parse_args(argv)
+    handlers = {
+        "train": cmd_train,
+        "init-fisher": cmd_init_fisher,
+        "eval": cmd_eval,
+    }
+    return handlers[args.command](args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,68 @@
+# =============================================================================
+# entropic-substrate-lm — .gitignore
+# =============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.installed.cfg
+*.egg
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Caches ---
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.basedpyright_cache/
+.hypothesis/
+.benchmarks/
+
+# --- Coverage ---
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Data / model / results artifacts ---
+# These directories are DVC/large-artifact working dirs. Keep the directory
+# placeholders (.gitkeep) but ignore everything else committed inside them —
+# actual data is tracked via `dvc add`, not git.
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+results/*
+!results/.gitkeep
+
+# --- Jupyter / notebooks scratch ---
+notebooks/*
+!notebooks/.gitkeep
+.ipynb_checkpoints/
+
+# --- Logs ---
+logs/
+*.log
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# NOTE: .dvc/config is intentionally NOT ignored — DVC remote/config metadata
+# is tracked in git. Only DVC's own internal cache/tmp dirs are excluded (see
+# .dvc/.gitignore, managed by `dvc init`).

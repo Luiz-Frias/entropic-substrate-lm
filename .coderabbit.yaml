@@ -1,0 +1,199 @@
+# =============================================================================
+# CodeRabbit Configuration
+# =============================================================================
+# AI-powered code review configuration for entropic-substrate-lm.
+# Docs: https://docs.coderabbit.ai/reference/configuration
+# =============================================================================
+
+# Global Settings
+language: "en-US"
+early_access: true
+enable_free_tier: false
+
+# Custom tone instruction for reviews
+tone_instructions: |
+  - Be constructive and educational
+  - Focus on numerical correctness (FP32 geometry discipline), performance, and maintainability
+  - Suggest improvements following DRY, SOLID & KISS principles
+
+# =============================================================================
+# Reviews Configuration
+# =============================================================================
+reviews:
+  # Review style: "chill" (friendly) or "assertive" (strict)
+  profile: "assertive" # Production-grade quality bar (DRY, SOLID & KISS) bar
+
+  # Request changes workflow
+  request_changes_workflow: true
+
+  # High-level summary of PR changes
+  high_level_summary: true
+
+  # Generate poem (fun touch for completed PRs)
+  poem: false
+
+  # Review-level summary
+  review_status: true
+
+  # Collapse walkthrough sections
+  collapse_walkthrough: false
+
+  # Automatic review settings
+  auto_review:
+    enabled: true
+
+    # Ignore specific file patterns
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT REVIEW"
+      - "[skip ci]"
+
+    # Auto-review drafts
+    drafts: false
+
+    # Path-based filtering
+    path_filters:
+      # Exclude generated/vendor code + reference submodules from reviews
+      - "!**/*.lock"
+      - "!**/*.min.js"
+      - "!**/*.min.css"
+      - "!**/vendor/**"
+      - "!**/node_modules/**"
+      - "!**/.venv/**"
+      - "!**/references/**" # pinned upstream submodules (holobyte, hnet, ngpt, geoopt)
+      - "!**/dist/**"
+      - "!**/build/**"
+      - "!**/data/**"
+      - "!**/models/**"
+      - "!**/results/**"
+
+      # Focus on source code
+      - "**/*.py"
+      - "**/*.sh"
+      - "**/*.yaml"
+      - "**/*.yml"
+      - "**/*.toml"
+      - "**/*.md"
+
+  # Tool integrations (linters, security scanners)
+  tools:
+    # Security & Secret Scanning
+    gitleaks:
+      enabled: true
+
+    # Shellcheck for bash scripts
+    shellcheck:
+      enabled: true
+
+    # YAML linting
+    yamllint:
+      enabled: true
+
+    # Markdown linting
+    markdownlint:
+      enabled: true
+
+  # Path-specific instructions
+  path_instructions:
+    - path: "scripts/**"
+      instructions: |
+        - Ensure scripts have proper error handling (set -euo pipefail for shell)
+        - Check for security vulnerabilities (injection, path traversal)
+        - Confirm download scripts verify checksums where available
+
+    - path: "src/entropic_substrate/geometry/**"
+      instructions: |
+        - Verify FP32 discipline: geometry math (expmap0/logmap0/projx/dist0) must run
+          with autocast disabled, never silently downcast to bf16/fp16
+        - Check curvature κ clamping bounds are respected (e.g. [-5, 5])
+        - Verify κ→0 Taylor-series guards avoid division by zero
+        - Confirm any vendored geoopt-derived logic cites the source in a docstring
+
+    - path: "src/entropic_substrate/layers/**"
+      instructions: |
+        - Verify GatedKappaNorm keeps geometry ops in fp32 internally
+        - Check load-balancing aux loss is finite and exposed to the trainer
+        - Verify gradients flow to learnable curvature parameters
+
+    - path: "**/*.py"
+      instructions: |
+        - Follow PEP 8 and type hints required
+        - Check for proper error handling and logging
+        - Verify SOLID principles
+        - Ensure DRY (extract repeated code)
+        - Reject stub/TODO-only functions — every module must be runnable
+
+    - path: ".pre-commit-config.yaml"
+      instructions: |
+        - Validate all hook repos are accessible
+        - Check for version pinning (no 'latest')
+        - Ensure hooks are idempotent
+
+    - path: "mise.toml"
+      instructions: |
+        - Validate tool versions are pinned or intentionally "latest" per convention
+        - Check for security in environment variables
+        - Ensure tasks have proper error handling
+
+    - path: "docs/**"
+      instructions: |
+        - Verify markdown formatting
+        - Check for broken links
+        - Ensure code examples are correct and tested
+        - Validate cross-references to other docs
+
+  # Code generation settings
+  finishing_touches:
+    generate_docstrings:
+      enabled: true
+      style: "google" # Google-style docstrings for Python
+
+    generate_unit_tests:
+      enabled: false # Disabled (tests manually written for quality)
+
+# =============================================================================
+# Chat Configuration
+# =============================================================================
+chat:
+  auto_reply: true
+
+# =============================================================================
+# Knowledge Base
+# =============================================================================
+knowledge_base:
+  # Organizational coding guidelines
+  code_guidelines:
+    enabled: true
+
+  # Share learnings across PRs
+  learnings:
+    scope: "local" # Learn from this repo only (not global)
+
+# =============================================================================
+# Ignored Files/Patterns
+# =============================================================================
+# These are never reviewed by CodeRabbit
+ignore:
+  - "**/*.lock"
+  - "**/*.min.*"
+  - "**/vendor/**"
+  - "**/node_modules/**"
+  - "**/.venv/**"
+  - "**/references/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/coverage/**"
+  - "**/.pytest_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/.ruff_cache/**"
+  - "**/data/**"
+  - "**/models/**"
+  - "**/results/**"
+
+# =============================================================================
+# Abort Review Conditions
+# =============================================================================
+abort_on_changes_requested: false
+abort_on_close: true

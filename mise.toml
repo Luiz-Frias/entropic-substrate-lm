@@ -1,0 +1,39 @@
+# mise.toml — entropic-substrate-lm
+# Pins: python 3.12, uv (pkg mgr), just (task runner), prek (Rust pre-commit runner),
+# shellcheck/shfmt/bats (shell linting/testing). Mirrors doc-lora-training convention.
+[env]
+_.python.venv = { path = ".venv", create = true }
+_.file = ".env"                          # loads HF_TOKEN, WANDB_API_KEY, S3 creds, etc.
+
+[settings.python]
+uv_venv_auto = true
+
+[tools]
+python = "3.12"
+uv = "latest"
+just = "latest"
+"github:j178/prek" = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+bats = "latest"
+
+# Shell tasks delegate to just — keeps a single source of truth for recipes.
+[tasks.check]
+description = "Quality gate (fmt-check + lint + typecheck + unit tests)"
+run = "just check"
+
+[tasks.check-all]
+description = "Full gate including integration tests"
+run = "just check && just test-all"
+
+[tasks.train]
+description = "Run a training experiment (wraps just train)"
+run = "just train"
+
+[tasks.download-data]
+description = "Download experiment datasets (wraps just download-data)"
+run = "just download-data"
+
+[tasks.gate]
+description = "Pre-commit + pre-push gate (prek)"
+run = "just pc-ci"

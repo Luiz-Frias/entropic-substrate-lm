@@ -1,0 +1,48 @@
+# E3: E2 with every Norm replaced by the gated kappa-stereographic layer.
+# K = 3 components initialised at kappa = -1 (hyperbolic), 0 (Euclidean),
+# +1 (spherical); curvatures are learnable and clamped to [-5, 5].
+# Top-1 routing + Switch-style load-balancing aux loss.
+name: e3
+
+model:
+  d_model: 768
+  n_layers: 9
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: ngpt
+  norm: kappa_moe
+  # ASSUMPTION: pre-commits to fisher_sqrt as the "E1 winner" — see the note in e2.yaml.
+  embedding_init: fisher_sqrt
+  fisher_init_path: data/fisher_init_d768.pt
+  tie_embeddings: true
+  alpha_init: 0.05
+  n_components: 3
+  top_k: 1
+  kappa_init: [-1.0, 0.0, 1.0]
+  aux_loss_weight: 0.01
+  router_noise: 0.0
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0015
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.0
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto
