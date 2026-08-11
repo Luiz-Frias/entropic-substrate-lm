@@ -32,7 +32,11 @@ jobs:
       - name: Install CPU-only torch + project deps
         run: |
           uv venv --python 3.12
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # --no-config: the pytorch index serves no upload timestamps, and uv's
+          # exclude-newer pin (pyproject [tool.uv]) excludes timestamp-less files
+          # entirely. The ==2.6.0 pin matches the Containerfile base image and
+          # restores the reproducibility exclude-newer provided.
+          uv pip install --no-config "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e . --group dev
 
       # --no-sync everywhere: a bare `uv run` re-syncs the env from pyproject
