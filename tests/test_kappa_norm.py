@@ -97,20 +97,29 @@ def test_balanced_router_hits_the_switch_lower_bound() -> None:
     assert float(layer.aux_loss.detach()) == pytest.approx(1.0, abs=1e-5)
 
 
-def test_gradients_reach_the_learnable_curvature(layer: GatedKappaNorm) -> None:
-    x = torch.randn(4, 6, 32)
-    layer(x).square().sum().backward()
-    assert layer.kappa.grad is not None
-    assert torch.isfinite(layer.kappa.grad).all()
-    assert float(layer.kappa.grad.abs().sum()) > 0.0
-
-
-def test_gradient_reaches_kappa_initialised_at_exactly_zero() -> None:
-    """The Euclidean component sits on the Taylor seam; it must still learn."""
-    layer = GatedKappaNorm(16, n_components=1, top_k=1, kappa_init=[0.0])
-    layer(torch.randn(4, 4, 16)).square().sum().backward()
-    assert layer.kappa.grad is not None
-    assert float(layer.kappa.grad.abs().sum()) > 0.0
+def test_kappa_norm_is_radially_annihilated() -> None:
+    """Design record 2026-08-11 (docs/e-3-instruction.md): origin log/exp maps
+    are radial and the output retraction erases radius, so this layer IS
+    ``UnitNorm`` to float precision and kappa is unlearnable here — curvature
+    is relational and moved to the attention kernel (E3). This pin documents
+    the theorem; if it ever fails, the layer regained a non-radial path and
+    the design record must be revisited before trusting either result."""
+    torch.manual_seed(0)
+    x = torch.randn(4, 6, 16)
+    unit = UnitNorm()(x)
+    for n_components, top_k, init in [
+        (1, 1, [0.0]),
+        (3, 1, None),
+        (3, 2, [-1.0, 0.0, 1.0]),
+    ]:
+        layer = GatedKappaNorm(16, n_components=n_components, top_k=top_k, kappa_init=init)
+        out = layer(x)
+        torch.testing.assert_close(out, unit, atol=1e-6, rtol=0)
+        out.square().sum().backward()
+        assert layer.kappa.grad is not None
+        assert torch.isfinite(layer.kappa.grad).all()
+        # Exactly zero for top-1; float residue (~1e-7) at most for top-2.
+        assert float(layer.kappa.grad.abs().sum()) < 1e-5
 
 
 def test_stats_are_populated_and_normalised(layer: GatedKappaNorm) -> None:

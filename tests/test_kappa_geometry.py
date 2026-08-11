@@ -19,6 +19,8 @@ from entropic_substrate.geometry.kappa import (
     artan_k,
     clamp_kappa,
     dist0,
+    dist_k,
+    dist_k_from_cos,
     expmap0,
     logmap0,
     mobius_add,
@@ -170,3 +172,94 @@ def test_float32_path_is_finite_for_extreme_inputs() -> None:
         x = torch.randn(256, 64, dtype=torch.float32) * 1e3
         y = expmap0(logmap0(projx(x, k), k), k)
         assert torch.isfinite(y).all(), kappa
+
+
+# --------------------------------------------------------------------------
+# dist_k — pairwise geodesic distance (the E3 attention kernel's primitive)
+# --------------------------------------------------------------------------
+
+
+def _point_pairs(kappa: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Two distinct clouds comfortably inside the chart."""
+    x = _points(kappa)
+    torch.manual_seed(1)
+    y = torch.randn_like(x)
+    y = y / y.norm(dim=-1, keepdim=True)
+    radius = 0.35 if kappa >= 0 else min(0.35, 0.7 / abs(kappa) ** 0.5)
+    scale = torch.linspace(0.02, radius, y.shape[0], dtype=torch.float64).unsqueeze(-1)
+    return x, y * scale
+
+
+@pytest.mark.parametrize("kappa", CURVATURES)
+def test_dist_k_matches_geoopt(kappa: float) -> None:
+    manifold = geoopt.Stereographic(k=kappa)
+    k = torch.tensor(kappa, dtype=torch.float64)
+    x, y = _point_pairs(kappa)
+    torch.testing.assert_close(dist_k(x, y, k), manifold.dist(x, y), atol=ATOL, rtol=0)
+
+
+def test_dist_k_zero_curvature_is_twice_euclidean() -> None:
+    k = torch.tensor(0.0, dtype=torch.float64)
+    x, y = _point_pairs(0.0)
+    torch.testing.assert_close(dist_k(x, y, k), 2.0 * (x - y).norm(dim=-1), atol=ATOL, rtol=0)
+
+
+@pytest.mark.parametrize("kappa", CURVATURES)
+def test_dist_k_identical_points_and_symmetry(kappa: float) -> None:
+    k = torch.tensor(kappa, dtype=torch.float64)
+    x, y = _point_pairs(kappa)
+    assert float(dist_k(x, x, k).abs().max()) < 1e-6
+    torch.testing.assert_close(dist_k(x, y, k), dist_k(y, x, k), atol=ATOL, rtol=0)
+
+
+def test_dist_k_taylor_seam_is_continuous() -> None:
+    """No jump when the learnable curvature crosses the guard band — the
+    Taylor branch just inside must agree with the closed form just outside.
+    (Inside the band the distance genuinely varies with kappa — that
+    first-order dependence is the point — so the comparison is across the
+    branch switch at matched kappa, not against kappa = 0.)"""
+    x, y = _point_pairs(0.0)
+    for sign in (-1.0, 1.0):
+        inside = dist_k(x, y, torch.tensor(sign * TAYLOR_EPS * 0.99, dtype=torch.float64))
+        outside = dist_k(x, y, torch.tensor(sign * TAYLOR_EPS * 1.01, dtype=torch.float64))
+        torch.testing.assert_close(inside, outside, atol=1e-5, rtol=0)
+
+
+def test_dist_k_gradient_reaches_kappa_at_exactly_zero() -> None:
+    """The invariant the annihilated norm layer could not satisfy: between two
+    DISTINCT points, curvature has first-order effect even at the Taylor seam."""
+    torch.manual_seed(0)
+    x = torch.randn(8, 16)
+    y = torch.randn(8, 16)
+    x = 0.3 * x / x.norm(dim=-1, keepdim=True)
+    y = 0.2 * y / y.norm(dim=-1, keepdim=True)
+    kappa = torch.zeros((), requires_grad=True)
+    dist_k(x, y, kappa).sum().backward()
+    assert kappa.grad is not None
+    assert float(kappa.grad.abs()) > 1e-4
+
+
+@pytest.mark.parametrize("kappa", CURVATURES)
+@pytest.mark.parametrize("radius", [0.2, 0.35])
+def test_dist_k_from_cos_matches_dist_k_on_common_radius(kappa: float, radius: float) -> None:
+    if kappa < 0:
+        radius = min(radius, 0.7 / abs(kappa) ** 0.5)
+    k = torch.tensor(kappa, dtype=torch.float64)
+    torch.manual_seed(2)
+    x = torch.randn(32, 16, dtype=torch.float64)
+    y = torch.randn(32, 16, dtype=torch.float64)
+    x = radius * x / x.norm(dim=-1, keepdim=True)
+    y = radius * y / y.norm(dim=-1, keepdim=True)
+    cos = (x * y).sum(-1) / radius**2
+    r = torch.tensor(radius, dtype=torch.float64)
+    torch.testing.assert_close(dist_k_from_cos(cos, k, r), dist_k(x, y, k), atol=ATOL, rtol=0)
+
+
+def test_dist_k_from_cos_boundary_cosines() -> None:
+    r = torch.tensor(0.35, dtype=torch.float64)
+    for kappa in (-2.0, 0.0, 2.0):
+        k = torch.tensor(kappa, dtype=torch.float64)
+        same = dist_k_from_cos(torch.tensor(1.0, dtype=torch.float64), k, r)
+        anti = dist_k_from_cos(torch.tensor(-1.0, dtype=torch.float64), k, r)
+        assert float(same.abs()) < 1e-6
+        assert torch.isfinite(anti) and float(anti) > 0.0

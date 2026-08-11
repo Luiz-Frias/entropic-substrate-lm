@@ -43,6 +43,8 @@ __all__ = [
     "artan_k",
     "clamp_kappa",
     "dist0",
+    "dist_k",
+    "dist_k_from_cos",
     "expmap0",
     "logmap0",
     "mobius_add",
@@ -228,3 +230,41 @@ def mobius_add(
     num = (1 - 2 * kappa * xy - kappa * y2) * x + (1 + kappa * x2) * y
     denom = 1 - 2 * kappa * xy + kappa**2 * x2 * y2
     return num / denom.clamp_min(_NORM_EPS)
+
+
+def dist_k(
+    x: torch.Tensor, y: torch.Tensor, kappa: torch.Tensor, dim: int = -1, keepdim: bool = False
+) -> torch.Tensor:
+    r"""Pairwise geodesic distance :math:`d_\kappa(x, y) = 2\tan^{-1}_\kappa(\|(-x)\oplus_\kappa y\|)`.
+
+    Reduces to :math:`2\|x - y\|` at :math:`\kappa = 0` (the stereographic
+    conformal factor is 2 at the origin — the same convention geoopt uses).
+    """
+    kappa = clamp_kappa(kappa)
+    return dist0(mobius_add(-x, y, kappa, dim=dim), kappa, dim=dim, keepdim=keepdim)
+
+
+def dist_k_from_cos(cos: torch.Tensor, kappa: torch.Tensor, radius: torch.Tensor) -> torch.Tensor:
+    r"""``dist_k`` between two points of common norm ``radius`` and cosine ``cos``.
+
+    Scalar reduction for the E3 attention kernel: when :math:`\|x\| = \|y\| = r`,
+    :math:`\|(-x)\oplus_\kappa y\|` is a rational function of :math:`(c, r^2)`
+    alone, so pairwise distances need only the ``(T, T)`` cosine matrix — never
+    a ``(T, T, d)`` Möbius broadcast. With :math:`a = 1 + 2\kappa r^2 c -
+    \kappa r^2`, :math:`b = 1 + \kappa r^2`:
+
+    .. math::
+        \|(-x)\oplus_\kappa y\| = \frac{r\sqrt{a^2 + b^2 - 2abc}}
+        {1 + 2\kappa r^2 c + \kappa^2 r^4}
+    """
+    kappa = clamp_kappa(kappa)
+    c = cos.clamp(-1.0, 1.0)
+    r2 = radius * radius
+    kr2 = kappa * r2
+    a = 1 + 2 * kr2 * c - kr2
+    b = 1 + kr2
+    # a² + b² − 2abc is exactly 0 at c = 1 (x = y); the floor keeps sqrt's
+    # gradient finite on the attention diagonal without moving off-diagonals.
+    gyro_norm = radius * (a * a + b * b - 2 * a * b * c).clamp_min(_NORM_EPS).sqrt()
+    denom = (1 + 2 * kr2 * c + kr2 * kr2).clamp_min(_NORM_EPS)
+    return 2.0 * artan_k(gyro_norm / denom, kappa)
