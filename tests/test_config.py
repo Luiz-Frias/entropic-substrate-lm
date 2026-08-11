@@ -146,3 +146,19 @@ def test_tiny_e3_model_builds_from_config(sample_bytes: bytes) -> None:
     # now lives in the attention kernel, one module per layer.
     assert len(model.kappa_modules()) == 0
     assert len(model.kappa_attention_modules()) == cfg.model.n_layers
+
+
+def test_anchor_arm_configs_extend_e3_only_on_the_anchor_axes() -> None:
+    """The anchored arms change the anchor/granularity axes and nothing else."""
+    cfgs = {e: resolve_experiment_config(e) for e in ("e3", "e3-anchor", "e3-vantage")}
+    e3 = cfgs["e3"].model
+    anchor = cfgs["e3-anchor"].model
+    vantage = cfgs["e3-vantage"].model
+    assert e3.anchor_mode == "none"
+    assert anchor.anchor_mode == "global"
+    assert anchor.kappa_granularity == "per_head"
+    assert vantage.anchor_mode == "per_head"
+    assert vantage.kappa_granularity == "global"
+    for arm in (anchor, vantage):
+        for field in ("d_model", "n_layers", "n_heads", "norm", "attn_kernel", "embedding_init"):
+            assert getattr(arm, field) == getattr(e3, field), field

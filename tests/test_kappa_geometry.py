@@ -263,3 +263,19 @@ def test_dist_k_from_cos_boundary_cosines() -> None:
         anti = dist_k_from_cos(torch.tensor(-1.0, dtype=torch.float64), k, r)
         assert float(same.abs()) < 1e-6
         assert torch.isfinite(anti) and float(anti) > 0.0
+
+
+def test_dist_k_from_inner_matches_dist_k_on_mixed_norms() -> None:
+    """General scalar reduction (anchored kernel): points of DIFFERENT norms."""
+    from entropic_substrate.geometry.kappa import dist_k_from_inner
+
+    torch.manual_seed(3)
+    for kappa in CURVATURES:
+        x, y = _point_pairs(kappa)
+        k = torch.tensor(kappa, dtype=torch.float64)
+        dot = (x * y).sum(-1)
+        x2 = x.pow(2).sum(-1)
+        y2 = y.pow(2).sum(-1)
+        torch.testing.assert_close(
+            dist_k_from_inner(dot, x2, y2, k), dist_k(x, y, k), atol=ATOL, rtol=0
+        )
