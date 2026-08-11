@@ -10,7 +10,7 @@ the positive orthant of the unit hypersphere with Fisher–Rao as (4×) the angu
 and downstream of the substrate, geometry belongs in the layers, not around the model:
 projection/retraction as layer operators, curvature as a learnable parameter. The repo is a
 controlled ablation ladder (E0→E3, one variable per rung; see `docs/e-3-instruction.md`),
-not a framework. The readout is nats/byte plus κ-trajectory and gate-usage diagnostics.
+not a framework. The readout is nats/byte plus per-head κ-trajectory diagnostics.
 
 ## Horizon
 
@@ -60,11 +60,16 @@ authoritative version:
    affine-free `Norm()` as the retraction step, residual `h ← Norm(h + α(h_block − h))`
    with learnable eigen-learning-rates. Optimizer stays plain AdamW; geometry lives
    entirely in the forward pass. This is the E2 swap.
-3. **GatedKappaNorm** (`layers/kappa_norm.py`) — the novel artifact: Switch-style sparse
-   gate over K κ-stereographic components (learnable, clamped κ init −1/0/+1), tangent-space
-   mix at κ_eff = Σ gᵢκᵢ, single retraction out, plus a load-balancing auxiliary loss.
-   `geometry/kappa.py` implements the κ-stereographic primitives directly; the geoopt
-   submodule is a **test-time oracle only**, never a runtime dependency.
+3. **κ-attention** (`models/blocks.py`) — the novel artifact (redesigned 2026-08-11, design
+   record in `docs/e-3-instruction.md`): per-head attention logits `−d_κ(q,k)²` with one
+   learnable clamped curvature per head (init spread −1/0/+1); E2 is the exact κ=0 member
+   (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
+   `layers/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
+   pinned by regression test — curvature is relational and cannot act on a single point at
+   a chart origin under a unit-norm contract). E3″ (asymmetric q/k anchors) is staged
+   behind a measured trigger: per-head κ divergence. `geometry/kappa.py` implements the
+   κ-stereographic primitives directly; the geoopt submodule is a **test-time oracle
+   only**, never a runtime dependency.
 
 **Non-negotiable numerics:** all geometric math runs in FP32 inside
 `torch.amp.autocast(enabled=False)` blocks regardless of surrounding bf16 autocast; κ is
