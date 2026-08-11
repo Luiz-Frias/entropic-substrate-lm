@@ -1,3 +1,7 @@
 [core]
+    remote = r2-entropic-substrate-lm
     autostage = true
     site_cache_dir = .cache/dvc-site-cache
+['remote "r2-entropic-substrate-lm"']
+    url = s3://entropic-substrate-lm
+    endpointurl = https://62c7fd87a1874f1dee6b149ad40ac657.r2.cloudflarestorage.com

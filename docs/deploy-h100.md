@@ -50,7 +50,8 @@ cd /app && python -m entropic_substrate.cli train --exp e3 --device cuda \
 
 ## Sync results home
 
-DVC remote is intentionally unset in-repo. Either set it on the pod
-(`dvc remote add -d r2 s3://<bucket> && dvc remote modify r2 endpointurl <r2-endpoint>` — the
-embedding-conversion R2 convention) and `dvc push`, or plain `rsync`/`runpodctl send` the
-`results/` JSONL files, which are tiny.
+The DVC remote is committed in `.dvc/config` (Cloudflare R2, bucket `entropic-substrate-lm`,
+the embedding-conversion convention: topology in git, identity in env). A pod only needs
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from a bucket-scoped R2 Object Read & Write
+token injected as env vars, then `dvc push`. For the tiny `results/` JSONL files,
+`rsync`/`runpodctl send` remains a credential-free alternative.
