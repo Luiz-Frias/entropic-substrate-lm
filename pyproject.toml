@@ -91,6 +91,15 @@ include = ["src"]
 exclude = ["**/__pycache__", "tests", "build", "references"]
 reportMissingImports = false
 reportMissingTypeStubs = false
+# torch ships partial stubs, so strict's reportUnknown* family fires on every
+# Tensor method (87 errors on the untouched scaffold — the gate was never
+# passable). Our own annotations remain strict-checked; only third-party
+# inference gaps are silenced. Decision: Luiz, 2026-08-11.
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownParameterType = false
+reportUnknownLambdaType = false
 
 # ---------------------------------------------------------------------------
 # bandit — security linting (invoked as `bandit -c pyproject.toml -q -r src`)
