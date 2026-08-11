@@ -40,13 +40,17 @@ htmlcov/
 # --- Data / model / results artifacts ---
 # These directories are DVC/large-artifact working dirs. Keep the directory
 # placeholders (.gitkeep) but ignore everything else committed inside them —
-# actual data is tracked via `dvc add`, not git.
+# actual data is tracked via `dvc add`, not git. The tiny *.dvc pointer files
+# produced by `dvc add` ARE git's half of that contract and must not be ignored.
 data/*
 !data/.gitkeep
+!data/*.dvc
 models/*
 !models/.gitkeep
+!models/*.dvc
 results/*
 !results/.gitkeep
+!results/*.dvc
 
 # --- Jupyter / notebooks scratch ---
 notebooks/*
