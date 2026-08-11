@@ -24,6 +24,7 @@ docker push ghcr.io/luiz-frias/entropic-substrate-lm:latest
 ```bash
 python -m entropic_substrate.cli train --exp e1-fisher --device cuda
 python -m entropic_substrate.cli train --exp e3 --device cuda
+bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc push per rung
 ```
 
 ## Vast.ai
