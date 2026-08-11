@@ -213,6 +213,12 @@ The ladder STOPS here by design. Review the numbers above, then decide:
        --gpu-id "${GPU_ID}" \\
        --docker-args "python -m entropic_substrate.cli train --exp e3-vantage --device cuda"
 
+   NOTE: each arm's CLI preflight requires results/e3.jsonl ON ITS OWN POD —
+   transfer this pod's copy first (runpodctl send ${RESULTS_DIR}/$(rname e3).jsonl
+   here, runpodctl receive <code> there) so the gate evaluates the real E3
+   readout. Do NOT reach for ENTROPIC_ALLOW_UNGATED=1 to skip the transfer;
+   that override exists for deliberately ungated runs, not for convenience.
+
 2) Multi-seed: 3 seeds before believing any gap < 0.05 nats/byte
    (--seed N --results results/<exp>-sN.jsonl, sequentially on this pod).
 
