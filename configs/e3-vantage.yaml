@@ -4,7 +4,9 @@
 # and e3-anchor (curvature + one shared vantage) answers "is the win coming
 # from curvature or from vantage?". Not the mainline rung: collapsing kappa
 # to one knob forfeits the per-head kappa readout by design.
-# EXECUTION GATE: same as e3-anchor (docs/e-3-instruction.md).
+# EXECUTION GATE: same as e3-anchor (docs/e-3-instruction.md) — the CLI
+# preflights that the E3 kappa readout exists and prints its divergence;
+# sufficiency is YOUR call. Override: ENTROPIC_ALLOW_UNGATED=1.
 name: e3-vantage
 
 model:

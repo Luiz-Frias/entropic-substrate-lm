@@ -125,6 +125,9 @@ eval ckpt *ARGS:
 # ---------------------------------------------------------------------------
 
 # Build the training container image (single-stage Containerfile — see file header).
-container-build tag="entropic-substrate-lm:latest":
-    @echo "→ Building container image {{tag}}..."
-    podman build -t {{tag}} -f Containerfile .
+# platform defaults to linux/amd64: GPU pods are x86_64, and a bare build on
+# Apple Silicon would produce an arm64 image they cannot run (qemu makes the
+# cross-build slower but correct).
+container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
+    @echo "→ Building container image {{tag}} for {{platform}}..."
+    podman build --platform {{platform}} -t {{tag}} -f Containerfile .

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,15 +19,24 @@ from typing import Any
 
 import torch
 
-from entropic_substrate.config import EXPERIMENTS, Config, resolve_experiment_config
+from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
+from entropic_substrate.config import (
+    EXPERIMENTS,
+    Config,
+    is_execution_gated,
+    resolve_experiment_config,
+)
 from entropic_substrate.data.build import build_corpus
 from entropic_substrate.data.enwik8 import load_enwik8_bytes
 from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
 from entropic_substrate.init.fisher import build_fisher_init, save_init
+from entropic_substrate.telemetry import EXIT_TELEMETRY_GAP, TelemetryGap, read_final_kappa
 from entropic_substrate.train import Trainer, resolve_device
 
 __all__ = ["build_parser", "main"]
+
+UNGATED_ENV: str = "ENTROPIC_ALLOW_UNGATED"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,6 +94,47 @@ def _overrides(args: argparse.Namespace) -> dict[str, Any]:
     return {"train": train} if train else {}
 
 
+def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
+    """Refuse to launch an anchored arm without the E3 readout it is gated on.
+
+    SANITY ONLY: this checks the readout *exists and is admissible*, and prints
+    it. Whether the per-head divergence justifies the GPU hours stays a human
+    go/no-go call by design (docs/e-3-instruction.md) — no threshold is encoded
+    here. Admissibility itself lives in :mod:`entropic_substrate.telemetry`,
+    shared with the ladder runner so the two cannot drift apart.
+    """
+    path = Path(cfg.train.results_dir) / ("e3-tiny.jsonl" if tiny else "e3.jsonl")
+    try:
+        readout = read_final_kappa(path)
+    except TelemetryGap as gap:
+        # Missing and malformed are the same premise — no valid readout to gate
+        # on — so the override covers both, but must never report a NaN-poisoned
+        # run as a merely absent one.
+        if os.environ.get(UNGATED_ENV) == "1":
+            print(
+                f"WARNING: no admissible E3 kappa readout ({gap}), but {UNGATED_ENV}=1 "
+                f"is set — launching {cfg.name} on an ungated premise.",
+                file=sys.stderr,
+            )
+            return 0
+        print(
+            "\n=============================== DECISION-NEEDED ==============================="
+            f"\n{cfg.name} is execution-gated on the E3 per-head kappa readout, and it is not"
+            f"\nusable:\n  {gap}"
+            "\nRun E3 first, then read the divergence and decide whether the anchored arms are"
+            "\nworth the GPU hours — that call is yours, not this script's"
+            "\n(docs/e-3-instruction.md)."
+            f"\nDeliberate ungated run: {UNGATED_ENV}=1"
+            "\n===============================================================================",
+            file=sys.stderr,
+        )
+        return EXIT_TELEMETRY_GAP
+    print(f"[{cfg.name}] E3 per-head kappa divergence (the execution gate) from {path}:")
+    for line in readout.report_lines():
+        print(line)
+    return 0
+
+
 def cmd_train(args: argparse.Namespace) -> int:
     """Handle ``train``."""
     if args.exp is None and args.config is None:
@@ -92,6 +143,12 @@ def cmd_train(args: argparse.Namespace) -> int:
     cfg = resolve_experiment_config(
         args.exp, args.config, tiny=args.tiny, overrides=_overrides(args)
     )
+    # Gate on what RUNS, not on the flag that asked for it: --config leaves
+    # --exp unset and outranks it when both are given.
+    if is_execution_gated(cfg):
+        code = _anchored_arm_preflight(cfg, tiny=args.tiny)
+        if code != 0:
+            return code
     trainer = Trainer(cfg, results_path=args.results)
     print(
         f"[{cfg.name}] {trainer.raw_model.num_parameters() / 1e6:.2f}M params on "
@@ -131,7 +188,12 @@ def cmd_init_fisher(args: argparse.Namespace) -> int:
 def cmd_eval(args: argparse.Namespace) -> int:
     """Handle ``eval``."""
     device = resolve_device(args.device or "auto")
-    state = torch.load(args.ckpt, map_location=device, weights_only=False)
+    # Checkpoints are self-produced and hold only tensors and primitives, so the
+    # secure default loads them fine (bandit B614).
+    state = normalize_checkpoint(
+        torch.load(args.ckpt, map_location=device, weights_only=True),
+        source=str(args.ckpt),
+    )
     from entropic_substrate.config import config_from_dict
 
     cfg: Config = config_from_dict(state["config"])
@@ -169,7 +231,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
     }
-    return handlers[args.command](args)
+    try:
+        return handlers[args.command](args)
+    except CheckpointFormatError as exc:
+        # An ambiguous or too-new checkpoint is an expected, operator-actionable
+        # condition — the guidance is in the message. Present it the way every
+        # other gate here does (printed refusal, exit 2), not as a traceback
+        # that reads like a defect in the trainer.
+        print(f"{exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

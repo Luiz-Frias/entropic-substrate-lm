@@ -245,6 +245,20 @@ def dist_k(
     return dist0(mobius_add(-x, y, kappa, dim=dim), kappa, dim=dim, keepdim=keepdim)
 
 
+def _geometry_dtype(*tensors: torch.Tensor) -> torch.dtype:
+    """Common dtype for a scalar reduction, floored at fp32.
+
+    Autocast hands these kernels bf16/fp16 operands; the gyro rational
+    functions are not conditioned for them (the denominators are differences of
+    O(1) terms). float64 — the dtype the geoopt oracle tests run in — passes
+    through untouched: the floor never caps.
+    """
+    dtype = tensors[0].dtype
+    for tensor in tensors[1:]:
+        dtype = torch.promote_types(dtype, tensor.dtype)
+    return torch.float32 if dtype in (torch.float16, torch.bfloat16) else dtype
+
+
 def dist_k_from_cos(cos: torch.Tensor, kappa: torch.Tensor, radius: torch.Tensor) -> torch.Tensor:
     r"""``dist_k`` between two points of common norm ``radius`` and cosine ``cos``.
 
@@ -258,9 +272,12 @@ def dist_k_from_cos(cos: torch.Tensor, kappa: torch.Tensor, radius: torch.Tensor
         \|(-x)\oplus_\kappa y\| = \frac{r\sqrt{a^2 + b^2 - 2abc}}
         {1 + 2\kappa r^2 c + \kappa^2 r^4}
     """
-    r2 = radius * radius
-    c = cos.clamp(-1.0, 1.0)
-    return dist_k_from_inner(r2 * c, r2, r2, kappa)
+    dtype = _geometry_dtype(cos, kappa, radius)
+    with torch.autocast(device_type=cos.device.type, enabled=False):
+        r = radius.to(dtype)
+        r2 = r * r
+        c = cos.to(dtype).clamp(-1.0, 1.0)
+        return dist_k_from_inner(r2 * c, r2, r2, kappa.to(dtype))
 
 
 def dist_k_from_inner(
@@ -278,11 +295,16 @@ def dist_k_from_inner(
         - 2AB\langle x,y\rangle}{(1 + 2\kappa\langle x,y\rangle
         + \kappa^2\|x\|^2\|y\|^2)^2}
     """
-    kappa = clamp_kappa(kappa)
-    a = 1 + 2 * kappa * dot - kappa * y_sqnorm
-    b = 1 + kappa * x_sqnorm
-    # The numerator is exactly 0 at x = y; the floor keeps sqrt's gradient
-    # finite on the attention diagonal without moving off-diagonals.
-    gyro_sq = (a * a * x_sqnorm + b * b * y_sqnorm - 2 * a * b * dot).clamp_min(_NORM_EPS)
-    denom = (1 + 2 * kappa * dot + kappa * kappa * x_sqnorm * y_sqnorm).clamp_min(_NORM_EPS)
-    return 2.0 * artan_k(gyro_sq.sqrt() / denom, kappa)
+    dtype = _geometry_dtype(dot, x_sqnorm, y_sqnorm, kappa)
+    with torch.autocast(device_type=dot.device.type, enabled=False):
+        dot = dot.to(dtype)
+        x_sqnorm = x_sqnorm.to(dtype)
+        y_sqnorm = y_sqnorm.to(dtype)
+        kappa = clamp_kappa(kappa.to(dtype))
+        a = 1 + 2 * kappa * dot - kappa * y_sqnorm
+        b = 1 + kappa * x_sqnorm
+        # The numerator is exactly 0 at x = y; the floor keeps sqrt's gradient
+        # finite on the attention diagonal without moving off-diagonals.
+        gyro_sq = (a * a * x_sqnorm + b * b * y_sqnorm - 2 * a * b * dot).clamp_min(_NORM_EPS)
+        denom = (1 + 2 * kappa * dot + kappa * kappa * x_sqnorm * y_sqnorm).clamp_min(_NORM_EPS)
+        return 2.0 * artan_k(gyro_sq.sqrt() / denom, kappa)

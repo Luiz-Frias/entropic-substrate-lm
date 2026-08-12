@@ -20,6 +20,7 @@ __all__ = [
     "DataConfig",
     "ModelConfig",
     "TrainConfig",
+    "is_execution_gated",
     "load_config",
     "merge_dicts",
     "resolve_experiment_config",
@@ -136,6 +137,20 @@ class Config:
     def to_dict(self) -> dict[str, Any]:
         """Plain-dict view (JSON serialisable), used for run metadata."""
         return dataclasses.asdict(self)
+
+
+def is_execution_gated(cfg: Config) -> bool:
+    """Does ``cfg`` describe a run held behind the E3 kappa readout?
+
+    Read off the RESOLVED config, never off ``--exp``: ``--config
+    configs/e3-anchor.yaml`` is a supported invocation that leaves ``--exp``
+    unset, and an explicit ``--config`` outranks ``--exp`` when both are given,
+    so the flag does not say what runs. The gated feature is the asymmetric
+    anchor pair (docs/e-3-instruction.md), which is exactly what
+    ``anchor_mode != "none"`` selects — including in a hand-rolled config that
+    never names an experiment.
+    """
+    return cfg.model.anchor_mode != "none"
 
 
 def merge_dicts(base: Mapping[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:

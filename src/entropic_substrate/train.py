@@ -30,10 +30,11 @@ import numpy as np
 import torch
 from torch import nn
 
+from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_checkpoint
 from entropic_substrate.config import Config
 from entropic_substrate.data.batching import Corpus, SequenceSampler
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
-from entropic_substrate.models.backbone import LanguageModel, build_model
+from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
 
 __all__ = [
     "EvalResult",
@@ -85,6 +86,20 @@ def cosine_lr(step: int, *, base_lr: float, warmup: int, total: int, min_ratio: 
     return base_lr * (min_ratio + (1.0 - min_ratio) * coeff)
 
 
+def _require_loss(out: LMOutput, phase: str) -> torch.Tensor:
+    """Narrow ``out.loss`` to a tensor, failing loud when the model returned none.
+
+    An ``assert`` here is stripped by ``python -O``, which turns a contract
+    violation into a ``backward()`` on ``None`` (train) or a ``float(None)``
+    deep inside the loop (eval). The eval path is a measurement path: it must
+    fail loud, never fail open.
+    """
+    if out.loss is None:
+        msg = f"{phase}: model returned no loss — forward was called without targets"
+        raise RuntimeError(msg)
+    return out.loss
+
+
 @dataclass(slots=True)
 class EvalResult:
     """Held-out evaluation summary."""
@@ -126,7 +141,12 @@ class Trainer:
             ):
                 fisher_source = b"".join(corpus_byte_stream(cfg.data, 20_000_000))
             model = build_model(cfg.model, fisher_source=fisher_source)
-        self.model = model.to(self.device)
+        # Annotated, not inferred: `torch.compile`'s stub returns a bare Callable,
+        # so without this the attribute widens to `LanguageModel | Callable` and
+        # every later `.parameters()` / `.train()` / `.eval()` fails the strict
+        # gate. The compiled wrapper is an nn.Module at runtime (`raw_model`
+        # unwraps `_orig_mod`), so nn.Module is the honest type for both branches.
+        self.model: nn.Module = model.to(self.device)
         if cfg.train.compile:
             self.model = torch.compile(self.model)  # type: ignore[assignment]
 
@@ -216,9 +236,9 @@ class Trainer:
         x, y = self.train_sampler.batch()
         with self._autocast():
             out = self.model(x, y)
-        assert out.loss is not None
+        loss = _require_loss(out, "train_step")
         aux = out.aux_loss
-        total = out.loss if aux is None else out.loss + aux
+        total = loss if aux is None else loss + aux
         self.optimizer.zero_grad(set_to_none=True)
         total.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.train.grad_clip)
@@ -248,8 +268,7 @@ class Trainer:
         for x, y in self.val_sampler.iter_batches(n):
             with self._autocast():
                 out = self.model(x, y)
-            assert out.loss is not None
-            losses.append(float(out.loss))
+            losses.append(float(_require_loss(out, "evaluate")))
             if out.kappa_stats:
                 kappas = [s.kappa for s in out.kappa_stats]
                 gates = [s.gate_fraction for s in out.kappa_stats]
@@ -271,6 +290,7 @@ class Trainer:
     def state_dict(self) -> dict[str, Any]:
         """Full run state for exact resume."""
         return {
+            "format_version": CHECKPOINT_FORMAT_VERSION,
             "step": self.step,
             "model": self.raw_model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -286,7 +306,14 @@ class Trainer:
 
     def load_checkpoint(self, path: str | os.PathLike[str]) -> None:
         """Restore model/optimiser/sampler/step from a checkpoint file."""
-        state = torch.load(Path(path), map_location=self.device, weights_only=False)
+        # weights_only=True matches the eval path in cli.py: checkpoints are
+        # self-produced and hold only tensors and primitives, so the secure
+        # default loads them fine (bandit B614).
+        state = normalize_checkpoint(
+            torch.load(Path(path), map_location=self.device, weights_only=True),
+            source=str(path),
+            for_resume=True,
+        )
         self.raw_model.load_state_dict(state["model"])
         self.optimizer.load_state_dict(state["optimizer"])
         self.train_sampler.load_state_dict(state["sampler"])

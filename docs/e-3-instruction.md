@@ -109,6 +109,26 @@ and the ladder runner enforces it.
   Against `e3` (curvature only) and `e3-anchor` (curvature + shared vantage) it answers
   *is the win coming from curvature or from vantage?* It forfeits the per-head κ readout
   by design and is not a mainline rung.
+- The **CLI preflight is sanity, not judgment**: launching an anchored arm refuses unless
+  `results/e3.jsonl` (`results/e3-tiny.jsonl` under `--tiny`) carries an *admissible* κ
+  readout, and prints its per-head divergence before training. It encodes NO threshold —
+  whether the divergence is large enough is yours to rule. Three properties, each pinned
+  by a test:
+  - **What triggers the gate is the resolved config**, not the `--exp` flag:
+    `anchor_mode != "none"` is the gated feature, so `--config configs/e3-anchor.yaml`
+    (which leaves `--exp` unset) and `--exp e2 --config configs/e3-anchor.yaml` (where the
+    explicit config outranks `--exp`) are both gated. Conversely
+    `--exp e3-anchor --config configs/e3.yaml` runs plain E3 and is *not* gated — the gate
+    follows what runs.
+  - **Admissible** means: the *final* eval record carries κ, its rows are non-empty and
+    numeric, and every value is finite. A numerically failed run writes `NaN` that Python's
+    JSON parser accepts, and a NaN spread compares false against every threshold — it would
+    read as a healthy zero-divergence gate. An interrupted writer leaves short rows. Both
+    are refusals, never a launch (`entropic_substrate.telemetry` owns these rules and the
+    ladder runner reads through the same code).
+  - `ENTROPIC_ALLOW_UNGATED=1` overrides it loudly for a deliberate ungated run — covering
+    malformed as well as absent telemetry, since both are the same premise, but the warning
+    names which one it saw.
 - Two traps, both pinned as tests so nobody re-falls into them: symmetric anchors
   (`p_q = p_k`) leave the kernel **exactly** invariant (Möbius translation is an
   isometry), and the operating radius must stay a bounded fraction of the hyperbolic

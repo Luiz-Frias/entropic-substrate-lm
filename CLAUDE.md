@@ -83,6 +83,11 @@ any map; the load-balance loss must stay finite and gradients must reach κ (uni
 contract — `data|models|results/*` are gitignored _except_ `*.dvc`); FineWeb-Edu is
 streamed, never local. `train.py` writes `results/*.jsonl` (nats/byte, κ trajectories,
 gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via `dvc push`.
+Both are read back through validated readers, because both feed gates: `telemetry.py` is the
+only admissibility predicate for `results/*.jsonl` (shared by the CLI preflight and
+`scripts/run_ladder.sh` — inadmissible telemetry raises, it never returns an empty value),
+and `checkpoint.py` stamps/checks `format_version` on `models/*.pt`. See
+`docs/architecture.md` for why an unversioned `tau` is refused rather than guessed.
 
 **Tests** (`tests/`, pytest markers `unit` / `integration`) check the vendored κ-math
 against geoopt and pin the numerics invariants above.

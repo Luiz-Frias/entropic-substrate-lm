@@ -88,6 +88,21 @@ HuggingFaceFW/fineweb-edu sample-10BT     (streamed, no local copy)
             → models/*.pt     (dvc-track large checkpoints)
 ```
 
+Both sinks have a **validated read side**, because both feed gates:
+
+- `results/*.jsonl` is read only through `telemetry.py` — the CLI preflight and the ladder
+  runner share one admissibility predicate (final eval record, non-empty numeric finite κ
+  rows) rather than each parsing the JSONL themselves. An inadmissible readout is a
+  `TelemetryGap` exception, not an empty value, so no caller can compute a spread from it.
+- `models/*.pt` carries `format_version` (`checkpoint.py`). It exists because the E3 kernel's
+  per-head `tau` changed from an effective temperature to a softplus pre-activation, and
+  unversioned checkpoints exist on *both* sides of that change — so an unversioned `tau`
+  cannot be disambiguated from its values, and a wrong guess shifts the effective temperature
+  ~30% silently. Unversioned + no `tau` (every E0/E1/E2 artifact) loads; unversioned + `tau`
+  is refused until the operator declares the era via `ENTROPIC_CKPT_TAU_SEMANTICS=softplus`
+  (load as-is) or `=temperature` (converted by `inverse_softplus`, eval only — the saved
+  AdamW moments would not survive the reparameterisation).
+
 ## Deliberate exclusions
 
 - **H-Net dynamic chunking (E4)** — deferred; requires `mamba_ssm` source builds and is a
