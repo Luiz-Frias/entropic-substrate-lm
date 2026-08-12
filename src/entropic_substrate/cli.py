@@ -19,7 +19,7 @@ from typing import Any
 
 import torch
 
-from entropic_substrate.checkpoint import normalize_checkpoint
+from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.config import (
     EXPERIMENTS,
     Config,
@@ -231,7 +231,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
     }
-    return handlers[args.command](args)
+    try:
+        return handlers[args.command](args)
+    except CheckpointFormatError as exc:
+        # An ambiguous or too-new checkpoint is an expected, operator-actionable
+        # condition — the guidance is in the message. Present it the way every
+        # other gate here does (printed refusal, exit 2), not as a traceback
+        # that reads like a defect in the trainer.
+        print(f"{exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

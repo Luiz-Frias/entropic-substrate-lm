@@ -23,6 +23,7 @@ from entropic_substrate.checkpoint import (
     inverse_softplus,
     normalize_checkpoint,
 )
+from entropic_substrate.cli import main as cli_main
 from entropic_substrate.train import Trainer
 from helpers import tiny_config
 
@@ -171,6 +172,64 @@ def test_declared_temperature_refuses_optimizer_resume(
     state = _legacy(_kappa_trainer(tmp_path).state_dict(), tau=1.0)
     with pytest.raises(CheckpointFormatError, match="resume"):
         normalize_checkpoint(state, source="mem", for_resume=True)
+
+
+# --------------------------------------------------------- CLI presentation
+def _ambiguous_ckpt(tmp_path: Path) -> Path:
+    """A real trained checkpoint with its version stamp removed."""
+    trainer = _kappa_trainer(tmp_path)
+    path = trainer.save_checkpoint("legacy")
+    torch.save(_legacy(torch.load(path, map_location="cpu", weights_only=False), tau=None), path)
+    return path
+
+
+def test_cli_eval_refuses_an_ambiguous_checkpoint_without_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Expected + operator-actionable: printed refusal and exit 2, matching every
+    other gate here — not a traceback that reads like a trainer defect."""
+    monkeypatch.delenv(TAU_SEMANTICS_ENV, raising=False)
+    path = _ambiguous_ckpt(tmp_path)
+    assert cli_main(["eval", "--ckpt", str(path), "--device", "cpu", "--batches", "1"]) == 2
+    err = capsys.readouterr().err
+    assert "DECISION-NEEDED" in err
+    assert TAU_SEMANTICS_ENV in err
+
+
+def test_cli_eval_loads_a_declared_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setenv(TAU_SEMANTICS_ENV, "softplus")
+    path = _ambiguous_ckpt(tmp_path)
+    assert cli_main(["eval", "--ckpt", str(path), "--device", "cpu", "--batches", "1"]) == 0
+    captured = capsys.readouterr()
+    assert "nats_per_byte" in captured.out
+    assert "declared by the operator" in captured.err
+
+
+def test_cli_resume_refuses_an_ambiguous_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.delenv(TAU_SEMANTICS_ENV, raising=False)
+    path = _ambiguous_ckpt(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    argv = [
+        "train",
+        "--exp",
+        "e3",
+        "--tiny",
+        "--device",
+        "cpu",
+        "--steps",
+        "1",
+        "--resume",
+        str(path),
+        "--results",
+        str(tmp_path / "out.jsonl"),
+        "--quiet",
+    ]
+    assert cli_main(argv) == 2
+    assert "DECISION-NEEDED" in capsys.readouterr().err
 
 
 def test_unknown_declaration_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

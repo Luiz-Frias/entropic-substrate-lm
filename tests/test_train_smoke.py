@@ -169,7 +169,12 @@ def test_run_start_record_captures_the_config(tmp_path: Path) -> None:
 
 
 # ------------------------------------------------------------------ CLI
-def test_cli_train_tiny_e3_end_to_end(tmp_path: Path) -> None:
+def test_cli_train_tiny_e3_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # chdir FIRST. `--results` redirects only the metrics sink; `models_dir` stays
+    # the relative default "models", so without an isolated cwd this test writes
+    # models/e3-tiny-final.pt into the repo working tree and overwrites a real
+    # smoke artifact every time the unit suite runs. The assertion below pins it.
+    monkeypatch.chdir(tmp_path)
     results = tmp_path / "e3.jsonl"
     code = main(
         [
@@ -189,6 +194,7 @@ def test_cli_train_tiny_e3_end_to_end(tmp_path: Path) -> None:
     assert code == 0
     records = [json.loads(line) for line in results.read_text().splitlines() if line]
     assert any(r["event"] == "eval" and "kappa" in r for r in records)
+    assert (tmp_path / "models" / "e3-tiny-final.pt").exists(), "checkpoint escaped tmp_path"
 
 
 def test_cli_init_fisher_writes_a_table(tmp_path: Path) -> None:

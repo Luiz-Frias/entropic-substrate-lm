@@ -91,7 +91,8 @@ def _declared_era() -> str | None:
 
 def _ambiguity_error(source: str, keys: list[str]) -> CheckpointFormatError:
     return CheckpointFormatError(
-        f"\n{'=' * 79}\n"
+        "\n=============================== DECISION-NEEDED "
+        "===============================\n"
         f"{source}: checkpoint carries no format_version, and holds kappa-attention\n"
         f"temperatures ({len(keys)} tau tensors, e.g. {keys[0]}). `tau` changed meaning\n"
         "from an effective temperature to a softplus pre-activation, and BOTH eras\n"
