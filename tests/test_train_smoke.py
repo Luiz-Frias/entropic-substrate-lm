@@ -16,7 +16,7 @@ import pytest
 import torch
 
 from entropic_substrate.cli import main
-from entropic_substrate.config import resolve_experiment_config
+from entropic_substrate.config import configs_dir, resolve_experiment_config
 from entropic_substrate.train import Trainer, cosine_lr, resolve_device, seed_everything
 from helpers import tiny_config
 
@@ -111,6 +111,19 @@ def test_checkpoint_roundtrip_resumes_exactly(tmp_path: Path) -> None:
     revived.load_checkpoint(path)
     assert revived.step == 3
     assert revived.train_step()["loss"] == pytest.approx(expected, rel=1e-5)
+
+
+def test_missing_loss_fails_loud_not_silently() -> None:
+    """The invariant used to be an ``assert``, which ``python -O`` strips: the
+    eval path is a measurement path and must never fail open."""
+    from entropic_substrate.models.backbone import LMOutput
+    from entropic_substrate.train import _require_loss
+
+    out = LMOutput(logits=torch.zeros(1, 1, 2))
+    with pytest.raises(RuntimeError, match="without targets"):
+        _require_loss(out, "evaluate")
+    with_loss = LMOutput(logits=torch.zeros(1, 1, 2), loss=torch.tensor(1.5))
+    assert float(_require_loss(with_loss, "evaluate")) == pytest.approx(1.5)
 
 
 def test_jsonl_records_kappa_and_gate_usage(tmp_path: Path) -> None:
@@ -274,6 +287,84 @@ def test_anchored_arm_override_is_loud(
     monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
     assert main(_anchored_argv(tmp_path)) == 0
     assert "ENTROPIC_ALLOW_UNGATED" in capsys.readouterr().err
+
+
+def _write_e3_readout(tmp_path: Path, payload: str) -> None:
+    results = tmp_path / "results"
+    results.mkdir(exist_ok=True)
+    (results / "e3-tiny.jsonl").write_text(payload, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "kappa",
+    ["[[]]", '[["a","b"]]', "[[NaN, NaN]]", "[[Infinity, 1.0]]", "[[0.1,0.2],[]]"],
+)
+def test_anchored_arm_refuses_malformed_kappa_telemetry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, kappa: str
+) -> None:
+    """A numerically failed run writes NaN that ``json`` parses back happily,
+    and a killed one writes short rows. Either way the gate returns a
+    controlled refusal — it never crashes, and never opens on a NaN spread."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    _write_e3_readout(tmp_path, f'{{"event":"eval","nats_per_byte":1.5,"kappa":{kappa}}}\n')
+    assert main(_anchored_argv(tmp_path)) == 2
+    err = capsys.readouterr().err
+    assert "DECISION-NEEDED" in err
+    assert "ENTROPIC_ALLOW_UNGATED" in err
+
+
+def test_malformed_telemetry_override_names_the_defect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """The override covers malformed as well as missing — same premise, launch
+    without a valid readout — but must not report it as merely missing."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
+    _write_e3_readout(tmp_path, '{"event":"eval","nats_per_byte":1.5,"kappa":[[NaN]]}\n')
+    assert main(_anchored_argv(tmp_path)) == 0
+    assert "non-finite" in capsys.readouterr().err
+
+
+# ---------------------------------------------- the gate reads what RUNS
+def _config_argv(tmp_path: Path, config: Path, *, exp: str | None = None) -> list[str]:
+    argv = ["train", "--config", str(config), "--tiny", "--device", "cpu", "--steps", "1"]
+    if exp is not None:
+        argv[1:1] = ["--exp", exp]
+    return [*argv, "--results", str(tmp_path / "out.jsonl"), "--quiet"]
+
+
+def test_anchored_config_path_is_gated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """``--config configs/e3-anchor.yaml`` is the supported invocation form and
+    leaves ``args.exp`` None; gating off the raw flag skipped it entirely."""
+    anchor_cfg = configs_dir() / "e3-anchor.yaml"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    assert main(_config_argv(tmp_path, anchor_cfg)) == 2
+    assert "DECISION-NEEDED" in capsys.readouterr().err
+
+
+def test_non_anchor_exp_cannot_launder_an_anchored_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """``--config`` wins over ``--exp``, so what runs is the anchored arm."""
+    anchor_cfg = configs_dir() / "e3-anchor.yaml"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    assert main(_config_argv(tmp_path, anchor_cfg, exp="e2")) == 2
+    assert "DECISION-NEEDED" in capsys.readouterr().err
+
+
+def test_anchored_exp_with_an_ungated_config_is_not_gated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The inverse: ``--exp e3-anchor --config configs/e3.yaml`` runs plain E3,
+    so it must NOT be gated — the gate follows the resolved config, both ways."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ENTROPIC_ALLOW_UNGATED", raising=False)
+    assert main(_config_argv(tmp_path, configs_dir() / "e3.yaml", exp="e3-anchor")) == 0
 
 
 def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:

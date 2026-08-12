@@ -50,26 +50,11 @@ run_rung() {
 }
 
 # Measurement path — fail LOUD: no defaults, no fallbacks, no "probably fine".
+# Admissibility lives in entropic_substrate.telemetry, shared with the CLI
+# preflight; an inline copy here is how the two came to disagree once already.
 final_npb() {
-  "$PY" - "${RESULTS_DIR}/$(rname "$1").jsonl" <<'PYEOF'
-import json
-import math
-import sys
-
-path = sys.argv[1]
-last = None
-with open(path, encoding="utf-8") as fh:
-    for line in fh:
-        rec = json.loads(line)
-        if rec.get("event") == "eval":
-            last = rec
-if last is None:
-    sys.exit(f"{path}: no eval record — run never reached an eval; refusing to gate on nothing")
-npb = last["nats_per_byte"]
-if not math.isfinite(npb):
-    sys.exit(f"{path}: non-finite nats/byte {npb!r}")
-print(npb)
-PYEOF
+  "$PY" -m entropic_substrate.telemetry final-eval \
+    "${RESULTS_DIR}/$(rname "$1").jsonl" --metric nats_per_byte
 }
 
 dvc_sync() {
@@ -166,35 +151,7 @@ E3_NPB=$(final_npb e3)
 say "E3 gate: ${E3_NPB} nats/byte vs E2 ${E2_NPB}"
 
 say "per-head kappa divergence report (the e3-anchor / e3-vantage execution gate):"
-"$PY" - "${RESULTS_DIR}/$(rname e3).jsonl" <<'PYEOF'
-import json
-import math
-import sys
-
-path = sys.argv[1]
-last = None
-with open(path, encoding="utf-8") as fh:
-    for line in fh:
-        rec = json.loads(line)
-        if rec.get("event") == "eval":
-            last = rec
-if last is None or not last.get("kappa"):
-    sys.exit("no kappa telemetry in the final eval — cannot report divergence")
-spreads = []
-for i, row in enumerate(last["kappa"]):
-    if not row:
-        sys.exit(f"{path}: layer {i} has an empty kappa row — telemetry is incomplete")
-    # bool is an int subclass — a JSON `true` here is malformed telemetry, not a 1.
-    if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in row):
-        sys.exit(f"{path}: layer {i} kappa row is not numeric: {row!r}")
-    values = [float(v) for v in row]
-    if not all(math.isfinite(v) for v in values):
-        sys.exit(f"{path}: layer {i} kappa row has non-finite values: {row!r}")
-    spread = max(values) - min(values)
-    spreads.append(spread)
-    print(f"  layer {i}: {values}  (head spread {spread:.4f})")
-print(f"  max within-layer head spread: {max(spreads):.4f}")
-PYEOF
+"$PY" -m entropic_substrate.telemetry kappa-report "${RESULTS_DIR}/$(rname e3).jsonl"
 
 cat <<EOF
 

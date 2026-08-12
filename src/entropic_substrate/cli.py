@@ -19,18 +19,23 @@ from typing import Any
 
 import torch
 
-from entropic_substrate.config import EXPERIMENTS, Config, resolve_experiment_config
+from entropic_substrate.checkpoint import normalize_checkpoint
+from entropic_substrate.config import (
+    EXPERIMENTS,
+    Config,
+    is_execution_gated,
+    resolve_experiment_config,
+)
 from entropic_substrate.data.build import build_corpus
 from entropic_substrate.data.enwik8 import load_enwik8_bytes
 from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
 from entropic_substrate.init.fisher import build_fisher_init, save_init
+from entropic_substrate.telemetry import EXIT_TELEMETRY_GAP, TelemetryGap, read_final_kappa
 from entropic_substrate.train import Trainer, resolve_device
 
 __all__ = ["build_parser", "main"]
 
-# Arms whose execution gate is the E3 per-head kappa readout.
-ANCHORED_ARMS: tuple[str, ...] = ("e3-anchor", "e3-vantage")
 UNGATED_ENV: str = "ENTROPIC_ALLOW_UNGATED"
 
 
@@ -89,40 +94,33 @@ def _overrides(args: argparse.Namespace) -> dict[str, Any]:
     return {"train": train} if train else {}
 
 
-def _e3_kappa_readout(path: Path) -> list[list[float]] | None:
-    """Per-head kappa from the last eval record in ``path`` that carries it."""
-    if not path.exists():
-        return None
-    last: list[list[float]] | None = None
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            record = json.loads(line)
-            if record.get("event") == "eval" and record.get("kappa"):
-                last = record["kappa"]
-    return last
-
-
-def _anchored_arm_preflight(exp: str, cfg: Config, *, tiny: bool) -> int:
+def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
     """Refuse to launch an anchored arm without the E3 readout it is gated on.
 
-    SANITY ONLY: this checks the readout *exists* and prints it. Whether the
-    per-head divergence justifies the GPU hours stays a human go/no-go call by
-    design (docs/e-3-instruction.md) — no threshold is encoded here.
+    SANITY ONLY: this checks the readout *exists and is admissible*, and prints
+    it. Whether the per-head divergence justifies the GPU hours stays a human
+    go/no-go call by design (docs/e-3-instruction.md) — no threshold is encoded
+    here. Admissibility itself lives in :mod:`entropic_substrate.telemetry`,
+    shared with the ladder runner so the two cannot drift apart.
     """
     path = Path(cfg.train.results_dir) / ("e3-tiny.jsonl" if tiny else "e3.jsonl")
-    kappa = _e3_kappa_readout(path)
-    if kappa is None:
+    try:
+        readout = read_final_kappa(path)
+    except TelemetryGap as gap:
+        # Missing and malformed are the same premise — no valid readout to gate
+        # on — so the override covers both, but must never report a NaN-poisoned
+        # run as a merely absent one.
         if os.environ.get(UNGATED_ENV) == "1":
             print(
-                f"WARNING: no E3 kappa readout at {path}, but {UNGATED_ENV}=1 is set — "
-                f"launching {exp} on an ungated premise.",
+                f"WARNING: no admissible E3 kappa readout ({gap}), but {UNGATED_ENV}=1 "
+                f"is set — launching {cfg.name} on an ungated premise.",
                 file=sys.stderr,
             )
             return 0
         print(
             "\n=============================== DECISION-NEEDED ==============================="
-            f"\n{exp} is execution-gated on the E3 per-head kappa readout, and {path} has no"
-            "\neval record carrying kappa telemetry (file missing, or the run never evaluated)."
+            f"\n{cfg.name} is execution-gated on the E3 per-head kappa readout, and it is not"
+            f"\nusable:\n  {gap}"
             "\nRun E3 first, then read the divergence and decide whether the anchored arms are"
             "\nworth the GPU hours — that call is yours, not this script's"
             "\n(docs/e-3-instruction.md)."
@@ -130,12 +128,10 @@ def _anchored_arm_preflight(exp: str, cfg: Config, *, tiny: bool) -> int:
             "\n===============================================================================",
             file=sys.stderr,
         )
-        return 2
-    spreads = [max(row) - min(row) for row in kappa]
-    print(f"[{exp}] E3 per-head kappa divergence (the execution gate) from {path}:")
-    for i, row in enumerate(kappa):
-        print(f"  layer {i}: {row}  (head spread {spreads[i]:.4f})")
-    print(f"  max within-layer head spread: {max(spreads):.4f}")
+        return EXIT_TELEMETRY_GAP
+    print(f"[{cfg.name}] E3 per-head kappa divergence (the execution gate) from {path}:")
+    for line in readout.report_lines():
+        print(line)
     return 0
 
 
@@ -147,8 +143,10 @@ def cmd_train(args: argparse.Namespace) -> int:
     cfg = resolve_experiment_config(
         args.exp, args.config, tiny=args.tiny, overrides=_overrides(args)
     )
-    if args.exp in ANCHORED_ARMS:
-        code = _anchored_arm_preflight(args.exp, cfg, tiny=args.tiny)
+    # Gate on what RUNS, not on the flag that asked for it: --config leaves
+    # --exp unset and outranks it when both are given.
+    if is_execution_gated(cfg):
+        code = _anchored_arm_preflight(cfg, tiny=args.tiny)
         if code != 0:
             return code
     trainer = Trainer(cfg, results_path=args.results)
@@ -192,7 +190,10 @@ def cmd_eval(args: argparse.Namespace) -> int:
     device = resolve_device(args.device or "auto")
     # Checkpoints are self-produced and hold only tensors and primitives, so the
     # secure default loads them fine (bandit B614).
-    state = torch.load(args.ckpt, map_location=device, weights_only=True)
+    state = normalize_checkpoint(
+        torch.load(args.ckpt, map_location=device, weights_only=True),
+        source=str(args.ckpt),
+    )
     from entropic_substrate.config import config_from_dict
 
     cfg: Config = config_from_dict(state["config"])

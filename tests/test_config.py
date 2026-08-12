@@ -10,6 +10,7 @@ from entropic_substrate.config import (
     EXPERIMENTS,
     config_from_dict,
     configs_dir,
+    is_execution_gated,
     load_config,
     merge_dicts,
     resolve_experiment_config,
@@ -163,3 +164,21 @@ def test_anchor_arm_configs_extend_e3_only_on_the_anchor_axes() -> None:
     for arm in (anchor, vantage):
         for field in ("d_model", "n_layers", "n_heads", "norm", "attn_kernel", "embedding_init"):
             assert getattr(arm, field) == getattr(e3, field), field
+
+
+def test_execution_gate_follows_the_resolved_config_not_the_flag() -> None:
+    """The gate is a property of what RUNS. Anchors are the gated feature, so
+    the predicate reads them off the resolved config — an anchored arm reached
+    through ``--config`` (where ``args.exp`` is None) is still gated."""
+    for arm in ("e3-anchor", "e3-vantage"):
+        assert is_execution_gated(resolve_experiment_config(arm))
+    for ungated in ("e0-byte", "e1-fisher", "e1-random", "e2", "e3"):
+        assert not is_execution_gated(resolve_experiment_config(ungated))
+
+
+def test_execution_gate_catches_a_hand_rolled_anchored_config() -> None:
+    """Not a name check: any config that turns anchors on is gated."""
+    cfg = config_from_dict(
+        {"name": "my-own-arm", "model": {"attn_kernel": "kappa", "anchor_mode": "global"}}
+    )
+    assert is_execution_gated(cfg)
