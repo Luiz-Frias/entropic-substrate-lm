@@ -80,10 +80,23 @@ def test_message_containing_braces_does_not_crash_the_formatter(
     A format callable that embeds the message's content directly into its
     returned template would have loguru re-parse those literal braces as
     format fields and raise KeyError; referencing ``{message}`` as an opaque
-    placeholder must not."""
+    placeholder must not.
+
+    Guard tooth: a bare ``"... in captured.err"`` substring check is
+    toothless here — when the formatter DOES crash, loguru catches the
+    exception and dumps a "--- Logging error in Loguru Handler ---" block
+    to stderr that echoes the offending record's ``message`` field verbatim
+    (via ``repr()``), so the exact substring this test looks for is present
+    on BOTH the success and the crash path. Asserting the absence of
+    loguru's own crash-dump markers is what actually distinguishes them —
+    reintroducing the f-string bug turns this red.
+    """
     configure_logging(json_path=None)
     logger.error("kappa is not a list of per-layer rows: {'layer0': [0.1]}")
     captured = capsys.readouterr()
+    assert "Logging error" not in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.err.count("{'layer0': [0.1]}") == 1
     assert "{'layer0': [0.1]}" in captured.err
 
 
