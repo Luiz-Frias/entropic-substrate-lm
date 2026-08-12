@@ -70,3 +70,7 @@ logs/
 # NOTE: .dvc/config is intentionally NOT ignored — DVC remote/config metadata
 # is tracked in git. Only DVC's own internal cache/tmp dirs are excluded (see
 # .dvc/.gitignore, managed by `dvc init`).
+
+# --- Worktrees ---
+.claude/worktrees/
+.codex/worktrees/
