@@ -36,15 +36,29 @@ from entropic_substrate.data.batching import Corpus, SequenceSampler
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
 from entropic_substrate.logging import logger
 from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
+from entropic_substrate.sinks import JsonlSink, MetricSink
 
 __all__ = [
     "EvalResult",
     "Trainer",
     "cosine_lr",
     "resolve_device",
+    "resolve_results_path",
     "seed_everything",
     "train_from_config",
 ]
+
+
+def resolve_results_path(cfg: Config, results_path: str | os.PathLike[str] | None) -> Path:
+    """The JSONL path a run writes to: ``results_path`` if given, else ``{results_dir}/{name}.jsonl``.
+
+    Shared by :class:`Trainer` and ``entropic_substrate.cli`` (which needs the
+    resolved path BEFORE constructing a ``Trainer``, to build its metric sink)
+    — a single source of truth so the two can never drift apart.
+    """
+    if results_path is not None:
+        return Path(results_path)
+    return Path(cfg.train.results_dir) / f"{cfg.name}.jsonl"
 
 
 def seed_everything(seed: int) -> None:
@@ -125,6 +139,7 @@ class Trainer:
         model: LanguageModel | None = None,
         device: torch.device | str | None = None,
         results_path: str | os.PathLike[str] | None = None,
+        sink: MetricSink | None = None,
     ) -> None:
         self.cfg = cfg
         seed_everything(cfg.train.seed)
@@ -170,14 +185,12 @@ class Trainer:
 
         self.optimizer = self._build_optimizer()
         self.step = 0
-        self.results_path = Path(
-            results_path
-            if results_path is not None
-            else Path(cfg.train.results_dir) / f"{cfg.name}.jsonl"
-        )
+        self.results_path = resolve_results_path(cfg, results_path)
         self.results_path.parent.mkdir(parents=True, exist_ok=True)
+        self.sink: MetricSink = sink if sink is not None else JsonlSink(self.results_path)
         self.ckpt_dir = Path(cfg.train.models_dir)
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
+        self.best_nats_per_byte = math.inf
 
         if cfg.train.resume:
             self.load_checkpoint(cfg.train.resume)
@@ -224,10 +237,9 @@ class Trainer:
         return lr
 
     def log(self, record: dict[str, Any]) -> None:
-        """Append one JSON record to the run's results JSONL."""
+        """Fan one metric record out through :attr:`sink` (JSONL always, MLflow if wired)."""
         record = {"run": self.cfg.name, "step": self.step, **record}
-        with self.results_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+        self.sink.log(record)
 
     # --------------------------------------------------------------- steps
     def train_step(self) -> dict[str, float]:
@@ -377,6 +389,10 @@ class Trainer:
                 result = self.evaluate()
                 record = self._eval_record(result, time.time() - start)
                 self.log(record)
+                if result.nats_per_byte < self.best_nats_per_byte:
+                    self.best_nats_per_byte = result.nats_per_byte
+                    best_path = self.save_checkpoint("best")
+                    self.sink.log_artifact(best_path, artifact_path="checkpoints")
                 if verbose:
                     kappa = record.get("kappa")
                     extra = f" kappa {kappa}" if kappa else ""
@@ -388,8 +404,10 @@ class Trainer:
             if self.cfg.train.save_interval > 0 and self.step % self.cfg.train.save_interval == 0:
                 self.save_checkpoint()
 
-        self.save_checkpoint("final")
+        final_path = self.save_checkpoint("final")
+        self.sink.log_artifact(final_path, artifact_path="checkpoints")
         self.log({"event": "run_end", "wall_s": round(time.time() - start, 3)})
+        self.sink.finish()
         return history
 
     def iter_history(self) -> Iterator[dict[str, Any]]:

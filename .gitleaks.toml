@@ -1,0 +1,20 @@
+# gitleaks config — extends the default ruleset, adds one narrow path allowlist.
+#
+# `.secrets.baseline` (detect-secrets' own baseline — see .pre-commit-config.yaml's
+# detect-secrets hook) stores SHA1 `hashed_secret` digests for findings
+# detect-secrets already tracks as known/reviewed. Those hex digests are
+# high-entropy strings that trip gitleaks' generic-api-key heuristic, even
+# though they are HASHES of already-triaged findings, not secrets in their
+# own right — detect-secrets is the tool of record for that file's content.
+# Anticipated by .pre-commit-config.yaml's top-level `exclude:` pattern,
+# which already excludes `.gitleaks.toml` itself from the other language
+# hooks; this file is the gitleaks-native counterpart to that exclusion.
+title = "entropic-substrate-lm gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''\.secrets\.baseline$''',
+]
