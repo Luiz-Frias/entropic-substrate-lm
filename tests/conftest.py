@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import torch
+from loguru import logger
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
@@ -38,7 +40,7 @@ def _deterministic() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _configure_logging(capsys: pytest.CaptureFixture[str]) -> None:
+def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     """Rebind loguru's sinks to the CURRENT per-test stdio streams.
 
     loguru binds a stream sink to the literal object passed to
@@ -60,10 +62,26 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> None:
     ``tests/test_logging.py``; every other test in this ~300+-test suite
     would otherwise append to ``logs/entropic-substrate.jsonl`` on every
     run for no reason.
+
+    TEARDOWN removes the sinks before yielding control back to pytest:
+    capsys tears down (and closes) its captured streams in the REVERSE of
+    fixture-setup order, i.e. AFTER this fixture's teardown runs (this
+    fixture depends on capsys, so capsys's own finalizer runs later). Any
+    log emission that lands in the window between one test's teardown and
+    the next test's setup — e.g. a slow-to-join background thread started
+    by a live integration test — would otherwise write to an
+    already-closed stream object and loguru's ``catch=True`` default would
+    print "Logging error in Loguru Handler ... ValueError: I/O operation
+    on closed file" noise into the run. Removing the sinks here closes that
+    window: a late emission after this point hits zero handlers and is
+    dropped silently, which is the correct behavior for teardown-window
+    noise (the message has already served its purpose or never mattered).
     """
     from entropic_substrate.logging import configure_logging
 
     configure_logging(json_path=None)
+    yield
+    logger.remove()
 
 
 @pytest.fixture
