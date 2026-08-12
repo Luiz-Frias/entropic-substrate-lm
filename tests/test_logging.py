@@ -88,24 +88,35 @@ def test_message_containing_braces_does_not_crash_the_formatter(
 
 
 # -------------------------------------------------------------- timezone
-def test_human_format_shows_edt_wall_clock_in_summer() -> None:
-    """A UTC instant in July renders as America/New_York's summer offset
-    (EDT, UTC-4) — proving DST is handled, not a fixed offset."""
+def test_human_format_shows_edt_wall_clock_in_summer(capsys: pytest.CaptureFixture[str]) -> None:
+    """A UTC instant in July, run through the PRODUCTION ``_human_format``
+    sink (not a standalone zoneinfo computation), renders America/New_York's
+    summer offset (EDT, UTC-4) — proving DST is handled, not a fixed offset.
+
+    Uses ``logger.patch()`` to inject a controlled ``record["time"]`` ahead
+    of the real sink, so this exercises ``est_logging._human_format``
+    itself: a regression to a hardcoded ``-05:00``/'EST' offset in that
+    function would make this assertion fail.
+    """
+    configure_logging(json_path=None)
     summer_utc = datetime(2026, 7, 15, 16, 0, 0, tzinfo=_UTC)  # 16:00 UTC
-    local = summer_utc.astimezone(_NY)
-    assert local.strftime("%H:%M") == "12:00"  # UTC-4
-    assert local.utcoffset().total_seconds() / 3600 == -4
+    logger.patch(lambda record: record.update(time=summer_utc)).info("dst-summer-marker")
+    err = capsys.readouterr().err
+    assert "2026-07-15 12:00:00" in err  # EDT, UTC-4
+    assert "dst-summer-marker" in err
 
 
-def test_human_format_shows_est_wall_clock_in_winter() -> None:
-    """The same wall-clock construction in January renders EST (UTC-5) —
-    the two tests together are what proves ``zoneinfo`` (DST-aware) is in
-    use rather than a hardcoded ``-05:00``/'EST' offset, which would be
-    silently wrong for ~8 months of the year."""
+def test_human_format_shows_est_wall_clock_in_winter(capsys: pytest.CaptureFixture[str]) -> None:
+    """Same mechanism as the summer test, for a January instant — EST,
+    UTC-5. The two tests together, both driven through the real sink, are
+    what proves ``zoneinfo`` (DST-aware) is in use rather than a hardcoded
+    offset, which would be silently wrong for ~8 months of the year."""
+    configure_logging(json_path=None)
     winter_utc = datetime(2026, 1, 15, 16, 0, 0, tzinfo=_UTC)  # 16:00 UTC
-    local = winter_utc.astimezone(_NY)
-    assert local.strftime("%H:%M") == "11:00"  # UTC-5
-    assert local.utcoffset().total_seconds() / 3600 == -5
+    logger.patch(lambda record: record.update(time=winter_utc)).info("dst-winter-marker")
+    err = capsys.readouterr().err
+    assert "2026-01-15 11:00:00" in err  # EST, UTC-5
+    assert "dst-winter-marker" in err
 
 
 def test_human_sink_renders_local_wall_clock(capsys: pytest.CaptureFixture[str]) -> None:
