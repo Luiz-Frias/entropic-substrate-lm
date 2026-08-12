@@ -37,6 +37,19 @@ if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
   exit 1
 fi
 
+# MLFLOW_S3_ENDPOINT_URL is equally required for the R2 artifact path
+# (compose.yaml passes it straight through to the mlflow container's boto3
+# client) — without it, R2 upload fails server-side with a boto3
+# `ValueError: Invalid endpoint:` that surfaces client-side as a generic
+# "too many 500 error responses" / MaxRetryError, exactly the confusing
+# failure class the AWS-creds guard above exists to prevent. Verified
+# empirically: an isolated stop/start with this var unset reproduces the
+# generic retry-exhaustion error, not a clear abort message.
+if [[ -z "${MLFLOW_S3_ENDPOINT_URL:-}" ]]; then
+  echo "[container-test] MLFLOW_S3_ENDPOINT_URL not set (.env missing or empty) — the mlflow server's R2 artifact store would fail with a confusing boto3 'Invalid endpoint' / MaxRetryError; aborting now instead." >&2
+  exit 1
+fi
+
 # Project name pinned (not left to podman-compose's default $(basename $PWD))
 # so the container names below are deterministic regardless of the checkout
 # directory's actual name (a worktree checkout is not named
