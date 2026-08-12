@@ -37,11 +37,10 @@ pytestmark = [
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-# Must match scripts/run_container_test.sh's pinned project name — the
-# container name (below) is derived from it, not from $(basename $PWD).
+# Must match scripts/run_container_test.sh's pinned project name — not left
+# to podman-compose's default $(basename $PWD).
 _PROJECT = "entropic-substrate-lm-mlflow-test"
 _COMPOSE = ["podman", "compose", "-p", _PROJECT, "-f", str(REPO_ROOT / "compose.yaml")]
-_MLFLOW_CONTAINER = f"{_PROJECT}_mlflow_1"
 
 
 def _tracking_uri() -> str:
@@ -140,92 +139,6 @@ def test_live_artifact_round_trips_through_real_r2(tmp_path: Path) -> None:
     assert any(k.endswith(remote_path) for k in keys), (run_id, remote_path, keys)
 
 
-# --------------------------------------------------------------- acceptance #6
-def _kill_mid_run_config(root: Path, *, name: str) -> object:
-    cfg = tiny_config(root)
-    cfg.name = name
-    cfg.train.max_steps = 30
-    cfg.train.eval_interval = 2
-    cfg.train.log_interval = 1
-    cfg.train.seed = 99
-    return cfg
-
-
-def _stop_mlflow() -> None:
-    subprocess.run([*_COMPOSE, "stop", "mlflow"], check=True, cwd=REPO_ROOT, timeout=30)  # nosec B603 B607
-
-
-def _start_mlflow() -> None:
-    # NOTE: `podman-compose ps -q <service>` (1.6.0) does not accept a service
-    # filter argument — verified empirically (scripts/run_container_test.sh's
-    # header comment). `podman inspect` against the deterministic container
-    # name is what actually works.
-    subprocess.run([*_COMPOSE, "start", "mlflow"], check=True, cwd=REPO_ROOT, timeout=30)  # nosec B603 B607
-    deadline = time.time() + 60
-    while time.time() < deadline:
-        status = subprocess.run(  # nosec B603 B607
-            ["podman", "inspect", "--format", "{{.State.Health.Status}}", _MLFLOW_CONTAINER],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        if status == "healthy":
-            return
-        time.sleep(2)
-    msg = "mlflow did not come back healthy after restart"
-    raise RuntimeError(msg)
-
-
-def test_kill_mid_run_jsonl_stays_complete_same_record_count_as_untracked(
-    tmp_path: Path,
-) -> None:
-    """SACRED INVARIANT: JSONL IS AUTHORITATIVE, MLFLOW IS DERIVED.
-
-    A single continuous ``fit()`` call, same seed/config on both sides; a
-    background timer kills the real mlflow container partway through the
-    tracked run's training loop (several evals happen both before and after
-    the kill, per ``eval_interval=2`` over ``max_steps=30``).
-    """
-    untracked_cfg = _kill_mid_run_config(tmp_path / "untracked", name="kill-mid-run-untracked")
-    untracked_results = tmp_path / "untracked.jsonl"
-    untracked_trainer = Trainer(untracked_cfg, results_path=untracked_results)
-    untracked_trainer.fit(verbose=False)
-
-    tracked_cfg = _kill_mid_run_config(tmp_path / "tracked", name="kill-mid-run-tracked")
-    tracked_results = tmp_path / "tracked.jsonl"
-    sink = build_sink(tracked_cfg, tiny=True, results_path=tracked_results)
-    tracked_trainer = Trainer(tracked_cfg, results_path=tracked_results, sink=sink)
-
-    killer = threading.Timer(1.0, _stop_mlflow)
-    killer.start()
-    try:
-        tracked_trainer.fit(verbose=False)  # must complete despite tracking dying mid-loop
-    finally:
-        killer.cancel()
-        _start_mlflow()
-
-    untracked_records = [
-        json.loads(line) for line in untracked_results.read_text().splitlines() if line
-    ]
-    tracked_records = [
-        json.loads(line) for line in tracked_results.read_text().splitlines() if line
-    ]
-
-    print(
-        f"untracked: {len(untracked_records)} records; tracked-then-killed: {len(tracked_records)}"
-    )
-    assert len(tracked_records) == len(untracked_records), (
-        "results/*.jsonl must be COMPLETE regardless of MLflow's mid-run state",
-        untracked_records,
-        tracked_records,
-    )
-    untracked_events = [r["event"] for r in untracked_records]
-    tracked_events = [r["event"] for r in tracked_records]
-    assert tracked_events == untracked_events
-
-    mlflow_sink = sink.best_effort[0]  # type: ignore[attr-defined]
-    assert mlflow_sink.failed_writes > 0, "the kill must have actually caused counted failures"
-
-
 # --------------------------------------------------------------- acceptance #8/9
 def test_live_aggregate_is_idempotent_and_absent_when_incomplete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -259,3 +172,84 @@ def test_live_aggregate_is_idempotent_and_absent_when_incomplete(
     assert first[0]["n_seeds"] == second[0]["n_seeds"] == 3
     assert first[0]["nats_per_byte"] == second[0]["nats_per_byte"]
     print(f"idempotent aggregate: {first[0]}")
+
+
+# --------------------------------------------------------------- acceptance #6
+def _kill_mid_run_config(root: Path, *, name: str) -> object:
+    cfg = tiny_config(root)
+    cfg.name = name
+    cfg.train.max_steps = 30
+    cfg.train.eval_interval = 2
+    cfg.train.log_interval = 1
+    cfg.train.seed = 99
+    return cfg
+
+
+def _stop_mlflow() -> None:
+    subprocess.run([*_COMPOSE, "stop", "mlflow"], check=True, cwd=REPO_ROOT, timeout=30)  # nosec B603 B607
+
+
+def test_kill_mid_run_jsonl_stays_complete_same_record_count_as_untracked(
+    tmp_path: Path,
+) -> None:
+    """SACRED INVARIANT: JSONL IS AUTHORITATIVE, MLFLOW IS DERIVED.
+
+    A single continuous ``fit()`` call, same seed/config on both sides; a
+    background timer kills the real mlflow container partway through the
+    tracked run's training loop (several evals happen both before and after
+    the kill, per ``eval_interval=2`` over ``max_steps=30``).
+
+    ORDERED LAST in this module (pytest collects top-to-bottom; this suite
+    runs without xdist) — deliberately. This test used to restart mlflow in
+    its own ``finally`` block and block on up to 60s of health-status
+    polling before returning control to whatever test ran next; under
+    full-suite load that poll blew its deadline on 2 of 4 verbatim re-runs
+    (an isolated stop/start of the same container recovered in ~11s), and
+    the resulting ``RuntimeError`` cascaded into
+    ``test_live_aggregate_is_idempotent...``'s setup, which then hit a dead
+    tracking server. With this test last, no later test in the module
+    depends on mlflow coming back up inside the test process at all —
+    ``scripts/run_container_test.sh``'s ``trap cleanup EXIT`` tears the
+    whole stack down (``compose down -v``) immediately afterward regardless
+    of container state. The flake mechanism is removed structurally, not
+    tuned away with a longer timeout.
+    """
+    untracked_cfg = _kill_mid_run_config(tmp_path / "untracked", name="kill-mid-run-untracked")
+    untracked_results = tmp_path / "untracked.jsonl"
+    untracked_trainer = Trainer(untracked_cfg, results_path=untracked_results)
+    untracked_trainer.fit(verbose=False)
+
+    tracked_cfg = _kill_mid_run_config(tmp_path / "tracked", name="kill-mid-run-tracked")
+    tracked_results = tmp_path / "tracked.jsonl"
+    sink = build_sink(tracked_cfg, tiny=True, results_path=tracked_results)
+    tracked_trainer = Trainer(tracked_cfg, results_path=tracked_results, sink=sink)
+
+    killer = threading.Timer(1.0, _stop_mlflow)
+    killer.start()
+    try:
+        tracked_trainer.fit(verbose=False)  # must complete despite tracking dying mid-loop
+    finally:
+        killer.cancel()
+        killer.join()  # block until any already-fired _stop_mlflow() call has returned
+
+    untracked_records = [
+        json.loads(line) for line in untracked_results.read_text().splitlines() if line
+    ]
+    tracked_records = [
+        json.loads(line) for line in tracked_results.read_text().splitlines() if line
+    ]
+
+    print(
+        f"untracked: {len(untracked_records)} records; tracked-then-killed: {len(tracked_records)}"
+    )
+    assert len(tracked_records) == len(untracked_records), (
+        "results/*.jsonl must be COMPLETE regardless of MLflow's mid-run state",
+        untracked_records,
+        tracked_records,
+    )
+    untracked_events = [r["event"] for r in untracked_records]
+    tracked_events = [r["event"] for r in tracked_records]
+    assert tracked_events == untracked_events
+
+    mlflow_sink = sink.best_effort[0]  # type: ignore[attr-defined]
+    assert mlflow_sink.failed_writes > 0, "the kill must have actually caused counted failures"
