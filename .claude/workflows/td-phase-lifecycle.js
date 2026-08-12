@@ -34,22 +34,37 @@ if (!PH || !PH.id || !PH.branch || !PH.parent || !PH.scope || !PH.acceptance) {
   throw new Error('args.phase{id,title,issue,branch,parent,scope,acceptance} is required (phase-manifest entry)')
 }
 const INV = (ARGS && ARGS.invariants) || [] // invariant-registry: strings, each with a tripwire + guard-teeth recipe
+// PORTED to entropic-substrate-lm (Python 3.12 / uv / just / prek) from the
+// sales-collateral-agx original (TypeScript / bun / doppler). Gates were already
+// injectable upstream; the changes below are the five things that were NOT —
+// see docs/conductor-port.md for the full list and rationale.
 const G = Object.assign(
   {
-    offline:
-      'RUN_LIVE_LLM_TESTS= bun run typecheck && RUN_LIVE_LLM_TESTS= bun run test && RUN_LIVE_LLM_TESTS= bun run lint',
-    exit: 'RUN_LIVE_LLM_TESTS= prek run --all-files',
-    live: 'doppler run -p sales-collateral-agx -c dev -- bun run test:live',
-    liveRequired: false, // gate-config: flip on for phases that touch an LLM-facing seam
+    offline: 'just check', // fmt-check + lint + basedpyright(src scripts) + unit tests
+    exit: 'just pc-ci', // prek commit + pre-push stages (CI parity)
+    live: 'just container-test', // podman: live MLflow+Postgres stack, integration tests
+    liveRequired: false, // gate-config: flip on for phases that touch the tracking seam
   },
   (ARGS && ARGS.gates) || {},
 )
 const P = Object.assign(
   // maxL2Loops default raised 2→3 (biome-sprint P4: one fixer attempt on a precisely-
   // specified finding is often one too few; the extra round is cache-cheap on resume).
-  { maxImplLoops: 3, maxL2Loops: 3, maxReviewLoops: 3, maxCrLoops: 5, submitMode: 'draft' },
+  {
+    maxImplLoops: 3,
+    maxL2Loops: 3,
+    maxReviewLoops: 3,
+    maxCrLoops: 5,
+    submitMode: 'draft',
+    // PORT: the exit-gate runner invocation was hardcoded to `bun scripts/run-exit-gate.ts`
+    // in four places upstream, which is the single thing that made this workflow
+    // repo-specific rather than toolchain-agnostic. Parameterised here; the Python
+    // port of that runner lives at scripts/run_exit_gate.py (see PR #8).
+    exitRunner: 'uv run python scripts/run_exit_gate.py',
+  },
   (ARGS && ARGS.policy) || {},
 )
+const RUNNER = P.exitRunner
 
 // ─── shared context block (every agent gets the same ground truth) ─────────────
 const INVARIANTS = INV.length
@@ -63,7 +78,7 @@ const BRIEF = [
   'ACCEPTANCE (machine-checkable):\n' + PH.acceptance,
   INVARIANTS,
   'GATES:\n  offline: ' + G.offline + '\n  exit: ' + G.exit + (G.liveRequired ? '\n  LIVE (required): ' + G.live : ''),
-  'HARD CONSTRAINTS: no merge · no gt fold · no .pre-commit-config.yaml edits · single shared worktree (verify pwd + clean tree before edits; unexpectedly dirty/foreign → STOP, report DECISION) · prefix offline gates, the EXIT gate, AND git commit with RUN_LIVE_LLM_TESTS= · models come from env, never hardcoded · VERIFY-BEFORE-ESCALATE: a DECISION at any stage is malformed unless it attaches the verification you RAN to test the blocking premise (command + observed output, in the evidence/decision text) — verify the claim empirically first; many decisions dissolve under verification.',
+  'HARD CONSTRAINTS: no merge · no gt fold · no .pre-commit-config.yaml edits (operator-gated in this repo) · single shared worktree (verify pwd + clean tree before edits; unexpectedly dirty/foreign → STOP, report DECISION) · the geometry numerics in docs/architecture.md are non-negotiable: FP32 inside autocast(enabled=False), clamped κ, finite load-balance loss · models come from env, never hardcoded · VERIFY-BEFORE-ESCALATE: a DECISION at any stage is malformed unless it attaches the verification you RAN to test the blocking premise (command + observed output, in the evidence/decision text) — verify the claim empirically first; many decisions dissolve under verification.',
 ].join('\n\n')
 // FOR-759 #1: ROUND schema requires evidence (below) — this shared clause is
 // appended to every ROUND-producing prompt (L2 gate-check ×2, Review lenses) so
@@ -72,7 +87,7 @@ const EVIDENCE_REQUIREMENT =
   'EVIDENCE REQUIREMENT (FOR-759, required by schema): your evidence field must carry VERBATIM proof for every check behind your verdict — the exact command + observed output/exit code for anything you ran (gate tails), or exact excerpts (diff hunks, grep hits, file:line) for anything you inspected. A verdict backed only by a summary, or left empty, does not satisfy the schema and is a FAIL on your OWN report.'
 
 // ─── schemas ────────────────────────────────────────────────────────────────────
-// FOR-754: exitGate is the runner's JSON relayed VERBATIM (bun scripts/run-exit-gate.ts
+// FOR-754: exitGate is the runner's JSON relayed VERBATIM (the P.exitRunner script
 // executes the gate itself — the agent is a courier, never a witness). The workflow
 // gates on it deterministically below; SUBMITTED is unreachable without it.
 const XGATE = {
@@ -136,7 +151,7 @@ function implGateRetryFeedback(attemptNum, implGateBlock, offlineCmd, exitCmd) {
     '\nPREVIOUS ATTEMPT #' + attemptNum + ' reported GREEN but its exit-gate relay did not certify: ' + implGateBlock +
     '. The WORK likely stands — do NOT reimplement. Verify branch/tree/commit state first, '
   const rerunExit =
-    're-run the deterministic runner (`bun scripts/run-exit-gate.ts --cmd ' + JSON.stringify(exitCmd) + '`), and re-emit your FULL report with the runner JSON VERBATIM in the exitGate field and the full 40-hex commit SHA in the commit field.\n'
+    're-run the deterministic runner (`' + RUNNER + ' --cmd ' + JSON.stringify(exitCmd) + '`), and re-emit your FULL report with the runner JSON VERBATIM in the exitGate field and the full 40-hex commit SHA in the commit field.\n'
   if (implGateBlock === DIRTY_TREE_BLOCK_REASON) {
     return (
       header +
@@ -257,7 +272,7 @@ for (let i = 1; i <= P.maxImplLoops; i++) {
       '2b. SIBLING-COPY CHECK (W1, hardening sprint): before fixing a helper/pattern, grep for byte-identical or near-identical sibling copies; if siblings exist that the scope does NOT name, do not half-migrate silently — fix only the named copy and REPORT the siblings in divergences (the conductor rules widen-vs-defer).\n' +
       '3. Run the offline gates verbatim. Self-review your own diff (a /verify-quality pass: re-read every hunk against scope + invariants).\n' +
       '4. Commit (conventional message, ≤72-char subject' + (PH.trailer ? ', trailer: ' + PH.trailer : '') + '); report the FULL 40-hex commit SHA in your commit field (`git rev-parse HEAD`).\n' +
-      '5. EXIT GATE (deterministic runner — do NOT run the gate by hand or transcribe results): `bun scripts/run-exit-gate.ts --cmd ' + JSON.stringify(G.exit) + '`. It executes the gate, reads the tip, and checks tree cleanliness itself. If prek auto-fixed files it reports DIRTY_TREE: fold the fixes into your commit (amend), then RE-RUN BOTH gate sets ON THE AMENDED TREE — the offline gates (' + G.offline + ') you ran in step 3 certified the PRE-fix tree, not this one, so they no longer speak for what you are about to submit; only once they are green again do you re-run the exit-gate runner so the certificate matches the final committed tip. A commit is never accepted GREEN on a re-run of the runner alone. Relay its ENTIRE JSON output verbatim in your exitGate field — GREEN without a certifying exitGate will be BLOCKED by the harness, not reviewed.\n' +
+      '5. EXIT GATE (deterministic runner — do NOT run the gate by hand or transcribe results): `' + RUNNER + ' --cmd ' + JSON.stringify(G.exit) + '`. It executes the gate, reads the tip, and checks tree cleanliness itself. If prek auto-fixed files it reports DIRTY_TREE: fold the fixes into your commit (amend), then RE-RUN BOTH gate sets ON THE AMENDED TREE — the offline gates (' + G.offline + ') you ran in step 3 certified the PRE-fix tree, not this one, so they no longer speak for what you are about to submit; only once they are green again do you re-run the exit-gate runner so the certificate matches the final committed tip. A commit is never accepted GREEN on a re-run of the runner alone. Relay its ENTIRE JSON output verbatim in your exitGate field — GREEN without a certifying exitGate will be BLOCKED by the harness, not reviewed.\n' +
       'Spawn Haiku scout sub-agents for recon if available. If you hit a MATERIAL contract question the scope does not answer → status DECISION with the question. A dirty or foreign working-tree state at ANY point is ALWAYS status DECISION (SET-AT-CUT: STOP has no third option) — never GREEN with a divergence note. Return status GREEN only when every gate passes.\n' +
       feedback,
     { label: 'impl:' + PH.id + '#' + i, phase: 'Implement', schema: IMPL, model: 'sonnet', effort: 'high' },
@@ -322,13 +337,13 @@ const RULING =
 const ISOLATION_NOTE =
   'ISOLATION (freeze #r3-9 — OVERRIDES any cd-into-worktree instruction in the scope): you run in your OWN isolated git worktree (your starting cwd). FIRST ACTS: git checkout --detach ' +
   PH.branch +
-  ' (branch refs are repo-global; detach avoids the two-worktrees-one-branch refusal — if the branch does not exist yet, STOP and return DECISION), then bun install, then (cd web && bun install). Run ALL commands, probes, flip-tests and gate runs HERE. The shared launch worktree (.claude/worktrees/m6-refinement) is READ-ONLY to you: inspect it via git show <ref>:<path> only; NEVER write there, never check anything out there, never run mutating git commands there.\n\n'
+  ' (branch refs are repo-global; detach avoids the two-worktrees-one-branch refusal — if the branch does not exist yet, STOP and return DECISION), then `uv sync --all-groups` (this repo is Python/uv; there is no bun and no web/ subproject). Run ALL commands, probes, flip-tests and gate runs HERE. The shared launch worktree (.claude/worktrees/observability-sprint) is READ-ONLY to you: inspect it via git show <ref>:<path> only; NEVER write there, never check anything out there, never run mutating git commands there.\n\n'
 
 const l2Prompts = {
   gate:
     BRIEF +
     '\n\nYou are the L2 GATE-CHECKER (fresh context; you did NOT write this code). Answer ONE question: does branch ' + PH.branch + ' pass its OWN gates + ceremony?\n' +
-    '- RE-RUN the offline gates verbatim AND the exit gate via `bun scripts/run-exit-gate.ts --cmd ' + JSON.stringify(G.exit) + '` (do not trust the implementer’s transcript; a non-certifying runner output — ok!==true — is a FAIL finding, quote its error JSON).\n' +
+    '- RE-RUN the offline gates verbatim AND the exit gate via `' + RUNNER + ' --cmd ' + JSON.stringify(G.exit) + '` (do not trust the implementer’s transcript; a non-certifying runner output — ok!==true — is a FAIL finding, quote its error JSON).\n' +
     '- POST-RUN DIRTY-TREE CHECK (FOR-759 #3, independent of the runner’s own dirty flag): immediately AFTER your gate re-runs finish, run `git status --porcelain` yourself — do not rely solely on the runner’s self-reported ok/dirty flag. ANY output (including hook-autofixed-but-uncommitted files the runner might not have caught) is an UNCONDITIONAL FAIL finding; quote it verbatim in evidence. A prek run that mutates the working tree must never silently pass.\n' +
     '- Check /tdd-first-stacked-pr conformance: failing-test-first evidence (tests pin acceptance + edge cases), commit hygiene, scope containment vs the issue.\n' +
     '- Check /gt-stacked-pr-sprint ceremony: branch parentage, one-unit-per-commit, no foreign files.\n' +
@@ -394,7 +409,7 @@ const LENSES = [
   {
     key: 'C-adversarial',
     brief:
-      'ROUND C — ADVERSARIAL INVARIANT-BREAK (guard-teeth). DO NOT trust any pre-provided isolation. FIRST self-isolate: TIP=$(git rev-parse HEAD); WT="$(mktemp -d)/wt"; git worktree add --detach "$WT" "$TIP"; cd "$WT"; run bun install there if the gates need it; then VERIFY $(git rev-parse --show-toplevel) differs from the launch checkout toplevel — if identical, return FAIL immediately (isolation unavailable). Do ALL mutation inside $WT; NEVER mutate the launch checkout. For each sacred invariant + each new guard/test this phase adds: FLIP it (re-introduce the bug, silent fallback, or invariant breach) and PROVE the gate/test goes RED. A guard that stays green when flipped is a FAIL finding. When done: cd out, `git worktree remove --force "$WT"`, then VERIFY `git worktree list` no longer shows it (W3: a leaked scratch worktree is a FAIL in your own report).',
+      'ROUND C — ADVERSARIAL INVARIANT-BREAK (guard-teeth). DO NOT trust any pre-provided isolation. FIRST self-isolate: TIP=$(git rev-parse HEAD); WT="$(mktemp -d)/wt"; git worktree add --detach "$WT" "$TIP"; cd "$WT"; run `uv sync --all-groups` there if the gates need it; then VERIFY $(git rev-parse --show-toplevel) differs from the launch checkout toplevel — if identical, return FAIL immediately (isolation unavailable). Do ALL mutation inside $WT; NEVER mutate the launch checkout. For each sacred invariant + each new guard/test this phase adds: FLIP it (re-introduce the bug, silent fallback, or invariant breach) and PROVE the gate/test goes RED. A guard that stays green when flipped is a FAIL finding. When done: cd out, `git worktree remove --force "$WT"`, then VERIFY `git worktree list` no longer shows it (W3: a leaked scratch worktree is a FAIL in your own report).',
     worktree: true,
   },
 ]
@@ -490,7 +505,7 @@ phase('Validate')
 const val = await agent(
   BRIEF +
     '\n\nYou are the L1 VALIDATOR (fresh context, distinct from every prior agent; you fix NOTHING — validation only). The phase is SUBMITTED: PR ' + pub.pr + ' @ tip ' + pub.tip + '. Validate it end-to-end; every check gets EVIDENCE (the command you ran + observed output) in your evidence field:\n' +
-    '1. Re-run the offline gates verbatim; record each command, its exit code, and tail output for the tested tip. Then the exit gate via the deterministic runner: `bun scripts/run-exit-gate.ts --cmd ' + JSON.stringify(G.exit) + ' --expect-tip ' + pub.tip + '` — relay its ENTIRE JSON output verbatim in your exitGate field (required; the harness blocks SUBMITTED on missing, stale-tip, dirty-tree, empty-tail, or nonzero evidence).\n' +
+    '1. Re-run the offline gates verbatim; record each command, its exit code, and tail output for the tested tip. Then the exit gate via the deterministic runner: `' + RUNNER + ' --cmd ' + JSON.stringify(G.exit) + ' --expect-tip ' + pub.tip + '` — relay its ENTIRE JSON output verbatim in your exitGate field (required; the harness blocks SUBMITTED on missing, stale-tip, dirty-tree, empty-tail, or nonzero evidence).\n' +
     '2. RUNTIME surface verification: find the smallest path that EXECUTES the changed code at a real surface (boot the demo/dev server, drive the CLI, hit the route) and observe it. Tests/typecheck do NOT count as runtime verification. If the diff has NO runtime surface (config/docs-only), record SKIP with the reason.\n' +
     (G.liveRequired ? '3. LIVE gate (required for this phase): run `' + G.live + '`; record the tail.\n' : '3. Live gate not required for this phase — note and skip.\n') +
     '4. PR state: head SHA equals local branch tip; correct base branch; draft status as expected.\n' +
