@@ -106,9 +106,15 @@ download-data:
 # ---------------------------------------------------------------------------
 
 # Run a training experiment, e.g.: just train exp=e1-fisher
-# Valid exp values: e0-byte, e0-bpe, e1-fisher, e1-random, e2, e3
+# Valid exp values: e0-byte, e0-bpe, e1-fisher, e1-random, e2, e3,
+# e3-anchor, e3-vantage (anchored arms are execution-gated on the E3 readout)
 train exp="tiny" *ARGS:
     PYTHONPATH=src uv run python -m entropic_substrate.cli train --exp {{exp}} {{ARGS}}
+
+# Gated ladder E1 → E2 → E3 (stops with DECISION-NEEDED before the anchored
+# arms / E4). `just ladder --tiny` = CPU smoke of the whole ladder in minutes.
+ladder *ARGS:
+    PYTHONPATH=src uv run --no-sync bash scripts/run_ladder.sh {{ARGS}}
 
 # Evaluate a checkpoint, e.g.: just eval ckpt=models/e3-latest.pt
 eval ckpt *ARGS:
