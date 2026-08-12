@@ -174,9 +174,20 @@ def test_json_sink_is_absolute_not_local(tmp_path: Path) -> None:
     assert abs((now_utc - parsed).total_seconds()) < 30
 
 
-def test_json_path_none_disables_the_json_sink(tmp_path: Path) -> None:
+def test_json_path_none_disables_the_json_sink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``json_path=None`` (what the test-suite-wide conftest fixture passes)
-    must not write anything anywhere."""
+    must not write anything anywhere.
+
+    chdir FIRST, and the assertion stops being vacuous. _DEFAULT_JSON_PATH is
+    RELATIVE ("logs/entropic-substrate.jsonl"), so without an isolated cwd a
+    regression that ignored ``None`` and fell back to the default would write
+    into the repo — under ``logs/``, which is gitignored, so it would not even
+    show up in ``git status``. The old assertion could never fail: nothing
+    writes to tmp_path when nothing ever cd'd there.
+    """
+    monkeypatch.chdir(tmp_path)
     configure_logging(json_path=None)
     logger.info("no-json-marker")
     assert not (tmp_path / "logs").exists()

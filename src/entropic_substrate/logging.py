@@ -53,6 +53,8 @@ from zoneinfo import ZoneInfo
 from loguru import logger
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from loguru import Message, Record
 
 __all__ = ["configure_logging", "logger"]
@@ -94,7 +96,7 @@ def _report_format(_record: Record) -> str:
     return "{message}\n"
 
 
-def _json_sink(path: Path):
+def _json_sink(path: Path) -> Callable[[Message], None]:
     """Build a sink function appending one UTC-ISO-8601 JSON object per record.
 
     A sink *function* rather than ``format=`` on a stream sink: this needs
