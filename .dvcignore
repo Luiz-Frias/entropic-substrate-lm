@@ -1,3 +1,16 @@
 # Add patterns of files dvc should ignore, which could improve
 # the performance. Learn more at
 # https://dvc.org/doc/user-guide/dvcignore
+
+# --- `--tiny` smoke artifacts are not experiment data ---
+# The CPU smoke overlay (configs/tiny.yaml, via `--tiny`) suffixes every run
+# name with "-tiny", so its checkpoints and metrics are name-identifiable. They
+# regenerate in seconds (`just train exp=e3 --tiny`), carry no readout anyone
+# would cite, and would otherwise push multi-MB blobs to R2 for nothing.
+#
+# scripts/run_ladder.sh already skips `dvc add`/`dvc push` on tiny runs; this is
+# the other half of that intent, covering the manual path. Listing them here
+# makes `dvc add models/e3-tiny-final.pt` FAIL LOUDLY rather than quietly
+# tracking a smoke artifact as if it were data.
+models/*-tiny-*.pt
+results/*-tiny.jsonl
