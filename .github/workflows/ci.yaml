@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   lint-and-unit:
-    name: Lint + unit tests (CPU)
+    name: Lint + typecheck + unit tests (CPU)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -47,6 +47,14 @@ jobs:
 
       - name: Ruff format check
         run: uv run --no-sync ruff format --check .
+
+      # basedpyright was a LOCAL-ONLY gate: `just check` ran it, CI did not, so a
+      # strict-typecheck failure could sit red on a branch while every PR check
+      # stayed green (it did, on fix/review-round-1). Results are stub-dependent,
+      # so it has to run against the SAME torch as the pin above, not uv.lock's
+      # newer resolve — verified clean under the 2.6.0 CPU wheel before landing.
+      - name: Typecheck (basedpyright, strict)
+        run: uv run --no-sync basedpyright src
 
       - name: Unit tests (pytest -m unit, CPU only)
         env:
