@@ -50,10 +50,11 @@ lint:
     @echo "→ Linting..."
     uv run ruff check . --fix
 
-# Run basedpyright strict type checking against src/.
+# Run basedpyright strict type checking against src/ + scripts/ (mirrors
+# pyproject [tool.basedpyright] include and the prek basedpyright hook).
 typecheck:
     @echo "→ Type checking..."
-    uv run basedpyright src
+    uv run basedpyright src scripts
 
 # Dependency hygiene + security lint (deptry + bandit, configured in pyproject).
 audit:

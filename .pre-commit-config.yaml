@@ -141,7 +141,11 @@ repos:
     hooks:
       - id: basedpyright
         stages: [pre-commit]
-        files: ^src/entropic_substrate/
+        # Mirrors pyproject [tool.basedpyright] include = ["src", "scripts"].
+        # scripts/ carries the exit-gate typestate core, whose whole point is
+        # compile-time enforcement — a checker that never sees it makes the
+        # typestate decorative. Widened with operator approval 2026-08-12.
+        files: ^(src/entropic_substrate/|scripts/)
         exclude: ^(tests/|build/|references/)
         args:
           - "--pythonversion"

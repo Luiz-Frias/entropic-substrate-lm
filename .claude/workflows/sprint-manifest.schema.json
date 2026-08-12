@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sprint-manifest.schema.json",
+  "title": "Sprint Manifest — the rails/trains/parallel sequencing artifact",
+  "description": "Machine-readable sprint plan: the horizontal sequencing within a pass (companion to the vertical Linear tree of ~/.claude/plans/active/subsystem-taxonomy-level-sync-ratchet.md). Emitted by sprint-preflight's brief assembler, AMENDED AND RATIFIED at the operator interview (ratified:false until then), then consumed as the SSOT the conductor composes lifecycle launch args from — hand-typed args are the failure class this artifact retires (the p2 missing-brace launch failure, the p1c invariant drift). DOCTRINE ENCODED, enforced by the generator and the conductor because JSON Schema cannot express topology: [R-rails] for every phase P and every entry in P.contracts_consumed, the owner must appear STRICTLY EARLIER in `sequence` or already exist on trunk — consumed-before-owned is a topological violation and a generation-time HALT (this check catches seam conflicts that file-overlap analysis cannot: both M6 DECISION-NEEDED halts — deckPlan ownership drift, recap-through-promotion — were of this class). [R-door] a contract with kind:'door' (schemas, wire formats, error envelopes, ID schemes — the one-way-door list) is owned by the EARLIEST feasible phase and carries frozen_after:true; later phases consume, never redefine (M6's 'shapes freeze again after p3b' discovered this rule three times ad hoc). [R-hub] every file appearing in two or more touch_sets is a hub file and must be OWNED by exactly one phase; other touchers acquire a conflict edge driving serial order. [R-train] among phases with no rail relation, land order is ASCENDING conflict footprint (least→most merge-conflict risk): the disruptive branch lands LAST, so its conflicts are resolved once, by the branch that caused them, against a settled base — this minimizes total expected rebase work and concentrates resolution at the point of maximum information. [R-parallel] phases with zero conflict edges of either type may share a parallel_group (the CALM cut: disjoint implementation is monotone and coordination-free; trunk integration is non-monotone and stays serial). [R-mode] parallel_group is only honored when every member has mode:'ratchet' — tracer-bullet phases run agent-serial by doctrine (unproven slices earn no parallelism). [R-cost] every phase carries cost_class (FM one-way-door 5): build = cites a work item and produces a persisted artifact (the default for sprint phases); serve = fulfills an external run; defense = neither.",
+  "type": "object",
+  "required": [
+    "spec_version",
+    "sprint",
+    "trunk",
+    "verified_at",
+    "ratified",
+    "sequence",
+    "phases",
+    "lifecycle"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "const": "1"
+    },
+    "sprint": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human name, e.g. 'M6 deck — p4a..p5b remainder'"
+    },
+    "trunk": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The sprint trunk branch (gt trunk)"
+    },
+    "verified_at": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "The stamped HEAD every premise was probed against; refreshed at ceremony when the base moves"
+    },
+    "registry": {
+      "type": "string",
+      "description": "Path to the invariant registry read fresh at every launch (invariants/gates/policy stay single-source THERE, never here)"
+    },
+    "generated_by": {
+      "type": "string",
+      "description": "Engine + run id that emitted this, e.g. 'sprint-preflight wf_xxx'"
+    },
+    "ratified": {
+      "type": "boolean",
+      "description": "false = draft awaiting the operator interview; the conductor may only launch from a ratified manifest"
+    },
+    "merge_topology": {
+      "type": "string",
+      "description": "Prose statement of the integration shape, e.g. 'stacked phase branches → squash onto milestone baseline → merge --no-ff into dev'"
+    },
+    "sequence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "The ratified TOTAL ORDER of phase ids: rails first (descending contract fan-out), then trains ascending conflict footprint; parallel groups appear as consecutive entries sharing parallel_group"
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "issues",
+          "branch",
+          "parent",
+          "mode",
+          "gates",
+          "cost_class",
+          "contracts_owned",
+          "contracts_consumed",
+          "touch_set",
+          "conflict_edges",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issues": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]+-[0-9]+$"
+            }
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Branch this phase stacks on"
+          },
+          "brief": {
+            "type": "string",
+            "description": "Path to the phase brief (brief-as-file)"
+          },
+          "mode": {
+            "enum": [
+              "tracer",
+              "ratchet"
+            ],
+            "description": "tracer = unproven slice (timeboxed, circuit-breaker, agent-serial); ratchet = known set (parallel-eligible)"
+          },
+          "gates": {
+            "type": "object",
+            "required": [
+              "liveRequired"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "liveRequired": {
+                "type": "boolean"
+              },
+              "liveDeferred": {
+                "type": "string",
+                "description": "If the live gate is conductor-deferred, the reason and re-certification owner — an honest deferral is recorded, never a false green"
+              }
+            }
+          },
+          "cost_class": {
+            "enum": [
+              "serve",
+              "build",
+              "defense"
+            ]
+          },
+          "model_tier": {
+            "type": "string",
+            "description": "Fleet model policy for this phase's launch, e.g. 'opus-only variant per operator ruling'"
+          },
+          "contracts_owned": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "kind"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "enum": [
+                    "contract",
+                    "door"
+                  ],
+                  "description": "door = one-way-door class (schema/wire-format/envelope/ID) — earliest feasible owner, frozen after"
+                },
+                "frozen_after": {
+                  "type": "boolean",
+                  "description": "true = no later phase may redefine; amendments require a conductor ruling recorded in the registry"
+                }
+              }
+            }
+          },
+          "contracts_consumed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "touch_set": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Files/globs this phase edits — the input to hub detection and R-train footprint"
+          },
+          "conflict_edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "with",
+                "type",
+                "evidence"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "with": {
+                  "type": "string",
+                  "description": "The other phase id"
+                },
+                "type": {
+                  "enum": [
+                    "file",
+                    "contract"
+                  ],
+                  "description": "file = shared touch-set (train risk); contract = owned/consumed relation (rail dependency)"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "The shared files or the contract name — never a bare assertion"
+                },
+                "resolution": {
+                  "enum": [
+                    "rails-before",
+                    "serial-after",
+                    "hub-owner"
+                  ],
+                  "description": "How the sequence resolves this edge"
+                }
+              }
+            }
+          },
+          "parallel_group": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Non-null = forked-impl-heads eligible with same-group phases (R-parallel + R-mode both required)"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "holding",
+              "active",
+              "done",
+              "blocked",
+              "retired"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lifecycle": {
+      "enum": [
+        "queued",
+        "active",
+        "archived"
+      ],
+      "description": "Sprint lifecycle (operator-ruled 2026-07-29, D12): queued = ratified, awaiting first launch; active = phases in flight; archived = sprint complete. ROTATION PROTOCOL: at the NEXT sprint's prelaunch commit, the completed sprint's manifest flips to archived and is renamed sprint-manifest.<slug>.json, and its launch-queue.jsonl rotates to launch-queue.<slug>.jsonl — the active filenames always hold exactly one sprint, so the final no-ff merge into dev never conflicts on ledger history and concerns never mix across sprints."
+    },
+    "ledger": {
+      "type": "string",
+      "description": "Path of this sprint's launch-queue ledger file (rotates with the manifest per the lifecycle protocol)"
+    }
+  }
+}

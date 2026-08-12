@@ -10,8 +10,16 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
+SCRIPTS = REPO_ROOT / "scripts"
 if str(SRC) not in sys.path:  # allow `pytest` without `pip install -e .`
     sys.path.insert(0, str(SRC))
+if str(SCRIPTS) not in sys.path:  # scripts/ is not a package; import exit_gate directly
+    # append, not insert(0): scripts/ currently holds only download_enwik8.py
+    # and exit_gate.py/run_exit_gate.py, so there's no live collision, but
+    # putting it ahead of src/ and the stdlib (as insert(0) would) means any
+    # FUTURE top-level script name matching a stdlib or src module would
+    # silently shadow it for the whole test session. Lowest priority instead.
+    sys.path.append(str(SCRIPTS))
 if str(Path(__file__).parent) not in sys.path:  # sibling `helpers` under importlib mode
     sys.path.insert(0, str(Path(__file__).parent))
 
