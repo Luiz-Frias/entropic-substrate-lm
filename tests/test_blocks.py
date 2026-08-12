@@ -8,6 +8,7 @@ import torch
 from entropic_substrate.models.backbone import build_model, vocab_size_for
 from entropic_substrate.models.blocks import (
     BaselineBlock,
+    CausalSelfAttention,
     NGPTBlock,
     apply_rotary,
     build_block,
@@ -232,3 +233,87 @@ def test_generate_extends_the_sequence() -> None:
 def test_parameter_counting_helpers() -> None:
     model = build_model(tiny_model_config())
     assert model.num_parameters() > model.num_parameters(non_embedding=True)
+
+
+# --------------------------------------------------------------------------
+# kappa-attention (E3): curvature in the comparison kernel
+# --------------------------------------------------------------------------
+
+
+def _kappa_attn(**overrides: object) -> CausalSelfAttention:
+    cfg = tiny_model_config(block="ngpt", norm="ngpt_norm", attn_kernel="kappa", **overrides)
+    return CausalSelfAttention(cfg, hypersphere=True)
+
+
+def test_kappa_attention_gradient_reaches_kappa_at_exactly_zero() -> None:
+    """The invariant the annihilated norm layer could not satisfy, resurrected
+    where it is structurally satisfiable: between distinct q/k points curvature
+    has first-order effect, even at the Taylor seam."""
+    torch.manual_seed(0)
+    attn = _kappa_attn(kappa_init=[0.0])
+    x = torch.randn(2, 8, 32)
+    attn(x).square().sum().backward()
+    assert attn.kappa.grad is not None
+    assert float(attn.kappa.grad.abs().sum()) > 1e-6
+
+
+def test_kappa_attention_at_zero_curvature_matches_cosine_at_init() -> None:
+    """E2 is the exact kappa=0 member of the E3 kernel family (softmax
+    shift-invariance kills the constant), pinned at initialization where
+    sqk == sqk_scale makes the E2 kernel exactly cosine * sqrt(head_dim)."""
+    torch.manual_seed(0)
+    cos_attn = CausalSelfAttention(
+        tiny_model_config(block="ngpt", norm="ngpt_norm"), hypersphere=True
+    )
+    kap_attn = _kappa_attn(kappa_init=[0.0])
+    kap_attn.load_state_dict(cos_attn.state_dict(), strict=False)
+    x = torch.randn(2, 12, 32)
+    torch.testing.assert_close(kap_attn(x), cos_attn(x), atol=1e-5, rtol=0)
+
+
+def test_kappa_attention_is_causal() -> None:
+    torch.manual_seed(0)
+    attn = _kappa_attn()
+    x = torch.randn(1, 10, 32)
+    base = attn(x)
+    bumped = x.clone()
+    bumped[:, -1] += 3.0
+    torch.testing.assert_close(attn(bumped)[:, :-1], base[:, :-1], atol=1e-6, rtol=0)
+
+
+def test_kappa_attention_kappa_is_per_head_and_finite_under_autocast() -> None:
+    torch.manual_seed(0)
+    attn = _kappa_attn()
+    assert attn.kappa.shape == (4,)
+    x = torch.randn(2, 8, 32)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        out = attn(x)
+    assert torch.isfinite(out.float()).all()
+
+
+def test_kappa_attention_default_init_spreads_kappa_over_heads() -> None:
+    attn = _kappa_attn()
+    assert attn.kappa.detach().tolist() == [-1.0, 0.0, 1.0, -1.0]
+
+
+def test_build_model_with_kappa_attention_reports_per_head_kappa_stats() -> None:
+    cfg = tiny_model_config(block="ngpt", norm="ngpt_norm", attn_kernel="kappa")
+    model = build_model(cfg)
+    x = torch.randint(0, 256, (2, 16))
+    out = model(x, x)
+    assert out.kappa_stats
+    assert len(out.kappa_stats[0].kappa) == cfg.n_heads
+
+
+def test_kappa_attention_rejects_unknown_kernel() -> None:
+    with pytest.raises(ValueError, match="unknown attn_kernel"):
+        CausalSelfAttention(tiny_model_config(attn_kernel="banana"), hypersphere=True)
+
+
+@pytest.mark.skip(
+    reason="E3'' staged behind a measured trigger (per-head kappa divergence in E3; "
+    "see docs/e-3-instruction.md). Symmetric anchors are null by isometry-invariance; "
+    "the mechanism must use p_q != p_k, and this test pins that non-invariance when built."
+)
+def test_asymmetric_anchors_break_isometry_invariance() -> None:
+    raise NotImplementedError

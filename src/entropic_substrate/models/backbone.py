@@ -10,13 +10,14 @@ import torch.nn.functional as F
 from torch import nn
 
 from entropic_substrate.config import ModelConfig
+from entropic_substrate.geometry.kappa import clamp_kappa
 from entropic_substrate.init.fisher import (
     build_fisher_init,
     load_init,
     random_sphere_init,
 )
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
-from entropic_substrate.models.blocks import build_block, build_norm
+from entropic_substrate.models.blocks import CausalSelfAttention, build_block, build_norm
 
 __all__ = [
     "LMOutput",
@@ -59,6 +60,9 @@ class LanguageModel(nn.Module):
     by default so the parameter budget stays comparable).
     """
 
+    # Registered as None on the non-hypersphere path.
+    sz: nn.Parameter | None
+
     def __init__(self, cfg: ModelConfig, fisher_source: bytes | None = None) -> None:
         super().__init__()
         self.cfg = cfg
@@ -91,7 +95,8 @@ class LanguageModel(nn.Module):
         std = self.cfg.d_model**-0.5
         if isinstance(module, nn.Linear):
             nn.init.normal_(module.weight, mean=0.0, std=std)
-            if module.bias is not None:
+            # torch stubs type Linear.bias as Parameter, but bias=False makes it None.
+            if module.bias is not None:  # pyright: ignore[reportUnnecessaryComparison]
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=std)
@@ -141,7 +146,9 @@ class LanguageModel(nn.Module):
         if not self.hypersphere:
             return
         for block in self.blocks:
-            block.normalize_weights()
+            # torch stubs give ModuleList items as Tensor | Module; both blocks
+            # define normalize_weights.
+            block.normalize_weights()  # pyright: ignore[reportCallIssue]
         for weight in {
             id(self.wte.weight): self.wte.weight,
             id(self.lm_head.weight): self.lm_head.weight,
@@ -151,6 +158,12 @@ class LanguageModel(nn.Module):
     def kappa_modules(self) -> list[GatedKappaNorm]:
         """All gated-curvature norms in the model (empty unless E3)."""
         return [m for m in self.modules() if isinstance(m, GatedKappaNorm)]
+
+    def kappa_attention_modules(self) -> list[CausalSelfAttention]:
+        """Attention modules carrying a learnable per-head curvature (E3)."""
+        return [
+            m for m in self.modules() if isinstance(m, CausalSelfAttention) and m.kappa is not None
+        ]
 
     def collect_aux_loss(self) -> torch.Tensor:
         """Sum of the load-balancing losses recorded by the last forward pass."""
@@ -194,11 +207,27 @@ class LanguageModel(nn.Module):
 
         mods = self.kappa_modules()
         aux = self.collect_aux_loss() if mods else None
+        stats = [m.stats for m in mods]
+        # E3: per-head attention curvatures ride the same telemetry channel;
+        # one stats row per layer, gate fields empty (heads are the mixture).
+        for attn in self.kappa_attention_modules():
+            head_kappa = attn.kappa
+            if head_kappa is None:
+                continue
+            stats.append(
+                KappaNormStats(
+                    kappa=[round(float(v), 6) for v in clamp_kappa(head_kappa.detach()).cpu()],
+                    gate_fraction=[],
+                    router_prob=[],
+                    aux_loss=0.0,
+                    entropy=0.0,
+                )
+            )
         return LMOutput(
             logits=logits,
             loss=loss,
             aux_loss=aux,
-            kappa_stats=[m.stats for m in mods],
+            kappa_stats=stats,
         )
 
     @torch.no_grad()

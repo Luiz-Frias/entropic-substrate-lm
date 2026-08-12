@@ -68,12 +68,13 @@ def test_experiment_ladder_wiring() -> None:
 
     e3 = cfgs["e3"].model
     assert e3.block == "ngpt"
-    assert e3.norm == "kappa_moe"
-    assert e3.n_components == 3
+    assert e3.attn_kernel == "kappa"
+    assert cfgs["e2"].model.attn_kernel == "cosine"
     assert e3.kappa_init == [-1.0, 0.0, 1.0]
-    assert e3.top_k in (1, 2)
-    # E3 is E2 plus the geometry MoE - nothing else may move.
-    for field in ("d_model", "n_layers", "n_heads", "tokenizer", "embedding_init"):
+    # E3 is E2 plus the attention-kernel swap - nothing else may move,
+    # including the norm (the annihilated kappa_moe swap is retired; see
+    # docs/e-3-instruction.md).
+    for field in ("d_model", "n_layers", "n_heads", "tokenizer", "embedding_init", "norm"):
         assert getattr(e3, field) == getattr(cfgs["e2"].model, field), field
 
 
@@ -135,10 +136,13 @@ def test_config_is_json_serialisable() -> None:
     import json
 
     payload = resolve_experiment_config("e3").to_dict()
-    assert json.loads(json.dumps(payload))["model"]["norm"] == "kappa_moe"
+    assert json.loads(json.dumps(payload))["model"]["attn_kernel"] == "kappa"
 
 
 def test_tiny_e3_model_builds_from_config(sample_bytes: bytes) -> None:
     cfg = resolve_experiment_config("e3", tiny=True)
     model = build_model(cfg.model, fisher_source=sample_bytes)
-    assert len(model.kappa_modules()) == 2 * cfg.model.n_layers
+    # The kappa_moe norm swap is retired (radially annihilated); curvature
+    # now lives in the attention kernel, one module per layer.
+    assert len(model.kappa_modules()) == 0
+    assert len(model.kappa_attention_modules()) == cfg.model.n_layers

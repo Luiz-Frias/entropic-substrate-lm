@@ -12,9 +12,12 @@ on :math:`S^{d-1}`:
   :math:`h \\leftarrow \\mathrm{Norm}(h + \\alpha(\\mathrm{Norm}(h_A) - h))`,
   where :math:`\\alpha` is a learned per-dimension "eigen learning rate".
 
-For E3 the ``Norm`` retraction is swapped for
-:class:`~entropic_substrate.layers.kappa_norm.GatedKappaNorm`, so the retraction
-is chosen per token from a mixture of curvatures.
+For E3 the attention *similarity kernel* is swapped (``attn_kernel: kappa``):
+per-head logits go from cosine to the κ-stereographic squared distance
+:math:`-d_\\kappa(q, k)^2` with one learnable clamped curvature per head — E2
+is the exact :math:`\\kappa = 0` member of the family. (The earlier plan to
+swap the ``Norm`` retraction is radially annihilated — design record in
+``docs/e-3-instruction.md``.)
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from entropic_substrate.config import ModelConfig
+from entropic_substrate.geometry.kappa import clamp_kappa, dist_k_from_cos
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, UnitNorm
 
 __all__ = [
@@ -92,6 +96,11 @@ def build_norm(cfg: ModelConfig) -> nn.Module:
 class CausalSelfAttention(nn.Module):
     """Multi-head causal attention with RoPE and (optionally) nGPT q/k scaling."""
 
+    # Each is registered as None on the paths that don't use it.
+    sqk: nn.Parameter | None
+    kappa: nn.Parameter | None
+    tau: nn.Parameter | None
+
     def __init__(self, cfg: ModelConfig, *, hypersphere: bool) -> None:
         super().__init__()
         if cfg.d_model % cfg.n_heads != 0:
@@ -115,6 +124,24 @@ class CausalSelfAttention(nn.Module):
         else:
             self.register_parameter("sqk", None)
 
+        if cfg.attn_kernel not in ("cosine", "kappa"):
+            msg = f"unknown attn_kernel {cfg.attn_kernel!r}"
+            raise ValueError(msg)
+        self.attn_kernel = cfg.attn_kernel
+        if cfg.attn_kernel == "kappa":
+            # One learnable curvature per head, kappa_init tiled across heads.
+            # sqk is deliberately NOT used on this path: a per-dimension scale
+            # inside a distance kernel is a learned diagonal metric, which
+            # would confound anisotropy with the curvature under test. Logit
+            # shaping is a per-head temperature `tau` instead.
+            init = list(cfg.kappa_init) if cfg.kappa_init else [-1.0, 0.0, 1.0]
+            values = [init[i % len(init)] for i in range(cfg.n_heads)]
+            self.kappa = nn.Parameter(torch.tensor(values, dtype=torch.float32))
+            self.tau = nn.Parameter(torch.ones(cfg.n_heads, dtype=torch.float32))
+        else:
+            self.register_parameter("kappa", None)
+            self.register_parameter("tau", None)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(B, T, D) -> (B, T, D)``."""
         b, t, d = x.shape
@@ -124,6 +151,11 @@ class CausalSelfAttention(nn.Module):
 
         cos, sin = rotary_embeddings(t, self.head_dim, x.device)
         q, k = apply_rotary(q, cos, sin), apply_rotary(k, cos, sin)
+
+        if self.attn_kernel == "kappa" and self.kappa is not None:
+            y = self._kappa_attention(q, k, v)
+            y = y.transpose(1, 2).contiguous().view(b, t, d)
+            return self.out_proj(y)
 
         if self.hypersphere and self.sqk is not None:
             sqk = (self.sqk / self.sqk_scale).view(1, self.n_heads, 1, self.head_dim)
@@ -145,6 +177,39 @@ class CausalSelfAttention(nn.Module):
         )
         y = y.transpose(1, 2).contiguous().view(b, t, d)
         return self.out_proj(y)
+
+    def _kappa_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        """E3 kernel: per-head logits ``−d_κ(q̂, k̂)² · τ·√head_dim / 8``.
+
+        At κ = 0 and τ = 1 this reproduces the cosine path at init exactly:
+        ``d_0² = 8 − 8cos`` for unit vectors, so the logits are
+        ``√hd·(cos − 1)·τ`` and softmax kills the constant. All geometry runs
+        in FP32 with autocast disabled (non-negotiable numerics).
+        """
+        if self.kappa is None or self.tau is None:
+            msg = "kappa attention requires attn_kernel='kappa' parameters"
+            raise RuntimeError(msg)
+        t = q.shape[-2]
+        with torch.autocast(device_type=q.device.type, enabled=False):
+            q32 = F.normalize(q.float(), p=2, dim=-1)
+            k32 = F.normalize(k.float(), p=2, dim=-1)
+            kappa = clamp_kappa(self.kappa.float()).view(1, -1, 1, 1)
+            # Unit vectors exit the κ < 0 ball for |κ| > 1; shrink q̂, k̂ onto a
+            # common sphere just inside it (radial, so the cosine is unchanged).
+            # 4e-3 mirrors the FP32 ball epsilon used by projx.
+            ball = (1.0 - 4e-3) * kappa.abs().clamp_min(1e-12).rsqrt()
+            radius = torch.where(kappa < 0, ball.clamp_max(1.0), torch.ones_like(ball))
+            cos = q32 @ k32.transpose(-2, -1)
+            dist = dist_k_from_cos(cos, kappa, radius)
+            scale = self.tau.float().view(1, -1, 1, 1) * float(self.head_dim) ** 0.5
+            logits = -dist.square() * (scale / 8.0)
+            causal = torch.ones(t, t, dtype=torch.bool, device=q.device).tril()
+            logits = logits.masked_fill(~causal, float("-inf"))
+            weights = torch.softmax(logits, dim=-1)
+            if self.training and self.dropout > 0.0:
+                weights = F.dropout(weights, p=self.dropout)
+            y32 = weights @ v.float()
+        return y32.to(v.dtype)
 
 
 class MLP(nn.Module):

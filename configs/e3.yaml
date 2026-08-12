@@ -1,7 +1,9 @@
-# E3: E2 with every Norm replaced by the gated kappa-stereographic layer.
-# K = 3 components initialised at kappa = -1 (hyperbolic), 0 (Euclidean),
-# +1 (spherical); curvatures are learnable and clamped to [-5, 5].
-# Top-1 routing + Switch-style load-balancing aux loss.
+# E3: E2 with the attention similarity kernel swapped from cosine to the
+# kappa-stereographic squared distance, one learnable curvature per head
+# (kappa_init tiled over the 12 heads: -1 hyperbolic / 0 Euclidean / +1
+# spherical, clamped to [-5, 5]). E2 is the exact kappa = 0 member of this
+# family, so the rung changes exactly one variable. Design record for why
+# the earlier kappa_moe norm swap was abandoned: docs/e-3-instruction.md.
 name: e3
 
 model:
@@ -14,17 +16,14 @@ model:
   bias: false
   tokenizer: byte
   block: ngpt
-  norm: kappa_moe
+  norm: ngpt_norm
+  attn_kernel: kappa
   # ASSUMPTION: pre-commits to fisher_sqrt as the "E1 winner" — see the note in e2.yaml.
   embedding_init: fisher_sqrt
   fisher_init_path: data/fisher_init_d768.pt
   tie_embeddings: true
   alpha_init: 0.05
-  n_components: 3
-  top_k: 1
   kappa_init: [-1.0, 0.0, 1.0]
-  aux_loss_weight: 0.01
-  router_noise: 0.0
 
 data:
   source: enwik8

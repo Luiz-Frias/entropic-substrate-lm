@@ -58,23 +58,49 @@ Expected from the literature: materially faster convergence per step at equal qu
 converges *slower*, suspect the α init or a missed normalization (check every matmul input is
 unit-norm). Compare against E1-winner init; keep the winner for E3.
 
-## E3 — GatedKappaNorm (the experiment)
+## E3 — κ-attention (the experiment)
 
 ```
 just train exp=e3
 ```
 
-Replaces the norm layer with the gated κ-stereographic MoE (K=3, κ init −1/0/+1, top-1 gate,
-load-balance λ per config). Read out, in priority order:
+Replaces the attention similarity kernel: per-head logits go from cosine `q·k` to the
+κ-stereographic squared distance `−d_κ(q, k)²`, one learnable clamped curvature per head
+(init spread over −1/0/+1). E2 is the exact κ = 0 member of this family — for unit vectors
+`−d_0(q, k)²/2 = q·k − 1` and softmax kills the constant — so the rung still changes exactly
+one variable. Heads are the mixture-over-geometries: no router, no load-balance machinery, no
+collapse failure mode. Read out, in priority order:
 
-1. **κ trajectories** (logged every eval): prediction — κ drifts negative on hierarchy-heavy
-   data (code), positive on cyclic/periodic structure, ~0 where Euclidean suffices. Flat-at-init
-   κ with healthy loss = the layer is being bypassed; check gate entropy.
-2. **Gate usage histograms**: collapse to one component ⇒ raise load-balance λ (known MoE
-   failure; the collapse target is usually the Euclidean component).
+1. **Per-head κ trajectories** (logged every eval): prediction — heads drift negative on
+   hierarchy-heavy data (code), positive on cyclic/periodic structure, ~0 where Euclidean
+   suffices. All heads pinned at 0 with healthy loss = the information landscape is flat at
+   this scale; that is a *result* (it kills E3″ cheaply), not a failure.
+2. **Head specialization**: do different heads settle at different κ on mixed corpora?
+   Divergence is the measured trigger that unlocks E3″ (below).
 3. **nats/byte vs E2** at matched budget.
 4. **Robustness**: eval on byte-corrupted held-out text (typo noise) — the continuity argument
    predicts the geometric arms degrade more gracefully than E0-bpe.
+
+### Design record — why not the norm layer (2026-08-11)
+
+The original E3 artifact (gated κ-stereographic **norm** layer) is measurably a no-op:
+`logmap0`/`expmap0` at the chart origin are radial maps, and the unit-sphere retraction the
+nGPT backbone requires erases radius — so the layer output equals `x/‖x‖` to float precision
+for every K/top-k/κ configuration, and ∂loss/∂κ ≡ 0 (exactly in top-1; ~1e-7 float residue
+in top-2). Curvature is a second-order, *relational* property — unobservable from a single
+point at a chart origin. `layers/kappa_norm.py` is retained with a regression test pinning
+the equivalence (`GatedKappaNorm ≡ UnitNorm`); the geometry moved to where points actually
+meet: the attention kernel. A second trap, recorded so nobody re-falls into it: a *shared*
+basepoint in the distance kernel is also null — Möbius translation is an isometry, so
+`d_κ((−p)⊕q, (−p)⊕k) = d_κ(q, k)` for every p.
+
+### E3″ — staged, behind a measured trigger
+
+Per-head **asymmetric** anchors: logits `−d_κ((−p_q)⊕q, (−p_k)⊕k)²` with learnable
+`p_q ≠ p_k` (the asymmetry breaks isometry-invariance, so the mechanism is non-null — pinned
+by a stub test until built). Build only if E3 shows per-head κ divergence; run it as a
+parallel pod against the E3 winner. Horizon beyond it: position-dependent curvature κ(x)
+with learned transport — the atlas — which no rung below has yet earned.
 
 ## Failure triage
 
@@ -82,7 +108,7 @@ load-balance λ per config). Read out, in priority order:
 |---|---|
 | NaN/inf in E2/E3 | geometry op running under autocast — audit FP32 blocks |
 | κ pinned at clamp boundary | clamp too tight or LR too high on κ (give κ its own param group, 10x lower LR) |
-| Gate collapse | load-balance λ too low; try top-2 |
+| All κ stuck at exactly 0 | first verify the ∂κ ≠ 0 unit test is green; if it is, flat may be the honest answer — report it |
 | E1-fisher ≈ E1-random exactly | lift not applied / init overwritten by weight init — assert at step 0 |
 | BPE arm "wins" implausibly | bytes-per-token conversion — recompute on the actual eval split |
 

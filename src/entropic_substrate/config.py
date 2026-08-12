@@ -28,6 +28,7 @@ __all__ = [
 EmbeddingInit = Literal["random_sphere", "fisher_sqrt", "default"]
 NormKind = Literal["layernorm", "ngpt_norm", "kappa_moe"]
 BlockKind = Literal["baseline", "ngpt"]
+AttnKernel = Literal["cosine", "kappa"]
 Tokenizer = Literal["byte", "gpt2"]
 DataSource = Literal["enwik8", "fineweb", "synthetic"]
 
@@ -56,6 +57,9 @@ class ModelConfig:
     vocab_size: int | None = None  # inferred from tokenizer when None
     block: BlockKind = "baseline"
     norm: NormKind = "layernorm"
+    # E3: attention similarity kernel — "cosine" (E0–E2) or "kappa"
+    # (per-head learnable curvature; kappa_init spreads over the heads).
+    attn_kernel: AttnKernel = "cosine"
     embedding_init: EmbeddingInit = "default"
     fisher_init_path: str | None = None
     tie_embeddings: bool = True

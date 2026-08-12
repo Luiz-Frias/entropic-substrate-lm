@@ -36,28 +36,34 @@ of Riemannian optimization, and residual recombination
 Euclidean and the optimizer stays AdamW — geometry lives entirely in the forward pass
 (projection pattern, torch.compile-friendly). This is the E2 swap.
 
-## Component 3 — GatedKappaNorm, the MoE-over-geometries layer (`layers/kappa_norm.py`)
+## Component 3 — κ-attention, curvature in the comparison kernel (`models/blocks.py`)
 
-The novel artifact of this repo. Replaces the block normalization layer in E3:
+The novel artifact of this repo (redesigned 2026-08-11; full design record in
+`e-3-instruction.md`). E3 swaps the attention similarity kernel:
 
 ```
-x (fp32, autocast disabled)
-  ├─ gate(x) → sparse top-k weights gᵢ over K components      (Switch-style router)
-  ├─ per component i: projx_κᵢ → logmap0_κᵢ                    (into tangent space)
-  ├─ gated tangent-space mix → κ_eff = Σᵢ gᵢκᵢ
-  └─ expmap0(κ_eff) → renorm                                  (single retraction out)
+per head h (fp32, autocast disabled):
+  logits = −d_κₕ(q, k)² · s        κₕ learnable, clamped, init spread over −1/0/+1
 ```
 
-- Each component carries a learnable curvature `κᵢ` (init −1, 0, +1; clamped), using the
-  [κ-stereographic model](http://proceedings.mlr.press/v119/bachmann20a/bachmann20a.pdf) so the
-  sign of curvature is differentiable through zero (Taylor-guarded at `κ → 0`).
-- Sparse gating + load-balancing auxiliary loss follows the
-  [Switch Spaces](https://arxiv.org/abs/2102.08688) argument: route each input to the geometry
-  that fits it instead of averaging all geometries.
-- Product-of-constant-curvature-factors framing per
-  [Gu et al., ICLR 2019](https://openreview.net/forum?id=HJxeWnCcF7).
-- `geometry/kappa.py` implements the primitives directly (vendored math, geoopt used as a
-  test-time oracle only — see `tests/`).
+- E2 is the exact κ = 0 member of the family: for unit vectors `−d_0(q,k)²/2 = q·k − 1`,
+  and softmax shift-invariance kills the constant — the ablation stays one-variable.
+- Heads are the mixture-over-geometries (product-of-constant-curvature-factors framing per
+  [Gu et al., ICLR 2019](https://openreview.net/forum?id=HJxeWnCcF7); routing-to-the-
+  fitting-geometry spirit per [Switch Spaces](https://arxiv.org/abs/2102.08688), realized
+  through head mixing rather than a sparse router — no load-balance machinery, no collapse
+  mode).
+- Curvature uses the
+  [κ-stereographic model](http://proceedings.mlr.press/v119/bachmann20a/bachmann20a.pdf) so
+  its sign is differentiable through zero (Taylor-guarded at `κ → 0`); `geometry/kappa.py`
+  implements the primitives directly, including `mobius_add` and `dist_k` (vendored math,
+  geoopt used as a test-time oracle only — see `tests/`).
+- The earlier gated κ-norm layer (`layers/kappa_norm.py`) is retained but measured to be
+  radially annihilated — origin log/exp maps are radial, the retraction erases radius, so
+  it is `UnitNorm` to float precision (pinned by regression test). Curvature is relational;
+  it acts where points meet.
+- Staged E3″ (measured trigger — per-head κ divergence): asymmetric q/k anchors
+  `p_q ≠ p_k`; symmetric anchors are null by isometry-invariance.
 
 ## Non-negotiable numerics
 
@@ -78,7 +84,7 @@ HuggingFaceFW/fineweb-edu sample-10BT     (streamed, no local copy)
         │
    backbone (config-selected: init × block × norm)
         │
-   train.py → results/*.jsonl (nats/byte, κ trajectories, gate histograms)
+   train.py → results/*.jsonl (nats/byte, per-head κ trajectories)
             → models/*.pt     (dvc-track large checkpoints)
 ```
 
