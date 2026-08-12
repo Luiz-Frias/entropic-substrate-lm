@@ -34,10 +34,11 @@ refused, and the operator declares the era explicitly via
 from __future__ import annotations
 
 import os
-import sys
 from typing import Any
 
 import torch
+
+from entropic_substrate.logging import logger
 
 __all__ = [
     "CHECKPOINT_FORMAT_VERSION",
@@ -164,10 +165,9 @@ def normalize_checkpoint(
             raise CheckpointFormatError(msg)
         model_state = dict(model_state)
         _convert_legacy_tau(model_state, keys, source)
-    print(
+    logger.info(
         f"{source}: unversioned checkpoint loaded as {TAU_SEMANTICS_ENV}={era} "
         f"({'tau converted' if era == 'temperature' else 'tau taken as-is'}, "
-        f"{len(keys)} tensors) — declared by the operator, not inferred.",
-        file=sys.stderr,
+        f"{len(keys)} tensors) — declared by the operator, not inferred."
     )
     return {**state, "model": model_state, "format_version": CHECKPOINT_FORMAT_VERSION}
