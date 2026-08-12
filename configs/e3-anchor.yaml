@@ -1,0 +1,49 @@
+# E3-anchor (E3''): the E3 kappa-attention kernel plus ONE global asymmetric
+# anchor pair (p_q != p_k, zero-init) — the minimal symmetry break that makes
+# vantage exist at all (symmetric anchors are provably null: Mobius translation
+# is an isometry). Per-head curvature retained, so the E3 readout survives.
+# EXECUTION GATE: run only if E3 shows per-head kappa divergence
+# (docs/e-3-instruction.md); launched as a parallel pod against the E3 winner.
+name: e3-anchor
+
+model:
+  d_model: 768
+  n_layers: 9
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: ngpt
+  norm: ngpt_norm
+  attn_kernel: kappa
+  anchor_mode: global
+  kappa_granularity: per_head
+  # ASSUMPTION: pre-commits to fisher_sqrt as the "E1 winner" — see the note in e2.yaml.
+  embedding_init: fisher_sqrt
+  fisher_init_path: data/fisher_init_d768.pt
+  tie_embeddings: true
+  alpha_init: 0.05
+  kappa_init: [-1.0, 0.0, 1.0]
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0015
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.0
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto

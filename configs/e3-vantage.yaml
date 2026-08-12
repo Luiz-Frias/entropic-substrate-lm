@@ -1,0 +1,50 @@
+# E3-vantage (E3'''): the attribution ablation — ONE shared curvature knob
+# (kappa_granularity: global, init 0) with PER-HEAD asymmetric anchors. Heads
+# differ only by vantage, so comparing this arm against e3 (curvature only)
+# and e3-anchor (curvature + one shared vantage) answers "is the win coming
+# from curvature or from vantage?". Not the mainline rung: collapsing kappa
+# to one knob forfeits the per-head kappa readout by design.
+# EXECUTION GATE: same as e3-anchor (docs/e-3-instruction.md).
+name: e3-vantage
+
+model:
+  d_model: 768
+  n_layers: 9
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: ngpt
+  norm: ngpt_norm
+  attn_kernel: kappa
+  anchor_mode: per_head
+  kappa_granularity: global
+  # ASSUMPTION: pre-commits to fisher_sqrt as the "E1 winner" — see the note in e2.yaml.
+  embedding_init: fisher_sqrt
+  fisher_init_path: data/fisher_init_d768.pt
+  tie_embeddings: true
+  alpha_init: 0.05
+  kappa_init: [0.0]
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0015
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.0
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto

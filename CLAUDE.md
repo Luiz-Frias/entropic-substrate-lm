@@ -66,8 +66,10 @@ authoritative version:
    (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
    `layers/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
    pinned by regression test — curvature is relational and cannot act on a single point at
-   a chart origin under a unit-norm contract). E3″ (asymmetric q/k anchors) is staged
-   behind a measured trigger: per-head κ divergence. `geometry/kappa.py` implements the
+   a chart origin under a unit-norm contract). The anchored arms `e3-anchor` (per-head κ +
+   global asymmetric anchors) and `e3-vantage` (global κ + per-head anchors; attribution
+   ablation) are code-ready but execution-gated on the E3 readout: per-head κ divergence.
+   Symmetric anchors are exactly null (isometry) — pinned by test. `geometry/kappa.py` implements the
    κ-stereographic primitives directly; the geoopt submodule is a **test-time oracle
    only**, never a runtime dependency.
 

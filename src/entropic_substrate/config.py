@@ -29,6 +29,8 @@ EmbeddingInit = Literal["random_sphere", "fisher_sqrt", "default"]
 NormKind = Literal["layernorm", "ngpt_norm", "kappa_moe"]
 BlockKind = Literal["baseline", "ngpt"]
 AttnKernel = Literal["cosine", "kappa"]
+AnchorMode = Literal["none", "global", "per_head"]
+KappaGranularity = Literal["per_head", "global"]
 Tokenizer = Literal["byte", "gpt2"]
 DataSource = Literal["enwik8", "fineweb", "synthetic"]
 
@@ -39,6 +41,10 @@ EXPERIMENTS: tuple[str, ...] = (
     "e1-random",
     "e2",
     "e3",
+    # Anchored arms — code-ready, execution gated on the E3 readout
+    # (per-head kappa divergence); see docs/e-3-instruction.md.
+    "e3-anchor",
+    "e3-vantage",
 )
 
 
@@ -60,6 +66,13 @@ class ModelConfig:
     # E3: attention similarity kernel — "cosine" (E0–E2) or "kappa"
     # (per-head learnable curvature; kappa_init spreads over the heads).
     attn_kernel: AttnKernel = "cosine"
+    # Anchored arms (docs/e-3-instruction.md; execution gated on E3 readout).
+    # anchor_mode: asymmetric Mobius anchors p_q != p_k — "global" (one shared
+    # pair, the minimal symmetry break) or "per_head" (the vantage arm).
+    # kappa_granularity "global" collapses curvature to one shared knob (the
+    # curvature-vs-vantage attribution ablation).
+    anchor_mode: AnchorMode = "none"
+    kappa_granularity: KappaGranularity = "per_head"
     embedding_init: EmbeddingInit = "default"
     fisher_init_path: str | None = None
     tie_embeddings: bool = True

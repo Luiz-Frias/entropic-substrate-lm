@@ -29,7 +29,13 @@ import torch.nn.functional as F
 from torch import nn
 
 from entropic_substrate.config import ModelConfig
-from entropic_substrate.geometry.kappa import clamp_kappa, dist_k_from_cos
+from entropic_substrate.geometry.kappa import (
+    clamp_kappa,
+    dist_k_from_cos,
+    dist_k_from_inner,
+    mobius_add,
+    projx,
+)
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, UnitNorm
 
 __all__ = [
@@ -100,6 +106,8 @@ class CausalSelfAttention(nn.Module):
     sqk: nn.Parameter | None
     kappa: nn.Parameter | None
     tau: nn.Parameter | None
+    p_q: nn.Parameter | None
+    p_k: nn.Parameter | None
 
     def __init__(self, cfg: ModelConfig, *, hypersphere: bool) -> None:
         super().__init__()
@@ -128,19 +136,45 @@ class CausalSelfAttention(nn.Module):
             msg = f"unknown attn_kernel {cfg.attn_kernel!r}"
             raise ValueError(msg)
         self.attn_kernel = cfg.attn_kernel
+        if cfg.anchor_mode not in ("none", "global", "per_head"):
+            msg = f"unknown anchor_mode {cfg.anchor_mode!r}"
+            raise ValueError(msg)
+        if cfg.kappa_granularity not in ("per_head", "global"):
+            msg = f"unknown kappa_granularity {cfg.kappa_granularity!r}"
+            raise ValueError(msg)
+        if cfg.anchor_mode != "none" and cfg.attn_kernel != "kappa":
+            msg = "anchor_mode requires attn_kernel='kappa'"
+            raise ValueError(msg)
+        self.anchor_mode = cfg.anchor_mode
+
         if cfg.attn_kernel == "kappa":
-            # One learnable curvature per head, kappa_init tiled across heads.
-            # sqk is deliberately NOT used on this path: a per-dimension scale
-            # inside a distance kernel is a learned diagonal metric, which
-            # would confound anisotropy with the curvature under test. Logit
-            # shaping is a per-head temperature `tau` instead.
+            # Learnable curvature — per head (kappa_init tiled) or one shared
+            # knob (the vantage ablation). sqk is deliberately NOT used on this
+            # path: a per-dimension scale inside a distance kernel is a learned
+            # diagonal metric, which would confound anisotropy with the
+            # curvature under test. Logit shaping is a per-head temperature.
             init = list(cfg.kappa_init) if cfg.kappa_init else [-1.0, 0.0, 1.0]
-            values = [init[i % len(init)] for i in range(cfg.n_heads)]
+            if cfg.kappa_granularity == "global":
+                values = [init[0]]
+            else:
+                values = [init[i % len(init)] for i in range(cfg.n_heads)]
             self.kappa = nn.Parameter(torch.tensor(values, dtype=torch.float32))
             self.tau = nn.Parameter(torch.ones(cfg.n_heads, dtype=torch.float32))
         else:
             self.register_parameter("kappa", None)
             self.register_parameter("tau", None)
+
+        if cfg.attn_kernel == "kappa" and cfg.anchor_mode != "none":
+            # Asymmetric Mobius anchors (p_q != p_k breaks isometry-invariance;
+            # symmetric anchors are provably null). Zero init = the kernel
+            # starts exactly at the anchor-free point and learns away from it.
+            n_anchor = 1 if cfg.anchor_mode == "global" else cfg.n_heads
+            shape = (1, n_anchor, 1, self.head_dim)
+            self.p_q = nn.Parameter(torch.zeros(shape, dtype=torch.float32))
+            self.p_k = nn.Parameter(torch.zeros(shape, dtype=torch.float32))
+        else:
+            self.register_parameter("p_q", None)
+            self.register_parameter("p_k", None)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(B, T, D) -> (B, T, D)``."""
@@ -194,13 +228,27 @@ class CausalSelfAttention(nn.Module):
             q32 = F.normalize(q.float(), p=2, dim=-1)
             k32 = F.normalize(k.float(), p=2, dim=-1)
             kappa = clamp_kappa(self.kappa.float()).view(1, -1, 1, 1)
-            # Unit vectors exit the κ < 0 ball for |κ| > 1; shrink q̂, k̂ onto a
-            # common sphere just inside it (radial, so the cosine is unchanged).
-            # 4e-3 mirrors the FP32 ball epsilon used by projx.
-            ball = (1.0 - 4e-3) * kappa.abs().clamp_min(1e-12).rsqrt()
+            # Operating radius for κ < 0: a bounded FRACTION of the hyperbolic
+            # ball, not its edge — at the boundary, near-antipodal pairs push
+            # artanh into its quasi-divergent regime (d/du = 1/(1−u²)), which
+            # both amplifies fp32 noise ~1e5x and saturates gradients. At
+            # f = 0.75 of the ball, antipodal u = 2f/(1+f²) ≤ 0.96: conditioned.
+            # κ ≥ 0 charts are unbounded; radius stays 1 (E2 equivalence).
+            ball = 0.75 * kappa.abs().clamp_min(1e-12).rsqrt()
             radius = torch.where(kappa < 0, ball.clamp_max(1.0), torch.ones_like(ball))
-            cos = q32 @ k32.transpose(-2, -1)
-            dist = dist_k_from_cos(cos, kappa, radius)
+            if self.p_q is not None and self.p_k is not None:
+                # Anchored arms: Mobius-translate q and k by their own learned
+                # anchors before measuring. Translated points lose the common
+                # radius, so the general three-scalar reduction is used.
+                q_pts = projx(mobius_add(-self.p_q.float(), radius * q32, kappa), kappa)
+                k_pts = projx(mobius_add(-self.p_k.float(), radius * k32, kappa), kappa)
+                dot = q_pts @ k_pts.transpose(-2, -1)
+                q_sq = q_pts.pow(2).sum(-1, keepdim=True)
+                k_sq = k_pts.pow(2).sum(-1, keepdim=True).transpose(-2, -1)
+                dist = dist_k_from_inner(dot, q_sq, k_sq, kappa)
+            else:
+                cos = q32 @ k32.transpose(-2, -1)
+                dist = dist_k_from_cos(cos, kappa, radius)
             scale = self.tau.float().view(1, -1, 1, 1) * float(self.head_dim) ** 0.5
             logits = -dist.square() * (scale / 8.0)
             causal = torch.ones(t, t, dtype=torch.bool, device=q.device).tril()

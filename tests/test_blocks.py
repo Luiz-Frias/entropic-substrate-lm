@@ -310,10 +310,61 @@ def test_kappa_attention_rejects_unknown_kernel() -> None:
         CausalSelfAttention(tiny_model_config(attn_kernel="banana"), hypersphere=True)
 
 
-@pytest.mark.skip(
-    reason="E3'' staged behind a measured trigger (per-head kappa divergence in E3; "
-    "see docs/e-3-instruction.md). Symmetric anchors are null by isometry-invariance; "
-    "the mechanism must use p_q != p_k, and this test pins that non-invariance when built."
-)
+def test_anchored_kernel_at_zero_anchors_matches_e3_prime() -> None:
+    """Anchors init at zero: the anchored arm starts exactly at the E3 point."""
+    torch.manual_seed(0)
+    base = _kappa_attn()
+    anchored = _kappa_attn(anchor_mode="global")
+    anchored.load_state_dict(base.state_dict(), strict=False)
+    x = torch.randn(2, 10, 32)
+    torch.testing.assert_close(anchored(x), base(x), atol=1e-6, rtol=0)
+
+
+def test_anchor_gradients_alive_at_the_e3_prime_point() -> None:
+    """The anchors must be learnable FROM the zero init, not just after it."""
+    torch.manual_seed(0)
+    attn = _kappa_attn(anchor_mode="global")
+    x = torch.randn(2, 8, 32)
+    attn(x).square().sum().backward()
+    assert attn.p_q is not None and attn.p_q.grad is not None
+    assert attn.p_k is not None and attn.p_k.grad is not None
+    assert float(attn.p_q.grad.abs().sum()) > 1e-8
+    assert float(attn.p_k.grad.abs().sum()) > 1e-8
+
+
+def test_symmetric_anchors_are_null_by_isometry() -> None:
+    """Mobius translation is an isometry: p_q = p_k leaves the distance kernel
+    (hence the output) exactly invariant. The trap that motivated the
+    asymmetric design, pinned as a theorem (docs/e-3-instruction.md)."""
+    torch.manual_seed(0)
+    attn = _kappa_attn(anchor_mode="global")
+    x = torch.randn(2, 8, 32)
+    base = attn(x)
+    assert attn.p_q is not None and attn.p_k is not None
+    with torch.no_grad():
+        shared = torch.randn_like(attn.p_q) * 0.05
+        attn.p_q.copy_(shared)
+        attn.p_k.copy_(shared)
+    torch.testing.assert_close(attn(x), base, atol=1e-5, rtol=0)
+
+
 def test_asymmetric_anchors_break_isometry_invariance() -> None:
-    raise NotImplementedError
+    torch.manual_seed(0)
+    attn = _kappa_attn(anchor_mode="global")
+    x = torch.randn(2, 8, 32)
+    base = attn(x)
+    assert attn.p_q is not None and attn.p_k is not None
+    with torch.no_grad():
+        attn.p_q.add_(0.05)
+        attn.p_k.sub_(0.05)
+    assert not torch.allclose(attn(x), base, atol=1e-4)
+
+
+def test_vantage_arm_global_kappa_per_head_anchors() -> None:
+    """The vantage ablation arm: one shared curvature, per-head anchors."""
+    torch.manual_seed(0)
+    attn = _kappa_attn(anchor_mode="per_head", kappa_granularity="global", kappa_init=[0.0])
+    assert attn.kappa is not None and attn.kappa.shape == (1,)
+    assert attn.p_q is not None and attn.p_q.shape[1] == 4
+    out = attn(torch.randn(2, 8, 32))
+    assert torch.isfinite(out).all()

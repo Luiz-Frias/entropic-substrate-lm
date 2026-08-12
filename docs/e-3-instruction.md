@@ -94,13 +94,29 @@ meet: the attention kernel. A second trap, recorded so nobody re-falls into it: 
 basepoint in the distance kernel is also null — Möbius translation is an isometry, so
 `d_κ((−p)⊕q, (−p)⊕k) = d_κ(q, k)` for every p.
 
-### E3″ — staged, behind a measured trigger
+### E3″ / E3‴ — anchored arms (code-ready; execution behind the measured trigger)
 
-Per-head **asymmetric** anchors: logits `−d_κ((−p_q)⊕q, (−p_k)⊕k)²` with learnable
-`p_q ≠ p_k` (the asymmetry breaks isometry-invariance, so the mechanism is non-null — pinned
-by a stub test until built). Build only if E3 shows per-head κ divergence; run it as a
-parallel pod against the E3 winner. Horizon beyond it: position-dependent curvature κ(x)
-with learned transport — the atlas — which no rung below has yet earned.
+Both arms are implemented and test-pinned but **run only if E3 shows per-head κ
+divergence** — the code landed early by explicit operator decision (2026-08-11) so the
+parallel pod can fire the moment the trigger shows; the gate moved from "build" to "run"
+and the ladder runner enforces it.
+
+- **`e3-anchor` (E3″)** — per-head κ plus ONE global asymmetric anchor pair
+  (`p_q ≠ p_k`, zero-init): the minimal symmetry break. Zero-init means the arm starts
+  exactly at the E3 point and learns its vantage away from it (gradient-alive at zero,
+  pinned by test).
+- **`e3-vantage` (E3‴)** — global κ plus per-head anchors: the attribution ablation.
+  Against `e3` (curvature only) and `e3-anchor` (curvature + shared vantage) it answers
+  *is the win coming from curvature or from vantage?* It forfeits the per-head κ readout
+  by design and is not a mainline rung.
+- Two traps, both pinned as tests so nobody re-falls into them: symmetric anchors
+  (`p_q = p_k`) leave the kernel **exactly** invariant (Möbius translation is an
+  isometry), and the operating radius must stay a bounded fraction of the hyperbolic
+  ball — at the ball edge, near-antipodal pairs put `artanh` in its quasi-divergent
+  regime (fp32 noise amplified ~1e5×, saturated gradients).
+
+Horizon beyond both: position-dependent curvature κ(x) with learned transport — the
+atlas — which no rung below has yet earned.
 
 ## Failure triage
 
