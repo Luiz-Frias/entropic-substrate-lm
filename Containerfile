@@ -9,30 +9,34 @@
 # layers so Docker/Podman layer caching still gives "rebuild fast when only
 # src/ changes", without a second image to publish and version.
 #
-# Target: single H100 (sm_90). CUDA 12.4 + cuDNN9 runtime is compatible with H100
-# and matches the pinned torch>=2.6.0 wheel. Also runs CPU-only for `just test`.
+# Target: single H100 (sm_90). CUDA 12.6 + cuDNN9 runtime is compatible with H100
+# and matches the pinned torch==2.13.0 wheel. Also runs CPU-only for `just test`.
 #
 # Build:  podman build -t entropic-substrate-lm:latest -f Containerfile .
 # Run (H100, RunPod/Vast.ai): see CMD notes at the bottom of this file.
 # =============================================================================
 
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime AS base
+FROM pytorch/pytorch:2.13.0-cuda12.6-cudnn9-runtime AS base
 
 WORKDIR /app
 
-# git is required for the geoopt git+https dependency; the pytorch runtime
-# base does not guarantee it.
+# git is required by the DVC/repository workflow used to publish rung artifacts;
+# the pytorch runtime base does not guarantee it.
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
 
-# uv — fast resolver/installer, used instead of pip for reproducible installs.
-RUN pip install --no-cache-dir "uv>=0.5"
+# uv — standalone, immutable amd64 binary. Copying it from Astral's official
+# distroless image respects the base image's PEP 668 system-Python boundary.
+COPY --from=ghcr.io/astral-sh/uv:0.11.6@sha256:43cb71695fcad1516c2fbe0f56e500184c42d8bce838d9f64593b8aff2c16298 /uv /uvx /bin/
 
-# Dependency layer: install third-party deps WITHOUT the project itself, so
-# this layer stays cached across src/ changes. (Installing `.` here would fail
-# anyway: the setuptools src-layout build needs src/ present.)
-COPY pyproject.toml ./
-RUN uv pip compile pyproject.toml -o /tmp/requirements.txt \
+# Dependency layer: export the audited runtime + deploy graph from uv.lock,
+# excluding the dev-only test oracle and quality tools. Torch is pruned with its
+# dependency closure because the official base owns the CUDA-matched wheel and
+# libraries. This layer stays cached across src/ changes. (Installing `.` here
+# would fail anyway: the setuptools src-layout build needs src/ present.)
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --group deploy --prune torch --no-emit-project --no-hashes \
+      --format requirements-txt --output-file /tmp/requirements.txt \
  && uv pip install --system --no-cache -r /tmp/requirements.txt
 
 # Source layer: invalidated on every src/configs/scripts change, but cheap to

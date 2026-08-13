@@ -34,9 +34,9 @@ jobs:
           uv venv --python 3.12
           # --no-config: the pytorch index serves no upload timestamps, and uv's
           # exclude-newer pin (pyproject [tool.uv]) excludes timestamp-less files
-          # entirely. The ==2.6.0 pin matches the Containerfile base image and
+          # entirely. The ==2.13.0 pin matches the Containerfile base image and
           # restores the reproducibility exclude-newer provided.
-          uv pip install --no-config "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --no-config "torch==2.13.0" --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e . --group dev
 
       # --no-sync everywhere: a bare `uv run` re-syncs the env from pyproject
@@ -52,7 +52,7 @@ jobs:
       # strict-typecheck failure could sit red on a branch while every PR check
       # stayed green (it did, on fix/review-round-1). Results are stub-dependent,
       # so it has to run against the SAME torch as the pin above, not uv.lock's
-      # newer resolve — verified clean under the 2.6.0 CPU wheel before landing.
+      # newer resolve — verified clean under the 2.13.0 CPU wheel before landing.
       - name: Typecheck (basedpyright, strict)
         run: uv run --no-sync basedpyright src scripts
 

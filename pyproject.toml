@@ -4,34 +4,46 @@ version = "0.1.0"
 description = "Substrate-level symbol encoding experiments — Fisher-Rao init, nGPT hypersphere backbone, gated κ-stereographic normalization"
 requires-python = ">=3.12"
 readme = "README.md"
-# Runtime deps: geometry-aware LM stack. torch resolves the CUDA 12.4 wheel on the
-# H100 target; CPU wheel is used for local/tiny/CI runs (see Containerfile / mise).
+# Runtime deps: geometry-aware LM stack. The torch version must match the CUDA
+# wheel already installed by the H100 base image; local/CI installs select the
+# CPU wheel explicitly where needed (see Containerfile / .github/workflows/ci.yaml).
 dependencies = [
-  "torch>=2.6.0",
+  "torch==2.13.0",
   "numpy>=1.26.0",
   "datasets>=3.6.0",
   "tiktoken>=0.8.0",
-  # geoopt ships fast-moving fixes on GitHub ahead of PyPI releases; its own README
-  # recommends installing straight from the repo, so we pin the git ref here too.
-  "geoopt @ git+https://github.com/geoopt/geoopt.git",
   "pyyaml>=6.0.2",
   "loguru>=0.7.3",
-  # analysis/citation surface for run metrics (entropic_substrate.sinks) — a
-  # runtime dep, not dev-only: MlflowSink is imported by src/, best-effort
-  # after startup, never the E3 gate's source of truth (that stays JSONL).
-  "mlflow>=3.0.0",
+  # HTTP tracking client for run metrics (entropic_substrate.sinks). The full
+  # MLflow server distribution is isolated in Containerfile.mlflow; keeping it
+  # out of the training runtime avoids importing server/UI dependency policy
+  # (including MLflow 3.15's cryptography<50 cap) into the model environment.
+  "mlflow-skinny==3.15.0",
 ]
 
 [dependency-groups]
+deploy = [
+  # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
+  # Keep that operational dependency explicit without shipping test tooling.
+  "dvc[s3]>=3.59.0",
+]
 dev = [
+  { include-group = "deploy" },
+  # Test-time oracle only: production geometry is implemented in-tree. geoopt
+  # ships fixes on GitHub ahead of PyPI, so retain the repository source.
+  "geoopt @ git+https://github.com/geoopt/geoopt.git",
   "ruff>=0.11.0",
   "basedpyright>=1.37.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=0.26.0",
-  "dvc[s3]>=3.59.0",
   "deptry>=0.20.0",
   "bandit>=1.8.0",
   "boto3>=1.34.0",
+  # The unit suite exercises MLflow's real local SQLite store. These are store
+  # adapters for tests only; production tracking goes over HTTP to the
+  # containerized server.
+  "sqlalchemy>=1.4.0,<3",
+  "alembic!=1.10.0,<2",
 ]
 
 [build-system]
@@ -51,7 +63,14 @@ where = ["src"]
 # which is how security patches get pulled in without a blanket rollback.
 # ---------------------------------------------------------------------------
 [tool.uv]
-exclude-newer = "2026-08-01T00:00:00Z"
+exclude-newer = "2026-08-13T00:00:00Z"
+# Security floors stay attached to the transitive dependency boundary: they
+# constrain packages already required by MLflow/DVC without promoting those
+# implementation details to first-party dependencies.
+constraint-dependencies = [
+  "cryptography>=50.0.0",
+  "gitpython>=3.1.58",
+]
 
 # ---------------------------------------------------------------------------
 # ruff — linting + formatting (mirrors doc-lora-training convention)
