@@ -19,11 +19,15 @@ import numpy as np
 __all__ = [
     "ENWIK8_RAW_BYTES",
     "ENWIK8_URL",
+    "ENWIK8_ZIP_SHA256",
     "download_enwik8",
     "load_enwik8_bytes",
 ]
 
-ENWIK8_URL = "http://mattmahoney.net/dc/enwik8.zip"
+ENWIK8_URL = "https://mattmahoney.net/dc/enwik8.zip"
+ENWIK8_ZIP_SHA256 = (
+    "547994d9980ebed1288380d652999f38a14fe291a6247c157c3d33d4932534bc"  # pragma: allowlist secret
+)
 # enwik8 is defined as exactly the first 10^8 bytes of an English Wikipedia
 # dump, so the uncompressed size is the integrity check we can assert on.
 ENWIK8_RAW_BYTES = 100_000_000
@@ -52,9 +56,16 @@ def download_enwik8(dest_dir: str | os.PathLike[str] = "data/enwik8") -> Path:
     archive = dest / "enwik8.zip"
     if not archive.exists() or archive.stat().st_size == 0:
         tmp = archive.with_suffix(".zip.part")
-        with urllib.request.urlopen(ENWIK8_URL) as response, tmp.open("wb") as out:
+        # The URL is a fixed HTTPS constant and the downloaded bytes are
+        # authenticated against ENWIK8_ZIP_SHA256 immediately below.
+        with urllib.request.urlopen(ENWIK8_URL) as response, tmp.open("wb") as out:  # nosec B310
             shutil.copyfileobj(response, out)
         tmp.replace(archive)
+
+    archive_sha256 = _sha256(archive)
+    if archive_sha256 != ENWIK8_ZIP_SHA256:
+        msg = f"enwik8 archive SHA-256 mismatch: expected {ENWIK8_ZIP_SHA256}, got {archive_sha256}"
+        raise RuntimeError(msg)
 
     with zipfile.ZipFile(archive) as zf:
         with zf.open("enwik8") as src, raw.open("wb") as out:
