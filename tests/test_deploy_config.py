@@ -62,6 +62,27 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
     assert 'pip install --no-cache-dir "uv' not in containerfile
 
 
+def test_live_stack_pins_a_single_mlflow_worker() -> None:
+    """A worker pool is what made the live gate flaky; keep the server single-process.
+
+    MLflow's default worker count has every uvicorn worker independently import the
+    full FastAPI/SQLAlchemy/Alembic stack. On a 4-vCPU podman VM they contend, the
+    supervisor kills whichever workers overrun its startup timeout, and startup
+    stretches unboundedly under load — measured at 41s with repeated ``Child process
+    [N] died`` versus 8s and zero deaths at ``--workers 1``. Concurrency is not under
+    test in this stack (one pytest process drives it), so the pool buys nothing.
+    """
+    compose = (REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    command_block = compose.partition("    command:")[2].partition("    healthcheck:")[0]
+    entries = [
+        line.strip().removeprefix("- ").strip('"')
+        for line in command_block.splitlines()
+        if line.strip().startswith("- ")
+    ]
+    assert "--workers" in entries, "compose.yaml must pin an explicit MLflow worker count"
+    assert entries[entries.index("--workers") + 1] == "1"
+
+
 def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:
     """Keep the isolated full server on the same protocol release as its client."""
     pyproject = _pyproject()
