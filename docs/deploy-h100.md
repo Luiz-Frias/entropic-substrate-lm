@@ -1,8 +1,16 @@
 # Deploy — H100 on RunPod / Vast.ai
 
-The `Containerfile` builds a single image (base: `pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime`,
-CUDA 12.4 covers H100 / sm_90). Everything below assumes the image is pushed to a registry both
+The `Containerfile` builds a single image (base: `pytorch/pytorch:2.13.0-cuda12.6-cudnn9-runtime`,
+CUDA 12.6 covers H100 / sm_90). Everything below assumes the image is pushed to a registry both
 platforms can pull from (GHCR or Docker Hub).
+
+The image installs the frozen runtime plus the `deploy` dependency group from `uv.lock`.
+That group includes DVC's S3 adapter for R2 synchronization while excluding dev-only test
+and geometry-oracle dependencies. The project pins `torch==2.13.0` to the same release already
+provided by the CUDA base image, preventing a later dependency resolution from replacing the
+CUDA-matched wheel. The container export prunes Torch's dependency closure because the official
+base image owns its CUDA 12.6 libraries; application packages cannot layer a second CUDA runtime
+over them.
 
 ## Build & push
 
@@ -29,7 +37,7 @@ bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc 
 
 ## Vast.ai
 
-- Filter: H100, CUDA ≥ 12.4 driver, verified hosts, ≥ 200GB disk if caching FineWeb shards.
+- Filter: H100, CUDA ≥ 12.6 driver, verified hosts, ≥ 200GB disk if caching FineWeb shards.
 - Image: same GHCR image; on-start script:
 
 ```bash
@@ -56,3 +64,8 @@ the embedding-conversion convention: topology in git, identity in env). A pod on
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` from a bucket-scoped R2 Object Read & Write
 token injected as env vars, then `dvc push`. For the tiny `results/` JSONL files,
 `rsync`/`runpodctl send` remains a credential-free alternative.
+
+`scripts/run_ladder.sh` creates DVC's site cache with mode `0700` under a `077` umask. This
+mitigates the unpatched DiskCache local-deserialization advisory by preventing other pod users
+from modifying serialized cache state; it does not make an untrusted or shared cache safe. Do
+not mount `.cache/dvc-site-cache` from a shared writable volume.
