@@ -50,10 +50,11 @@ lint:
     @echo "→ Linting..."
     uv run ruff check . --fix
 
-# Run basedpyright strict type checking against src/.
+# Run basedpyright strict type checking against src/ + scripts/ (mirrors
+# pyproject [tool.basedpyright] include and the prek basedpyright hook).
 typecheck:
     @echo "→ Type checking..."
-    uv run basedpyright src
+    uv run basedpyright src scripts
 
 # Dependency hygiene + security lint (deptry + bandit, configured in pyproject).
 audit:
@@ -131,3 +132,9 @@ eval ckpt *ARGS:
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
     @echo "→ Building container image {{tag}} for {{platform}}..."
     podman build --platform {{platform}} -t {{tag}} -f Containerfile .
+
+# LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
+# native arm64, real R2 artifacts), run the integration suite against it,
+# tear down. See scripts/run_container_test.sh for the orchestration.
+container-test:
+    bash scripts/run_container_test.sh

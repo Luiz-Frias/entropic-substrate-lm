@@ -1,0 +1,100 @@
+# Local live MLflow stack for `just container-test` (podman-compose).
+#
+# postgres = MLflow's backend store (params/metrics/tags/runs). mlflow = the
+# tracking server, artifacts proxied through it to the REAL Cloudflare R2
+# bucket (s3://entropic-substrate-lm/mlflow/) — never MinIO. R2's boto3
+# checksum behaviour is invisible against MinIO, which is exactly why the
+# live test must point at real R2 (see CLAUDE.md's R2 COMPATIBILITY note).
+#
+# NO FIXED HOST PORT: the mlflow service below publishes only the container
+# port ("5000", no "host:container" mapping) — podman assigns an EPHEMERAL
+# host port, which scripts/run_container_test.sh discovers via `podman port`
+# after the container is up and builds MLFLOW_TRACKING_URI from whatever was
+# actually assigned. A fixed host port ("5001:5000", the previous shape —
+# 5001 chosen only to dodge macOS AirPlay squatting on 5000) is a
+# concurrency hazard: two worktrees running `just container-test` at once
+# would collide on the same host port regardless of the (also now
+# per-worktree) project name below.
+#
+# PROJECT NAME (see run_container_test.sh): derived per-worktree, not fixed
+# — a fixed, shared compose project name is what let one agent's mlflow
+# container fuse to a DIFFERENT agent's postgres under concurrent runs
+# (verified empirically via `com.docker.compose.project.working_dir`
+# container labels) — a run could validate against another run's database
+# and report green.
+#
+# Credentials come from the repo's .env (mise loads it into the environment
+# already; podman-compose additionally reads a sibling .env for ${VAR}
+# interpolation here) — never hardcoded.
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    # NAMED volume, not an anonymous one: `down` (no `-v`, the failure-path
+    # teardown below) only preserves data that's findable afterward. An
+    # anonymous volume survives `down` too but as an unlabelled dangling
+    # 64-hex ID nothing can point an operator at; naming it makes "survives
+    # for diagnosis" actually diagnosable (podman names it
+    # `${PROJECT}_pgdata` — verified empirically against this same
+    # compose.yaml shape).
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Containerfile.mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      # R2 COMPATIBILITY knobs (CLAUDE.md): recent AWS SDKs send integrity
+      # checksums R2 has historically rejected. Set here so every client of
+      # this server — not just the training host — inherits the fix.
+      # Empirically verified against the real bucket by `just
+      # container-test`'s artifact-round-trip integration test.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      AWS_DEFAULT_REGION: auto
+    # Bare container port — ephemeral host port assigned by podman, NOT a
+    # fixed "host:container" mapping. See the module-level comment above.
+    ports:
+      - "5000"
+    command:
+      - mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --backend-store-uri
+      - postgresql://mlflow:mlflow@postgres:5432/mlflow
+      - --artifacts-destination
+      - s3://entropic-substrate-lm/mlflow/
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:5000/health')",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+# Named so a failure-path teardown (`down` without `-v`) leaves something an
+# operator can actually find and inspect: `${PROJECT}_pgdata`.
+volumes:
+  pgdata:

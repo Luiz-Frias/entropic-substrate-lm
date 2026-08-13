@@ -54,7 +54,7 @@ jobs:
       # so it has to run against the SAME torch as the pin above, not uv.lock's
       # newer resolve — verified clean under the 2.6.0 CPU wheel before landing.
       - name: Typecheck (basedpyright, strict)
-        run: uv run --no-sync basedpyright src
+        run: uv run --no-sync basedpyright src scripts
 
       - name: Unit tests (pytest -m unit, CPU only)
         env:
