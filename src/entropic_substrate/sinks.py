@@ -73,13 +73,43 @@ EXP_TAG = "exp"
 # reasoning depends on this being fast. setdefault() only: an operator who has
 # already set these gets to keep their own values (e.g. a flaky WAN link that
 # genuinely needs more retries).
+#
+# timeout=5/retries=0 (the original values here) gave a real unreachable host
+# ~5s x N to abort, but ZERO margin on a healthy server that stalls once.
+# MEASURED ROOT CAUSE (not "port-forward jitter" — that theory was tested and
+# falsified below): the fresh `just container-test` mlflow container's own
+# HEALTHCHECK hits a lightweight liveness-only `/health` endpoint that never
+# touches Postgres, so "container healthy" fires before the DB-backed REST
+# API (SQLAlchemy engine/connection-pool init, first-query-shape compile) has
+# actually warmed up. Isolated curl probes through the SAME port forward,
+# immediately after healthy, measured this directly: call 1 (a real
+# get-by-name) 7.27s, call 2 1.22s, call 3 0.11s — a one-time cold-start
+# tax, not sustained network jitter. The PRIMARY fix for that is a real
+# warm-up probe against the actual REST API in
+# `scripts/run_container_test.sh`, run once before any test (and therefore
+# before this class's tight budget is ever exercised against a cold server).
+# This module's timeout=10/retries=1 is deliberately secondary, residual
+# hardening: `build_sink()`'s startup probe still makes ~7 sequential calls
+# per `MlflowSink` construction, so even with the harness warmed, 0-margin
+# on a single call would still turn any leftover stall into a hard red on a
+# REQUIRED gate. Do not read this as "the timeout bump fixes flakiness" —
+# empirically it does NOT, on its own, cover a genuine cold start: a 10s
+# timeout with 1 retry still read-timed-out twice in a row (20s+) against an
+# unwarmed server in one verbatim re-run. backoff_factor is pinned low (not
+# left to mlflow's own default of 2, which compounds across retries) so a
+# genuinely dead host still aborts in a bounded window, not minutes; the
+# common misconfiguration modes (connection refused, DNS failure — see
+# acceptance #5's `http://127.0.0.1:1` test) fail instantly regardless of
+# this budget, since neither is a read-timeout in the first place.
 _HTTP_TIMEOUT_ENV = "MLFLOW_HTTP_REQUEST_TIMEOUT"
 _HTTP_RETRIES_ENV = "MLFLOW_HTTP_REQUEST_MAX_RETRIES"
+_HTTP_BACKOFF_FACTOR_ENV = "MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR"
 
 
 def _apply_fast_fail_http_defaults() -> None:
-    os.environ.setdefault(_HTTP_TIMEOUT_ENV, "5")
-    os.environ.setdefault(_HTTP_RETRIES_ENV, "0")
+    os.environ.setdefault(_HTTP_TIMEOUT_ENV, "10")
+    os.environ.setdefault(_HTTP_RETRIES_ENV, "1")
+    os.environ.setdefault(_HTTP_BACKOFF_FACTOR_ENV, "1")
 
 
 class MlflowStartupError(RuntimeError):

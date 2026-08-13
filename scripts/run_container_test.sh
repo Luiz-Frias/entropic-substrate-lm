@@ -88,6 +88,43 @@ if [[ "$status" != "healthy" ]]; then
   exit 1
 fi
 
+# Container-healthy is NOT REST-API-ready. The container's own HEALTHCHECK
+# (compose.yaml) hits mlflow's lightweight, liveness-only `/health` endpoint,
+# which never touches Postgres. VERIFIED EMPIRICALLY (isolated curl probes
+# through this same host->podman-machine port forward, immediately after a
+# fresh stack reported healthy): the first real, DB-backed REST call —
+# get-experiment-by-name — took 7.27s; the second 1.22s; the third 0.11s. A
+# one-time cold-start tax (SQLAlchemy engine/connection-pool init, first
+# query-shape compile), not sustained network jitter — confirmed by the
+# monotonic falloff to baseline over 3 calls. Left unaddressed, this raced
+# against MlflowSink's intentionally tight startup-probe budget
+# (entropic_substrate.sinks._apply_fast_fail_http_defaults — kept tight on
+# purpose so a genuinely unreachable tracking server aborts a real training
+# run in seconds, not minutes) and produced MlflowStartupError read-timeouts
+# in roughly 2 of every 3 verbatim runs of this script. Warming the REST API
+# here — once, before pytest ever constructs a Trainer/MlflowSink — is a
+# one-time setup cost with no GPU-hours downside, so it can afford to wait
+# out the cold start properly instead of racing it.
+say "warming the tracking server's REST API (not just its liveness healthcheck)..."
+warm_status="cold"
+for _ in $(seq 1 45); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
+    "${MLFLOW_URL}/api/2.0/mlflow/experiments/get-by-name?experiment_name=container-test-warmup" || echo "000")"
+  # 200 (exists) or 404 (doesn't exist yet) both mean Postgres was actually
+  # queried — that's the real readiness signal, not just an HTTP response.
+  if [[ "$code" == "200" || "$code" == "404" ]]; then
+    warm_status="warm"
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$warm_status" != "warm" ]]; then
+  say "mlflow REST API never warmed up (still cold after the wait budget) — logs:"
+  "${COMPOSE[@]}" logs mlflow
+  exit 1
+fi
+
 say "podman ps:"
 podman ps
 

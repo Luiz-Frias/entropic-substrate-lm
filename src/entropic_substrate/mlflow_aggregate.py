@@ -114,6 +114,18 @@ def aggregate(
         client.set_terminated(parent_id, status="FINISHED")
 
         # Retroactive nesting: adopt every child under the now-complete parent.
+        #
+        # VERIFIED (tests/test_mlflow_aggregate.py::
+        # test_retroactive_parent_tag_nests_in_the_real_mlflow_ui), not
+        # assumed: against a real (sqlite-backed, local) mlflow.tracking
+        # store, (a) mlflow.entities.RunInfo carries no separate
+        # creation-time-only parent_run_id field to fall back on in this
+        # mlflow version, and (b) the MLflow UI's own shipped JS bundle
+        # (mlflow/server/js/build/static/js/main.*.js) determines run-tree
+        # nesting purely by reading the "mlflow.parentRunId" key out of
+        # run.data.tags at render time. A tag set after run creation reads
+        # back identically to one set at create_run() time, so this DOES
+        # nest retroactively in the UI.
         for run in runs:
             client.set_tag(run.info.run_id, "mlflow.parentRunId", parent_id)
 

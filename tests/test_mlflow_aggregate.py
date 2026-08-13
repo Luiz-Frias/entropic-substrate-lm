@@ -1,13 +1,19 @@
 """Unit tests for :mod:`entropic_substrate.mlflow_aggregate` — seed aggregation.
 
-Against the same ``FakeMlflowClient`` as ``tests/test_sinks.py`` (imported
-from there rather than duplicated). Live idempotency against a real server
-is proven separately by the ``integration``-marked tests.
+Mostly against the same ``FakeMlflowClient`` as ``tests/test_sinks.py``
+(imported from there rather than duplicated); one test
+(``test_retroactive_parent_tag_nests_in_the_real_mlflow_ui``) uses a real,
+local, sqlite-backed ``mlflow.tracking.MlflowClient`` instead, to verify the
+retroactive-nesting tag round-trips through mlflow's actual storage rather
+than an in-memory dict. Live idempotency against a real server is proven
+separately by the ``integration``-marked tests.
 """
 
 from __future__ import annotations
 
 import statistics
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +24,17 @@ pytestmark = pytest.mark.unit
 
 
 def _seed_run(
-    client: FakeMlflowClient, exp_id: str, *, config_hash: str, seed: int, npb: float
+    # `Any`, not `FakeMlflowClient`: this helper is called with a real
+    # `mlflow.tracking.MlflowClient` too (see
+    # test_retroactive_parent_tag_nests_in_the_real_mlflow_ui below) — both
+    # are used purely structurally (create_run/log_param/log_metric/
+    # set_terminated), so the narrower type would be dishonest.
+    client: Any,
+    exp_id: str,
+    *,
+    config_hash: str,
+    seed: int,
+    npb: float,
 ) -> str:
     run = client.create_run(exp_id, tags={"config_hash": config_hash, "exp": "e1-fisher"})
     client.log_param(run.info.run_id, "seed", seed)
@@ -98,6 +114,55 @@ def test_children_are_adopted_via_parent_run_id_tag() -> None:
 
     for run_id in run_ids:
         assert client._runs[run_id].data.tags["mlflow.parentRunId"] == parent_id
+
+
+def test_retroactive_parent_tag_nests_in_the_real_mlflow_ui(tmp_path: Path) -> None:
+    """Empirical answer to the phase-scope question the spec flagged as unverified:
+
+    "VERIFY empirically whether setting mlflow.parentRunId on EXISTING runs
+    nests them retroactively in the MLflow UI... Do not assume either way."
+
+    Against a REAL ``mlflow.tracking.MlflowClient`` (sqlite-backed, local,
+    no server process, no network — still hermetic/fast) rather than
+    ``FakeMlflowClient``, so this exercises mlflow's actual tag storage and
+    retrieval round-trip, not an in-memory dict.
+
+    Findings, both checked directly against the installed mlflow package:
+
+    1. ``mlflow.entities.RunInfo`` in this version carries NO
+       ``parent_run_id`` field at all (confirmed via ``vars(run.info)`` on a
+       freshly created run) — there is no separate, creation-time-only slot
+       nesting could be reading instead of the tag.
+    2. The MLflow UI's shipped, built JS bundle
+       (``mlflow/server/js/build/static/js/main.*.js``, vendored inside the
+       installed ``mlflow`` package) determines run-tree nesting by reading
+       the ``"mlflow.parentRunId"`` key out of each run's ``data.tags`` at
+       render time — the exact same tag `aggregate()` retroactively sets via
+       ``client.set_tag()``.
+
+    So: YES, retroactive nesting works — the UI does not distinguish a tag
+    set at ``create_run()`` time from one set afterward, because it never
+    reads a separate immutable field to begin with.
+    """
+    import mlflow.tracking
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=f"sqlite:///{tmp_path}/mlflow.db")
+    exp_id = client.create_experiment("real-nesting-probe")
+    run_ids = [
+        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5 + s * 0.01) for s in (1, 2, 3)
+    ]
+
+    summaries = aggregate(client, experiment_name="real-nesting-probe", n_seeds=3)
+    parent_id = summaries[0]["parent_run_id"]
+
+    for run_id in run_ids:
+        # Fresh get_run() per child — a real read round-trip through mlflow's
+        # own store, not the value this process just wrote in memory.
+        refreshed = client.get_run(run_id)
+        assert refreshed.data.tags["mlflow.parentRunId"] == parent_id
+        # RunInfo has no parent_run_id attribute to fall back on — the tag
+        # really is the only signal, confirming point 1 above inline.
+        assert not hasattr(refreshed.info, "parent_run_id")
 
 
 def test_two_config_hashes_aggregate_independently() -> None:
