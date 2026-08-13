@@ -84,8 +84,11 @@ services:
       # the full FastAPI/SQLAlchemy/Alembic stack at once; on this 4-vCPU
       # podman VM they contend, uvicorn's supervisor kills the workers that
       # overrun its startup timeout, and respawns them — so startup stretches
-      # unboundedly under load. Measured on an otherwise-idle host, same
-      # image (cc5080a8ca0c), same clean volume:
+      # unboundedly under load. Measured back-to-back under IDENTICAL
+      # conditions — same image (cc5080a8ca0c), same clean volume, and the
+      # same unrelated container (agx-qdrant) resident for both arms, so the
+      # host was NOT idle and the comparison is a controlled A/B rather than
+      # a best-case number:
       #   default   -> 41s to "Application startup complete", repeated
       #                "Child process [N] died" crash-loop
       #   --workers 1 -> 8s, ZERO child deaths
