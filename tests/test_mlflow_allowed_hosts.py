@@ -10,8 +10,12 @@ because there would be no way to pass a configured allowlist into the
 server at all.
 
 Gated behind ``just container-test`` (skipped unless
-``MLFLOW_COMPOSE_PROJECT`` is set, exactly like ``test_mlflow_live.py`` — see
-that module for why a hardcoded fallback project name is refused).
+``MLFLOW_COMPOSE_PROJECT`` is set — this module's own stack lookup needs the
+project name itself, not just a tracking URL, so it gates on a different
+env var than ``test_mlflow_live.py`` does; both are exported together by
+run_container_test.sh, so there is no behavioral gap between the two
+gates in practice. See that module for why a hardcoded fallback project
+name is refused).
 scripts/run_container_test.sh runs this module as its OWN phase, AFTER the
 main postgres+mlflow stack has been torn down — never concurrently with it.
 MEASURED: two full postgres+mlflow pairs on this repo's 4-vCPU podman VM

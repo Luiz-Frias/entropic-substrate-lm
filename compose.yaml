@@ -140,8 +140,14 @@ services:
     # default: neither is in .env, see run_container_test.sh), the
     # container's own shell resolves both $${VAR:+...} blocks to nothing
     # and the rendered command is byte-identical to the flag-less command
-    # this replaced — mlflow falls back to its own compiled-in "localhost +
-    # private IPs" default. LOCAL BEHAVIOR IS UNCHANGED. Verify with
+    # this replaced — mlflow falls back to its own compiled-in default.
+    # MEASURED (pinned image, both flags omitted): boot log reads "Security
+    # middleware enabled with default settings (localhost-only)" — no
+    # private-IP language anywhere in that line or in any response measured
+    # against it (see the --allowed-hosts "" measurement below, same boot
+    # message). Only "localhost-only" is claimed here; a private-IP host
+    # header was never probed, so no claim is made about it either way.
+    # LOCAL BEHAVIOR IS UNCHANGED. Verify with
     # `podman compose ... config` (confirms command: keeps the literal
     # `$${VAR...}` text) and `tests/test_compose_config.py`'s
     # `test_allowlist_vars_flow_through_environment_not_spliced_into_command`
