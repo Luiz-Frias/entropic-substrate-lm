@@ -31,8 +31,15 @@ from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
 from entropic_substrate.init.fisher import build_fisher_init, save_init
 from entropic_substrate.logging import configure_logging, logger
+from entropic_substrate.mlflow_aggregate import aggregate
+from entropic_substrate.sinks import (
+    MLFLOW_TINY_ENV,
+    MLFLOW_TRACKING_ENV,
+    MlflowStartupError,
+    build_sink,
+)
 from entropic_substrate.telemetry import EXIT_TELEMETRY_GAP, TelemetryGap, read_final_kappa
-from entropic_substrate.train import Trainer, resolve_device
+from entropic_substrate.train import Trainer, resolve_device, resolve_results_path
 
 __all__ = ["build_parser", "main"]
 
@@ -51,7 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--exp", choices=EXPERIMENTS, help="experiment ladder rung")
     train.add_argument("--config", type=Path, help="explicit YAML config path")
     train.add_argument("--device", default=None, help="cpu | cuda | cuda:N | mps | auto")
-    train.add_argument("--tiny", action="store_true", help="overlay configs/tiny.yaml")
+    train.add_argument(
+        "--tiny",
+        action="store_true",
+        help=(
+            "overlay configs/tiny.yaml. MLflow tracking (when MLFLOW_TRACKING_URI is "
+            f"set) is OFF for --tiny runs unless {MLFLOW_TINY_ENV}=1 is also set."
+        ),
+    )
     train.add_argument("--steps", type=int, default=None, help="override max_steps")
     train.add_argument("--seed", type=int, default=None, help="override the seed")
     train.add_argument("--resume", type=Path, default=None, help="checkpoint to resume")
@@ -77,6 +91,21 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--device", default=None)
     evaluate.add_argument("--batches", type=int, default=None)
     evaluate.add_argument("--json", action="store_true", help="print JSON only")
+
+    aggregate_p = sub.add_parser(
+        "mlflow-aggregate", help="idempotently roll seed runs into a parent run by config_hash"
+    )
+    aggregate_p.add_argument(
+        "--experiment", default=os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
+    )
+    aggregate_p.add_argument(
+        "--tracking-uri",
+        default=None,
+        help=f"defaults to ${MLFLOW_TRACKING_ENV}",
+    )
+    aggregate_p.add_argument(
+        "--n-seeds", type=int, default=3, help="minimum children before a parent is created"
+    )
 
     return parser
 
@@ -149,7 +178,18 @@ def cmd_train(args: argparse.Namespace) -> int:
         code = _anchored_arm_preflight(cfg, tiny=args.tiny)
         if code != 0:
             return code
-    trainer = Trainer(cfg, results_path=args.results)
+
+    results_path = resolve_results_path(cfg, args.results)
+    # STARTUP ABORT, RUNTIME CONTINUE: the MLflow startup probe runs BEFORE
+    # Trainer (corpus/model construction, GPU allocation) — an unreachable or
+    # misconfigured tracking server must fail here, not after minutes of setup.
+    try:
+        sink = build_sink(cfg, tiny=args.tiny, results_path=results_path)
+    except MlflowStartupError as exc:
+        logger.error(f"mlflow startup abort: {exc}")
+        return 2
+
+    trainer = Trainer(cfg, results_path=results_path, sink=sink)
     logger.info(
         f"[{cfg.name}] {trainer.raw_model.num_parameters() / 1e6:.2f}M params on "
         f"{trainer.device}; tokenizer={trainer.meta.tokenizer} "
@@ -227,6 +267,36 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
+    """Handle ``mlflow-aggregate``."""
+    tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
+    if not tracking_uri:
+        logger.error(
+            f"mlflow-aggregate: no tracking URI (--tracking-uri or ${MLFLOW_TRACKING_ENV})"
+        )
+        return 2
+    import mlflow.tracking
+    from mlflow.exceptions import MlflowException
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    try:
+        summaries = aggregate(client, experiment_name=args.experiment, n_seeds=args.n_seeds)
+    except MlflowException as exc:
+        # A controlled refusal, not a raw traceback — same gate idiom as
+        # CheckpointFormatError below: an operator-actionable server-side
+        # rejection must read as "here's what happened", not as a stack
+        # trace that looks like a defect in this tool.
+        # mlflow_aggregate.py's own fix (n_seeds as a tag, not a write-once
+        # param) makes the specific growth-crash this was written for
+        # unreachable; this catch is the net for whatever the NEXT
+        # MlflowException-raising defect in this path turns out to be.
+        logger.error(f"mlflow-aggregate: aggregation rejected by the tracking server: {exc}")
+        return 2
+    if not summaries:
+        logger.info("mlflow-aggregate: no complete seed group to aggregate")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
@@ -235,6 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
+        "mlflow-aggregate": cmd_mlflow_aggregate,
     }
     try:
         return handlers[args.command](args)

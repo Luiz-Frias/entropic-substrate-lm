@@ -41,7 +41,7 @@ Euclidean and the optimizer stays AdamW — geometry lives entirely in the forwa
 The novel artifact of this repo (redesigned 2026-08-11; full design record in
 `e-3-instruction.md`). E3 swaps the attention similarity kernel:
 
-```
+```text
 per head h (fp32, autocast disabled):
   logits = −d_κₕ(q, k)² · s        κₕ learnable, clamped, init spread over −1/0/+1
 ```
@@ -76,7 +76,7 @@ per head h (fp32, autocast disabled):
 
 ## Data flow
 
-```
+```text
 scripts/download_enwik8.py → data/enwik8  (dvc add data/enwik8; remote set by owner)
 HuggingFaceFW/fineweb-edu sample-10BT     (streamed, no local copy)
         │
@@ -84,16 +84,28 @@ HuggingFaceFW/fineweb-edu sample-10BT     (streamed, no local copy)
         │
    backbone (config-selected: init × block × norm)
         │
-   train.py → results/*.jsonl (nats/byte, per-head κ trajectories)
-            → models/*.pt     (dvc-track large checkpoints)
+   train.py → results/*.jsonl (nats/byte, per-head κ trajectories)  ─┬─ sinks.py: MetricSink port
+            → models/*.pt     (dvc-track large checkpoints)          │
+                                                                       └→ MLflow (best-effort,
+                                                                          analysis/citation only)
 ```
 
-Both sinks have a **validated read side**, because both feed gates:
+`sinks.py`'s `MetricSink` port sits between `Trainer.log()` and where records land: `JsonlSink`
+is the extraction of what `Trainer.log()` always did (byte-identical), `MlflowSink` is an
+optional, best-effort fan-out to a tracking server (params/tags at run start, metrics + the
+full per-head κ series per eval, final/best checkpoints as artifacts) — never authoritative,
+never gated on, enabled only when `MLFLOW_TRACKING_URI` is set. `mlflow-aggregate`
+(`entropic_substrate.mlflow_aggregate`) idempotently rolls seed runs into one parent per
+`config_hash` once `n_seeds` are present; absence of a parent for an incomplete group is the
+signal, not an error.
+
+Both durable sinks have a **validated read side**, because both feed gates:
 
 - `results/*.jsonl` is read only through `telemetry.py` — the CLI preflight and the ladder
   runner share one admissibility predicate (final eval record, non-empty numeric finite κ
   rows) rather than each parsing the JSONL themselves. An inadmissible readout is a
   `TelemetryGap` exception, not an empty value, so no caller can compute a spread from it.
+  **MLflow is never in this path** — the E3 execution gate reads JSONL only.
 - `models/*.pt` carries `format_version` (`checkpoint.py`). It exists because the E3 kernel's
   per-head `tau` changed from an effective temperature to a softplus pre-activation, and
   unversioned checkpoints exist on *both* sides of that change — so an unversioned `tau`
