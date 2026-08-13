@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
 
 from entropic_substrate.config import DataConfig
+from entropic_substrate.data import enwik8, fineweb
 from entropic_substrate.data.batching import SequenceSampler, TokenSplit
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
 from entropic_substrate.data.enwik8 import load_enwik8_bytes
@@ -70,6 +74,28 @@ def test_load_enwik8_bytes_reads_and_truncates(tmp_path) -> None:
     path.write_bytes(bytes(range(256)))
     assert len(load_enwik8_bytes(path)) == 256
     assert len(load_enwik8_bytes(path, max_bytes=10)) == 10
+
+
+def test_enwik8_download_source_is_https_and_content_pinned(tmp_path) -> None:
+    assert enwik8.ENWIK8_URL == "https://mattmahoney.net/dc/enwik8.zip"
+
+    archive = tmp_path / "enwik8.zip"
+    archive.write_bytes(b"tampered archive")
+    with pytest.raises(RuntimeError, match="archive SHA-256"):
+        enwik8.download_enwik8(tmp_path)
+
+
+def test_fineweb_stream_pins_the_dataset_revision(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_load_dataset(repo: str, **kwargs):
+        captured.update(repo=repo, **kwargs)
+        return [{"text": "measured"}]
+
+    monkeypatch.setitem(sys.modules, "datasets", SimpleNamespace(load_dataset=fake_load_dataset))
+
+    assert next(fineweb.stream_fineweb_bytes()) == b"measured<|endoftext|>"
+    assert captured["revision"] == fineweb.FINEWEB_REVISION
 
 
 def _split(n: int = 1_000) -> TokenSplit:
