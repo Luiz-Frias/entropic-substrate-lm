@@ -74,3 +74,6 @@ logs/
 # --- Worktrees ---
 .claude/worktrees/
 .codex/worktrees/
+
+# --- Local Files ---
+*.local
