@@ -1,6 +1,7 @@
 # mise.toml — entropic-substrate-lm
 # Pins: python 3.12, uv (pkg mgr), just (task runner), prek (Rust pre-commit runner),
-# shellcheck/shfmt/bats (shell linting/testing). Mirrors doc-lora-training convention.
+# shellcheck/shfmt/bats (shell linting/testing), dprint (Markdown/config formatting).
+# Mirrors doc-lora-training convention.
 [env]
 _.python.venv = { path = ".venv", create = true }
 _.file = ".env"                          # loads HF_TOKEN, WANDB_API_KEY, R2/RunPod creds, etc.
@@ -16,6 +17,7 @@ just = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 bats = "latest"
+"ubi:dprint/dprint" = "0.54.0"
 
 # Shell tasks delegate to just — keeps a single source of truth for recipes.
 [tasks.check]
