@@ -1,12 +1,15 @@
 """Unit tests for :mod:`entropic_substrate.mlflow_aggregate` — seed aggregation.
 
 Mostly against the same ``FakeMlflowClient`` as ``tests/test_sinks.py``
-(imported from there rather than duplicated); one test
-(``test_retroactive_parent_tag_nests_in_the_real_mlflow_ui``) uses a real,
-local, sqlite-backed ``mlflow.tracking.MlflowClient`` instead, to verify the
-retroactive-nesting tag round-trips through mlflow's actual storage rather
-than an in-memory dict. Live idempotency against a real server is proven
-separately by the ``integration``-marked tests.
+(imported from there rather than duplicated); a few tests use a real,
+local, sqlite-backed ``mlflow.tracking.MlflowClient`` instead (retroactive
+nesting, growth-under-write-once-params), to verify against mlflow's actual
+storage semantics rather than an in-memory approximation of them. Live
+idempotency against a real server is proven separately by the
+``integration``-marked tests. The final section drives
+:func:`entropic_substrate.cli.main` end to end (the ``mlflow-aggregate``
+subcommand), covering the CLI's controlled-refusal wrapping around
+:func:`aggregate`.
 """
 
 from __future__ import annotations
@@ -76,7 +79,9 @@ def test_parent_created_once_three_seeds_are_present() -> None:
     parents = [r for r in client._runs.values() if r.data.tags.get(PARENT_TAG) == "1"]
     assert len(parents) == 1
     parent = parents[0]
-    assert parent.data.params["n_seeds"] == "3"
+    # A TAG, not a param — see mlflow_aggregate.py's module docstring: params
+    # are write-once server-side, and n_seeds must be updatable on re-runs.
+    assert parent.data.tags["n_seeds"] == "3"
     assert parent.data.metrics["nats_per_byte_mean"] == pytest.approx((1.5 + 1.6 + 1.4) / 3)
     assert parent.data.metrics["nats_per_byte_std"] == pytest.approx(
         statistics.pstdev([1.5, 1.6, 1.4])
@@ -100,6 +105,68 @@ def test_running_twice_produces_one_parent_with_identical_stats() -> None:
 
     parents = [r for r in client._runs.values() if r.data.tags.get(PARENT_TAG) == "1"]
     assert len(parents) == 1, "two aggregate() calls must not create two parents"
+
+
+def test_growing_seed_group_updates_the_existing_parent_not_a_stale_one() -> None:
+    """FIX 1 (audit finding, round A): a parent must always be updatable to
+    the CURRENT aggregate, never left EXISTING + STALE + UNUPDATABLE — the
+    third state the "no parent without a complete aggregate" invariant never
+    contemplated. Simulates the operator sequence from the finding: an
+    operator adds a 4th seed for confidence AFTER a 3-seed parent already
+    exists. Before the fix (``log_param``, write-once), the second
+    ``aggregate()`` call raised ``MlflowException`` here too — see
+    ``FakeMlflowClient.log_param``'s write-once enforcement in
+    ``tests/test_sinks.py``, and the real-server twin of this test below.
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+
+    first = aggregate(client, experiment_name="exp", n_seeds=3)
+    assert first[0]["n_seeds"] == 3
+
+    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)  # operator adds a 4th seed
+    second = aggregate(client, experiment_name="exp", n_seeds=3)  # must not raise
+
+    assert second[0]["parent_run_id"] == first[0]["parent_run_id"], (
+        "growth must update the SAME parent, not create a second one"
+    )
+    assert second[0]["n_seeds"] == 4
+    assert second[0]["nats_per_byte"]["mean"] == pytest.approx((1.5 + 1.6 + 1.4 + 1.45) / 4)
+
+    parents = [r for r in client._runs.values() if r.data.tags.get(PARENT_TAG) == "1"]
+    assert len(parents) == 1, "growth must not create a second parent"
+    assert parents[0].data.tags["n_seeds"] == "4"
+
+
+def test_growing_seed_group_against_a_real_mlflow_client_does_not_raise(tmp_path: Path) -> None:
+    """Real-server twin of the fake-based growth test above — against a real
+    (sqlite-backed, local) ``mlflow.tracking.MlflowClient``, not the fake, so
+    this exercises MLflow's actual write-once-param enforcement rather than
+    an in-memory approximation of it. This is the exact scenario captured
+    verbatim in the phase's ``reproBefore`` (aggregate 3 seeds, add a 4th,
+    aggregate again) — pinned here so a regression can never land silently.
+    """
+    import mlflow.tracking
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=f"sqlite:///{tmp_path}/mlflow.db")
+    exp_id = client.create_experiment("real-growth-probe")
+    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+
+    first = aggregate(client, experiment_name="real-growth-probe", n_seeds=3)
+    assert first[0]["n_seeds"] == 3
+
+    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)
+    second = aggregate(client, experiment_name="real-growth-probe", n_seeds=3)  # must not raise
+
+    assert second[0]["parent_run_id"] == first[0]["parent_run_id"]
+    assert second[0]["n_seeds"] == 4
+    refreshed_parent = client.get_run(second[0]["parent_run_id"])
+    assert refreshed_parent.data.tags["n_seeds"] == "4"
 
 
 def test_children_are_adopted_via_parent_run_id_tag() -> None:
@@ -233,3 +300,55 @@ def test_incomplete_metric_across_group_is_skipped_not_averaged_partially() -> N
     assert len(summaries) == 1
     assert "nats_per_byte" not in summaries[0]
     assert summaries[0]["loss"]["mean"] == pytest.approx((3.0 + 3.2 + 3.4) / 3)
+
+
+# ------------------------------------------------------- cmd_mlflow_aggregate (CLI)
+def test_cli_mlflow_aggregate_handles_seed_group_growth_end_to_end(tmp_path: Path) -> None:
+    """FIX 1, end to end: drive the ``mlflow-aggregate`` subcommand through
+    :func:`entropic_substrate.cli.main` (not just the library function)
+    against a real sqlite-backed store, with the seed group growing between
+    the two invocations — the exact operator sequence the audit finding
+    described. Must return 0 both times, never raise past ``main()``.
+    """
+    import mlflow.tracking
+
+    from entropic_substrate.cli import main
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    exp_id = client.create_experiment("cli-growth")
+    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+
+    argv = ["mlflow-aggregate", "--tracking-uri", tracking_uri, "--experiment", "cli-growth"]
+    assert main(argv) == 0
+
+    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)  # operator adds a 4th seed
+    assert main(argv) == 0  # must not raise past main()
+
+
+def test_cli_mlflow_aggregate_reports_mlflow_exception_as_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense in depth, independent of the specific n_seeds bug FIX 1 makes
+    unreachable: ANY ``MlflowException`` surfacing from :func:`aggregate` at
+    the CLI boundary must read as a printed refusal + exit 2 — this repo's
+    gate idiom (same shape as ``CheckpointFormatError`` in ``main()``) —
+    never a raw traceback. The next MlflowException-raising defect in this
+    path must land here, not as an unhandled crash.
+    """
+    from mlflow.exceptions import MlflowException
+
+    import entropic_substrate.cli as cli_module
+
+    def _boom(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        msg = "simulated server-side rejection"
+        raise MlflowException(msg)
+
+    monkeypatch.setattr(cli_module, "aggregate", _boom)
+
+    code = cli_module.main(
+        ["mlflow-aggregate", "--tracking-uri", f"sqlite:///{tmp_path}/mlflow.db"]
+    )
+    assert code == 2

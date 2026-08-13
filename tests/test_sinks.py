@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from mlflow.exceptions import MlflowException
 
 from entropic_substrate.sinks import (
     MLFLOW_TINY_ENV,
@@ -64,6 +65,17 @@ class FakeMlflowClient:
     ``kill()``: flips the client into "every call from now on raises" —
     simulates "tracking killed mid-run" without racing the handful of calls
     ``MlflowSink.__init__`` itself makes during a successful startup.
+
+    ``log_param`` enforces WRITE-ONCE, exactly like the real server: a
+    param logged twice with the SAME value is a silent no-op, a param
+    logged twice with a DIFFERENT value raises ``MlflowException`` — see
+    ``sqlalchemy_store.py``'s ``log_param`` (the ``old_value != param.value``
+    check after the unique-constraint ``IntegrityError``). A fake that
+    modeled ``log_param`` as a plain dict overwrite (the pre-fix shape here)
+    is MORE PERMISSIVE THAN REALITY: it cannot express the bug class where a
+    call site treats a re-computable value as an immutable param (see
+    ``entropic_substrate.mlflow_aggregate``'s ``n_seeds`` fix, and
+    ``tests/test_mlflow_aggregate.py::test_growing_seed_group_updates_the_existing_parent``).
     """
 
     def __init__(self, *, fail_startup: bool = False) -> None:
@@ -115,7 +127,16 @@ class FakeMlflowClient:
 
     def log_param(self, run_id: str, key: str, value: Any) -> None:
         self._tick()
-        self._runs[run_id].data.params[str(key)] = str(value)
+        str_key, str_value = str(key), str(value)
+        existing = self._runs[run_id].data.params.get(str_key)
+        if existing is not None and existing != str_value:
+            msg = (
+                f"Changing param values is not allowed. Param with key='{str_key}' was "
+                f"already logged with value='{existing}' for run ID='{run_id}'. Attempted "
+                f"logging new value '{str_value}'."
+            )
+            raise MlflowException(msg)
+        self._runs[run_id].data.params[str_key] = str_value
 
     def log_metric(self, run_id: str, key: str, value: float, step: int = 0) -> None:
         self._tick()
@@ -156,6 +177,39 @@ def _parse_tag_equals_filter(filter_string: str) -> list[tuple[str, str]]:
     if not filter_string:
         return []
     return _TAG_FILTER_RE.findall(filter_string)
+
+
+# ------------------------------------------------------------ FakeMlflowClient fidelity
+def test_fake_log_param_is_a_silent_no_op_when_the_value_is_unchanged() -> None:
+    """Real MLflow's write-once check compares OLD vs NEW value — re-logging
+    the identical value must not raise (verified against the installed
+    ``mlflow`` package's ``sqlalchemy_store.log_param``: the IntegrityError
+    branch only re-raises when ``old_value != param.value``).
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    run = client.create_run(exp_id)
+
+    client.log_param(run.info.run_id, "n_seeds", 3)
+    client.log_param(run.info.run_id, "n_seeds", 3)  # same value again — must not raise
+
+    assert run.data.params["n_seeds"] == "3"
+
+
+def test_fake_log_param_raises_mlflow_exception_when_the_value_changes() -> None:
+    """The exact bug FIX 1 exists for: a param re-logged with a DIFFERENT
+    value must raise, matching the real server, not silently overwrite.
+    Reproduced against a real sqlite-backed ``mlflow.tracking.MlflowClient``
+    in ``tests/test_mlflow_aggregate.py`` — this pins the fake to the same
+    contract so unit tests can catch this bug class without a live server.
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    run = client.create_run(exp_id)
+
+    client.log_param(run.info.run_id, "n_seeds", 3)
+    with pytest.raises(MlflowException, match="Changing param values is not allowed"):
+        client.log_param(run.info.run_id, "n_seeds", 4)
 
 
 # ------------------------------------------------------------------- JsonlSink

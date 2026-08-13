@@ -12,6 +12,21 @@ see the repo's SACRED INVARIANTS. Idempotent: running this twice against
 unchanged children reuses the SAME parent run (found by its
 ``aggregate.is_parent`` + ``config_hash`` tags) and recomputes the same
 mean/std/n_seeds, rather than creating a second parent.
+
+IDEMPOTENT UNDER GROWTH TOO: if the group gains a member between runs (an
+operator adds a confidence seed, a ladder re-run emits an extra one), the
+SAME parent is updated IN PLACE to the new mean/std/n_seeds — never left
+stale. This is why ``n_seeds`` is written with :meth:`~mlflow.tracking.
+MlflowClient.set_tag`, not :meth:`~mlflow.tracking.MlflowClient.log_param`:
+real MLflow enforces WRITE-ONCE semantics on params server-side (re-logging
+a param with a value that differs from what's already stored raises
+``MlflowException``; ``tests/test_sinks.py``'s ``FakeMlflowClient`` enforces
+the identical contract). A parent that EXISTS, is STALE, and CANNOT BE
+UPDATED is a third state this module's invariant never contemplated — and
+it is worse than absence, because it is silent. Tags (like the metrics
+below, always re-loggable via ``log_metric``) are the correctly mutable
+primitive for a value that is recomputed on every call, not fixed at
+creation.
 """
 
 from __future__ import annotations
@@ -107,7 +122,9 @@ def aggregate(
             client.set_tag(parent.info.run_id, "mlflow.runName", f"{exp_name}-aggregate-{chash}")
         parent_id = parent.info.run_id
 
-        client.log_param(parent_id, "n_seeds", len(runs))
+        # A TAG, not a param: see the module docstring's GROWTH note — this
+        # value is recomputed on every call and must always be updatable.
+        client.set_tag(parent_id, "n_seeds", len(runs))
         for metric, values in stats.items():
             client.log_metric(parent_id, f"{metric}_mean", values["mean"])
             client.log_metric(parent_id, f"{metric}_std", values["std"])

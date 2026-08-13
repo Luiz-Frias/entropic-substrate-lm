@@ -37,9 +37,17 @@ pytestmark = [
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-# Must match scripts/run_container_test.sh's pinned project name — not left
-# to podman-compose's default $(basename $PWD).
-_PROJECT = "entropic-substrate-lm-mlflow-test"
+# scripts/run_container_test.sh derives the compose project name
+# PER-WORKTREE (not a fixed, shared name — see that script's own comment for
+# why: a fixed name is what fused one agent's mlflow container to a
+# DIFFERENT agent's postgres under concurrent runs) and exports it as
+# MLFLOW_COMPOSE_PROJECT precisely so this module's own `podman compose -p
+# ...` calls (the mid-run mlflow-kill test below) target the SAME project
+# the script brought up. A hardcoded fallback here would reintroduce the
+# exact cross-talk defect this coupling exists to prevent — read the env var
+# only, and fail loud (inside `_stop_mlflow`, at the point it's actually
+# needed) rather than silently defaulting to the old shared name.
+_PROJECT = os.environ.get("MLFLOW_COMPOSE_PROJECT", "")
 _COMPOSE = ["podman", "compose", "-p", _PROJECT, "-f", str(REPO_ROOT / "compose.yaml")]
 
 
@@ -186,6 +194,16 @@ def _kill_mid_run_config(root: Path, *, name: str) -> object:
 
 
 def _stop_mlflow() -> None:
+    if not _PROJECT:
+        # Fail loud, never silently default to the old shared project name —
+        # that default is exactly the concurrency defect this coupling was
+        # written to prevent (see the module-level comment on _PROJECT).
+        msg = (
+            "MLFLOW_COMPOSE_PROJECT is not set — this test must run via "
+            "`just container-test` (scripts/run_container_test.sh derives and "
+            "exports the per-worktree compose project name before pytest starts)."
+        )
+        raise RuntimeError(msg)
     subprocess.run([*_COMPOSE, "stop", "mlflow"], check=True, cwd=REPO_ROOT, timeout=30)  # nosec B603 B607
 
 

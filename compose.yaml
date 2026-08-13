@@ -6,8 +6,22 @@
 # checksum behaviour is invisible against MinIO, which is exactly why the
 # live test must point at real R2 (see CLAUDE.md's R2 COMPATIBILITY note).
 #
-# Port 5001 (not 5000) on the host: macOS AirPlay Receiver commonly squats
-# on 5000.
+# NO FIXED HOST PORT: the mlflow service below publishes only the container
+# port ("5000", no "host:container" mapping) — podman assigns an EPHEMERAL
+# host port, which scripts/run_container_test.sh discovers via `podman port`
+# after the container is up and builds MLFLOW_TRACKING_URI from whatever was
+# actually assigned. A fixed host port ("5001:5000", the previous shape —
+# 5001 chosen only to dodge macOS AirPlay squatting on 5000) is a
+# concurrency hazard: two worktrees running `just container-test` at once
+# would collide on the same host port regardless of the (also now
+# per-worktree) project name below.
+#
+# PROJECT NAME (see run_container_test.sh): derived per-worktree, not fixed
+# — a fixed, shared compose project name is what let one agent's mlflow
+# container fuse to a DIFFERENT agent's postgres under concurrent runs
+# (verified empirically via `com.docker.compose.project.working_dir`
+# container labels) — a run could validate against another run's database
+# and report green.
 #
 # Credentials come from the repo's .env (mise loads it into the environment
 # already; podman-compose additionally reads a sibling .env for ${VAR}
@@ -19,6 +33,15 @@ services:
       POSTGRES_USER: mlflow
       POSTGRES_PASSWORD: mlflow
       POSTGRES_DB: mlflow
+    # NAMED volume, not an anonymous one: `down` (no `-v`, the failure-path
+    # teardown below) only preserves data that's findable afterward. An
+    # anonymous volume survives `down` too but as an unlabelled dangling
+    # 64-hex ID nothing can point an operator at; naming it makes "survives
+    # for diagnosis" actually diagnosable (podman names it
+    # `${PROJECT}_pgdata` — verified empirically against this same
+    # compose.yaml shape).
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
       interval: 2s
@@ -44,8 +67,10 @@ services:
       AWS_REQUEST_CHECKSUM_CALCULATION: when_required
       AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       AWS_DEFAULT_REGION: auto
+    # Bare container port — ephemeral host port assigned by podman, NOT a
+    # fixed "host:container" mapping. See the module-level comment above.
     ports:
-      - "5001:5000"
+      - "5000"
     command:
       - mlflow
       - server
@@ -68,3 +93,8 @@ services:
       interval: 3s
       timeout: 5s
       retries: 40
+
+# Named so a failure-path teardown (`down` without `-v`) leaves something an
+# operator can actually find and inspect: `${PROJECT}_pgdata`.
+volumes:
+  pgdata:

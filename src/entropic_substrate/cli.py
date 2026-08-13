@@ -276,9 +276,22 @@ def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
         )
         return 2
     import mlflow.tracking
+    from mlflow.exceptions import MlflowException
 
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
-    summaries = aggregate(client, experiment_name=args.experiment, n_seeds=args.n_seeds)
+    try:
+        summaries = aggregate(client, experiment_name=args.experiment, n_seeds=args.n_seeds)
+    except MlflowException as exc:
+        # A controlled refusal, not a raw traceback — same gate idiom as
+        # CheckpointFormatError below: an operator-actionable server-side
+        # rejection must read as "here's what happened", not as a stack
+        # trace that looks like a defect in this tool.
+        # mlflow_aggregate.py's own fix (n_seeds as a tag, not a write-once
+        # param) makes the specific growth-crash this was written for
+        # unreachable; this catch is the net for whatever the NEXT
+        # MlflowException-raising defect in this path turns out to be.
+        logger.error(f"mlflow-aggregate: aggregation rejected by the tracking server: {exc}")
+        return 2
     if not summaries:
         logger.info("mlflow-aggregate: no complete seed group to aggregate")
     return 0
