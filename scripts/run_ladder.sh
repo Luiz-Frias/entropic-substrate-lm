@@ -20,6 +20,7 @@
 # executed) pod commands.
 # =============================================================================
 set -euo pipefail
+umask 077
 
 cd "$(dirname "$0")/.."
 
@@ -27,6 +28,13 @@ RESULTS_DIR=${RESULTS_DIR:-results}
 PY=${LADDER_PYTHON:-python}
 GPU_ID=${LADDER_GPU_ID:-NVIDIA H100 80GB HBM3}
 IMAGE=${LADDER_IMAGE:-ghcr.io/luiz-frias/entropic-substrate-lm:latest}
+# DVC's current DiskCache dependency has no patched release for its local
+# pickle-cache advisory. Restrict the site cache to this pod user before DVC
+# opens it; chmod also repairs a directory persisted from an older image.
+DVC_SITE_CACHE_DIR=${DVC_SITE_CACHE_DIR:-.cache/dvc-site-cache}
+export DVC_SITE_CACHE_DIR
+install -d -m 0700 "$DVC_SITE_CACHE_DIR"
+chmod 0700 "$DVC_SITE_CACHE_DIR"
 # The .dvc pointers are md5 addresses into the remote cache; without them the
 # pushed objects are unreachable. They are pod-local files, so they are also
 # collected here to ride along with any results retrieval.
