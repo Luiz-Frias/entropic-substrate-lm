@@ -34,12 +34,45 @@ import hashlib
 import json
 import os
 import subprocess  # nosec B404 -- git_sha() only, fixed argv, see its own nosec
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from entropic_substrate.config import Config
 from entropic_substrate.logging import logger
+
+# How long a PRESENT-but-cold tracking server may take to answer its first write
+# before we give up. Deliberately generous: it is only reachable when something
+# already accepted the connection, so it trades startup latency on a cold server
+# for never failing a REQUIRED live gate on a warm-up race. An absent server does
+# not reach this budget at all — see the ABSENT vs COLD note at the call site.
+_STARTUP_COLD_BUDGET_S = 90.0
+
+# Transport-level read-timeout types, matched by NAME rather than imported.
+# mlflow re-wraps these in MlflowException, and importing urllib3/requests here
+# to isinstance-check them would couple this module to mlflow's own transitive
+# dependencies for no gain.
+_COLD_START_EXC_NAMES = frozenset({"ReadTimeout", "ReadTimeoutError", "Timeout"})
+
+
+def _is_cold_start(exc: BaseException) -> bool:
+    """Is ``exc`` a server-is-slow failure rather than a server-is-absent one?
+
+    Walks the ``__cause__``/``__context__`` chain, because the transport error
+    that actually distinguishes the two is wrapped by the time it surfaces. The
+    message-text fallback exists only for the case where the chain was broken by
+    a re-raise that dropped the cause.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in _COLD_START_EXC_NAMES:
+            return True
+        current = current.__cause__ or current.__context__
+    return "read timed out" in str(exc).lower()
+
 
 __all__ = [
     "MLFLOW_EXPERIMENT_ENV",
@@ -225,25 +258,46 @@ class MlflowSink:
             client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self._client = client
 
-        try:
-            experiment = client.get_experiment_by_name(experiment_name)
-            experiment_id = (
-                experiment.experiment_id
-                if experiment is not None
-                else client.create_experiment(experiment_name)
-            )
-            run = client.create_run(
-                experiment_id, tags={str(k): str(v) for k, v in (tags or {}).items()}
-            )
-            self._run_id = run.info.run_id
-            client.set_tag(self._run_id, "mlflow.runName", run_name)
-            for key, value in (params or {}).items():
-                client.log_param(self._run_id, key, value)
-        except MlflowStartupError:
-            raise
-        except Exception as exc:
-            msg = f"MLflow tracking unreachable/misconfigured at {tracking_uri!r}: {exc}"
-            raise MlflowStartupError(msg) from exc
+        # ABSENT vs COLD are different failures and must not share a policy.
+        # "Connection refused" / DNS failure means nothing is listening: that is
+        # misconfiguration, and the startup-abort invariant requires failing
+        # immediately, before GPU hours are spent. A READ timeout means something
+        # accepted the connection and then took too long — a cold gunicorn worker
+        # or a first-request DB migration — which is a slow server, not a wrong
+        # URI, and retrying is correct. Treating them alike is what made the live
+        # gate flaky: the budget that fails fast on a bad URI is far too short for
+        # a cold server on a small VM.
+        deadline = time.monotonic() + _STARTUP_COLD_BUDGET_S
+        attempt = 0
+        while True:
+            try:
+                experiment = client.get_experiment_by_name(experiment_name)
+                experiment_id = (
+                    experiment.experiment_id
+                    if experiment is not None
+                    else client.create_experiment(experiment_name)
+                )
+                run = client.create_run(
+                    experiment_id, tags={str(k): str(v) for k, v in (tags or {}).items()}
+                )
+                self._run_id = run.info.run_id
+                client.set_tag(self._run_id, "mlflow.runName", run_name)
+                for key, value in (params or {}).items():
+                    client.log_param(self._run_id, key, value)
+                break
+            except MlflowStartupError:
+                raise
+            except Exception as exc:
+                if not _is_cold_start(exc) or time.monotonic() >= deadline:
+                    msg = f"MLflow tracking unreachable/misconfigured at {tracking_uri!r}: {exc}"
+                    raise MlflowStartupError(msg) from exc
+                attempt += 1
+                backoff = min(2.0**attempt, 8.0)
+                logger.warning(
+                    f"mlflow: {tracking_uri} answered but read-timed-out "
+                    f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
+                )
+                time.sleep(backoff)
 
         logger.info(f"mlflow: tracking run {run_name!r} at {tracking_uri} (run_id={self._run_id})")
 

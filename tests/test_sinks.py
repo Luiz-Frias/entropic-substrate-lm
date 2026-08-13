@@ -603,3 +603,59 @@ def test_kappa_metric_helper_handles_empty_rows_without_crashing() -> None:
     # No kappa keys, no crash — an empty kappa list is falsy and short-circuits.
     metrics = client._runs[sink.run_id].data.metrics
     assert not any(k.startswith("kappa/") for k in metrics)
+
+
+# ------------------------------------------- cold server vs absent server
+class ReadTimeoutError(Exception):
+    """Stands in for urllib3's ReadTimeoutError.
+
+    Named to match the real class EXACTLY: :func:`_is_cold_start` matches by
+    type name to avoid importing urllib3, so a stub with a decorated name
+    (``_ReadTimeoutError``) would not be recognised — as this test proved on
+    its first run.
+    """
+
+
+class NewConnectionError(Exception):
+    """Stands in for urllib3's connect-time failure: nothing is listening."""
+
+
+def test_read_timeout_in_the_cause_chain_is_a_cold_start() -> None:
+    """A wrapped read timeout means the server ANSWERED and was slow."""
+    from entropic_substrate.sinks import _is_cold_start
+
+    wrapped = RuntimeError("API request to /experiments/create failed")
+    wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+    assert _is_cold_start(wrapped)
+
+
+def test_connection_refused_is_not_a_cold_start() -> None:
+    """Nothing listening is MISCONFIGURATION — it must abort, never retry.
+
+    This is the startup-abort invariant: retrying a bad URI would burn the
+    whole cold-start budget before failing, which is the opposite of failing
+    fast before GPU hours are spent.
+    """
+    from entropic_substrate.sinks import _is_cold_start
+
+    wrapped = RuntimeError("failed to connect")
+    wrapped.__cause__ = NewConnectionError("[Errno 61] Connection refused")
+    assert not _is_cold_start(wrapped)
+
+
+def test_cold_start_detection_survives_a_broken_cause_chain() -> None:
+    """Fallback path: a re-raise that dropped __cause__ still classifies."""
+    from entropic_substrate.sinks import _is_cold_start
+
+    assert _is_cold_start(RuntimeError("HTTPConnectionPool: Read timed out."))
+
+
+def test_cold_start_walk_terminates_on_a_cyclic_cause_chain() -> None:
+    """A self-referential chain must not hang the startup path."""
+    from entropic_substrate.sinks import _is_cold_start
+
+    a = RuntimeError("a")
+    b = RuntimeError("b")
+    a.__cause__ = b
+    b.__cause__ = a
+    assert not _is_cold_start(a)
