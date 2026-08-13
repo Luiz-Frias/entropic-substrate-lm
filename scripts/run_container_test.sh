@@ -1,13 +1,38 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_container_test.sh — the LIVE gate for phase p2-mlflow.
+# run_container_test.sh — the LIVE gate for phases p2-mlflow / p3-allowlist.
 #
-# Brings up postgres + mlflow (compose.yaml, podman-compose), waits for the
-# tracking server to report healthy, runs the integration-marked test suite
-# against it (real localhost tracking server, real Cloudflare R2 artifacts —
-# never MinIO), then tears the stack down. Teardown runs on ANY exit path
-# (trap on EXIT) so a red test run never leaves the stack up blocking the
-# next invocation.
+# TWO SEQUENTIAL PHASES, never concurrent:
+#   1. Brings up postgres + mlflow (compose.yaml, podman-compose), waits for
+#      the tracking server to report healthy, runs the main integration
+#      suite against it (real localhost tracking server, real Cloudflare R2
+#      artifacts — never MinIO), then tears the stack down BEFORE phase 2
+#      starts.
+#   2. tests/test_mlflow_allowed_hosts.py — self-contained (its own
+#      module-scoped fixture owns a SEPARATE compose stack, own project
+#      name, own teardown).
+#
+# WHY SEQUENTIAL, NOT CONCURRENT (measured, not assumed): an earlier attempt
+# ran phase 2 as ordinary pytest inside phase 1's `-m integration` call,
+# while the main stack was still up. MEASURED on this 4-vCPU podman VM: a
+# second full postgres+mlflow pair, booted while the first sits idle,
+# consumed only ~39% CPU share (`podman top` on the starving process) and
+# its healthcheck was still failing (FailingStreak 34/40) after 5+ minutes —
+# approaching compose.yaml's own healthcheck retry budget (interval 3s x
+# retries 40) with NO margin, i.e. a coin flip between "eventually healthy"
+# and "permanently unhealthy," not a slow-but-bounded delay. Raising a
+# client-side wait timeout would not fix that: the ceiling is the
+# healthcheck's own retry budget, which invariant #5 forbids touching (it
+# would change the main stack's behavior for everyone). Root cause is two
+# full stacks contending for one machine's CPU — the fix is not running
+# them at the same time, not a bigger number. Solo (this shape), the
+# allowlist stack's mlflow container was observed healthy well inside its
+# existing 120s bound every time — no bound in that module needed raising.
+#
+# Teardown runs on ANY exit path for phase 1 (trap on EXIT) so a red test
+# run never leaves that stack up blocking the next invocation; phase 2 owns
+# its own teardown entirely inside its pytest fixture (down -v in a
+# finally), so nothing at this script's level needs to clean it up.
 #
 # Usage: just container-test   (wraps this script)
 # =============================================================================
@@ -50,6 +75,16 @@ if [[ -z "${MLFLOW_S3_ENDPOINT_URL:-}" ]]; then
   exit 1
 fi
 
+# DO NOT put MLFLOW_ALLOWED_HOSTS / MLFLOW_CORS_ALLOWED_ORIGINS in .env for
+# local convenience (e.g. to "match the Railway deploy"). compose.yaml's
+# --allowed-hosts REPLACES mlflow's compiled-in localhost default outright
+# rather than extending it (verified empirically against the pinned image)
+# — this script's own mlflow container is reached via localhost:<ephemeral
+# port>, so a Railway-domain value in .env would silently 403 every
+# integration test below the moment it's sourced. This script intentionally
+# leaves both vars unset for its own stack; tests/test_mlflow_allowed_hosts.py
+# boots a SEPARATE, short-lived stack to exercise the allowlist instead.
+
 # Project name derived PER-WORKTREE, not fixed — NOT $$ either: a PID is not
 # stable if teardown runs from a different shell invocation than the up,
 # which is exactly the trap-on-EXIT case. Basename of this checkout's
@@ -86,13 +121,16 @@ MLFLOW_CONTAINER="${PROJECT}_mlflow_1"
 
 say() { printf '\n[container-test] %s\n' "$*"; }
 
-cleanup() {
-  # Capture the triggering exit status as the FIRST statement — `$?` here is
-  # still the script's real exit code, not whatever `local`/the trap itself
-  # would produce if this were computed later.
-  local exit_status=$?
+# Takes the exit status EXPLICITLY (as $1) rather than reading `$?` itself,
+# because this is now called twice: once from the EXIT trap (where `$?` is
+# the right source) and once DELIBERATELY right after phase 1's pytest call
+# succeeds, to tear the main stack down before phase 2 starts (see the
+# module header on why concurrent stacks are a contention hazard, not just
+# a resource nicety).
+cleanup_main_stack() {
+  local exit_status="$1"
   if [[ "$exit_status" -eq 0 ]]; then
-    say "success — tearing down the stack, including volumes..."
+    say "success — tearing down the mlflow/postgres stack, including volumes..."
     "${COMPOSE[@]}" down -v --remove-orphans || true
   else
     # PRESERVE EVIDENCE ON FAILURE: no "-v" here — a red gate must not
@@ -105,7 +143,7 @@ cleanup() {
     say "remove manually once done: podman volume rm ${PROJECT}_pgdata"
   fi
 }
-trap cleanup EXIT
+trap 'cleanup_main_stack $?' EXIT
 
 say "building + starting postgres + mlflow..."
 "${COMPOSE[@]}" up -d --build
@@ -215,7 +253,23 @@ fi
 say "podman ps:"
 podman ps
 
-say "running integration tests against ${MLFLOW_URL}..."
+say "phase 1/2: running the main integration suite against ${MLFLOW_URL}..."
 export MLFLOW_TRACKING_URI="$MLFLOW_URL"
 export ENTROPIC_MLFLOW_TINY=1
-PYTHONPATH=src uv run pytest -m integration -q --disable-warnings
+# --ignore: tests/test_mlflow_allowed_hosts.py is phase 2, run below, AFTER
+# this stack is torn down — see the module header comment on why the two
+# never run concurrently.
+PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
+  --ignore=tests/test_mlflow_allowed_hosts.py
+
+# Tear the main stack down NOW, deliberately, rather than waiting for the
+# EXIT trap — phase 2 must never see this stack still up (see the module
+# header's measured contention finding). Then disable the trap: the stack
+# is already gone, so there is nothing left for it to clean up, and leaving
+# it armed would just re-run `down` a second time (harmless, but reporting
+# "success — tearing down..." twice would misleadingly suggest two stacks).
+cleanup_main_stack 0
+trap - EXIT
+
+say "phase 2/2: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
+PYTHONPATH=src uv run pytest tests/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings

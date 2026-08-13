@@ -71,40 +71,78 @@ services:
     # fixed "host:container" mapping. See the module-level comment above.
     ports:
       - "5000"
+    # SINGLE WORKER — this is a determinism fix, not a tuning knob, and it
+    # is the root cause of the live gate's startup flakiness. MLflow's
+    # default worker count has every uvicorn worker independently import
+    # the full FastAPI/SQLAlchemy/Alembic stack at once; on this 4-vCPU
+    # podman VM they contend, uvicorn's supervisor kills the workers that
+    # overrun its startup timeout, and respawns them — so startup stretches
+    # unboundedly under load. Measured back-to-back under IDENTICAL
+    # conditions — same image (cc5080a8ca0c), same clean volume, and the
+    # same unrelated container (agx-qdrant) resident for both arms, so the
+    # host was NOT idle and the comparison is a controlled A/B rather than
+    # a best-case number:
+    #   default   -> 41s to "Application startup complete", repeated
+    #                "Child process [N] died" crash-loop
+    #   --workers 1 -> 8s, ZERO child deaths
+    # That one cause produced BOTH observed gate failures: the container
+    # never reporting healthy inside the 120s poll, and the client's
+    # RemoteDisconnected (a request landing on a worker that was then
+    # killed mid-flight). Concurrency is not under test here — this stack
+    # serves one pytest process — so a worker pool buys nothing and costs
+    # determinism. Do NOT "fix" a recurrence by raising the poll budget;
+    # see sinks.py on why bigger numbers are not a fix. Do NOT change
+    # --workers for the host-allowlist work below either — settled and
+    # pinned by test on the parent branch, orthogonal to this knob.
+    #
+    # HOST ALLOWLIST (p3) — sh -c wrapper, not a flat argv list, because the
+    # two ${VAR:+...} blocks below must make --allowed-hosts and
+    # --cors-allowed-origins OPTIONAL FLAGS, not optional VALUES.
+    # podman-compose 1.6.0's ${VAR:-default}/${VAR:+word} interpolation runs
+    # inside a `command:` list entry (verified empirically against this
+    # exact shape) using THIS PROCESS's environment at compose-parse time —
+    # so with MLFLOW_ALLOWED_HOSTS / MLFLOW_CORS_ALLOWED_ORIGINS unset (the
+    # default: neither is in .env, see run_container_test.sh), both
+    # ${VAR:+...} blocks resolve to nothing and the rendered command is
+    # byte-identical to the flag-less command this replaced — mlflow falls
+    # back to its own compiled-in "localhost + private IPs" default.
+    # LOCAL BEHAVIOR IS UNCHANGED. Verify with `podman compose ... config`.
+    #
+    # Why not always pass the flag with a possibly-empty value instead
+    # (`--allowed-hosts "${MLFLOW_ALLOWED_HOSTS:-}"`)? Measured against the
+    # pinned image (ghcr.io/mlflow/mlflow:v3.15.0): an explicit empty string
+    # IS safe for --allowed-hosts (logs "Security middleware enabled with
+    # default settings (localhost-only)" — identical to omitting the flag)
+    # but HANGS the server for --cors-allowed-origins: the process burns
+    # CPU indefinitely inside CORS middleware setup and never binds the
+    # listening socket (verified — `podman top` showed only the parent
+    # process, no uvicorn child, after 60+s; a `podman exec` python probe
+    # got ConnectionRefusedError then a timeout hitting localhost:5000
+    # INSIDE the container). Root cause not chased further upstream (mlflow
+    # is vendored here, not ours to patch) — omitting the flag entirely
+    # sidesteps the bug instead of leaning on a "safe" default value that
+    # only happens to be safe for one of the two flags.
+    #
+    # REPLACE, NOT EXTEND: setting --allowed-hosts REPLACES mlflow's
+    # compiled default outright — verified empirically, a server configured
+    # with a custom allowlist 403s a PLAIN request with no Host override
+    # (i.e. exactly what a client at localhost:<ephemeral-port> sends).
+    # These vars must stay unset for `just container-test`'s own stack, or
+    # the live gate 403s itself — see the guard note in
+    # scripts/run_container_test.sh.
+    #
+    # NEVER '*': mlflow accepts a wildcard allowlist value, which disables
+    # the DNS-rebinding guard entirely. Forbidden here regardless of
+    # convenience — no default, no fallback, ever resolves to '*'.
     command:
-      - mlflow
-      - server
-      - --host
-      - 0.0.0.0
-      - --port
-      - "5000"
-      # SINGLE WORKER — this is a determinism fix, not a tuning knob, and it
-      # is the root cause of the live gate's startup flakiness. MLflow's
-      # default worker count has every uvicorn worker independently import
-      # the full FastAPI/SQLAlchemy/Alembic stack at once; on this 4-vCPU
-      # podman VM they contend, uvicorn's supervisor kills the workers that
-      # overrun its startup timeout, and respawns them — so startup stretches
-      # unboundedly under load. Measured back-to-back under IDENTICAL
-      # conditions — same image (cc5080a8ca0c), same clean volume, and the
-      # same unrelated container (agx-qdrant) resident for both arms, so the
-      # host was NOT idle and the comparison is a controlled A/B rather than
-      # a best-case number:
-      #   default   -> 41s to "Application startup complete", repeated
-      #                "Child process [N] died" crash-loop
-      #   --workers 1 -> 8s, ZERO child deaths
-      # That one cause produced BOTH observed gate failures: the container
-      # never reporting healthy inside the 120s poll, and the client's
-      # RemoteDisconnected (a request landing on a worker that was then
-      # killed mid-flight). Concurrency is not under test here — this stack
-      # serves one pytest process — so a worker pool buys nothing and costs
-      # determinism. Do NOT "fix" a recurrence by raising the poll budget;
-      # see sinks.py on why bigger numbers are not a fix.
-      - --workers
-      - "1"
-      - --backend-store-uri
-      - postgresql://mlflow:mlflow@postgres:5432/mlflow
-      - --artifacts-destination
-      - s3://entropic-substrate-lm/mlflow/
+      - sh
+      - -c
+      - >-
+        exec mlflow server --host 0.0.0.0 --port 5000 --workers 1
+        --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
+        --artifacts-destination s3://entropic-substrate-lm/mlflow/
+        ${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts "$MLFLOW_ALLOWED_HOSTS"}
+        ${MLFLOW_CORS_ALLOWED_ORIGINS:+--cors-allowed-origins "$MLFLOW_CORS_ALLOWED_ORIGINS"}
     healthcheck:
       test:
         [

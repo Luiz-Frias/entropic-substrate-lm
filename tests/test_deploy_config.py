@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 
@@ -17,6 +18,23 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def _pyproject() -> dict[str, Any]:
     with (REPO_ROOT / "pyproject.toml").open("rb") as file:
         return tomllib.load(file)
+
+
+def _mlflow_command_script() -> str:
+    """The literal ``sh -c`` script compose.yaml hands to the mlflow
+    container — a single string (YAML folded scalar), NOT a flat argv list.
+    Parsed with a real YAML loader rather than string-sliced, so this stays
+    correct regardless of how the surrounding comment block is reflowed.
+    """
+    compose = yaml.safe_load((REPO_ROOT / "compose.yaml").read_text(encoding="utf-8"))
+    command = compose["services"]["mlflow"]["command"]
+    assert command[:2] == ["sh", "-c"], (
+        "mlflow's command must stay an `sh -c` wrapper — that's what makes "
+        "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
+        "compose.yaml's own HOST ALLOWLIST comment)",
+        command,
+    )
+    return command[2]
 
 
 def _dependency_names(entries: list[str | dict[str, str]]) -> set[str]:
@@ -72,15 +90,31 @@ def test_live_stack_pins_a_single_mlflow_worker() -> None:
     [N] died`` versus 8s and zero deaths at ``--workers 1``. Concurrency is not under
     test in this stack (one pytest process drives it), so the pool buys nothing.
     """
-    compose = (REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
-    command_block = compose.partition("    command:")[2].partition("    healthcheck:")[0]
-    entries = [
-        line.strip().removeprefix("- ").strip('"')
-        for line in command_block.splitlines()
-        if line.strip().startswith("- ")
-    ]
+    entries = _mlflow_command_script().split()
     assert "--workers" in entries, "compose.yaml must pin an explicit MLflow worker count"
     assert entries[entries.index("--workers") + 1] == "1"
+
+
+def test_live_stack_host_allowlist_is_optional_and_never_wildcard() -> None:
+    """The p3 allowlist knobs must be OPTIONAL FLAGS (absent when unset —
+    not present-with-an-empty-value; --cors-allowed-origins "" measurably
+    HANGS the pinned mlflow image, see compose.yaml's own comment) and must
+    never resolve to a bare '*', which silently disables the DNS-rebinding
+    guard while looking configured.
+    """
+    script = _mlflow_command_script()
+    assert "${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script, script
+    assert "${MLFLOW_CORS_ALLOWED_ORIGINS:+--cors-allowed-origins" in script, script
+    # Neither flag may be present unconditionally (i.e. outside a `:+` guard)
+    # — a bare `--allowed-hosts "${MLFLOW_ALLOWED_HOSTS:-}"` shape would pass
+    # an empty string on the unset path, which is the exact footgun this
+    # phase measured and rejected for --cors-allowed-origins.
+    assert re.search(r"(?<!\+)--allowed-hosts \"\$\{MLFLOW_ALLOWED_HOSTS:-", script) is None
+    assert (
+        re.search(r"(?<!\+)--cors-allowed-origins \"\$\{MLFLOW_CORS_ALLOWED_ORIGINS:-", script)
+        is None
+    )
+    assert "*" not in script, "compose.yaml must never default the allowlist to a wildcard"
 
 
 def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:
