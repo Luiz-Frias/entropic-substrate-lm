@@ -268,36 +268,36 @@ class Trainer:
             "nats_per_byte": loss / self.meta.bytes_per_token,
         }
 
-    @torch.no_grad()
     def evaluate(self, num_batches: int | None = None) -> EvalResult:
         """Deterministic held-out evaluation, reported in nats/byte."""
-        self.model.eval()
-        self.val_sampler.reset_eval()
-        n = num_batches if num_batches is not None else self.cfg.data.num_eval_batches
-        losses: list[float] = []
-        kappas: list[list[float]] = []
-        gates: list[list[float]] = []
-        entropies: list[float] = []
-        for x, y in self.val_sampler.iter_batches(n):
-            with self._autocast():
-                out = self.model(x, y)
-            losses.append(float(_require_loss(out, "evaluate")))
-            if out.kappa_stats:
-                kappas = [s.kappa for s in out.kappa_stats]
-                gates = [s.gate_fraction for s in out.kappa_stats]
-                entropies = [s.entropy for s in out.kappa_stats]
-        mean_loss = float(np.mean(losses))
-        npb = mean_loss / self.meta.bytes_per_token
-        self.model.train()
-        return EvalResult(
-            loss=mean_loss,
-            nats_per_byte=npb,
-            bits_per_byte=npb / math.log(2.0),
-            perplexity=float(math.exp(min(mean_loss, 20.0))),
-            kappa=kappas,
-            gate_fraction=gates,
-            router_entropy=entropies,
-        )
+        with torch.no_grad():
+            self.model.eval()
+            self.val_sampler.reset_eval()
+            n = num_batches if num_batches is not None else self.cfg.data.num_eval_batches
+            losses: list[float] = []
+            kappas: list[list[float]] = []
+            gates: list[list[float]] = []
+            entropies: list[float] = []
+            for x, y in self.val_sampler.iter_batches(n):
+                with self._autocast():
+                    out = self.model(x, y)
+                losses.append(float(_require_loss(out, "evaluate")))
+                if out.kappa_stats:
+                    kappas = [s.kappa for s in out.kappa_stats]
+                    gates = [s.gate_fraction for s in out.kappa_stats]
+                    entropies = [s.entropy for s in out.kappa_stats]
+            mean_loss = float(np.mean(losses))
+            npb = mean_loss / self.meta.bytes_per_token
+            self.model.train()
+            return EvalResult(
+                loss=mean_loss,
+                nats_per_byte=npb,
+                bits_per_byte=npb / math.log(2.0),
+                perplexity=float(math.exp(min(mean_loss, 20.0))),
+                kappa=kappas,
+                gate_fraction=gates,
+                router_entropy=entropies,
+            )
 
     # ----------------------------------------------------------- lifecycle
     def state_dict(self) -> dict[str, Any]:
