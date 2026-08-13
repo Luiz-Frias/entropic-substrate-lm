@@ -87,7 +87,11 @@ indent-style = "space"
 [tool.basedpyright]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
-include = ["src"]
+# scripts/ carries the exit-gate typestate core (scripts/exit_gate.py); the
+# typestate contract (module-private brand, certificate-by-type transition) is
+# only real if the checker sees it. Mirrors .pre-commit-config.yaml's
+# basedpyright `files: ^(src/entropic_substrate/|scripts/)` and `just typecheck`.
+include = ["src", "scripts"]
 exclude = ["**/__pycache__", "tests", "build", "references"]
 reportMissingImports = false
 reportMissingTypeStubs = false
