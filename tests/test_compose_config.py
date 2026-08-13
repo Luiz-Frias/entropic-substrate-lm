@@ -69,3 +69,88 @@ def test_postgres_backing_store_uses_a_named_not_anonymous_volume() -> None:
         f"volume {volume_name!r} is mounted but not declared under the top-level "
         "`volumes:` key — that makes it anonymous, not named"
     )
+
+
+@pytest.mark.parametrize("var_name", ["MLFLOW_ALLOWED_HOSTS", "MLFLOW_CORS_ALLOWED_ORIGINS"])
+def test_allowlist_vars_flow_through_environment_not_spliced_into_command(
+    var_name: str,
+) -> None:
+    """P3 host-allowlist injection fix (L2 blocker).
+
+    MEASURED (throwaway probe, /tmp — never touched this repo): with the
+    OLD single-``$`` shape (``${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts
+    "$MLFLOW_ALLOWED_HOSTS"}`` directly in ``command:``), podman-compose
+    1.6.0's interpolator resolves it HOST-SIDE, at ``config``/``up`` parse
+    time, using whatever string is in this process's environment — before
+    the container's own shell ever runs. Setting
+    ``MLFLOW_ALLOWED_HOSTS='foo.test"; touch /tmp/PWNED ; echo "'`` and
+    running ``podman compose -f compose.yaml config`` rendered the literal
+    text ``--allowed-hosts "foo.test"; touch /tmp/PWNED ; echo ""`` into the
+    ``sh -c`` script — i.e. an arbitrary shell command spliced into
+    container-startup text, executed on every ``up``, gated only by who can
+    set an env var. Every other externally-sourced value in this file
+    (``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``,
+    ``MLFLOW_S3_ENDPOINT_URL``) passes through the ``environment:`` map — a
+    pure data channel podman hands to the container's ``exec()`` environ
+    array, never re-parsed as shell text. These two vars are the only
+    exception in the whole compose/Containerfile surface, which is what
+    makes this a blocker and not a style nit.
+
+    Two properties pin the fix:
+      1. the var is declared under ``services.mlflow.environment`` (data
+         channel), so its value never touches podman-compose's host-side
+         string interpolator at all; and
+      2. every reference to the var inside ``command:``'s ``sh -c`` script
+         is ``$``-escaped (``$$VAR`` / ``$${VAR:+...}``) so podman-compose's
+         interpolator leaves it as a LITERAL single ``$`` for the
+         CONTAINER's own shell to expand at runtime — never as something
+         podman-compose itself substitutes a value into.
+    """
+    compose = _compose()
+    mlflow_service = compose["services"]["mlflow"]
+
+    env_block = mlflow_service.get("environment") or {}
+    assert var_name in env_block, (
+        f"{var_name} must be declared under services.mlflow.environment (a pure "
+        "data channel) — not read only inside command: via host-side ${VAR} "
+        "interpolation, which splices its value into shell-command text at "
+        "podman-compose parse time (see this test's docstring for the measured "
+        "injection)."
+    )
+
+    command = mlflow_service.get("command")
+    assert command, "mlflow service must declare a command"
+    script = command[-1]
+
+    # UNESCAPED forms podman-compose's host-side interpolator would resolve
+    # at parse time — splicing the raw value into the command string. Must
+    # not appear.
+    for unescaped in (f"${{{var_name}", f"${var_name}"):
+        # A double-escaped occurrence ("$${VAR}") contains the single-escaped
+        # substring too, so exclude matches that are actually part of a
+        # "$$"-prefixed (escaped) token before failing.
+        idx = script.find(unescaped)
+        while idx != -1:
+            preceding = script[max(0, idx - 1) : idx]
+            assert preceding == "$", (
+                f"command: references {unescaped!r} without podman-compose "
+                f"$-escaping — this splices {var_name}'s value into shell-command "
+                "text at HOST-SIDE parse time instead of letting the container's "
+                "own shell expand an environment-block variable at runtime "
+                "(see this test's docstring for the measured injection)."
+            )
+            idx = script.find(unescaped, idx + 1)
+
+    # ESCAPED forms must actually be present — the property above is
+    # satisfied just as well by omitting the var from command: entirely,
+    # which would silently drop the --allowed-hosts/--cors-allowed-origins
+    # flag no matter what the operator sets the var to.
+    assert f"$${{{var_name}:+" in script, (
+        f"command: must reference {var_name} via the $-escaped optional-flag "
+        f"form ($${{{var_name}:+...}}) so the CONTAINER's shell (not "
+        "podman-compose) decides whether to pass the flag at all"
+    )
+    assert f"$${var_name}" in script, (
+        f"command: must reference {var_name}'s value via the $-escaped form "
+        f"($${var_name}) inside the quoted flag argument"
+    )
