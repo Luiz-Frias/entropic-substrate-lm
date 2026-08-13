@@ -25,11 +25,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from entropic_substrate.logging import configure_logging, logger
 
 __all__ = [
     "EXIT_TELEMETRY_GAP",
@@ -184,16 +185,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
-
+    configure_logging()
     args = _build_parser().parse_args(argv)
     try:
         if args.command == "kappa-report":
             for line in read_final_kappa(args.path).report_lines():
-                print(line)
+                logger.bind(report=True).info(line)
         else:
+            # MACHINE-CONSUMED STDOUT, NOT LOGS: scripts/run_ladder.sh
+            # captures this exact line via `$( )` and feeds it to `float()`.
+            # A loguru prefix here breaks the ladder with a ValueError — see
+            # entropic_substrate.logging's module docstring. Stays raw
+            # print(), never routed through this module's sinks.
             print(final_eval_metric(args.path, args.metric))
     except TelemetryGap as gap:
-        print(f"telemetry gap: {gap}", file=sys.stderr)
+        logger.error(f"telemetry gap: {gap}")
         return EXIT_TELEMETRY_GAP
     return 0
 

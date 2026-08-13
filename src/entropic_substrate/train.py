@@ -34,6 +34,7 @@ from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_c
 from entropic_substrate.config import Config
 from entropic_substrate.data.batching import Corpus, SequenceSampler
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
+from entropic_substrate.logging import logger
 from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
 
 __all__ = [
@@ -365,7 +366,7 @@ class Trainer:
                 }
                 self.log(record)
                 if verbose:
-                    print(
+                    logger.info(
                         f"step {self.step:>6} loss {metrics['loss']:.4f} "
                         f"nats/byte {metrics['nats_per_byte']:.4f} "
                         f"lr {metrics['lr']:.2e}"
@@ -379,7 +380,7 @@ class Trainer:
                 if verbose:
                     kappa = record.get("kappa")
                     extra = f" kappa {kappa}" if kappa else ""
-                    print(
+                    logger.info(
                         f"  eval  loss {result.loss:.4f} "
                         f"nats/byte {result.nats_per_byte:.4f} "
                         f"bits/byte {result.bits_per_byte:.4f}{extra}"

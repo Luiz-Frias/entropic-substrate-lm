@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -31,6 +30,7 @@ from entropic_substrate.data.enwik8 import load_enwik8_bytes
 from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
 from entropic_substrate.init.fisher import build_fisher_init, save_init
+from entropic_substrate.logging import configure_logging, logger
 from entropic_substrate.telemetry import EXIT_TELEMETRY_GAP, TelemetryGap, read_final_kappa
 from entropic_substrate.train import Trainer, resolve_device
 
@@ -111,13 +111,12 @@ def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
         # on — so the override covers both, but must never report a NaN-poisoned
         # run as a merely absent one.
         if os.environ.get(UNGATED_ENV) == "1":
-            print(
-                f"WARNING: no admissible E3 kappa readout ({gap}), but {UNGATED_ENV}=1 "
-                f"is set — launching {cfg.name} on an ungated premise.",
-                file=sys.stderr,
+            logger.warning(
+                f"no admissible E3 kappa readout ({gap}), but {UNGATED_ENV}=1 "
+                f"is set — launching {cfg.name} on an ungated premise."
             )
             return 0
-        print(
+        logger.error(
             "\n=============================== DECISION-NEEDED ==============================="
             f"\n{cfg.name} is execution-gated on the E3 per-head kappa readout, and it is not"
             f"\nusable:\n  {gap}"
@@ -125,20 +124,21 @@ def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
             "\nworth the GPU hours — that call is yours, not this script's"
             "\n(docs/e-3-instruction.md)."
             f"\nDeliberate ungated run: {UNGATED_ENV}=1"
-            "\n===============================================================================",
-            file=sys.stderr,
+            "\n==============================================================================="
         )
         return EXIT_TELEMETRY_GAP
-    print(f"[{cfg.name}] E3 per-head kappa divergence (the execution gate) from {path}:")
+    logger.bind(report=True).info(
+        f"[{cfg.name}] E3 per-head kappa divergence (the execution gate) from {path}:"
+    )
     for line in readout.report_lines():
-        print(line)
+        logger.bind(report=True).info(line)
     return 0
 
 
 def cmd_train(args: argparse.Namespace) -> int:
     """Handle ``train``."""
     if args.exp is None and args.config is None:
-        print("error: one of --exp or --config is required", file=sys.stderr)
+        logger.error("one of --exp or --config is required")
         return 2
     cfg = resolve_experiment_config(
         args.exp, args.config, tiny=args.tiny, overrides=_overrides(args)
@@ -150,13 +150,13 @@ def cmd_train(args: argparse.Namespace) -> int:
         if code != 0:
             return code
     trainer = Trainer(cfg, results_path=args.results)
-    print(
+    logger.info(
         f"[{cfg.name}] {trainer.raw_model.num_parameters() / 1e6:.2f}M params on "
         f"{trainer.device}; tokenizer={trainer.meta.tokenizer} "
         f"bytes/token={trainer.meta.bytes_per_token:.4f}"
     )
     trainer.fit(verbose=not args.quiet)
-    print(f"metrics -> {trainer.results_path}")
+    logger.info(f"metrics -> {trainer.results_path}")
     return 0
 
 
@@ -178,7 +178,7 @@ def cmd_init_fisher(args: argparse.Namespace) -> int:
     )
     path = save_init(table, args.out)
     norms = table.norm(dim=1)
-    print(
+    logger.info(
         f"wrote {tuple(table.shape)} Fisher init -> {path} "
         f"(norm min={norms.min():.6f} max={norms.max():.6f})"
     )
@@ -216,15 +216,20 @@ def cmd_eval(args: argparse.Namespace) -> int:
         "gate_usage": result.gate_fraction,
     }
     if args.json:
+        # MACHINE-CONSUMED STDOUT, NOT LOGS: tests/test_train_smoke.py reads
+        # this exact line back via json.loads(capsys...out.strip()...[-1]).
+        # Stays raw print(), never routed through this module's sinks — see
+        # entropic_substrate.logging's module docstring.
         print(json.dumps(payload, sort_keys=True))
     else:
         for key, value in payload.items():
-            print(f"{key}: {value}")
+            logger.bind(report=True).info(f"{key}: {value}")
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
+    configure_logging()
     args = build_parser().parse_args(argv)
     handlers = {
         "train": cmd_train,
@@ -238,7 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # condition — the guidance is in the message. Present it the way every
         # other gate here does (printed refusal, exit 2), not as a traceback
         # that reads like a defect in the trainer.
-        print(f"{exc}", file=sys.stderr)
+        logger.error(str(exc))
         return 2
 
 

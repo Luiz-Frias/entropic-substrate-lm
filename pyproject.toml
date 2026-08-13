@@ -15,6 +15,7 @@ dependencies = [
   # recommends installing straight from the repo, so we pin the git ref here too.
   "geoopt @ git+https://github.com/geoopt/geoopt.git",
   "pyyaml>=6.0.2",
+  "loguru>=0.7.3",
 ]
 
 [dependency-groups]
