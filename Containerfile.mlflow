@@ -1,16 +1,12 @@
-# Local live-stack sidecar for `just container-test` — NOT the training
-# image (Containerfile, CUDA/amd64, multi-GB). This one is small, native
-# arm64 (runs on the operator's machine only, never deployed to the H100
-# pod), and exists for exactly one reason: the official mlflow image ships
-# without psycopg2 (Postgres backend store) or boto3 (S3-protocol / R2
-# artifact proxy) — verified empirically:
-#   podman run --rm ghcr.io/mlflow/mlflow:v3.15.0 python -c "import psycopg2"
-#   podman run --rm ghcr.io/mlflow/mlflow:v3.15.0 python -c "import boto3"
-# both raise ModuleNotFoundError on the untouched image.
+# Local live-stack sidecar for `just container-test` — NOT the training image
+# (Containerfile, CUDA/amd64, multi-GB). This one is small, native to the
+# operator's machine, and never deployed to the H100 pod. The official image
+# needs two adapters for this repository's Postgres + R2 live gate:
+# psycopg2-binary and boto3.
 #
-# Pinned to the exact mlflow version uv resolved into uv.lock (see
-# pyproject.toml's `mlflow>=3.0.0` under exclude-newer) — client/server
-# version parity, never `:latest`.
+# Pinned to the same release as pyproject.toml's `mlflow-skinny` HTTP client.
+# MLflow 3.15.x currently constrains cryptography<50 in the full distribution;
+# keep that unresolved upstream risk quarantined to this local-only service.
 FROM ghcr.io/mlflow/mlflow:v3.15.0
 
 RUN pip install --no-cache-dir psycopg2-binary boto3
