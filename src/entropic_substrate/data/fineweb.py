@@ -10,16 +10,29 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-__all__ = ["FINEWEB_EOT", "FINEWEB_REPO", "fineweb_text", "stream_fineweb_bytes"]
+__all__ = [
+    "FINEWEB_EOT",
+    "FINEWEB_REPO",
+    "FINEWEB_REVISION",
+    "fineweb_text",
+    "stream_fineweb_bytes",
+]
 
 FINEWEB_REPO = "HuggingFaceFW/fineweb-edu"
+FINEWEB_REVISION = "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9"  # pragma: allowlist secret
 FINEWEB_EOT = "<|endoftext|>"
 
 
 def _iter_documents(name: str, split: str) -> Iterator[str]:
     from datasets import load_dataset  # imported lazily: heavy + optional at test time
 
-    dataset = load_dataset(FINEWEB_REPO, name=name, split=split, streaming=True)
+    dataset = load_dataset(  # nosec B615 -- immutable revision constant is forwarded below
+        FINEWEB_REPO,
+        name=name,
+        split=split,
+        streaming=True,
+        revision=FINEWEB_REVISION,
+    )
     for item in dataset:
         text = item.get("text") if isinstance(item, dict) else None
         if text:

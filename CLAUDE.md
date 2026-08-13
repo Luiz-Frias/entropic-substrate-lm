@@ -38,7 +38,7 @@ PYTHONPATH=src uv run pytest tests/test_kappa.py::test_name -m unit   # single t
 just train exp=e1-fisher     # exp ∈ {e0-byte, e0-bpe, e1-random, e1-fisher, e2, e3, tiny}
 just eval ckpt=models/e3-latest.pt
 just download-data           # enwik8 → data/, then: dvc add data/enwik8 && dvc push
-just container-build         # podman build (CUDA 12.4 image; deploy: docs/deploy-h100.md)
+just container-build         # podman build (CUDA 12.6 image; deploy: docs/deploy-h100.md)
 just pc-ci                   # prek commit + pre-push stages (CI parity)
 ```
 

@@ -361,7 +361,6 @@ class NGPTBlock(nn.Module):
         h = self._lerp(h, self.attn(self.norm_attn(h)), self.attn_alpha)
         return self._lerp(h, self.mlp(self.norm_mlp(h)), self.mlp_alpha)
 
-    @torch.no_grad()
     def normalize_weights(self) -> None:
         """Project every projection matrix back to unit norm along the embedding axis.
 
@@ -373,16 +372,17 @@ class NGPTBlock(nn.Module):
         (``dim=0``). Either way the unit constraint lives on the embedding
         dimension, so every dot product against the stream is a cosine.
         """
-        for linear, dim in (
-            (self.attn.q_proj, 1),
-            (self.attn.k_proj, 1),
-            (self.attn.v_proj, 1),
-            (self.attn.out_proj, 0),
-            (self.mlp.fc, 1),
-            (self.mlp.proj, 0),
-        ):
-            w = linear.weight
-            w.copy_(w / w.norm(p=2, dim=dim, keepdim=True).clamp_min(1e-12))
+        with torch.no_grad():
+            for linear, dim in (
+                (self.attn.q_proj, 1),
+                (self.attn.k_proj, 1),
+                (self.attn.v_proj, 1),
+                (self.attn.out_proj, 0),
+                (self.mlp.fc, 1),
+                (self.mlp.proj, 0),
+            ):
+                w = linear.weight
+                w.copy_(w / w.norm(p=2, dim=dim, keepdim=True).clamp_min(1e-12))
 
 
 def build_block(cfg: ModelConfig) -> nn.Module:

@@ -18,7 +18,9 @@ _OBJECTS = ("information", "geometry", "entropy", "the manifold", "a token")
 
 def synthetic_text(num_chars: int = 200_000, *, seed: int = 0) -> str:
     """Generate a reproducible, highly-structured pseudo-English corpus."""
-    rng = random.Random(seed)
+    # Intentional non-cryptographic PRNG: this corpus must be seed-reproducible
+    # and never generates credentials, tokens, identifiers, or security values.
+    rng = random.Random(seed)  # nosec B311
     parts: list[str] = []
     total = 0
     while total < num_chars:

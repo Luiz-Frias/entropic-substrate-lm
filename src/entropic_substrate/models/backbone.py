@@ -140,20 +140,20 @@ class LanguageModel(nn.Module):
         return build_fisher_init(fisher_source, self.cfg.d_model)
 
     # ------------------------------------------------------------- helpers
-    @torch.no_grad()
     def normalize_weights(self) -> None:
         """Unit-norm every embedding-dimension weight row (nGPT constraint)."""
-        if not self.hypersphere:
-            return
-        for block in self.blocks:
-            # torch stubs give ModuleList items as Tensor | Module; both blocks
-            # define normalize_weights.
-            block.normalize_weights()  # pyright: ignore[reportCallIssue]
-        for weight in {
-            id(self.wte.weight): self.wte.weight,
-            id(self.lm_head.weight): self.lm_head.weight,
-        }.values():
-            weight.copy_(weight / weight.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12))
+        with torch.no_grad():
+            if not self.hypersphere:
+                return
+            for block in self.blocks:
+                # torch stubs give ModuleList items as Tensor | Module; both blocks
+                # define normalize_weights.
+                block.normalize_weights()  # pyright: ignore[reportCallIssue]
+            for weight in {
+                id(self.wte.weight): self.wte.weight,
+                id(self.lm_head.weight): self.lm_head.weight,
+            }.values():
+                weight.copy_(weight / weight.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12))
 
     def kappa_modules(self) -> list[GatedKappaNorm]:
         """All gated-curvature norms in the model (empty unless E3)."""
@@ -230,7 +230,6 @@ class LanguageModel(nn.Module):
             kappa_stats=stats,
         )
 
-    @torch.no_grad()
     def generate(
         self,
         idx: torch.Tensor,
@@ -239,15 +238,16 @@ class LanguageModel(nn.Module):
         top_k: int | None = None,
     ) -> torch.Tensor:
         """Autoregressive sampling (used for qualitative checks)."""
-        for _ in range(max_new_tokens):
-            window = idx[:, -self.cfg.block_size :]
-            logits = self(window).logits[:, -1, :] / max(temperature, 1e-6)
-            if top_k is not None:
-                kth = torch.topk(logits, min(top_k, logits.shape[-1]))[0][:, -1:]
-                logits = logits.masked_fill(logits < kth, float("-inf"))
-            probs = torch.softmax(logits, dim=-1)
-            idx = torch.cat([idx, torch.multinomial(probs, num_samples=1)], dim=1)
-        return idx
+        with torch.no_grad():
+            for _ in range(max_new_tokens):
+                window = idx[:, -self.cfg.block_size :]
+                logits = self(window).logits[:, -1, :] / max(temperature, 1e-6)
+                if top_k is not None:
+                    kth = torch.topk(logits, min(top_k, logits.shape[-1]))[0][:, -1:]
+                    logits = logits.masked_fill(logits < kth, float("-inf"))
+                probs = torch.softmax(logits, dim=-1)
+                idx = torch.cat([idx, torch.multinomial(probs, num_samples=1)], dim=1)
+            return idx
 
 
 def build_model(cfg: ModelConfig, fisher_source: bytes | None = None) -> LanguageModel:
