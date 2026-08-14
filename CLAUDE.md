@@ -44,7 +44,10 @@ just pc-ci                   # prek commit + pre-push stages (CI parity)
 
 mise loads `.env` into the environment; `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` there
 are the R2 S3-protocol credentials the DVC remote needs (remote itself is committed in
-`.dvc/config`, bucket `entropic-substrate-lm`). Commit messages are gitlint-checked:
+`.dvc/config`, bucket `entropic-substrate-lm`). `MLFLOW_S3_ENDPOINT_URL` must be in
+`.env` too — `just container-test` preflight-aborts without it rather than failing later
+as an opaque boto3 retry-exhaustion error, so a checkout missing it cannot run the live
+gate at all. Commit messages are gitlint-checked:
 Conventional Commits, title ≤ 72 chars.
 
 ## House rules
