@@ -76,7 +76,12 @@ logs/
 .codex/worktrees/
 
 # --- Local Files ---
+# `*.local` matches justfile.local but NOT CLAUDE.local.md — the pattern needs
+# the name to END in `.local`, so anything carrying a real extension after it
+# (CLAUDE.local.md, notes.local.md) fell through. Verified with
+# `git check-ignore -v`: justfile.local matched, CLAUDE.local.md did not.
 *.local
+*.local.md
 
 # --- Workflow Artifacts ---
 .claude/workflows/*.registry.json
