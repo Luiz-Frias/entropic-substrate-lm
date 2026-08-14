@@ -67,8 +67,7 @@ def mlflow_command_script() -> str:
     assert command[:2] == ["sh", "-c"], (
         "mlflow's command must stay an `sh -c` wrapper — that's what makes "
         "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
-        "compose.yaml's own HOST ALLOWLIST comment)",
-        command,
+        f"compose.yaml's own HOST ALLOWLIST comment); got {command!r}"
     )
     return command[2]
 

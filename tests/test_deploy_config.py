@@ -82,9 +82,16 @@ def test_live_stack_pins_a_single_mlflow_worker() -> None:
 def test_live_stack_host_allowlist_is_optional_and_never_wildcard() -> None:
     """The p3 allowlist knobs must be OPTIONAL FLAGS (absent when unset —
     not present-with-an-empty-value; --cors-allowed-origins "" measurably
-    HANGS the pinned mlflow image, see compose.yaml's own comment) and must
-    never resolve to a bare '*', which silently disables the DNS-rebinding
-    guard while looking configured.
+    HANGS the pinned mlflow image, see compose.yaml's own comment).
+
+    What this test PINS is compose.yaml's own TEXT: no unconditional flag,
+    no literal '*' written into the command as a default. It does NOT (and,
+    parsing static YAML, cannot) prove an operator's runtime
+    MLFLOW_ALLOWED_HOSTS/MLFLOW_CORS_ALLOWED_ORIGINS value is never '*' —
+    that value arrives from the deploy environment at container-start time,
+    after this test has already run. Enforcing that at runtime (a fail-fast
+    guard inside compose.yaml's own sh -c script) is tracked separately, not
+    pinned here.
     """
     script = mlflow_command_script()
     assert "${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script, script
@@ -98,7 +105,7 @@ def test_live_stack_host_allowlist_is_optional_and_never_wildcard() -> None:
         re.search(r"(?<!\+)--cors-allowed-origins \"\$\{MLFLOW_CORS_ALLOWED_ORIGINS:-", script)
         is None
     )
-    assert "*" not in script, "compose.yaml must never default the allowlist to a wildcard"
+    assert "*" not in script, "compose.yaml must never WRITE a wildcard allowlist default"
 
 
 def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:

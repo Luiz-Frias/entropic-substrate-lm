@@ -60,7 +60,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_HOST = "allowlisted.host.test"
 FOREIGN_HOST = "evil.example"
 ALLOWED_ORIGIN = f"https://{ALLOWED_HOST}"
-FOREIGN_ORIGIN = "https://evil.example"
+# Derived from FOREIGN_HOST, not a second literal: a hardcoded duplicate
+# would silently stop matching the Host-header identity the moment someone
+# edits FOREIGN_HOST alone, splitting "foreign" into two different domains
+# across the Host-guard and CORS tests.
+FOREIGN_ORIGIN = f"https://{FOREIGN_HOST}"
 
 _SEARCH_PATH = "/api/2.0/mlflow/experiments/search"
 
@@ -95,12 +99,21 @@ def _wait_container_healthy(container: str, *, timeout_s: float = 120.0) -> None
     status = "starting"
     last_stderr = ""
     while time.monotonic() < deadline:
-        result = subprocess.run(  # nosec B603 B607
-            ["podman", "inspect", "--format", "{{.State.Health.Status}}", container],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        try:
+            result = subprocess.run(  # nosec B603 B607
+                ["podman", "inspect", "--format", "{{.State.Health.Status}}", container],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            # A slow `podman inspect` is exactly the kind of transient hiccup
+            # this loop must tolerate, not propagate — an uncaught
+            # TimeoutExpired here would abort the wait early and skip the
+            # diagnosis this function exists to attach to a GENUINE timeout.
+            last_stderr = "`podman inspect` itself timed out after 10s"
+            time.sleep(2)
+            continue
         if result.stderr.strip():
             last_stderr = result.stderr.strip()
         status = result.stdout.strip() or "starting"
