@@ -75,15 +75,29 @@ if [[ -z "${MLFLOW_S3_ENDPOINT_URL:-}" ]]; then
   exit 1
 fi
 
-# DO NOT put MLFLOW_ALLOWED_HOSTS / MLFLOW_CORS_ALLOWED_ORIGINS in .env for
-# local convenience (e.g. to "match the Railway deploy"). compose.yaml's
-# --allowed-hosts REPLACES mlflow's compiled-in localhost default outright
-# rather than extending it (verified empirically against the pinned image)
-# — this script's own mlflow container is reached via localhost:<ephemeral
-# port>, so a Railway-domain value in .env would silently 403 every
-# integration test below the moment it's sourced. This script intentionally
-# leaves both vars unset for its own stack; tests/test_mlflow_allowed_hosts.py
+# ENFORCED, not merely requested: neutralize the host-allowlist knobs for THIS
+# stack. A set allowlist REPLACES mlflow's compiled-in localhost default rather
+# than extending it (verified empirically against the pinned image), and this
+# script reaches its own mlflow container at localhost:<ephemeral port> — so a
+# Railway-domain value would silently 403 every integration test below, on one
+# developer's machine and nobody else's. tests/test_mlflow_allowed_hosts.py
 # boots a SEPARATE, short-lived stack to exercise the allowlist instead.
+#
+# EMPTY EXPORT, NOT `unset` — the intuitive fix does not work. podman-compose
+# reads the .env beside compose.yaml ITSELF, independently of this process's
+# environment, so removing these from the process env leaves the .env value in
+# full force. MEASURED against podman-compose 1.6.0 (scratch stack, .env
+# containing MLFLOW_ALLOWED_HOSTS=FROM_DOTENV_FILE, compose interpolating
+# ${MLFLOW_ALLOWED_HOSTS:-UNSET_DEFAULT}):
+#
+#   process env UNSET               -> FROM_DOTENV_FILE   (.env wins!)
+#   process env = FROM_PROCESS_ENV  -> FROM_PROCESS_ENV
+#   process env = "" (empty)        -> UNSET_DEFAULT      (empty wins)
+#
+# An empty EXPORTED value outranks .env and lets compose.yaml's `:-` default
+# apply; `unset` does not. Pinned by tests/test_run_container_test_config.py.
+export MLFLOW_ALLOWED_HOSTS=""
+export MLFLOW_CORS_ALLOWED_ORIGINS=""
 
 # Project name derived PER-WORKTREE, not fixed — NOT $$ either: a PID is not
 # stable if teardown runs from a different shell invocation than the up,
