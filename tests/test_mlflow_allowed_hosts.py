@@ -48,6 +48,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from helpers import assert_no_foreign_mlflow_stack, capture_container_logs
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
@@ -245,6 +247,14 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     env["MLFLOW_ALLOWED_HOSTS"] = ALLOWED_HOST
     env["MLFLOW_CORS_ALLOWED_ORIGINS"] = ALLOWED_ORIGIN
 
+    # PRECONDITION, checked before anything is created: this module's whole
+    # timing model assumes it is the only mlflow stack on the machine (see the
+    # module docstring). That was documented but UNENFORCED, and a run where it
+    # silently did not hold cost five minutes and produced no usable diagnosis.
+    # Raising here, before `up`, means nothing was created and there is nothing
+    # for the outer `finally` to tear down.
+    assert_no_foreign_mlflow_stack(project)
+
     try:
         try:
             # `up` itself belongs INSIDE this try, not before it: `check=True`
@@ -272,35 +282,48 @@ def allowlisted_mlflow_url() -> Iterator[str]:
             # undiagnosable until re-measured by hand. Dump the mlflow
             # container's full log to stdout (pytest attaches captured
             # stdout to whichever test triggered fixture setup) so a future
-            # red run carries its own diagnosis. `check=False` here: if `up`
-            # itself is what failed, the container may not exist yet either,
-            # and this diagnostic call must never mask the real exception
-            # being re-raised below with one of its own.
-            setup_log = subprocess.run(  # nosec B603 B607
-                [*compose, "logs", "mlflow"],
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=REPO_ROOT,
-                env=env,
-                timeout=30,
+            # red run carries its own diagnosis.
+            #
+            # A RETRACTION, because this file's comments are treated as
+            # evidence. The previous revision called `subprocess.run([*compose,
+            # "logs", "mlflow"], ..., timeout=30)` inline here and reasoned that
+            # `check=False` was enough to keep it from masking the real
+            # exception. `check=False` suppresses a NON-ZERO EXIT; it does
+            # nothing about a TIMEOUT. MEASURED on the 2026-08-13 live gate:
+            # that call raised `subprocess.TimeoutExpired` from inside this
+            # `except` block, so the `print` below never ran, the genuine setup
+            # error was demoted to `__context__`, and the outer `finally`'s
+            # `down -v` then destroyed the container and volume. The diagnostic
+            # became the reported failure and deleted the evidence for the real
+            # one. capture_container_logs() cannot raise at all — see its
+            # docstring for the measured cost figures behind that shape.
+            print(
+                f"[allowlist-fixture] SETUP FAILED — mlflow container logs "
+                f"({container}):\n{capture_container_logs(container)}"
             )
-            print(f"[allowlist-fixture] SETUP FAILED — mlflow container logs:\n{setup_log.stdout}")
+            # Recovery path, load-bearing rather than decorative: the outer
+            # `finally` below removes the container and its volume, but podman's
+            # log driver on this machine is journald (`podman info --format
+            # '{{.Host.LogDriver}}'`), so the container's own lines OUTLIVE that
+            # teardown. This is how the 2026-08-13 failure was diagnosed after
+            # the fact; printing it means the next operator does not have to
+            # rediscover it.
+            print(
+                "[allowlist-fixture] container logs survive the teardown below in "
+                f"the podman VM's journal — recover with:\n"
+                f'  podman machine ssh "sudo journalctl --no-pager CONTAINER_NAME={container}"'
+            )
             raise
         # Evidence, not just a side effect: print the server's own boot line
         # confirming the allowlist/CORS config actually landed. pytest shows
         # captured stdout on any failing test in this module, so this is a
         # cheap, always-available anchor for "was the flag even applied" —
         # separate from whether the HTTP-level assertions below pass.
-        boot_log = subprocess.run(  # nosec B603 B607
-            [*compose, "logs", "mlflow"],
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
-            env=env,
-            timeout=30,
-        )
-        for line in boot_log.stdout.splitlines():
+        # Same never-raising helper as the failure path above, for the same
+        # reason one level less obvious: this call sits on the GREEN path, so a
+        # stall here would fail a run in which nothing is actually wrong. It is
+        # an evidence nicety; it must never be able to decide the gate.
+        for line in capture_container_logs(container).splitlines():
             if "Security middleware enabled" in line:
                 print(f"[allowlist-fixture] {line}")
         yield base_url
