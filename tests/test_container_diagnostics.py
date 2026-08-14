@@ -22,7 +22,12 @@ from typing import Any
 
 import pytest
 
-from helpers import assert_no_foreign_mlflow_stack, capture_container_logs
+from helpers import (
+    assert_no_foreign_mlflow_stack,
+    capture_container_logs,
+    reap_healthcheck_orphans,
+    teardown_compose_stack,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -229,3 +234,100 @@ def test_guard_reports_but_tolerates_a_nonzero_probe(
     assert_no_foreign_mlflow_stack("mine-allowlist")
 
     assert "could not verify" in capsys.readouterr().out
+
+
+# ------------------------------------------------------ teardown_compose_stack
+def test_teardown_compose_stack_never_raises_on_timeout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """THE SECOND HALF of the 2026-08-13 defect, same class as the logs call.
+
+    The fixture's ``finally`` ran ``podman compose down -v`` with ``check=False``
+    and ``timeout=60``. ``check=False`` only suppresses a non-zero EXIT; a
+    timeout still raises ``TimeoutExpired`` — and raising from ``finally``
+    replaces whatever error the test was actually reporting. Observed live: a
+    genuine ``RuntimeError: ... did not report healthy within 120.0s`` was
+    reported to the operator as ``TimeoutExpired: podman compose ...`` instead.
+    """
+
+    def fake_run(argv: list[str], **_: Any) -> _Completed:
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=60.0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    teardown_compose_stack(["podman", "compose", "-p", "proj"], cwd=".", env={})
+
+    out = capsys.readouterr().out
+    assert "teardown" in out.lower(), out
+
+
+def test_teardown_compose_stack_never_raises_on_oserror(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing/unexecutable podman must not become the reported failure either."""
+
+    def fake_run(argv: list[str], **_: Any) -> _Completed:
+        raise OSError("podman: command not found")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    teardown_compose_stack(["podman", "compose", "-p", "proj"], cwd=".", env={})
+
+    out = capsys.readouterr().out
+    assert "teardown" in out.lower(), out
+
+
+def test_teardown_compose_stack_reports_a_nonzero_exit_loudly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Never-raising must not mean SILENT. A teardown that failed leaves
+    containers, a volume and a network behind, and the next run inherits them —
+    so the operator has to be told, even though the run itself continues.
+    """
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda argv, **_: _Completed(stderr="no such project", returncode=1),
+    )
+    teardown_compose_stack(["podman", "compose", "-p", "proj"], cwd=".", env={})
+
+    out = capsys.readouterr().out
+    assert "teardown" in out.lower(), out
+    assert "no such project" in out, out
+
+
+def test_teardown_compose_stack_is_quiet_when_it_succeeds(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The green path must not print — this runs on every passing gate."""
+    monkeypatch.setattr(subprocess, "run", lambda argv, **_: _Completed(returncode=0))
+    teardown_compose_stack(["podman", "compose", "-p", "proj"], cwd=".", env={})
+    assert capsys.readouterr().out == ""
+
+
+# ----------------------------------------------------- reap_healthcheck_orphans
+def test_reap_healthcheck_orphans_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cleanup that can fail the run it is cleaning up after is worse than none.
+
+    This one exists because a podman healthcheck timer can OUTLIVE its
+    container: MEASURED 2026-08-14, two `systemd --user` timers were still
+    `active/waiting` and re-firing `podman healthcheck run <id>` for containers
+    whose ids returned `no such object`, on a VM whose load average had reached
+    5.32/8.78/7.52 with nothing but one unrelated container running.
+    """
+
+    def fake_run(argv: list[str], **_: Any) -> _Completed:
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=30.0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    reap_healthcheck_orphans()  # must not raise
+
+
+def test_reap_healthcheck_orphans_survives_a_missing_reaper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A checkout without the script (or without podman) still runs the gate."""
+
+    def fake_run(argv: list[str], **_: Any) -> _Completed:
+        raise OSError("no such file")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    reap_healthcheck_orphans()  # must not raise

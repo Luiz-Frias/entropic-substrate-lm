@@ -156,6 +156,11 @@ cleanup_main_stack() {
     say "inspect with: podman volume inspect ${PROJECT}_pgdata"
     say "remove manually once done: podman volume rm ${PROJECT}_pgdata"
   fi
+  # Reap healthcheck timers podman left behind for the containers just removed.
+  # BOTH exit paths, because an orphan outlives a red run exactly as happily as
+  # a green one — and a red run is the more likely to have left one. Never fails
+  # the gate: `|| true` plus the script's own exit 0.
+  bash "$(dirname "${BASH_SOURCE[0]}")/reap_healthcheck_orphans.sh" || true
 }
 trap 'cleanup_main_stack $?' EXIT
 
@@ -280,6 +285,64 @@ PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
 # EXIT trap — phase 2 must never see this stack still up (see the module
 # header's measured contention finding).
 cleanup_main_stack 0
+
+# WAIT FOR THE VM TO SETTLE BEFORE PHASE 2 — and note what this is NOT: it is
+# not a bigger timeout. Phase 2's 120s health bound is not too small on a quiet
+# machine; the problem is that phase 2 starts on a machine that is BY
+# CONSTRUCTION at its busiest, because tearing down phase 1 (stopping two
+# containers, removing a network and a volume) is the thing that immediately
+# precedes it.
+#
+# MEASURED on this 4-vCPU VM, one stack at a time, identical image and compose
+# file — time from `up` to the mlflow container reporting healthy:
+#
+#     VM settled (load1 0.86)      29.64s
+#     VM at load1 4.4             135.71s      <-- past the 120s bound
+#
+# So the bound has NO margin at the exact moment phase 2 uses it, and the gate
+# reported that as a code failure three separate times today. Waiting for the
+# cause to clear is the fix; raising the bound would only move the cliff (see
+# CLAUDE.md House rule 3, and sinks.py on why bigger numbers are not fixes).
+#
+# Never fails the gate: settling is best-effort. If the machine will not settle
+# it says so and proceeds, so a genuinely busy host degrades to today's
+# behaviour rather than to a hang.
+settle_podman_vm() {
+  # Measure the HOST, not the guest. The podman VM's vCPUs are time-sliced by
+  # the hypervisor against macOS, so a guest that looks idle is still starved
+  # when the host is oversubscribed — and the guest's own load average reflects
+  # that starvation rather than causing it. MEASURED 2026-08-14 while this gate
+  # was failing: guest reported 1 runnable process out of 193 and 3231MB free,
+  # 0 containers, 1 network — completely clean — while the 8-core host sat at
+  # load 42.86 under an unrelated Rust build and a Codex process. Polling the
+  # guest would have declared that machine settled.
+  #
+  # Normalised per core, because a load of 8 means something different on 8
+  # cores than on 2. Threshold is one runnable process per core: at or below
+  # that the VM gets a fair share; the measured healthy case (29.64s to healthy)
+  # was recorded well inside it.
+  local cores
+  cores="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"
+  local target="${LIVE_GATE_SETTLE_LOAD:-$cores}"
+  local waited=0
+  local load1=""
+  while [[ "$waited" -lt 180 ]]; do
+    load1="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
+    if [[ -z "$load1" ]]; then
+      say "could not read host load (non-macOS?) — continuing without settling"
+      return 0
+    fi
+    if awk -v a="$load1" -v b="$target" 'BEGIN{exit !(a<b)}'; then
+      say "host settled (load1 ${load1} < ${target} on ${cores} cores) after ${waited}s — starting phase 2"
+      return 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  say "WARNING: host still busy (load1 ${load1} vs ${cores} cores) after ${waited}s — starting phase 2 anyway; a timing failure below is the MACHINE, not the code. Check \`ps aux -r | head\` for what is competing."
+  return 0
+}
+settle_podman_vm
 
 # Re-arm the EXIT trap for phase 2's stack — a BACKUP net, not phase 2's
 # primary cleanup. tests/test_mlflow_allowed_hosts.py's own pytest fixture

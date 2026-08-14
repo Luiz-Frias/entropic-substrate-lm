@@ -48,7 +48,12 @@ from pathlib import Path
 import pytest
 import requests
 
-from helpers import assert_no_foreign_mlflow_stack, capture_container_logs
+from helpers import (
+    assert_no_foreign_mlflow_stack,
+    capture_container_logs,
+    reap_healthcheck_orphans,
+    teardown_compose_stack,
+)
 
 pytestmark = [
     pytest.mark.integration,
@@ -253,6 +258,9 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     # silently did not hold cost five minutes and produced no usable diagnosis.
     # Raising here, before `up`, means nothing was created and there is nothing
     # for the outer `finally` to tear down.
+    # Reap BEFORE the contention check, not after: an orphaned timer is not a
+    # running stack, so the check would pass while the machine stays slow.
+    reap_healthcheck_orphans()
     assert_no_foreign_mlflow_stack(project)
 
     try:
@@ -328,13 +336,16 @@ def allowlisted_mlflow_url() -> Iterator[str]:
                 print(f"[allowlist-fixture] {line}")
         yield base_url
     finally:
-        subprocess.run(  # nosec B603 B607
-            [*compose, "down", "-v", "--remove-orphans"],
-            check=False,
-            cwd=REPO_ROOT,
-            env=env,
-            timeout=60,
-        )
+        # Never raises — see teardown_compose_stack's docstring. Raising from a
+        # `finally` replaces whatever error the run was actually reporting, and
+        # this exact call did so: a genuine "did not report healthy within
+        # 120.0s" reached the operator as a TimeoutExpired on `podman compose`.
+        teardown_compose_stack(compose, cwd=REPO_ROOT, env=env)
+        # Drop this stack's healthcheck timer if podman left it behind. Done
+        # AFTER the down, because that is when the container disappears and the
+        # timer is orphaned; done at all, because an orphan re-fires every 3s
+        # and slows every subsequent run (see the helper for the load figures).
+        reap_healthcheck_orphans()
 
 
 # --------------------------------------------------------------- acceptance #3

@@ -16,6 +16,8 @@ __all__ = [
     "load_compose",
     "mlflow_command",
     "mlflow_service_config",
+    "reap_healthcheck_orphans",
+    "teardown_compose_stack",
     "tiny_config",
     "tiny_model_config",
 ]
@@ -263,6 +265,97 @@ def assert_no_foreign_mlflow_stack(project: str, *, timeout_s: float = 15.0) -> 
             f"  podman compose -p <its-project> -f compose.yaml down -v --remove-orphans"
         )
         raise RuntimeError(msg)
+
+
+def teardown_compose_stack(
+    compose_argv: list[str],
+    *,
+    cwd: Path | str,
+    env: dict[str, str],
+    timeout_s: float = 60.0,
+) -> None:
+    """Tear a compose stack down. **This never raises**, but it is never silent
+    about failing either.
+
+    SAME DEFECT CLASS AS capture_container_logs(), one call site further on. The
+    fixture's ``finally`` previously ran this inline with ``check=False`` and
+    ``timeout=60``. ``check=False`` suppresses a non-zero EXIT and nothing else;
+    a timeout still raises ``TimeoutExpired`` — from inside ``finally``, which
+    REPLACES whatever exception the test was in the middle of reporting.
+    OBSERVED live (2026-08-14): a genuine
+
+        RuntimeError: ...allowlist_mlflow_1 did not report healthy within 120.0s
+
+    reached the operator as ``TimeoutExpired: Command '['podman', 'compose', ...``
+    instead. Cleanup must never be able to decide what a run reports.
+
+    Never-raising must NOT mean quiet, though: a teardown that failed leaves
+    containers, a network and a volume behind, and the NEXT run inherits them as
+    the contention that assert_no_foreign_mlflow_stack() then refuses. So a
+    failure prints loudly and the run continues; only the green path is silent,
+    because this executes on every passing gate.
+    """
+    argv = [*compose_argv, "down", "-v", "--remove-orphans"]
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=cwd,
+            env=env,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[live-gate] WARNING: teardown did not finish within {timeout_s}s — "
+            f"containers/volumes may survive: {' '.join(argv)}"
+        )
+        return
+    except OSError as exc:
+        print(f"[live-gate] WARNING: teardown could not run ({exc!r}): {' '.join(argv)}")
+        return
+    if result.returncode != 0:
+        print(
+            f"[live-gate] WARNING: teardown exited {result.returncode} — "
+            f"containers/volumes may survive: {result.stderr.strip()}"
+        )
+
+
+def reap_healthcheck_orphans(*, timeout_s: float = 60.0) -> None:
+    """Drop podman healthcheck timers whose container is gone. Never raises.
+
+    A compose healthcheck creates a transient ``systemd --user`` timer inside the
+    podman VM, and that timer can OUTLIVE its container: MEASURED 2026-08-14, two
+    were still ``active/waiting`` and re-firing ``podman healthcheck run <id>``
+    every 3s for ids that ``podman inspect`` reported as "no such object", on a VM
+    whose load average had reached 5.32/8.78/7.52 with nothing running but one
+    unrelated container.
+
+    That matters here because this suite's bounds are load-sensitive — 29.64s to
+    healthy on a settled VM versus 135.71s at load1 4.4, against a 120s bound — so
+    orphans RATCHET the floor: each run that leaves one makes the next slower, and
+    the suite reads a moving baseline as flakiness.
+
+    Delegates to ``scripts/reap_healthcheck_orphans.sh`` rather than reimplementing
+    it, because ``scripts/run_container_test.sh`` needs exactly the same cleanup and
+    two copies of a machine-state mutation would drift.
+    """
+    script = _REPO_ROOT / "scripts" / "reap_healthcheck_orphans.sh"
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["bash", str(script)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_s,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        print(f"[live-gate] WARNING: could not reap orphaned healthcheck timers: {exc!r}")
+        return
+    for line in result.stdout.splitlines():
+        if "reaped" in line:
+            print(line)
 
 
 def tiny_config(tmp_path: Path, **model_overrides: object) -> Config:
