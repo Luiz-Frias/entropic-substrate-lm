@@ -1,6 +1,7 @@
 # mise.toml — entropic-substrate-lm
 # Pins: python 3.12, uv (pkg mgr), just (task runner), prek (Rust pre-commit runner),
-# shellcheck/shfmt/bats (shell linting/testing), dprint (Markdown/config formatting).
+# shellcheck/shfmt/bats (shell linting/testing), dprint (Markdown/config formatting),
+# graphite (stacked-PR CLI).
 # Mirrors doc-lora-training convention.
 [env]
 _.python.venv = { path = ".venv", create = true }
@@ -18,6 +19,13 @@ shellcheck = "latest"
 shfmt = "latest"
 bats = "latest"
 "ubi:dprint/dprint" = "0.54.0"
+# Graphite CLI — this repo ships as stacked PRs, so `gt` is toolchain, not a
+# personal preference. Pinned rather than "latest": it rewrites branch
+# parent/child metadata, and a silent CLI upgrade mid-stack is not something to
+# discover from a restack. Registry entry resolves to withgraphite's tap.
+# `gt auth` still needs a per-user token — that is a SECRET and never lands
+# here; see the House rules in CLAUDE.md.
+graphite = "1.8.6"
 
 # Shell tasks delegate to just — keeps a single source of truth for recipes.
 [tasks.check]
