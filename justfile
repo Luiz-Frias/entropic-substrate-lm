@@ -129,6 +129,8 @@ eval ckpt *ARGS:
 # platform defaults to linux/amd64: GPU pods are x86_64, and a bare build on
 # Apple Silicon would produce an arm64 image they cannot run (qemu makes the
 # cross-build slower but correct).
+
+# Build the training container image (defaults to linux/amd64 for GPU pods)
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
     @echo "→ Building container image {{tag}} for {{platform}}..."
     podman build --platform {{platform}} -t {{tag}} -f Containerfile .
@@ -136,6 +138,8 @@ container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
 # LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
 # native arm64, real R2 artifacts), run the integration suite against it,
 # tear down. See scripts/run_container_test.sh for the orchestration.
+
+# LIVE gate: real MLflow + Postgres + R2 stack, integration suite, teardown
 container-test:
     bash scripts/run_container_test.sh
 
