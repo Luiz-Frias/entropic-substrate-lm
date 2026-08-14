@@ -141,7 +141,16 @@ def _discover_host_port(container: str, container_port: int = 5000) -> int:
             f"discover the ephemeral host port (stderr: {result.stderr.strip()!r})"
         )
         raise RuntimeError(msg)
-    return int(lines[0].rsplit(":", 1)[-1])
+    port_field = lines[0].rsplit(":", 1)[-1]
+    try:
+        return int(port_field)
+    except ValueError as exc:
+        msg = (
+            f"`podman port {container} {container_port}` printed an unparsable line "
+            f"{lines[0]!r} (expected a trailing `:<port>`; stderr: "
+            f"{result.stderr.strip()!r})"
+        )
+        raise RuntimeError(msg) from exc
 
 
 def _expect_ok(

@@ -264,12 +264,28 @@ PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
 
 # Tear the main stack down NOW, deliberately, rather than waiting for the
 # EXIT trap — phase 2 must never see this stack still up (see the module
-# header's measured contention finding). Then disable the trap: the stack
-# is already gone, so there is nothing left for it to clean up, and leaving
-# it armed would just re-run `down` a second time (harmless, but reporting
-# "success — tearing down..." twice would misleadingly suggest two stacks).
+# header's measured contention finding).
 cleanup_main_stack 0
-trap - EXIT
+
+# Re-arm the EXIT trap for phase 2's stack — a BACKUP net, not phase 2's
+# primary cleanup. tests/test_mlflow_allowed_hosts.py's own pytest fixture
+# already owns `down -v --remove-orphans` in a `finally`, which covers every
+# normal Python-level exit path (return, raised exception, KeyboardInterrupt
+# — SIGINT's default handler raises a catchable exception). What a `finally`
+# block does NOT cover is this SCRIPT receiving SIGTERM (e.g. a CI job
+# cancellation) while the pytest subprocess is mid-run: SIGTERM's default
+# disposition terminates the process without running Python-level `finally`
+# blocks. Re-arming this script's own EXIT trap closes that gap at the shell
+# level, one layer up from the fixture. `down -v --remove-orphans` against a
+# stack the fixture already tore down cleanly is a documented no-op (same
+# idiom the fixture itself relies on for a stack that never fully came up),
+# so this never double-reports a teardown that already happened.
+ALLOWLIST_PROJECT="${PROJECT}-allowlist"
+cleanup_allowlist_stack() {
+  podman compose -p "$ALLOWLIST_PROJECT" -f compose.yaml down -v --remove-orphans \
+    >/dev/null 2>&1 || true
+}
+trap cleanup_allowlist_stack EXIT
 
 say "phase 2/2: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
 PYTHONPATH=src uv run pytest tests/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings

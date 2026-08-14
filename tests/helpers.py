@@ -40,7 +40,15 @@ def load_compose() -> dict[str, Any]:
     cheap, infrequent static-config checks, not a hot path).
     """
     text = (_REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
-    return yaml.safe_load(text)
+    parsed = yaml.safe_load(text)
+    if not isinstance(parsed, dict):
+        msg = (
+            f"compose.yaml did not parse to a mapping (got {type(parsed).__name__}) — "
+            "an empty or malformed compose.yaml would otherwise surface as an opaque "
+            "KeyError/TypeError several calls downstream in mlflow_service_config()"
+        )
+        raise ValueError(msg)
+    return parsed
 
 
 def mlflow_service_config() -> dict[str, Any]:
@@ -64,12 +72,16 @@ def mlflow_command_script() -> str:
     service = mlflow_service_config()
     command = service.get("command")
     assert command, "mlflow service must declare a command"
-    assert command[:2] == ["sh", "-c"], (
+    # length-checked alongside the prefix: `command[:2] == ["sh", "-c"]` alone
+    # passes for the exact two-element list `["sh", "-c"]` too, which would
+    # then raise an unlabeled IndexError on `command[2]` below instead of
+    # naming the real defect (a missing script argument).
+    assert len(command) == 3 and command[:2] == ["sh", "-c"], (
         "mlflow's command must stay an `sh -c` wrapper — that's what makes "
         "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
         f"compose.yaml's own HOST ALLOWLIST comment); got {command!r}"
     )
-    return command[2]
+    return str(command[2])
 
 
 def tiny_config(tmp_path: Path, **model_overrides: object) -> Config:
