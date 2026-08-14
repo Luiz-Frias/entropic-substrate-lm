@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from helpers import mlflow_command_script
+from helpers import mlflow_command
 
 pytestmark = pytest.mark.unit
 
@@ -74,38 +74,23 @@ def test_live_stack_pins_a_single_mlflow_worker() -> None:
     [N] died`` versus 8s and zero deaths at ``--workers 1``. Concurrency is not under
     test in this stack (one pytest process drives it), so the pool buys nothing.
     """
-    entries = mlflow_command_script().split()
-    assert "--workers" in entries, "compose.yaml must pin an explicit MLflow worker count"
-    assert entries[entries.index("--workers") + 1] == "1"
+    command = mlflow_command()
+    assert "--workers" in command, "compose.yaml must pin an explicit MLflow worker count"
+    assert command[command.index("--workers") + 1] == "1"
 
 
-def test_live_stack_host_allowlist_is_optional_and_never_wildcard() -> None:
-    """The p3 allowlist knobs must be OPTIONAL FLAGS (absent when unset —
-    not present-with-an-empty-value; --cors-allowed-origins "" measurably
-    HANGS the pinned mlflow image, see compose.yaml's own comment).
-
-    What this test PINS is compose.yaml's own TEXT: no unconditional flag,
-    no literal '*' written into the command as a default. It does NOT (and,
-    parsing static YAML, cannot) prove an operator's runtime
-    MLFLOW_ALLOWED_HOSTS/MLFLOW_CORS_ALLOWED_ORIGINS value is never '*' —
-    that value arrives from the deploy environment at container-start time,
-    after this test has already run. Enforcing that at runtime (a fail-fast
-    guard inside compose.yaml's own sh -c script) is tracked separately, not
-    pinned here.
-    """
-    script = mlflow_command_script()
-    assert "${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script, script
-    assert "${MLFLOW_CORS_ALLOWED_ORIGINS:+--cors-allowed-origins" in script, script
-    # Neither flag may be present unconditionally (i.e. outside a `:+` guard)
-    # — a bare `--allowed-hosts "${MLFLOW_ALLOWED_HOSTS:-}"` shape would pass
-    # an empty string on the unset path, which is the exact footgun this
-    # phase measured and rejected for --cors-allowed-origins.
-    assert re.search(r"(?<!\+)--allowed-hosts \"\$\{MLFLOW_ALLOWED_HOSTS:-", script) is None
-    assert (
-        re.search(r"(?<!\+)--cors-allowed-origins \"\$\{MLFLOW_CORS_ALLOWED_ORIGINS:-", script)
-        is None
-    )
-    assert "*" not in script, "compose.yaml must never WRITE a wildcard allowlist default"
+# The allowlist FLAG-SHAPE test that used to live here is deliberately gone,
+# not relocated. It pinned an `sh -c` script that no longer exists: the
+# allowlist now reaches MLflow through MLFLOW_SERVER_* environment variables,
+# so there is no flag whose optionality needs guarding. tests/
+# test_compose_config.py owns that contract in full — single owner, which also
+# retires a genuinely weak assertion this module carried. Its
+# `"${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script` check was ALSO a
+# substring of the correctly-escaped `"$${MLFLOW_ALLOWED_HOSTS:+..."` form, so
+# it would have kept passing had the command reverted to the injectable
+# single-`$` shape — inviting a future reader to trust the wrong test as the
+# escaping guard. This module keeps only what it is uniquely responsible for:
+# the worker count above and the image/dependency pins below.
 
 
 def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:

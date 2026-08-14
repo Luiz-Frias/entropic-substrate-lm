@@ -67,26 +67,45 @@ services:
       AWS_REQUEST_CHECKSUM_CALCULATION: when_required
       AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       AWS_DEFAULT_REGION: auto
-      # HOST ALLOWLIST (p3) — same pure-data-channel idiom as the AWS_*/
-      # MLFLOW_S3_ENDPOINT_URL vars above, NOT spliced into command: text.
-      # MEASURED (throwaway /tmp probe, never touched this repo): the
-      # earlier shape read these two vars directly inside command:'s sh -c
-      # script via unescaped ${VAR} — podman-compose 1.6.0 interpolates
-      # that HOST-SIDE, at `config`/`up` parse time, using this process's
-      # raw environment string. Setting MLFLOW_ALLOWED_HOSTS to
-      # `foo.test"; touch /tmp/PWNED ; echo "` and running `podman compose
-      # -f compose.yaml config` rendered that literal shell text into the
-      # container's startup script — an arbitrary-command-execution
-      # surface gated only by who can set an env var. Declaring the vars
-      # here instead routes their value through podman's exec() environ
-      # array (never re-parsed as shell text); command: below then only
-      # ever references them in $-escaped ($$VAR) form, which
-      # podman-compose leaves as a literal single $ for the CONTAINER's
-      # OWN shell to expand at runtime via ordinary quoted parameter
-      # substitution — confirmed empirically that the same crafted value
-      # produces zero extra shell commands once routed this way.
-      MLFLOW_ALLOWED_HOSTS: ${MLFLOW_ALLOWED_HOSTS:-}
-      MLFLOW_CORS_ALLOWED_ORIGINS: ${MLFLOW_CORS_ALLOWED_ORIGINS:-}
+      # HOST ALLOWLIST (p3) — MLflow's OWN env vars. These are not a
+      # convention we invented: mlflow/utils/cli_args.py:256,270 in the
+      # pinned image binds --allowed-hosts / --cors-allowed-origins to
+      # MLFLOW_SERVER_ALLOWED_HOSTS / MLFLOW_SERVER_CORS_ALLOWED_ORIGINS via
+      # click's native envvar=, so setting them here IS passing the flags,
+      # and command: below stays a flat argv list with no shell at all.
+      #
+      # WHY THIS AND NOT A COMMAND-LINE FLAG — the flag form was a MEASURED
+      # injection. Reading these vars inside an sh -c script as unescaped
+      # ${VAR} let podman-compose 1.6.0 interpolate HOST-SIDE, at
+      # `config`/`up` parse time, from this process's raw environment:
+      # setting MLFLOW_ALLOWED_HOSTS to `foo.test"; touch /tmp/PWNED ; echo "`
+      # rendered that literal shell text into the container's startup
+      # script — arbitrary command execution gated only by who can set an
+      # env var. Escaping it ($$VAR) deferred expansion to the container's
+      # own shell and closed the hole, but a correctly-escaped
+      # interpolation site is still an interpolation site. There is now no
+      # site: podman hands these to the container's exec() environ array,
+      # which nothing re-parses as shell. Same pure-data-channel idiom as
+      # the AWS_*/MLFLOW_S3_ENDPOINT_URL vars above.
+      #
+      # EMPTY MEANS UNSET, and that is what makes the `:-` default safe.
+      # MEASURED against the pinned image, ONE container at a time (see the
+      # worker comment below — concurrent probes on this 4-vCPU VM look
+      # exactly like a hang and will mislead you): both vars set to "" boot
+      # in ~7s logging "Security middleware enabled with default settings
+      # (localhost-only)", identical to omitting them. So an operator who
+      # sets nothing gets today's localhost-only behaviour with no
+      # conditional-flag machinery, and one who sets a domain gets it
+      # enforced — verified in the real compose stack (postgres + R2):
+      # allowed Host -> 200, foreign Host -> 403 on both the REST API and
+      # the UI, foreign Host -> 200 on /health (that exemption is upstream's
+      # and is pinned by tests/test_mlflow_live.py).
+      #
+      # The operator-facing names stay MLFLOW_ALLOWED_HOSTS /
+      # MLFLOW_CORS_ALLOWED_ORIGINS — .env, the Railway service, and the
+      # live-test fixtures all keep the names they already use.
+      MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_ALLOWED_HOSTS:-}
+      MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: ${MLFLOW_CORS_ALLOWED_ORIGINS:-}
     # Bare container port — ephemeral host port assigned by podman, NOT a
     # fixed "host:container" mapping. See the module-level comment above.
     ports:
@@ -115,79 +134,65 @@ services:
     # --workers for the host-allowlist work below either — settled and
     # pinned by test on the parent branch, orthogonal to this knob.
     #
-    # HOST ALLOWLIST (p3) — sh -c wrapper, not a flat argv list, because the
-    # two $${VAR:+...} blocks below must make --allowed-hosts and
-    # --cors-allowed-origins OPTIONAL FLAGS, not optional VALUES. Both vars
-    # are declared under `environment:` above (a pure data channel, the
-    # same idiom as AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/
-    # MLFLOW_S3_ENDPOINT_URL) and referenced here ONLY in `$$`-escaped
-    # form — NEVER as a bare `${VAR}`/`$VAR`. An earlier shape used bare
-    # `${VAR:+...}` directly in command: and was a shell-injection hole:
-    # podman-compose 1.6.0's ${VAR} interpolation runs HOST-SIDE, at
-    # `config`/`up` parse time, splicing this process's raw environment
-    # STRING into the command TEXT before the container's shell ever sees
-    # it — MEASURED via a throwaway /tmp probe (never touched this repo):
-    # `MLFLOW_ALLOWED_HOSTS='foo.test"; touch /tmp/PWNED ; echo "'` plus
-    # `podman compose -f compose.yaml config` rendered that literal shell
-    # text into the mlflow container's startup script, i.e. arbitrary code
-    # execution gated only by who can set an env var. `$$` tells
-    # podman-compose's interpolator to leave a literal single `$` in the
-    # rendered command, so `$${VAR:+...}` reaches the CONTAINER's own sh
-    # unevaluated and is expanded there via ordinary quoted parameter
-    # substitution — the value flows through `environment:`'s exec()
-    # environ array, never through a shell-text splice. With
-    # MLFLOW_ALLOWED_HOSTS / MLFLOW_CORS_ALLOWED_ORIGINS unset (the
-    # default: neither is in .env, see run_container_test.sh), the
-    # container's own shell resolves both $${VAR:+...} blocks to nothing
-    # and the rendered command is byte-identical to the flag-less command
-    # this replaced — mlflow falls back to its own compiled-in default.
-    # MEASURED (pinned image, both flags omitted): boot log reads "Security
-    # middleware enabled with default settings (localhost-only)" — no
-    # private-IP language anywhere in that line or in any response measured
-    # against it (see the --allowed-hosts "" measurement below, same boot
-    # message). Only "localhost-only" is claimed here; a private-IP host
-    # header was never probed, so no claim is made about it either way.
-    # LOCAL BEHAVIOR IS UNCHANGED. Verify with
-    # `podman compose ... config` (confirms command: keeps the literal
-    # `$${VAR...}` text) and `tests/test_compose_config.py`'s
-    # `test_allowlist_vars_flow_through_environment_not_spliced_into_command`
-    # (pins both properties statically, no podman required).
+    # HOST ALLOWLIST (p3) — no flags here. The allowlist arrives entirely
+    # through MLFLOW_SERVER_ALLOWED_HOSTS / MLFLOW_SERVER_CORS_ALLOWED_ORIGINS
+    # under `environment:` above; see that block for the mechanism and the
+    # injection history. This command: is therefore a FLAT ARGV LIST with no
+    # shell and no `$` in any entry, which is the property
+    # tests/test_compose_config.py pins.
     #
-    # Why not always pass the flag with a possibly-empty value instead
-    # (`--allowed-hosts "${MLFLOW_ALLOWED_HOSTS:-}"`)? Measured against the
-    # pinned image (ghcr.io/mlflow/mlflow:v3.15.0): an explicit empty string
-    # IS safe for --allowed-hosts (logs "Security middleware enabled with
-    # default settings (localhost-only)" — identical to omitting the flag)
-    # but HANGS the server for --cors-allowed-origins: the process burns
-    # CPU indefinitely inside CORS middleware setup and never binds the
-    # listening socket (verified — `podman top` showed only the parent
-    # process, no uvicorn child, after 60+s; a `podman exec` python probe
-    # got ConnectionRefusedError then a timeout hitting localhost:5000
-    # INSIDE the container). Root cause not chased further upstream (mlflow
-    # is vendored here, not ours to patch) — omitting the flag entirely
-    # sidesteps the bug instead of leaning on a "safe" default value that
-    # only happens to be safe for one of the two flags.
+    # A RETRACTION, because this file's comments are treated as evidence.
+    # An earlier revision wrapped this command in `sh -c` so two
+    # `$${VAR:+--flag "$$VAR"}` blocks could make the flags OPTIONAL, and
+    # justified that machinery with a measured claim: that passing
+    # `--cors-allowed-origins ""` "HANGS the server ... burns CPU
+    # indefinitely inside CORS middleware setup and never binds". THAT CLAIM
+    # DOES NOT REPRODUCE. Re-probed against the same pinned image, one
+    # container at a time:
+    #   control, no vars/flags                          bound in 8s
+    #   env vars both ""                                bound in 7s
+    #   CLI --cors-allowed-origins ""                   bound in 8s
+    #   CLI --cors-allowed-origins "" (repeat)          bound in 7s
+    #   CLI both flags ""                               bound in 7s
+    #   real compose stack (postgres + R2), flat argv,
+    #     --cors-allowed-origins ""                     healthy
+    # The likely cause of the original reading is the same contention
+    # artifact documented under --workers below: THREE mlflow containers
+    # booting at once on this 4-vCPU VM all appear to hang, control
+    # included. Probe sequentially or you will measure the VM, not mlflow.
     #
-    # REPLACE, NOT EXTEND: setting --allowed-hosts REPLACES mlflow's
-    # compiled default outright — verified empirically, a server configured
-    # with a custom allowlist 403s a PLAIN request with no Host override
-    # (i.e. exactly what a client at localhost:<ephemeral-port> sends).
-    # These vars must stay unset for `just container-test`'s own stack, or
-    # the live gate 403s itself — see the guard note in
-    # scripts/run_container_test.sh.
+    # So the optional-flag problem the wrapper solved was not real — and the
+    # native env vars make it moot regardless, since there is no flag to
+    # make optional. Deleting the wrapper also deletes the only place in
+    # this whole compose/Containerfile surface where an externally-set value
+    # was spliced into shell-command text.
+    #
+    # REPLACE, NOT EXTEND: a set allowlist REPLACES mlflow's compiled
+    # default outright — verified empirically, a server configured with a
+    # custom allowlist 403s a PLAIN request with no Host override (i.e.
+    # exactly what a client at localhost:<ephemeral-port> sends). These vars
+    # must stay unset for `just container-test`'s own stack, or the live
+    # gate 403s itself — see the guard note in scripts/run_container_test.sh.
     #
     # NEVER '*': mlflow accepts a wildcard allowlist value, which disables
     # the DNS-rebinding guard entirely. Forbidden here regardless of
-    # convenience — no default, no fallback, ever resolves to '*'.
+    # convenience — no default, no fallback, ever resolves to '*'. NOTE this
+    # file cannot enforce that at deploy time: Railway supplies its own env,
+    # never this compose file, so the wildcard guard belongs with the deploy
+    # topology, not here.
     command:
-      - sh
-      - -c
-      - >-
-        exec mlflow server --host 0.0.0.0 --port 5000 --workers 1
-        --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
-        --artifacts-destination s3://entropic-substrate-lm/mlflow/
-        $${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts "$$MLFLOW_ALLOWED_HOSTS"}
-        $${MLFLOW_CORS_ALLOWED_ORIGINS:+--cors-allowed-origins "$$MLFLOW_CORS_ALLOWED_ORIGINS"}
+      - mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --workers
+      - "1"
+      - --backend-store-uri
+      - postgresql://mlflow:mlflow@postgres:5432/mlflow
+      - --artifacts-destination
+      - s3://entropic-substrate-lm/mlflow/
     healthcheck:
       test:
         [

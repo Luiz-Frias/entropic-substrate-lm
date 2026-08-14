@@ -11,7 +11,7 @@ from entropic_substrate.config import Config, DataConfig, ModelConfig, TrainConf
 
 __all__ = [
     "load_compose",
-    "mlflow_command_script",
+    "mlflow_command",
     "mlflow_service_config",
     "tiny_config",
     "tiny_model_config",
@@ -56,32 +56,37 @@ def mlflow_service_config() -> dict[str, Any]:
     return load_compose()["services"]["mlflow"]
 
 
-def mlflow_command_script() -> str:
-    """The literal ``sh -c`` script compose.yaml hands to the mlflow
-    container — a single string (YAML folded scalar), NOT a flat argv list.
+def mlflow_command() -> list[str]:
+    """``compose.yaml``'s ``services.mlflow.command`` as a FLAT argv list.
+
     Parsed with a real YAML loader rather than string-sliced, so this stays
     correct regardless of how the surrounding comment block is reflowed.
 
-    Shared by tests/test_deploy_config.py and tests/test_compose_config.py:
-    both need the same parsed script (worker count in one, allowlist flag
-    shape in the other), and both need the SAME ``["sh", "-c"]`` prefix
-    check — a test that skips it and reads ``command[-1]`` would silently
-    keep passing against an unrelated element if the command ever became a
-    flat argv list again.
+    The list shape is itself the contract. An earlier revision wrapped this
+    command in ``sh -c`` so the container's own shell could expand
+    ``${VAR:+--flag "$VAR"}`` and make the allowlist flags OPTIONAL. That
+    wrapper is gone: MLflow binds ``--allowed-hosts`` /
+    ``--cors-allowed-origins`` to ``MLFLOW_SERVER_ALLOWED_HOSTS`` /
+    ``MLFLOW_SERVER_CORS_ALLOWED_ORIGINS`` natively (click ``envvar=``,
+    mlflow/utils/cli_args.py:256,270 in the pinned image), so the flags are
+    never passed and nothing needs a shell. Asserting the flat shape here
+    means a regression to any shell wrapper fails LOUDLY in one place
+    instead of silently reintroducing a command-text interpolation site.
     """
     service = mlflow_service_config()
     command = service.get("command")
     assert command, "mlflow service must declare a command"
-    # length-checked alongside the prefix: `command[:2] == ["sh", "-c"]` alone
-    # passes for the exact two-element list `["sh", "-c"]` too, which would
-    # then raise an unlabeled IndexError on `command[2]` below instead of
-    # naming the real defect (a missing script argument).
-    assert len(command) == 3 and command[:2] == ["sh", "-c"], (
-        "mlflow's command must stay an `sh -c` wrapper — that's what makes "
-        "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
-        f"compose.yaml's own HOST ALLOWLIST comment); got {command!r}"
+    assert isinstance(command, list), (
+        f"mlflow's command must be a flat argv LIST, not a shell string; got {command!r}"
     )
-    return str(command[2])
+    assert command[:2] != ["sh", "-c"], (
+        "mlflow's command is wrapped in `sh -c` again. That wrapper existed only to "
+        "make the allowlist flags optional, and it is exactly the command-TEXT "
+        "interpolation site that allowed a measured shell injection. MLflow reads "
+        "MLFLOW_SERVER_ALLOWED_HOSTS/MLFLOW_SERVER_CORS_ALLOWED_ORIGINS natively — "
+        f"pass them via `environment:` instead; got {command!r}"
+    )
+    return [str(entry) for entry in command]
 
 
 def tiny_config(tmp_path: Path, **model_overrides: object) -> Config:

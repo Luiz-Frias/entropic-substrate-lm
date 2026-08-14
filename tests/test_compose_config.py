@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import pytest
 
-from helpers import load_compose, mlflow_command_script, mlflow_service_config
+from helpers import load_compose, mlflow_command, mlflow_service_config
+
+# MLflow's OWN env var names (click `envvar=`, mlflow/utils/cli_args.py:256,270
+# in the pinned ghcr.io/mlflow/mlflow:v3.15.0). Setting these is equivalent to
+# passing --allowed-hosts / --cors-allowed-origins, with no flag and no shell.
+NATIVE_ALLOWLIST_VARS = {
+    "MLFLOW_SERVER_ALLOWED_HOSTS": "MLFLOW_ALLOWED_HOSTS",
+    "MLFLOW_SERVER_CORS_ALLOWED_ORIGINS": "MLFLOW_CORS_ALLOWED_ORIGINS",
+}
 
 pytestmark = pytest.mark.unit
 
@@ -62,87 +70,82 @@ def test_postgres_backing_store_uses_a_named_not_anonymous_volume() -> None:
     )
 
 
-@pytest.mark.parametrize("var_name", ["MLFLOW_ALLOWED_HOSTS", "MLFLOW_CORS_ALLOWED_ORIGINS"])
-def test_allowlist_vars_flow_through_environment_not_spliced_into_command(
-    var_name: str,
-) -> None:
-    """P3 host-allowlist injection fix (L2 blocker).
+def test_allowlist_uses_mlflows_native_env_vars_not_command_flags() -> None:
+    """The allowlist reaches MLflow as ENVIRONMENT, never as command text.
 
-    MEASURED (throwaway probe, /tmp — never touched this repo): with the
-    OLD single-``$`` shape (``${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts
-    "$MLFLOW_ALLOWED_HOSTS"}`` directly in ``command:``), podman-compose
-    1.6.0's interpolator resolves it HOST-SIDE, at ``config``/``up`` parse
-    time, using whatever string is in this process's environment — before
-    the container's own shell ever runs. Setting
-    ``MLFLOW_ALLOWED_HOSTS='foo.test"; touch /tmp/PWNED ; echo "'`` and
-    running ``podman compose -f compose.yaml config`` rendered the literal
-    text ``--allowed-hosts "foo.test"; touch /tmp/PWNED ; echo ""`` into the
-    ``sh -c`` script — i.e. an arbitrary shell command spliced into
-    container-startup text, executed on every ``up``, gated only by who can
-    set an env var. Every other externally-sourced value in this file
-    (``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``,
-    ``MLFLOW_S3_ENDPOINT_URL``) passes through the ``environment:`` map — a
-    pure data channel podman hands to the container's ``exec()`` environ
-    array, never re-parsed as shell text. These two vars are the only
-    exception in the whole compose/Containerfile surface, which is what
-    makes this a blocker and not a style nit.
+    MLflow binds ``--allowed-hosts`` / ``--cors-allowed-origins`` to
+    ``MLFLOW_SERVER_ALLOWED_HOSTS`` / ``MLFLOW_SERVER_CORS_ALLOWED_ORIGINS``
+    through click's native ``envvar=`` (mlflow/utils/cli_args.py:256,270,
+    read inside the pinned ghcr.io/mlflow/mlflow:v3.15.0 image). So the
+    flags are unnecessary, and with them goes the ``sh -c`` wrapper that
+    existed only to make them optional.
 
-    Two properties pin the fix:
-      1. the var is declared under ``services.mlflow.environment`` (data
-         channel), so its value never touches podman-compose's host-side
-         string interpolator at all; and
-      2. every reference to the var inside ``command:``'s ``sh -c`` script
-         is ``$``-escaped (``$$VAR`` / ``$${VAR:+...}``) so podman-compose's
-         interpolator leaves it as a LITERAL single ``$`` for the
-         CONTAINER's own shell to expand at runtime — never as something
-         podman-compose itself substitutes a value into.
+    That deletion is a SECURITY improvement, not merely a simplification.
+    The wrapper was the one place in the entire compose/Containerfile
+    surface where an externally-sourced value was spliced into shell-command
+    TEXT. With the old single-``$`` shape that was a MEASURED injection:
+    ``MLFLOW_ALLOWED_HOSTS='foo.test"; touch /tmp/PWNED ; echo "'`` rendered
+    ``--allowed-hosts "foo.test"; touch /tmp/PWNED ; echo ""`` into the
+    startup script at ``podman compose config`` time. The escaped
+    (``$$VAR``) form fixed that by deferring expansion to the container's
+    shell — but a correctly-escaped interpolation site is still an
+    interpolation site. Passing these as ``environment:`` entries removes
+    the site itself: podman hands the value to the container's ``exec()``
+    environ array, where nothing ever re-parses it as shell.
+
+    Empty is SAFE and means "unset". Measured against the pinned image with
+    both vars set to "": the server boots in ~7s logging "Security
+    middleware enabled with default settings (localhost-only)" — identical
+    to omitting them — so the ``:-`` default below preserves local
+    behaviour exactly, with no conditional-flag machinery.
     """
-    mlflow_service = mlflow_service_config()
+    env_block = mlflow_service_config().get("environment") or {}
 
-    env_block = mlflow_service.get("environment") or {}
-    assert var_name in env_block, (
-        f"{var_name} must be declared under services.mlflow.environment (a pure "
-        "data channel) — not read only inside command: via host-side ${VAR} "
-        "interpolation, which splices its value into shell-command text at "
-        "podman-compose parse time (see this test's docstring for the measured "
-        "injection)."
-    )
+    for native, operator_facing in NATIVE_ALLOWLIST_VARS.items():
+        assert native in env_block, (
+            f"{native} must be declared under services.mlflow.environment — that is "
+            "how the allowlist reaches MLflow now that no CLI flag is passed"
+        )
+        # The OPERATOR-facing name is what gets interpolated into it, so the
+        # documented interface (and .env, and the live-test fixtures) keep
+        # working. A hardcoded value here would also silently ignore whatever
+        # the operator set at deploy time.
+        assert f"${{{operator_facing}" in str(env_block[native]), (
+            f"{native} must take its value from ${{{operator_facing}}} so the "
+            f"operator-facing variable name stays {operator_facing}; got "
+            f"{env_block[native]!r}"
+        )
 
-    # mlflow_command_script() also pins that command: stays an ["sh", "-c",
-    # script] wrapper — reading an unrelated element instead of the actual
-    # script if the command ever became a flat argv list is exactly the
-    # false-pass this shared helper exists to rule out.
-    script = mlflow_command_script()
 
-    # UNESCAPED forms podman-compose's host-side interpolator would resolve
-    # at parse time — splicing the raw value into the command string. Must
-    # not appear.
-    for unescaped in (f"${{{var_name}", f"${var_name}"):
-        # A double-escaped occurrence ("$${VAR}") contains the single-escaped
-        # substring too, so exclude matches that are actually part of a
-        # "$$"-prefixed (escaped) token before failing.
-        idx = script.find(unescaped)
-        while idx != -1:
-            preceding = script[max(0, idx - 1) : idx]
-            assert preceding == "$", (
-                f"command: references {unescaped!r} without podman-compose "
-                f"$-escaping — this splices {var_name}'s value into shell-command "
-                "text at HOST-SIDE parse time instead of letting the container's "
-                "own shell expand an environment-block variable at runtime "
-                "(see this test's docstring for the measured injection)."
-            )
-            idx = script.find(unescaped, idx + 1)
+def test_mlflow_command_has_no_interpolation_site_at_all() -> None:
+    """No ``$`` anywhere in ``command:`` — the injection vector is GONE.
 
-    # ESCAPED forms must actually be present — the property above is
-    # satisfied just as well by omitting the var from command: entirely,
-    # which would silently drop the --allowed-hosts/--cors-allowed-origins
-    # flag no matter what the operator sets the var to.
-    assert f"$${{{var_name}:+" in script, (
-        f"command: must reference {var_name} via the $-escaped optional-flag "
-        f"form ($${{{var_name}:+...}}) so the CONTAINER's shell (not "
-        "podman-compose) decides whether to pass the flag at all"
-    )
-    assert f"$${var_name}" in script, (
-        f"command: must reference {var_name}'s value via the $-escaped form "
-        f"($${var_name}) inside the quoted flag argument"
-    )
+    Stronger than the escaping check it replaces. That one asserted every
+    reference was ``$``-escaped correctly, which is a property you can get
+    wrong in a new way each time someone edits the script. This asserts
+    there is nothing to escape: the command is a flat argv list of literal
+    arguments, so no host-side interpolation and no container-side shell
+    expansion can occur, correctly or otherwise.
+
+    ``mlflow_command()`` separately rejects a regression to ``sh -c``.
+    """
+    command = mlflow_command()
+
+    for entry in command:
+        assert "$" not in entry, (
+            f"command entry {entry!r} contains a '$'. compose.yaml's command: must "
+            "hold only literal arguments — any variable reference here is a "
+            "host-side interpolation site (podman-compose substitutes at `config`/"
+            "`up` parse time) or a container-side shell expansion, and splicing an "
+            "externally-set value into command text is the measured injection this "
+            "shape exists to make impossible. Pass values via `environment:`."
+        )
+
+    # The flags themselves must be absent: passing them AND the env vars would
+    # reintroduce the empty-value edge cases the native binding avoids.
+    for flag in ("--allowed-hosts", "--cors-allowed-origins"):
+        assert flag not in command, (
+            f"{flag} is passed on the command line again. It is redundant with the "
+            "MLFLOW_SERVER_* environment variables and reintroduces the "
+            "optional-flag problem that required a shell wrapper."
+        )
