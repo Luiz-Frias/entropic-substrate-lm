@@ -84,8 +84,16 @@ def _request(
 
 
 def _wait_container_healthy(container: str, *, timeout_s: float = 120.0) -> None:
+    """Poll tolerantly (a transient ``podman inspect`` hiccup must not abort
+    the wait — the loop itself stays exactly as forgiving as before), but
+    remember the last non-empty stderr so a genuine timeout's error message
+    carries a diagnosis instead of just "last status: starting" — which is
+    indistinguishable from "podman inspect kept failing" and from "the
+    container is still legitimately booting".
+    """
     deadline = time.monotonic() + timeout_s
     status = "starting"
+    last_stderr = ""
     while time.monotonic() < deadline:
         result = subprocess.run(  # nosec B603 B607
             ["podman", "inspect", "--format", "{{.State.Health.Status}}", container],
@@ -93,11 +101,15 @@ def _wait_container_healthy(container: str, *, timeout_s: float = 120.0) -> None
             text=True,
             timeout=10,
         )
+        if result.stderr.strip():
+            last_stderr = result.stderr.strip()
         status = result.stdout.strip() or "starting"
         if status == "healthy":
             return
         time.sleep(2)
-    msg = f"{container} did not report healthy within {timeout_s}s (last status: {status})"
+    msg = f"{container} did not report healthy within {timeout_s}s (last status: {status!r})"
+    if last_stderr:
+        msg += f" — last `podman inspect` stderr: {last_stderr!r}"
     raise RuntimeError(msg)
 
 
@@ -109,8 +121,14 @@ def _discover_host_port(container: str, container_port: int = 5000) -> int:
         check=True,
         timeout=10,
     )
-    line = result.stdout.strip().splitlines()[0]
-    return int(line.rsplit(":", 1)[-1])
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        msg = (
+            f"`podman port {container} {container_port}` returned no output — cannot "
+            f"discover the ephemeral host port (stderr: {result.stderr.strip()!r})"
+        )
+        raise RuntimeError(msg)
+    return int(lines[0].rsplit(":", 1)[-1])
 
 
 def _expect_ok(
@@ -201,11 +219,21 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     env["MLFLOW_ALLOWED_HOSTS"] = ALLOWED_HOST
     env["MLFLOW_CORS_ALLOWED_ORIGINS"] = ALLOWED_ORIGIN
 
-    subprocess.run(  # nosec B603 B607
-        [*compose, "up", "-d", "--build"], check=True, cwd=REPO_ROOT, env=env, timeout=240
-    )
     try:
         try:
+            # `up` itself belongs INSIDE this try, not before it: `check=True`
+            # raises CalledProcessError and a hung build raises
+            # TimeoutExpired — either one, before this fixture reworked to
+            # put `up` here, skipped the outer `finally`'s `down -v
+            # --remove-orphans` entirely, leaking a partially-started stack
+            # (containers/network/volume) that starves the NEXT run exactly
+            # the way the module docstring's contention measurement
+            # describes. `down -v --remove-orphans` is safe to run against a
+            # stack that never fully came up (check=False below already
+            # tolerates a stack that never existed at all).
+            subprocess.run(  # nosec B603 B607
+                [*compose, "up", "-d", "--build"], check=True, cwd=REPO_ROOT, env=env, timeout=240
+            )
             _wait_container_healthy(container)
             port = _discover_host_port(container)
             base_url = f"http://127.0.0.1:{port}"
@@ -218,11 +246,15 @@ def allowlisted_mlflow_url() -> Iterator[str]:
             # undiagnosable until re-measured by hand. Dump the mlflow
             # container's full log to stdout (pytest attaches captured
             # stdout to whichever test triggered fixture setup) so a future
-            # red run carries its own diagnosis.
+            # red run carries its own diagnosis. `check=False` here: if `up`
+            # itself is what failed, the container may not exist yet either,
+            # and this diagnostic call must never mask the real exception
+            # being re-raised below with one of its own.
             setup_log = subprocess.run(  # nosec B603 B607
                 [*compose, "logs", "mlflow"],
                 capture_output=True,
                 text=True,
+                check=False,
                 cwd=REPO_ROOT,
                 env=env,
                 timeout=30,

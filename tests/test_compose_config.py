@@ -13,20 +13,11 @@ real by the conductor's live gate, not by these tests. See
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
 import pytest
-import yaml
+
+from helpers import load_compose, mlflow_command_script, mlflow_service_config
 
 pytestmark = pytest.mark.unit
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _compose() -> dict[str, Any]:
-    text = (REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
-    return yaml.safe_load(text)
 
 
 def test_mlflow_service_publishes_no_fixed_host_port() -> None:
@@ -38,7 +29,7 @@ def test_mlflow_service_publishes_no_fixed_host_port() -> None:
     podman-compose: a scratch stack with ``ports: ["5432"]`` came up as
     ``0.0.0.0:<random>->5432/tcp``, discoverable via ``podman port``).
     """
-    ports = _compose()["services"]["mlflow"]["ports"]
+    ports = mlflow_service_config()["ports"]
     assert ports, "mlflow service must publish its port somehow"
     for entry in ports:
         assert ":" not in str(entry), (
@@ -56,7 +47,7 @@ def test_postgres_backing_store_uses_a_named_not_anonymous_volume() -> None:
     "survives for diagnosis" actually diagnosable — podman names it
     ``${PROJECT}_pgdata`` (verified empirically against this exact shape).
     """
-    compose = _compose()
+    compose = load_compose()
     postgres_volumes = compose["services"]["postgres"].get("volumes")
     assert postgres_volumes, "postgres service must declare a data volume"
     # Anonymous volumes are bare container-path strings ("/var/lib/..."); a
@@ -106,8 +97,7 @@ def test_allowlist_vars_flow_through_environment_not_spliced_into_command(
          CONTAINER's own shell to expand at runtime — never as something
          podman-compose itself substitutes a value into.
     """
-    compose = _compose()
-    mlflow_service = compose["services"]["mlflow"]
+    mlflow_service = mlflow_service_config()
 
     env_block = mlflow_service.get("environment") or {}
     assert var_name in env_block, (
@@ -118,9 +108,11 @@ def test_allowlist_vars_flow_through_environment_not_spliced_into_command(
         "injection)."
     )
 
-    command = mlflow_service.get("command")
-    assert command, "mlflow service must declare a command"
-    script = command[-1]
+    # mlflow_command_script() also pins that command: stays an ["sh", "-c",
+    # script] wrapper — reading an unrelated element instead of the actual
+    # script if the command ever became a flat argv list is exactly the
+    # false-pass this shared helper exists to rule out.
+    script = mlflow_command_script()
 
     # UNESCAPED forms podman-compose's host-side interpolator would resolve
     # at parse time — splicing the raw value into the command string. Must

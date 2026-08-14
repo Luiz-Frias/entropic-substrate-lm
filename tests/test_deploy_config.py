@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
+
+from helpers import mlflow_command_script
 
 pytestmark = pytest.mark.unit
 
@@ -18,23 +19,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def _pyproject() -> dict[str, Any]:
     with (REPO_ROOT / "pyproject.toml").open("rb") as file:
         return tomllib.load(file)
-
-
-def _mlflow_command_script() -> str:
-    """The literal ``sh -c`` script compose.yaml hands to the mlflow
-    container — a single string (YAML folded scalar), NOT a flat argv list.
-    Parsed with a real YAML loader rather than string-sliced, so this stays
-    correct regardless of how the surrounding comment block is reflowed.
-    """
-    compose = yaml.safe_load((REPO_ROOT / "compose.yaml").read_text(encoding="utf-8"))
-    command = compose["services"]["mlflow"]["command"]
-    assert command[:2] == ["sh", "-c"], (
-        "mlflow's command must stay an `sh -c` wrapper — that's what makes "
-        "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
-        "compose.yaml's own HOST ALLOWLIST comment)",
-        command,
-    )
-    return command[2]
 
 
 def _dependency_names(entries: list[str | dict[str, str]]) -> set[str]:
@@ -90,7 +74,7 @@ def test_live_stack_pins_a_single_mlflow_worker() -> None:
     [N] died`` versus 8s and zero deaths at ``--workers 1``. Concurrency is not under
     test in this stack (one pytest process drives it), so the pool buys nothing.
     """
-    entries = _mlflow_command_script().split()
+    entries = mlflow_command_script().split()
     assert "--workers" in entries, "compose.yaml must pin an explicit MLflow worker count"
     assert entries[entries.index("--workers") + 1] == "1"
 
@@ -102,7 +86,7 @@ def test_live_stack_host_allowlist_is_optional_and_never_wildcard() -> None:
     never resolve to a bare '*', which silently disables the DNS-rebinding
     guard while looking configured.
     """
-    script = _mlflow_command_script()
+    script = mlflow_command_script()
     assert "${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script, script
     assert "${MLFLOW_CORS_ALLOWED_ORIGINS:+--cors-allowed-origins" in script, script
     # Neither flag may be present unconditionally (i.e. outside a `:+` guard)
