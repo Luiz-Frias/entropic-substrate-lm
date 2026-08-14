@@ -13,9 +13,21 @@ real by the conductor's live gate, not by these tests. See
 
 from __future__ import annotations
 
+import re
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from helpers import load_compose, mlflow_command, mlflow_service_config
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# A bcrypt hash's own format ($2a$/$2b$/$2y$ + cost + 53-char salt+digest) —
+# used to grep this WHOLE TREE for an accidentally committed credential, not
+# just compose.yaml. Hashed or not, a credential belongs only in the
+# environment (this phase's NO CREDENTIALS COMMITTED invariant).
+_BCRYPT_HASH_RE = re.compile(r"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}")
 
 # MLflow's OWN env var names (click `envvar=`, mlflow/utils/cli_args.py:256,270
 # in the pinned ghcr.io/mlflow/mlflow:v3.15.0). Setting these is equivalent to
@@ -149,3 +161,147 @@ def test_mlflow_command_has_no_interpolation_site_at_all() -> None:
             "MLFLOW_SERVER_* environment variables and reintroduces the "
             "optional-flag problem that required a shell wrapper."
         )
+
+
+# --------------------------------------------------------------- p4: caddy
+
+
+def _caddy_service_config() -> dict[str, object]:
+    return load_compose()["services"]["caddy"]
+
+
+def test_caddy_service_exists_and_is_profile_gated() -> None:
+    """The default `up -d --build` (phases 1 and 2, no service names) must
+    NOT build/start caddy — VERIFIED against podman-compose 1.6.0 with a
+    scratch two-service file: an unprofiled `config --services` listed only
+    the unprofiled service; `--profile proxy config --services` listed
+    both. Un-profiled, phases 1/2 would pay caddy's build+boot cost for
+    nothing they exercise.
+    """
+    compose = load_compose()
+    assert "caddy" in compose["services"], "compose.yaml must declare a caddy service (p4)"
+    profiles = _caddy_service_config().get("profiles")
+    assert profiles == ["proxy"], (
+        f"caddy service must be gated behind profiles: ['proxy'] so the default "
+        f"`up` (phases 1/2) never starts it; got {profiles!r}"
+    )
+
+
+def test_caddy_service_publishes_no_fixed_host_port() -> None:
+    """Same concurrency hazard as mlflow's own port — see that test above."""
+    ports = _caddy_service_config()["ports"]
+    assert ports, "caddy service must publish its port somehow"
+    for entry in ports:
+        assert ":" not in str(entry), (
+            f"port entry {entry!r} looks like a fixed host:container mapping — must "
+            "stay a bare container port so podman assigns an ephemeral host port"
+        )
+
+
+def test_caddy_service_has_no_depends_on_mlflow() -> None:
+    """MLflow's allowlist does an EXACT host:port string match (measured — see
+    compose.yaml's own comment on this service), so the fixture must bring
+    caddy up BEFORE mlflow to discover caddy's ephemeral port first. A
+    compose-level `depends_on: mlflow` would force mlflow into the SAME `up`
+    call as caddy and defeat that ordering.
+    """
+    depends_on = _caddy_service_config().get("depends_on")
+    assert not depends_on, (
+        f"caddy must not declare depends_on (found {depends_on!r}) — the live-gate "
+        "fixture owns the boot order explicitly; see compose.yaml's comment"
+    )
+
+
+def test_caddy_credentials_come_from_environment_only() -> None:
+    """The basic-auth user/hash must be sourced from ${VAR}, never a literal."""
+    env_block = _caddy_service_config().get("environment") or {}
+    for var in ("CADDY_BASIC_AUTH_USER", "CADDY_BASIC_AUTH_HASH"):
+        assert var in env_block, f"caddy service must declare {var} under environment:"
+        assert str(env_block[var]) == f"${{{var}}}", (
+            f"{var} must be a bare ${{{var}}} interpolation with no default/literal "
+            f"fallback; got {env_block[var]!r}"
+        )
+
+
+def test_caddyfile_exempts_health_from_basic_auth_via_matcher_not_ordering() -> None:
+    """A Caddyfile's directives are NOT ordered by textual position — Caddy
+    sorts by internal precedence, so a bare `basic_auth` anywhere in the
+    file applies globally regardless of where it sits relative to a
+    `handle /health` block (VERIFIED: `caddy adapt` on that naive shape put
+    the authentication handler in routes[0] with NO path matcher at all).
+    Only a named-matcher `handle`/`handle` pair (mutually exclusive, like a
+    switch) actually scopes basic_auth away from /health.
+    """
+    caddyfile = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    assert "@health path /health" in caddyfile, (
+        "Caddyfile must define a named matcher for /health — a bare textual "
+        "ordering does not scope basic_auth away from it (see this test's docstring)"
+    )
+    health_block = caddyfile.partition("@health path /health")[2].partition("handle {")[0]
+    assert "basic_auth" not in health_block, (
+        "basic_auth must not appear inside the @health-matched handle block — "
+        "/health must stay unauthenticated for a platform healthcheck"
+    )
+    assert "basic_auth" in caddyfile, "Caddyfile must configure basic_auth somewhere"
+
+
+def test_caddyfile_never_overrides_the_forwarded_host_header() -> None:
+    """reverse_proxy forwards the ORIGINAL Host header by default (VERIFIED
+    against the pinned caddy:2.11-alpine image — see Caddyfile's own header
+    comment). An explicit `header_up Host ...` override would substitute a
+    fixed value for whatever the client actually sent, making
+    MLFLOW_ALLOWED_HOSTS's public-domain entry a lie about what MLflow
+    receives.
+    """
+    caddyfile = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    assert "header_up Host" not in caddyfile, (
+        "Caddyfile must not override the forwarded Host header — the default "
+        "pass-through is what makes MLFLOW_ALLOWED_HOSTS's public-domain entry "
+        "correspond to what MLflow actually receives"
+    )
+
+
+def test_no_bcrypt_hash_literal_anywhere_in_the_tracked_tree() -> None:
+    """NO CREDENTIALS COMMITTED, hashed or otherwise. Greps every git-tracked
+    text file for a bcrypt-hash-shaped string — not just compose.yaml/Caddyfile,
+    so a hash pasted into a test, a doc, or a stray fixture is caught too.
+    """
+    result = subprocess.run(  # nosec B603 B607
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO_ROOT,
+        timeout=15,
+    )
+    offenders: list[str] = []
+    for rel_path in result.stdout.splitlines():
+        path = REPO_ROOT / rel_path
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if _BCRYPT_HASH_RE.search(text):
+            offenders.append(rel_path)
+    assert not offenders, (
+        f"bcrypt-hash-shaped literal found in tracked file(s): {offenders} — "
+        "credentials (hashed or not) must come from the environment only"
+    )
+
+
+def test_caddyfile_binds_a_bare_port_with_no_domain_literal() -> None:
+    """NO PLACEHOLDER DOMAINS anywhere in the tree — the Caddyfile's site
+    address must be a bare port, not a hardcoded hostname (real or
+    railway.app-shaped). A real deploy's public domain is a Railway-supplied
+    runtime value, out of scope for this phase to hardcode or invent.
+    """
+    caddyfile = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    first_code_line = next(
+        line for line in caddyfile.splitlines() if line.strip() and not line.strip().startswith("#")
+    )
+    assert first_code_line.strip().startswith(":"), (
+        f"Caddyfile's site address ({first_code_line!r}) must be a bare :port, not a "
+        "hardcoded hostname"
+    )

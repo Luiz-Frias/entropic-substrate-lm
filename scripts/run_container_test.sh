@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_container_test.sh — the LIVE gate for phases p2-mlflow / p3-allowlist.
+# run_container_test.sh — the LIVE gate for phases p2-mlflow / p3-allowlist /
+# p4-caddy-auth.
 #
-# TWO SEQUENTIAL PHASES, never concurrent:
+# THREE SEQUENTIAL PHASES, never concurrent:
 #   1. Brings up postgres + mlflow (compose.yaml, podman-compose), waits for
 #      the tracking server to report healthy, runs the main integration
 #      suite against it (real localhost tracking server, real Cloudflare R2
@@ -11,6 +12,12 @@
 #   2. tests/test_mlflow_allowed_hosts.py — self-contained (its own
 #      module-scoped fixture owns a SEPARATE compose stack, own project
 #      name, own teardown).
+#   3. tests/test_caddy_auth.py (p4) — likewise self-contained, its own THIRD
+#      compose stack (`--profile proxy`, so it alone includes the caddy
+#      service), own project name, own teardown. Proves the Caddy-fronted
+#      auth path this script's own live gate is the only thing that
+#      exercises (see CLAUDE.md's House rules on why the gate is a hard
+#      dependency, not a courtesy).
 #
 # WHY SEQUENTIAL, NOT CONCURRENT (measured, not assumed): an earlier attempt
 # ran phase 2 as ordinary pytest inside phase 1's `-m integration` call,
@@ -30,9 +37,11 @@
 # existing 120s bound every time — no bound in that module needed raising.
 #
 # Teardown runs on ANY exit path for phase 1 (trap on EXIT) so a red test
-# run never leaves that stack up blocking the next invocation; phase 2 owns
-# its own teardown entirely inside its pytest fixture (down -v in a
-# finally), so nothing at this script's level needs to clean it up.
+# run never leaves that stack up blocking the next invocation; phases 2 and 3
+# each own their own teardown entirely inside their own pytest fixture
+# (down -v in a finally), so nothing at this script's level needs to clean
+# either up on the normal path (this script's re-armed EXIT trap below is
+# only a SIGTERM backup net for both).
 #
 # Usage: just container-test   (wraps this script)
 # =============================================================================
@@ -272,26 +281,35 @@ fi
 say "podman ps:"
 podman ps
 
-say "phase 1/2: running the main integration suite against ${MLFLOW_URL}..."
+say "phase 1/3: running the main integration suite against ${MLFLOW_URL}..."
 export MLFLOW_TRACKING_URI="$MLFLOW_URL"
 export ENTROPIC_MLFLOW_TINY=1
-# --ignore: tests/test_mlflow_allowed_hosts.py is phase 2, run below, AFTER
-# this stack is torn down — see the module header comment on why the two
-# never run concurrently.
+# --ignore: tests/test_mlflow_allowed_hosts.py is phase 2 and
+# tests/test_caddy_auth.py is phase 3 (p4), both run below AFTER this stack
+# is torn down — see the module header comment on why no two of the three
+# ever run concurrently. Without both ignores here, `-m integration` would
+# sweep phase 2 and phase 3's own modules into THIS pytest process, and their
+# fixtures would try to bring up a SECOND/THIRD live stack while phase 1's
+# is still up — assert_no_foreign_mlflow_stack() correctly refuses that
+# (MEASURED: this was the failure mode the first time
+# tests/test_caddy_auth.py was added without updating this ignore list).
 PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
-  --ignore=tests/test_mlflow_allowed_hosts.py
+  --ignore=tests/test_mlflow_allowed_hosts.py \
+  --ignore=tests/test_caddy_auth.py
 
 # Tear the main stack down NOW, deliberately, rather than waiting for the
 # EXIT trap — phase 2 must never see this stack still up (see the module
 # header's measured contention finding).
 cleanup_main_stack 0
 
-# WAIT FOR THE VM TO SETTLE BEFORE PHASE 2 — and note what this is NOT: it is
-# not a bigger timeout. Phase 2's 120s health bound is not too small on a quiet
-# machine; the problem is that phase 2 starts on a machine that is BY
-# CONSTRUCTION at its busiest, because tearing down phase 1 (stopping two
+# WAIT FOR THE VM TO SETTLE BETWEEN PHASES — and note what this is NOT: it is
+# not a bigger timeout. Phase 2/3's 120s health bounds are not too small on a
+# quiet machine; the problem is that each phase starts on a machine that is BY
+# CONSTRUCTION at its busiest, because tearing down the PRIOR phase (stopping
 # containers, removing a network and a volume) is the thing that immediately
-# precedes it.
+# precedes it. Called twice below — once after phase 1's teardown, once after
+# phase 2's own (fixture-owned) teardown, before phase 3 — same cause, same
+# fix, at both seams.
 #
 # MEASURED on this 4-vCPU VM, one stack at a time, identical image and compose
 # file — time from `up` to the mlflow container reporting healthy:
@@ -333,36 +351,54 @@ settle_podman_vm() {
       return 0
     fi
     if awk -v a="$load1" -v b="$target" 'BEGIN{exit !(a<b)}'; then
-      say "host settled (load1 ${load1} < ${target} on ${cores} cores) after ${waited}s — starting phase 2"
+      say "host settled (load1 ${load1} < ${target} on ${cores} cores) after ${waited}s — starting the next phase"
       return 0
     fi
     sleep 5
     waited=$((waited + 5))
   done
-  say "WARNING: host still busy (load1 ${load1} vs ${cores} cores) after ${waited}s — starting phase 2 anyway; a timing failure below is the MACHINE, not the code. Check \`ps aux -r | head\` for what is competing."
+  say "WARNING: host still busy (load1 ${load1} vs ${cores} cores) after ${waited}s — starting the next phase anyway; a timing failure below is the MACHINE, not the code. Check \`ps aux -r | head\` for what is competing."
   return 0
 }
 settle_podman_vm
 
-# Re-arm the EXIT trap for phase 2's stack — a BACKUP net, not phase 2's
-# primary cleanup. tests/test_mlflow_allowed_hosts.py's own pytest fixture
-# already owns `down -v --remove-orphans` in a `finally`, which covers every
-# normal Python-level exit path (return, raised exception, KeyboardInterrupt
-# — SIGINT's default handler raises a catchable exception). What a `finally`
-# block does NOT cover is this SCRIPT receiving SIGTERM (e.g. a CI job
-# cancellation) while the pytest subprocess is mid-run: SIGTERM's default
-# disposition terminates the process without running Python-level `finally`
-# blocks. Re-arming this script's own EXIT trap closes that gap at the shell
-# level, one layer up from the fixture. `down -v --remove-orphans` against a
-# stack the fixture already tore down cleanly is a documented no-op (same
-# idiom the fixture itself relies on for a stack that never fully came up),
-# so this never double-reports a teardown that already happened.
+# Re-arm the EXIT trap to cover phase 2's AND phase 3's stacks — a BACKUP
+# net, not either phase's primary cleanup. Both tests/test_mlflow_allowed_hosts.py
+# and tests/test_caddy_auth.py own `down -v --remove-orphans` in their own
+# pytest fixture's `finally`, which covers every normal Python-level exit
+# path (return, raised exception, KeyboardInterrupt — SIGINT's default
+# handler raises a catchable exception). What a `finally` block does NOT
+# cover is this SCRIPT receiving SIGTERM (e.g. a CI job cancellation) while
+# the pytest subprocess is mid-run: SIGTERM's default disposition
+# terminates the process without running Python-level `finally` blocks.
+# Re-arming this script's own EXIT trap ONCE, here, ahead of both remaining
+# phases, closes that gap at the shell level for both — `down -v
+# --remove-orphans` against a stack a fixture already tore down cleanly is a
+# documented no-op (same idiom each fixture itself relies on for a stack
+# that never fully came up), so this never double-reports a teardown that
+# already happened, and it costs nothing to leave armed across the phase 3
+# boundary too.
 ALLOWLIST_PROJECT="${PROJECT}-allowlist"
-cleanup_allowlist_stack() {
+CADDY_PROJECT="${PROJECT}-caddy"
+cleanup_backup_stacks() {
   podman compose -p "$ALLOWLIST_PROJECT" -f compose.yaml down -v --remove-orphans \
     >/dev/null 2>&1 || true
+  # --profile proxy: `down` removing a profile-gated service's resources
+  # does not strictly require the flag (compose tears down everything the
+  # PROJECT owns regardless of profile), but passing it mirrors the `up`
+  # invocation that created this stack and costs nothing extra.
+  podman compose -p "$CADDY_PROJECT" -f compose.yaml --profile proxy down -v --remove-orphans \
+    >/dev/null 2>&1 || true
 }
-trap cleanup_allowlist_stack EXIT
+trap cleanup_backup_stacks EXIT
 
-say "phase 2/2: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
+say "phase 2/3: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
 PYTHONPATH=src uv run pytest tests/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings
+
+# Same cause as the phase-1 -> phase-2 seam above: phase 2's own fixture just
+# tore its stack down (down -v --remove-orphans, inside its `finally`), which
+# is precisely what makes the VM busiest right as phase 3 is about to start.
+settle_podman_vm
+
+say "phase 3/3: running the Caddy-fronted auth integration suite (own compose stack + --profile proxy, own project name — see tests/test_caddy_auth.py)..."
+PYTHONPATH=src uv run pytest tests/test_caddy_auth.py -m integration -q --disable-warnings

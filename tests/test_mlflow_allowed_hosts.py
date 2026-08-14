@@ -51,8 +51,10 @@ import requests
 from helpers import (
     assert_no_foreign_mlflow_stack,
     capture_container_logs,
+    discover_host_port,
     reap_healthcheck_orphans,
     teardown_compose_stack,
+    wait_container_healthy,
 )
 
 pytestmark = [
@@ -96,72 +98,6 @@ def _request(
     return requests.request(
         method, base_url + path, headers=headers, json=json_body, timeout=timeout
     )
-
-
-def _wait_container_healthy(container: str, *, timeout_s: float = 120.0) -> None:
-    """Poll tolerantly (a transient ``podman inspect`` hiccup must not abort
-    the wait — the loop itself stays exactly as forgiving as before), but
-    remember the last non-empty stderr so a genuine timeout's error message
-    carries a diagnosis instead of just "last status: starting" — which is
-    indistinguishable from "podman inspect kept failing" and from "the
-    container is still legitimately booting".
-    """
-    deadline = time.monotonic() + timeout_s
-    status = "starting"
-    last_stderr = ""
-    while time.monotonic() < deadline:
-        try:
-            result = subprocess.run(  # nosec B603 B607
-                ["podman", "inspect", "--format", "{{.State.Health.Status}}", container],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except subprocess.TimeoutExpired:
-            # A slow `podman inspect` is exactly the kind of transient hiccup
-            # this loop must tolerate, not propagate — an uncaught
-            # TimeoutExpired here would abort the wait early and skip the
-            # diagnosis this function exists to attach to a GENUINE timeout.
-            last_stderr = "`podman inspect` itself timed out after 10s"
-            time.sleep(2)
-            continue
-        if result.stderr.strip():
-            last_stderr = result.stderr.strip()
-        status = result.stdout.strip() or "starting"
-        if status == "healthy":
-            return
-        time.sleep(2)
-    msg = f"{container} did not report healthy within {timeout_s}s (last status: {status!r})"
-    if last_stderr:
-        msg += f" — last `podman inspect` stderr: {last_stderr!r}"
-    raise RuntimeError(msg)
-
-
-def _discover_host_port(container: str, container_port: int = 5000) -> int:
-    result = subprocess.run(  # nosec B603 B607
-        ["podman", "port", container, str(container_port)],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    )
-    lines = result.stdout.strip().splitlines()
-    if not lines:
-        msg = (
-            f"`podman port {container} {container_port}` returned no output — cannot "
-            f"discover the ephemeral host port (stderr: {result.stderr.strip()!r})"
-        )
-        raise RuntimeError(msg)
-    port_field = lines[0].rsplit(":", 1)[-1]
-    try:
-        return int(port_field)
-    except ValueError as exc:
-        msg = (
-            f"`podman port {container} {container_port}` printed an unparsable line "
-            f"{lines[0]!r} (expected a trailing `:<port>`; stderr: "
-            f"{result.stderr.strip()!r})"
-        )
-        raise RuntimeError(msg) from exc
 
 
 def _expect_ok(
@@ -278,8 +214,8 @@ def allowlisted_mlflow_url() -> Iterator[str]:
             subprocess.run(  # nosec B603 B607
                 [*compose, "up", "-d", "--build"], check=True, cwd=REPO_ROOT, env=env, timeout=240
             )
-            _wait_container_healthy(container)
-            port = _discover_host_port(container)
+            wait_container_healthy(container)
+            port = discover_host_port(container)
             base_url = f"http://127.0.0.1:{port}"
             _expect_ok(base_url, _SEARCH_PATH, host=ALLOWED_HOST)
         except Exception:
