@@ -223,6 +223,50 @@ def test_caddy_credentials_come_from_environment_only() -> None:
         )
 
 
+def _caddyfile_code_only(caddyfile: str) -> str:
+    """Same-length copy with comments and ``{$VAR}`` placeholders blanked out.
+
+    Offsets are preserved so positions found here index straight back into the
+    original text. Two things must go before any structural analysis:
+
+    - COMMENTS. This Caddyfile documents the basic_auth hazard at length in its
+      own header, so a naive search finds ``basic_auth`` five times in prose
+      before reaching the one occurrence that is actually configuration. MEASURED
+      while writing this: offsets 349, 815, 1570, 1609 and 1984 are all comment
+      text; only 3539 is the directive.
+    - ``{$VAR}`` PLACEHOLDERS, because they contain braces. Left in, the depth
+      counter closes the handle block early on
+      ``{$CADDY_BASIC_AUTH_USER}`` and reports a span ending before the very
+      directive it exists to contain.
+    """
+    masked = re.sub(r"\{\$[^}]*\}", lambda m: "x" * len(m.group(0)), caddyfile)
+    return re.sub(r"#[^\n]*", lambda m: " " * len(m.group(0)), masked)
+
+
+def _catch_all_handle_span(code: str) -> tuple[int, int]:
+    """Byte span of the catch-all ``handle {`` block, found by brace matching.
+
+    "Catch-all" is the ``handle`` with NO matcher; ``handle @health`` is the
+    exempt one. Matching ``handle`` followed directly by ``{`` distinguishes the
+    two without needing a Caddyfile parser. Takes the masked text from
+    :func:`_caddyfile_code_only`.
+    """
+    match = re.search(r"handle\s*\{", code)
+    assert match is not None, (
+        "Caddyfile must contain a catch-all `handle {` block — a named-matcher "
+        "`handle @health` alone cannot scope basic_auth away from /health"
+    )
+    depth = 0
+    for index in range(match.end() - 1, len(code)):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return match.start(), index + 1
+    raise AssertionError("Caddyfile has unbalanced braces — cannot locate the handle block")
+
+
 def test_caddyfile_exempts_health_from_basic_auth_via_matcher_not_ordering() -> None:
     """A Caddyfile's directives are NOT ordered by textual position — Caddy
     sorts by internal precedence, so a bare `basic_auth` anywhere in the
@@ -237,12 +281,29 @@ def test_caddyfile_exempts_health_from_basic_auth_via_matcher_not_ordering() -> 
         "Caddyfile must define a named matcher for /health — a bare textual "
         "ordering does not scope basic_auth away from it (see this test's docstring)"
     )
-    health_block = caddyfile.partition("@health path /health")[2].partition("handle {")[0]
-    assert "basic_auth" not in health_block, (
-        "basic_auth must not appear inside the @health-matched handle block — "
-        "/health must stay unauthenticated for a platform healthcheck"
-    )
-    assert "basic_auth" in caddyfile, "Caddyfile must configure basic_auth somewhere"
+
+    # STRUCTURAL, not a text partition. An earlier version of this test scanned
+    # only the span BETWEEN "@health path /health" and the next "handle {", and
+    # was MEASURED toothless by a guard-teeth flip: moving basic_auth to a bare
+    # top-level directive — the exact historical regression this docstring
+    # describes — sits BEFORE that span and was therefore invisible, leaving the
+    # test green while `caddy adapt` showed routes[0] carrying an authentication
+    # handler with no match key (i.e. /health authenticated too). The invariant
+    # that actually holds is positional in the BLOCK sense: every basic_auth must
+    # live inside the catch-all handle. That fails closed on placements nobody
+    # has thought of yet, including ones above the matcher.
+    code = _caddyfile_code_only(caddyfile)
+    start, end = _catch_all_handle_span(code)
+    occurrences = [m.start() for m in re.finditer(r"\bbasic_auth\b", code)]
+    assert occurrences, "Caddyfile must configure basic_auth somewhere"
+    for index in occurrences:
+        assert start < index < end, (
+            "basic_auth must appear ONLY inside the catch-all `handle` block. One at "
+            f"offset {index} falls outside it (block spans {start}..{end}). A "
+            "basic_auth outside that block is applied GLOBALLY by Caddy's directive "
+            "sorting — including to /health, which a platform healthcheck cannot "
+            "authenticate — regardless of where it sits textually."
+        )
 
 
 def test_caddyfile_never_overrides_the_forwarded_host_header() -> None:
