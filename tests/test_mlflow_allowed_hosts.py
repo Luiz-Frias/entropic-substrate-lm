@@ -161,8 +161,9 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     allowlist; discover its ephemeral port; tear it down unconditionally.
 
     Independent PROJECT NAME (suffixed off the main stack's, itself derived
-    per-worktree by run_container_test.sh — see that script's own comment
-    on why a fixed name is a cross-run hazard) so this stack's containers,
+    PER-RUN by run_container_test.sh — a per-worktree family plus PID and
+    epoch; see that script's own comment on why a fixed name, or a merely
+    per-worktree one, is a cross-run hazard) so this stack's containers,
     volumes, and postgres data can never fuse with the main
     `just container-test` stack or with another worktree's run.
     """
@@ -171,7 +172,7 @@ def allowlisted_mlflow_url() -> Iterator[str]:
         msg = (
             "MLFLOW_COMPOSE_PROJECT is not set — this fixture must run via "
             "`just container-test` (scripts/run_container_test.sh exports the "
-            "per-worktree compose project name before pytest starts)."
+            "per-run compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
     # MLFLOW_COMPOSE_PROJECT_FAMILY (p5): the STABLE per-worktree identity,

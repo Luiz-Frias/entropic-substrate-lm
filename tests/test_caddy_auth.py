@@ -184,7 +184,7 @@ def caddy_stack() -> Iterator[tuple[str, int, str, str]]:
         msg = (
             "MLFLOW_COMPOSE_PROJECT is not set — this fixture must run via "
             "`just container-test` (scripts/run_container_test.sh exports the "
-            "per-worktree compose project name before pytest starts)."
+            "per-run compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
     # MLFLOW_COMPOSE_PROJECT_FAMILY (p5): see
