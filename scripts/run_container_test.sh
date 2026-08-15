@@ -48,6 +48,15 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+say() { printf '\n[container-test] %s\n' "$*"; }
+
+# IDENTITY GUARD (p5, defects #4 / #5-fix-1) — extracted to its own file so
+# it is directly, hermetically testable; see that file's header for the
+# full rationale and the measured defect it closes.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/assert_expected_toplevel.sh"
 
 # Explicit .env load, not left to ambient mise shell-hook activation: mise's
 # `_.file = ".env"` (mise.toml) only reaches THIS process's environment when
@@ -108,41 +117,54 @@ fi
 export MLFLOW_ALLOWED_HOSTS=""
 export MLFLOW_CORS_ALLOWED_ORIGINS=""
 
-# Project name derived PER-WORKTREE, not fixed — NOT $$ either: a PID is not
-# stable if teardown runs from a different shell invocation than the up,
-# which is exactly the trap-on-EXIT case. Basename of this checkout's
-# toplevel, sanitised to the charset podman-compose accepts for a project
-# name ([a-z0-9_-] — the fixed prefix below guarantees the result still
-# starts alphanumeric regardless of what the worktree happens to be named).
+# Project identity — derivation EXTRACTED to scripts/derive_compose_project.sh
+# (p5) so its own runtime behaviour (same worktree, same second, two
+# DIFFERENT project names) is directly testable by invoking that file twice
+# as a subprocess (tests/test_derive_compose_project.py), which a grep of
+# THIS script's source text never could. Sets PROJECT_FAMILY (stable per
+# worktree — the identity tests/helpers.py's assert_no_foreign_mlflow_stack
+# uses to recognise "another run of mine") and PROJECT (PROJECT_FAMILY plus
+# per-run entropy — defect #1, see that script's own header for the
+# measurement and the retraction of the earlier "NOT $$ either" reasoning).
 #
-# WHY THIS MATTERS: a FIXED, shared project name is what let one agent's
-# mlflow container fuse to a DIFFERENT agent's postgres under concurrent
-# `just container-test` runs (verified empirically via the
-# `com.docker.compose.project.working_dir` container label, and two
-# concurrent `down -v` processes racing from different worktrees) — a run
-# could VALIDATE AGAINST ANOTHER RUN'S DATABASE and report green. Exported
-# (not just a local var) so tests/test_mlflow_live.py's own `podman compose
-# -p ...` calls (the mid-run mlflow-kill test) target the SAME project this
-# script brought up, instead of guessing or falling back to the old shared
-# name.
-TOPLEVEL="$(git rev-parse --show-toplevel)"
-WORKTREE_NAME="$(basename "$TOPLEVEL")"
-SANITIZED_WORKTREE="$(printf '%s' "$WORKTREE_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
-# The basename ALONE is not unique, and fails in exactly the case this fix exists
-# for: the Round C guard-teeth recipe mandates WT="$(mktemp -d)/wt", so every
-# reviewer's worktree basename is literally "wt" and they would all resolve to one
-# shared project name — restoring the container-fusion and cross-teardown hazard
-# this derivation is meant to remove. Hash the FULL path so two worktrees can never
-# collide however their directories are named. cksum is POSIX and always present;
-# CRC32 over a handful of concurrent paths has negligible collision risk, and the
-# readable basename is retained purely so `podman ps` stays human-legible.
-PATH_HASH="$(printf '%s' "$TOPLEVEL" | cksum | cut -d' ' -f1)"
-PROJECT="entropic-substrate-lm-mlflow-test-${SANITIZED_WORKTREE}-${PATH_HASH}"
+# Both exported, not just local vars: MLFLOW_COMPOSE_PROJECT so
+# tests/test_mlflow_live.py's own `podman compose -p ...` calls (the
+# mid-run mlflow-kill test) target the SAME project this script brought up
+# instead of guessing; MLFLOW_COMPOSE_PROJECT_FAMILY so
+# tests/test_mlflow_allowed_hosts.py and tests/test_caddy_auth.py's own
+# assert_no_foreign_mlflow_stack calls (phases 2 and 3) can pass `family=`
+# and get the twin-detecting, poll-before-refusing behaviour p5 added there —
+# see that function's docstring for why `family` is required for a project
+# name that carries per-run entropy.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/derive_compose_project.sh"
 export MLFLOW_COMPOSE_PROJECT="$PROJECT"
+export MLFLOW_COMPOSE_PROJECT_FAMILY="$PROJECT_FAMILY"
 COMPOSE=(podman compose -p "$PROJECT" -f compose.yaml)
 MLFLOW_CONTAINER="${PROJECT}_mlflow_1"
 
-say() { printf '\n[container-test] %s\n' "$*"; }
+# IDENTITY HEADER (p5, defect #5-fix-2): container names were hardened
+# (per-worktree hash, now per-run entropy too) but the LOG was not, and the
+# log is what a reviewer reports from. MEASURED 2026-08-14/15: two agents'
+# `/tmp/container-test-round-c-N.log` artifacts (43694 and 6067 bytes)
+# coexisted under UNNAMESPACED shared filenames, and a report built from one
+# described a DIFFERENT worktree's run in every container name, phase
+# result, and timing — caught only because one agent happened to check its
+# own derived project name against the log body. This script cannot control
+# what an external harness names its captured-output file (grep across this
+# repo found no such naming here — it is orchestration-layer, out of this
+# phase's scope), but it CAN make the log's own CONTENT self-identifying, so
+# that exact cross-check is a one-line grep instead of a rediscovery. sha256
+# (not a weaker checksum) of the files this run's conclusion actually
+# depends on: this script, its extracted project-identity derivation, and
+# the compose file that defines every container/healthcheck bound quoted
+# above.
+say "identity: cwd=$(pwd) toplevel=${TOPLEVEL}"
+say "identity: project=${PROJECT} family=${PROJECT_FAMILY}"
+say "identity: sha256 of the files this run's conclusion depends on:"
+for f in "${SCRIPT_DIR}/run_container_test.sh" "${SCRIPT_DIR}/derive_compose_project.sh" compose.yaml; do
+  printf '[container-test]   %s\n' "$(shasum -a 256 "$f")"
+done
 
 # Takes the exit status EXPLICITLY (as $1) rather than reading `$?` itself,
 # because this is now called twice: once from the EXIT trap (where `$?` is

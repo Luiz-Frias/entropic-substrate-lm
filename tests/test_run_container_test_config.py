@@ -1,5 +1,7 @@
 """Contracts for the live-gate shell boundary (``scripts/run_container_test.sh``)."""
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -222,3 +224,112 @@ def test_backup_teardown_trap_covers_both_the_allowlist_and_caddy_projects() -> 
         "the caddy project's teardown must pass --profile proxy, mirroring the `up` "
         "invocation that created it"
     )
+
+
+# ------------------------------------------------------------------- p5: identity
+#
+# scripts/derive_compose_project.sh (defect #1) and
+# scripts/assert_expected_toplevel.sh (defect #4) are EXTRACTED, so their
+# runtime behaviour is tested against the real subprocess in their own
+# dedicated test files (tests/test_derive_compose_project.py and the
+# behavioural tests below) rather than only grepped here. This section pins
+# that run_container_test.sh actually WIRES them in.
+
+
+def test_gate_sources_the_extracted_identity_guard_before_anything_else_preflight() -> None:
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    assert 'source "${SCRIPT_DIR}/assert_expected_toplevel.sh"' in script, (
+        "run_container_test.sh must source the extracted identity guard — see that "
+        "file's own header for why an inline reimplementation is not equivalent (it "
+        "would no longer be testable without the AWS/podman preflight around it)"
+    )
+    # BEFORE the AWS/S3 preflight checks: a wrong-worktree session must be refused
+    # before it can even reach the point of complaining about missing credentials.
+    guard_at = script.index('source "${SCRIPT_DIR}/assert_expected_toplevel.sh"')
+    aws_check_at = script.index("AWS_ACCESS_KEY_ID")
+    assert guard_at < aws_check_at, "the identity guard must run before the AWS creds check"
+
+
+def test_gate_sources_the_extracted_project_derivation() -> None:
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    assert 'source "${SCRIPT_DIR}/derive_compose_project.sh"' in script, (
+        "run_container_test.sh must source the extracted per-run project derivation"
+    )
+
+
+def test_gate_exports_both_the_exact_project_and_its_stable_family() -> None:
+    """MLFLOW_COMPOSE_PROJECT_FAMILY must be exported alongside
+    MLFLOW_COMPOSE_PROJECT — tests/test_mlflow_allowed_hosts.py and
+    tests/test_caddy_auth.py need the FAMILY (not just the entropy-bearing
+    exact project) to call assert_no_foreign_mlflow_stack's family-aware
+    path (p5, defects #2/#3)."""
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    assert 'export MLFLOW_COMPOSE_PROJECT="$PROJECT"' in script, script
+    assert 'export MLFLOW_COMPOSE_PROJECT_FAMILY="$PROJECT_FAMILY"' in script, script
+
+
+def test_gate_prints_an_identity_header_with_project_family_and_file_hashes() -> None:
+    """Defect #5-fix-2: the log's own CONTENT must be self-identifying — a
+    round-numbered shared artifact filename is outside this repo's control
+    (grep found no such naming inside this repo; it is orchestration-layer),
+    but the BODY the gate prints is."""
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    assert "identity: cwd=" in script, script
+    assert "identity: project=" in script and "family=" in script, script
+    assert "sha256" in script, "the identity header must hash the files this run depends on"
+
+
+# ---------------------------------------- behavioural: scripts/assert_expected_toplevel.sh
+#
+# Run as REAL subprocesses (no AWS creds, no .env, no podman needed — the
+# guard is the very first thing run_container_test.sh does and this script
+# IS that guard in isolation), so these prove actual runtime behaviour
+# rather than the presence of a token. Guard-teeth in both directions,
+# acceptance requires: refuses a mismatch, permits a match, permits unset.
+
+_GUARD_SCRIPT = REPO_ROOT / "scripts" / "assert_expected_toplevel.sh"
+
+
+def _run_guard(expected_toplevel: str | None) -> subprocess.CompletedProcess[str]:
+    env = {"PATH": os.environ.get("PATH", "")}
+    if expected_toplevel is not None:
+        env["LIVE_GATE_EXPECTED_TOPLEVEL"] = expected_toplevel
+    return subprocess.run(  # nosec B603 B607
+        ["bash", str(_GUARD_SCRIPT)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+        timeout=15,
+    )
+
+
+def test_identity_guard_refuses_a_mismatched_expected_toplevel_with_a_distinct_exit_code() -> None:
+    result = _run_guard("/tmp/definitely-not-this-worktree")
+    assert result.returncode == 3, result
+    assert "REFUSING" in result.stderr, result.stderr
+    assert "LIVE_GATE_EXPECTED_TOPLEVEL" in result.stderr, result.stderr
+
+
+def test_identity_guard_permits_a_matching_expected_toplevel() -> None:
+    real_toplevel = subprocess.run(  # nosec B603 B607
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO_ROOT,
+    ).stdout.strip()
+
+    result = _run_guard(real_toplevel)
+    assert result.returncode == 0, result
+    assert "REFUSING" not in result.stderr, result.stderr
+
+
+def test_identity_guard_permits_an_unset_expectation() -> None:
+    """OPTIONAL by design: an orchestrator that never set
+    LIVE_GATE_EXPECTED_TOPLEVEL (a manual `just container-test` run) must
+    not be blocked — this guard degrades to a no-op, not a new failure mode,
+    exactly like every other best-effort probe in this live gate."""
+    result = _run_guard(None)
+    assert result.returncode == 0, result
+    assert "REFUSING" not in result.stderr, result.stderr

@@ -174,6 +174,15 @@ def allowlisted_mlflow_url() -> Iterator[str]:
             "per-worktree compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
+    # MLFLOW_COMPOSE_PROJECT_FAMILY (p5): the STABLE per-worktree identity,
+    # separate from `base_project`'s per-run entropy — passed to
+    # assert_no_foreign_mlflow_stack's `family=` so it can tell phase 1's own
+    # not-yet-reaped residual (same family, poll for it to clear) apart from a
+    # genuinely foreign stack (different family, refuse immediately) instead of
+    # confusing the two the way the single-prefix guard used to. Falls back to
+    # None (the guard's pre-p5 behaviour) if unset — should never happen when
+    # launched via `just container-test`, which exports both together.
+    family = os.environ.get("MLFLOW_COMPOSE_PROJECT_FAMILY") or None
 
     project = f"{base_project}-allowlist"
     compose = ["podman", "compose", "-p", project, "-f", str(REPO_ROOT / "compose.yaml")]
@@ -197,7 +206,7 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     # Reap BEFORE the contention check, not after: an orphaned timer is not a
     # running stack, so the check would pass while the machine stays slow.
     reap_healthcheck_orphans()
-    assert_no_foreign_mlflow_stack(project)
+    assert_no_foreign_mlflow_stack(project, family=family)
 
     try:
         try:

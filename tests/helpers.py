@@ -203,7 +203,14 @@ def capture_container_logs(container: str, *, timeout_s: float = 30.0) -> str:
     return rendered
 
 
-def assert_no_foreign_mlflow_stack(project: str, *, timeout_s: float = 15.0) -> None:
+def assert_no_foreign_mlflow_stack(
+    project: str,
+    *,
+    family: str | None = None,
+    timeout_s: float = 15.0,
+    residual_poll_interval_s: float = 2.0,
+    residual_poll_timeout_s: float = 20.0,
+) -> None:
     """Refuse to bring a live-gate stack up while ANOTHER one is running.
 
     THE INVARIANT THIS ENFORCES was previously asserted only in prose. Both
@@ -236,30 +243,94 @@ def assert_no_foreign_mlflow_stack(project: str, *, timeout_s: float = 15.0) -> 
     report red for reasons that have nothing to do with the code under test.
     A probe that cannot be RUN is reported and tolerated — an unverifiable
     precondition must not become a new flake source of its own.
+
+    ``family`` (p5, OPTIONAL, default ``None``) splits "is this mine" from a
+    single prefix match into TWO separate identities, fixing two failure
+    DIRECTIONS the single-prefix design had at once:
+
+    #2 OVER-reports at a phase boundary: phase 2 passes ``project =
+    "<PROJECT>-allowlist"``, so phase 1's own ``<PROJECT>_mlflow_1`` does not
+    match that exact prefix and was classified FOREIGN — MEASURED, verbatim
+    from a gate run::
+
+        phase 1/3: 4 passed, 46.55s   teardown: containers + volume + network removed
+        settle:    WARNING host still busy (load1 9.40 vs 8 cores) after 180s
+        phase 2/3: 3 ERRORS — REFUSING to start '...-allowlist': another mlflow stack
+                   is already running (...676710117_mlflow_1)     <-- ITS OWN phase 1
+
+    The teardown had already reported success; podman's own ``podman ps``
+    bookkeeping simply had not caught up. The 180s inter-phase settle
+    happening to spend enough wall-clock for podman to finish reaping is
+    INCIDENTAL, not by design — it settles on HOST LOAD, a completely
+    different signal from CONTAINER STATE, and the false positive above
+    reproduced even with that settle already in place. Shortening or
+    conditioning that wait does not reopen this bug because it was never
+    what fixed it.
+
+    #3 UNDER-reports: the exact same prefix match makes a process sharing the
+    same EXACT derived project name invisible as a twin.
+
+    So: a container whose name matches ``project`` exactly is a TWIN (#3) —
+    refused immediately, polling would not help, it is not going away on its
+    own. A container matching only ``family`` (same WORKTREE, different exact
+    run) is a RESIDUAL (#2) — POLLED for actual clearance rather than
+    convicted on one sample, and refused only if it is still there once
+    ``residual_poll_timeout_s`` elapses (never silently tolerated forever —
+    that would just re-open the fusion hazard PROJECT_FAMILY exists to
+    prevent). Anything matching neither is FOREIGN — refused immediately,
+    exactly as before. **Widening the single prefix match to swallow #2
+    would have reopened the container-fusion hazard the per-worktree hash
+    exists to prevent — this is why the two identities are kept SEPARATE
+    rather than one prefix becoming fuzzier.**
+
+    ``residual_poll_interval_s`` / ``residual_poll_timeout_s``: bounded but
+    UNMEASURED beyond the anecdote above (MEASURE, DO NOT INFER — this is
+    labelled honestly rather than presented as a precise figure). Attempts to
+    reproduce the bookkeeping lag synthetically on this machine — a bare
+    ``podman rm -f`` on a throwaway labelled container, and a real ``podman
+    compose down -v --remove-orphans`` on a postgres-only scratch stack, both
+    at ``sysctl vm.loadavg`` 1st-minute 3.6–4.9 — cleared in under 15ms in
+    both trials, i.e. the lag the brief measured did not reproduce at that
+    load. Proposed experiment to pin an exact bound: repeat this probe
+    immediately after a REAL ``just container-test`` phase-1 teardown, at a
+    range of measured host-load values, and record poll-count-to-clear.
+
+    When ``family`` is left ``None`` (every call site predating p5), the
+    behaviour is EXACTLY the pre-p5 guard: a container matching ``project``
+    exactly is treated as this fixture's own business (its own ``up``/``down``
+    already own it) rather than a twin. That reading was correct for a NAME
+    WITH NO PER-RUN ENTROPY OF ITS OWN (a fixed literal, e.g. in a unit test) —
+    it stops being correct the moment ``project`` carries per-run entropy
+    (defect #1, ``scripts/derive_compose_project.sh``), because such a name
+    has never existed before THIS process, so nothing can legitimately be "my
+    own earlier leftover" under it. Callers deriving ``project`` that way
+    MUST also pass ``family`` to get the twin-detecting behaviour above.
     """
-    try:
-        result = subprocess.run(  # nosec B603 B607
-            ["podman", "ps", "--filter", _MLFLOW_SERVICE_FILTER, "--format", "{{.Names}}"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout_s,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        print(f"[live-gate] WARNING: could not verify no other mlflow stack is up: {exc!r}")
-        return
-    if result.returncode != 0:
-        print(
-            "[live-gate] WARNING: could not verify no other mlflow stack is up — "
-            f"`podman ps` exited {result.returncode}: {result.stderr.strip()!r}"
-        )
-        return
-    running = [name.strip() for name in result.stdout.splitlines() if name.strip()]
-    foreign = sorted(name for name in running if not name.startswith(f"{project}_"))
-    if foreign:
+
+    def _list_running() -> list[str] | None:
+        try:
+            result = subprocess.run(  # nosec B603 B607
+                ["podman", "ps", "--filter", _MLFLOW_SERVICE_FILTER, "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            print(f"[live-gate] WARNING: could not verify no other mlflow stack is up: {exc!r}")
+            return None
+        if result.returncode != 0:
+            print(
+                "[live-gate] WARNING: could not verify no other mlflow stack is up — "
+                f"`podman ps` exited {result.returncode}: {result.stderr.strip()!r}"
+            )
+            return None
+        return [name.strip() for name in result.stdout.splitlines() if name.strip()]
+
+    def _refuse(offenders: list[str]) -> None:
         msg = (
             f"REFUSING to start compose project {project!r}: another mlflow stack is "
-            f"already running ({', '.join(foreign)}). This machine's podman VM is "
+            f"already running ({', '.join(offenders)}). This machine's podman VM is "
             "4 vCPU / 4 GB; two mlflow stacks contend and the second one's boot "
             "stretches past every timing bound in this suite (MEASURED: 29.64s to "
             "healthy on a settled VM vs 135.71s at load1 4.4). A run started here "
@@ -268,6 +339,69 @@ def assert_no_foreign_mlflow_stack(project: str, *, timeout_s: float = 15.0) -> 
             f"  podman compose -p <its-project> -f compose.yaml down -v --remove-orphans"
         )
         raise RuntimeError(msg)
+
+    own_prefix = f"{project}_"
+
+    if family is None:
+        # BACK-COMPAT PATH — byte-for-byte the pre-p5 guard. See the
+        # docstring section above on why this stays correct only for a
+        # `project` with no per-run entropy of its own.
+        running = _list_running()
+        if running is None:
+            return
+        foreign = sorted(name for name in running if not name.startswith(own_prefix))
+        if foreign:
+            _refuse(foreign)
+        return
+
+    # FAMILY-AWARE PATH (p5).
+    family_prefix = f"{family}-"
+
+    def _classify(names: list[str]) -> tuple[list[str], list[str]]:
+        foreign_names: list[str] = []
+        residual_names: list[str] = []
+        for name in names:
+            if name.startswith(own_prefix):
+                # #3: something already holds OUR OWN target name, found
+                # BEFORE we have brought anything up under it. Under per-run
+                # entropy that name has never existed before this process,
+                # so it can only be a twin — refused like any other foreign
+                # name, never silently treated as ours.
+                foreign_names.append(name)
+            elif name.startswith(family_prefix):
+                # Same WORKTREE, different exact run — #2's false-positive
+                # fix: do not convict on a single sample.
+                residual_names.append(name)
+            else:
+                foreign_names.append(name)
+        return foreign_names, residual_names
+
+    running = _list_running()
+    if running is None:
+        return
+    foreign, residual = _classify(running)
+    if foreign:
+        _refuse(foreign)
+    if not residual:
+        return
+
+    # #2: poll until the residual is ACTUALLY gone, or genuinely give up and
+    # refuse — the bound is CONTAINER STATE, never a fixed sleep or the host
+    # load settle_podman_vm() uses (a different signal for a different
+    # purpose — see the docstring section above on why that settle's timing
+    # is incidental to this fix, not load-bearing for it).
+    deadline = time.monotonic() + residual_poll_timeout_s
+    while time.monotonic() < deadline:
+        time.sleep(residual_poll_interval_s)
+        running = _list_running()
+        if running is None:
+            return
+        foreign, residual = _classify(running)
+        if foreign:
+            _refuse(foreign)
+        if not residual:
+            return
+    _refuse(residual)
 
 
 def teardown_compose_stack(
