@@ -3,11 +3,15 @@
 Boots a SECOND podman-compose stack from the repo's REAL ``compose.yaml`` —
 not a reduced test-only fixture — with ``MLFLOW_ALLOWED_HOSTS`` /
 ``MLFLOW_CORS_ALLOWED_ORIGINS`` set in the subprocess environment. Reusing
-the actual compose file means these tests exercise the actual
-``${VAR:+...}`` interpolation shape compose.yaml relies on: delete that
-block and this suite goes red (see the phase's GUARD-TEETH requirement),
-because there would be no way to pass a configured allowlist into the
-server at all.
+the actual compose file means these tests exercise the real wiring: those
+operator-facing names are interpolated into ``services.mlflow.environment``
+as MLflow's own ``MLFLOW_SERVER_ALLOWED_HOSTS`` /
+``MLFLOW_SERVER_CORS_ALLOWED_ORIGINS`` (click ``envvar=``,
+mlflow/utils/cli_args.py:256,270 in the pinned image), which is what makes
+the allowlist take effect with no CLI flag and no shell anywhere in
+``command:``. Delete those two environment entries and this suite goes red
+(see the phase's GUARD-TEETH requirement), because there would be no way to
+pass a configured allowlist into the server at all.
 
 Gated behind ``just container-test`` (skipped unless
 ``MLFLOW_COMPOSE_PROJECT`` is set — this module's own stack lookup needs the
