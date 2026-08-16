@@ -5,12 +5,24 @@ three ideas: (1) **√p Fisher-Rao initialization** — byte identity vectors in
 corpus next-byte transition distributions, sqrt-mapped onto the positive orthant of the unit
 hypersphere (Fisher-Rao metric = angular metric), then lifted 256→`d_model` via a fixed
 semi-orthogonal matrix; (2) an **nGPT-style hypersphere-native backbone** (normalization-as-
-retraction, no manifold-aware optimizer, plain AdamW); and (3) a custom **gated
-κ-stereographic normalization layer** ("MoE-over-geometries"): `logmap0` → sparse gating over
-`K` constant-curvature components (each with a learnable, clamped curvature κ) → `expmap0` /
-`projx` recombine, with a load-balancing auxiliary loss. Geometry math is always forced to
+retraction, no manifold-aware optimizer, plain AdamW); and (3) **per-head κ-attention** —
+curvature in the comparison kernel rather than on individual states: each head scores with
+`logits = −d_κₕ(q, k)² · s` under its own learnable, clamped curvature `κₕ` (initialized
+spread over −1/0/+1), so the heads themselves are the mixture-over-geometries. Head mixing,
+not a sparse router — no load-balance machinery and no gate-collapse mode. E2 is the exact
+`κ = 0` member of that family, which keeps the ablation one-variable. Geometry math is always forced to
 FP32 inside autocast-disabled blocks, regardless of the surrounding AMP precision. Prior art is
 pinned as git submodules under [`references/`](references/) (holobyte, hnet, ngpt, geoopt).
+
+> **A note on what changed, and why it is a result rather than a rename.** An earlier
+> revision put curvature in a gated κ-stereographic _normalization_ layer (`logmap0` →
+> sparse gate over `K` constant-curvature components → `expmap0`/`projx`). That layer is
+> still in-tree (`layers/kappa_norm.py`) but is **measured to be radially annihilated**:
+> origin log/exp maps are radial, and the unit-norm retraction erases radius, so under this
+> backbone's unit-norm contract the layer equals `UnitNorm` to float precision — pinned by a
+> regression test. Curvature is _relational_; it cannot act on a single point sitting at a
+> chart origin, only where points meet. That is why it moved into the attention kernel.
+> [`docs/architecture.md`](docs/architecture.md) is the authoritative description.
 
 ## Quickstart
 
@@ -46,12 +58,12 @@ just eval ckpt=models/e3-latest.pt
 
 ## Experiment ladder
 
-| ID | Description                                                                                  | Metric    |
-| -- | --------------------------------------------------------------------------------------------- | --------- |
-| E0 | Matched-param baselines: byte-level vanilla transformer **and** GPT-2-BPE transformer (~80–100M params) | nats/byte (BPE loss converted at the measured bytes/token on the eval split, not assumed 4.0) |
-| E1 | E0 byte model with embedding init swapped: random-on-sphere vs. √p Fisher-Rao init. Identical arch/seed. | nats/byte |
-| E2 | Hypersphere-native backbone (nGPT-style Norm-as-retraction blocks, SLERP/LERP residual with learnable eigen-LRs α) | nats/byte |
-| E3 | E2 with LayerNorm/Norm replaced by the gated κ-stereographic layer (K=3 components: init κ = −1, 0, +1; learnable; sparse top-1 or top-2 gate + load-balance loss) | nats/byte + learned κ / gate-usage logs |
+| ID | Description                                                                                                                                                                                                                | Metric                                                                                        |
+| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| E0 | Matched-param baselines: byte-level vanilla transformer **and** GPT-2-BPE transformer (~80–100M params)                                                                                                                    | nats/byte (BPE loss converted at the measured bytes/token on the eval split, not assumed 4.0) |
+| E1 | E0 byte model with embedding init swapped: random-on-sphere vs. √p Fisher-Rao init. Identical arch/seed.                                                                                                                   | nats/byte                                                                                     |
+| E2 | Hypersphere-native backbone (nGPT-style Norm-as-retraction blocks, SLERP/LERP residual with learnable eigen-LRs α)                                                                                                         | nats/byte                                                                                     |
+| E3 | E2 with the attention similarity kernel swapped for per-head κ-distance: `logits = −d_κₕ(q,k)²·s`, one learnable clamped κ per head (init spread −1/0/+1). E2 is the exact κ=0 member, so the ablation stays one-variable. | nats/byte + per-head κ trajectories                                                           |
 
 Datasets: [enwik8](http://mattmahoney.net/dc/textdata.html) (downloaded via
 `just download-data` into `data/`, tracked with `dvc add data/enwik8`) and

@@ -14,9 +14,14 @@
 # 5001 chosen only to dodge macOS AirPlay squatting on 5000) is a
 # concurrency hazard: two worktrees running `just container-test` at once
 # would collide on the same host port regardless of the (also now
-# per-worktree) project name below.
+# per-run) project name below.
 #
-# PROJECT NAME (see run_container_test.sh): derived per-worktree, not fixed
+# PROJECT NAME (see run_container_test.sh): derived PER-RUN — a stable
+# per-worktree family (full-path hash) plus PID and epoch, exported
+# alongside it as MLFLOW_COMPOSE_PROJECT_FAMILY. Not fixed, and not
+# per-worktree either: two runs from ONE worktree used to derive
+# byte-identical container names, so one run's `down -v` could destroy
+# the other's live stack mid-test
 # — a fixed, shared compose project name is what let one agent's mlflow
 # container fuse to a DIFFERENT agent's postgres under concurrent runs
 # (verified empirically via `com.docker.compose.project.working_dir`
@@ -67,10 +72,119 @@ services:
       AWS_REQUEST_CHECKSUM_CALCULATION: when_required
       AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       AWS_DEFAULT_REGION: auto
+      # HOST ALLOWLIST (p3) — MLflow's OWN env vars. These are not a
+      # convention we invented: mlflow/utils/cli_args.py:256,270 in the
+      # pinned image binds --allowed-hosts / --cors-allowed-origins to
+      # MLFLOW_SERVER_ALLOWED_HOSTS / MLFLOW_SERVER_CORS_ALLOWED_ORIGINS via
+      # click's native envvar=, so setting them here IS passing the flags,
+      # and command: below stays a flat argv list with no shell at all.
+      #
+      # WHY THIS AND NOT A COMMAND-LINE FLAG — the flag form was a MEASURED
+      # injection. Reading these vars inside an sh -c script as unescaped
+      # ${VAR} let podman-compose 1.6.0 interpolate HOST-SIDE, at
+      # `config`/`up` parse time, from this process's raw environment:
+      # setting MLFLOW_ALLOWED_HOSTS to `foo.test"; touch /tmp/PWNED ; echo "`
+      # rendered that literal shell text into the container's startup
+      # script — arbitrary command execution gated only by who can set an
+      # env var. Escaping it ($$VAR) deferred expansion to the container's
+      # own shell and closed the hole, but a correctly-escaped
+      # interpolation site is still an interpolation site. There is now no
+      # site: podman hands these to the container's exec() environ array,
+      # which nothing re-parses as shell. Same pure-data-channel idiom as
+      # the AWS_*/MLFLOW_S3_ENDPOINT_URL vars above.
+      #
+      # EMPTY MEANS UNSET, and that is what makes the `:-` default safe.
+      # MEASURED against the pinned image, ONE container at a time (see the
+      # worker comment below — concurrent probes on this 4-vCPU VM look
+      # exactly like a hang and will mislead you): both vars set to "" boot
+      # in ~7s logging "Security middleware enabled with default settings
+      # (localhost-only)", identical to omitting them. So an operator who
+      # sets nothing gets today's localhost-only behaviour with no
+      # conditional-flag machinery, and one who sets a domain gets it
+      # enforced — verified in the real compose stack (postgres + R2):
+      # allowed Host -> 200, foreign Host -> 403 on both the REST API and
+      # the UI, foreign Host -> 200 on /health (that exemption is upstream's
+      # and is pinned by tests/test_mlflow_live.py).
+      #
+      # The operator-facing names stay MLFLOW_ALLOWED_HOSTS /
+      # MLFLOW_CORS_ALLOWED_ORIGINS — .env, the Railway service, and the
+      # live-test fixtures all keep the names they already use.
+      MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_ALLOWED_HOSTS:-}
+      MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: ${MLFLOW_CORS_ALLOWED_ORIGINS:-}
     # Bare container port — ephemeral host port assigned by podman, NOT a
     # fixed "host:container" mapping. See the module-level comment above.
     ports:
       - "5000"
+    # SINGLE WORKER — this is a determinism fix, not a tuning knob, and it
+    # is the root cause of the live gate's startup flakiness. MLflow's
+    # default worker count has every uvicorn worker independently import
+    # the full FastAPI/SQLAlchemy/Alembic stack at once; on this 4-vCPU
+    # podman VM they contend, uvicorn's supervisor kills the workers that
+    # overrun its startup timeout, and respawns them — so startup stretches
+    # unboundedly under load. Measured back-to-back under IDENTICAL
+    # conditions — same image (cc5080a8ca0c), same clean volume, and the
+    # same unrelated container (agx-qdrant) resident for both arms, so the
+    # host was NOT idle and the comparison is a controlled A/B rather than
+    # a best-case number:
+    #   default   -> 41s to "Application startup complete", repeated
+    #                "Child process [N] died" crash-loop
+    #   --workers 1 -> 8s, ZERO child deaths
+    # That one cause produced BOTH observed gate failures: the container
+    # never reporting healthy inside the 120s poll, and the client's
+    # RemoteDisconnected (a request landing on a worker that was then
+    # killed mid-flight). Concurrency is not under test here — this stack
+    # serves one pytest process — so a worker pool buys nothing and costs
+    # determinism. Do NOT "fix" a recurrence by raising the poll budget;
+    # see sinks.py on why bigger numbers are not a fix. Do NOT change
+    # --workers for the host-allowlist work below either — settled and
+    # pinned by test on the parent branch, orthogonal to this knob.
+    #
+    # HOST ALLOWLIST (p3) — no flags here. The allowlist arrives entirely
+    # through MLFLOW_SERVER_ALLOWED_HOSTS / MLFLOW_SERVER_CORS_ALLOWED_ORIGINS
+    # under `environment:` above; see that block for the mechanism and the
+    # injection history. This command: is therefore a FLAT ARGV LIST with no
+    # shell and no `$` in any entry, which is the property
+    # tests/test_compose_config.py pins.
+    #
+    # A RETRACTION, because this file's comments are treated as evidence.
+    # An earlier revision wrapped this command in `sh -c` so two
+    # `$${VAR:+--flag "$$VAR"}` blocks could make the flags OPTIONAL, and
+    # justified that machinery with a measured claim: that passing
+    # `--cors-allowed-origins ""` "HANGS the server ... burns CPU
+    # indefinitely inside CORS middleware setup and never binds". THAT CLAIM
+    # DOES NOT REPRODUCE. Re-probed against the same pinned image, one
+    # container at a time:
+    #   control, no vars/flags                          bound in 8s
+    #   env vars both ""                                bound in 7s
+    #   CLI --cors-allowed-origins ""                   bound in 8s
+    #   CLI --cors-allowed-origins "" (repeat)          bound in 7s
+    #   CLI both flags ""                               bound in 7s
+    #   real compose stack (postgres + R2), flat argv,
+    #     --cors-allowed-origins ""                     healthy
+    # The likely cause of the original reading is the same contention
+    # artifact documented under --workers below: THREE mlflow containers
+    # booting at once on this 4-vCPU VM all appear to hang, control
+    # included. Probe sequentially or you will measure the VM, not mlflow.
+    #
+    # So the optional-flag problem the wrapper solved was not real — and the
+    # native env vars make it moot regardless, since there is no flag to
+    # make optional. Deleting the wrapper also deletes the only place in
+    # this whole compose/Containerfile surface where an externally-set value
+    # was spliced into shell-command text.
+    #
+    # REPLACE, NOT EXTEND: a set allowlist REPLACES mlflow's compiled
+    # default outright — verified empirically, a server configured with a
+    # custom allowlist 403s a PLAIN request with no Host override (i.e.
+    # exactly what a client at localhost:<ephemeral-port> sends). These vars
+    # must stay unset for `just container-test`'s own stack, or the live
+    # gate 403s itself — see the guard note in scripts/run_container_test.sh.
+    #
+    # NEVER '*': mlflow accepts a wildcard allowlist value, which disables
+    # the DNS-rebinding guard entirely. Forbidden here regardless of
+    # convenience — no default, no fallback, ever resolves to '*'. NOTE this
+    # file cannot enforce that at deploy time: Railway supplies its own env,
+    # never this compose file, so the wildcard guard belongs with the deploy
+    # topology, not here.
     command:
       - mlflow
       - server
@@ -78,6 +192,8 @@ services:
       - 0.0.0.0
       - --port
       - "5000"
+      - --workers
+      - "1"
       - --backend-store-uri
       - postgresql://mlflow:mlflow@postgres:5432/mlflow
       - --artifacts-destination
@@ -89,6 +205,82 @@ services:
           "python",
           "-c",
           "import urllib.request as u; u.urlopen('http://localhost:5000/health')",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  # CADDY (p4) — the ONLY authentication in this topology. MLflow above has
+  # none of its own and holds R2 credentials it uses to proxy artifacts
+  # (AWS_*/MLFLOW_S3_ENDPOINT_URL under services.mlflow.environment), so an
+  # unauthenticated public MLflow is an open door to the bucket. See
+  # Caddyfile's own header comment for the auth design (basic_auth,
+  # /health exempt, why the exemption is safe) and the measured Host-header
+  # forwarding behaviour that makes MLFLOW_ALLOWED_HOSTS need the PUBLIC
+  # domain rather than this service's own name.
+  #
+  # BEHIND A PROFILE, not in the default set. compose's `up -d --build`
+  # with no service names (what run_container_test.sh's phases 1 and 2 both
+  # call) starts every service the file declares UNLESS it is gated behind
+  # a profile the invocation didn't request — VERIFIED against
+  # podman-compose 1.6.0 with a scratch two-service file: a plain `config
+  # --services` listed only the unprofiled service, `--profile proxy
+  # config --services` listed both. Un-profiled, this service would build
+  # and start on every `just container-test` run, including phase 1 and 2,
+  # which exercise none of this and would pay the cost for nothing.
+  #
+  # NO depends_on HERE, deliberately. MLflow's ALLOWED_HOSTS/CORS guard does
+  # an EXACT host[:port] STRING match, not a hostname-only match — VERIFIED
+  # against the pinned image: an allowlist of `localhost` admitted
+  # `Host: localhost` (200) but refused `Host: localhost:15000` (403), and
+  # an allowlist of `localhost:15001` admitted only that exact string. Caddy
+  # publishes an EPHEMERAL host port (same bare-port idiom as mlflow's own
+  # "5000" above), which podman does not assign until this container is
+  # CREATED — so the exact string mlflow's allowlist would need to admit a
+  # request routed back through Caddy on localhost is not knowable before
+  # mlflow itself boots with its allowlist already baked into its
+  # environment. tests/test_caddy_auth.py resolves this by bringing this
+  # service up FIRST (alongside postgres, without mlflow), discovering its
+  # assigned port, and only THEN starting mlflow with that exact
+  # `host:port` folded into MLFLOW_ALLOWED_HOSTS alongside the fixed public
+  # test domain — the same `podman port` discovery idiom
+  # run_container_test.sh already uses for mlflow's own port, applied one
+  # layer up. A compose-level `depends_on: mlflow` would force mlflow to
+  # start in the SAME `up` call as this service, defeating that ordering.
+  # Caddy tolerates a not-yet-reachable upstream fine on its own (each
+  # request dials fresh; nothing here holds a persistent connection), so
+  # nothing is lost by leaving the two undeclared as dependents of one
+  # another.
+  caddy:
+    image: docker.io/library/caddy:2.11-alpine
+    profiles: ["proxy"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      # NEVER a literal here or anywhere else in this tree (gitleaks runs
+      # at pre-commit and pre-push) — both arrive from the process
+      # environment only. CADDY_BASIC_AUTH_HASH is a bcrypt hash, not a
+      # plaintext password, but a hash is still a credential (NO CREDENTIALS
+      # COMMITTED, hashed or otherwise) and stays out of git regardless.
+      CADDY_BASIC_AUTH_USER: ${CADDY_BASIC_AUTH_USER}
+      CADDY_BASIC_AUTH_HASH: ${CADDY_BASIC_AUTH_HASH}
+    # Bare container port, same ephemeral-host-port idiom as mlflow's own
+    # "5000" above — see that service's module-level comment. podman
+    # assigns the host side; nothing here is fixed or guessable.
+    ports:
+      - "8080"
+    healthcheck:
+      # /health is EXEMPT from basic_auth (see Caddyfile) precisely so an
+      # unauthenticated probe like this one can observe liveness — the
+      # same property a real platform healthcheck depends on.
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
         ]
       interval: 3s
       timeout: 5s

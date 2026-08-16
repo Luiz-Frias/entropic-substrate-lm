@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 
+from helpers import mlflow_command
+
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +62,35 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
         "/uv /uvx /bin/"
     ) in containerfile
     assert 'pip install --no-cache-dir "uv' not in containerfile
+
+
+def test_live_stack_pins_a_single_mlflow_worker() -> None:
+    """A worker pool is what made the live gate flaky; keep the server single-process.
+
+    MLflow's default worker count has every uvicorn worker independently import the
+    full FastAPI/SQLAlchemy/Alembic stack. On a 4-vCPU podman VM they contend, the
+    supervisor kills whichever workers overrun its startup timeout, and startup
+    stretches unboundedly under load — measured at 41s with repeated ``Child process
+    [N] died`` versus 8s and zero deaths at ``--workers 1``. Concurrency is not under
+    test in this stack (one pytest process drives it), so the pool buys nothing.
+    """
+    command = mlflow_command()
+    assert "--workers" in command, "compose.yaml must pin an explicit MLflow worker count"
+    assert command[command.index("--workers") + 1] == "1"
+
+
+# The allowlist FLAG-SHAPE test that used to live here is deliberately gone,
+# not relocated. It pinned an `sh -c` script that no longer exists: the
+# allowlist now reaches MLflow through MLFLOW_SERVER_* environment variables,
+# so there is no flag whose optionality needs guarding. tests/
+# test_compose_config.py owns that contract in full — single owner, which also
+# retires a genuinely weak assertion this module carried. Its
+# `"${MLFLOW_ALLOWED_HOSTS:+--allowed-hosts" in script` check was ALSO a
+# substring of the correctly-escaped `"$${MLFLOW_ALLOWED_HOSTS:+..."` form, so
+# it would have kept passing had the command reverted to the injectable
+# single-`$` shape — inviting a future reader to trust the wrong test as the
+# escaping guard. This module keeps only what it is uniquely responsible for:
+# the worker count above and the image/dependency pins below.
 
 
 def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:

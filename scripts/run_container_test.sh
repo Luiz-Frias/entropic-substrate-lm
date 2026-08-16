@@ -1,19 +1,62 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_container_test.sh — the LIVE gate for phase p2-mlflow.
+# run_container_test.sh — the LIVE gate for phases p2-mlflow / p3-allowlist /
+# p4-caddy-auth.
 #
-# Brings up postgres + mlflow (compose.yaml, podman-compose), waits for the
-# tracking server to report healthy, runs the integration-marked test suite
-# against it (real localhost tracking server, real Cloudflare R2 artifacts —
-# never MinIO), then tears the stack down. Teardown runs on ANY exit path
-# (trap on EXIT) so a red test run never leaves the stack up blocking the
-# next invocation.
+# THREE SEQUENTIAL PHASES, never concurrent:
+#   1. Brings up postgres + mlflow (compose.yaml, podman-compose), waits for
+#      the tracking server to report healthy, runs the main integration
+#      suite against it (real localhost tracking server, real Cloudflare R2
+#      artifacts — never MinIO), then tears the stack down BEFORE phase 2
+#      starts.
+#   2. tests/test_mlflow_allowed_hosts.py — self-contained (its own
+#      module-scoped fixture owns a SEPARATE compose stack, own project
+#      name, own teardown).
+#   3. tests/test_caddy_auth.py (p4) — likewise self-contained, its own THIRD
+#      compose stack (`--profile proxy`, so it alone includes the caddy
+#      service), own project name, own teardown. Proves the Caddy-fronted
+#      auth path this script's own live gate is the only thing that
+#      exercises (see CLAUDE.md's House rules on why the gate is a hard
+#      dependency, not a courtesy).
+#
+# WHY SEQUENTIAL, NOT CONCURRENT (measured, not assumed): an earlier attempt
+# ran phase 2 as ordinary pytest inside phase 1's `-m integration` call,
+# while the main stack was still up. MEASURED on this 4-vCPU podman VM: a
+# second full postgres+mlflow pair, booted while the first sits idle,
+# consumed only ~39% CPU share (`podman top` on the starving process) and
+# its healthcheck was still failing (FailingStreak 34/40) after 5+ minutes —
+# approaching compose.yaml's own healthcheck retry budget (interval 3s x
+# retries 40) with NO margin, i.e. a coin flip between "eventually healthy"
+# and "permanently unhealthy," not a slow-but-bounded delay. Raising a
+# client-side wait timeout would not fix that: the ceiling is the
+# healthcheck's own retry budget, which invariant #5 forbids touching (it
+# would change the main stack's behavior for everyone). Root cause is two
+# full stacks contending for one machine's CPU — the fix is not running
+# them at the same time, not a bigger number. Solo (this shape), the
+# allowlist stack's mlflow container was observed healthy well inside its
+# existing 120s bound every time — no bound in that module needed raising.
+#
+# Teardown runs on ANY exit path for phase 1 (trap on EXIT) so a red test
+# run never leaves that stack up blocking the next invocation; phases 2 and 3
+# each own their own teardown entirely inside their own pytest fixture
+# (down -v in a finally), so nothing at this script's level needs to clean
+# either up on the normal path (this script's re-armed EXIT trap below is
+# only a SIGTERM backup net for both).
 #
 # Usage: just container-test   (wraps this script)
 # =============================================================================
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+say() { printf '\n[container-test] %s\n' "$*"; }
+
+# IDENTITY GUARD (p5, defects #4 / #5-fix-1) — extracted to its own file so
+# it is directly, hermetically testable; see that file's header for the
+# full rationale and the measured defect it closes.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/assert_expected_toplevel.sh"
 
 # Explicit .env load, not left to ambient mise shell-hook activation: mise's
 # `_.file = ".env"` (mise.toml) only reaches THIS process's environment when
@@ -50,49 +93,89 @@ if [[ -z "${MLFLOW_S3_ENDPOINT_URL:-}" ]]; then
   exit 1
 fi
 
-# Project name derived PER-WORKTREE, not fixed — NOT $$ either: a PID is not
-# stable if teardown runs from a different shell invocation than the up,
-# which is exactly the trap-on-EXIT case. Basename of this checkout's
-# toplevel, sanitised to the charset podman-compose accepts for a project
-# name ([a-z0-9_-] — the fixed prefix below guarantees the result still
-# starts alphanumeric regardless of what the worktree happens to be named).
+# ENFORCED, not merely requested: neutralize the host-allowlist knobs for THIS
+# stack. A set allowlist REPLACES mlflow's compiled-in localhost default rather
+# than extending it (verified empirically against the pinned image), and this
+# script reaches its own mlflow container at localhost:<ephemeral port> — so a
+# Railway-domain value would silently 403 every integration test below, on one
+# developer's machine and nobody else's. tests/test_mlflow_allowed_hosts.py
+# boots a SEPARATE, short-lived stack to exercise the allowlist instead.
 #
-# WHY THIS MATTERS: a FIXED, shared project name is what let one agent's
-# mlflow container fuse to a DIFFERENT agent's postgres under concurrent
-# `just container-test` runs (verified empirically via the
-# `com.docker.compose.project.working_dir` container label, and two
-# concurrent `down -v` processes racing from different worktrees) — a run
-# could VALIDATE AGAINST ANOTHER RUN'S DATABASE and report green. Exported
-# (not just a local var) so tests/test_mlflow_live.py's own `podman compose
-# -p ...` calls (the mid-run mlflow-kill test) target the SAME project this
-# script brought up, instead of guessing or falling back to the old shared
-# name.
-TOPLEVEL="$(git rev-parse --show-toplevel)"
-WORKTREE_NAME="$(basename "$TOPLEVEL")"
-SANITIZED_WORKTREE="$(printf '%s' "$WORKTREE_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')"
-# The basename ALONE is not unique, and fails in exactly the case this fix exists
-# for: the Round C guard-teeth recipe mandates WT="$(mktemp -d)/wt", so every
-# reviewer's worktree basename is literally "wt" and they would all resolve to one
-# shared project name — restoring the container-fusion and cross-teardown hazard
-# this derivation is meant to remove. Hash the FULL path so two worktrees can never
-# collide however their directories are named. cksum is POSIX and always present;
-# CRC32 over a handful of concurrent paths has negligible collision risk, and the
-# readable basename is retained purely so `podman ps` stays human-legible.
-PATH_HASH="$(printf '%s' "$TOPLEVEL" | cksum | cut -d' ' -f1)"
-PROJECT="entropic-substrate-lm-mlflow-test-${SANITIZED_WORKTREE}-${PATH_HASH}"
+# EMPTY EXPORT, NOT `unset` — the intuitive fix does not work. podman-compose
+# reads the .env beside compose.yaml ITSELF, independently of this process's
+# environment, so removing these from the process env leaves the .env value in
+# full force. MEASURED against podman-compose 1.6.0 (scratch stack, .env
+# containing MLFLOW_ALLOWED_HOSTS=FROM_DOTENV_FILE, compose interpolating
+# ${MLFLOW_ALLOWED_HOSTS:-UNSET_DEFAULT}):
+#
+#   process env UNSET               -> FROM_DOTENV_FILE   (.env wins!)
+#   process env = FROM_PROCESS_ENV  -> FROM_PROCESS_ENV
+#   process env = "" (empty)        -> UNSET_DEFAULT      (empty wins)
+#
+# An empty EXPORTED value outranks .env and lets compose.yaml's `:-` default
+# apply; `unset` does not. Pinned by tests/test_run_container_test_config.py.
+export MLFLOW_ALLOWED_HOSTS=""
+export MLFLOW_CORS_ALLOWED_ORIGINS=""
+
+# Project identity — derivation EXTRACTED to scripts/derive_compose_project.sh
+# (p5) so its own runtime behaviour (same worktree, same second, two
+# DIFFERENT project names) is directly testable by invoking that file twice
+# as a subprocess (tests/test_derive_compose_project.py), which a grep of
+# THIS script's source text never could. Sets PROJECT_FAMILY (stable per
+# worktree — the identity tests/helpers.py's assert_no_foreign_mlflow_stack
+# uses to recognise "another run of mine") and PROJECT (PROJECT_FAMILY plus
+# per-run entropy — defect #1, see that script's own header for the
+# measurement and the retraction of the earlier "NOT $$ either" reasoning).
+#
+# Both exported, not just local vars: MLFLOW_COMPOSE_PROJECT so
+# tests/test_mlflow_live.py's own `podman compose -p ...` calls (the
+# mid-run mlflow-kill test) target the SAME project this script brought up
+# instead of guessing; MLFLOW_COMPOSE_PROJECT_FAMILY so
+# tests/test_mlflow_allowed_hosts.py and tests/test_caddy_auth.py's own
+# assert_no_foreign_mlflow_stack calls (phases 2 and 3) can pass `family=`
+# and get the twin-detecting, poll-before-refusing behaviour p5 added there —
+# see that function's docstring for why `family` is required for a project
+# name that carries per-run entropy.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/derive_compose_project.sh"
 export MLFLOW_COMPOSE_PROJECT="$PROJECT"
+export MLFLOW_COMPOSE_PROJECT_FAMILY="$PROJECT_FAMILY"
 COMPOSE=(podman compose -p "$PROJECT" -f compose.yaml)
 MLFLOW_CONTAINER="${PROJECT}_mlflow_1"
 
-say() { printf '\n[container-test] %s\n' "$*"; }
+# IDENTITY HEADER (p5, defect #5-fix-2): container names were hardened
+# (per-worktree hash, now per-run entropy too) but the LOG was not, and the
+# log is what a reviewer reports from. MEASURED 2026-08-14/15: two agents'
+# `/tmp/container-test-round-c-N.log` artifacts (43694 and 6067 bytes)
+# coexisted under UNNAMESPACED shared filenames, and a report built from one
+# described a DIFFERENT worktree's run in every container name, phase
+# result, and timing — caught only because one agent happened to check its
+# own derived project name against the log body. This script cannot control
+# what an external harness names its captured-output file (grep across this
+# repo found no such naming here — it is orchestration-layer, out of this
+# phase's scope), but it CAN make the log's own CONTENT self-identifying, so
+# that exact cross-check is a one-line grep instead of a rediscovery. sha256
+# (not a weaker checksum) of the files this run's conclusion actually
+# depends on: this script, its extracted project-identity derivation, and
+# the compose file that defines every container/healthcheck bound quoted
+# above.
+say "identity: cwd=$(pwd) toplevel=${TOPLEVEL}"
+say "identity: project=${PROJECT} family=${PROJECT_FAMILY}"
+say "identity: sha256 of the files this run's conclusion depends on:"
+for f in "${SCRIPT_DIR}/run_container_test.sh" "${SCRIPT_DIR}/derive_compose_project.sh" compose.yaml; do
+  printf '[container-test]   %s\n' "$(shasum -a 256 "$f")"
+done
 
-cleanup() {
-  # Capture the triggering exit status as the FIRST statement — `$?` here is
-  # still the script's real exit code, not whatever `local`/the trap itself
-  # would produce if this were computed later.
-  local exit_status=$?
+# Takes the exit status EXPLICITLY (as $1) rather than reading `$?` itself,
+# because this is now called twice: once from the EXIT trap (where `$?` is
+# the right source) and once DELIBERATELY right after phase 1's pytest call
+# succeeds, to tear the main stack down before phase 2 starts (see the
+# module header on why concurrent stacks are a contention hazard, not just
+# a resource nicety).
+cleanup_main_stack() {
+  local exit_status="$1"
   if [[ "$exit_status" -eq 0 ]]; then
-    say "success — tearing down the stack, including volumes..."
+    say "success — tearing down the mlflow/postgres stack, including volumes..."
     "${COMPOSE[@]}" down -v --remove-orphans || true
   else
     # PRESERVE EVIDENCE ON FAILURE: no "-v" here — a red gate must not
@@ -104,8 +187,13 @@ cleanup() {
     say "inspect with: podman volume inspect ${PROJECT}_pgdata"
     say "remove manually once done: podman volume rm ${PROJECT}_pgdata"
   fi
+  # Reap healthcheck timers podman left behind for the containers just removed.
+  # BOTH exit paths, because an orphan outlives a red run exactly as happily as
+  # a green one — and a red run is the more likely to have left one. Never fails
+  # the gate: `|| true` plus the script's own exit 0.
+  bash "$(dirname "${BASH_SOURCE[0]}")/reap_healthcheck_orphans.sh" || true
 }
-trap cleanup EXIT
+trap 'cleanup_main_stack $?' EXIT
 
 say "building + starting postgres + mlflow..."
 "${COMPOSE[@]}" up -d --build
@@ -215,7 +303,124 @@ fi
 say "podman ps:"
 podman ps
 
-say "running integration tests against ${MLFLOW_URL}..."
+say "phase 1/3: running the main integration suite against ${MLFLOW_URL}..."
 export MLFLOW_TRACKING_URI="$MLFLOW_URL"
 export ENTROPIC_MLFLOW_TINY=1
-PYTHONPATH=src uv run pytest -m integration -q --disable-warnings
+# --ignore: tests/test_mlflow_allowed_hosts.py is phase 2 and
+# tests/test_caddy_auth.py is phase 3 (p4), both run below AFTER this stack
+# is torn down — see the module header comment on why no two of the three
+# ever run concurrently. Without both ignores here, `-m integration` would
+# sweep phase 2 and phase 3's own modules into THIS pytest process, and their
+# fixtures would try to bring up a SECOND/THIRD live stack while phase 1's
+# is still up — assert_no_foreign_mlflow_stack() correctly refuses that
+# (MEASURED: this was the failure mode the first time
+# tests/test_caddy_auth.py was added without updating this ignore list).
+PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
+  --ignore=tests/test_mlflow_allowed_hosts.py \
+  --ignore=tests/test_caddy_auth.py
+
+# Tear the main stack down NOW, deliberately, rather than waiting for the
+# EXIT trap — phase 2 must never see this stack still up (see the module
+# header's measured contention finding).
+cleanup_main_stack 0
+
+# WAIT FOR THE VM TO SETTLE BETWEEN PHASES — and note what this is NOT: it is
+# not a bigger timeout. Phase 2/3's 120s health bounds are not too small on a
+# quiet machine; the problem is that each phase starts on a machine that is BY
+# CONSTRUCTION at its busiest, because tearing down the PRIOR phase (stopping
+# containers, removing a network and a volume) is the thing that immediately
+# precedes it. Called twice below — once after phase 1's teardown, once after
+# phase 2's own (fixture-owned) teardown, before phase 3 — same cause, same
+# fix, at both seams.
+#
+# MEASURED on this 4-vCPU VM, one stack at a time, identical image and compose
+# file — time from `up` to the mlflow container reporting healthy:
+#
+#     VM settled (load1 0.86)      29.64s
+#     VM at load1 4.4             135.71s      <-- past the 120s bound
+#
+# So the bound has NO margin at the exact moment phase 2 uses it, and the gate
+# reported that as a code failure three separate times today. Waiting for the
+# cause to clear is the fix; raising the bound would only move the cliff (see
+# CLAUDE.md House rule 3, and sinks.py on why bigger numbers are not fixes).
+#
+# Never fails the gate: settling is best-effort. If the machine will not settle
+# it says so and proceeds, so a genuinely busy host degrades to today's
+# behaviour rather than to a hang.
+settle_podman_vm() {
+  # Measure the HOST, not the guest. The podman VM's vCPUs are time-sliced by
+  # the hypervisor against macOS, so a guest that looks idle is still starved
+  # when the host is oversubscribed — and the guest's own load average reflects
+  # that starvation rather than causing it. MEASURED 2026-08-14 while this gate
+  # was failing: guest reported 1 runnable process out of 193 and 3231MB free,
+  # 0 containers, 1 network — completely clean — while the 8-core host sat at
+  # load 42.86 under an unrelated Rust build and a Codex process. Polling the
+  # guest would have declared that machine settled.
+  #
+  # Normalised per core, because a load of 8 means something different on 8
+  # cores than on 2. Threshold is one runnable process per core: at or below
+  # that the VM gets a fair share; the measured healthy case (29.64s to healthy)
+  # was recorded well inside it.
+  local cores
+  cores="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"
+  local target="${LIVE_GATE_SETTLE_LOAD:-$cores}"
+  local waited=0
+  local load1=""
+  while [[ "$waited" -lt 180 ]]; do
+    load1="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
+    if [[ -z "$load1" ]]; then
+      say "could not read host load (non-macOS?) — continuing without settling"
+      return 0
+    fi
+    if awk -v a="$load1" -v b="$target" 'BEGIN{exit !(a<b)}'; then
+      say "host settled (load1 ${load1} < ${target} on ${cores} cores) after ${waited}s — starting the next phase"
+      return 0
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  say "WARNING: host still busy (load1 ${load1} vs ${cores} cores) after ${waited}s — starting the next phase anyway; a timing failure below is the MACHINE, not the code. Check \`ps aux -r | head\` for what is competing."
+  return 0
+}
+settle_podman_vm
+
+# Re-arm the EXIT trap to cover phase 2's AND phase 3's stacks — a BACKUP
+# net, not either phase's primary cleanup. Both tests/test_mlflow_allowed_hosts.py
+# and tests/test_caddy_auth.py own `down -v --remove-orphans` in their own
+# pytest fixture's `finally`, which covers every normal Python-level exit
+# path (return, raised exception, KeyboardInterrupt — SIGINT's default
+# handler raises a catchable exception). What a `finally` block does NOT
+# cover is this SCRIPT receiving SIGTERM (e.g. a CI job cancellation) while
+# the pytest subprocess is mid-run: SIGTERM's default disposition
+# terminates the process without running Python-level `finally` blocks.
+# Re-arming this script's own EXIT trap ONCE, here, ahead of both remaining
+# phases, closes that gap at the shell level for both — `down -v
+# --remove-orphans` against a stack a fixture already tore down cleanly is a
+# documented no-op (same idiom each fixture itself relies on for a stack
+# that never fully came up), so this never double-reports a teardown that
+# already happened, and it costs nothing to leave armed across the phase 3
+# boundary too.
+ALLOWLIST_PROJECT="${PROJECT}-allowlist"
+CADDY_PROJECT="${PROJECT}-caddy"
+cleanup_backup_stacks() {
+  podman compose -p "$ALLOWLIST_PROJECT" -f compose.yaml down -v --remove-orphans \
+    >/dev/null 2>&1 || true
+  # --profile proxy: `down` removing a profile-gated service's resources
+  # does not strictly require the flag (compose tears down everything the
+  # PROJECT owns regardless of profile), but passing it mirrors the `up`
+  # invocation that created this stack and costs nothing extra.
+  podman compose -p "$CADDY_PROJECT" -f compose.yaml --profile proxy down -v --remove-orphans \
+    >/dev/null 2>&1 || true
+}
+trap cleanup_backup_stacks EXIT
+
+say "phase 2/3: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
+PYTHONPATH=src uv run pytest tests/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings
+
+# Same cause as the phase-1 -> phase-2 seam above: phase 2's own fixture just
+# tore its stack down (down -v --remove-orphans, inside its `finally`), which
+# is precisely what makes the VM busiest right as phase 3 is about to start.
+settle_podman_vm
+
+say "phase 3/3: running the Caddy-fronted auth integration suite (own compose stack + --profile proxy, own project name — see tests/test_caddy_auth.py)..."
+PYTHONPATH=src uv run pytest tests/test_caddy_auth.py -m integration -q --disable-warnings

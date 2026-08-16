@@ -129,6 +129,8 @@ eval ckpt *ARGS:
 # platform defaults to linux/amd64: GPU pods are x86_64, and a bare build on
 # Apple Silicon would produce an arm64 image they cannot run (qemu makes the
 # cross-build slower but correct).
+
+# Build the training container image (defaults to linux/amd64 for GPU pods)
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
     @echo "→ Building container image {{tag}} for {{platform}}..."
     podman build --platform {{platform}} -t {{tag}} -f Containerfile .
@@ -136,5 +138,37 @@ container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
 # LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
 # native arm64, real R2 artifacts), run the integration suite against it,
 # tear down. See scripts/run_container_test.sh for the orchestration.
+
+# LIVE gate: real MLflow + Postgres + R2 stack, integration suite, teardown
 container-test:
     bash scripts/run_container_test.sh
+
+# ---------------------------------------------------------------------------
+# Publish
+# ---------------------------------------------------------------------------
+
+# Full pre-flight, then submit the whole Graphite stack as drafts.
+#
+# `container-test` is a HARD dependency, not a courtesy. Nothing else in this
+# repo executes the live MLflow path:
+#
+#   prek pre-commit  `pytest -m unit`  no containers
+#   prek pre-push    `pytest -q`       no containers, AND
+#                                      tests/test_mlflow_live.py skipif's on
+#                                      MLFLOW_TRACKING_URI, so with no stack up
+#                                      every live test SILENTLY SKIPS —
+#                                      reporting success by testing nothing
+#   CI               `just check`      no containers
+#
+# Because those tests SKIP rather than FAIL, an ungated push is green while
+# covering nothing. That is exactly how the live gate went red at main (deps
+# commit 81bd4dd, mlflow -> mlflow-skinny) and stayed red under a fully green
+# CI. See CLAUDE.md's House rules.
+#
+# Deliberately NOT provided: a `ship-it-fast` that skips the live gate. An
+# official bypass is how a gate stops being a gate. If a branch genuinely
+# cannot run containers, call `gt submit` directly and own that choice.
+
+# Gate (check + live container-test) then submit the Graphite stack as drafts
+ship-it: check container-test
+    gt submit --stack --ai --no-edit --no-interactive --always

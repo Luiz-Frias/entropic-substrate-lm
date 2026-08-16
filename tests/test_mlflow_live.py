@@ -201,7 +201,7 @@ def _stop_mlflow() -> None:
         msg = (
             "MLFLOW_COMPOSE_PROJECT is not set — this test must run via "
             "`just container-test` (scripts/run_container_test.sh derives and "
-            "exports the per-worktree compose project name before pytest starts)."
+            "exports the per-run compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
     subprocess.run([*_COMPOSE, "stop", "mlflow"], check=True, cwd=REPO_ROOT, timeout=30)  # nosec B603 B607
