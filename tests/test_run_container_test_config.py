@@ -57,3 +57,114 @@ def test_live_gate_neutralizes_allowlist_vars_with_empty_not_unset(var_name: str
         "value set in .env — podman-compose reads that file directly. Use "
         f'`export {var_name}=""` instead.'
     )
+
+
+def test_live_gate_reaps_orphaned_healthcheck_timers_on_both_exit_paths() -> None:
+    """Every gate run must clean up the healthcheck timers it caused.
+
+    A podman healthcheck timer can outlive its container. Orphans re-fire every
+    3s against an id that no longer exists, and this suite's bounds are
+    load-sensitive (MEASURED: 29.64s to healthy on a settled VM versus 135.71s at
+    load1 4.4, against a 120s bound), so an orphan left by one run RATCHETS the
+    floor for the next. That makes the baseline move, which is what disguises the
+    problem as flakiness rather than as accumulation.
+
+    Pinned inside ``cleanup_main_stack`` specifically, because that function runs
+    on BOTH exit paths — a red run is if anything the more likely to have left an
+    orphan behind, so reaping only on success would miss the common case.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+
+    assert "reap_healthcheck_orphans.sh" in script, (
+        "run_container_test.sh must invoke scripts/reap_healthcheck_orphans.sh so a "
+        "gate run cleans up the healthcheck timers it caused"
+    )
+
+    cleanup = script.partition("cleanup_main_stack()")[2].partition("\n}")[0]
+    assert "reap_healthcheck_orphans.sh" in cleanup, (
+        "the reap must live in cleanup_main_stack (the EXIT trap), which runs on BOTH "
+        "the success and failure paths — not somewhere only a green run reaches"
+    )
+
+
+def test_reaper_script_exists_and_is_executable_and_never_fails_its_caller() -> None:
+    """The reaper is cleanup, so it must not be able to fail the run it cleans up.
+
+    Two properties: it ends with an explicit ``exit 0``, and the call site tolerates
+    a failure anyway (``|| true``). Belt and braces is deliberate here — this script
+    mutates machine state inside the podman VM, and a future edit that introduces a
+    non-zero path must not be able to turn cleanup into a gate failure.
+    """
+    reaper = REPO_ROOT / "scripts" / "reap_healthcheck_orphans.sh"
+    assert reaper.exists(), "scripts/reap_healthcheck_orphans.sh is missing"
+
+    body = reaper.read_text(encoding="utf-8")
+    assert body.rstrip().endswith("exit 0"), "the reaper must end with an explicit `exit 0`"
+    assert "podman inspect" in body, (
+        "the reaper must check each unit's container INDIVIDUALLY before stopping its "
+        "timer — otherwise it would disturb a live container's healthcheck"
+    )
+
+    gate = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    assert 'reap_healthcheck_orphans.sh" || true' in gate.replace("'", '"'), (
+        "the reap call must be `|| true`-guarded so cleanup can never fail the gate"
+    )
+
+
+def test_gate_waits_for_the_vm_to_settle_between_phases() -> None:
+    """Phase 2 must not start on the machine phase 1's teardown just made busy.
+
+    This is a CAUSE fix, not a bigger number, and the distinction is the point.
+    Phase 2's 120s health bound is fine on a quiet VM — MEASURED time from ``up``
+    to healthy on this 4-vCPU machine, one stack at a time: 29.64s at load1 0.86
+    versus 135.71s at load1 4.4. The bound only fails because phase 2 begins
+    immediately after phase 1's teardown, i.e. at the exact moment the VM is
+    least settled. Raising the bound would move the cliff rather than remove it
+    (House rule 3; see sinks.py for the same lesson learned the expensive way).
+
+    Pinned properties: the settle happens AFTER the main stack is torn down and
+    BEFORE phase 2 runs, and it can never fail the gate — a machine that refuses
+    to settle must degrade to the old behaviour with a warning, not to a hang.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+
+    assert "settle_podman_vm" in script, (
+        "run_container_test.sh must wait for the podman VM to settle between phases"
+    )
+
+    teardown_at = script.index("cleanup_main_stack 0")
+    settle_at = script.index("settle_podman_vm()")
+    phase2_at = script.index("phase 2/2")
+    assert teardown_at < settle_at < phase2_at, (
+        "the settle must sit between the phase-1 teardown and the phase-2 run — "
+        "settling before the teardown would wait for the wrong thing"
+    )
+
+    settle_body = script.partition("settle_podman_vm()")[2].partition("\n}")[0]
+    assert "return 0" in settle_body, (
+        "settle_podman_vm must always return 0 — a machine that will not settle has "
+        "to degrade to a warning, never fail the gate or hang it"
+    )
+    assert "WARNING" in settle_body, (
+        "a give-up path that stays silent would make a machine-caused timing failure "
+        "downstream look like a code failure"
+    )
+
+    # It must poll the HOST, not the guest. The podman VM's vCPUs are
+    # time-sliced by the hypervisor, so a quiet guest on a saturated host is
+    # still starved — MEASURED while this gate was failing: guest showed 1
+    # runnable process of 193 and a completely clean container/network/volume
+    # state, while the 8-core host sat at load 42.86 under an unrelated Rust
+    # build. Polling the guest would have called that machine settled.
+    assert "vm.loadavg" in settle_body, (
+        "settle_podman_vm must read the HOST load (sysctl vm.loadavg); the guest's "
+        "own load average measures the STARVATION rather than its cause"
+    )
+    assert "/proc/loadavg" not in settle_body, (
+        "settle_podman_vm must not gate on the GUEST's /proc/loadavg — that was the "
+        "first version of this fix and it would pass on a saturated host"
+    )
+    assert "hw.logicalcpu" in settle_body, (
+        "the threshold must be normalised per core — a load of 8 means something "
+        "very different on 8 cores than on 2"
+    )
