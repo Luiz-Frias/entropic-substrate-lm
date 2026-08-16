@@ -3,6 +3,15 @@ models/
 results/
 references/
 .venv
+# Nested venvs need an explicit `**` — a bare `.venv` pattern is matched against
+# the path relative to the build context ROOT, so it excludes only the top-level
+# one. Agent worktrees under .claude/worktrees/ each carry a full ~1.3G venv
+# (torch dominates); MEASURED mid-sprint with 7 of them resident: 9.1G of a 10G
+# context, none of it excluded. Those directories are also build-context-only
+# noise — nothing in either image is built from them.
+**/.venv
+.claude/
+.codex/
 .git
 .dvc/tmp
 .dvc/cache
