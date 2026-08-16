@@ -205,6 +205,82 @@ services:
       timeout: 5s
       retries: 40
 
+  # CADDY (p4) — the ONLY authentication in this topology. MLflow above has
+  # none of its own and holds R2 credentials it uses to proxy artifacts
+  # (AWS_*/MLFLOW_S3_ENDPOINT_URL under services.mlflow.environment), so an
+  # unauthenticated public MLflow is an open door to the bucket. See
+  # Caddyfile's own header comment for the auth design (basic_auth,
+  # /health exempt, why the exemption is safe) and the measured Host-header
+  # forwarding behaviour that makes MLFLOW_ALLOWED_HOSTS need the PUBLIC
+  # domain rather than this service's own name.
+  #
+  # BEHIND A PROFILE, not in the default set. compose's `up -d --build`
+  # with no service names (what run_container_test.sh's phases 1 and 2 both
+  # call) starts every service the file declares UNLESS it is gated behind
+  # a profile the invocation didn't request — VERIFIED against
+  # podman-compose 1.6.0 with a scratch two-service file: a plain `config
+  # --services` listed only the unprofiled service, `--profile proxy
+  # config --services` listed both. Un-profiled, this service would build
+  # and start on every `just container-test` run, including phase 1 and 2,
+  # which exercise none of this and would pay the cost for nothing.
+  #
+  # NO depends_on HERE, deliberately. MLflow's ALLOWED_HOSTS/CORS guard does
+  # an EXACT host[:port] STRING match, not a hostname-only match — VERIFIED
+  # against the pinned image: an allowlist of `localhost` admitted
+  # `Host: localhost` (200) but refused `Host: localhost:15000` (403), and
+  # an allowlist of `localhost:15001` admitted only that exact string. Caddy
+  # publishes an EPHEMERAL host port (same bare-port idiom as mlflow's own
+  # "5000" above), which podman does not assign until this container is
+  # CREATED — so the exact string mlflow's allowlist would need to admit a
+  # request routed back through Caddy on localhost is not knowable before
+  # mlflow itself boots with its allowlist already baked into its
+  # environment. tests/test_caddy_auth.py resolves this by bringing this
+  # service up FIRST (alongside postgres, without mlflow), discovering its
+  # assigned port, and only THEN starting mlflow with that exact
+  # `host:port` folded into MLFLOW_ALLOWED_HOSTS alongside the fixed public
+  # test domain — the same `podman port` discovery idiom
+  # run_container_test.sh already uses for mlflow's own port, applied one
+  # layer up. A compose-level `depends_on: mlflow` would force mlflow to
+  # start in the SAME `up` call as this service, defeating that ordering.
+  # Caddy tolerates a not-yet-reachable upstream fine on its own (each
+  # request dials fresh; nothing here holds a persistent connection), so
+  # nothing is lost by leaving the two undeclared as dependents of one
+  # another.
+  caddy:
+    image: docker.io/library/caddy:2.11-alpine
+    profiles: ["proxy"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      # NEVER a literal here or anywhere else in this tree (gitleaks runs
+      # at pre-commit and pre-push) — both arrive from the process
+      # environment only. CADDY_BASIC_AUTH_HASH is a bcrypt hash, not a
+      # plaintext password, but a hash is still a credential (NO CREDENTIALS
+      # COMMITTED, hashed or otherwise) and stays out of git regardless.
+      CADDY_BASIC_AUTH_USER: ${CADDY_BASIC_AUTH_USER}
+      CADDY_BASIC_AUTH_HASH: ${CADDY_BASIC_AUTH_HASH}
+    # Bare container port, same ephemeral-host-port idiom as mlflow's own
+    # "5000" above — see that service's module-level comment. podman
+    # assigns the host side; nothing here is fixed or guessable.
+    ports:
+      - "8080"
+    healthcheck:
+      # /health is EXEMPT from basic_auth (see Caddyfile) precisely so an
+      # unauthenticated probe like this one can observe liveness — the
+      # same property a real platform healthcheck depends on.
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
 # Named so a failure-path teardown (`down` without `-v`) leaves something an
 # operator can actually find and inspect: `${PROJECT}_pgdata`.
 volumes:

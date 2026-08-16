@@ -134,7 +134,7 @@ def test_gate_waits_for_the_vm_to_settle_between_phases() -> None:
 
     teardown_at = script.index("cleanup_main_stack 0")
     settle_at = script.index("settle_podman_vm()")
-    phase2_at = script.index("phase 2/2")
+    phase2_at = script.index("phase 2/3")
     assert teardown_at < settle_at < phase2_at, (
         "the settle must sit between the phase-1 teardown and the phase-2 run — "
         "settling before the teardown would wait for the wrong thing"
@@ -167,4 +167,58 @@ def test_gate_waits_for_the_vm_to_settle_between_phases() -> None:
     assert "hw.logicalcpu" in settle_body, (
         "the threshold must be normalised per core — a load of 8 means something "
         "very different on 8 cores than on 2"
+    )
+
+
+# --------------------------------------------------------------- p4: phase 3
+
+
+def test_phase_1_ignores_phase_2_and_phase_3_modules() -> None:
+    """`-m integration` in phase 1's pytest invocation must exclude BOTH
+    tests/test_mlflow_allowed_hosts.py (phase 2) and tests/test_caddy_auth.py
+    (phase 3) — MEASURED failure mode: adding tests/test_caddy_auth.py
+    without this ignore let phase 1's own `-m integration` sweep it in,
+    so its fixture tried to bring up a THIRD live stack while phase 1's was
+    still up, and assert_no_foreign_mlflow_stack() correctly refused it.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    phase1_call = script.partition("pytest -m integration -q --disable-warnings")[2].partition(
+        "\n\n"
+    )[0]
+    assert "--ignore=tests/test_mlflow_allowed_hosts.py" in phase1_call, phase1_call
+    assert "--ignore=tests/test_caddy_auth.py" in phase1_call, phase1_call
+
+
+def test_gate_waits_for_the_vm_to_settle_before_phase_3_too() -> None:
+    """Same seam, same cause, one phase boundary later: phase 2's own
+    fixture tears its stack down (down -v --remove-orphans, inside its
+    `finally`) immediately before phase 3 starts, which is exactly what
+    makes the VM busiest at that moment — see the phase-1/phase-2 test
+    above for the underlying measurement.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+
+    phase2_at = script.index("phase 2/3")
+    second_settle_at = script.index("settle_podman_vm", phase2_at)
+    phase3_at = script.index("phase 3/3")
+    assert phase2_at < second_settle_at < phase3_at, (
+        "a second settle_podman_vm call must sit between the phase-2 run and the phase-3 run"
+    )
+
+
+def test_backup_teardown_trap_covers_both_the_allowlist_and_caddy_projects() -> None:
+    """The re-armed EXIT trap (a SIGTERM backup net, not either phase's
+    primary cleanup — each fixture's own `finally` already owns that) must
+    cover phase 3's project too, not just phase 2's, or a SIGTERM mid-phase-3
+    would leak that stack.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+
+    assert "CADDY_PROJECT=" in script, "run_container_test.sh must derive phase 3's project name"
+    backup = script.partition("cleanup_backup_stacks()")[2].partition("\ntrap")[0]
+    assert "$ALLOWLIST_PROJECT" in backup, backup
+    assert "$CADDY_PROJECT" in backup, backup
+    assert "--profile proxy" in backup, (
+        "the caddy project's teardown must pass --profile proxy, mirroring the `up` "
+        "invocation that created it"
     )

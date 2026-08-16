@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from entropic_substrate.config import Config, DataConfig, ModelConfig, TrainConf
 __all__ = [
     "assert_no_foreign_mlflow_stack",
     "capture_container_logs",
+    "discover_host_port",
     "load_compose",
     "mlflow_command",
     "mlflow_service_config",
@@ -20,6 +22,7 @@ __all__ = [
     "teardown_compose_stack",
     "tiny_config",
     "tiny_model_config",
+    "wait_container_healthy",
 ]
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -356,6 +359,83 @@ def reap_healthcheck_orphans(*, timeout_s: float = 60.0) -> None:
     for line in result.stdout.splitlines():
         if "reaped" in line:
             print(line)
+
+
+def wait_container_healthy(container: str, *, timeout_s: float = 120.0) -> None:
+    """Poll ``podman inspect`` until ``container`` reports healthy.
+
+    MOVED HERE from tests/test_mlflow_allowed_hosts.py (2026-08-14, p4): the
+    Caddy live-gate module (tests/test_caddy_auth.py) needs the exact same
+    polling loop for its own mlflow/caddy containers, and a second hand-copy
+    would drift from this one the first time either needed a fix. Poll
+    tolerantly (a transient ``podman inspect`` hiccup must not abort the
+    wait), but remember the last non-empty stderr so a genuine timeout's
+    error message carries a diagnosis instead of just "last status:
+    starting" — which is indistinguishable from "podman inspect kept
+    failing" and from "the container is still legitimately booting".
+    """
+    deadline = time.monotonic() + timeout_s
+    status = "starting"
+    last_stderr = ""
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(  # nosec B603 B607
+                ["podman", "inspect", "--format", "{{.State.Health.Status}}", container],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            # A slow `podman inspect` is exactly the kind of transient hiccup
+            # this loop must tolerate, not propagate — an uncaught
+            # TimeoutExpired here would abort the wait early and skip the
+            # diagnosis this function exists to attach to a GENUINE timeout.
+            last_stderr = "`podman inspect` itself timed out after 10s"
+            time.sleep(2)
+            continue
+        if result.stderr.strip():
+            last_stderr = result.stderr.strip()
+        status = result.stdout.strip() or "starting"
+        if status == "healthy":
+            return
+        time.sleep(2)
+    msg = f"{container} did not report healthy within {timeout_s}s (last status: {status!r})"
+    if last_stderr:
+        msg += f" — last `podman inspect` stderr: {last_stderr!r}"
+    raise RuntimeError(msg)
+
+
+def discover_host_port(container: str, container_port: int = 5000) -> int:
+    """Discover the ephemeral host port podman assigned to ``container_port``.
+
+    MOVED HERE alongside :func:`wait_container_healthy` — same sibling-copy
+    rationale. ``container_port`` defaults to mlflow's own "5000" (the
+    original, single call site); the Caddy live-gate module passes "8080".
+    """
+    result = subprocess.run(  # nosec B603 B607
+        ["podman", "port", container, str(container_port)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        msg = (
+            f"`podman port {container} {container_port}` returned no output — cannot "
+            f"discover the ephemeral host port (stderr: {result.stderr.strip()!r})"
+        )
+        raise RuntimeError(msg)
+    port_field = lines[0].rsplit(":", 1)[-1]
+    try:
+        return int(port_field)
+    except ValueError as exc:
+        msg = (
+            f"`podman port {container} {container_port}` printed an unparsable line "
+            f"{lines[0]!r} (expected a trailing `:<port>`; stderr: "
+            f"{result.stderr.strip()!r})"
+        )
+        raise RuntimeError(msg) from exc
 
 
 def tiny_config(tmp_path: Path, **model_overrides: object) -> Config:

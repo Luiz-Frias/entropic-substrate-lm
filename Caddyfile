@@ -1,0 +1,67 @@
+# Caddy reverse proxy — the ONLY authentication in front of MLflow (phase p4).
+#
+# MLflow ships with no auth of its own and holds R2 credentials it uses to
+# proxy artifact reads/writes (compose.yaml's AWS_*/MLFLOW_S3_ENDPOINT_URL,
+# services.mlflow.environment). An unauthenticated public MLflow is
+# therefore an open door to the bucket — Caddy's basic_auth below is what
+# closes it, not a convenience layer on top of something already safe.
+#
+# /health IS EXEMPT, DELIBERATELY. MLflow 3.15's own DNS-rebinding guard
+# already exempts /health from the host allowlist (MEASURED against the
+# pinned ghcr.io/mlflow/mlflow:v3.15.0 image: foreign Host -> /health 200,
+# /api/... 403, / 403 — see tests/test_mlflow_allowed_hosts.py). A platform
+# healthcheck (Railway's probe) cannot send credentials, so requiring
+# basic_auth on /health would make the platform mark a perfectly healthy
+# deploy as down. /health carries no data and never touches R2 (liveness
+# only — mlflow/server/handlers.py's health route does not hit the backend
+# store), so exempting it from auth costs nothing an attacker could use:
+# the DNS-rebinding guard the request would need to defeat to reach
+# anything else stays fully enforced one route down. Pinned by
+# tests/test_caddy_auth.py (/health unauth -> 200, API unauth -> 401, both
+# in the same run as the credentialed proof).
+#
+# THE SPLIT SHAPE MATTERS. A Caddyfile's directives are NOT ordered by
+# their textual position — Caddy sorts them by a fixed internal precedence,
+# so writing `handle /health { reverse_proxy }` above a bare `basic_auth`
+# does NOT exempt /health: basic_auth would still apply globally regardless
+# of where its block sits in the file (VERIFIED: `caddy adapt` on that
+# naive shape put the `authentication` handler in `routes[0]` with no path
+# matcher at all — i.e. every request, /health included). Named-matcher
+# `handle` blocks are mutually exclusive (first match wins, like a switch),
+# which is what actually scopes basic_auth away from /health — VERIFIED via
+# `caddy adapt` against this exact file: routes[0] matches only /health and
+# contains no authentication handler; routes[1] (the catch-all) contains the
+# authentication handler ahead of reverse_proxy.
+#
+# reverse_proxy FORWARDS THE ORIGINAL Host HEADER BY DEFAULT — no directive
+# overriding it to the upstream's own address appears anywhere below. VERIFIED
+# against this exact pinned image (two throwaway caddy:2.11-alpine
+# containers, one probe as an upstream that echoes the Host it received):
+# a request sent with `Host: mlflow.entropic-substrate-lm.example` arrived
+# at the upstream with that SAME Host, not `mlflow:5000`. This is why
+# MLFLOW_ALLOWED_HOSTS must contain the PUBLIC domain (compose.yaml), not
+# Caddy's own upstream/service name — an override here would make that
+# false and 403 every real request MLflow's allowlist was configured to
+# admit.
+#
+# CADDY_BASIC_AUTH_USER / CADDY_BASIC_AUTH_HASH arrive as runtime
+# placeholders (Caddy's own `{$VAR}` syntax, resolved by Caddy's config
+# loader from the CONTAINER's environment at boot) — never a literal
+# anywhere in this file. `{$CADDY_BASIC_AUTH_HASH}` is a bcrypt hash
+# (`caddy hash-password`, the default algorithm for this pinned Caddy
+# version), which is still a credential even though it is one-way — it
+# never appears in git history, only ever read from the environment. See
+# compose.yaml for where those two variables come from.
+:8080 {
+	@health path /health
+	handle @health {
+		reverse_proxy mlflow:5000
+	}
+
+	handle {
+		basic_auth {
+			{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+		}
+		reverse_proxy mlflow:5000
+	}
+}
