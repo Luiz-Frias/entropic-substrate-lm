@@ -78,6 +78,29 @@ services:
       - 0.0.0.0
       - --port
       - "5000"
+      # SINGLE WORKER — this is a determinism fix, not a tuning knob, and it
+      # is the root cause of the live gate's startup flakiness. MLflow's
+      # default worker count has every uvicorn worker independently import
+      # the full FastAPI/SQLAlchemy/Alembic stack at once; on this 4-vCPU
+      # podman VM they contend, uvicorn's supervisor kills the workers that
+      # overrun its startup timeout, and respawns them — so startup stretches
+      # unboundedly under load. Measured back-to-back under IDENTICAL
+      # conditions — same image (cc5080a8ca0c), same clean volume, and the
+      # same unrelated container (agx-qdrant) resident for both arms, so the
+      # host was NOT idle and the comparison is a controlled A/B rather than
+      # a best-case number:
+      #   default   -> 41s to "Application startup complete", repeated
+      #                "Child process [N] died" crash-loop
+      #   --workers 1 -> 8s, ZERO child deaths
+      # That one cause produced BOTH observed gate failures: the container
+      # never reporting healthy inside the 120s poll, and the client's
+      # RemoteDisconnected (a request landing on a worker that was then
+      # killed mid-flight). Concurrency is not under test here — this stack
+      # serves one pytest process — so a worker pool buys nothing and costs
+      # determinism. Do NOT "fix" a recurrence by raising the poll budget;
+      # see sinks.py on why bigger numbers are not a fix.
+      - --workers
+      - "1"
       - --backend-store-uri
       - postgresql://mlflow:mlflow@postgres:5432/mlflow
       - --artifacts-destination
