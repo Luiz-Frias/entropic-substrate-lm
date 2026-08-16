@@ -155,3 +155,41 @@ markers = [
   "unit: fast hermetic unit tests (CPU, <60s)",
   "integration: multi-component integration tests",
 ]
+
+# ---------------------------------------------------------------------------
+# commitizen — commit-message schema (pre-commit: `commitizen`, `commitizen-branch`)
+#
+# `cz check` is the repo's only conventional-commit gate: gitlint runs its
+# default rules, which do not include CT1. So this pattern is load-bearing, and
+# `tests/test_commit_schema.py` pins both of its arms.
+#
+# Why cz_customize rather than the stock plugin. MEASURED 2026-08-16, commitizen
+# 4.11.6: a top-level `[tool.commitizen] schema_pattern` is parsed and then
+# IGNORED — `ConventionalCommitsCz.schema_pattern()` returns a hardcoded regex
+# and never reads the setting. `cz check` output under that config is
+# byte-identical to the no-config control. Only cz_customize consults the key.
+# Cost of the swap, also measured: `cz commit` raises `KeyError: 'type'` without
+# a `questions` block. Nothing here calls it — authoring goes through
+# `just stack`, and cz appears in exactly two pre-commit hooks, both `cz check`.
+#
+# The delta from stock is one alternative: GitHub composes a squash-merge
+# subject as `<PR title> (#N)`, and `gt submit --ai` sometimes wraps the title
+# in a code fence, yielding ``docs(x): y` (#33)` — conventional inside, but not
+# at position 0, where `cz check` anchors. Commits 24ddc3c (#32) and 0c6bed7
+# (#33) are already merged onto shared branches and authored by GitHub, so they
+# are not rewritable. The fence is admitted ONLY with the trailing `(#N)` that
+# identifies forge output; a fenced subject written locally still fails.
+#
+# Forked from 4.11.6's default, so it does not inherit commit types added
+# upstream — re-check the type list when the pre-commit hook rev is bumped.
+# ---------------------------------------------------------------------------
+[tool.commitizen]
+name = "cz_customize"
+
+[tool.commitizen.customize]
+schema = "<type>(<scope>): <subject>"
+example = "fix(compose): pin one mlflow worker to make the live gate deterministic"
+info = """Conventional Commits, plus GitHub squash-merge subjects of the form
+`<conventional subject>` (#N). Title <= 72 chars is enforced separately by gitlint.
+"""
+schema_pattern = '(?s)(?:(?:build|bump|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\(\S+\))?!?: [^\n\r]+|`(?:build|bump|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\(\S+\))?!?: [^\n\r]+` \(#\d+\))(?:(?:\n\n.*)|(?:\s*))?$'
