@@ -184,9 +184,13 @@ def caddy_stack() -> Iterator[tuple[str, int, str, str]]:
         msg = (
             "MLFLOW_COMPOSE_PROJECT is not set — this fixture must run via "
             "`just container-test` (scripts/run_container_test.sh exports the "
-            "per-worktree compose project name before pytest starts)."
+            "per-run compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
+    # MLFLOW_COMPOSE_PROJECT_FAMILY (p5): see
+    # tests/test_mlflow_allowed_hosts.py's identical fixture-setup comment —
+    # same mechanism, this phase's own stack.
+    family = os.environ.get("MLFLOW_COMPOSE_PROJECT_FAMILY") or None
 
     project = f"{base_project}-caddy"
     compose_file = str(REPO_ROOT / "compose.yaml")
@@ -195,7 +199,7 @@ def caddy_stack() -> Iterator[tuple[str, int, str, str]]:
     caddy_container = f"{project}_caddy_1"
 
     reap_healthcheck_orphans()
-    assert_no_foreign_mlflow_stack(project)
+    assert_no_foreign_mlflow_stack(project, family=family)
 
     # Fresh per run, never committed, never printed. secrets.token_urlsafe
     # (CSPRNG-backed) — this is a throwaway credential for a throwaway

@@ -236,6 +236,195 @@ def test_guard_reports_but_tolerates_a_nonzero_probe(
     assert "could not verify" in capsys.readouterr().out
 
 
+# --------------------------------------- assert_no_foreign_mlflow_stack (p5, family-aware)
+#
+# p5 defects #2 and #3 are two failure DIRECTIONS of the SAME prefix-match
+# design: #2 over-reports (refuses its own predecessor's not-yet-reaped
+# corpse at a phase boundary) and #3 under-reports (is blind to a twin
+# holding the identical project name). Both are fixed together by giving the
+# guard the run's FAMILY (the stable per-worktree identity,
+# scripts/derive_compose_project.sh's PROJECT_FAMILY) as a SEPARATE,
+# OPTIONAL parameter from the exact `project`:
+#
+#   family=None (unset)         -> back-compat path, UNCHANGED from every
+#                                   test above this line.
+#   family=<worktree identity>  -> family-aware path: a container matching
+#                                   `project` exactly is a TWIN (#3, refuse
+#                                   immediately); a container matching only
+#                                   `family` is a RESIDUAL (#2, poll for
+#                                   actual clearance, refuse if it never
+#                                   clears); anything matching neither is
+#                                   FOREIGN (refuse immediately, unchanged).
+#
+# Poll timing is overridden to sub-second in every test below so this file
+# stays a fast unit suite — the DEFAULT bound (residual_poll_timeout_s /
+# residual_poll_interval_s) is exercised for real by the live gate itself
+# and documented, with its measurement, on assert_no_foreign_mlflow_stack's
+# own docstring.
+FAMILY = "entropic-substrate-lm-mlflow-test-sprint-676710117"
+EXACT_PROJECT = f"{FAMILY}-12345-1786766913-allowlist"
+
+
+def test_guard_with_family_refuses_immediately_on_a_genuinely_foreign_stack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Different family entirely (a different worktree's run) — must refuse
+    on the FIRST probe, no polling. Proves the family-aware path does not
+    WIDEN the existing foreign-stack refusal (the invariant this whole phase
+    must not trade away)."""
+    calls = 0
+
+    def fake_run(*_a: Any, **_k: Any) -> _Completed:
+        nonlocal calls
+        calls += 1
+        return _Completed(stdout="entropic-substrate-lm-mlflow-test-OTHER-999_mlflow_1\n")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="another mlflow stack is already running"):
+        assert_no_foreign_mlflow_stack(
+            EXACT_PROJECT,
+            family=FAMILY,
+            residual_poll_interval_s=0.01,
+            residual_poll_timeout_s=0.05,
+        )
+
+    assert calls == 1, "a genuinely foreign stack must refuse on the first probe, never poll"
+
+
+def test_guard_with_family_refuses_immediately_on_an_exact_name_twin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defect #3, reproduced: a container already holds our EXACT target
+    project name, before we have brought anything up under it. Under
+    per-run entropy (defect #1) that name has never existed before THIS
+    process, so it cannot be 'our own leftover' — it can only be a twin.
+    Must refuse on the FIRST probe (no polling: waiting would not help,
+    the twin is not going to disappear on its own)."""
+    calls = 0
+
+    def fake_run(*_a: Any, **_k: Any) -> _Completed:
+        nonlocal calls
+        calls += 1
+        return _Completed(stdout=f"{EXACT_PROJECT}_mlflow_1\n")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="another mlflow stack is already running"):
+        assert_no_foreign_mlflow_stack(
+            EXACT_PROJECT,
+            family=FAMILY,
+            residual_poll_interval_s=0.01,
+            residual_poll_timeout_s=0.05,
+        )
+
+    assert calls == 1, "an exact-name twin must refuse on the first probe, never poll"
+
+
+def test_guard_with_family_tolerates_a_residual_that_clears_during_the_poll(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defect #2, reproduced and fixed: the FIRST probe sees a same-family,
+    different-exact-project container (an earlier phase's not-yet-reaped
+    corpse) — the guard must NOT convict on that single sample. It must
+    proceed once a LATER probe shows the machine actually cleared."""
+    responses = iter(
+        [
+            _Completed(stdout=f"{FAMILY}-11111-1786766000_mlflow_1\n"),  # residual, still there
+            _Completed(stdout=f"{FAMILY}-11111-1786766000_mlflow_1\n"),  # residual, still there
+            _Completed(stdout=""),  # cleared
+        ]
+    )
+
+    def fake_run(*_a: Any, **_k: Any) -> _Completed:
+        return next(responses)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    # Must not raise — the whole point of the fix.
+    assert_no_foreign_mlflow_stack(
+        EXACT_PROJECT, family=FAMILY, residual_poll_interval_s=0.01, residual_poll_timeout_s=1.0
+    )
+
+    with pytest.raises(StopIteration):
+        next(responses)  # all three canned responses were actually consumed
+
+
+def test_guard_with_family_refuses_if_the_residual_never_clears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The OTHER half of #2's fix: polling must be BOUNDED. A residual that
+    never actually clears (a twin genuinely holding the family, or a stack
+    that never tore down) must still be refused — tolerating the
+    phase-boundary lag must never become tolerating contention forever,
+    which would just re-open the fusion hazard PROJECT_FAMILY exists to
+    prevent."""
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: _Completed(stdout=f"{FAMILY}-99999-1786766000_mlflow_1\n"),
+    )
+
+    with pytest.raises(RuntimeError, match="another mlflow stack is already running"):
+        assert_no_foreign_mlflow_stack(
+            EXACT_PROJECT,
+            family=FAMILY,
+            residual_poll_interval_s=0.01,
+            residual_poll_timeout_s=0.05,
+        )
+
+
+def test_guard_with_family_proves_both_directions_in_one_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance item #4, literally: tolerate a residual from the same
+    run's earlier phase AND still refuse a genuinely foreign stack, BOTH in
+    one test (pytest) run — not two separately-plausible tests that could
+    each pass against a guard broken in the other direction (e.g. one that
+    always waits-then-proceeds, which would ALSO make the tolerate-half
+    above pass while silently disabling the foreign-stack refusal)."""
+    # Half 1: tolerates its own earlier-phase residual once it clears.
+    clearing = iter(
+        [
+            _Completed(stdout=f"{FAMILY}-22222-1786766000_mlflow_1\n"),
+            _Completed(stdout=""),
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: next(clearing))
+    assert_no_foreign_mlflow_stack(
+        EXACT_PROJECT, family=FAMILY, residual_poll_interval_s=0.01, residual_poll_timeout_s=1.0
+    )
+
+    # Half 2: still refuses a genuinely foreign stack, same guard, same test.
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: _Completed(stdout="entropic-substrate-lm-mlflow-test-OTHER-1_mlflow_1\n"),
+    )
+    with pytest.raises(RuntimeError, match="another mlflow stack is already running"):
+        assert_no_foreign_mlflow_stack(
+            EXACT_PROJECT,
+            family=FAMILY,
+            residual_poll_interval_s=0.01,
+            residual_poll_timeout_s=0.05,
+        )
+
+
+def test_guard_family_default_is_backward_compatible_with_every_test_above(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`family` is OPTIONAL and defaults to preserving the pre-p5 contract
+    exactly: every test above this section calls the guard with ONE
+    positional argument and must keep passing unmodified. This test pins
+    that the family-aware branch is opt-in, not a silent behavior change for
+    existing callers."""
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: _Completed(stdout="mine-allowlist_mlflow_1\n")
+    )
+    # No `family=` — must take the back-compat path (own-prefix match tolerated).
+    assert_no_foreign_mlflow_stack("mine-allowlist")
+
+
 # ------------------------------------------------------ teardown_compose_stack
 def test_teardown_compose_stack_never_raises_on_timeout(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

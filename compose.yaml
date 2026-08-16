@@ -14,9 +14,14 @@
 # 5001 chosen only to dodge macOS AirPlay squatting on 5000) is a
 # concurrency hazard: two worktrees running `just container-test` at once
 # would collide on the same host port regardless of the (also now
-# per-worktree) project name below.
+# per-run) project name below.
 #
-# PROJECT NAME (see run_container_test.sh): derived per-worktree, not fixed
+# PROJECT NAME (see run_container_test.sh): derived PER-RUN — a stable
+# per-worktree family (full-path hash) plus PID and epoch, exported
+# alongside it as MLFLOW_COMPOSE_PROJECT_FAMILY. Not fixed, and not
+# per-worktree either: two runs from ONE worktree used to derive
+# byte-identical container names, so one run's `down -v` could destroy
+# the other's live stack mid-test
 # — a fixed, shared compose project name is what let one agent's mlflow
 # container fuse to a DIFFERENT agent's postgres under concurrent runs
 # (verified empirically via `com.docker.compose.project.working_dir`

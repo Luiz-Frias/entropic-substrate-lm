@@ -161,8 +161,9 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     allowlist; discover its ephemeral port; tear it down unconditionally.
 
     Independent PROJECT NAME (suffixed off the main stack's, itself derived
-    per-worktree by run_container_test.sh — see that script's own comment
-    on why a fixed name is a cross-run hazard) so this stack's containers,
+    PER-RUN by run_container_test.sh — a per-worktree family plus PID and
+    epoch; see that script's own comment on why a fixed name, or a merely
+    per-worktree one, is a cross-run hazard) so this stack's containers,
     volumes, and postgres data can never fuse with the main
     `just container-test` stack or with another worktree's run.
     """
@@ -171,9 +172,18 @@ def allowlisted_mlflow_url() -> Iterator[str]:
         msg = (
             "MLFLOW_COMPOSE_PROJECT is not set — this fixture must run via "
             "`just container-test` (scripts/run_container_test.sh exports the "
-            "per-worktree compose project name before pytest starts)."
+            "per-run compose project name before pytest starts)."
         )
         raise RuntimeError(msg)
+    # MLFLOW_COMPOSE_PROJECT_FAMILY (p5): the STABLE per-worktree identity,
+    # separate from `base_project`'s per-run entropy — passed to
+    # assert_no_foreign_mlflow_stack's `family=` so it can tell phase 1's own
+    # not-yet-reaped residual (same family, poll for it to clear) apart from a
+    # genuinely foreign stack (different family, refuse immediately) instead of
+    # confusing the two the way the single-prefix guard used to. Falls back to
+    # None (the guard's pre-p5 behaviour) if unset — should never happen when
+    # launched via `just container-test`, which exports both together.
+    family = os.environ.get("MLFLOW_COMPOSE_PROJECT_FAMILY") or None
 
     project = f"{base_project}-allowlist"
     compose = ["podman", "compose", "-p", project, "-f", str(REPO_ROOT / "compose.yaml")]
@@ -197,7 +207,7 @@ def allowlisted_mlflow_url() -> Iterator[str]:
     # Reap BEFORE the contention check, not after: an orphaned timer is not a
     # running stack, so the check would pass while the machine stays slow.
     reap_healthcheck_orphans()
-    assert_no_foreign_mlflow_stack(project)
+    assert_no_foreign_mlflow_stack(project, family=family)
 
     try:
         try:
