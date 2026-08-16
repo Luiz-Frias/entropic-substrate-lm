@@ -47,6 +47,52 @@ are the R2 S3-protocol credentials the DVC remote needs (remote itself is commit
 `.dvc/config`, bucket `entropic-substrate-lm`). Commit messages are gitlint-checked:
 Conventional Commits, title ≤ 72 chars.
 
+## House rules
+
+These live here, inline, rather than in a `HOUSE-RULES.md` imported with `@` —
+**measured 2026-08-14: `@`-imports do not expand.** A sentinel placed in an imported
+file came back ABSENT from a fresh `claude --print`, while a control question answered
+correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itself.
+(A gitignored `CLAUDE.local.md` is likewise never loaded — humans only.)
+
+1. **Publish with `just ship-it`, never a bare `gt submit`.** The live gate is the only
+   thing in this repo that runs the MLflow stack: `tests/test_mlflow_live.py` `skipif`s
+   on `MLFLOW_TRACKING_URI`, so with no stack up the live tests **skip rather than
+   fail** — reporting success by testing nothing. CI runs no containers either. That
+   gap is how the gate went red at `main` and stayed red under a green CI.
+
+2. **Probe sequentially. Never draw a conclusion from concurrent containers.** The
+   podman VM is 4 vCPU / 4 GB. Several MLflow containers booting at once each import
+   the full FastAPI/SQLAlchemy stack and all appear to hang — _including a control_.
+   This has produced two wrong conclusions already, one of which became a load-bearing
+   comment justifying ~110 lines of machinery. One container at a time, always.
+
+3. **Never fix flakiness by raising a timeout or a retry budget.** `sinks.py` and
+   `compose.yaml` both carry the measurement showing bigger numbers did not work. Find
+   the cause; the symptom taxonomy will keep growing otherwise.
+
+4. **Comments record measurements, with the measurement.** This is why a comment here
+   can be _wrong_ rather than merely stale — and a wrong measured claim is a defect to
+   retract explicitly, in the commit that fixes it, not to quietly overwrite.
+
+5. **TDD is non-negotiable, and guard-teeth prove both arms.** Failing test first. Then
+   break the guarded thing and show the test goes RED — a test that cannot fail is not
+   evidence. For a guard, prove it is _load-bearing_: the happy path passing does not
+   distinguish "the guard worked" from "the hazard never reached it".
+
+6. **Secrets never enter git.** gitleaks runs at pre-commit and pre-push. `gt auth`
+   needs a per-user token; it lives in your own gt config or `.env`, never in
+   `mise.toml`. `CC_COMMIT_API_KEY` (used by the personal `commit-msg` recipe) likewise.
+
+7. **Upgrading an existing venv across the mlflow → mlflow-skinny swap breaks it.** Both
+   distributions own the same `mlflow/` directory, so removing the former deletes files
+   the latter still claims — metadata present, package gone, `import mlflow` fails. CI
+   never sees it (fresh venv). Fix:
+   `uv sync --all-groups --reinstall-package mlflow-skinny`.
+
+`just ship-it` is tracked, so everyone has it. `just stack` / `just commit-msg` are
+personal (`justfile.local`, gitignored) because they need an API key.
+
 ## Architecture
 
 Three swappable components under a standard decoder-only transformer, selected per
