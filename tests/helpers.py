@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from entropic_substrate.config import Config, DataConfig, ModelConfig, TrainConfig
 
-__all__ = ["tiny_config", "tiny_model_config"]
+__all__ = [
+    "load_compose",
+    "mlflow_command_script",
+    "mlflow_service_config",
+    "tiny_config",
+    "tiny_model_config",
+]
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def tiny_model_config(**overrides: object) -> ModelConfig:
@@ -22,6 +33,55 @@ def tiny_model_config(**overrides: object) -> ModelConfig:
     for key, value in overrides.items():
         setattr(cfg, key, value)
     return cfg
+
+
+def load_compose() -> dict[str, Any]:
+    """Parse ``compose.yaml`` fresh on every call (no caching — these are
+    cheap, infrequent static-config checks, not a hot path).
+    """
+    text = (_REPO_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    parsed = yaml.safe_load(text)
+    if not isinstance(parsed, dict):
+        msg = (
+            f"compose.yaml did not parse to a mapping (got {type(parsed).__name__}) — "
+            "an empty or malformed compose.yaml would otherwise surface as an opaque "
+            "KeyError/TypeError several calls downstream in mlflow_service_config()"
+        )
+        raise ValueError(msg)
+    return parsed
+
+
+def mlflow_service_config() -> dict[str, Any]:
+    """``compose.yaml``'s ``services.mlflow`` block, parsed."""
+    return load_compose()["services"]["mlflow"]
+
+
+def mlflow_command_script() -> str:
+    """The literal ``sh -c`` script compose.yaml hands to the mlflow
+    container — a single string (YAML folded scalar), NOT a flat argv list.
+    Parsed with a real YAML loader rather than string-sliced, so this stays
+    correct regardless of how the surrounding comment block is reflowed.
+
+    Shared by tests/test_deploy_config.py and tests/test_compose_config.py:
+    both need the same parsed script (worker count in one, allowlist flag
+    shape in the other), and both need the SAME ``["sh", "-c"]`` prefix
+    check — a test that skips it and reads ``command[-1]`` would silently
+    keep passing against an unrelated element if the command ever became a
+    flat argv list again.
+    """
+    service = mlflow_service_config()
+    command = service.get("command")
+    assert command, "mlflow service must declare a command"
+    # length-checked alongside the prefix: `command[:2] == ["sh", "-c"]` alone
+    # passes for the exact two-element list `["sh", "-c"]` too, which would
+    # then raise an unlabeled IndexError on `command[2]` below instead of
+    # naming the real defect (a missing script argument).
+    assert len(command) == 3 and command[:2] == ["sh", "-c"], (
+        "mlflow's command must stay an `sh -c` wrapper — that's what makes "
+        "--allowed-hosts/--cors-allowed-origins OPTIONAL flags (see "
+        f"compose.yaml's own HOST ALLOWLIST comment); got {command!r}"
+    )
+    return str(command[2])
 
 
 def tiny_config(tmp_path: Path, **model_overrides: object) -> Config:
