@@ -709,6 +709,25 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
 # split spec; MlflowSink only ever sees a pointer path + a plain mapping.
 
 
+def test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mirrors config.configs_dir()'s __file__-anchored resolution: a bare
+    ``Path("data/enwik8.dvc")`` (the prior shape here) only resolves under a
+    CWD that happens to be the repo root — `just train` always runs from
+    there today, but anything invoked from elsewhere (an editor's run
+    config, a different justfile recipe) would silently miss a real
+    pointer and fall through to the best-effort "absent" no-op instead of
+    finding it.
+    """
+    from entropic_substrate.sinks import _default_enwik8_dvc_pointer
+
+    monkeypatch.chdir(tmp_path)
+    resolved = _default_enwik8_dvc_pointer()
+    assert resolved.is_absolute()
+    assert resolved.is_file(), f"must resolve the real repo-root pointer, got {resolved}"
+
+
 def test_read_dvc_pointer_digest_returns_none_for_an_absent_pointer(tmp_path: Path) -> None:
     from entropic_substrate.sinks import _read_dvc_pointer_digest
 

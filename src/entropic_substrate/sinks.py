@@ -106,14 +106,34 @@ _DEFAULT_EXPERIMENT = "entropic-substrate-lm"
 # best-effort spirit of this whole class says garbage -> disabled, not abort.
 MLFLOW_SYSTEM_METRICS_ENV = "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING"
 
-# Fixed repo-relative location of the enwik8 DVC pointer (docs/architecture.md
-# — "enwik8 is DVC-tracked in data/"). Not derived from cfg.data.path (that
-# field names the extracted training file, e.g. "data/enwik8/enwik8"; the
-# pointer that carries the digest lives one level up). A module constant
-# rather than a cfg field: dataset lineage is scoped to exactly the one
-# source this repo tracks in DVC today (see build_sink's source == "enwik8"
-# gate) — FineWeb-Edu is streamed and carries no local pointer to read.
-_ENWIK8_DVC_POINTER = Path("data/enwik8.dvc")
+# Fixed repo location of the enwik8 DVC pointer (docs/architecture.md — "enwik8
+# is DVC-tracked in data/"). Not derived from cfg.data.path (that field names
+# the extracted training file, e.g. "data/enwik8/enwik8"; the pointer that
+# carries the digest lives one level up). A module constant rather than a cfg
+# field: dataset lineage is scoped to exactly the one source this repo tracks
+# in DVC today (see build_sink's source == "enwik8" gate) — FineWeb-Edu is
+# streamed and carries no local pointer to read.
+
+
+def _default_enwik8_dvc_pointer() -> Path:
+    """Resolve the enwik8 DVC pointer's default location.
+
+    Anchored the same way as ``entropic_substrate.config.configs_dir()``
+    (``__file__`` parents first: src/entropic_substrate/sinks.py -> repo
+    root, same depth as config.py) so the pointer resolves regardless of
+    the caller's CWD, falling back to the plain CWD-relative candidate this
+    constant carried before if the anchored one is not a file. Stays
+    best-effort by construction either way: build_sink's later ``.exists()``
+    check treats a miss on both candidates as an absent pointer, not a
+    startup failure.
+    """
+    anchored = Path(__file__).resolve().parents[2] / "data" / "enwik8.dvc"
+    if anchored.is_file():
+        return anchored
+    return Path("data/enwik8.dvc")
+
+
+_ENWIK8_DVC_POINTER = _default_enwik8_dvc_pointer()
 
 # Tags the aggregate module (entropic_substrate.mlflow_aggregate) reads back.
 CONFIG_HASH_TAG = "config_hash"

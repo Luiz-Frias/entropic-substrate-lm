@@ -63,23 +63,6 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
     assert {"include-group": "deploy"} in groups["dev"]
     assert "geoopt" not in _dependency_names(groups["deploy"])
 
-
-def test_deploy_group_pins_system_metrics_dependencies() -> None:
-    """MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
-    mlflow-native, but mlflow-skinny does NOT declare psutil or pynvml as a
-    dependency (verified 2026-08-17 via ``importlib.metadata.requires``) —
-    without an explicit pin, GPU/CPU system metrics silently no-op for want
-    of an import rather than failing loud on a training pod. Training-pod-only
-    observability belongs in ``deploy``, not ``dev``: the unit suite injects a
-    fake monitor factory (tests/test_sinks.py) and never imports either.
-    """
-    pyproject = _pyproject()
-    groups = pyproject["dependency-groups"]
-    deploy_names = _dependency_names(groups["deploy"])
-
-    assert "psutil" in deploy_names
-    assert "pynvml" in deploy_names
-
     containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
     assert "COPY pyproject.toml uv.lock ./" in containerfile
     assert "uv export --frozen --no-dev --group deploy" in containerfile
@@ -96,6 +79,23 @@ def test_deploy_group_pins_system_metrics_dependencies() -> None:
         "/uv /uvx /bin/"
     ) in containerfile
     assert 'pip install --no-cache-dir "uv' not in containerfile
+
+
+def test_deploy_group_pins_system_metrics_dependencies() -> None:
+    """MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
+    mlflow-native, but mlflow-skinny does NOT declare psutil or pynvml as a
+    dependency (verified 2026-08-17 via ``importlib.metadata.requires``) —
+    without an explicit pin, GPU/CPU system metrics silently no-op for want
+    of an import rather than failing loud on a training pod. Training-pod-only
+    observability belongs in ``deploy``, not ``dev``: the unit suite injects a
+    fake monitor factory (tests/test_sinks.py) and never imports either.
+    """
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    deploy_names = _dependency_names(groups["deploy"])
+
+    assert "psutil" in deploy_names
+    assert "pynvml" in deploy_names
 
 
 def test_live_stack_pins_a_single_mlflow_worker() -> None:
