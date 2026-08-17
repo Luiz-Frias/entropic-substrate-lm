@@ -169,6 +169,13 @@ container-test:
 # official bypass is how a gate stops being a gate. If a branch genuinely
 # cannot run containers, call `gt submit` directly and own that choice.
 
+# Deliberately NO `--ai`: it would REGENERATE the PR title from the diff,
+# blind to gitlint/commitizen, and the PR title is what GitHub bakes into the
+# permanent squash-merge subject (`<title> (#N)`). That is how PRs #32/#33
+# landed code-fenced subjects that turned the pre-push gate red. Without it,
+# gt uses the first commit's subject — already generated under the rules by
+# `just stack`. Pinned by tests/test_pr_authoring.py.
+
 # Gate (check + live container-test) then submit the Graphite stack as drafts
 ship-it: check container-test
-    gt submit --stack --ai --no-edit --no-interactive --always
+    gt submit --stack --no-edit --no-interactive --always
