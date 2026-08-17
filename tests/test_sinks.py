@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 from mlflow.exceptions import MlflowException
-from mlflow.protos.databricks_pb2 import RESOURCE_ALREADY_EXISTS
+from mlflow.protos.databricks_pb2 import RESOURCE_ALREADY_EXISTS, RESOURCE_DOES_NOT_EXIST
 
 from entropic_substrate.sinks import (
     MLFLOW_SYSTEM_METRICS_ENV,
@@ -196,6 +196,17 @@ class FakeMlflowClient:
     # back to that exact source afterward. A fake that let duplicate creation
     # silently overwrite would be MORE PERMISSIVE THAN REALITY, hiding the
     # exact idempotency bug class ``register_citation()`` exists to handle.
+    #
+    # MEASURED 2026-08-17, read directly from the installed mlflow's own
+    # sqlalchemy store (``_get_registered_model`` in
+    # ``mlflow/store/model_registry/sqlalchemy_store.py``, the backend
+    # ``create_model_version`` calls before inserting a version row):
+    # ``create_model_version`` on a name that was never registered raises
+    # ``MlflowException`` with ``error_code == "RESOURCE_DOES_NOT_EXIST"``.
+    # The fake previously used ``.setdefault(name, [])`` here, silently
+    # auto-vivifying the registry entry — the SAME over-permissive failure
+    # mode the paragraph above already calls out for duplicate creation, just
+    # on the missing-model side of the same idempotency contract.
     def create_registered_model(self, name: str) -> _FakeRegisteredModel:
         self._tick()
         if name in self._registered_models:
@@ -212,7 +223,10 @@ class FakeMlflowClient:
         tags: dict[str, Any] | None = None,
     ) -> _FakeModelVersion:
         self._tick()
-        versions = self._registered_models.setdefault(name, [])
+        if name not in self._registered_models:
+            msg = f"Registered Model with name={name} not found"
+            raise MlflowException(msg, error_code=RESOURCE_DOES_NOT_EXIST)
+        versions = self._registered_models[name]
         version = _FakeModelVersion(
             name=name,
             version=str(len(versions) + 1),
@@ -1243,6 +1257,29 @@ def test_build_sink_threads_results_path_into_the_mlflow_sink(tmp_path: Path) ->
 # ``register_citation()`` is an explicit, opt-in method — never called from
 # ``finish()`` automatically. The DVC-tracked ``.pt`` is the sole load
 # authority; nothing here ever uploads or references model weights.
+
+
+def test_fake_client_create_model_version_rejects_an_unregistered_model_name() -> None:
+    """Fidelity: MEASURED 2026-08-17 against the installed mlflow's own
+    sqlalchemy-backed store (``_get_registered_model`` in
+    ``mlflow/store/model_registry/sqlalchemy_store.py``) —
+    ``create_model_version`` on a name that was never
+    ``create_registered_model``-ed raises ``MlflowException`` with
+    ``error_code == "RESOURCE_DOES_NOT_EXIST"``. The fake's prior
+    ``self._registered_models.setdefault(name, [])`` silently auto-vivified
+    the entry instead — MORE PERMISSIVE THAN REALITY, the exact failure mode
+    the fidelity note above ``create_registered_model`` already warns against
+    for duplicate creation; this closes the same gap for the missing-model
+    case. ``register_citation()`` itself is unaffected: it always calls
+    ``create_registered_model()`` first (see
+    ``test_register_citation_creates_a_version_and_a_champion_alias`` below),
+    so this only tightens the fake against a call shape no current production
+    code exercises but a future direct caller could.
+    """
+    client = FakeMlflowClient()
+    with pytest.raises(MlflowException) as exc_info:
+        client.create_model_version(name="never-registered", source="runs:/x/results")
+    assert exc_info.value.error_code == "RESOURCE_DOES_NOT_EXIST"
 
 
 def test_register_citation_creates_a_version_and_a_champion_alias() -> None:
