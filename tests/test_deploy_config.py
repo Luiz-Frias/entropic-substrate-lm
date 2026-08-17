@@ -168,6 +168,32 @@ def test_caddy_containerfile_bakes_only_the_caddyfile_from_the_compose_pinned_im
     )
 
 
+def test_railway_config_as_code_pins_per_service_build_and_watch_paths() -> None:
+    """One repo feeds two Railway services; each needs its OWN build recipe.
+
+    A single root railway.json cannot express two dockerfilePaths, so each
+    service carries a dedicated config file (its path is set once in the
+    service's settings). watchPatterns keep GitHub-source deploys scoped: a
+    push touching only src/ must not rebuild the proxy, and vice versa. The
+    dockerfilePath here must agree with the RAILWAY_DOCKERFILE_PATH variable
+    each service already carries — config-as-code and env must never diverge.
+    """
+    import json as _json
+
+    mlflow_cfg = _json.loads((REPO_ROOT / "railway.mlflow.json").read_text(encoding="utf-8"))
+    assert mlflow_cfg["build"]["builder"] == "DOCKERFILE"
+    assert mlflow_cfg["build"]["dockerfilePath"] == "Containerfile.mlflow"
+    assert "Containerfile.mlflow" in mlflow_cfg["build"]["watchPatterns"]
+
+    caddy_cfg = _json.loads((REPO_ROOT / "railway.caddy.json").read_text(encoding="utf-8"))
+    assert caddy_cfg["build"]["builder"] == "DOCKERFILE"
+    assert caddy_cfg["build"]["dockerfilePath"] == "Containerfile.caddy"
+    for watched in ("Caddyfile", "Containerfile.caddy"):
+        assert watched in caddy_cfg["build"]["watchPatterns"], (
+            f"caddy service must redeploy when {watched} changes"
+        )
+
+
 def test_railwayignore_keeps_secrets_and_bulk_out_of_the_upload_context() -> None:
     """``railway up`` ships the working directory to a remote builder.
 
