@@ -674,6 +674,29 @@ def test_default_system_metrics_monitor_factory_is_not_invoked_when_disabled(
     assert sink._system_metrics_monitor is None
 
 
+def test_default_system_metrics_monitor_factory_call_shape_binds_the_real_constructor() -> None:
+    """Pins the calling convention ``_default_system_metrics_monitor_factory``
+    hardcodes (``SystemMetricsMonitor(run_id, tracking_uri=tracking_uri)``)
+    against the INSTALLED mlflow's own constructor signature via
+    ``inspect.signature(...).bind()`` — binds only, never constructs, so no
+    background thread and no real client.
+
+    This does NOT call the factory itself — doing so would spawn the real
+    background-thread monitor against a fake client, exactly what every other
+    test in this section injects a fake to avoid. What this pins is the call
+    shape the factory is hardcoded to use: if mlflow ever renames or reorders
+    ``SystemMetricsMonitor``'s constructor args, this test goes RED here
+    rather than only surfacing as an opaque failure the next time someone
+    runs training with ``MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true``.
+    """
+    import inspect
+
+    from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
+
+    signature = inspect.signature(SystemMetricsMonitor)
+    signature.bind("run-1", tracking_uri="http://fake")
+
+
 def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
     """Guard-tooth for the stated invariant: sinks.py must not grow a
     module-level ``import psutil`` / ``import pynvml`` — either dependency
@@ -681,10 +704,22 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
     inside the env-gated factory. A module-level import would make training
     runs without MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING pay an ImportError risk
     (or a hard dependency) for a feature they never opted into.
+
+    Reads the source via the imported module's own ``__file__`` rather than a
+    CWD-relative ``Path("src/entropic_substrate/sinks.py")`` — same rationale
+    as ``test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd``
+    above: a bare relative path only resolves under a CWD that happens to be
+    the repo root. MEASURED: from any other CWD it raises
+    ``FileNotFoundError`` on ``.read_text()`` — an ERROR, not a silent skip —
+    but still a guard-tooth that should hold under any invocation CWD (an
+    editor's run config, a direct ``pytest`` invocation from elsewhere), not
+    just the one this suite happens to always be run from today.
     """
     import ast
 
-    source = Path("src/entropic_substrate/sinks.py").read_text(encoding="utf-8")
+    import entropic_substrate.sinks as sinks_module
+
+    source = Path(sinks_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     banned = {"psutil", "pynvml"}
     # MODULE-LEVEL statements only (tree.body) — a lazy import INSIDE a
