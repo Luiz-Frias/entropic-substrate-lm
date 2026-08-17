@@ -27,8 +27,14 @@ def _pyproject() -> dict[str, Any]:
 
 
 def _dependency_names(entries: list[str | dict[str, str]]) -> set[str]:
+    # Split at the FIRST PEP 508 version-specifier/extras/URL character
+    # (`[`, `<`, `>`, `=`, `!`, `~`, `@`). A plain `.split("=", 1)` (the prior
+    # shape here) mis-parsed any bare `>=`/`<=`/`~=` entry with no `[extras]`
+    # to shield it — e.g. "psutil>=6.0.0" -> "psutil>" — because ">" was never
+    # a split character; "dvc[s3]>=3.59.0" only ever passed because its `[`
+    # split ran first and discarded the `>=` along with the extras.
     return {
-        entry.split("@", 1)[0].split("[", 1)[0].split("=", 1)[0].strip().lower()
+        re.split(r"[\[<>=!~@]", entry, maxsplit=1)[0].strip().lower()
         for entry in entries
         if isinstance(entry, str)
     }
@@ -56,6 +62,23 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
     assert "dvc" in _dependency_names(groups["deploy"])
     assert {"include-group": "deploy"} in groups["dev"]
     assert "geoopt" not in _dependency_names(groups["deploy"])
+
+
+def test_deploy_group_pins_system_metrics_dependencies() -> None:
+    """MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
+    mlflow-native, but mlflow-skinny does NOT declare psutil or pynvml as a
+    dependency (verified 2026-08-17 via ``importlib.metadata.requires``) —
+    without an explicit pin, GPU/CPU system metrics silently no-op for want
+    of an import rather than failing loud on a training pod. Training-pod-only
+    observability belongs in ``deploy``, not ``dev``: the unit suite injects a
+    fake monitor factory (tests/test_sinks.py) and never imports either.
+    """
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    deploy_names = _dependency_names(groups["deploy"])
+
+    assert "psutil" in deploy_names
+    assert "pynvml" in deploy_names
 
     containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
     assert "COPY pyproject.toml uv.lock ./" in containerfile
