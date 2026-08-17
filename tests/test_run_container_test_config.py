@@ -1,6 +1,7 @@
 """Contracts for the live-gate shell boundary (``scripts/run_container_test.sh``)."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -124,9 +125,17 @@ def test_gate_waits_for_the_vm_to_settle_between_phases() -> None:
     least settled. Raising the bound would move the cliff rather than remove it
     (House rule 3; see sinks.py for the same lesson learned the expensive way).
 
-    Pinned properties: the settle happens AFTER the main stack is torn down and
-    BEFORE phase 2 runs, and it can never fail the gate — a machine that refuses
-    to settle must degrade to the old behaviour with a warning, not to a hang.
+    The same hazard exists at the phase-1 seam with a different producer: under
+    `ship-it`, `just check` saturates every host core with pytest immediately
+    before this script boots the main stack, so phase 1's `up --build` starts
+    on a machine `check` just made busy. MEASURED 2026-08-16: the run that went
+    red logged "host settled" at load1 7.97/8 and 7.58/8 between phases — the
+    same saturated window phase 1 had already booted into unguarded.
+
+    Pinned properties: a settle call guards EVERY phase seam — before the main
+    stack's `up`, after the phase-1 teardown, and before phase 3 — and it can
+    never fail the gate: a machine that refuses to settle must degrade to the
+    old behaviour with a warning, not to a hang.
     """
     script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
 
@@ -134,13 +143,28 @@ def test_gate_waits_for_the_vm_to_settle_between_phases() -> None:
         "run_container_test.sh must wait for the podman VM to settle between phases"
     )
 
-    teardown_at = script.index("cleanup_main_stack 0")
-    settle_at = script.index("settle_podman_vm()")
-    phase2_at = script.index("phase 2/3")
-    assert teardown_at < settle_at < phase2_at, (
-        "the settle must sit between the phase-1 teardown and the phase-2 run — "
-        "settling before the teardown would wait for the wrong thing"
+    # Call sites, not the definition: a line that is exactly the bare call.
+    call_sites = [match.start() for match in re.finditer(r"(?m)^settle_podman_vm$", script)]
+    assert len(call_sites) == 3, (
+        f"expected a settle call at all three phase seams, found {len(call_sites)} — "
+        "phase 1 boots straight off `just check`'s full-core pytest saturation "
+        "under ship-it, the same hazard the phase-2/3 settles exist for"
     )
+
+    main_up_at = script.index("up -d --build")
+    teardown_at = script.index("cleanup_main_stack 0")
+    phase2_at = script.index("phase 2/3")
+    phase3_at = script.index("phase 3/3")
+    assert call_sites[0] < main_up_at, (
+        "the first settle must precede the main stack's `up --build` — booting "
+        "postgres+mlflow on the machine `just check` just saturated is the "
+        "phase-1 edition of the seam hazard"
+    )
+    assert teardown_at < call_sites[1] < phase2_at, (
+        "the second settle must sit between the phase-1 teardown and the phase-2 "
+        "run — settling before the teardown would wait for the wrong thing"
+    )
+    assert call_sites[2] < phase3_at, "the third settle must precede phase 3"
 
     settle_body = script.partition("settle_podman_vm()")[2].partition("\n}")[0]
     assert "return 0" in settle_body, (
@@ -333,3 +357,42 @@ def test_identity_guard_permits_an_unset_expectation() -> None:
     result = _run_guard(None)
     assert result.returncode == 0, result
     assert "REFUSING" not in result.stderr, result.stderr
+
+
+def test_settle_default_target_is_half_a_runnable_process_per_core() -> None:
+    """The settle threshold must demand HEADROOM, not mere non-oversubscription.
+
+    The previous default was ``target = cores`` — one runnable process per
+    core — on the theory that at or below saturation the VM gets a fair share.
+    MEASURED 2026-08-16, that theory failed at its own boundary: the gate
+    declared "host settled" at load1 7.97/8 before phase 2 and 7.58/8 before
+    phase 3, then phase 3's single-worker MLflow (behind Caddy, in the 4-vCPU
+    VM) missed its clients' 10s read deadlines until retries exhausted, and
+    the zero-failed-writes assertion in tests/test_caddy_auth.py went red.
+    Starting at 95-99.6%% of saturation is not a settled machine.
+
+    The default is now half a runnable process per core (``cores/2``,
+    computed as a float so a 1-core host gets 0.5 rather than 0, which would
+    never satisfy ``load1 < target`` and always burn the full settle wait).
+    ``LIVE_GATE_SETTLE_LOAD`` still overrides for machines where the operator
+    knows better. This is a stricter START condition, not a bigger timeout —
+    the settle stays best-effort and can never fail or hang the gate.
+    """
+    script = (REPO_ROOT / "scripts" / "run_container_test.sh").read_text(encoding="utf-8")
+    settle_body = script.partition("settle_podman_vm()")[2].partition("\n}")[0]
+
+    assert '"${LIVE_GATE_SETTLE_LOAD:-' in settle_body, (
+        "the operator override knob LIVE_GATE_SETTLE_LOAD must survive — it is "
+        "the sanctioned per-run escape hatch in both directions"
+    )
+    assert ":-$cores}" not in settle_body, (
+        "the settle default regressed to one runnable process per core "
+        "(target = cores). MEASURED 2026-08-16: that admitted phase starts at "
+        "load1 7.97/8 and 7.58/8, and the Caddy phase went red on 10s MLflow "
+        "read timeouts. The default must demand headroom: cores/2."
+    )
+    assert "BEGIN{print c / 2}" in settle_body.replace("c/2", "c / 2"), (
+        "the settle default must be cores/2, computed as a float (awk), so odd "
+        "and single-core hosts get a meaningful fractional target instead of "
+        "integer-division zero"
+    )
