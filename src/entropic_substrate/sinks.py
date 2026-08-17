@@ -402,7 +402,12 @@ class MlflowSink:
         self._config_hash = config_hash
         # "Registered model per experiment" == this run's run_name, the ONLY
         # value build_sink ever passes here (== cfg.name at that call site).
-        self._exp_name = run_name
+        # Named for what it IS USED AS (the registry's registered-model name),
+        # not for the constructor arg it happens to equal — CodeRabbit review
+        # flagged the prior name (`_exp_name`) as confusable with the separate
+        # `experiment_name` constructor argument, which is a different value
+        # (the MLflow tracking experiment) entirely.
+        self._registered_model_name = run_name
 
         if client is None:
             _apply_fast_fail_http_defaults()
@@ -607,7 +612,7 @@ class MlflowSink:
         authority, and this method never uploads or references model
         weights.
 
-        One registered model per experiment (``self._exp_name`` ==
+        One registered model per experiment (``self._registered_model_name`` ==
         ``run_name`` == ``cfg.name`` at the only call site, ``build_sink``),
         aliased ``champion-<config_hash>`` so re-running the same config
         repoints the alias to this run's citation rather than accumulating
@@ -629,19 +634,19 @@ class MlflowSink:
             return
         try:
             try:
-                self._client.create_registered_model(self._exp_name)
+                self._client.create_registered_model(self._registered_model_name)
             except Exception as exc:
                 if not _is_already_exists(exc):
                     raise
             source = f"runs:/{self._run_id}/results"
             version = self._client.create_model_version(
-                name=self._exp_name,
+                name=self._registered_model_name,
                 source=source,
                 run_id=self._run_id,
                 tags={"citation_only": "true"},
             )
             self._client.set_registered_model_alias(
-                self._exp_name, f"champion-{self._config_hash}", version.version
+                self._registered_model_name, f"champion-{self._config_hash}", version.version
             )
         except Exception as exc:
             self._failed_writes += 1
