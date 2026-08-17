@@ -34,12 +34,17 @@ from entropic_substrate.logging import configure_logging, logger
 
 __all__ = [
     "EXIT_TELEMETRY_GAP",
+    "EvalRecord",
     "KappaReadout",
     "TelemetryGap",
+    "TrainRecord",
     "final_eval_metric",
     "final_eval_record",
     "main",
+    "read_eval_series",
     "read_final_kappa",
+    "read_seed",
+    "read_train_series",
 ]
 
 # Callers exit with this when the readout a gate needs is absent or malformed.
@@ -163,6 +168,129 @@ def read_final_kappa(path: str | Path) -> KappaReadout:
         )
         raise TelemetryGap(msg)
     return KappaReadout(path=path, rows=_validate_rows(path, record["kappa"]))
+
+
+# ------------------------------------------------------------------- series
+@dataclass(frozen=True, slots=True)
+class EvalRecord:
+    """One admissible ``event == "eval"`` row from a run's series (charts)."""
+
+    step: int
+    loss: float
+    nats_per_byte: float
+    kappa: list[list[float]] | None
+
+
+@dataclass(frozen=True, slots=True)
+class TrainRecord:
+    """One admissible ``event == "train"`` row from a run's series (charts)."""
+
+    step: int
+    loss: float
+    nats_per_byte: float
+
+
+def _finite_field(path: Path, record: dict[str, Any], key: str) -> float:
+    if key not in record:
+        msg = f"{path}: record carries no {key!r}"
+        raise TelemetryGap(msg)
+    value = record[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        msg = f"{path}: {key} is not numeric: {value!r}"
+        raise TelemetryGap(msg)
+    if not math.isfinite(value):
+        msg = f"{path}: non-finite {key} {value!r}"
+        raise TelemetryGap(msg)
+    return float(value)
+
+
+def _int_field(path: Path, record: dict[str, Any], key: str) -> int:
+    if key not in record:
+        msg = f"{path}: record carries no {key!r}"
+        raise TelemetryGap(msg)
+    value = record[key]
+    # bool is an int subclass — see the module docstring's rationale for kappa.
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"{path}: {key} is not an int: {value!r}"
+        raise TelemetryGap(msg)
+    return value
+
+
+def read_eval_series(path: str | Path) -> list[EvalRecord]:
+    """Every admissible ``event == "eval"`` record in ``path``, in file order.
+
+    Same admissibility rules as :func:`final_eval_metric` / :func:`read_final_kappa`,
+    applied to EVERY eval record rather than just the last one: a chart built
+    from a partially-validated series could draw a healthy trajectory right up
+    to a NaN-poisoned tail record it silently skipped. ``kappa`` is optional
+    PER RECORD — E1/E2 runs never report it, and even an E3 run may drop it on
+    one eval and not another — but when present it goes through the same
+    :func:`_validate_rows` gate :func:`read_final_kappa` uses.
+    """
+    path = Path(path)
+    records: list[EvalRecord] = []
+    for record in _iter_records(path):
+        if record.get("event") != "eval":
+            continue
+        step = _int_field(path, record, "step")
+        loss = _finite_field(path, record, "loss")
+        nats_per_byte = _finite_field(path, record, "nats_per_byte")
+        kappa = record.get("kappa")
+        rows = _validate_rows(path, kappa) if kappa is not None else None
+        records.append(EvalRecord(step=step, loss=loss, nats_per_byte=nats_per_byte, kappa=rows))
+    if not records:
+        msg = f"{path}: no eval record — the run never reached an eval"
+        raise TelemetryGap(msg)
+    return records
+
+
+def read_train_series(path: str | Path) -> list[TrainRecord]:
+    """Every admissible ``event == "train"`` record in ``path``, in file order.
+
+    Same fail-loud contract as :func:`read_eval_series`: one non-finite or
+    malformed row anywhere in the series invalidates the whole read.
+    """
+    path = Path(path)
+    records: list[TrainRecord] = []
+    for record in _iter_records(path):
+        if record.get("event") != "train":
+            continue
+        step = _int_field(path, record, "step")
+        loss = _finite_field(path, record, "loss")
+        nats_per_byte = _finite_field(path, record, "nats_per_byte")
+        records.append(TrainRecord(step=step, loss=loss, nats_per_byte=nats_per_byte))
+    if not records:
+        msg = f"{path}: no train record — the run never logged a training step"
+        raise TelemetryGap(msg)
+    return records
+
+
+def read_seed(path: str | Path) -> int:
+    """The ``train.seed`` a run was launched with, from its ``run_start`` record.
+
+    Pairing (E1) and seed-band grouping (charts) both key on this — read
+    through the same validated-record iterator as every other reader here
+    rather than a second ad-hoc JSONL parse.
+    """
+    path = Path(path)
+    for record in _iter_records(path):
+        if record.get("event") != "run_start":
+            continue
+        config = record.get("config")
+        if not isinstance(config, dict) or not isinstance(config.get("train"), dict):
+            msg = f"{path}: run_start record carries no config.train"
+            raise TelemetryGap(msg)
+        train_cfg = config["train"]
+        if "seed" not in train_cfg:
+            msg = f"{path}: run_start record carries no train.seed"
+            raise TelemetryGap(msg)
+        seed = train_cfg["seed"]
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            msg = f"{path}: train.seed is not an int: {seed!r}"
+            raise TelemetryGap(msg)
+        return seed
+    msg = f"{path}: no run_start record — cannot recover the seed"
+    raise TelemetryGap(msg)
 
 
 # ------------------------------------------------------------------ module CLI

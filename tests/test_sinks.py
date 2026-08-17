@@ -101,6 +101,7 @@ class FakeMlflowClient:
         self.fail_startup = fail_startup
         self._killed = False
         self.artifacts_logged: list[tuple[str, str, str | None]] = []
+        self.figures_logged: list[tuple[str, str]] = []
         # registry-as-citation (piece c): name -> ordered model versions;
         # (name, alias) -> version string.
         self._registered_models: dict[str, list[_FakeModelVersion]] = {}
@@ -165,6 +166,26 @@ class FakeMlflowClient:
     def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:
         self._tick()
         self.artifacts_logged.append((run_id, path, artifact_path))
+
+    # ``log_figure`` signature MEASURED 2026-08-17 against the installed
+    # mlflow-skinny (`inspect.signature(MlflowClient.log_figure)`):
+    # ``(self, run_id, figure, artifact_file, *, save_kwargs=None)`` — a
+    # ``matplotlib.figure.Figure`` OR ``plotly.graph_objects.Figure``, saved
+    # under ``artifact_file`` on that run. Unknown ``run_id`` raises KeyError
+    # via the same ``self._runs[run_id]`` lookup every other per-run method
+    # here uses (log_metric, log_artifact, set_terminated) — this fake never
+    # invents a friendlier failure mode than the dict lookup it already has.
+    def log_figure(
+        self,
+        run_id: str,
+        figure: Any,
+        artifact_file: str,
+        *,
+        save_kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        self._tick()
+        _ = self._runs[run_id]  # KeyError on an unknown run_id — see note above
+        self.figures_logged.append((run_id, artifact_file))
 
     def set_terminated(self, run_id: str, status: str = "FINISHED") -> None:
         self._tick()

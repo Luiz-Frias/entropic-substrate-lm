@@ -98,6 +98,33 @@ def test_deploy_group_pins_system_metrics_dependencies() -> None:
     assert "pynvml" in deploy_names
 
 
+def test_analysis_group_is_dev_only_and_absent_from_deploy() -> None:
+    """matplotlib/marimo/plotly render interpretation charts (entropic_substrate.
+    analysis, notebooks/) but must never grow the training-pod image: mirrors
+    ``test_deploy_group_pins_system_metrics_dependencies``'s idiom, inverted —
+    these three belong in a dev-side ``analysis`` group ONLY, included by
+    ``dev`` so the unit suite can import them, and absent from ``deploy`` AND
+    from ``[project.dependencies]`` (the training-pod runtime).
+    """
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    analysis_names = _dependency_names(groups["analysis"])
+    deploy_names = _dependency_names(groups["deploy"])
+    project_names = _dependency_names(pyproject["project"]["dependencies"])
+
+    for name in ("matplotlib", "marimo", "plotly"):
+        assert name in analysis_names, f"{name} must be pinned in the analysis group"
+        assert name not in deploy_names, f"{name} must never enter the deploy group"
+        assert name not in project_names, f"{name} must never enter the runtime deps"
+
+    assert {"include-group": "analysis"} in groups["dev"]
+
+    containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
+    assert "uv export --frozen --no-dev --group deploy" in containerfile
+    for name in ("matplotlib", "marimo", "plotly"):
+        assert name not in containerfile
+
+
 def test_live_stack_pins_a_single_mlflow_worker() -> None:
     """A worker pool is what made the live gate flaky; keep the server single-process.
 

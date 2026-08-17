@@ -1,0 +1,238 @@
+"""The ``charts`` CLI subcommand — local rendering always, MLflow attach only
+when a tracking URI is reachable. Attach-path tests use a REAL, local,
+sqlite-backed ``mlflow.tracking.MlflowClient`` (same idiom as
+tests/test_mlflow_aggregate.py's CLI section), because ``log_figure`` writes
+actual artifact bytes that a structural fake would not meaningfully verify.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from entropic_substrate.cli import main
+from entropic_substrate.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
+
+pytestmark = pytest.mark.unit
+
+
+def _write(path: Path, *records: dict[str, Any]) -> Path:
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    return path
+
+
+def _run_start(seed: int) -> dict[str, Any]:
+    return {"event": "run_start", "step": 0, "config": {"train": {"seed": seed}}}
+
+
+def _train(step: int, loss: float) -> dict[str, Any]:
+    return {"event": "train", "step": step, "loss": loss, "nats_per_byte": loss / 2}
+
+
+def _eval(step: int, npb: float, kappa: list[list[float]] | None = None) -> dict[str, Any]:
+    record: dict[str, Any] = {"event": "eval", "step": step, "loss": npb * 2, "nats_per_byte": npb}
+    if kappa is not None:
+        record["kappa"] = kappa
+    return record
+
+
+def _e2_jsonl(path: Path, seed: int = 1) -> Path:
+    return _write(
+        path,
+        _run_start(seed),
+        _train(1, 3.0),
+        _eval(10, 1.8),
+        _train(11, 2.6),
+        _eval(20, 1.5),
+    )
+
+
+def _e3_jsonl(path: Path, seed: int = 1) -> Path:
+    return _write(
+        path,
+        _run_start(seed),
+        _train(1, 2.9),
+        _eval(10, 1.7, kappa=[[-0.5, 0.2], [0.1, -0.3]]),
+        _train(11, 2.4),
+        _eval(20, 1.3, kappa=[[-0.7, 0.4], [0.2, -0.1]]),
+    )
+
+
+def _e1_jsonl(path: Path, seed: int, base: float) -> Path:
+    return _write(path, _run_start(seed), _eval(10, base), _eval(20, base - 0.2))
+
+
+# ------------------------------------------------------------ local rendering
+def test_charts_renders_e2_e3_locally_without_a_tracking_uri(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    e2 = _e2_jsonl(tmp_path / "e2.jsonl")
+    e3 = _e3_jsonl(tmp_path / "e3.jsonl")
+    out_dir = tmp_path / "charts"
+
+    code = main(["charts", "--e2", str(e2), "--e3", str(e3), "--out-dir", str(out_dir)])
+
+    assert code == 0
+    for name in (
+        "e2_spike_variance_texture",
+        "e3_loss_separation_vs_e2",
+        "e3_kappa_divergence_vs_loss_gap",
+        "e3_kappa_trajectories",
+    ):
+        assert (out_dir / f"{name}.png").exists()
+
+
+def test_charts_renders_e1_paired_charts_locally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2, 3)]
+    control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2, 3)]
+    out_dir = tmp_path / "charts"
+
+    code = main(
+        [
+            "charts",
+            *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
+            *[arg for p in control for arg in ("--e1-control", str(p))],
+            "--e1-epsilon",
+            "0.02",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert code == 0
+    assert (out_dir / "e1_paired_loss_curves.png").exists()
+    assert (out_dir / "e1_log_steps_washout.png").exists()
+
+
+def test_charts_with_no_inputs_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    code = main(["charts", "--out-dir", str(tmp_path / "charts")])
+    assert code == 2
+
+
+def test_charts_with_only_e1_fisher_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    fisher = _e1_jsonl(tmp_path / "f1.jsonl", 1, 1.5)
+    code = main(["charts", "--e1-fisher", str(fisher), "--out-dir", str(tmp_path / "charts")])
+    assert code == 2
+
+
+def test_charts_propagates_a_telemetry_gap_as_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Measurement path: fail LOUD — a NaN-poisoned run must never render a
+    blank or partial chart. Guard-tooth for this CLI's TelemetryGap handling:
+    without the except clause this crashes with an unhandled TelemetryGap
+    traceback instead of a controlled exit 2."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    poisoned = _write(tmp_path / "e2.jsonl", _run_start(1), _eval(10, math.nan))
+    code = main(["charts", "--e2", str(poisoned), "--out-dir", str(tmp_path / "charts")])
+    assert code == 2
+    assert "telemetry gap" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------- MLflow attach
+def test_charts_attaches_per_run_figures_by_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)  # keeps the sqlite backend's ./mlruns artifact root local
+    import mlflow.tracking
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    exp_id = client.create_experiment("exp")
+    e3_run = client.create_run(exp_id)
+
+    e2 = _e2_jsonl(tmp_path / "e2.jsonl")
+    e3 = _e3_jsonl(tmp_path / "e3.jsonl")
+
+    code = main(
+        [
+            "charts",
+            "--e2",
+            str(e2),
+            "--e3",
+            str(e3),
+            "--e3-run-id",
+            e3_run.info.run_id,
+            "--tracking-uri",
+            tracking_uri,
+            "--out-dir",
+            str(tmp_path / "charts"),
+        ]
+    )
+
+    assert code == 0
+    artifact_paths = {a.path for a in client.list_artifacts(e3_run.info.run_id, "charts")}
+    assert "charts/e3_kappa_trajectories.png" in artifact_paths
+    assert "charts/e3_loss_separation_vs_e2.png" in artifact_paths
+
+
+def test_charts_attaches_e1_seed_band_to_the_aggregate_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    import mlflow.tracking
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    exp_id = client.create_experiment("exp")
+    parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "hash123"})
+
+    fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2)]
+    control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2)]
+
+    code = main(
+        [
+            "charts",
+            *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
+            *[arg for p in control for arg in ("--e1-control", str(p))],
+            "--config-hash",
+            "hash123",
+            "--experiment",
+            "exp",
+            "--tracking-uri",
+            tracking_uri,
+            "--out-dir",
+            str(tmp_path / "charts"),
+        ]
+    )
+
+    assert code == 0
+    artifact_paths = {a.path for a in client.list_artifacts(parent.info.run_id, "charts")}
+    assert "charts/e1_paired_loss_curves.png" in artifact_paths
+    assert "charts/e1_log_steps_washout.png" in artifact_paths
+
+
+def test_charts_without_a_run_id_or_config_hash_renders_but_attaches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MLflow writes are never required for the charts to render locally —
+    a reachable tracking URI with NO run_id/config_hash given must still
+    return 0 and leave the local PNGs in place."""
+    monkeypatch.chdir(tmp_path)
+    import mlflow.tracking
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).create_experiment("exp")
+    e2 = _e2_jsonl(tmp_path / "e2.jsonl")
+    out_dir = tmp_path / "charts"
+
+    code = main(
+        ["charts", "--e2", str(e2), "--tracking-uri", tracking_uri, "--out-dir", str(out_dir)]
+    )
+
+    assert code == 0
+    assert (out_dir / "e2_spike_variance_texture.png").exists()

@@ -6,6 +6,7 @@ Subcommands
 ``init-fisher``      precompute and cache the sqrt(p) Fisher embedding table
 ``eval``             evaluate a checkpoint on its held-out split
 ``capture-results``  pull finished runs' results JSONLs into DVC
+``charts``           render E1/E2/E3 interpretation charts, attach to MLflow
 """
 
 from __future__ import annotations
@@ -125,6 +126,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     aggregate_p.add_argument(
         "--n-seeds", type=int, default=3, help="minimum children before a parent is created"
+    )
+
+    charts = sub.add_parser(
+        "charts",
+        help="render E1/E2/E3 interpretation charts and attach them to MLflow",
+    )
+    charts.add_argument(
+        "--e1-fisher",
+        action="append",
+        dest="e1_fisher",
+        default=[],
+        type=Path,
+        help="E1 fisher-arm results JSONL (repeatable, one per seed)",
+    )
+    charts.add_argument(
+        "--e1-control",
+        action="append",
+        dest="e1_control",
+        default=[],
+        type=Path,
+        help="E1 control-arm results JSONL (repeatable, one per seed)",
+    )
+    charts.add_argument(
+        "--e1-epsilon",
+        type=float,
+        default=None,
+        help="practical-relevance threshold reported alongside the CI (NOT preregistered)",
+    )
+    charts.add_argument(
+        "--config-hash",
+        default=None,
+        help="attach the E1 seed-band charts to the mlflow-aggregate parent run for this hash",
+    )
+    charts.add_argument("--e2", type=Path, default=None, help="E2 results JSONL (single run)")
+    charts.add_argument("--e2-run-id", default=None, help="MLflow run_id to attach the E2 chart to")
+    charts.add_argument("--e3", type=Path, default=None, help="E3 results JSONL (single run)")
+    charts.add_argument(
+        "--e3-run-id", default=None, help="MLflow run_id to attach the E3 charts to"
+    )
+    charts.add_argument("--out-dir", type=Path, default=Path("results/charts"))
+    charts.add_argument(
+        "--experiment", default=os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
+    )
+    charts.add_argument(
+        "--tracking-uri",
+        default=None,
+        help=f"defaults to ${MLFLOW_TRACKING_ENV}; omit both to render locally only",
     )
 
     return parser
@@ -349,6 +397,127 @@ def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     return 0
 
 
+_E1_METRIC = "nats_per_byte"
+# Which --e2-run-id / --e3-run-id a per-run chart attaches to. E1's two charts
+# are multi-seed by construction and attach elsewhere (the aggregate parent
+# run per --config-hash, via attach_seed_band_to_aggregate) — they are
+# deliberately absent from this table.
+_RUN_ID_ARG_FOR_CHART: dict[str, str] = {
+    "e2_spike_variance_texture": "e2_run_id",
+    "e3_loss_separation_vs_e2": "e3_run_id",
+    "e3_kappa_trajectories": "e3_run_id",
+    "e3_kappa_divergence_vs_loss_gap": "e3_run_id",
+}
+
+
+def cmd_charts(args: argparse.Namespace) -> int:
+    """Handle ``charts``: render, then best-effort attach to MLflow.
+
+    Lazy-import idiom (mirrors ``cmd_capture_results``): matplotlib/mlflow
+    stay out of every other subcommand's import graph. Rendering always
+    happens first and always succeeds independent of MLflow (SACRED
+    INVARIANTS: local rendering never depends on the tracking server) —
+    only the attach step below is gated on a reachable tracking URI.
+    """
+    from entropic_substrate.analysis import charts as chart_fns
+    from entropic_substrate.analysis.series import (
+        load_eval_run,
+        load_train_run,
+        pair_final_metrics,
+        paired_verdict,
+    )
+
+    figures: dict[str, Any] = {}
+    try:
+        if args.e1_fisher and args.e1_control:
+            fisher_runs = [load_eval_run(p, label=f"fisher-{p.stem}") for p in args.e1_fisher]
+            control_runs = [load_eval_run(p, label=f"control-{p.stem}") for p in args.e1_control]
+            pairs, excluded = pair_final_metrics(args.e1_fisher, args.e1_control, metric=_E1_METRIC)
+            if excluded:
+                logger.warning(
+                    f"charts: E1 seeds present on only one side — excluded from the "
+                    f"verdict, reported not silently dropped: {excluded}"
+                )
+            verdict = paired_verdict(pairs)
+            figures["e1_paired_loss_curves"] = chart_fns.fig_e1_paired_loss_curves(
+                fisher_runs, control_runs, verdict, epsilon=args.e1_epsilon
+            )
+            figures["e1_log_steps_washout"] = chart_fns.fig_e1_log_steps_washout(
+                fisher_runs, control_runs
+            )
+        elif args.e1_fisher or args.e1_control:
+            logger.error("charts: --e1-fisher and --e1-control must both be given to pair E1")
+            return 2
+
+        e2_eval_run = load_eval_run(args.e2, label="e2") if args.e2 else None
+        e3_eval_run = load_eval_run(args.e3, label="e3") if args.e3 else None
+        if args.e2:
+            e2_train_run = load_train_run(args.e2, label="e2")
+            figures["e2_spike_variance_texture"] = chart_fns.fig_e2_spike_variance_texture(
+                [e2_train_run]
+            )
+        if e2_eval_run is not None and e3_eval_run is not None:
+            figures["e3_loss_separation_vs_e2"] = chart_fns.fig_e3_loss_separation_vs_e2(
+                e2_eval_run, e3_eval_run
+            )
+            figures["e3_kappa_divergence_vs_loss_gap"] = (
+                chart_fns.fig_e3_kappa_divergence_vs_loss_gap(e3_eval_run, e2_eval_run)
+            )
+        if e3_eval_run is not None:
+            figures["e3_kappa_trajectories"] = chart_fns.fig_e3_kappa_trajectories(e3_eval_run)
+    except TelemetryGap as gap:
+        # Measurement path: fail LOUD, never a blank or partial chart from bad
+        # telemetry — same controlled-refusal shape as the anchored-arm
+        # preflight (entropic_substrate.telemetry.EXIT_TELEMETRY_GAP).
+        logger.error(f"charts: telemetry gap: {gap}")
+        return EXIT_TELEMETRY_GAP
+
+    if not figures:
+        logger.error(
+            "charts: no chart inputs given (need --e1-fisher/--e1-control, --e2, and/or --e3)"
+        )
+        return 2
+
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    for name, figure in figures.items():
+        out_path = args.out_dir / f"{name}.png"
+        figure.savefig(out_path, dpi=150)
+        logger.info(f"charts: wrote {out_path}")
+
+    tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
+    if not tracking_uri:
+        logger.info("charts: no tracking URI — rendered locally only, nothing attached")
+        return 0
+
+    import mlflow.tracking
+
+    from entropic_substrate.analysis.mlflow_attach import (
+        attach_figures_to_run,
+        attach_seed_band_to_aggregate,
+    )
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+
+    by_run_id: dict[str, dict[str, Any]] = {}
+    for name, figure in figures.items():
+        run_id_arg = _RUN_ID_ARG_FOR_CHART.get(name)
+        run_id = getattr(args, run_id_arg, None) if run_id_arg else None
+        if run_id:
+            by_run_id.setdefault(run_id, {})[name] = figure
+    for run_id, run_figures in by_run_id.items():
+        attach_figures_to_run(client, run_id, run_figures)
+
+    seed_band_figures = {name: fig for name, fig in figures.items() if name.startswith("e1_")}
+    if seed_band_figures and args.config_hash:
+        attach_seed_band_to_aggregate(
+            client,
+            experiment_name=args.experiment,
+            config_hash=args.config_hash,
+            figures=seed_band_figures,
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
@@ -359,6 +528,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval": cmd_eval,
         "capture-results": cmd_capture_results,
         "mlflow-aggregate": cmd_mlflow_aggregate,
+        "charts": cmd_charts,
     }
     try:
         return handlers[args.command](args)

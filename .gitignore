@@ -53,8 +53,12 @@ results/*
 !results/*.dvc
 
 # --- Jupyter / notebooks scratch ---
+# marimo notebooks are plain, reviewable .py source (no cell-output blobs to
+# scrub), unlike .ipynb — tracked deliberately, unlike the scratch directory
+# default below.
 notebooks/*
 !notebooks/.gitkeep
+!notebooks/*.py
 .ipynb_checkpoints/
 
 # --- Logs ---

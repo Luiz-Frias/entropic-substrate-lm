@@ -38,7 +38,7 @@ from typing import Any
 from entropic_substrate.logging import logger
 from entropic_substrate.sinks import CONFIG_HASH_TAG, EXP_TAG
 
-__all__ = ["DEFAULT_METRICS", "PARENT_TAG", "aggregate"]
+__all__ = ["DEFAULT_METRICS", "PARENT_TAG", "aggregate", "find_parent_run"]
 
 DEFAULT_METRICS: tuple[str, ...] = ("nats_per_byte", "loss", "bits_per_byte", "perplexity")
 PARENT_TAG = "aggregate.is_parent"
@@ -61,10 +61,17 @@ def _group_by_config_hash(runs: Sequence[Any]) -> dict[str, list[Any]]:
     return groups
 
 
-def _existing_parent(client: Any, experiment_id: str, chash: str) -> Any | None:
+def find_parent_run(client: Any, experiment_id: str, config_hash: str) -> Any | None:
+    """The aggregate PARENT run for ``config_hash``, if one exists yet.
+
+    Public: :mod:`entropic_substrate.analysis.mlflow_attach` also needs this
+    lookup (to attach seed-band chart variants), so the rule for "which run
+    is the parent" lives in exactly one place rather than a second
+    ``search_runs`` filter string drifting from this one.
+    """
     found = client.search_runs(
         [experiment_id],
-        filter_string=f"tags.`{PARENT_TAG}` = '1' and tags.`{CONFIG_HASH_TAG}` = '{chash}'",
+        filter_string=f"tags.`{PARENT_TAG}` = '1' and tags.`{CONFIG_HASH_TAG}` = '{config_hash}'",
         max_results=1,
     )
     return found[0] if found else None
@@ -113,7 +120,7 @@ def aggregate(
             continue
 
         exp_name = runs[0].data.tags.get(EXP_TAG, experiment_name)
-        parent = _existing_parent(client, experiment.experiment_id, chash)
+        parent = find_parent_run(client, experiment.experiment_id, chash)
         if parent is None:
             parent = client.create_run(
                 experiment.experiment_id,

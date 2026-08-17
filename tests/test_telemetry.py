@@ -20,7 +20,10 @@ from entropic_substrate.telemetry import (
     final_eval_metric,
     final_eval_record,
     main,
+    read_eval_series,
     read_final_kappa,
+    read_seed,
+    read_train_series,
 )
 
 pytestmark = pytest.mark.unit
@@ -32,9 +35,21 @@ def _write(path: Path, *records: str) -> Path:
 
 
 def _eval(**fields: Any) -> str:
-    record: dict[str, Any] = {"event": "eval", "nats_per_byte": 1.5}
+    record: dict[str, Any] = {"event": "eval", "step": 0, "loss": 1.0, "nats_per_byte": 1.5}
     record.update(fields)
     return json.dumps(record)
+
+
+def _train(**fields: Any) -> str:
+    record: dict[str, Any] = {"event": "train", "step": 1, "loss": 1.0, "nats_per_byte": 1.5}
+    record.update(fields)
+    return json.dumps(record)
+
+
+def _run_start(*, seed: int = 42, **overrides: Any) -> str:
+    config: dict[str, Any] = {"train": {"seed": seed}}
+    config.update(overrides)
+    return json.dumps({"event": "run_start", "step": 0, "config": config})
 
 
 # ------------------------------------------------------------- happy path
@@ -144,6 +159,121 @@ def test_absent_metric_is_a_gap(tmp_path: Path) -> None:
 def test_final_eval_record_returns_the_last_one(tmp_path: Path) -> None:
     path = _write(tmp_path / "e1.jsonl", _eval(step=1), _eval(step=2))
     assert final_eval_record(path)["step"] == 2
+
+
+# --------------------------------------------------------------- eval series
+def test_read_eval_series_returns_every_admissible_eval_in_order(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _run_start(),
+        _eval(step=10, loss=2.0, nats_per_byte=1.8),
+        _train(step=15, loss=1.9),
+        _eval(step=20, loss=1.5, nats_per_byte=1.3),
+    )
+    series = read_eval_series(path)
+    assert [r.step for r in series] == [10, 20]
+    assert series[0].loss == pytest.approx(2.0)
+    assert series[0].nats_per_byte == pytest.approx(1.8)
+    assert series[0].kappa is None
+    assert series[1].nats_per_byte == pytest.approx(1.3)
+
+
+def test_read_eval_series_carries_validated_kappa_per_record(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[-0.9, 0.1]]),
+        _eval(step=2),  # legitimate: a run may drop kappa on a later eval
+        _eval(step=3, kappa=[[0.2, 0.4]]),
+    )
+    series = read_eval_series(path)
+    assert series[0].kappa == [[-0.9, 0.1]]
+    assert series[1].kappa is None
+    assert series[2].kappa == [[0.2, 0.4]]
+
+
+def test_read_eval_series_on_empty_file_is_a_gap(tmp_path: Path) -> None:
+    path = tmp_path / "e2.jsonl"
+    path.write_text("", encoding="utf-8")
+    with pytest.raises(TelemetryGap, match=r"no such file|no eval record"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_with_no_eval_records_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _run_start(), _train(step=1))
+    with pytest.raises(TelemetryGap, match="no eval record"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_refuses_a_nonfinite_row_anywhere_in_the_series(tmp_path: Path) -> None:
+    """A curve that looks healthy right up to a NaN-poisoned tail must not
+    silently truncate — the whole series is inadmissible, not a prefix of it."""
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _eval(step=1, nats_per_byte=1.5),
+        _eval(step=2, nats_per_byte=float("nan")),
+    )
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_refuses_malformed_kappa_anywhere(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[0.1]]),
+        _eval(step=2, kappa=[[]]),
+    )
+    with pytest.raises(TelemetryGap, match="empty"):
+        read_eval_series(path)
+
+
+# -------------------------------------------------------------- train series
+def test_read_train_series_returns_every_admissible_train_row(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _run_start(),
+        _train(step=1, loss=3.0, nats_per_byte=2.5),
+        _eval(step=1),
+        _train(step=2, loss=2.8, nats_per_byte=2.3),
+    )
+    series = read_train_series(path)
+    assert [r.step for r in series] == [1, 2]
+    assert series[1].loss == pytest.approx(2.8)
+
+
+def test_read_train_series_with_no_train_records_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _run_start(), _eval(step=1))
+    with pytest.raises(TelemetryGap, match="no train record"):
+        read_train_series(path)
+
+
+def test_read_train_series_refuses_a_nonfinite_row(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _train(step=1, loss=1.0),
+        _train(step=2, loss=float("inf")),
+    )
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_train_series(path)
+
+
+# --------------------------------------------------------------------- seed
+def test_read_seed_reads_the_run_start_record(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e1.jsonl", _run_start(seed=7), _eval(step=1))
+    assert read_seed(path) == 7
+
+
+def test_read_seed_without_a_run_start_record_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e1.jsonl", _eval(step=1))
+    with pytest.raises(TelemetryGap, match="no run_start record"):
+        read_seed(path)
+
+
+def test_read_seed_missing_from_config_is_a_gap(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e1.jsonl", json.dumps({"event": "run_start", "config": {"train": {}}})
+    )
+    with pytest.raises(TelemetryGap, match=r"no train\.seed"):
+        read_seed(path)
 
 
 # -------------------------------------------------------------- module CLI
