@@ -243,10 +243,17 @@ class MlflowSink:
         run_name: str,
         params: Mapping[str, Any] | None = None,
         tags: Mapping[str, Any] | None = None,
+        results_path: str | Path | None = None,
         client: Any | None = None,
     ) -> None:
         self._failed_writes = 0
         self._finished = False
+        # The authoritative results JSONL this run writes locally; finish()
+        # uploads it as a derived, best-effort run artifact (operator ruling
+        # 2026-08-17 — previously pod-side glue any launch script could
+        # forget). None => nothing to upload, e.g. tests that only probe
+        # metric fan-out.
+        self._results_path = Path(results_path) if results_path is not None else None
 
         if client is None:
             _apply_fast_fail_http_defaults()
@@ -361,6 +368,25 @@ class MlflowSink:
         if self._finished:
             return
         self._finished = True
+        # OWN GUARD, deliberately separate from the termination block below: a
+        # dead artifact store must not leave the run stuck in RUNNING —
+        # set_terminated still fires and the failure is counted (pinned by
+        # tests/test_sinks.py). CompositeSink.finish() runs the authoritative
+        # JsonlSink first, so the file is complete before this upload reads it.
+        if self._results_path is not None:
+            try:
+                if self._results_path.exists():
+                    self._client.log_artifact(
+                        self._run_id, str(self._results_path), artifact_path="results"
+                    )
+                else:
+                    logger.warning(
+                        f"mlflow: results file {self._results_path} missing at finish() — "
+                        "skipping the derived upload; the local JSONL is authoritative"
+                    )
+            except Exception as exc:
+                self._failed_writes += 1
+                logger.warning(f"mlflow: results JSONL upload failed: {exc}")
         try:
             if self._failed_writes:
                 self._client.set_tag(self._run_id, "mlflow_failed_writes", str(self._failed_writes))
@@ -513,6 +539,7 @@ def build_sink(
             "git_sha": git_sha(),
         },
         tags={EXP_TAG: cfg.name, CONFIG_HASH_TAG: chash},
+        results_path=Path(results_path),
         client=client,
     )
     return CompositeSink(jsonl, mlflow_sink)
