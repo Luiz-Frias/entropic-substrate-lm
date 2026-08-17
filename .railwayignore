@@ -1,0 +1,17 @@
+# `railway up` upload-context exclusions — pinned by tests/test_deploy_config.py.
+#
+# .env is the live credential file (R2 / HF / RunPod / commit-API keys);
+# gitleaks guards the git history but an upload context is a separate egress
+# path the hooks never see. The rest is bulk the deploy images never COPY
+# (Containerfile.mlflow copies nothing; Containerfile.caddy copies only the
+# Caddyfile) — shipping it buys nothing and slows every deploy.
+.env
+.venv
+.git
+.cache
+.claude
+data
+models
+results
+references
+notebooks

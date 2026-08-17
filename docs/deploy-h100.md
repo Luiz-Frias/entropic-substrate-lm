@@ -15,10 +15,18 @@ over them.
 ## Build & push
 
 ```bash
-just container-build                       # podman/docker build -t entropic-substrate-lm .
-docker tag entropic-substrate-lm ghcr.io/luiz-frias/entropic-substrate-lm:latest
-docker push ghcr.io/luiz-frias/entropic-substrate-lm:latest
+just container-publish   # native amd64 Docker Build Cloud builder → pushes to GHCR
 ```
+
+`just container-build` (local podman) still exists for native-arch experiments, but is
+NOT a publish lane on Apple Silicon: the dependency layer's uv installer segfaults under
+qemu-user emulation (measured 2026-08-17 — see the justfile's retraction comment).
+`container-publish` builds on a native amd64 cloud builder and pushes straight to GHCR,
+so the multi-GB image never transits the local uplink. The GHCR package is private
+(the repo is); pods authenticate with a **classic** PAT scoped to `read:packages` only —
+GHCR does not accept fine-grained PATs (GitHub docs: "GitHub Packages only supports
+authentication using a personal access token (classic)"), registered via
+`runpodctl registry create`.
 
 ## RunPod
 
@@ -69,3 +77,28 @@ token injected as env vars, then `dvc push`. For the tiny `results/` JSONL files
 mitigates the unpatched DiskCache local-deserialization advisory by preventing other pod users
 from modifying serialized cache state; it does not make an untrusted or shared cache safe. Do
 not mount `.cache/dvc-site-cache` from a shared writable volume.
+
+## Observability — MLflow tracking stack (Railway)
+
+The stack the local live gate rehearses (`compose.yaml`) is deployed on Railway, project
+`entropic-substrate-lm`: `Postgres` (managed template, Railway volume) ← `mlflow` (built from
+`Containerfile.mlflow`, **private-network only** — no public domain; dual-stack bind via
+`MLFLOW_HOST=::`) ← `caddy` (built from `Containerfile.caddy`, the only public service —
+`basic_auth` in front, `/health` exempt, upstream `mlflow.railway.internal:5000` via the
+Caddyfile's `MLFLOW_UPSTREAM` placeholder). Every MLflow server option arrives as a native
+env var (see `Containerfile.mlflow`'s CMD comment); artifacts land at
+`s3://entropic-substrate-lm/mlflow/` on R2 — the same destination the local gate writes.
+`MLFLOW_SERVER_ALLOWED_HOSTS` on the mlflow service pins the public Caddy domain exactly —
+this deployment is the enforcement site for compose.yaml's never-`'*'` note.
+
+A training pod opts in with three variables (canonical values: Doppler project
+`entropic-substrate-lm`; the server-side pair lives on the Railway services):
+
+- `MLFLOW_TRACKING_URI=https://caddy-production-3bbd.up.railway.app`
+- `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD` — Caddy basic auth; the MLflow
+  client sends these natively.
+
+The sink stays best-effort and never gated on (`architecture.md`): URI unset ⇒ the pod logs
+JSONL only. VERIFIED outside-in 2026-08-17 against the deployed stack: `/health` unauth →
+200; API unauth → 401; API auth'd → 200 (DB-backed); an artifact logged through the public
+URL landed at `mlflow/1/<run_id>/artifacts/probe.txt` on R2 and read back byte-identical.

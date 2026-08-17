@@ -1,4 +1,9 @@
-"""Static contracts for the RunPod/H100 deployment dependency boundary."""
+"""Static contracts for the deployment dependency boundaries.
+
+Two deploy surfaces share this module: the RunPod/H100 training image
+(Containerfile) and the observability sidecar images the tracking stack
+deploys from (Containerfile.mlflow, Containerfile.caddy).
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from helpers import mlflow_command
+from helpers import load_compose, mlflow_command
 
 pytestmark = pytest.mark.unit
 
@@ -56,6 +61,12 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
     assert "COPY pyproject.toml uv.lock ./" in containerfile
     assert "uv export --frozen --no-dev --group deploy" in containerfile
     assert "--prune torch" in containerfile
+    # The base image's system Python 3.12 is Debian externally-managed
+    # (PEP 668): the FIRST real build of this file (Docker Build Cloud,
+    # native amd64, 2026-08-17) failed exit-2 at the dependency layer with
+    # uv refusing `--system` against the marker. ENV form (not a per-RUN
+    # flag) so both install layers inherit the opt-out and cannot drift.
+    assert "ENV UV_BREAK_SYSTEM_PACKAGES=1" in containerfile
     assert (
         "COPY --from=ghcr.io/astral-sh/uv:0.11.6@sha256:"
         "43cb71695fcad1516c2fbe0f56e500184c42d8bce838d9f64593b8aff2c16298 "
@@ -103,3 +114,91 @@ def test_mlflow_sidecar_matches_the_skinny_client_release() -> None:
     sidecar = (REPO_ROOT / "Containerfile.mlflow").read_text(encoding="utf-8")
     assert f"FROM ghcr.io/mlflow/mlflow:v{client_version}" in sidecar
     assert "psycopg2-binary boto3" in sidecar
+
+
+def test_mlflow_sidecar_cmd_is_flat_exec_form_with_no_flags() -> None:
+    """A deploy platform runs the sidecar image's own CMD; the local stack never does.
+
+    compose.yaml's ``command:`` overrides CMD outright (the base image ships
+    ``ENTRYPOINT []`` — nothing wraps around it), so this CMD exists for exactly
+    one consumer: a platform that runs the image as-built. Exec form with NO
+    flags: in the pinned release every server option this deployment needs binds
+    to a native env var via click ``envvar=`` (mlflow/utils/cli_args.py —
+    MLFLOW_HOST / MLFLOW_PORT / MLFLOW_WORKERS / MLFLOW_ARTIFACTS_DESTINATION /
+    MLFLOW_SERVER_ALLOWED_HOSTS / MLFLOW_SERVER_CORS_ALLOWED_ORIGINS;
+    mlflow/cli/__init__.py — MLFLOW_BACKEND_STORE_URI), so deploy configuration
+    stays a pure data channel — no shell form, no interpolation site, the same
+    idiom compose.yaml's flat argv already pins for the local stack.
+    """
+    sidecar = (REPO_ROOT / "Containerfile.mlflow").read_text(encoding="utf-8")
+    cmds = [line.strip() for line in sidecar.splitlines() if line.strip().startswith("CMD")]
+    assert cmds == ['CMD ["mlflow", "server"]'], (
+        f"Containerfile.mlflow must declare exactly one flat exec-form CMD with "
+        f"no flags — configuration reaches the server via env vars only; got {cmds!r}"
+    )
+
+
+def test_caddy_containerfile_bakes_only_the_caddyfile_from_the_compose_pinned_image() -> None:
+    """Deploy platforms build images; they do not bind-mount files. The Caddyfile
+    therefore ships inside a dedicated image — same pinned base as the local
+    compose service (one Caddy version, two venues) — carrying NOTHING but the
+    config: credentials arrive from the environment at boot (the Caddyfile's
+    ``{$VAR}`` placeholders), never from a layer, and the base image's own
+    ``caddy run --config /etc/caddy/Caddyfile`` stays the run contract.
+    """
+    caddy_image = load_compose()["services"]["caddy"]["image"]
+    containerfile = (REPO_ROOT / "Containerfile.caddy").read_text(encoding="utf-8")
+    lines = [
+        stripped
+        for line in containerfile.splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    ]
+    assert lines and lines[0] == f"FROM {caddy_image}", (
+        f"Containerfile.caddy must build FROM the exact image compose.yaml pins "
+        f"({caddy_image}); got {lines[:1]!r}"
+    )
+    copies = [line for line in lines if line.startswith("COPY")]
+    assert copies == ["COPY Caddyfile /etc/caddy/Caddyfile"], (
+        f"the ONLY COPY must be the Caddyfile itself — no credentials, no extra "
+        f"files in the layer; got {copies!r}"
+    )
+    overrides = [line for line in lines if line.startswith(("CMD", "ENTRYPOINT"))]
+    assert not overrides, (
+        f"must not override the base image's `caddy run` contract; got {overrides!r}"
+    )
+
+
+def test_railwayignore_keeps_secrets_and_bulk_out_of_the_upload_context() -> None:
+    """``railway up`` ships the working directory to a remote builder.
+
+    ``.env`` holds live R2/HF/RunPod credentials and MUST never ride along —
+    gitleaks guards the git history, but an upload context is a separate
+    egress path the hooks never see. The bulk entries (venv, DVC-tracked
+    data/checkpoints, reference submodules) are excluded because neither
+    deploy image COPYs anything beyond the Caddyfile, so shipping gigabytes
+    of context buys nothing and slows every deploy.
+    """
+    entries = (REPO_ROOT / ".railwayignore").read_text(encoding="utf-8").split()
+    for required in (".env", ".venv", "data", "models", "results", "references"):
+        assert required in entries, (
+            f".railwayignore must exclude {required!r} from the `railway up` "
+            f"upload context; entries found: {entries!r}"
+        )
+
+
+def test_dockerignore_matches_containerignore_byte_for_byte() -> None:
+    """podman reads .containerignore; the docker CLI reads ONLY .dockerignore.
+
+    The Build Cloud lane (`docker buildx build --builder cloud-...`) uploads
+    the context to a REMOTE builder, so without parity it ships everything
+    .containerignore exists to exclude — ``.env`` included. One contract, two
+    filenames: a symlink satisfies this test, drift fails it.
+    """
+    container = (REPO_ROOT / ".containerignore").read_text(encoding="utf-8")
+    docker = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8")
+    assert docker == container, (
+        ".dockerignore must be byte-identical to .containerignore (symlink it) — "
+        "docker-CLI builds otherwise upload a context the containerignore was "
+        "written to prevent"
+    )
+    assert ".env" in container.split(), ".containerignore must exclude .env"
