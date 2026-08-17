@@ -10,3 +10,16 @@
 FROM ghcr.io/mlflow/mlflow:v3.15.0
 
 RUN pip install --no-cache-dir psycopg2-binary boto3
+
+# A deploy platform (Railway) starts the server from this CMD; the local live
+# gate never reaches it — compose.yaml's `command:` overrides CMD outright
+# (this base image ships ENTRYPOINT [], so nothing wraps around it). Flat exec
+# form with NO flags: every server option the deployment needs binds to a
+# native env var in this pinned release via click envvar= —
+# mlflow/utils/cli_args.py: MLFLOW_HOST / MLFLOW_PORT / MLFLOW_WORKERS /
+# MLFLOW_ARTIFACTS_DESTINATION / MLFLOW_SERVER_ALLOWED_HOSTS /
+# MLFLOW_SERVER_CORS_ALLOWED_ORIGINS; mlflow/cli/__init__.py:
+# MLFLOW_BACKEND_STORE_URI — so deploy configuration stays a pure data channel
+# (no shell, no interpolation site), the same idiom compose.yaml's flat argv
+# pins for the local stack. Pinned by tests/test_deploy_config.py.
+CMD ["mlflow", "server"]

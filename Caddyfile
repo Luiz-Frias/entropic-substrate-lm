@@ -52,16 +52,31 @@
 # version), which is still a credential even though it is one-way — it
 # never appears in git history, only ever read from the environment. See
 # compose.yaml for where those two variables come from.
+#
+# THE UPSTREAM IS PARAMETERIZED: `{$MLFLOW_UPSTREAM:mlflow:5000}`. A deploy
+# venue's private network names the tracking server something only the deploy
+# environment knows (Railway: <service>.railway.internal:<port>), while the
+# local compose stack reaches it as `mlflow:5000`. Caddy resolves
+# `{$VAR:default}` from the container environment at config load and splits
+# on the FIRST colon only — MEASURED against this pinned caddy:2.11-alpine
+# image (2026-08-17, `caddy adapt`, one container at a time): variable unset
+# -> upstream dial "mlflow:5000"; MLFLOW_UPSTREAM=mlflow.railway.internal:5000
+# -> dial "mlflow.railway.internal:5000". Unset is therefore byte-identical
+# to the pre-parameterized behavior, and the local live gate needs no env.
+# Same pure-data channel as the basic-auth pair above; nothing re-parses it
+# as shell. BOTH sites below carry the placeholder — if they diverged, the
+# auth-exempt health route and the authenticated API would proxy to
+# DIFFERENT backends. Pinned by tests/test_compose_config.py.
 :8080 {
 	@health path /health
 	handle @health {
-		reverse_proxy mlflow:5000
+		reverse_proxy {$MLFLOW_UPSTREAM:mlflow:5000}
 	}
 
 	handle {
 		basic_auth {
 			{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
 		}
-		reverse_proxy mlflow:5000
+		reverse_proxy {$MLFLOW_UPSTREAM:mlflow:5000}
 	}
 }

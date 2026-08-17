@@ -127,13 +127,29 @@ eval ckpt *ARGS:
 
 # Build the training container image (single-stage Containerfile — see file header).
 # platform defaults to linux/amd64: GPU pods are x86_64, and a bare build on
-# Apple Silicon would produce an arm64 image they cannot run (qemu makes the
-# cross-build slower but correct).
+# Apple Silicon would produce an arm64 image they cannot run.
+#
+# RETRACTION (2026-08-17): this comment previously claimed "qemu makes the
+# cross-build slower but correct". MEASURED wrong on this repo's own build: the
+# dependency layer's uv installer segfaults (exit 139) under qemu-user on the
+# podman VM (rosetta=false), while the trivial `uv --version` under the same
+# emulation passes — heavy multithreaded work is the trigger class, so the
+# failure is load-dependent, not deterministic-per-binary. Local cross-builds
+# are therefore NOT a supported publish lane; use `just container-publish`,
+# which builds on a native amd64 Docker Build Cloud builder.
 
-# Build the training container image (defaults to linux/amd64 for GPU pods)
+# Build the training container image locally (defaults to linux/amd64 for GPU pods)
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
     @echo "→ Building container image {{tag}} for {{platform}}..."
     podman build --platform {{platform}} -t {{tag}} -f Containerfile .
+
+# Build on a native amd64 Docker Build Cloud builder and push straight to GHCR
+# (the image never transits the local uplink; the context upload respects
+# .dockerignore — see tests/test_deploy_config.py's parity pin). Needs a
+# Docker Hub login (`docker login`) and the cloud-capable buildx from
+# docker/buildx-desktop; the OSS Homebrew buildx lacks the `cloud` driver.
+container-publish tag="ghcr.io/luiz-frias/entropic-substrate-lm:latest" builder="cloud-luizffrias-small-lang-model":
+    docker buildx build --builder {{builder}} --platform linux/amd64 -f Containerfile -t {{tag}} --push .
 
 # LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
 # native arm64, real R2 artifacts), run the integration suite against it,

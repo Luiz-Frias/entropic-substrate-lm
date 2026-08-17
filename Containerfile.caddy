@@ -1,0 +1,14 @@
+# Deploy-venue image for the Caddy auth front (Railway) — NOT used by the
+# local live gate, which runs the same pinned image directly and bind-mounts
+# the Caddyfile (compose.yaml, services.caddy). Platforms that build images
+# and do not bind-mount files need the config baked in; that is this file's
+# ONLY job. The base image's own CMD (`caddy run --config /etc/caddy/Caddyfile
+# --adapter caddyfile`) stays the run contract, and credentials + the upstream
+# address arrive from the environment at boot via the Caddyfile's {$VAR}
+# placeholders — never from a layer (NO CREDENTIALS COMMITTED, none baked
+# either). Pinned by tests/test_deploy_config.py: FROM must equal the exact
+# image compose.yaml pins for the local caddy service — one Caddy version,
+# two venues.
+FROM docker.io/library/caddy:2.11-alpine
+
+COPY Caddyfile /etc/caddy/Caddyfile

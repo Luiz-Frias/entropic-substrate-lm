@@ -25,9 +25,24 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
 
-# uv — standalone, immutable amd64 binary. Copying it from Astral's official
-# distroless image respects the base image's PEP 668 system-Python boundary.
+# uv — standalone, immutable amd64 binary from Astral's official distroless
+# image. RETRACTION (2026-08-17): this comment previously claimed the copy
+# "respects the base image's PEP 668 system-Python boundary" — wrong; copying
+# a binary neither respects nor violates that boundary, which bites at
+# INSTALL time. See the ENV below for the measured failure and the fix.
 COPY --from=ghcr.io/astral-sh/uv:0.11.6@sha256:43cb71695fcad1516c2fbe0f56e500184c42d8bce838d9f64593b8aff2c16298 /uv /uvx /bin/
+
+# The base image's system Python 3.12 is Debian "externally managed"
+# (PEP 668). MEASURED on the FIRST real build of this file (Docker Build
+# Cloud, native amd64, 2026-08-17): the dependency layer failed exit 2 with
+# uv refusing `uv pip install --system` against the marker ("Virtual
+# environments were not considered due to the `--system` flag"). Inside this
+# image the marker guards an OS Python that IS the payload interpreter —
+# torch itself already sits in that site-packages, put there by the base
+# image's own build — so the opt-out is deliberate, not a workaround.
+# ENV form rather than a per-RUN flag so BOTH install layers below inherit
+# it and cannot drift apart. Pinned by tests/test_deploy_config.py.
+ENV UV_BREAK_SYSTEM_PACKAGES=1
 
 # Dependency layer: export the audited runtime + deploy graph from uv.lock,
 # excluding the dev-only test oracle and quality tools. Torch is pruned with its

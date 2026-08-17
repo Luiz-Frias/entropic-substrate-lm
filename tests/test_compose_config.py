@@ -322,6 +322,42 @@ def test_caddyfile_never_overrides_the_forwarded_host_header() -> None:
     )
 
 
+def test_caddyfile_upstream_is_env_parameterized_with_the_compose_default() -> None:
+    """Both reverse_proxy sites use ``{$MLFLOW_UPSTREAM:mlflow:5000}`` — Caddy's
+    native env placeholder, resolved from the CONTAINER environment at config
+    load, with the local compose service name as the fallback.
+
+    A deploy venue's private network names the tracking server something only
+    the deploy environment knows (Railway: ``<service>.railway.internal:<port>``)
+    while the local stack reaches it as ``mlflow:5000``. The placeholder is the
+    same pure-data channel as the basic-auth credentials — no shell, no
+    host-side interpolation site — and its parser splits on the FIRST colon
+    only, so a default that itself contains ``:5000`` survives intact. MEASURED
+    against the pinned caddy:2.11-alpine image (2026-08-17, ``caddy adapt``,
+    one container at a time): variable unset -> upstream dial ``mlflow:5000``;
+    MLFLOW_UPSTREAM=mlflow.railway.internal:5000 -> dial
+    ``mlflow.railway.internal:5000``. Unset is therefore byte-identical to the
+    pre-parameterized local behavior.
+
+    BOTH sites must carry the placeholder — the @health handle and the
+    catch-all. If they diverged, the auth-exempt health route and the
+    authenticated API would proxy to DIFFERENT backends, and a platform
+    healthcheck would attest liveness of a server no real request reaches.
+    """
+    caddyfile = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    code = re.sub(r"#[^\n]*", "", caddyfile)  # strip comments, KEEP placeholders
+    upstreams = re.findall(r"reverse_proxy\s+(\S+)", code)
+    assert len(upstreams) == 2, (
+        f"expected exactly two reverse_proxy sites (the @health handle and the "
+        f"catch-all); found {len(upstreams)}: {upstreams!r}"
+    )
+    for upstream in upstreams:
+        assert upstream == "{$MLFLOW_UPSTREAM:mlflow:5000}", (
+            f"every reverse_proxy upstream must be the env placeholder "
+            f"{{$MLFLOW_UPSTREAM:mlflow:5000}}; got {upstream!r}"
+        )
+
+
 def test_no_bcrypt_hash_literal_anywhere_in_the_tracked_tree() -> None:
     """NO CREDENTIALS COMMITTED, hashed or otherwise. Greps every git-tracked
     text file for a bcrypt-hash-shaped string — not just compose.yaml/Caddyfile,
