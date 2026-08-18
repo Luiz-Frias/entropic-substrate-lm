@@ -260,7 +260,7 @@ def test_charts_attaches_e1_seed_band_to_the_aggregate_parent(
     tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
     exp_id = client.create_experiment("exp")
-    parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "hash123"})
+    parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "deadbeefcafe"})
 
     fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2)]
     control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2)]
@@ -271,7 +271,7 @@ def test_charts_attaches_e1_seed_band_to_the_aggregate_parent(
             *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
             *[arg for p in control for arg in ("--e1-control", str(p))],
             "--config-hash",
-            "hash123",
+            "deadbeefcafe",
             "--experiment",
             "exp",
             "--tracking-uri",
@@ -285,6 +285,52 @@ def test_charts_attaches_e1_seed_band_to_the_aggregate_parent(
     artifact_paths = {a.path for a in client.list_artifacts(parent.info.run_id, "charts")}
     assert "charts/e1_paired_loss_curves.png" in artifact_paths
     assert "charts/e1_log_steps_washout.png" in artifact_paths
+
+
+def test_charts_with_a_malformed_config_hash_is_a_controlled_refusal_not_a_silent_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """MEASURED gap this pins: ``--config-hash`` is user-typed input (unlike
+    ``mlflow-aggregate``, which always computes it internally via
+    ``entropic_substrate.sinks.config_hash`` — 12 lowercase hex chars). A
+    typo here previously fell into ``attach_seed_band_to_aggregate``'s
+    best-effort ``except Exception`` net and was silently logged as 'no
+    aggregate parent yet' — indistinguishable from the LEGITIMATE case where
+    mlflow-aggregate genuinely has not run yet. 'STOP and ask > silent
+    fallback' (repo NON-NEGOTIABLE): a malformed hash is a caller mistake,
+    not an absent-parent condition, and must exit non-zero rather than
+    silently no-op. Local rendering still succeeds first — SACRED
+    INVARIANTS: local rendering never depends on the tracking server."""
+    monkeypatch.chdir(tmp_path)
+    import mlflow.tracking
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).create_experiment("exp")
+    fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2)]
+    control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2)]
+    out_dir = tmp_path / "charts"
+
+    code = main(
+        [
+            "charts",
+            *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
+            *[arg for p in control for arg in ("--e1-control", str(p))],
+            "--config-hash",
+            "not-a-hex-digest!!",
+            "--experiment",
+            "exp",
+            "--tracking-uri",
+            tracking_uri,
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert code == 2
+    assert "config-hash" in capsys.readouterr().err.lower()
+    # Local PNGs still exist — the refusal is scoped to the MLflow attach
+    # step, not a reason to withhold the already-rendered charts.
+    assert (out_dir / "e1_paired_loss_curves.png").exists()
 
 
 def test_charts_without_a_run_id_or_config_hash_renders_but_attaches_nothing(

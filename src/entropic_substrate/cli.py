@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -397,6 +398,24 @@ def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     return 0
 
 
+# entropic_substrate.sinks.config_hash() is always
+# hashlib.sha256(...).hexdigest()[:12] — 12 lowercase hex chars, exactly.
+# Every OTHER --config-hash-shaped value this repo produces (mlflow-aggregate
+# groups runs by reading this same tag back off already-tagged runs) comes
+# from that one function, so this is the true contract, not a guess.
+#
+# ``--config-hash`` here is the first place that contract meets RAW,
+# operator-typed input rather than a value the code computed for itself —
+# mlflow-aggregate never took it as a CLI flag before this subcommand. A
+# typo'd value used to fall straight into attach_seed_band_to_aggregate's
+# best-effort ``except Exception`` net and get logged as "no aggregate
+# parent yet" — indistinguishable from the legitimate case where
+# mlflow-aggregate genuinely has not completed. Validating the SHAPE here,
+# before that best-effort path ever sees it, turns a caller mistake into a
+# controlled refusal instead of a silent no-op (repo NON-NEGOTIABLE: "STOP
+# and ask > silent fallback").
+_CONFIG_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+
 _E1_METRIC = "nats_per_byte"
 # Which --e2-run-id / --e3-run-id a per-run chart attaches to. E1's two charts
 # are multi-seed by construction and attach elsewhere (the aggregate parent
@@ -509,6 +528,23 @@ def cmd_charts(args: argparse.Namespace) -> int:
 
     seed_band_figures = {name: fig for name, fig in figures.items() if name.startswith("e1_")}
     if seed_band_figures and args.config_hash:
+        if not _CONFIG_HASH_RE.match(args.config_hash):
+            # A shape check, not an existence check: this fires on a
+            # malformed value BEFORE the best-effort MLflow path ever sees
+            # it, so it cannot be confused with "no aggregate parent yet" —
+            # that legitimate case is attach_seed_band_to_aggregate's to
+            # report; this is cmd_charts's own controlled refusal of a
+            # caller mistake. Local PNGs are already written by this point
+            # and are not withheld — this refusal is scoped to the attach
+            # step only, and only fires when the seed-band attach would
+            # otherwise actually be attempted (an unused/absent
+            # --config-hash is never validated — nothing would consume it).
+            logger.error(
+                f"charts: --config-hash {args.config_hash!r} is not a 12-char lowercase "
+                "hex digest (entropic_substrate.sinks.config_hash()'s exact shape) — "
+                "refusing to guess which aggregate parent this was meant to reach"
+            )
+            return 2
         attach_seed_band_to_aggregate(
             client,
             experiment_name=args.experiment,
