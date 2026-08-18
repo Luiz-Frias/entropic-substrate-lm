@@ -141,3 +141,46 @@ def test_sampler_state_roundtrip_restores_the_stream() -> None:
     restored = SequenceSampler(_split(), 2, 16, train=True, seed=99)
     restored.load_state_dict(state)
     assert torch.equal(restored.batch()[0], expected)
+
+
+# ------------------------------------------------------- data-order digest
+# Pairing evidence for the E1 preregistration (docs/e1-preregistration.md):
+# "same seed ⇒ same data order" must be RECORDED per run, not asserted about
+# the code. The sampler attests its first 32 train batches' source offsets.
+
+
+def test_train_sampler_data_order_digest_is_deterministic_and_stable() -> None:
+    a = SequenceSampler(_split(), 4, 16, train=True, seed=7)
+    b = SequenceSampler(_split(), 4, 16, train=True, seed=7)
+    for _ in range(32):
+        a.batch()
+        b.batch()
+    assert a.data_order_digest() == b.data_order_digest()
+    digest, count = a.data_order_digest()
+    assert count == 32
+    a.batch()  # batch 33 must NOT change the attestation window
+    assert a.data_order_digest() == (digest, 32)
+
+    c = SequenceSampler(_split(), 4, 16, train=True, seed=8)
+    for _ in range(32):
+        c.batch()
+    assert c.data_order_digest()[0] != digest
+
+
+def test_train_sampler_digest_reports_partial_batch_counts() -> None:
+    """A run shorter than the window attests what it actually consumed."""
+    sampler = SequenceSampler(_split(), 4, 16, train=True, seed=7)
+    assert sampler.data_order_digest() is None
+    for _ in range(5):
+        sampler.batch()
+    digest, count = sampler.data_order_digest()
+    assert count == 5
+    assert len(digest) == 64  # sha256 hex
+
+
+def test_eval_sampler_never_attests_a_data_order() -> None:
+    """The eval grid is deterministic by construction — attesting it would
+    let an eval digest masquerade as train-pairing evidence."""
+    sampler = SequenceSampler(_split(), 4, 16, train=False)
+    sampler.batch()
+    assert sampler.data_order_digest() is None

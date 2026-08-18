@@ -392,3 +392,29 @@ def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:
         trainer = Trainer(cfg)
         metrics = trainer.train_step()
         assert math.isfinite(metrics["loss"]), exp
+
+
+def test_train_records_attest_a_paired_reproducible_data_order(tmp_path: Path) -> None:
+    """The pairing evidence the E1 preregistration relies on: two runs with the
+    same seed must RECORD the same data-order digest in their JSONL — exactly
+    once, on a train record, with the attested batch count. Additive field
+    only; every pre-existing record field is untouched.
+    """
+
+    def digest_record(workdir: Path) -> dict[str, object]:
+        cfg = tiny_config(workdir)
+        trainer = Trainer(cfg)
+        trainer.fit(verbose=False)
+        lines = Path(trainer.results_path).read_text(encoding="utf-8").splitlines()
+        records = [json.loads(line) for line in lines if line.strip()]
+        carrying = [r for r in records if "data_order_digest" in r]
+        assert len(carrying) == 1, f"expected exactly one attesting record, got {len(carrying)}"
+        assert carrying[0]["event"] == "train"
+        return carrying[0]
+
+    first = digest_record(tmp_path / "a")
+    second = digest_record(tmp_path / "b")
+    assert first["data_order_digest"] == second["data_order_digest"]
+    # tiny runs are 5 steps — shorter than the 32-batch window, so the record
+    # attests the actual count rather than pretending to a full window.
+    assert first["data_order_batches"] == second["data_order_batches"] == 5
