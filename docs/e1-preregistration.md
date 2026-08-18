@@ -54,3 +54,12 @@ which then attests its actual batch count. Fresh runs only: a resumed run
 never attests (absence = not attested, never "same order"). Spec pinned by
 unit tests (tests/test_data.py, tests/test_train_smoke.py). Purely additive
 to the JSONL schema: existing-field serialization is unchanged.
+
+## Amendment 1 — ε fixed (2026-08-18, post-run / pre-analysis)
+
+ε = 0.01 nats/byte. Basis, chosen with NO access to any confirmatory e1
+outcome (the amender had seen: the e0 baselines, and the declared 2026-08-17
+pilot): one enwik8 reporting step (0.01 bits/byte ≈ 0.0069 nats/byte) rounded
+up to ≈1.3% of the measured e0-byte baseline (0.7738 nats/byte). Committed
+after the stage-1 runs completed but before any analysis session or arm-level
+readout; every other registration term is unchanged.
