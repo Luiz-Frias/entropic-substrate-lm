@@ -89,6 +89,27 @@ class PairedFinalMetric:
         return self.control - self.fisher
 
 
+def _by_seed(paths: Sequence[str | Path], *, arm: str) -> dict[int, Path]:
+    """``{seed: path}`` for one arm — raises on a same-arm duplicate seed
+    rather than silently keeping the last path (a plain dict comprehension's
+    failure mode: MEASURED regression, see
+    tests/test_analysis_series.py::test_pair_final_metrics_rejects_a_duplicate_seed_within_one_arm).
+    """
+    by_seed: dict[int, Path] = {}
+    for raw in paths:
+        path = Path(raw)
+        seed = read_seed(path)
+        if seed in by_seed:
+            msg = (
+                f"pair_final_metrics: {arm} arm gives seed {seed} twice "
+                f"({by_seed[seed]} and {path}) — one run per seed per arm, "
+                "or the earlier run is silently lost"
+            )
+            raise ValueError(msg)
+        by_seed[seed] = path
+    return by_seed
+
+
 def pair_final_metrics(
     fisher_paths: Sequence[str | Path],
     control_paths: Sequence[str | Path],
@@ -96,7 +117,9 @@ def pair_final_metrics(
     metric: str = "nats_per_byte",
 ) -> tuple[list[PairedFinalMetric], list[int]]:
     """Pair fisher/control runs by seed; a seed present on only one side is
-    reported (returned in the second element), never silently dropped.
+    reported (returned in the second element), never silently dropped — and
+    a seed given TWICE within the SAME side raises rather than silently
+    keeping only the last path (see :func:`_by_seed`).
 
     The metric is read EXCLUSIVELY via :func:`entropic_substrate.telemetry.
     final_eval_metric`, matching docs/e1-preregistration.md's Design section
@@ -105,8 +128,8 @@ def pair_final_metrics(
     analysis session's job per the prereg's own Integrity chain section —
     this chart-rendering path pairs on seed only.
     """
-    fisher_by_seed = {read_seed(p): Path(p) for p in fisher_paths}
-    control_by_seed = {read_seed(p): Path(p) for p in control_paths}
+    fisher_by_seed = _by_seed(fisher_paths, arm="fisher")
+    control_by_seed = _by_seed(control_paths, arm="control")
     common = sorted(set(fisher_by_seed) & set(control_by_seed))
     excluded = sorted(set(fisher_by_seed) ^ set(control_by_seed))
     pairs = [

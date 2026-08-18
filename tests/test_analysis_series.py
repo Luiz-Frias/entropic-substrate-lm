@@ -84,6 +84,25 @@ def test_pair_final_metrics_pairs_by_seed_and_reports_unpaired(tmp_path: Path) -
     assert pairs[0].difference == pytest.approx(1.4 - 1.2)
 
 
+def test_pair_final_metrics_rejects_a_duplicate_seed_within_one_arm(tmp_path: Path) -> None:
+    """MEASURED regression this pins: two fisher-arm JSONLs sharing the same
+    seed (e.g. an accidental rerun, or two differently-named captures of the
+    same launch) silently overwrote each other in the ``{seed: path}`` dict
+    comprehension — the FIRST fisher-seed-1 run vanished with no trace, and
+    ``pair_final_metrics`` paired the SECOND one against control's seed 1
+    instead. The docstring promises 'never silently dropped' for the
+    fisher-vs-control asymmetry (the ``excluded`` return); a same-arm
+    duplicate was the one case that promise did not actually cover — it must
+    raise, not silently keep the last path.
+    """
+    fisher_1a = _write(tmp_path / "f1a.jsonl", _run_start(1), _eval(100, 1.2))
+    fisher_1b = _write(tmp_path / "f1b.jsonl", _run_start(1), _eval(100, 9.9))  # same seed!
+    control_1 = _write(tmp_path / "c1.jsonl", _run_start(1), _eval(100, 1.4))
+
+    with pytest.raises(ValueError, match=r"seed 1 twice|seed 1.*twice|duplicate.*seed"):
+        pair_final_metrics([fisher_1a, fisher_1b], [control_1])
+
+
 def test_pair_final_metrics_reads_the_metric_via_telemetry_final_eval_metric(
     tmp_path: Path,
 ) -> None:
