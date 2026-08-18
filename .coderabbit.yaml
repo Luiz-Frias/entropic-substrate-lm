@@ -38,6 +38,46 @@ reviews:
   # Collapse walkthrough sections
   collapse_walkthrough: false
 
+  # Abort an in-progress review when its PR closes. MOVED from top level
+  # 2026-08-18: the key is valid ONLY under reviews.* (schema.v2.json); at
+  # top level it was silently ignored — measured on the PR banner
+  # 2026-08-17. Pinned by tests/test_coderabbit_config.py.
+  abort_on_close: true
+
+  # Path-based filtering — reviews.path_filters is the schema's ONLY home
+  # for path scoping (auto_review has no such property, so a copy there is
+  # silently dropped; the retired top-level `ignore:` block never worked at
+  # all — both measured on the PR banner 2026-08-17). This list is the
+  # union of both former sites: negations = never review, bare globs =
+  # focus. Pinned by tests/test_coderabbit_config.py.
+  path_filters:
+    # Exclude generated/vendor code, caches, reference submodules, DVC bulk
+    - "!**/*.lock"
+    - "!**/*.min.*"
+    - "!**/vendor/**"
+    - "!**/node_modules/**"
+    - "!**/.venv/**"
+    - "!**/references/**" # pinned upstream submodules (holobyte, hnet, ngpt, geoopt)
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/__pycache__/**"
+    - "!**/*.pyc"
+    - "!**/coverage/**"
+    - "!**/.pytest_cache/**"
+    - "!**/.mypy_cache/**"
+    - "!**/.ruff_cache/**"
+    - "!**/data/**"
+    - "!**/models/**"
+    - "!**/results/**"
+
+    # Focus on source code
+    - "**/*.py"
+    - "**/*.sh"
+    - "**/*.yaml"
+    - "**/*.yml"
+    - "**/*.toml"
+    - "**/*.md"
+
   # Automatic review settings
   auto_review:
     enabled: true
@@ -50,30 +90,6 @@ reviews:
 
     # Auto-review drafts
     drafts: false
-
-    # Path-based filtering
-    path_filters:
-      # Exclude generated/vendor code + reference submodules from reviews
-      - "!**/*.lock"
-      - "!**/*.min.js"
-      - "!**/*.min.css"
-      - "!**/vendor/**"
-      - "!**/node_modules/**"
-      - "!**/.venv/**"
-      - "!**/references/**" # pinned upstream submodules (holobyte, hnet, ngpt, geoopt)
-      - "!**/dist/**"
-      - "!**/build/**"
-      - "!**/data/**"
-      - "!**/models/**"
-      - "!**/results/**"
-
-      # Focus on source code
-      - "**/*.py"
-      - "**/*.sh"
-      - "**/*.yaml"
-      - "**/*.yml"
-      - "**/*.toml"
-      - "**/*.md"
 
   # Tool integrations (linters, security scanners)
   tools:
@@ -169,31 +185,11 @@ knowledge_base:
   learnings:
     scope: "local" # Learn from this repo only (not global)
 
-# =============================================================================
-# Ignored Files/Patterns
-# =============================================================================
-# These are never reviewed by CodeRabbit
-ignore:
-  - "**/*.lock"
-  - "**/*.min.*"
-  - "**/vendor/**"
-  - "**/node_modules/**"
-  - "**/.venv/**"
-  - "**/references/**"
-  - "**/dist/**"
-  - "**/build/**"
-  - "**/__pycache__/**"
-  - "**/*.pyc"
-  - "**/coverage/**"
-  - "**/.pytest_cache/**"
-  - "**/.mypy_cache/**"
-  - "**/.ruff_cache/**"
-  - "**/data/**"
-  - "**/models/**"
-  - "**/results/**"
-
-# =============================================================================
-# Abort Review Conditions
-# =============================================================================
-abort_on_changes_requested: false
-abort_on_close: true
+# RETIRED 2026-08-18 — three top-level keys the schema does not define, all
+# silently ignored (measured on the PR banner 2026-08-17):
+#   * `ignore:` — its globs now live as negations in reviews.path_filters.
+#   * `abort_on_close` — valid key, wrong level; moved under reviews.
+#   * `abort_on_changes_requested: false` — no schema equivalent exists;
+#     false matches the default behavior, so removal changes nothing.
+# Conformance to the vendored schema snapshot is pinned by
+# tests/test_coderabbit_config.py.

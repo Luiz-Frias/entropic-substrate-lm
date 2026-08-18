@@ -87,9 +87,13 @@ The stack the local live gate rehearses (`compose.yaml`) is deployed on Railway,
 `basic_auth` in front, `/health` exempt, upstream `mlflow.railway.internal:5000` via the
 Caddyfile's `MLFLOW_UPSTREAM` placeholder). Every MLflow server option arrives as a native
 env var (see `Containerfile.mlflow`'s CMD comment); artifacts land at
-`s3://entropic-substrate-lm/mlflow/` on R2 — the same destination the local gate writes.
+`s3://entropic-substrate-lm/mlflow/` on R2 — a prefix the deployed server OWNS. The local
+live gate writes the venue-split `mlflow-live-gate/` prefix instead (see compose.yaml's
+`--artifacts-destination` comment for the observed commingling that forced the split).
 `MLFLOW_SERVER_ALLOWED_HOSTS` on the mlflow service pins the public Caddy domain exactly —
-this deployment is the enforcement site for compose.yaml's never-`'*'` note.
+this deployment is the enforcement site for compose.yaml's never-`'*'` note. Per-service
+build recipes + GitHub-source watch paths are config-as-code in `railway.mlflow.json` /
+`railway.caddy.json` (each service's settings point at its file).
 
 A training pod opts in with three variables (canonical values: Doppler project
 `entropic-substrate-lm`; the server-side pair lives on the Railway services):

@@ -19,8 +19,13 @@ from entropic_substrate.telemetry import (
     TelemetryGap,
     final_eval_metric,
     final_eval_record,
+    kappa_spreads,
     main,
+    max_kappa_spread,
+    read_eval_series,
     read_final_kappa,
+    read_seed,
+    read_train_series,
 )
 
 pytestmark = pytest.mark.unit
@@ -32,9 +37,21 @@ def _write(path: Path, *records: str) -> Path:
 
 
 def _eval(**fields: Any) -> str:
-    record: dict[str, Any] = {"event": "eval", "nats_per_byte": 1.5}
+    record: dict[str, Any] = {"event": "eval", "step": 0, "loss": 1.0, "nats_per_byte": 1.5}
     record.update(fields)
     return json.dumps(record)
+
+
+def _train(**fields: Any) -> str:
+    record: dict[str, Any] = {"event": "train", "step": 1, "loss": 1.0, "nats_per_byte": 1.5}
+    record.update(fields)
+    return json.dumps(record)
+
+
+def _run_start(*, seed: int = 42, **overrides: Any) -> str:
+    config: dict[str, Any] = {"train": {"seed": seed}}
+    config.update(overrides)
+    return json.dumps({"event": "run_start", "step": 0, "config": config})
 
 
 # ------------------------------------------------------------- happy path
@@ -144,6 +161,242 @@ def test_absent_metric_is_a_gap(tmp_path: Path) -> None:
 def test_final_eval_record_returns_the_last_one(tmp_path: Path) -> None:
     path = _write(tmp_path / "e1.jsonl", _eval(step=1), _eval(step=2))
     assert final_eval_record(path)["step"] == 2
+
+
+# --------------------------------------------------------------- eval series
+def test_read_eval_series_returns_every_admissible_eval_in_order(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _run_start(),
+        _eval(step=10, loss=2.0, nats_per_byte=1.8),
+        _train(step=15, loss=1.9),
+        _eval(step=20, loss=1.5, nats_per_byte=1.3),
+    )
+    series = read_eval_series(path)
+    assert [r.step for r in series] == [10, 20]
+    assert series[0].loss == pytest.approx(2.0)
+    assert series[0].nats_per_byte == pytest.approx(1.8)
+    assert series[0].kappa is None
+    assert series[1].nats_per_byte == pytest.approx(1.3)
+
+
+def test_read_eval_series_carries_validated_kappa_per_record(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[-0.9, 0.1]]),
+        _eval(step=2),  # legitimate: a run may drop kappa on a later eval
+        _eval(step=3, kappa=[[0.2, 0.4]]),
+    )
+    series = read_eval_series(path)
+    assert series[0].kappa == [[-0.9, 0.1]]
+    assert series[1].kappa is None
+    assert series[2].kappa == [[0.2, 0.4]]
+
+
+def test_read_eval_series_on_empty_file_is_a_gap(tmp_path: Path) -> None:
+    path = tmp_path / "e2.jsonl"
+    path.write_text("", encoding="utf-8")
+    with pytest.raises(TelemetryGap, match=r"no such file|no eval record"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_with_no_eval_records_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _run_start(), _train(step=1))
+    with pytest.raises(TelemetryGap, match="no eval record"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize("field", ["loss", "nats_per_byte"])
+def test_read_eval_series_refuses_a_nonfinite_row_anywhere_in_the_series(
+    tmp_path: Path, field: str
+) -> None:
+    """A curve that looks healthy right up to a NaN-poisoned tail must not
+    silently truncate — the whole series is inadmissible, not a prefix of it.
+    Parametrized over BOTH chart-consumed numeric fields — the pre-fix
+    version only ever poisoned ``nats_per_byte``, leaving ``loss``'s
+    identical ``_finite_field`` call unexercised by any test."""
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _eval(step=1, nats_per_byte=1.5),
+        _eval(step=2, **{field: float("nan")}),
+    )
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_refuses_malformed_kappa_anywhere(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[0.1]]),
+        _eval(step=2, kappa=[[]]),
+    )
+    with pytest.raises(TelemetryGap, match="empty"):
+        read_eval_series(path)
+
+
+# ----------------------------------------------- eval series: kappa shape
+@pytest.mark.parametrize(
+    ("first", "later"),
+    [
+        ([[0.1, 0.2], [0.3, 0.4]], [[0.1, 0.2]]),  # fewer layers
+        ([[0.1, 0.2]], [[0.1, 0.2], [0.3, 0.4]]),  # more layers
+        ([[0.1, 0.2, 0.3]], [[0.1, 0.2]]),  # fewer heads
+        ([[0.1, 0.2]], [[0.1, 0.2, 0.3]]),  # more heads
+        ([[0.1, 0.2], [0.3, 0.4]], [[0.1, 0.2], [0.3, 0.4, 0.5]]),  # head drift in ONE layer only
+    ],
+)
+def test_read_eval_series_refuses_a_kappa_shape_change(
+    tmp_path: Path, first: list[list[float]], later: list[list[float]]
+) -> None:
+    """Chart code derives n_layers/n_heads from the FIRST kappa-bearing record
+    and then indexes kappa[layer][head] across every record in the series — a
+    later record with a different shape must be refused here, not left to
+    surface as a bare IndexError inside a plotting comprehension."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=first),
+        _eval(step=2, kappa=later),
+    )
+    with pytest.raises(TelemetryGap, match="step 2 kappa"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_keys_the_shape_on_the_first_kappa_bearing_record(tmp_path: Path) -> None:
+    """The reference shape comes from the first PRESENT kappa matrix, not
+    from record 0 — a leading record that dropped kappa entirely must not
+    suppress the shape check for the records that follow it."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1),
+        _eval(step=2, kappa=[[0.1, 0.2]]),
+        _eval(step=3, kappa=[[0.1, 0.2, 0.3]]),
+    )
+    with pytest.raises(TelemetryGap, match="step 3 kappa"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_accepts_a_consistent_kappa_shape_across_records(tmp_path: Path) -> None:
+    """An ABSENT kappa between two consistently shaped ones is still
+    admissible — E1/E2 runs never report kappa, and an E3 run may drop it on
+    one eval — so the shape check must skip records without kappa rather
+    than treat an absence as a shape mismatch."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]),
+        _eval(step=2),
+        _eval(step=3, kappa=[[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]]),
+    )
+    series = read_eval_series(path)
+    assert [r.kappa for r in series] == [
+        [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+        None,
+        [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+    ]
+
+
+# ------------------------------------------------------------ kappa spread
+def test_kappa_readout_spreads_delegate_to_the_shared_helper(tmp_path: Path) -> None:
+    """Pins the delegation so ``KappaReadout`` and the shared helper cannot
+    silently fork later: the spread arithmetic had been written out three
+    separate times (here, Lane A's charts, Lane B's notebook), which is how
+    two lanes can come to report different numbers for the same run."""
+    rows = [[-0.9, 0.1, 1.2, -0.4], [-0.2, 0.0, 0.3, 0.1]]
+    path = _write(tmp_path / "e3.jsonl", _eval(kappa=rows))
+    readout = read_final_kappa(path)
+    assert readout.spreads == kappa_spreads(rows)
+    assert readout.max_spread == max_kappa_spread(rows)
+
+
+@pytest.mark.parametrize("rows", [[], [[]], [[0.1, 0.2], []]])
+def test_kappa_spreads_refuses_empty_input(rows: list[list[float]]) -> None:
+    with pytest.raises(TelemetryGap, match="empty"):
+        kappa_spreads(rows)
+
+
+def test_max_kappa_spread_refuses_an_empty_matrix() -> None:
+    with pytest.raises(TelemetryGap, match="empty"):
+        max_kappa_spread([])
+
+
+# -------------------------------------------------------------- train series
+def test_read_train_series_returns_every_admissible_train_row(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _run_start(),
+        _train(step=1, loss=3.0, nats_per_byte=2.5),
+        _eval(step=1),
+        _train(step=2, loss=2.8, nats_per_byte=2.3),
+    )
+    series = read_train_series(path)
+    assert [r.step for r in series] == [1, 2]
+    assert series[1].loss == pytest.approx(2.8)
+
+
+def test_read_train_series_with_no_train_records_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _run_start(), _eval(step=1))
+    with pytest.raises(TelemetryGap, match="no train record"):
+        read_train_series(path)
+
+
+def test_read_train_series_refuses_a_nonfinite_row(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e2.jsonl",
+        _train(step=1, loss=1.0),
+        _train(step=2, loss=float("inf")),
+    )
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_train_series(path)
+
+
+# --------------------------------------------------------------------- seed
+def test_read_seed_reads_the_run_start_record(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e1.jsonl", _run_start(seed=7), _eval(step=1))
+    assert read_seed(path) == 7
+
+
+def test_read_seed_without_a_run_start_record_is_a_gap(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e1.jsonl", _eval(step=1))
+    with pytest.raises(TelemetryGap, match="no run_start record"):
+        read_seed(path)
+
+
+def test_read_seed_missing_from_config_is_a_gap(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "e1.jsonl", json.dumps({"event": "run_start", "config": {"train": {}}})
+    )
+    with pytest.raises(TelemetryGap, match=r"no train\.seed"):
+        read_seed(path)
+
+
+# ------------------------------------- guard-teeth: bool is an int subclass
+# Same trap class the kappa validator already pins (see the
+# ``[[True, False]]`` case above): ``isinstance(True, int)`` is True, so
+# without the explicit bool clause each reader would silently coerce. These
+# three exist because an L1 deletion probe (2026-08-18) showed the full unit
+# suite stayed GREEN with each bool clause removed — the guards worked but
+# nothing pinned them. Each test goes RED when its clause is deleted
+# (re-probed after writing).
+
+
+def test_train_series_refuses_a_bool_metric(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _train(step=1, loss=True))
+    with pytest.raises(TelemetryGap, match="not numeric"):
+        read_train_series(path)
+
+
+def test_train_series_refuses_a_bool_step(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _train(step=True, loss=1.0))
+    with pytest.raises(TelemetryGap, match="not an int"):
+        read_train_series(path)
+
+
+def test_read_seed_refuses_a_bool_seed(tmp_path: Path) -> None:
+    """YAML parses ``seed: true`` as a bool, which int-coerces to 1 — an
+    unguarded read would silently pair a run against seed 1's partner in
+    ``pair_final_metrics``, inside the E1 confirmatory path."""
+    path = _write(tmp_path / "e1.jsonl", _run_start(seed=True), _eval(step=1))
+    with pytest.raises(TelemetryGap, match="not an int"):
+        read_seed(path)
 
 
 # -------------------------------------------------------------- module CLI

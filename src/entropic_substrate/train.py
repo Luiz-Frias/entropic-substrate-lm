@@ -32,7 +32,11 @@ from torch import nn
 
 from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_checkpoint
 from entropic_substrate.config import Config
-from entropic_substrate.data.batching import Corpus, SequenceSampler
+from entropic_substrate.data.batching import (
+    DATA_ORDER_DIGEST_BATCHES,
+    Corpus,
+    SequenceSampler,
+)
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
 from entropic_substrate.logging import logger
 from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
@@ -353,6 +357,13 @@ class Trainer:
         total = max_steps if max_steps is not None else self.cfg.train.max_steps
         history: list[dict[str, Any]] = []
         start = time.time()
+        # Pairing evidence for the E1 preregistration: attest the data order
+        # ONCE, on the first logged train record at/after the digest window
+        # (or the final record of a shorter run) — and only for a FRESH run:
+        # a resumed run has not observed batches 1..N, so it must not attest
+        # to them (absence of the field = not attested, never "same order").
+        fresh_start = self.step == 0
+        order_attested = False
 
         self.log(
             {
@@ -376,6 +387,15 @@ class Trainer:
                     **{k: round(v, 6) for k, v in metrics.items()},
                     "wall_s": round(time.time() - start, 3),
                 }
+                if (
+                    fresh_start
+                    and not order_attested
+                    and (self.step >= DATA_ORDER_DIGEST_BATCHES or self.step == total)
+                ):
+                    attestation = self.train_sampler.data_order_digest()
+                    if attestation is not None:
+                        record["data_order_digest"], record["data_order_batches"] = attestation
+                        order_attested = True
                 self.log(record)
                 if verbose:
                     logger.info(

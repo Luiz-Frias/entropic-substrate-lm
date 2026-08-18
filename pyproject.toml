@@ -26,9 +26,35 @@ deploy = [
   # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
   # Keep that operational dependency explicit without shipping test tooling.
   "dvc[s3]>=3.59.0",
+  # MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
+  # mlflow-native, but mlflow-skinny does NOT declare either as a dependency
+  # (verified 2026-08-17 via `importlib.metadata.requires("mlflow-skinny")`)
+  # — psutil happened to be present transitively (torch) in this dev venv,
+  # which is exactly the kind of accidental coverage that silently vanishes
+  # on a different base image. Pinned here, not in dev: the unit suite
+  # (tests/test_sinks.py) injects a fake monitor factory and never imports
+  # either — this is training-pod-only observability.
+  "psutil>=6.0.0",
+  "pynvml>=12.0.0",
+]
+# Interpretation charts (entropic_substrate.analysis, notebooks/) — matplotlib
+# figures attached retroactively to MLflow runs, plus ad-hoc plotly/marimo
+# notebooks over DVC-captured JSONLs. DEV-SIDE ONLY, deliberately its own group
+# rather than folded into `dev` directly: a training pod's environment is built
+# from `deploy` alone (see Containerfile's `uv export --group deploy`), and
+# these three have no business anywhere near it — an analysis library on a
+# training pod is dead weight at best and, on the H100 image's already-tight
+# CUDA/torch dependency resolution, a resolver hazard at worst. `dev` includes
+# this group so the unit suite (tests/test_analysis_charts.py and siblings)
+# can import matplotlib/marimo/plotly.
+analysis = [
+  "matplotlib>=3.10.0",
+  "marimo>=0.23.16",
+  "plotly>=5.24.0",
 ]
 dev = [
   { include-group = "deploy" },
+  { include-group = "analysis" },
   # Test-time oracle only: production geometry is implemented in-tree. geoopt
   # ships fixes on GitHub ahead of PyPI, so retain the repository source.
   "geoopt @ git+https://github.com/geoopt/geoopt.git",
@@ -44,6 +70,7 @@ dev = [
   # containerized server.
   "sqlalchemy>=1.4.0,<3",
   "alembic!=1.10.0,<2",
+  "jsonschema>=4.26.0",
 ]
 
 [build-system]
@@ -101,6 +128,13 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["entropic_substrate"]
+
+[tool.ruff.lint.per-file-ignores]
+# marimo's own on-disk cell format uses a bare trailing expression as "this
+# is the cell's displayed output" (the same convention as a Jupyter cell) —
+# that is the idiom, not an oversight, and B018 has no way to distinguish
+# the two.
+"notebooks/*.py" = ["B018"]
 
 [tool.ruff.format]
 quote-style = "double"

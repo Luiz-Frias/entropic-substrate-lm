@@ -35,7 +35,7 @@ import json
 import os
 import subprocess  # nosec B404 -- git_sha() only, fixed argv, see its own nosec
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -76,6 +76,7 @@ def _is_cold_start(exc: BaseException) -> bool:
 
 __all__ = [
     "MLFLOW_EXPERIMENT_ENV",
+    "MLFLOW_SYSTEM_METRICS_ENV",
     "MLFLOW_TINY_ENV",
     "MLFLOW_TRACKING_ENV",
     "CompositeSink",
@@ -96,6 +97,43 @@ MLFLOW_TRACKING_ENV = "MLFLOW_TRACKING_URI"
 MLFLOW_TINY_ENV = "ENTROPIC_MLFLOW_TINY"
 MLFLOW_EXPERIMENT_ENV = "MLFLOW_EXPERIMENT_NAME"
 _DEFAULT_EXPERIMENT = "entropic-substrate-lm"
+
+# mlflow-NATIVE env var (mlflow.environment_variables.
+# MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) — this module only passes it through
+# to mlflow's OWN SystemMetricsMonitor (never re-implements psutil/pynvml
+# collection). Deliberately re-parsed here rather than read via mlflow's own
+# accessor: mlflow's `.get()` raises ValueError on a garbage value; the
+# best-effort spirit of this whole class says garbage -> disabled, not abort.
+MLFLOW_SYSTEM_METRICS_ENV = "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING"
+
+# Fixed repo location of the enwik8 DVC pointer (docs/architecture.md — "enwik8
+# is DVC-tracked in data/"). Not derived from cfg.data.path (that field names
+# the extracted training file, e.g. "data/enwik8/enwik8"; the pointer that
+# carries the digest lives one level up). A module constant rather than a cfg
+# field: dataset lineage is scoped to exactly the one source this repo tracks
+# in DVC today (see build_sink's source == "enwik8" gate) — FineWeb-Edu is
+# streamed and carries no local pointer to read.
+
+
+def _default_enwik8_dvc_pointer() -> Path:
+    """Resolve the enwik8 DVC pointer's default location.
+
+    Anchored the same way as ``entropic_substrate.config.configs_dir()``
+    (``__file__`` parents first: src/entropic_substrate/sinks.py -> repo
+    root, same depth as config.py) so the pointer resolves regardless of
+    the caller's CWD, falling back to the plain CWD-relative candidate this
+    constant carried before if the anchored one is not a file. Stays
+    best-effort by construction either way: build_sink's later ``.exists()``
+    check treats a miss on both candidates as an absent pointer, not a
+    startup failure.
+    """
+    anchored = Path(__file__).resolve().parents[2] / "data" / "enwik8.dvc"
+    if anchored.is_file():
+        return anchored
+    return Path("data/enwik8.dvc")
+
+
+_ENWIK8_DVC_POINTER = _default_enwik8_dvc_pointer()
 
 # Tags the aggregate module (entropic_substrate.mlflow_aggregate) reads back.
 CONFIG_HASH_TAG = "config_hash"
@@ -222,6 +260,92 @@ def _kappa_metrics(kappa: Sequence[Sequence[float]]) -> dict[str, float]:
     return metrics
 
 
+@runtime_checkable
+class _SystemMetricsMonitorLike(Protocol):
+    """Structural shape this module needs from mlflow's own
+    ``SystemMetricsMonitor`` — just ``start()``/``finish()``, so tests can
+    inject a fake without ever importing the real (thread-spawning) class.
+    """
+
+    def start(self) -> None: ...
+    def finish(self) -> None: ...
+
+
+def _system_metrics_logging_enabled() -> bool:
+    """Env-gated pass-through — same env var mlflow itself reads, parsed
+    best-effort (garbage -> disabled) rather than mlflow's own raise-on-garbage
+    ``.get()``; see the ``MLFLOW_SYSTEM_METRICS_ENV`` constant's comment.
+    """
+    return os.environ.get(MLFLOW_SYSTEM_METRICS_ENV, "").strip().lower() in {"true", "1"}
+
+
+def _default_system_metrics_monitor_factory(
+    run_id: str, tracking_uri: str
+) -> _SystemMetricsMonitorLike:
+    """Lazy import: the ONLY place psutil/pynvml reach this module, and only
+    when system-metrics logging is actually enabled — see the module-level
+    "no unconditional import" invariant pinned by
+    ``tests/test_sinks.py::test_sinks_module_has_no_unconditional_psutil_or_pynvml_import``.
+    """
+    from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
+
+    return SystemMetricsMonitor(run_id, tracking_uri=tracking_uri)
+
+
+def _read_dvc_pointer_digest(pointer_path: Path) -> str | None:
+    """Validated read of a DVC pointer's ``outs[0].md5`` digest.
+
+    ``None`` when ``pointer_path`` does not exist — the normal, expected case
+    (most configs are not enwik8, and even an enwik8 config may run before
+    ``dvc pull``). Raises ``ValueError`` when the pointer file EXISTS but is
+    structurally invalid (unparsable YAML, no ``outs``, empty ``outs``, or a
+    missing/blank ``md5``) — a corrupt pointer is a defect to surface loudly
+    from this function, never to silently treat as absent. The call site
+    (``MlflowSink.__init__``) is what decides best-effort: it catches this
+    and counts it as a swallowed tracking-write failure, exactly like every
+    other post-startup MLflow operation in this class.
+    """
+    if not pointer_path.exists():
+        return None
+    import yaml
+
+    try:
+        payload = yaml.safe_load(pointer_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        msg = f"{pointer_path}: unparsable YAML: {exc}"
+        raise ValueError(msg) from exc
+    if not isinstance(payload, dict):
+        msg = f"{pointer_path}: empty or non-mapping DVC pointer"
+        raise ValueError(msg)
+    outs = payload.get("outs")
+    if not isinstance(outs, list) or not outs:
+        msg = f"{pointer_path}: no 'outs' entries"
+        raise ValueError(msg)
+    first = outs[0]
+    if not isinstance(first, dict):
+        msg = f"{pointer_path}: outs[0] is not a mapping"
+        raise ValueError(msg)
+    digest = first.get("md5")
+    if not digest:
+        msg = f"{pointer_path}: outs[0] missing a non-blank 'md5'"
+        raise ValueError(msg)
+    return str(digest)
+
+
+def _is_already_exists(exc: BaseException) -> bool:
+    """Idempotent registry creation: a registered model that already exists is
+    SUCCESS, not failure — every seed run of one experiment shares the same
+    registered-model name (``run_name``) and will all attempt to (re-)create
+    it. Matched by ``error_code`` (the string mlflow's own ``MlflowException``
+    exposes, e.g. ``"RESOURCE_ALREADY_EXISTS"``) rather than an isinstance
+    check against ``mlflow.exceptions.MlflowException`` — this keeps the
+    check working against any injected fake client's own exception type,
+    the same "match by shape, not by mlflow's own class" idiom
+    ``_is_cold_start`` already uses for transport errors above.
+    """
+    return getattr(exc, "error_code", None) == "RESOURCE_ALREADY_EXISTS"
+
+
 class MlflowSink:
     """BEST-EFFORT AFTER STARTUP. See module docstring for the full contract.
 
@@ -229,10 +353,23 @@ class MlflowSink:
     implements the small slice of ``mlflow.tracking.MlflowClient`` this class
     uses (``get_experiment_by_name``, ``create_experiment``, ``create_run``,
     ``set_tag``, ``log_param``, ``log_metric``, ``log_artifact``,
-    ``set_terminated``) without a live server. When ``client`` is omitted,
-    ``mlflow`` is imported lazily here — the only place in this module that
-    touches the dependency — so untracked runs and unit tests that never
-    build an ``MlflowSink`` pay no import cost.
+    ``set_terminated``, plus the registry trio ``create_registered_model`` /
+    ``create_model_version`` / ``set_registered_model_alias`` for
+    :meth:`register_citation`) without a live server. When ``client`` is
+    omitted, ``mlflow`` is imported lazily here — the only place in this
+    module that touches the dependency — so untracked runs and unit tests
+    that never build an ``MlflowSink`` pay no import cost.
+
+    ``system_metrics_monitor_factory`` is the same injectable-seam idiom for
+    mlflow's OWN ``SystemMetricsMonitor``: production leaves it at the
+    default (a lazy import, gated on ``MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING``),
+    tests inject a fake so the unit suite never spawns the real class's
+    background thread against a real ``MlflowClient``.
+
+    This class stays deliberately Config-free: dataset lineage
+    (``dataset_pointer_path`` / ``dataset_split_spec``) and the citation
+    registry key (``config_hash``) are plain values ``build_sink`` — which
+    DOES have the ``Config`` — extracts and passes through.
     """
 
     def __init__(
@@ -243,10 +380,34 @@ class MlflowSink:
         run_name: str,
         params: Mapping[str, Any] | None = None,
         tags: Mapping[str, Any] | None = None,
+        results_path: str | Path | None = None,
+        config_hash: str | None = None,
+        dataset_pointer_path: str | Path | None = None,
+        dataset_split_spec: Mapping[str, Any] | None = None,
         client: Any | None = None,
+        system_metrics_monitor_factory: Callable[[str, str], _SystemMetricsMonitorLike]
+        | None = None,
     ) -> None:
         self._failed_writes = 0
         self._finished = False
+        # The authoritative results JSONL this run writes locally; finish()
+        # uploads it as a derived, best-effort run artifact (operator ruling
+        # 2026-08-17 — previously pod-side glue any launch script could
+        # forget). None => nothing to upload, e.g. tests that only probe
+        # metric fan-out.
+        self._results_path = Path(results_path) if results_path is not None else None
+        # Citation-registry key (config_hash()'s output) — None => the caller
+        # never gave one, and register_citation() becomes a no-op rather than
+        # guessing a value that would silently collide across configs.
+        self._config_hash = config_hash
+        # "Registered model per experiment" == this run's run_name, the ONLY
+        # value build_sink ever passes here (== cfg.name at that call site).
+        # Named for what it IS USED AS (the registry's registered-model name),
+        # not for the constructor arg it happens to equal — CodeRabbit review
+        # flagged the prior name (`_exp_name`) as confusable with the separate
+        # `experiment_name` constructor argument, which is a different value
+        # (the MLflow tracking experiment) entirely.
+        self._registered_model_name = run_name
 
         if client is None:
             _apply_fast_fail_http_defaults()
@@ -298,6 +459,39 @@ class MlflowSink:
                     f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
                 )
                 time.sleep(backoff)
+
+        # DATASET LINEAGE (best-effort, own guard) — deliberately OUTSIDE the
+        # retry loop above: a corrupt/malformed pointer is neither a cold
+        # start (must not be retried against the STARTUP_COLD_BUDGET) nor a
+        # reason to raise MlflowStartupError (only network unreachability
+        # gets that authority). dataset_pointer_path is None whenever
+        # build_sink's config isn't sourced from enwik8; the reader itself
+        # returns None (no-op) when the pointer file doesn't exist.
+        if dataset_pointer_path is not None:
+            try:
+                digest = _read_dvc_pointer_digest(Path(dataset_pointer_path))
+                if digest is not None:
+                    client.set_tag(self._run_id, "dvc/enwik8_md5", digest)
+                    for key, value in (dataset_split_spec or {}).items():
+                        client.log_param(self._run_id, f"data/{key}", value)
+            except Exception as exc:
+                self._failed_writes += 1
+                logger.warning(f"mlflow: dataset lineage logging failed: {exc}")
+
+        # SYSTEM METRICS (best-effort, own guard) — env-gated pass-through to
+        # mlflow's OWN SystemMetricsMonitor; see MLFLOW_SYSTEM_METRICS_ENV's
+        # comment for why this class re-parses the env var itself rather than
+        # calling mlflow's accessor.
+        self._system_metrics_monitor: _SystemMetricsMonitorLike | None = None
+        if _system_metrics_logging_enabled():
+            factory = system_metrics_monitor_factory or _default_system_metrics_monitor_factory
+            try:
+                monitor = factory(self._run_id, tracking_uri)
+                monitor.start()
+                self._system_metrics_monitor = monitor
+            except Exception as exc:
+                self._failed_writes += 1
+                logger.warning(f"mlflow: system metrics monitor failed to start: {exc}")
 
         logger.info(f"mlflow: tracking run {run_name!r} at {tracking_uri} (run_id={self._run_id})")
 
@@ -361,6 +555,34 @@ class MlflowSink:
         if self._finished:
             return
         self._finished = True
+        # OWN GUARD: a monitor that fails to stop must not block run
+        # termination below. Nested inside the `_finished` early-return
+        # above, so a second finish() call never double-stops it.
+        if self._system_metrics_monitor is not None:
+            try:
+                self._system_metrics_monitor.finish()
+            except Exception as exc:
+                self._failed_writes += 1
+                logger.warning(f"mlflow: system metrics monitor finish() failed: {exc}")
+        # OWN GUARD, deliberately separate from the termination block below: a
+        # dead artifact store must not leave the run stuck in RUNNING —
+        # set_terminated still fires and the failure is counted (pinned by
+        # tests/test_sinks.py). CompositeSink.finish() runs the authoritative
+        # JsonlSink first, so the file is complete before this upload reads it.
+        if self._results_path is not None:
+            try:
+                if self._results_path.exists():
+                    self._client.log_artifact(
+                        self._run_id, str(self._results_path), artifact_path="results"
+                    )
+                else:
+                    logger.warning(
+                        f"mlflow: results file {self._results_path} missing at finish() — "
+                        "skipping the derived upload; the local JSONL is authoritative"
+                    )
+            except Exception as exc:
+                self._failed_writes += 1
+                logger.warning(f"mlflow: results JSONL upload failed: {exc}")
         try:
             if self._failed_writes:
                 self._client.set_tag(self._run_id, "mlflow_failed_writes", str(self._failed_writes))
@@ -382,6 +604,53 @@ class MlflowSink:
     @property
     def run_id(self) -> str:
         return self._run_id
+
+    def register_citation(self) -> None:
+        """Best-effort, EXPLICIT (never auto-called from :meth:`finish`):
+        catalog this run in the MLflow model registry as a CITATION POINTER
+        ONLY — the DVC-tracked ``.pt`` checkpoint remains the sole load
+        authority, and this method never uploads or references model
+        weights.
+
+        One registered model per experiment (``self._registered_model_name`` ==
+        ``run_name`` == ``cfg.name`` at the only call site, ``build_sink``),
+        aliased ``champion-<config_hash>`` so re-running the same config
+        repoints the alias to this run's citation rather than accumulating
+        duplicates (``config_hash`` is deliberately seed-invariant — see
+        :func:`config_hash`). A no-op, not an error, when this sink was built
+        without a ``config_hash`` (e.g. a bare :class:`MlflowSink` in a test
+        that never threads one through).
+
+        The registered model version's ``source`` points at this run's
+        ``results`` artifact (telemetry JSONL, uploaded by :meth:`finish`) —
+        verified 2026-08-17 against a real, local sqlite-backed
+        ``mlflow.tracking.MlflowClient`` that ``create_model_version`` both
+        accepts an arbitrary ``runs:/<id>/<artifact>`` source at creation time
+        (no MLmodel flavour required to REGISTER, only to LOAD, which this
+        method never does) and that the alias resolves back to it afterward.
+        """
+        if self._config_hash is None:
+            logger.warning("mlflow: register_citation() called without a config_hash — skipping")
+            return
+        try:
+            try:
+                self._client.create_registered_model(self._registered_model_name)
+            except Exception as exc:
+                if not _is_already_exists(exc):
+                    raise
+            source = f"runs:/{self._run_id}/results"
+            version = self._client.create_model_version(
+                name=self._registered_model_name,
+                source=source,
+                run_id=self._run_id,
+                tags={"citation_only": "true"},
+            )
+            self._client.set_registered_model_alias(
+                self._registered_model_name, f"champion-{self._config_hash}", version.version
+            )
+        except Exception as exc:
+            self._failed_writes += 1
+            logger.warning(f"mlflow: registry citation failed: {exc}")
 
 
 class CompositeSink:
@@ -502,6 +771,11 @@ def build_sink(
     tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV, "")
     experiment_name = os.environ.get(MLFLOW_EXPERIMENT_ENV, _DEFAULT_EXPERIMENT)
     chash = config_hash(cfg)
+    # Dataset lineage: only enwik8 configs have a local DVC pointer to read
+    # (FineWeb-Edu is streamed, never local — see the module docstring's data
+    # flow section). Split spec carries the one field DataConfig uses to
+    # define the split: val_fraction.
+    is_enwik8 = cfg.data.source == "enwik8"
     mlflow_sink = MlflowSink(
         tracking_uri=tracking_uri,
         experiment_name=experiment_name,
@@ -513,6 +787,14 @@ def build_sink(
             "git_sha": git_sha(),
         },
         tags={EXP_TAG: cfg.name, CONFIG_HASH_TAG: chash},
+        results_path=Path(results_path),
+        config_hash=chash,
+        dataset_pointer_path=_ENWIK8_DVC_POINTER if is_enwik8 else None,
+        dataset_split_spec=(
+            {"source": cfg.data.source, "val_fraction": cfg.data.val_fraction}
+            if is_enwik8
+            else None
+        ),
         client=client,
     )
     return CompositeSink(jsonl, mlflow_sink)

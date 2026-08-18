@@ -129,6 +129,29 @@ def test_allowlist_uses_mlflows_native_env_vars_not_command_flags() -> None:
         )
 
 
+def test_live_gate_artifacts_land_in_the_gate_prefix_not_the_deploy_prefix() -> None:
+    """The local live gate and the deployed tracking server share one R2 bucket
+    but must NOT share a keyspace. OBSERVED 2026-08-17 while verifying the
+    Railway deploy: a listing of ``s3://entropic-substrate-lm/mlflow/1/``
+    returned live-gate throwaway artifacts (live-caddy-auth-e2e, kill-mid-run,
+    live-r2-roundtrip checkpoints) interleaved with authoritative runs — run-id
+    UUIDs prevent collisions, but disposable gate output and citable analysis
+    artifacts were commingled in one prefix. The split is by VENUE: the gate
+    writes ``mlflow-live-gate/`` (safe to lifecycle-expire wholesale), the
+    deployed server keeps ``mlflow/`` (its env var, not this file). Ruled by
+    operator 2026-08-17.
+    """
+    command = mlflow_command()
+    destination = command[command.index("--artifacts-destination") + 1]
+    assert destination == "s3://entropic-substrate-lm/mlflow-live-gate/", (
+        f"live-gate artifacts must land in the gate-only prefix; got {destination!r}"
+    )
+    assert "s3://entropic-substrate-lm/mlflow/" not in command, (
+        "the deploy prefix must never appear in the live-gate command — that is "
+        "the commingling this test exists to prevent"
+    )
+
+
 def test_mlflow_command_has_no_interpolation_site_at_all() -> None:
     """No ``$`` anywhere in ``command:`` — the injection vector is GONE.
 

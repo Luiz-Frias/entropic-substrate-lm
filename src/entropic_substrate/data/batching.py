@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
-__all__ = ["Corpus", "CorpusMeta", "SequenceSampler", "TokenSplit"]
+__all__ = [
+    "DATA_ORDER_DIGEST_BATCHES",
+    "Corpus",
+    "CorpusMeta",
+    "SequenceSampler",
+    "TokenSplit",
+]
+
+#: How many train batches :meth:`SequenceSampler.data_order_digest` attests.
+#: Enough to evidence order identity between paired runs (the E1
+#: preregistration's pairing claim — docs/e1-preregistration.md Appendix A)
+#: without hashing an entire run; the window is fixed so the digest is stable
+#: from batch 32 onward.
+DATA_ORDER_DIGEST_BATCHES = 32
 
 
 @dataclass(slots=True)
@@ -76,9 +90,16 @@ class SequenceSampler:
         self.generator = torch.Generator(device="cpu").manual_seed(seed)
         self._max_start = n - seq_len - 1
         self._eval_cursor = 0
+        self._order_hasher = hashlib.sha256()
+        self._order_batches = 0
 
     def state_dict(self) -> dict[str, torch.Tensor | int]:
-        """Serialisable sampler state (for exact resume)."""
+        """Serialisable sampler state (for exact resume).
+
+        The data-order attestation is DELIBERATELY not serialised: a resumed
+        run has not observed batches 1..N from a fresh start, so it must not
+        attest to them — the trainer only emits the digest for fresh runs.
+        """
         return {
             "generator": self.generator.get_state(),
             "eval_cursor": self._eval_cursor,
@@ -100,7 +121,14 @@ class SequenceSampler:
                 (self.batch_size,),
                 generator=self.generator,
             )
-            return idx.numpy()
+            starts = idx.numpy()
+            if self._order_batches < DATA_ORDER_DIGEST_BATCHES:
+                # '<i8' pins width AND byte order: the digest is pairing
+                # evidence that travels via captured JSONLs, so it must be
+                # comparable across machines, not just across processes.
+                self._order_hasher.update(starts.astype("<i8").tobytes())
+                self._order_batches += 1
+            return starts
         stride = max(self._max_start // max(self.batch_size, 1), 1)
         base = (self._eval_cursor * self.batch_size * stride) % (self._max_start + 1)
         self._eval_cursor += 1
@@ -119,6 +147,20 @@ class SequenceSampler:
             x = x.pin_memory().to(self.device, non_blocking=True)
             y = y.pin_memory().to(self.device, non_blocking=True)
         return x, y
+
+    def data_order_digest(self) -> tuple[str, int] | None:
+        """Attestation of this sampler's train-batch source offsets.
+
+        Returns ``(sha256_hex, batches_attested)`` once at least one train
+        batch has been drawn; the window caps at
+        :data:`DATA_ORDER_DIGEST_BATCHES`, after which the digest is stable.
+        ``None`` for eval samplers — the eval grid is deterministic by
+        construction, and attesting it would let an eval digest masquerade as
+        train-pairing evidence — and before any batch is drawn.
+        """
+        if not self.train or self._order_batches == 0:
+            return None
+        return self._order_hasher.hexdigest(), self._order_batches
 
     def reset_eval(self) -> None:
         """Rewind the deterministic eval grid."""

@@ -2,9 +2,11 @@
 
 Subcommands
 -----------
-``train``        run one rung of the experiment ladder
-``init-fisher``  precompute and cache the sqrt(p) Fisher embedding table
-``eval``         evaluate a checkpoint on its held-out split
+``train``            run one rung of the experiment ladder
+``init-fisher``      precompute and cache the sqrt(p) Fisher embedding table
+``eval``             evaluate a checkpoint on its held-out split
+``capture-results``  pull finished runs' results JSONLs into DVC
+``charts``           render E1/E2/E3 interpretation charts, attach to MLflow
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -92,6 +95,25 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--batches", type=int, default=None)
     evaluate.add_argument("--json", action="store_true", help="print JSON only")
 
+    capture = sub.add_parser(
+        "capture-results",
+        help="pull finished runs' results JSONLs from the tracking server into DVC",
+    )
+    capture.add_argument(
+        "--experiment",
+        action="append",
+        dest="experiments",
+        default=None,
+        help="experiment name (repeatable; defaults to $MLFLOW_EXPERIMENT_NAME)",
+    )
+    capture.add_argument("--dest", type=Path, default=Path("results/captured"))
+    capture.add_argument(
+        "--include-tiny", action="store_true", help="also capture -tiny smoke runs"
+    )
+    capture.add_argument(
+        "--no-dvc", action="store_true", help="download + validate only; skip dvc add/push"
+    )
+
     aggregate_p = sub.add_parser(
         "mlflow-aggregate", help="idempotently roll seed runs into a parent run by config_hash"
     )
@@ -105,6 +127,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     aggregate_p.add_argument(
         "--n-seeds", type=int, default=3, help="minimum children before a parent is created"
+    )
+
+    charts = sub.add_parser(
+        "charts",
+        help="render E1/E2/E3 interpretation charts and attach them to MLflow",
+    )
+    charts.add_argument(
+        "--e1-fisher",
+        action="append",
+        dest="e1_fisher",
+        default=[],
+        type=Path,
+        help="E1 fisher-arm results JSONL (repeatable, one per seed)",
+    )
+    charts.add_argument(
+        "--e1-control",
+        action="append",
+        dest="e1_control",
+        default=[],
+        type=Path,
+        help="E1 control-arm results JSONL (repeatable, one per seed)",
+    )
+    charts.add_argument(
+        "--e1-epsilon",
+        type=float,
+        default=None,
+        help="practical-relevance threshold reported alongside the CI (NOT preregistered)",
+    )
+    charts.add_argument(
+        "--config-hash",
+        default=None,
+        help="attach the E1 seed-band charts to the mlflow-aggregate parent run for this hash",
+    )
+    charts.add_argument("--e2", type=Path, default=None, help="E2 results JSONL (single run)")
+    charts.add_argument("--e2-run-id", default=None, help="MLflow run_id to attach the E2 chart to")
+    charts.add_argument("--e3", type=Path, default=None, help="E3 results JSONL (single run)")
+    charts.add_argument(
+        "--e3-run-id", default=None, help="MLflow run_id to attach the E3 charts to"
+    )
+    charts.add_argument("--out-dir", type=Path, default=Path("results/charts"))
+    charts.add_argument(
+        "--experiment", default=os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
+    )
+    charts.add_argument(
+        "--tracking-uri",
+        default=None,
+        help=f"defaults to ${MLFLOW_TRACKING_ENV}; omit both to render locally only",
     )
 
     return parser
@@ -267,6 +336,38 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capture_results(args: argparse.Namespace) -> int:
+    """Handle ``capture-results``."""
+    tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV)
+    if not tracking_uri:
+        logger.error(f"capture-results: ${MLFLOW_TRACKING_ENV} is not set")
+        return 2
+    import subprocess  # nosec B404 -- dvc add/push only, fixed argv at the call site below
+
+    import mlflow.tracking
+
+    from entropic_substrate.capture_results import capture_finished_runs, dvc_commands
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    experiments = args.experiments or [
+        os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
+    ]
+    captured = capture_finished_runs(client, experiments, args.dest, include_tiny=args.include_tiny)
+    if not captured:
+        logger.info("capture-results: nothing new to capture")
+        return 0
+    if args.no_dvc:
+        logger.info(f"capture-results: {len(captured)} file(s) captured; dvc skipped (--no-dvc)")
+        return 0
+    for command in dvc_commands(args.dest):
+        # nosec B603 B607 -- argv is the fixed list from dvc_commands(), no
+        # shell; "dvc" deliberately resolved from PATH, same idiom as sinks'
+        # git_sha().
+        subprocess.run(command, check=True)  # nosec B603 B607
+    logger.info(f"capture-results: {len(captured)} file(s) captured and pushed via dvc")
+    return 0
+
+
 def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     """Handle ``mlflow-aggregate``."""
     tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
@@ -297,6 +398,180 @@ def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     return 0
 
 
+# entropic_substrate.sinks.config_hash() is always
+# hashlib.sha256(...).hexdigest()[:12] — 12 lowercase hex chars, exactly.
+# Every OTHER --config-hash-shaped value this repo produces (mlflow-aggregate
+# groups runs by reading this same tag back off already-tagged runs) comes
+# from that one function, so this is the true contract, not a guess.
+#
+# ``--config-hash`` here is the first place that contract meets RAW,
+# operator-typed input rather than a value the code computed for itself —
+# mlflow-aggregate never took it as a CLI flag before this subcommand. A
+# typo'd value used to fall straight into attach_seed_band_to_aggregate's
+# best-effort ``except Exception`` net and get logged as "no aggregate
+# parent yet" — indistinguishable from the legitimate case where
+# mlflow-aggregate genuinely has not completed. Validating the SHAPE here,
+# before that best-effort path ever sees it, turns a caller mistake into a
+# controlled refusal instead of a silent no-op (repo NON-NEGOTIABLE: "STOP
+# and ask > silent fallback").
+_CONFIG_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+
+_E1_METRIC = "nats_per_byte"
+# Which --e2-run-id / --e3-run-id a per-run chart attaches to. E1's two charts
+# are multi-seed by construction and attach elsewhere (the aggregate parent
+# run per --config-hash, via attach_seed_band_to_aggregate) — they are
+# deliberately absent from this table.
+_RUN_ID_ARG_FOR_CHART: dict[str, str] = {
+    "e2_spike_variance_texture": "e2_run_id",
+    "e3_loss_separation_vs_e2": "e3_run_id",
+    "e3_kappa_trajectories": "e3_run_id",
+    "e3_kappa_divergence_vs_loss_gap": "e3_run_id",
+}
+
+
+def cmd_charts(args: argparse.Namespace) -> int:
+    """Handle ``charts``: render, then best-effort attach to MLflow.
+
+    Lazy-import idiom (mirrors ``cmd_capture_results``): matplotlib/mlflow
+    stay out of every other subcommand's import graph. Rendering always
+    happens first and always succeeds independent of MLflow (SACRED
+    INVARIANTS: local rendering never depends on the tracking server) —
+    only the attach step below is gated on a reachable tracking URI.
+    """
+    from entropic_substrate.analysis import charts as chart_fns
+    from entropic_substrate.analysis.series import (
+        load_eval_run,
+        load_train_run,
+        pair_final_metrics,
+        paired_verdict,
+    )
+
+    figures: dict[str, Any] = {}
+    try:
+        if args.e1_fisher and args.e1_control:
+            fisher_runs = [load_eval_run(p, label=f"fisher-{p.stem}") for p in args.e1_fisher]
+            control_runs = [load_eval_run(p, label=f"control-{p.stem}") for p in args.e1_control]
+            pairs, excluded = pair_final_metrics(args.e1_fisher, args.e1_control, metric=_E1_METRIC)
+            if excluded:
+                logger.warning(
+                    f"charts: E1 seeds present on only one side — excluded from the "
+                    f"verdict, reported not silently dropped: {excluded}"
+                )
+            verdict = paired_verdict(pairs)
+            figures["e1_paired_loss_curves"] = chart_fns.fig_e1_paired_loss_curves(
+                fisher_runs, control_runs, verdict, epsilon=args.e1_epsilon
+            )
+            figures["e1_log_steps_washout"] = chart_fns.fig_e1_log_steps_washout(
+                fisher_runs, control_runs
+            )
+        elif args.e1_fisher or args.e1_control:
+            logger.error("charts: --e1-fisher and --e1-control must both be given to pair E1")
+            return 2
+
+        e2_eval_run = load_eval_run(args.e2, label="e2") if args.e2 else None
+        e3_eval_run = load_eval_run(args.e3, label="e3") if args.e3 else None
+        if args.e2:
+            e2_train_run = load_train_run(args.e2, label="e2")
+            figures["e2_spike_variance_texture"] = chart_fns.fig_e2_spike_variance_texture(
+                [e2_train_run]
+            )
+        if e2_eval_run is not None and e3_eval_run is not None:
+            figures["e3_loss_separation_vs_e2"] = chart_fns.fig_e3_loss_separation_vs_e2(
+                e2_eval_run, e3_eval_run
+            )
+            figures["e3_kappa_divergence_vs_loss_gap"] = (
+                chart_fns.fig_e3_kappa_divergence_vs_loss_gap(e3_eval_run, e2_eval_run)
+            )
+        if e3_eval_run is not None:
+            figures["e3_kappa_trajectories"] = chart_fns.fig_e3_kappa_trajectories(e3_eval_run)
+    except TelemetryGap as gap:
+        # Measurement path: fail LOUD, never a blank or partial chart from bad
+        # telemetry — same controlled-refusal shape as the anchored-arm
+        # preflight (entropic_substrate.telemetry.EXIT_TELEMETRY_GAP).
+        logger.error(f"charts: telemetry gap: {gap}")
+        return EXIT_TELEMETRY_GAP
+    except ValueError as exc:
+        # A chart-builder / series-loader input-validation refusal (e.g.
+        # pair_final_metrics's same-arm duplicate-seed check) — a caller
+        # mistake, not a defect in this command. MEASURED gap this closes:
+        # main() catches no bare ValueError, so this used to reach the
+        # operator as an unhandled traceback instead of the controlled
+        # exit-2 idiom every OTHER input-validation refusal here uses (see
+        # tests/test_cli_charts.py::
+        # test_charts_with_a_duplicate_seed_within_one_e1_arm_is_a_controlled_refusal).
+        logger.error(f"charts: {exc}")
+        return 2
+
+    if not figures:
+        logger.error(
+            "charts: no chart inputs given (need --e1-fisher/--e1-control, --e2, and/or --e3)"
+        )
+        return 2
+
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    for name, figure in figures.items():
+        out_path = args.out_dir / f"{name}.png"
+        figure.savefig(out_path, dpi=150)
+        logger.info(f"charts: wrote {out_path}")
+
+    tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
+    if not tracking_uri:
+        logger.info("charts: no tracking URI — rendered locally only, nothing attached")
+        return 0
+
+    import mlflow.tracking
+
+    from entropic_substrate.analysis.mlflow_attach import (
+        attach_figures_to_run,
+        attach_seed_band_to_aggregate,
+    )
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+
+    by_run_id: dict[str, dict[str, Any]] = {}
+    for name, figure in figures.items():
+        run_id_arg = _RUN_ID_ARG_FOR_CHART.get(name)
+        run_id = getattr(args, run_id_arg, None) if run_id_arg else None
+        if run_id:
+            by_run_id.setdefault(run_id, {})[name] = figure
+    for run_id, run_figures in by_run_id.items():
+        attach_figures_to_run(client, run_id, run_figures)
+
+    seed_band_figures = {name: fig for name, fig in figures.items() if name.startswith("e1_")}
+    if seed_band_figures and args.config_hash:
+        if not _CONFIG_HASH_RE.fullmatch(args.config_hash):
+            # fullmatch, not match: re.match's trailing "$" anchor matches
+            # end-of-string OR just before a SINGLE trailing "\n" — MEASURED
+            # regression, see tests/test_cli_charts.py::
+            # test_charts_with_a_trailing_newline_on_config_hash_is_a_controlled_refusal
+            # (a value like "deadbeefcafe\n" — an unstripped $(cat file) or
+            # an env var with a trailing newline — satisfied .match() despite
+            # not being a clean 12-char hex digest).
+            # A shape check, not an existence check: this fires on a
+            # malformed value BEFORE the best-effort MLflow path ever sees
+            # it, so it cannot be confused with "no aggregate parent yet" —
+            # that legitimate case is attach_seed_band_to_aggregate's to
+            # report; this is cmd_charts's own controlled refusal of a
+            # caller mistake. Local PNGs are already written by this point
+            # and are not withheld — this refusal is scoped to the attach
+            # step only, and only fires when the seed-band attach would
+            # otherwise actually be attempted (an unused/absent
+            # --config-hash is never validated — nothing would consume it).
+            logger.error(
+                f"charts: --config-hash {args.config_hash!r} is not a 12-char lowercase "
+                "hex digest (entropic_substrate.sinks.config_hash()'s exact shape) — "
+                "refusing to guess which aggregate parent this was meant to reach"
+            )
+            return 2
+        attach_seed_band_to_aggregate(
+            client,
+            experiment_name=args.experiment,
+            config_hash=args.config_hash,
+            figures=seed_band_figures,
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
@@ -305,7 +580,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
+        "capture-results": cmd_capture_results,
         "mlflow-aggregate": cmd_mlflow_aggregate,
+        "charts": cmd_charts,
     }
     try:
         return handlers[args.command](args)

@@ -1,0 +1,6 @@
+outs:
+- md5: 7722de7ace6575299cd8ab788c2fd201.dir
+  size: 100000073
+  nfiles: 2
+  hash: md5
+  path: enwik8

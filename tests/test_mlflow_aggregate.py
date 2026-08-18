@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.mlflow_aggregate import PARENT_TAG, aggregate
+from entropic_substrate.mlflow_aggregate import PARENT_TAG, aggregate, find_parent_run
 from test_sinks import FakeMlflowClient
 
 pytestmark = pytest.mark.unit
@@ -53,8 +53,8 @@ def test_no_parent_when_fewer_than_n_seeds_exist() -> None:
     """NO PARENT WITHOUT A COMPLETE AGGREGATE — absence is the signal."""
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
 
     summaries = aggregate(client, experiment_name="exp", n_seeds=3)
 
@@ -65,9 +65,9 @@ def test_no_parent_when_fewer_than_n_seeds_exist() -> None:
 def test_parent_created_once_three_seeds_are_present() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
-    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=3, npb=1.4)
 
     summaries = aggregate(client, experiment_name="exp", n_seeds=3)
 
@@ -92,9 +92,9 @@ def test_running_twice_produces_one_parent_with_identical_stats() -> None:
     """Idempotency: two invocations, one parent, same mean/std/n_seeds."""
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
-    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=3, npb=1.4)
 
     first = aggregate(client, experiment_name="exp", n_seeds=3)
     second = aggregate(client, experiment_name="exp", n_seeds=3)
@@ -120,14 +120,16 @@ def test_growing_seed_group_updates_the_existing_parent_not_a_stale_one() -> Non
     """
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
-    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=3, npb=1.4)
 
     first = aggregate(client, experiment_name="exp", n_seeds=3)
     assert first[0]["n_seeds"] == 3
 
-    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)  # operator adds a 4th seed
+    _seed_run(
+        client, exp_id, config_hash="aaaa1111bbbb", seed=4, npb=1.45
+    )  # operator adds a 4th seed
     second = aggregate(client, experiment_name="exp", n_seeds=3)  # must not raise
 
     assert second[0]["parent_run_id"] == first[0]["parent_run_id"], (
@@ -153,14 +155,14 @@ def test_growing_seed_group_against_a_real_mlflow_client_does_not_raise(tmp_path
 
     client = mlflow.tracking.MlflowClient(tracking_uri=f"sqlite:///{tmp_path}/mlflow.db")
     exp_id = client.create_experiment("real-growth-probe")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
-    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=3, npb=1.4)
 
     first = aggregate(client, experiment_name="real-growth-probe", n_seeds=3)
     assert first[0]["n_seeds"] == 3
 
-    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=4, npb=1.45)
     second = aggregate(client, experiment_name="real-growth-probe", n_seeds=3)  # must not raise
 
     assert second[0]["parent_run_id"] == first[0]["parent_run_id"]
@@ -173,7 +175,8 @@ def test_children_are_adopted_via_parent_run_id_tag() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     run_ids = [
-        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5 + s * 0.01) for s in (1, 2, 3)
+        _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=s, npb=1.5 + s * 0.01)
+        for s in (1, 2, 3)
     ]
 
     summaries = aggregate(client, experiment_name="exp", n_seeds=3)
@@ -216,7 +219,8 @@ def test_retroactive_parent_tag_nests_in_the_real_mlflow_ui(tmp_path: Path) -> N
     client = mlflow.tracking.MlflowClient(tracking_uri=f"sqlite:///{tmp_path}/mlflow.db")
     exp_id = client.create_experiment("real-nesting-probe")
     run_ids = [
-        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5 + s * 0.01) for s in (1, 2, 3)
+        _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=s, npb=1.5 + s * 0.01)
+        for s in (1, 2, 3)
     ]
 
     summaries = aggregate(client, experiment_name="real-nesting-probe", n_seeds=3)
@@ -236,24 +240,24 @@ def test_two_config_hashes_aggregate_independently() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     for s in (1, 2, 3):
-        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5)
+        _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=s, npb=1.5)
     for s in (1, 2, 3):
-        _seed_run(client, exp_id, config_hash="h2", seed=s, npb=2.5)
+        _seed_run(client, exp_id, config_hash="cccc2222dddd", seed=s, npb=2.5)
 
     summaries = aggregate(client, experiment_name="exp", n_seeds=3)
 
     by_hash = {s["config_hash"]: s for s in summaries}
-    assert set(by_hash) == {"h1", "h2"}
-    assert by_hash["h1"]["nats_per_byte"]["mean"] == pytest.approx(1.5)
-    assert by_hash["h2"]["nats_per_byte"]["mean"] == pytest.approx(2.5)
+    assert set(by_hash) == {"aaaa1111bbbb", "cccc2222dddd"}
+    assert by_hash["aaaa1111bbbb"]["nats_per_byte"]["mean"] == pytest.approx(1.5)
+    assert by_hash["cccc2222dddd"]["nats_per_byte"]["mean"] == pytest.approx(2.5)
 
 
 def test_abort_between_seeds_leaves_no_parent() -> None:
     """A group short one seed (simulating an aborted ladder) creates nothing."""
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
     # seed=3 never ran — the ladder aborted between seeds.
 
     aggregate(client, experiment_name="exp", n_seeds=3)
@@ -273,10 +277,10 @@ def test_parent_runs_are_excluded_from_their_own_child_group() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     for s in (1, 2, 3):
-        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5)
+        _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=s, npb=1.5)
 
     aggregate(client, experiment_name="exp", n_seeds=3)
-    # Running again: the parent (also tagged config_hash="h1") must not be
+    # Running again: the parent (also tagged config_hash="aaaa1111bbbb") must not be
     # picked up as a leaf, or the group would balloon to 4 "seeds".
     summaries = aggregate(client, experiment_name="exp", n_seeds=3)
     assert summaries[0]["n_seeds"] == 3
@@ -291,7 +295,7 @@ def test_incomplete_metric_across_group_is_skipped_not_averaged_partially() -> N
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     for npb in (1.5, 1.6, 1.7):
-        run = client.create_run(exp_id, tags={"config_hash": "h1", "exp": "e1-fisher"})
+        run = client.create_run(exp_id, tags={"config_hash": "aaaa1111bbbb", "exp": "e1-fisher"})
         client.log_metric(run.info.run_id, "loss", npb * 2)  # present on all 3
         if npb != 1.7:  # nats_per_byte missing on exactly one run
             client.log_metric(run.info.run_id, "nats_per_byte", npb)
@@ -300,6 +304,87 @@ def test_incomplete_metric_across_group_is_skipped_not_averaged_partially() -> N
     assert len(summaries) == 1
     assert "nats_per_byte" not in summaries[0]
     assert summaries[0]["loss"]["mean"] == pytest.approx((3.0 + 3.2 + 3.4) / 3)
+
+
+# ----------------------------------- find_parent_run: config_hash boundary validation
+# ``config_hash`` is interpolated straight into an MLflow filter string, so it is
+# validated against the exact shape `entropic_substrate.sinks.config_hash()` produces
+# (12 lowercase hex chars) before it ever reaches `search_runs`. `src/entropic_substrate/
+# cli.py` carries the identical `_CONFIG_HASH_RE` contract for its user-typed
+# `--config-hash` flag — these arms mirror that one.
+def test_find_parent_run_rejects_too_short_config_hash() -> None:
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "abc123")
+
+
+def test_find_parent_run_rejects_too_long_config_hash() -> None:
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "deadbeefcafe1")
+
+
+def test_find_parent_run_rejects_uppercase_hex() -> None:
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "DEADBEEFCAFE")
+
+
+def test_find_parent_run_rejects_non_hex_digits_at_correct_length() -> None:
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "nothexdigits")
+
+
+def test_find_parent_run_rejects_empty_config_hash() -> None:
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "")
+
+
+def test_find_parent_run_rejects_trailing_newline_config_hash() -> None:
+    """``$`` also matches immediately before a single trailing ``\\n`` under
+    ``re.match`` — the exact MEASURED regression ``tests/test_cli_charts.py``
+    pins for the identical ``cli.py`` contract (``_CONFIG_HASH_RE``):
+    ``re.match`` accepted ``"deadbeefcafe\\n"`` because ``$`` is not anchored
+    to the true end of string. ``fullmatch`` has no such carve-out, so this
+    arm must raise here too.
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    with pytest.raises(ValueError, match="config_hash"):
+        find_parent_run(client, exp_id, "deadbeefcafe\n")
+
+
+def test_find_parent_run_accepts_a_valid_config_hash() -> None:
+    """Positive arm: a well-formed 12-char lowercase hex config_hash does not
+    raise, and returns None when no parent run exists yet for it.
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    assert find_parent_run(client, exp_id, "deadbeefcafe") is None
+
+
+def test_aggregate_raises_on_malformed_config_hash_tag_in_the_store() -> None:
+    """A malformed ``config_hash`` tag already sitting in the store is an
+    invalid invariant, not an absent-parent condition: once a group reaches
+    ``n_seeds`` and :func:`aggregate` reaches the parent lookup, it must fail
+    loud rather than silently skip the group (repo failure semantics —
+    unexpected defect / invalid invariant -> fail hard with structured
+    context, not a quiet no-op).
+    """
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    for s in (1, 2, 3):
+        _seed_run(client, exp_id, config_hash="h1", seed=s, npb=1.5)
+
+    with pytest.raises(ValueError, match="config_hash"):
+        aggregate(client, experiment_name="exp", n_seeds=3)
 
 
 # ------------------------------------------------------- cmd_mlflow_aggregate (CLI)
@@ -317,14 +402,16 @@ def test_cli_mlflow_aggregate_handles_seed_group_growth_end_to_end(tmp_path: Pat
     tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
     exp_id = client.create_experiment("cli-growth")
-    _seed_run(client, exp_id, config_hash="h1", seed=1, npb=1.5)
-    _seed_run(client, exp_id, config_hash="h1", seed=2, npb=1.6)
-    _seed_run(client, exp_id, config_hash="h1", seed=3, npb=1.4)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=1, npb=1.5)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=2, npb=1.6)
+    _seed_run(client, exp_id, config_hash="aaaa1111bbbb", seed=3, npb=1.4)
 
     argv = ["mlflow-aggregate", "--tracking-uri", tracking_uri, "--experiment", "cli-growth"]
     assert main(argv) == 0
 
-    _seed_run(client, exp_id, config_hash="h1", seed=4, npb=1.45)  # operator adds a 4th seed
+    _seed_run(
+        client, exp_id, config_hash="aaaa1111bbbb", seed=4, npb=1.45
+    )  # operator adds a 4th seed
     assert main(argv) == 0  # must not raise past main()
 
 

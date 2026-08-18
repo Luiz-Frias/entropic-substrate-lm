@@ -27,8 +27,14 @@ def _pyproject() -> dict[str, Any]:
 
 
 def _dependency_names(entries: list[str | dict[str, str]]) -> set[str]:
+    # Split at the FIRST PEP 508 version-specifier/extras/URL character
+    # (`[`, `<`, `>`, `=`, `!`, `~`, `@`). A plain `.split("=", 1)` (the prior
+    # shape here) mis-parsed any bare `>=`/`<=`/`~=` entry with no `[extras]`
+    # to shield it — e.g. "psutil>=6.0.0" -> "psutil>" — because ">" was never
+    # a split character; "dvc[s3]>=3.59.0" only ever passed because its `[`
+    # split ran first and discarded the `>=` along with the extras.
     return {
-        entry.split("@", 1)[0].split("[", 1)[0].split("=", 1)[0].strip().lower()
+        re.split(r"[\[<>=!~@]", entry, maxsplit=1)[0].strip().lower()
         for entry in entries
         if isinstance(entry, str)
     }
@@ -73,6 +79,50 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
         "/uv /uvx /bin/"
     ) in containerfile
     assert 'pip install --no-cache-dir "uv' not in containerfile
+
+
+def test_deploy_group_pins_system_metrics_dependencies() -> None:
+    """MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
+    mlflow-native, but mlflow-skinny does NOT declare psutil or pynvml as a
+    dependency (verified 2026-08-17 via ``importlib.metadata.requires``) —
+    without an explicit pin, GPU/CPU system metrics silently no-op for want
+    of an import rather than failing loud on a training pod. Training-pod-only
+    observability belongs in ``deploy``, not ``dev``: the unit suite injects a
+    fake monitor factory (tests/test_sinks.py) and never imports either.
+    """
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    deploy_names = _dependency_names(groups["deploy"])
+
+    assert "psutil" in deploy_names
+    assert "pynvml" in deploy_names
+
+
+def test_analysis_group_is_dev_only_and_absent_from_deploy() -> None:
+    """matplotlib/marimo/plotly render interpretation charts (entropic_substrate.
+    analysis, notebooks/) but must never grow the training-pod image: mirrors
+    ``test_deploy_group_pins_system_metrics_dependencies``'s idiom, inverted —
+    these three belong in a dev-side ``analysis`` group ONLY, included by
+    ``dev`` so the unit suite can import them, and absent from ``deploy`` AND
+    from ``[project.dependencies]`` (the training-pod runtime).
+    """
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    analysis_names = _dependency_names(groups["analysis"])
+    deploy_names = _dependency_names(groups["deploy"])
+    project_names = _dependency_names(pyproject["project"]["dependencies"])
+
+    for name in ("matplotlib", "marimo", "plotly"):
+        assert name in analysis_names, f"{name} must be pinned in the analysis group"
+        assert name not in deploy_names, f"{name} must never enter the deploy group"
+        assert name not in project_names, f"{name} must never enter the runtime deps"
+
+    assert {"include-group": "analysis"} in groups["dev"]
+
+    containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
+    assert "uv export --frozen --no-dev --group deploy" in containerfile
+    for name in ("matplotlib", "marimo", "plotly"):
+        assert name not in containerfile
 
 
 def test_live_stack_pins_a_single_mlflow_worker() -> None:
@@ -166,6 +216,32 @@ def test_caddy_containerfile_bakes_only_the_caddyfile_from_the_compose_pinned_im
     assert not overrides, (
         f"must not override the base image's `caddy run` contract; got {overrides!r}"
     )
+
+
+def test_railway_config_as_code_pins_per_service_build_and_watch_paths() -> None:
+    """One repo feeds two Railway services; each needs its OWN build recipe.
+
+    A single root railway.json cannot express two dockerfilePaths, so each
+    service carries a dedicated config file (its path is set once in the
+    service's settings). watchPatterns keep GitHub-source deploys scoped: a
+    push touching only src/ must not rebuild the proxy, and vice versa. The
+    dockerfilePath here must agree with the RAILWAY_DOCKERFILE_PATH variable
+    each service already carries — config-as-code and env must never diverge.
+    """
+    import json as _json
+
+    mlflow_cfg = _json.loads((REPO_ROOT / "railway.mlflow.json").read_text(encoding="utf-8"))
+    assert mlflow_cfg["build"]["builder"] == "DOCKERFILE"
+    assert mlflow_cfg["build"]["dockerfilePath"] == "Containerfile.mlflow"
+    assert "Containerfile.mlflow" in mlflow_cfg["build"]["watchPatterns"]
+
+    caddy_cfg = _json.loads((REPO_ROOT / "railway.caddy.json").read_text(encoding="utf-8"))
+    assert caddy_cfg["build"]["builder"] == "DOCKERFILE"
+    assert caddy_cfg["build"]["dockerfilePath"] == "Containerfile.caddy"
+    for watched in ("Caddyfile", "Containerfile.caddy"):
+        assert watched in caddy_cfg["build"]["watchPatterns"], (
+            f"caddy service must redeploy when {watched} changes"
+        )
 
 
 def test_railwayignore_keeps_secrets_and_bulk_out_of_the_upload_context() -> None:
