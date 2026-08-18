@@ -255,3 +255,23 @@ def test_e3_kappa_divergence_vs_loss_gap_uses_a_twin_axis_with_distinct_styles()
     assert kappa_lines and gap_lines
     assert kappa_lines[0].get_linestyle() != gap_lines[0].get_linestyle()
     assert kappa_lines[0].get_color() != gap_lines[0].get_color()
+
+
+def test_e3_kappa_divergence_vs_loss_gap_legend_excludes_the_unlabeled_zero_line() -> None:
+    """MEASURED regression this pins: ``gap_ax.axhline(0.0, ...)`` is drawn
+    with no ``label=``, so matplotlib auto-names it (e.g. ``'_child1'``) —
+    and the legend-building code collected EVERY line on both axes
+    unconditionally (``kappa_ax.get_lines()`` returns axhlines too), so that
+    auto-name reached the rendered legend as a real, garbage entry. Verified
+    directly: pre-fix, ``[t.get_text() for t in ax.get_legend().get_texts()]``
+    included ``'_child1'`` as a THIRD entry alongside the two real series.
+    """
+    e3_run = _e3_kappa_run()
+    e2_run = _eval_run("e2", 1, [10, 20, 30], [1.9, 1.7, 1.6])
+
+    fig = fig_e3_kappa_divergence_vs_loss_gap(e3_run, e2_run)
+
+    legend = fig.get_axes()[0].get_legend()
+    labels = [t.get_text() for t in legend.get_texts()]
+    assert len(labels) == 2, f"expected exactly 2 legend entries, got {labels!r}"
+    assert all(not label.startswith("_") for label in labels)

@@ -376,8 +376,18 @@ def fig_e3_kappa_divergence_vs_loss_gap(
     gap_ax.tick_params(axis="y", labelcolor=OKABE_ITO["blue"])
     gap_ax.axhline(0.0, color=OKABE_ITO["black"], linewidth=1.0, linestyle=":")
 
-    lines = [*kappa_ax.get_lines(), *gap_ax.get_lines()]
-    labels = [str(line.get_label()) for line in lines]
-    kappa_ax.legend(lines, labels, loc="upper left", fontsize=7)
+    # ``get_lines()`` returns EVERY Line2D on the axes, including the
+    # unlabeled ``gap_ax.axhline(0.0, ...)`` zero-reference line above —
+    # matplotlib auto-names an unlabeled line with a leading underscore
+    # (e.g. ``'_child1'``) specifically to signal "exclude me from a
+    # legend"; collecting every line unconditionally let that auto-name
+    # reach the rendered legend as a real, garbage entry (MEASURED
+    # regression, see tests/test_analysis_charts.py::
+    # test_e3_kappa_divergence_vs_loss_gap_legend_excludes_the_unlabeled_zero_line).
+    all_lines = [*kappa_ax.get_lines(), *gap_ax.get_lines()]
+    labeled = [line for line in all_lines if not str(line.get_label()).startswith("_")]
+    kappa_ax.legend(
+        labeled, [str(line.get_label()) for line in labeled], loc="upper left", fontsize=7
+    )
     kappa_ax.set_title(f"{e3_run.label}: κ-divergence timing vs {e2_run.label} loss-gap timing")
     return fig
