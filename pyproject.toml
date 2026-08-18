@@ -26,6 +26,16 @@ deploy = [
   # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
   # Keep that operational dependency explicit without shipping test tooling.
   "dvc[s3]>=3.59.0",
+  # MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
+  # mlflow-native, but mlflow-skinny does NOT declare either as a dependency
+  # (verified 2026-08-17 via `importlib.metadata.requires("mlflow-skinny")`)
+  # — psutil happened to be present transitively (torch) in this dev venv,
+  # which is exactly the kind of accidental coverage that silently vanishes
+  # on a different base image. Pinned here, not in dev: the unit suite
+  # (tests/test_sinks.py) injects a fake monitor factory and never imports
+  # either — this is training-pod-only observability.
+  "psutil>=6.0.0",
+  "pynvml>=12.0.0",
 ]
 dev = [
   { include-group = "deploy" },
