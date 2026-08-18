@@ -54,3 +54,31 @@ which then attests its actual batch count. Fresh runs only: a resumed run
 never attests (absence = not attested, never "same order"). Spec pinned by
 unit tests (tests/test_data.py, tests/test_train_smoke.py). Purely additive
 to the JSONL schema: existing-field serialization is unchanged.
+
+## Amendment 1 — ε fixed (2026-08-18, post-run / pre-analysis)
+
+ε = 0.01 nats/byte. Basis, chosen with NO access to any confirmatory e1
+outcome (the amender had seen: the e0 baselines, and the declared 2026-08-17
+pilot): one enwik8 reporting step (0.01 bits/byte ≈ 0.0069 nats/byte) rounded
+up to ≈1.3% of the measured e0-byte baseline (0.7738 nats/byte). Committed
+after the stage-1 runs completed but before any analysis session or arm-level
+readout; every other registration term is unchanged.
+
+## Amendment 2 — ε ratified; information-access disclosure (2026-08-18, pre-analysis)
+
+The operator ratifies ε = 0.01 nats/byte as fixed in Amendment 1. Recorded
+before any analysis session opens, per the blind review's MAJOR-1 finding
+(`docs/reviews/e1-review.md`):
+
+- **Disclosure:** the operator had MLflow dashboard access to arm-level
+  training curves during and after the confirmatory runs — including before
+  requesting that ε be fixed. The executing agent that selected the value had
+  read no arm-level outcome at selection time (session transcript). MAJOR-1's
+  unverifiable-assertion concern therefore attaches to the operator channel,
+  and is answered mechanically rather than by assertion: the ε-sensitivity
+  map filed at `docs/reviews/e1-epsilon-sensitivity.md` shows the direction
+  verdict is ε-invariant and exactly which readings each ε choice would have
+  produced, so nothing about the SUPPORTED verdict depended on where ε fell.
+- The practical-relevance reading DOES depend on ε (unresolved zone = the
+  filed CI itself); readers who reject the post-run ε should use the map's
+  no-threshold row: the CI stands alone as the complete evidence.
