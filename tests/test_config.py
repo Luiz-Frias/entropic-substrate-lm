@@ -9,6 +9,7 @@ import pytest
 
 from entropic_substrate.config import (
     EXPERIMENTS,
+    Config,
     DataConfig,
     ModelConfig,
     TrainConfig,
@@ -97,7 +98,7 @@ def test_experiment_ladder_wiring() -> None:
         assert getattr(e3, field) == getattr(cfgs["e2"].model, field), field
 
 
-def _total_params(cfg) -> int:
+def _total_params(cfg: Config) -> int:
     d, layers = cfg.model.d_model, cfg.model.n_layers
     per_layer = (
         4 * d * d + (3 if cfg.model.block == "ngpt" else 2) * int(cfg.model.mlp_ratio * d) * d
