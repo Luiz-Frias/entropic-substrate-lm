@@ -2,9 +2,12 @@
 #
 # postgres = MLflow's backend store (params/metrics/tags/runs). mlflow = the
 # tracking server, artifacts proxied through it to the REAL Cloudflare R2
-# bucket (s3://entropic-substrate-lm/mlflow/) — never MinIO. R2's boto3
-# checksum behaviour is invisible against MinIO, which is exactly why the
-# live test must point at real R2 (see CLAUDE.md's R2 COMPATIBILITY note).
+# bucket (s3://entropic-substrate-lm/mlflow-live-gate/) — never MinIO. R2's
+# boto3 checksum behaviour is invisible against MinIO, which is exactly why
+# the live test must point at real R2 (see CLAUDE.md's R2 COMPATIBILITY note).
+# The prefix is the GATE'S OWN, split from the deployed tracking server's
+# mlflow/ — OBSERVED 2026-08-17: gate throwaways and authoritative runs
+# commingled under one keyspace (see the --artifacts-destination entry below).
 #
 # NO FIXED HOST PORT: the mlflow service below publishes only the container
 # port ("5000", no "host:container" mapping) — podman assigns an EPHEMERAL
@@ -196,8 +199,17 @@ services:
       - "1"
       - --backend-store-uri
       - postgresql://mlflow:mlflow@postgres:5432/mlflow
+      # VENUE-SPLIT PREFIX, deliberately NOT the deployed server's mlflow/.
+      # OBSERVED 2026-08-17 while verifying the Railway deploy: a listing of
+      # mlflow/1/ interleaved live-gate throwaway checkpoints
+      # (live-caddy-auth-e2e, kill-mid-run, live-r2-roundtrip) with
+      # authoritative training runs. Run-id UUIDs prevent collisions but not
+      # commingling: the gate's output is disposable and this prefix can be
+      # lifecycle-expired wholesale; the deployed server's mlflow/ (set in its
+      # OWN environment, never this file) holds citable artifacts. Pinned by
+      # tests/test_compose_config.py.
       - --artifacts-destination
-      - s3://entropic-substrate-lm/mlflow/
+      - s3://entropic-substrate-lm/mlflow-live-gate/
     healthcheck:
       test:
         [

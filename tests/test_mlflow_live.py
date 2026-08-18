@@ -9,7 +9,8 @@ never tries to reach a server that isn't there.
 
 R2, never MinIO: the CRC32-checksum incompatibility CLAUDE.md warns about is
 invisible against MinIO — these tests exercise the actual bucket
-(``s3://entropic-substrate-lm/mlflow/``) end to end.
+(``s3://entropic-substrate-lm/mlflow-live-gate/``, the gate's own venue-split
+prefix — see compose.yaml's --artifacts-destination comment) end to end.
 """
 
 from __future__ import annotations
@@ -136,12 +137,17 @@ def test_live_artifact_round_trips_through_real_r2(tmp_path: Path) -> None:
         ),
         region_name="auto",
     )
-    # NOTE: the real key layout is "mlflow/{experiment_id}/{run_id}/artifacts/..."
-    # — verified empirically (a prefix of "mlflow/{run_id}/" alone matches
+    # NOTE: the real key layout is "<dest>/{experiment_id}/{run_id}/artifacts/..."
+    # — verified empirically (a prefix of "<dest>/{run_id}/" alone matches
     # nothing; the experiment_id segment is load-bearing). Search broadly by
-    # run_id substring instead of assuming that internal layout.
+    # run_id substring instead of assuming that internal layout. The prefix is
+    # the GATE'S OWN venue-split destination (compose.yaml) — listing the
+    # deployed server's "mlflow/" here would re-create the commingled read the
+    # split exists to end, and (MEASURED, first post-split gate run 2026-08-17)
+    # finds nothing: this very assertion failed with keys=[] until the probe
+    # followed the destination it verifies.
     run_id = mlflow_sink.run_id  # type: ignore[attr-defined]
-    resp = s3.list_objects_v2(Bucket="entropic-substrate-lm", Prefix="mlflow/")
+    resp = s3.list_objects_v2(Bucket="entropic-substrate-lm", Prefix="mlflow-live-gate/")
     keys = [o["Key"] for o in resp.get("Contents", []) if run_id in o["Key"]]
     print(f"observed R2 object key(s) for run {run_id}: {keys}")
     assert any(k.endswith(remote_path) for k in keys), (run_id, remote_path, keys)
