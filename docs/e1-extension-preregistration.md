@@ -44,6 +44,19 @@ rule — deliberately stricter than stage 1's — and reports under it.
   between those two worlds; a failure here is an informative result, not a
   nullity.
 
+## Clause precedence (declared 2026-08-18, before any extension analysis)
+
+The stage-1 cloud review (`docs/reviews/e1-review-cloud.md`, MAJOR-1) found
+the original registration's verdict rule self-contradictory in the observed
+region: the direction clause and the practical-relevance clause can both fire,
+with no declared precedence. For this extension, declared before any
+extension run completed or was analyzed: the two clauses answer DIFFERENT
+questions and are BOTH always reported — direction
+(STRONGLY_SUPPORTED / NOT_STRONGLY_SUPPORTED per the 3σ rule) is the primary
+verdict label; practical relevance vs ε is a mandatory co-equal rider that
+travels with every quotation of the verdict. Quoting the direction label
+without its rider is a misquotation of this registration.
+
 ## Predeclared probes (report, never decide)
 
 1. Covariates per pair: launch order, datacenter, pod id, run start/end from
