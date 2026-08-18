@@ -143,6 +143,77 @@ def test_charts_propagates_a_telemetry_gap_as_a_controlled_refusal(
     assert "telemetry gap" in capsys.readouterr().err
 
 
+def test_charts_telemetry_gap_after_e1_figures_already_built_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Guard-tooth for the partial-figure hazard the sibling test above does
+    NOT cover: that test poisons a LONE --e2 input, where the gap fires
+    before ``figures`` holds anything. Here E1 is valid (its two figures are
+    built and already sitting in ``figures``) and E3 is what's poisoned, so
+    the gap fires strictly AFTER at least one figure exists — this is what
+    would catch a regression from ``except TelemetryGap: return
+    EXIT_TELEMETRY_GAP`` to a log-and-continue handler, which the sibling
+    test's early-gap shape cannot distinguish from correct behavior. Refusal
+    must be WHOLESALE: no e1 PNGs on disk either, not just no e3 PNGs."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2, 3)]
+    control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2, 3)]
+    poisoned_e3 = _write(tmp_path / "e3.jsonl", _run_start(1), _eval(10, math.nan))
+    out_dir = tmp_path / "charts"
+
+    code = main(
+        [
+            "charts",
+            *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
+            *[arg for p in control for arg in ("--e1-control", str(p))],
+            "--e3",
+            str(poisoned_e3),
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert code == 2
+    assert "telemetry gap" in capsys.readouterr().err
+    assert not out_dir.exists() or not list(out_dir.glob("*.png"))
+
+
+def test_cli_module_has_no_unconditional_analysis_or_matplotlib_import() -> None:
+    """Guard-tooth mirroring tests/test_sinks.py's
+    ``test_sinks_module_has_no_unconditional_psutil_or_pynvml_import`` AST
+    walk: cli.py must not grow a module-level import of matplotlib, marimo,
+    plotly, or entropic_substrate.analysis. The ``charts`` subcommand's
+    lazy-import idiom (mirrors ``cmd_capture_results``) is what keeps these
+    dev-only analysis deps out of every OTHER subcommand's import graph on a
+    training pod — a hoisted module-level import here would make `train`/
+    `eval`/etc. pay that import cost (or hard-dependency risk) for a feature
+    they never touch. MODULE-LEVEL statements only (``tree.body``): a lazy
+    import inside ``cmd_charts``'s function body is exactly the sanctioned
+    shape and must not false-positive here.
+    """
+    import ast
+
+    import entropic_substrate.cli as cli_module
+
+    source = Path(cli_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    banned_prefixes = ("matplotlib", "marimo", "plotly", "entropic_substrate.analysis")
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            dotted_names = [(alias.name, node.lineno) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            dotted_names = [(node.module or "", node.lineno)]
+        else:
+            continue
+        for name, lineno in dotted_names:
+            hit = [
+                prefix
+                for prefix in banned_prefixes
+                if name == prefix or name.startswith(prefix + ".")
+            ]
+            assert not hit, f"cli.py must not import {name!r} at module level — line {lineno}"
+
+
 # --------------------------------------------------------------- MLflow attach
 def test_charts_attaches_per_run_figures_by_run_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

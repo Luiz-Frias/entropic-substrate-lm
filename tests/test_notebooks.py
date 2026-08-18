@@ -85,6 +85,29 @@ def test_notebook_is_tracked_by_git_despite_the_notebooks_scratch_gitignore() ->
     assert result.returncode != 0, f"{NOTEBOOK} is still gitignored — check .gitignore"
 
 
+def test_notebook_covers_all_six_lane_a_chart_titles() -> None:
+    """Chart-set parity guard: Lane B must render the same six charts Lane A
+    (entropic_substrate.analysis.charts) does. MEASURED regression this pins:
+    the notebook shipped with only 5 of 6 (chart 2, the E1 log-steps washout
+    view, was entirely absent) and nothing in this suite caught it — the
+    other Lane B tests above check structure/plumbing, not chart-set
+    completeness. Titles are the exact strings each Lane A ``fig_*`` function
+    sets (``entropic_substrate.analysis.charts``); Lane B's plotly titles
+    mirror them so this string match is meaningful, not coincidental.
+    """
+    source = NOTEBOOK.read_text(encoding="utf-8")
+    expected_chart_titles = [
+        "E1: fisher vs control — paired loss curves",  # chart 1
+        "E1: log-step washout view",  # chart 2
+        "E2: per-step train loss — spike/variance texture",  # chart 3
+        "E3 vs E2: loss separation",  # chart 4
+        "per-head κ trajectory",  # chart 5
+        "κ-divergence timing vs loss-gap timing",  # chart 6
+    ]
+    for title in expected_chart_titles:
+        assert title in source, f"Lane B notebook is missing chart: {title!r}"
+
+
 def test_marimo_check_reports_no_issues() -> None:
     """A real ``marimo check --strict`` run — catches structural notebook
     defects (undefined cell references, cyclic deps) static text checks

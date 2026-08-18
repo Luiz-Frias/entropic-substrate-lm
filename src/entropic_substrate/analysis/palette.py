@@ -7,10 +7,19 @@ contrast (not hue) is the primary distinguisher.
 
 Palette: Okabe, M. & Ito, K. (2008), "Color Universal Design (CUD)" — the
 standard 8-color set verified safe under protanopia/deuteranopia/tritanopia.
-The two colors this module pairs by default, blue ``#0072B2`` and vermillion
-``#D55E00``, sit at markedly different luminance (relative luminance ≈0.10 vs
-≈0.16 by WCAG's coefficients) as well as different hue, so the pairing reads
-under a grayscale/dichromacy simulation and not only in full color.
+
+RETRACTION (this docstring, prior revision): claimed blue ``#0072B2`` and
+vermillion ``#D55E00`` sit at "relative luminance ≈0.10 vs ≈0.16" — MEASURED
+WRONG by the named formula (WCAG 2.x relative luminance: linearize sRGB per
+channel, ``L = 0.2126R + 0.7152G + 0.0722B``). Computed directly from the hex
+values: blue ``L≈0.1525``, vermillion ``L≈0.2215`` — a WCAG contrast ratio of
+``(0.2215+0.05)/(0.1525+0.05)≈1.34:1``, well under the 3:1 non-text minimum.
+Luminance alone does NOT make this pairing dichromacy-safe; what does is the
+redundant non-color channel every ``*_style()`` helper below attaches
+(``fisher_style``: solid line, circle marker; ``control_style``: dashed line,
+square marker) plus the direct legend label — the pairing reads under a
+grayscale/dichromacy simulation because of linestyle+marker+label, not because
+of a luminance gap this palette does not actually have.
 """
 
 from __future__ import annotations

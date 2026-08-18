@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 from entropic_substrate.analysis.series import (
-    T_0_9875,
     load_eval_run,
     load_train_run,
     pair_final_metrics,
@@ -100,7 +99,16 @@ def test_pair_final_metrics_reads_the_metric_via_telemetry_final_eval_metric(
 
 # --------------------------------------------------------------- verdict / CI
 def test_paired_verdict_stage1_matches_the_preregistered_t_value() -> None:
-    """docs/e1-preregistration.md: t_{0.9875,4} ≈ 3.50 (stage 1, n=5)."""
+    """docs/e1-preregistration.md: t_{0.9875,4} = 3.4954 (stage 1, n=5).
+
+    Asserted against the LITERAL value from the prereg, not
+    ``series.T_0_9875[4]`` — comparing a module's constant against itself is
+    tautological (self-consistent regardless of correctness) and would not
+    catch a drifted/typo'd table entry. The guard fabric's actual catch for
+    that drift is tests/test_analysis_charts.py's rendered-figure text
+    assertion (the verdict strip draws the literal), but pinning the number
+    here too keeps this test meaningful in isolation.
+    """
     from entropic_substrate.analysis.series import PairedFinalMetric
 
     pairs = [
@@ -110,21 +118,21 @@ def test_paired_verdict_stage1_matches_the_preregistered_t_value() -> None:
     verdict = paired_verdict(pairs)
     assert verdict.n == 5
     assert verdict.stage == 1
-    assert verdict.t_value == pytest.approx(T_0_9875[4])
+    assert verdict.t_value == pytest.approx(3.4954)
     assert verdict.ci_low is not None
     assert verdict.ci_high is not None
     assert verdict.ci_low < verdict.mean_d < verdict.ci_high
 
 
 def test_paired_verdict_stage2_matches_the_preregistered_t_value() -> None:
-    """t_{0.9875,8} ≈ 2.75 (stage 2, cumulative n=9)."""
+    """t_{0.9875,8} = 2.7515 (stage 2, cumulative n=9) — literal, see above."""
     from entropic_substrate.analysis.series import PairedFinalMetric
 
     pairs = [PairedFinalMetric(seed=s, fisher=1.5, control=1.6) for s in range(1, 10)]
     verdict = paired_verdict(pairs)
     assert verdict.n == 9
     assert verdict.stage == 2
-    assert verdict.t_value == pytest.approx(T_0_9875[8])
+    assert verdict.t_value == pytest.approx(2.7515)
 
 
 def test_paired_verdict_on_a_non_preregistered_n_reports_no_ci_rather_than_guess() -> None:

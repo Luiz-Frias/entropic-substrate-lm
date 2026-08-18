@@ -18,6 +18,7 @@ def _():
         e2_style,
         e3_style,
         fisher_style,
+        head_style,
     )
     from entropic_substrate.analysis.series import (
         T_0_9875,
@@ -36,6 +37,7 @@ def _():
         e3_style,
         fisher_style,
         go,
+        head_style,
         load_eval_run,
         load_train_run,
         mo,
@@ -163,6 +165,12 @@ def _(
 ):
     fisher_paths = resolve_paths(e1_fisher_glob.value)
     control_paths = resolve_paths(e1_control_glob.value)
+    # Defined unconditionally (empty when no JSONLs are loaded yet) so the
+    # washout cell (chart 2) below can depend on them reactively — a name
+    # only bound inside one branch of an if/else would leave the downstream
+    # cell with a NameError whenever this branch didn't run.
+    fisher_runs: list = []
+    control_runs: list = []
 
     if not fisher_paths or not control_paths:
         e1_output = mo.md("*(no E1 fisher/control JSONLs found under the captured directory yet)*")
@@ -173,24 +181,24 @@ def _(
         verdict = paired_verdict(pairs)
 
         e1_fig = go.Figure()
-        for run in fisher_runs:
+        for _run in fisher_runs:
             e1_fig.add_trace(
                 go.Scatter(
-                    x=[r.step for r in run.records],
-                    y=[r.nats_per_byte for r in run.records],
+                    x=[r.step for r in _run.records],
+                    y=[r.nats_per_byte for r in _run.records],
                     mode="lines+markers",
-                    name=f"{fisher_style().label}: {run.label}",
+                    name=f"{fisher_style().label}: {_run.label}",
                     line={"color": OKABE_ITO["blue"], "dash": "solid"},
                     marker={"symbol": "circle"},
                 )
             )
-        for run in control_runs:
+        for _run in control_runs:
             e1_fig.add_trace(
                 go.Scatter(
-                    x=[r.step for r in run.records],
-                    y=[r.nats_per_byte for r in run.records],
+                    x=[r.step for r in _run.records],
+                    y=[r.nats_per_byte for r in _run.records],
                     mode="lines+markers",
-                    name=f"{control_style().label}: {run.label}",
+                    name=f"{control_style().label}: {_run.label}",
                     line={"color": OKABE_ITO["vermillion"], "dash": "dash"},
                     marker={"symbol": "square"},
                 )
@@ -233,6 +241,49 @@ def _(
         e1_output = mo.ui.plotly(e1_fig)
 
     e1_output
+    return control_runs, fisher_runs
+
+
+@app.cell
+def _(OKABE_ITO, control_runs, control_style, fisher_runs, fisher_style, go, mo):
+    # --------------------------------------------------------- chart 2: washout
+    if not fisher_runs or not control_runs:
+        washout_output = mo.md(
+            "*(no E1 fisher/control JSONLs found under the captured directory yet)*"
+        )
+    else:
+        washout_fig = go.Figure()
+        for _run in fisher_runs:
+            washout_fig.add_trace(
+                go.Scatter(
+                    x=[r.step for r in _run.records],
+                    y=[r.nats_per_byte for r in _run.records],
+                    mode="lines+markers",
+                    name=f"{fisher_style().label}: {_run.label}",
+                    line={"color": OKABE_ITO["blue"], "dash": "solid"},
+                    marker={"symbol": "circle"},
+                )
+            )
+        for _run in control_runs:
+            washout_fig.add_trace(
+                go.Scatter(
+                    x=[r.step for r in _run.records],
+                    y=[r.nats_per_byte for r in _run.records],
+                    mode="lines+markers",
+                    name=f"{control_style().label}: {_run.label}",
+                    line={"color": OKABE_ITO["vermillion"], "dash": "dash"},
+                    marker={"symbol": "square"},
+                )
+            )
+        washout_fig.update_layout(
+            title="E1: log-step washout view",
+            xaxis_title="step (log scale)",
+            xaxis_type="log",
+            yaxis_title="nats/byte",
+        )
+        washout_output = mo.ui.plotly(washout_fig)
+
+    washout_output
     return
 
 
@@ -335,8 +386,26 @@ def _(OKABE_ITO, e2_run, e2_style, e3_run, e3_style, go, mo):
 
 
 @app.cell
-def _(OKABE_ITO, e3_run, go, mo):
+def _(OKABE_ITO, e3_run, go, head_style, mo):
     from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+
+    # matplotlib -> plotly codes for head_style()'s linestyle/marker channels.
+    # Deliberately plain-``[]`` lookups (no ``.get(x, default)``): an
+    # unmapped code must KeyError loud, not silently fall back to a shared
+    # default that would recreate the exact color-only collision this
+    # translation exists to avoid (head_style() is what keeps head 0 from
+    # rendering identically to the black zero-line/clamp-bound references).
+    _DASH_FOR_LINESTYLE = {"-": "solid", "--": "dash", "-.": "dashdot", ":": "dot"}
+    _SYMBOL_FOR_MARKER = {
+        "o": "circle",
+        "s": "square",
+        "^": "triangle-up",
+        "D": "diamond",
+        "v": "triangle-down",
+        "P": "cross",
+        "X": "x",
+        "*": "star",
+    }
 
     kappa_records = [r for r in e3_run.records if r.kappa is not None] if e3_run else []
     if not kappa_records:
@@ -348,9 +417,8 @@ def _(OKABE_ITO, e3_run, go, mo):
         for layer_idx in range(n_layers):
             n_heads = len(kappa_records[0].kappa[layer_idx])
             layer_fig = go.Figure()
-            palette_cycle = list(OKABE_ITO.values())
-            dash_cycle = ["solid", "dash", "dot", "dashdot"]
             for head_idx in range(n_heads):
+                style = head_style(head_idx)
                 layer_fig.add_trace(
                     go.Scatter(
                         x=steps,
@@ -358,9 +426,10 @@ def _(OKABE_ITO, e3_run, go, mo):
                         mode="lines+markers",
                         name=f"head {head_idx}",
                         line={
-                            "color": palette_cycle[head_idx % len(palette_cycle)],
-                            "dash": dash_cycle[head_idx % len(dash_cycle)],
+                            "color": style.color,
+                            "dash": _DASH_FOR_LINESTYLE[style.linestyle],
                         },
+                        marker={"symbol": _SYMBOL_FOR_MARKER[style.marker]},
                     )
                 )
             layer_fig.add_hline(y=0.0, line_color=OKABE_ITO["black"])

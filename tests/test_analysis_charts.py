@@ -216,7 +216,12 @@ def test_e3_kappa_trajectories_one_axis_per_layer_with_clamp_and_zero_lines() ->
     ]
     assert len(head_lines) == n_heads
     assert len({ln.get_color() for ln in head_lines}) == n_heads
-    assert len({ln.get_linestyle() for ln in head_lines}) >= 1  # redundant channel present
+    # Redundant non-color channels: linestyle AND marker must both actually
+    # vary across heads, not just be technically present (a set of size 1 —
+    # e.g. every head solid — would satisfy a bare ">= 1" check while giving
+    # the colorblind operator nothing beyond hue to go on).
+    assert len({ln.get_linestyle() for ln in head_lines}) >= 2
+    assert len({ln.get_marker() for ln in head_lines}) >= 2
 
     y_values = {round(y, 6) for ln in _lines(layer0) for y in ln.get_ydata()}
     assert 0.0 in y_values  # zero line
