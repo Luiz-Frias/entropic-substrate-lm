@@ -174,6 +174,22 @@ def fig_e1_log_steps_washout(
     if not fisher_runs or not control_runs:
         msg = "fig_e1_log_steps_washout: need at least one fisher run and one control run"
         raise ValueError(msg)
+    # A log x-axis cannot place step <= 0, and matplotlib never says so:
+    # MEASURED 2026-08-18 (Agg) — plotting x=[0, 10, 20, 30] then
+    # set_xscale("log") raised nothing and warned nothing; the step-0 vertex
+    # transformed to display x ≈ -9.5e5, outside the axes clip box (it is not
+    # a NaN mask), and autoscale excluded it entirely, xlim coming back
+    # (9.47, 31.69). The point is simply absent from the rendered figure —
+    # exactly the "computed but hidden" failure this module's docstring
+    # forbids — so refuse the series instead of drawing a lie.
+    for run in (*fisher_runs, *control_runs):
+        bad = [record.step for record in run.records if record.step <= 0]
+        if bad:
+            msg = (
+                f"fig_e1_log_steps_washout: {run.label} has non-positive step(s) {bad} — "
+                "a log x-axis cannot draw them"
+            )
+            raise ValueError(msg)
     fig = _figure((9, 5.5))
     ax = fig.add_subplot(111)
     _plot_seed_band(ax, fisher_runs, fisher_style(), metric=metric)

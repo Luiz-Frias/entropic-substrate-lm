@@ -151,6 +151,23 @@ def test_e1_log_steps_washout_uses_a_log_x_axis() -> None:
     colors = {line.get_color() for line in _lines(ax)}
     assert OKABE_ITO["blue"] in colors
     assert OKABE_ITO["vermillion"] in colors
+    # strictly positive steps still render every point: the guard refuses a bad
+    # series, it never quietly drops the offending points from a good one.
+    assert all(list(line.get_xdata()) == [10, 20, 30] for line in _lines(ax))
+
+
+def test_e1_log_steps_washout_refuses_a_zero_step() -> None:
+    fisher, control = _fisher_control_runs()
+    fisher[0] = _eval_run("e1-fisher-s1", 1, [0, 10, 20], [2.0, 1.6, 1.3])
+    with pytest.raises(ValueError, match=r"e1-fisher-s1.*non-positive step\(s\) \[0\]"):
+        fig_e1_log_steps_washout(fisher, control)
+
+
+def test_e1_log_steps_washout_refuses_a_negative_step() -> None:
+    fisher, control = _fisher_control_runs()
+    control[1] = _eval_run("e1-random-s2", 2, [-10, 20, 30], [2.1, 1.7, 1.4])
+    with pytest.raises(ValueError, match=r"e1-random-s2.*non-positive step\(s\) \[-10\]"):
+        fig_e1_log_steps_washout(fisher, control)
 
 
 # ---------------------------------------------------- chart 3: E2 spike texture
