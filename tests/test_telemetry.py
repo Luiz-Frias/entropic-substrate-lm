@@ -282,6 +282,37 @@ def test_read_seed_missing_from_config_is_a_gap(tmp_path: Path) -> None:
         read_seed(path)
 
 
+# ------------------------------------- guard-teeth: bool is an int subclass
+# Same trap class the kappa validator already pins (see the
+# ``[[True, False]]`` case above): ``isinstance(True, int)`` is True, so
+# without the explicit bool clause each reader would silently coerce. These
+# three exist because an L1 deletion probe (2026-08-18) showed the full unit
+# suite stayed GREEN with each bool clause removed — the guards worked but
+# nothing pinned them. Each test goes RED when its clause is deleted
+# (re-probed after writing).
+
+
+def test_train_series_refuses_a_bool_metric(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _train(step=1, loss=True))
+    with pytest.raises(TelemetryGap, match="not numeric"):
+        read_train_series(path)
+
+
+def test_train_series_refuses_a_bool_step(tmp_path: Path) -> None:
+    path = _write(tmp_path / "e2.jsonl", _train(step=True, loss=1.0))
+    with pytest.raises(TelemetryGap, match="not an int"):
+        read_train_series(path)
+
+
+def test_read_seed_refuses_a_bool_seed(tmp_path: Path) -> None:
+    """YAML parses ``seed: true`` as a bool, which int-coerces to 1 — an
+    unguarded read would silently pair a run against seed 1's partner in
+    ``pair_final_metrics``, inside the E1 confirmatory path."""
+    path = _write(tmp_path / "e1.jsonl", _run_start(seed=True), _eval(step=1))
+    with pytest.raises(TelemetryGap, match="not an int"):
+        read_seed(path)
+
+
 # -------------------------------------------------------------- module CLI
 def test_cli_kappa_report_prints_the_divergence(tmp_path: Path, capsys) -> None:
     path = _write(tmp_path / "e3.jsonl", _eval(kappa=[[-1.0, 1.0]]))
