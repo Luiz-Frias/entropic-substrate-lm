@@ -659,3 +659,78 @@ def test_cold_start_walk_terminates_on_a_cyclic_cause_chain() -> None:
     a.__cause__ = b
     b.__cause__ = a
     assert not _is_cold_start(a)
+
+
+# ------------------------------------------------ results JSONL at finish()
+# The sink owns the upload of the authoritative results JSONL as a run
+# artifact (operator ruling 2026-08-17) — previously pod-side glue after
+# training, which any new launch script could forget. The JSONL stays
+# authoritative and local-first; the upload is derived, best-effort view.
+
+
+def _results_backed_sink(tmp_path: Path, client: Any) -> tuple[MlflowSink, Path]:
+    results = tmp_path / "results" / "run.jsonl"
+    results.parent.mkdir(parents=True)
+    results.write_text('{"step": 1}\n', encoding="utf-8")
+    sink = MlflowSink(
+        tracking_uri="http://fake",
+        experiment_name="exp",
+        run_name="run",
+        results_path=results,
+        client=client,
+    )
+    return sink, results
+
+
+def test_finish_uploads_results_jsonl_under_results_artifact_path(tmp_path: Path) -> None:
+    client = FakeMlflowClient()
+    sink, results = _results_backed_sink(tmp_path, client)
+    sink.finish()
+    assert (sink.run_id, str(results), "results") in client.artifacts_logged
+    assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
+
+
+def test_failed_results_upload_cannot_block_run_termination(tmp_path: Path) -> None:
+    """The upload gets its OWN guard: a dead artifact store must not leave the
+    run stuck in RUNNING — set_terminated still fires, the failure is counted.
+    """
+
+    class ArtifactStoreDown(FakeMlflowClient):
+        def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:
+            msg = "simulated artifact store outage"
+            raise ConnectionError(msg)
+
+    client = ArtifactStoreDown()
+    sink, _ = _results_backed_sink(tmp_path, client)
+    before = sink.failed_writes
+    sink.finish()  # must not raise
+    assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
+    assert sink.failed_writes == before + 1
+
+
+def test_missing_results_file_at_finish_skips_upload_but_terminates(tmp_path: Path) -> None:
+    client = FakeMlflowClient()
+    sink = MlflowSink(
+        tracking_uri="http://fake",
+        experiment_name="exp",
+        run_name="run",
+        results_path=tmp_path / "never-written.jsonl",
+        client=client,
+    )
+    sink.finish()
+    assert client.artifacts_logged == []
+    assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
+
+
+def test_build_sink_threads_results_path_into_the_mlflow_sink(tmp_path: Path) -> None:
+    """The wiring, not just the unit: a composite built by build_sink must end
+    a run with the results JSONL attached — the pod needs no glue script.
+    """
+    cfg = tiny_config(tmp_path)
+    client = FakeMlflowClient()
+    results = tmp_path / "out.jsonl"
+    sink = build_sink(cfg, tiny=False, results_path=results, client=client)
+    sink.log({"step": 1, "loss": 1.0})
+    sink.finish()
+    uploaded = [(path, dest) for (_run, path, dest) in client.artifacts_logged]
+    assert (str(results), "results") in uploaded
