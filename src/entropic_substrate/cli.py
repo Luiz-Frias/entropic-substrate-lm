@@ -2,9 +2,10 @@
 
 Subcommands
 -----------
-``train``        run one rung of the experiment ladder
-``init-fisher``  precompute and cache the sqrt(p) Fisher embedding table
-``eval``         evaluate a checkpoint on its held-out split
+``train``            run one rung of the experiment ladder
+``init-fisher``      precompute and cache the sqrt(p) Fisher embedding table
+``eval``             evaluate a checkpoint on its held-out split
+``capture-results``  pull finished runs' results JSONLs into DVC
 """
 
 from __future__ import annotations
@@ -91,6 +92,25 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--device", default=None)
     evaluate.add_argument("--batches", type=int, default=None)
     evaluate.add_argument("--json", action="store_true", help="print JSON only")
+
+    capture = sub.add_parser(
+        "capture-results",
+        help="pull finished runs' results JSONLs from the tracking server into DVC",
+    )
+    capture.add_argument(
+        "--experiment",
+        action="append",
+        dest="experiments",
+        default=None,
+        help="experiment name (repeatable; defaults to $MLFLOW_EXPERIMENT_NAME)",
+    )
+    capture.add_argument("--dest", type=Path, default=Path("results/captured"))
+    capture.add_argument(
+        "--include-tiny", action="store_true", help="also capture -tiny smoke runs"
+    )
+    capture.add_argument(
+        "--no-dvc", action="store_true", help="download + validate only; skip dvc add/push"
+    )
 
     aggregate_p = sub.add_parser(
         "mlflow-aggregate", help="idempotently roll seed runs into a parent run by config_hash"
@@ -267,6 +287,38 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capture_results(args: argparse.Namespace) -> int:
+    """Handle ``capture-results``."""
+    tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV)
+    if not tracking_uri:
+        logger.error(f"capture-results: ${MLFLOW_TRACKING_ENV} is not set")
+        return 2
+    import subprocess  # nosec B404 -- dvc add/push only, fixed argv at the call site below
+
+    import mlflow.tracking
+
+    from entropic_substrate.capture_results import capture_finished_runs, dvc_commands
+
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    experiments = args.experiments or [
+        os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
+    ]
+    captured = capture_finished_runs(client, experiments, args.dest, include_tiny=args.include_tiny)
+    if not captured:
+        logger.info("capture-results: nothing new to capture")
+        return 0
+    if args.no_dvc:
+        logger.info(f"capture-results: {len(captured)} file(s) captured; dvc skipped (--no-dvc)")
+        return 0
+    for command in dvc_commands(args.dest):
+        # nosec B603 B607 -- argv is the fixed list from dvc_commands(), no
+        # shell; "dvc" deliberately resolved from PATH, same idiom as sinks'
+        # git_sha().
+        subprocess.run(command, check=True)  # nosec B603 B607
+    logger.info(f"capture-results: {len(captured)} file(s) captured and pushed via dvc")
+    return 0
+
+
 def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     """Handle ``mlflow-aggregate``."""
     tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
@@ -305,6 +357,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
+        "capture-results": cmd_capture_results,
         "mlflow-aggregate": cmd_mlflow_aggregate,
     }
     try:
