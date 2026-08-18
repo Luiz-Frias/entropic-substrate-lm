@@ -18,7 +18,7 @@ dependencies = [
   # MLflow server distribution is isolated in Containerfile.mlflow; keeping it
   # out of the training runtime avoids importing server/UI dependency policy
   # (including MLflow 3.15's cryptography<50 cap) into the model environment.
-  "mlflow-skinny==3.15.0",
+  "mlflow-skinny==3.15.1",
 ]
 
 [dependency-groups]
