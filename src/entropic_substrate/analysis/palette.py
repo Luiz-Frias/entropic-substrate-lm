@@ -48,11 +48,28 @@ OKABE_ITO: dict[str, str] = {
 }
 
 # Cycled for per-head trajectories (chart 5/6): color, linestyle, and marker
-# all advance together so two adjacent heads never differ by hue alone even
-# when a figure has more heads than distinct Okabe-Ito colors are comfortable
-# to tell apart at a glance — the linestyle/marker cycle repeats in lockstep
-# with color at that point, so the pair (color, linestyle+marker) stays a
-# meaningful redundant channel rather than color carrying it alone.
+# all advance so a figure with more heads than distinct Okabe-Ito colors
+# comfortably tell apart still keeps every head visually distinct.
+#
+# RETRACTION (prior revision of this comment): claimed the three cycles
+# "advance together... in lockstep... so the pair stays a meaningful
+# redundant channel" — MEASURED WRONG. With color len 8, linestyle len 4,
+# and (pre-fix) marker len 8, the combined (color, linestyle, marker) triple
+# had period lcm(8,4,8)=8, not the "more heads than 8 colors" case the
+# comment claimed to cover: head_style(8) reproduced head_style(0)'s triple
+# EXACTLY (color, linestyle, AND marker all identical — see
+# tests/test_analysis_palette.py::test_head_style_stays_distinct_across_the_real_e3_head_count).
+# This is not a hypothetical scale case — every real E1/E2/E3 config
+# (configs/e0-*.yaml, e1-*.yaml, e2.yaml, e3*.yaml) pins n_heads: 12, so
+# heads 8-11 were complete visual clones of heads 0-3 on every real E3 run.
+#
+# Fix: the marker cycle is length 7 (one dropped), coprime with the color
+# cycle's length 8 (gcd(7,8)=1) — the combined triple's period becomes
+# lcm(8,4,7)=56, so no two of the real 12 heads collide on every channel at
+# once. Individual channels still repeat sooner (color repeats every 8,
+# e.g.) but at least one of {color, linestyle, marker} always differs
+# between any two of the 12 real heads, which is what "redundant channel"
+# requires — no single channel needs to be unique alone.
 _HEAD_COLOR_CYCLE: tuple[str, ...] = (
     "blue",
     "vermillion",
@@ -64,7 +81,7 @@ _HEAD_COLOR_CYCLE: tuple[str, ...] = (
     "black",
 )
 _HEAD_LINESTYLE_CYCLE: tuple[str, ...] = ("-", "--", "-.", ":")
-_HEAD_MARKER_CYCLE: tuple[str, ...] = ("o", "s", "^", "D", "v", "P", "X", "*")
+_HEAD_MARKER_CYCLE: tuple[str, ...] = ("o", "s", "^", "D", "v", "P", "X")
 
 
 @dataclass(frozen=True, slots=True)

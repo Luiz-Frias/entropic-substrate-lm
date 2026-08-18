@@ -26,9 +26,18 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.analysis.palette import OKABE_ITO
+from entropic_substrate.analysis.palette import OKABE_ITO, head_style
 
 pytestmark = pytest.mark.unit
+
+# configs/e0-byte.yaml, e0-bpe.yaml, e1-fisher.yaml, e1-random.yaml, e2.yaml,
+# e3.yaml, e3-anchor.yaml, e3-vantage.yaml all pin n_heads: 12 — only
+# tiny.yaml (a smoke-test config, not a real arm) uses fewer. head_style()'s
+# distinctness guarantee is evaluated against THIS number, not an arbitrary
+# round one, because chart 5/6 (fig_e3_kappa_trajectories /
+# fig_e3_kappa_divergence_vs_loss_gap) render exactly this many per-head
+# lines on every real E3 run.
+_REAL_E3_N_HEADS = 12
 
 # The eight published Okabe-Ito CUD hex codes, transcribed independently of
 # palette.py — do NOT import these from entropic_substrate.analysis.palette.
@@ -56,3 +65,29 @@ def test_okabe_ito_has_no_red_or_green_pure_hues() -> None:
     the two unsafe pure hues landing in the palette by any future edit."""
     assert "#FF0000" not in OKABE_ITO.values()
     assert "#00FF00" not in OKABE_ITO.values()
+
+
+def test_head_style_stays_distinct_across_the_real_e3_head_count() -> None:
+    """MEASURED regression this pins: at the repo's actual n_heads=12,
+    ``head_style(8)`` was a COMPLETE clone of ``head_style(0)`` — identical
+    color AND linestyle AND marker, not merely a color collision. The color
+    cycle (len 8) and the marker cycle (len 8, pre-fix) share a period, so
+    every 8-index step realigned all three channels at once; the colorblind
+    operator would have seen literally no way to tell head 0 from head 8 on
+    fig_e3_kappa_trajectories for every real E1/E2/E3 config (all pin
+    n_heads: 12).
+
+    Verified directly: ``head_style(0) == SeriesStyle(color='#0072B2',
+    linestyle='-', marker='o', label='head 0')`` and pre-fix
+    ``head_style(8)`` reproduced that exact triple (color, linestyle,
+    marker) — only the label differed. Asserts distinctness on the
+    STYLE triple alone (excluding the always-distinct numeric label), for
+    every pair of the 12 real heads.
+    """
+    styles = [head_style(i) for i in range(_REAL_E3_N_HEADS)]
+    triples = [(s.color, s.linestyle, s.marker) for s in styles]
+    assert len(set(triples)) == _REAL_E3_N_HEADS, (
+        f"head_style() produces only {len(set(triples))} distinct "
+        f"(color, linestyle, marker) triples across the real {_REAL_E3_N_HEADS} "
+        f"E3 heads — two or more heads would render as complete visual clones"
+    )
