@@ -375,7 +375,18 @@ def test_anchored_exp_with_an_ungated_config_is_not_gated(
 
 def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:
     """Smoke: every ladder rung must construct and take one step on CPU."""
-    for exp in ("e0-byte", "e1-fisher", "e1-random", "e2", "e3"):
+    for exp in (
+        "e0-byte",
+        "e1-fisher",
+        "e1-random",
+        "e2",
+        "e3",
+        "e1-5a-input",
+        "e1-5a-output",
+        "e1-5a-both",
+        "e1-5b-gram",
+        "e1-5c-field",
+    ):
         cfg = resolve_experiment_config(
             exp,
             tiny=True,
