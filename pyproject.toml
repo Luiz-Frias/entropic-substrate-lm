@@ -58,7 +58,7 @@ dev = [
   # Test-time oracle only: production geometry is implemented in-tree. geoopt
   # ships fixes on GitHub ahead of PyPI, so retain the repository source.
   "geoopt @ git+https://github.com/geoopt/geoopt.git",
-  "ruff>=0.11.0",
+  "ruff>=0.16.2",
   "basedpyright>=1.37.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=0.26.0",
