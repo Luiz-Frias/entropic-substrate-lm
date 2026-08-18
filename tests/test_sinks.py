@@ -82,6 +82,14 @@ class FakeMlflowClient:
     simulates "tracking killed mid-run" without racing the handful of calls
     ``MlflowSink.__init__`` itself makes during a successful startup.
 
+    ``fail_log_figure_for``: a set of ``artifact_file`` names (widened for
+    tests/test_analysis_mlflow_attach.py) that fail ``log_figure`` ONE call
+    at a time, unlike ``kill()``'s "everything from here on fails" — needed
+    because a client that fails EVERY call cannot distinguish "the caller's
+    loop continues past one failure" from "the caller's loop aborts at the
+    first failure": both produce an empty result identically. Empty by
+    default (no behavior change for every other test in this file).
+
     ``log_param`` enforces WRITE-ONCE, exactly like the real server: a
     param logged twice with the SAME value is a silent no-op, a param
     logged twice with a DIFFERENT value raises ``MlflowException`` — see
@@ -101,6 +109,8 @@ class FakeMlflowClient:
         self.fail_startup = fail_startup
         self._killed = False
         self.artifacts_logged: list[tuple[str, str, str | None]] = []
+        self.figures_logged: list[tuple[str, str]] = []
+        self.fail_log_figure_for: set[str] = set()
         # registry-as-citation (piece c): name -> ordered model versions;
         # (name, alias) -> version string.
         self._registered_models: dict[str, list[_FakeModelVersion]] = {}
@@ -165,6 +175,29 @@ class FakeMlflowClient:
     def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:
         self._tick()
         self.artifacts_logged.append((run_id, path, artifact_path))
+
+    # ``log_figure`` signature MEASURED 2026-08-17 against the installed
+    # mlflow-skinny (`inspect.signature(MlflowClient.log_figure)`):
+    # ``(self, run_id, figure, artifact_file, *, save_kwargs=None)`` — a
+    # ``matplotlib.figure.Figure`` OR ``plotly.graph_objects.Figure``, saved
+    # under ``artifact_file`` on that run. Unknown ``run_id`` raises KeyError
+    # via the same ``self._runs[run_id]`` lookup every other per-run method
+    # here uses (log_metric, log_artifact, set_terminated) — this fake never
+    # invents a friendlier failure mode than the dict lookup it already has.
+    def log_figure(
+        self,
+        run_id: str,
+        figure: Any,
+        artifact_file: str,
+        *,
+        save_kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        self._tick()
+        _ = self._runs[run_id]  # KeyError on an unknown run_id — see note above
+        if artifact_file in self.fail_log_figure_for:
+            msg = f"simulated per-figure failure for {artifact_file!r}"
+            raise ConnectionError(msg)
+        self.figures_logged.append((run_id, artifact_file))
 
     def set_terminated(self, run_id: str, status: str = "FINISHED") -> None:
         self._tick()

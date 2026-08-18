@@ -53,8 +53,18 @@ results/*
 !results/*.dvc
 
 # --- Jupyter / notebooks scratch ---
-notebooks/*
+# marimo notebooks are plain, reviewable .py source (no cell-output blobs to
+# scrub), unlike .ipynb — tracked deliberately, unlike the scratch directory
+# default below. Git does not descend into an ignored DIRECTORY, so the
+# subdirectory re-include (`!notebooks/**/`) must come BEFORE the .py
+# re-include — without it a nested notebook (notebooks/e4/charts.py) stays
+# invisible to git entirely. MEASURED with `git check-ignore -v`: pre-fix
+# notebooks/e4/charts.py matched `notebooks/*`; post-fix it is unignored
+# while notebooks/e4/scratch.txt still matches `notebooks/**`.
+notebooks/**
 !notebooks/.gitkeep
+!notebooks/**/
+!notebooks/**/*.py
 .ipynb_checkpoints/
 
 # --- Logs ---
