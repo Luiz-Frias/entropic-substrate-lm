@@ -11,6 +11,7 @@ drawn ON the figure wherever a verdict is implied — never computed off-figure.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -31,6 +32,11 @@ from entropic_substrate.analysis.series import (
 )
 from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
 from entropic_substrate.telemetry import EvalRecord, TrainRecord
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+    from matplotlib.lines import Line2D
 
 pytestmark = pytest.mark.unit
 
@@ -70,11 +76,11 @@ def _fisher_control_runs() -> tuple[list[EvalSeriesRun], list[EvalSeriesRun]]:
     return fisher, control
 
 
-def _lines(ax):
+def _lines(ax: Axes) -> list[Line2D]:
     return list(ax.get_lines())
 
 
-def _all_text(fig) -> str:
+def _all_text(fig: Figure) -> str:
     chunks: list[str] = []
     for ax in fig.get_axes():
         chunks.extend(t.get_text() for t in ax.texts)

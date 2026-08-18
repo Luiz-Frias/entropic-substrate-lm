@@ -5,6 +5,8 @@ idiom as tests/test_mlflow_aggregate.py): no network, no real server.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from entropic_substrate.analysis.mlflow_attach import (
@@ -14,17 +16,20 @@ from entropic_substrate.analysis.mlflow_attach import (
 from entropic_substrate.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
 from test_sinks import FakeMlflowClient
 
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
 pytestmark = pytest.mark.unit
 
 
-def _figure():
-    from matplotlib.figure import Figure
+def _figure() -> Figure:
+    from matplotlib.figure import Figure as _Figure
 
-    return Figure()
+    return _Figure()
 
 
 # --------------------------------------------------------- attach_figures_to_run
-def test_attach_figures_to_run_logs_each_figure_under_charts(tmp_path) -> None:
+def test_attach_figures_to_run_logs_each_figure_under_charts() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     run = client.create_run(exp_id)
@@ -52,6 +57,29 @@ def test_attach_figures_to_run_is_best_effort_one_failure_does_not_sink_the_rest
     assert attached == []  # nothing attached, but no exception propagated
 
 
+def test_attach_figures_to_run_a_failure_on_one_figure_does_not_sink_a_later_one() -> None:
+    """Guard-tooth this test's PREDECESSOR (above) could not provide: ``kill()``
+    makes EVERY subsequent call fail, so a client that failed ALL calls could
+    never distinguish 'the loop continues past one failure' (``continue``)
+    from 'the loop aborts at the first failure' (``break``/an early
+    ``return``) — both produce ``attached == []`` identically. This test
+    fails EXACTLY ONE named figure and asserts the LATER, un-poisoned figure
+    still attaches — the one assertion shape that can tell ``continue``
+    apart from ``break``. ``FakeMlflowClient.fail_log_figure_for`` is the
+    minimal widening this needed (see its docstring in test_sinks.py)."""
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    run = client.create_run(exp_id)
+    client.fail_log_figure_for = {"charts/poisoned.png"}
+
+    attached = attach_figures_to_run(
+        client, run.info.run_id, {"poisoned": _figure(), "healthy": _figure()}
+    )
+
+    assert attached == ["charts/healthy.png"]  # the later figure survived the earlier failure
+    assert client.figures_logged == [(run.info.run_id, "charts/healthy.png")]
+
+
 def test_attach_figures_to_run_on_an_unknown_run_id_does_not_raise() -> None:
     client = FakeMlflowClient()
     attached = attach_figures_to_run(client, "no-such-run", {"e1_paired": _figure()})
@@ -59,7 +87,7 @@ def test_attach_figures_to_run_on_an_unknown_run_id_does_not_raise() -> None:
 
 
 # ------------------------------------------------------ attach_seed_band_to_aggregate
-def test_attach_seed_band_to_aggregate_finds_the_parent_and_attaches(tmp_path) -> None:
+def test_attach_seed_band_to_aggregate_finds_the_parent_and_attaches() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
     parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "abc123"})
