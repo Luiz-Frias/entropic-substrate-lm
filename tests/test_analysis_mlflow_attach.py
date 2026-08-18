@@ -90,12 +90,12 @@ def test_attach_figures_to_run_on_an_unknown_run_id_does_not_raise() -> None:
 def test_attach_seed_band_to_aggregate_finds_the_parent_and_attaches() -> None:
     client = FakeMlflowClient()
     exp_id = client.create_experiment("exp")
-    parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "abc123"})
+    parent = client.create_run(exp_id, tags={PARENT_TAG: "1", CONFIG_HASH_TAG: "abc123def456"})
 
     attached = attach_seed_band_to_aggregate(
         client,
         experiment_name="exp",
-        config_hash="abc123",
+        config_hash="abc123def456",
         figures={"e1_paired_seed_band": _figure()},
     )
 
@@ -112,7 +112,7 @@ def test_attach_seed_band_to_aggregate_without_a_parent_yet_is_a_noop() -> None:
     attached = attach_seed_band_to_aggregate(
         client,
         experiment_name="exp",
-        config_hash="abc123",
+        config_hash="abc123def456",
         figures={"e1_paired_seed_band": _figure()},
     )
 

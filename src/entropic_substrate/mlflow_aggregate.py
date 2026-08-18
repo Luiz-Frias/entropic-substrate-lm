@@ -31,6 +31,7 @@ creation.
 
 from __future__ import annotations
 
+import re
 import statistics
 from collections.abc import Sequence
 from typing import Any
@@ -42,6 +43,13 @@ __all__ = ["DEFAULT_METRICS", "PARENT_TAG", "aggregate", "find_parent_run"]
 
 DEFAULT_METRICS: tuple[str, ...] = ("nats_per_byte", "loss", "bits_per_byte", "perplexity")
 PARENT_TAG = "aggregate.is_parent"
+# Mirrors `entropic_substrate.cli._CONFIG_HASH_RE` exactly: the shape
+# `entropic_substrate.sinks.config_hash()` always produces (12 lowercase hex
+# chars). fullmatch, not match/`$`-anchored — MEASURED regression pinned in
+# tests/test_cli_charts.py for the cli.py twin of this contract: `re.match`'s
+# trailing "$" also matches immediately before a single trailing "\n", so
+# `re.match` alone accepted "deadbeefcafe\n". `fullmatch` has no such carve-out.
+_CONFIG_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
 
 
 def _leaf_runs(client: Any, experiment_id: str) -> list[Any]:
@@ -68,7 +76,20 @@ def find_parent_run(client: Any, experiment_id: str, config_hash: str) -> Any | 
     lookup (to attach seed-band chart variants), so the rule for "which run
     is the parent" lives in exactly one place rather than a second
     ``search_runs`` filter string drifting from this one.
+
+    ``config_hash`` is interpolated directly into an MLflow filter string
+    below, so it is boundary-validated here rather than trusted: the
+    contract is the exact shape :func:`entropic_substrate.sinks.config_hash`
+    always produces (12 lowercase hex chars). ``entropic_substrate.cli``
+    carries the identical ``_CONFIG_HASH_RE`` regex for its user-typed
+    ``--config-hash`` flag.
     """
+    if not _CONFIG_HASH_RE.fullmatch(config_hash):
+        msg = (
+            "config_hash must be exactly 12 lowercase hex chars "
+            f"(entropic_substrate.sinks.config_hash contract); got {config_hash!r}"
+        )
+        raise ValueError(msg)
     found = client.search_runs(
         [experiment_id],
         filter_string=f"tags.`{PARENT_TAG}` = '1' and tags.`{CONFIG_HASH_TAG}` = '{config_hash}'",

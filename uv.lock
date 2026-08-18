@@ -1181,7 +1181,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 analysis = [
-    { name = "marimo", specifier = ">=0.9.0" },
+    { name = "marimo", specifier = ">=0.23.16" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "plotly", specifier = ">=5.24.0" },
 ]
@@ -1198,7 +1198,7 @@ dev = [
     { name = "deptry", specifier = ">=0.20.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "geoopt", git = "https://github.com/geoopt/geoopt.git" },
-    { name = "marimo", specifier = ">=0.9.0" },
+    { name = "marimo", specifier = ">=0.23.16" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "plotly", specifier = ">=5.24.0" },
     { name = "psutil", specifier = ">=6.0.0" },
