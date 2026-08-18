@@ -36,6 +36,7 @@ from entropic_substrate.analysis.palette import (
 )
 from entropic_substrate.analysis.series import T_0_9875, EvalSeriesRun, TrainSeriesRun, Verdict
 from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+from entropic_substrate.telemetry import max_kappa_spread
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -364,7 +365,7 @@ def fig_e3_kappa_divergence_vs_loss_gap(
 
     fig = _figure((9.5, 5.5))
     kappa_ax = fig.add_subplot(111)
-    max_spreads = [max(max(row) - min(row) for row in kappa_by_step[s]) for s in common]
+    max_spreads = [max_kappa_spread(kappa_by_step[s]) for s in common]
     gap = [by_e2[s] - by_e3[s] for s in common]
 
     kappa_ax.plot(

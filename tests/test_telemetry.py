@@ -19,7 +19,9 @@ from entropic_substrate.telemetry import (
     TelemetryGap,
     final_eval_metric,
     final_eval_record,
+    kappa_spreads,
     main,
+    max_kappa_spread,
     read_eval_series,
     read_final_kappa,
     read_seed,
@@ -230,6 +232,90 @@ def test_read_eval_series_refuses_malformed_kappa_anywhere(tmp_path: Path) -> No
     )
     with pytest.raises(TelemetryGap, match="empty"):
         read_eval_series(path)
+
+
+# ----------------------------------------------- eval series: kappa shape
+@pytest.mark.parametrize(
+    ("first", "later"),
+    [
+        ([[0.1, 0.2], [0.3, 0.4]], [[0.1, 0.2]]),  # fewer layers
+        ([[0.1, 0.2]], [[0.1, 0.2], [0.3, 0.4]]),  # more layers
+        ([[0.1, 0.2, 0.3]], [[0.1, 0.2]]),  # fewer heads
+        ([[0.1, 0.2]], [[0.1, 0.2, 0.3]]),  # more heads
+        ([[0.1, 0.2], [0.3, 0.4]], [[0.1, 0.2], [0.3, 0.4, 0.5]]),  # head drift in ONE layer only
+    ],
+)
+def test_read_eval_series_refuses_a_kappa_shape_change(
+    tmp_path: Path, first: list[list[float]], later: list[list[float]]
+) -> None:
+    """Chart code derives n_layers/n_heads from the FIRST kappa-bearing record
+    and then indexes kappa[layer][head] across every record in the series — a
+    later record with a different shape must be refused here, not left to
+    surface as a bare IndexError inside a plotting comprehension."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=first),
+        _eval(step=2, kappa=later),
+    )
+    with pytest.raises(TelemetryGap, match="step 2 kappa"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_keys_the_shape_on_the_first_kappa_bearing_record(tmp_path: Path) -> None:
+    """The reference shape comes from the first PRESENT kappa matrix, not
+    from record 0 — a leading record that dropped kappa entirely must not
+    suppress the shape check for the records that follow it."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1),
+        _eval(step=2, kappa=[[0.1, 0.2]]),
+        _eval(step=3, kappa=[[0.1, 0.2, 0.3]]),
+    )
+    with pytest.raises(TelemetryGap, match="step 3 kappa"):
+        read_eval_series(path)
+
+
+def test_read_eval_series_accepts_a_consistent_kappa_shape_across_records(tmp_path: Path) -> None:
+    """An ABSENT kappa between two consistently shaped ones is still
+    admissible — E1/E2 runs never report kappa, and an E3 run may drop it on
+    one eval — so the shape check must skip records without kappa rather
+    than treat an absence as a shape mismatch."""
+    path = _write(
+        tmp_path / "e3.jsonl",
+        _eval(step=1, kappa=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]),
+        _eval(step=2),
+        _eval(step=3, kappa=[[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]]),
+    )
+    series = read_eval_series(path)
+    assert [r.kappa for r in series] == [
+        [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+        None,
+        [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+    ]
+
+
+# ------------------------------------------------------------ kappa spread
+def test_kappa_readout_spreads_delegate_to_the_shared_helper(tmp_path: Path) -> None:
+    """Pins the delegation so ``KappaReadout`` and the shared helper cannot
+    silently fork later: the spread arithmetic had been written out three
+    separate times (here, Lane A's charts, Lane B's notebook), which is how
+    two lanes can come to report different numbers for the same run."""
+    rows = [[-0.9, 0.1, 1.2, -0.4], [-0.2, 0.0, 0.3, 0.1]]
+    path = _write(tmp_path / "e3.jsonl", _eval(kappa=rows))
+    readout = read_final_kappa(path)
+    assert readout.spreads == kappa_spreads(rows)
+    assert readout.max_spread == max_kappa_spread(rows)
+
+
+@pytest.mark.parametrize("rows", [[], [[]], [[0.1, 0.2], []]])
+def test_kappa_spreads_refuses_empty_input(rows: list[list[float]]) -> None:
+    with pytest.raises(TelemetryGap, match="empty"):
+        kappa_spreads(rows)
+
+
+def test_max_kappa_spread_refuses_an_empty_matrix() -> None:
+    with pytest.raises(TelemetryGap, match="empty"):
+        max_kappa_spread([])
 
 
 # -------------------------------------------------------------- train series

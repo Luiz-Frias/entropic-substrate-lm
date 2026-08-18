@@ -118,6 +118,27 @@ def test_notebook_covers_all_six_lane_a_chart_titles() -> None:
         assert title in source, f"Lane B notebook is missing chart: {title!r}"
 
 
+def test_notebook_shares_one_e1_trace_builder_across_both_e1_charts() -> None:
+    """Chart 1 (paired loss curves) and chart 2 (log-step washout view) differ
+    only in LAYOUT — the trace loops themselves used to be duplicated
+    byte-for-byte, which let the two E1 charts drift apart in the
+    color/dash/marker encoding (a redundant non-color channel, not
+    decoration). Pins that both chart cells call one shared builder instead
+    of rebuilding the trace list."""
+    source = NOTEBOOK.read_text(encoding="utf-8")
+    assert "def e1_traces(" in source
+    assert source.count("e1_traces(") >= 3  # one definition + two call sites
+
+
+def test_notebook_computes_kappa_spread_through_telemetry() -> None:
+    """Lane A (entropic_substrate.analysis.charts) and Lane B must produce
+    identical kappa spreads for the same run, so the arithmetic lives once
+    in entropic_substrate.telemetry rather than being re-derived here."""
+    source = NOTEBOOK.read_text(encoding="utf-8")
+    assert "from entropic_substrate.telemetry import max_kappa_spread" in source
+    assert "max(max(row) - min(row)" not in source
+
+
 def test_marimo_check_reports_no_issues() -> None:
     """A real ``marimo check --strict`` run — catches structural notebook
     defects (undefined cell references, cyclic deps) static text checks

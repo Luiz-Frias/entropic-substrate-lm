@@ -27,12 +27,45 @@ def _():
         pair_final_metrics,
         paired_verdict,
     )
+    from entropic_substrate.telemetry import max_kappa_spread
+
+    def e1_traces(fisher_runs: list, control_runs: list) -> list[go.Scatter]:
+        """The E1 fisher/control traces, shared by chart 1 (paired loss curves)
+        and chart 2 (the log-step washout view) — those two charts differ only
+        in LAYOUT. Colors/dash/marker are a redundant non-color encoding
+        channel, not decoration, so two copies drifting apart would leave the
+        two charts disagreeing about which arm is which."""
+        traces = []
+        for run in fisher_runs:
+            traces.append(
+                go.Scatter(
+                    x=[r.step for r in run.records],
+                    y=[r.nats_per_byte for r in run.records],
+                    mode="lines+markers",
+                    name=f"{fisher_style().label}: {run.label}",
+                    line={"color": OKABE_ITO["blue"], "dash": "solid"},
+                    marker={"symbol": "circle"},
+                )
+            )
+        for run in control_runs:
+            traces.append(
+                go.Scatter(
+                    x=[r.step for r in run.records],
+                    y=[r.nats_per_byte for r in run.records],
+                    mode="lines+markers",
+                    name=f"{control_style().label}: {run.label}",
+                    line={"color": OKABE_ITO["vermillion"], "dash": "dash"},
+                    marker={"symbol": "square"},
+                )
+            )
+        return traces
 
     return (
         OKABE_ITO,
         Path,
         T_0_9875,
         control_style,
+        e1_traces,
         e2_style,
         e3_style,
         fisher_style,
@@ -40,6 +73,7 @@ def _():
         head_style,
         load_eval_run,
         load_train_run,
+        max_kappa_spread,
         mo,
         os,
         pair_final_metrics,
@@ -118,22 +152,42 @@ def _(Path, captured_dir, mlflow_experiment, mlflow_tracking_uri, os):
         if experiment is None:
             return
         dest.mkdir(parents=True, exist_ok=True)
-        for run in client.search_runs([experiment.experiment_id], max_results=500):
-            if run.info.status != "FINISHED":
-                continue
-            for artifact in client.list_artifacts(run.info.run_id, "results"):
-                if not artifact.path.endswith(".jsonl"):
+        page_token = None
+        while True:
+            runs = client.search_runs(
+                [experiment.experiment_id], max_results=500, page_token=page_token
+            )
+            for run in runs:
+                if run.info.status != "FINISHED":
                     continue
-                name = f"{run.info.run_name}-{run.info.run_id[:8]}-{Path(artifact.path).name}"
-                target = dest / name
-                if target.exists():
-                    continue
-                downloaded = Path(
-                    mlflow.artifacts.download_artifacts(
-                        run_id=run.info.run_id, artifact_path=artifact.path, tracking_uri=uri
+                for artifact in client.list_artifacts(run.info.run_id, "results"):
+                    # A FileInfo for a sub-directory has no bytes to download —
+                    # only leaf .jsonl entries are downloadable artifacts.
+                    if artifact.is_dir or not artifact.path.endswith(".jsonl"):
+                        continue
+                    # run_name is optional on the tracking server; an unnamed
+                    # run would otherwise capture as a literal "None-<id>-...".
+                    run_label = run.info.run_name or run.info.run_id
+                    name = f"{run_label}-{run.info.run_id[:8]}-{Path(artifact.path).name}"
+                    target = dest / name
+                    if target.exists():
+                        continue
+                    downloaded = Path(
+                        mlflow.artifacts.download_artifacts(
+                            run_id=run.info.run_id, artifact_path=artifact.path, tracking_uri=uri
+                        )
                     )
-                )
-                target.write_bytes(downloaded.read_bytes())
+                    # Stage-then-rename: a write interrupted mid-flight would
+                    # otherwise leave a truncated *.jsonl that the `target.exists()`
+                    # skip above never re-downloads, and that read_eval_series then
+                    # refuses forever. The .part suffix also keeps a partial file
+                    # out of resolve_paths' *.jsonl glob while it's being written.
+                    staged = target.with_name(target.name + ".part")
+                    staged.write_bytes(downloaded.read_bytes())
+                    os.replace(staged, target)
+            page_token = runs.token
+            if not page_token:
+                break
 
     def resolve_paths(glob_pattern: str) -> list[Path]:
         """Local DVC-captured files first; the MLflow fallback only fires
@@ -150,12 +204,10 @@ def _(Path, captured_dir, mlflow_experiment, mlflow_tracking_uri, os):
 
 @app.cell
 def _(
-    OKABE_ITO,
     T_0_9875,
-    control_style,
     e1_control_glob,
     e1_fisher_glob,
-    fisher_style,
+    e1_traces,
     go,
     load_eval_run,
     mo,
@@ -181,28 +233,8 @@ def _(
         verdict = paired_verdict(pairs)
 
         e1_fig = go.Figure()
-        for _run in fisher_runs:
-            e1_fig.add_trace(
-                go.Scatter(
-                    x=[r.step for r in _run.records],
-                    y=[r.nats_per_byte for r in _run.records],
-                    mode="lines+markers",
-                    name=f"{fisher_style().label}: {_run.label}",
-                    line={"color": OKABE_ITO["blue"], "dash": "solid"},
-                    marker={"symbol": "circle"},
-                )
-            )
-        for _run in control_runs:
-            e1_fig.add_trace(
-                go.Scatter(
-                    x=[r.step for r in _run.records],
-                    y=[r.nats_per_byte for r in _run.records],
-                    mode="lines+markers",
-                    name=f"{control_style().label}: {_run.label}",
-                    line={"color": OKABE_ITO["vermillion"], "dash": "dash"},
-                    marker={"symbol": "square"},
-                )
-            )
+        for _trace in e1_traces(fisher_runs, control_runs):
+            e1_fig.add_trace(_trace)
         stage_note = (
             f" — Stage {verdict.stage}" if verdict.stage is not None else " — n not preregistered"
         )
@@ -245,7 +277,7 @@ def _(
 
 
 @app.cell
-def _(OKABE_ITO, control_runs, control_style, fisher_runs, fisher_style, go, mo):
+def _(control_runs, e1_traces, fisher_runs, go, mo):
     # --------------------------------------------------------- chart 2: washout
     if not fisher_runs or not control_runs:
         washout_output = mo.md(
@@ -253,28 +285,8 @@ def _(OKABE_ITO, control_runs, control_style, fisher_runs, fisher_style, go, mo)
         )
     else:
         washout_fig = go.Figure()
-        for _run in fisher_runs:
-            washout_fig.add_trace(
-                go.Scatter(
-                    x=[r.step for r in _run.records],
-                    y=[r.nats_per_byte for r in _run.records],
-                    mode="lines+markers",
-                    name=f"{fisher_style().label}: {_run.label}",
-                    line={"color": OKABE_ITO["blue"], "dash": "solid"},
-                    marker={"symbol": "circle"},
-                )
-            )
-        for _run in control_runs:
-            washout_fig.add_trace(
-                go.Scatter(
-                    x=[r.step for r in _run.records],
-                    y=[r.nats_per_byte for r in _run.records],
-                    mode="lines+markers",
-                    name=f"{control_style().label}: {_run.label}",
-                    line={"color": OKABE_ITO["vermillion"], "dash": "dash"},
-                    marker={"symbol": "square"},
-                )
-            )
+        for _trace in e1_traces(fisher_runs, control_runs):
+            washout_fig.add_trace(_trace)
         washout_fig.update_layout(
             title="E1: log-step washout view",
             xaxis_title="step (log scale)",
@@ -411,6 +423,14 @@ def _(OKABE_ITO, e3_run, go, head_style, mo):
     if not kappa_records:
         kappa_output = mo.md("*(no kappa telemetry in the loaded E3 run)*")
     else:
+        # e3_run reaches this cell only through load_eval_run -> read_eval_series,
+        # which is the ONLY path a kappa-bearing record arrives by. That reader
+        # now refuses a cross-record kappa shape mismatch as an admissibility
+        # rule (entropic_substrate.telemetry), so every record here is already
+        # guaranteed to share n_layers/n_heads with kappa_records[0] — deriving
+        # them from the first record is safe, and a second local shape check
+        # here would re-create the duplicate-validator defect telemetry.py
+        # exists to remove.
         n_layers = len(kappa_records[0].kappa)
         steps = [r.step for r in kappa_records]
         kappa_figs = []
@@ -448,7 +468,7 @@ def _(OKABE_ITO, e3_run, go, head_style, mo):
 
 
 @app.cell
-def _(OKABE_ITO, e2_run, e3_run, go, mo):
+def _(OKABE_ITO, e2_run, e3_run, go, max_kappa_spread, mo):
     kappa_records2 = [r for r in e3_run.records if r.kappa is not None] if e3_run else []
     if not kappa_records2 or e2_run is None:
         timing_output = mo.md(
@@ -462,7 +482,7 @@ def _(OKABE_ITO, e2_run, e3_run, go, mo):
         if not common2:
             timing_output = mo.md("*(kappa steps share no common eval step with e2/e3)*")
         else:
-            spreads = [max(max(row) - min(row) for row in kappa_by_step2[s]) for s in common2]
+            spreads = [max_kappa_spread(kappa_by_step2[s]) for s in common2]
             gaps = [by_e2b[s] - by_e3b[s] for s in common2]
             timing_fig = go.Figure()
             timing_fig.add_trace(

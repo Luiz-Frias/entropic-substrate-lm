@@ -14,7 +14,13 @@ What "admissible" means, and why each rule exists:
   and ``bool`` is an ``int`` subclass so a JSON ``true`` would otherwise pass;
 * values must be finite — ``json`` parses ``NaN``/``Infinity`` back without
   complaint, so a numerically failed run yields a NaN spread that compares
-  false against every threshold and reads as a healthy zero-divergence gate.
+  false against every threshold and reads as a healthy zero-divergence gate;
+* every kappa-bearing record in a series must share ONE shape (layer count,
+  and head count per layer) with every other kappa-bearing record in that
+  series — chart code derives ``n_layers``/``n_heads`` from the first
+  kappa-bearing record and then indexes ``kappa[layer][head]`` across the
+  rest, so a later record with a different shape is refused here rather than
+  surfacing as a bare ``IndexError`` inside a plotting comprehension.
 
 An inadmissible readout is a :class:`TelemetryGap`, never a value: callers turn
 it into a refusal, so nothing downstream can mistake absence for a measurement.
@@ -40,7 +46,9 @@ __all__ = [
     "TrainRecord",
     "final_eval_metric",
     "final_eval_record",
+    "kappa_spreads",
     "main",
+    "max_kappa_spread",
     "read_eval_series",
     "read_final_kappa",
     "read_seed",
@@ -59,6 +67,33 @@ class TelemetryGap(Exception):
     """
 
 
+def kappa_spreads(rows: Sequence[Sequence[float]]) -> list[float]:
+    """Within-layer head spread per layer — the E3 divergence signal.
+
+    The ONE place this arithmetic lives: :attr:`KappaReadout.spreads` (Lane A)
+    and the Lane B notebook's per-step aggregation both call it, so the two
+    lanes cannot report different spreads for the same run. Empty input is a
+    :class:`TelemetryGap` rather than the bare ``ValueError`` ``max(())``
+    raises — a caller holding rows that never passed :func:`_validate_rows`
+    must fail the same loud way every other reader here does.
+    """
+    if not rows:
+        msg = "kappa spread of an empty matrix — no layers reported"
+        raise TelemetryGap(msg)
+    spreads: list[float] = []
+    for index, row in enumerate(rows):
+        if not row:
+            msg = f"kappa spread of an empty layer {index} row — telemetry is incomplete"
+            raise TelemetryGap(msg)
+        spreads.append(max(row) - min(row))
+    return spreads
+
+
+def max_kappa_spread(rows: Sequence[Sequence[float]]) -> float:
+    """Largest within-layer head spread across layers — one record's aggregate."""
+    return max(kappa_spreads(rows))
+
+
 @dataclass(frozen=True, slots=True)
 class KappaReadout:
     """Validated per-layer, per-head curvatures from one eval record."""
@@ -69,12 +104,12 @@ class KappaReadout:
     @property
     def spreads(self) -> list[float]:
         """Within-layer head spread — the E3 divergence signal, per layer."""
-        return [max(row) - min(row) for row in self.rows]
+        return kappa_spreads(self.rows)
 
     @property
     def max_spread(self) -> float:
         """Largest within-layer head spread across layers."""
-        return max(self.spreads)
+        return max_kappa_spread(self.rows)
 
     def report_lines(self) -> list[str]:
         """Human-readable divergence report (the operator's go/no-go input)."""
@@ -157,6 +192,12 @@ def _validate_rows(path: Path, kappa: Any) -> list[list[float]]:
     return rows
 
 
+def _kappa_shape(rows: Sequence[Sequence[float]]) -> tuple[int, ...]:
+    """Per-layer head counts — the shape a chart's ``kappa[layer][head]``
+    indexing assumes holds for every record in the series."""
+    return tuple(len(row) for row in rows)
+
+
 def read_final_kappa(path: str | Path) -> KappaReadout:
     """Validated per-head curvatures from the final eval record in ``path``."""
     path = Path(path)
@@ -225,10 +266,14 @@ def read_eval_series(path: str | Path) -> list[EvalRecord]:
     to a NaN-poisoned tail record it silently skipped. ``kappa`` is optional
     PER RECORD — E1/E2 runs never report it, and even an E3 run may drop it on
     one eval and not another — but when present it goes through the same
-    :func:`_validate_rows` gate :func:`read_final_kappa` uses.
+    :func:`_validate_rows` gate :func:`read_final_kappa` uses, AND its shape
+    (layer count, head count per layer) must match every other kappa-bearing
+    record in the series — see the module docstring's admissibility list.
     """
     path = Path(path)
     records: list[EvalRecord] = []
+    shape: tuple[int, ...] | None = None
+    shape_step: int | None = None
     for record in _iter_records(path):
         if record.get("event") != "eval":
             continue
@@ -237,6 +282,19 @@ def read_eval_series(path: str | Path) -> list[EvalRecord]:
         nats_per_byte = _finite_field(path, record, "nats_per_byte")
         kappa = record.get("kappa")
         rows = _validate_rows(path, kappa) if kappa is not None else None
+        if rows is not None:
+            record_shape = _kappa_shape(rows)
+            if shape is None:
+                shape, shape_step = record_shape, step
+            elif record_shape != shape:
+                msg = (
+                    f"{path}: step {step} kappa is {len(record_shape)} layers with head "
+                    f"counts {record_shape}, but step {shape_step} reported {len(shape)} "
+                    f"layers with {shape} — the charts index kappa[layer][head] off the "
+                    "first kappa-bearing record, so a shape change downstream is a bare "
+                    "IndexError inside a plotting comprehension rather than a refusal"
+                )
+                raise TelemetryGap(msg)
         records.append(EvalRecord(step=step, loss=loss, nats_per_byte=nats_per_byte, kappa=rows))
     if not records:
         msg = f"{path}: no eval record — the run never reached an eval"
