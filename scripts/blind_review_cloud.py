@@ -26,26 +26,34 @@ MODEL = "claude-opus-5"
 BETAS = ["files-api-2025-04-14"]
 CODE_TOOL: dict[str, str] = {"type": "code_execution_20260120", "name": "code_execution"}
 
-# Files API uploads are flat; packet paths are nested. '/' -> '__' keeps the
-# layout recoverable and leaves file CONTENT (and so every manifest md5)
-# untouched. The prompt suffix below tells the reviewer the mapping.
-NAME_MAPPING_NOTE = (
-    "\n\nNOTE ON FILE NAMES: the packet files are provided to your execution "
-    "container with '/' in their relative paths replaced by '__' (e.g. "
-    "data/A-seed1.jsonl arrives as data__A-seed1.jsonl). manifest.txt refers "
-    "to the original layout; file CONTENTS are byte-identical, so every md5 "
-    "in the manifest must still verify against the renamed files."
+# The API caps container uploads at 16 files per request (measured 2026-08-18:
+# the 21-file n=9 packet was rejected with "Cannot add more than 16 files").
+# Ship ONE zip instead — relative paths survive inside it, so the manifest
+# verifies against the real layout with no renaming.
+ZIP_NOTE = (
+    "\n\nNOTE ON DELIVERY: the packet arrives in your execution container as "
+    "a single file, packet.zip. First extract it (Python's zipfile module) "
+    "into ./packet — the archive preserves the packet's relative layout, so "
+    "manifest.txt paths resolve directly against the extracted tree."
 )
 
 
-def flatten_name(relative_path: pathlib.PurePath) -> str:
-    """Container-safe flat filename for a nested packet path."""
-    return "__".join(relative_path.parts)
+def build_packet_zip(packet_dir: pathlib.Path, zip_path: pathlib.Path) -> list[str]:
+    """Zip the packet preserving relative paths; return the sorted arcnames."""
+    import zipfile
+
+    arcnames: list[str] = []
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(p for p in packet_dir.rglob("*") if p.is_file()):
+            arcname = path.relative_to(packet_dir).as_posix()
+            archive.write(path, arcname)
+            arcnames.append(arcname)
+    return arcnames
 
 
 def build_content(prompt_text: str, file_ids: list[str]) -> list[dict[str, Any]]:
-    """One user message: verbatim prompt first, then every packet file."""
-    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text + NAME_MAPPING_NOTE}]
+    """One user message: verbatim prompt first, then the packet archive."""
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text + ZIP_NOTE}]
     content += [{"type": "container_upload", "file_id": fid} for fid in file_ids]
     return content
 
@@ -58,12 +66,15 @@ def main() -> int:
 
     file_ids: list[str] = []
     try:
-        for path in sorted(p for p in packet.rglob("*") if p.is_file()):
-            name = flatten_name(path.relative_to(packet))
-            with path.open("rb") as handle:
-                uploaded = client.beta.files.upload(file=(name, handle, "text/plain"))
-            file_ids.append(uploaded.id)
-            print(f"uploaded {name} -> {uploaded.id}")
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as scratch:
+            zip_path = pathlib.Path(scratch) / "packet.zip"
+            arcnames = build_packet_zip(packet, zip_path)
+            with zip_path.open("rb") as handle:
+                uploaded = client.beta.files.upload(file=("packet.zip", handle, "application/zip"))
+        file_ids.append(uploaded.id)
+        print(f"uploaded packet.zip ({len(arcnames)} files) -> {uploaded.id}")
 
         messages: list[dict[str, Any]] = [
             {

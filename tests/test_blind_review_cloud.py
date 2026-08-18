@@ -26,15 +26,25 @@ sys.modules["blind_review_cloud"] = _MOD
 _SPEC.loader.exec_module(_MOD)
 
 
-def test_flatten_name_is_layout_recoverable() -> None:
-    assert _MOD.flatten_name(pathlib.PurePath("data/A-seed1.jsonl")) == "data__A-seed1.jsonl"
-    assert _MOD.flatten_name(pathlib.PurePath("manifest.txt")) == "manifest.txt"
+def test_packet_zip_preserves_relative_layout(tmp_path: pathlib.Path) -> None:
+    import zipfile
+
+    packet = tmp_path / "packet"
+    (packet / "data").mkdir(parents=True)
+    (packet / "manifest.txt").write_text("m", encoding="utf-8")
+    (packet / "data" / "A-seed1.jsonl").write_text("a", encoding="utf-8")
+    zip_path = tmp_path / "packet.zip"
+    arcnames = _MOD.build_packet_zip(packet, zip_path)
+    assert arcnames == ["data/A-seed1.jsonl", "manifest.txt"]
+    with zipfile.ZipFile(zip_path) as archive:
+        assert archive.read("data/A-seed1.jsonl") == b"a"
+        assert archive.read("manifest.txt") == b"m"
 
 
-def test_content_leads_with_prompt_then_all_files() -> None:
-    content = _MOD.build_content("REVIEW PROMPT", ["file_a", "file_b"])
+def test_content_leads_with_prompt_then_the_archive() -> None:
+    content = _MOD.build_content("REVIEW PROMPT", ["file_zip"])
     assert content[0]["type"] == "text"
     assert content[0]["text"].startswith("REVIEW PROMPT")
-    assert "NOTE ON FILE NAMES" in content[0]["text"]
-    assert [c["file_id"] for c in content[1:]] == ["file_a", "file_b"]
+    assert "NOTE ON DELIVERY" in content[0]["text"]
+    assert [c["file_id"] for c in content[1:]] == ["file_zip"]
     assert all(c["type"] == "container_upload" for c in content[1:])
