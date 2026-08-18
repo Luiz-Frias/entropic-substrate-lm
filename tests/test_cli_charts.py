@@ -120,6 +120,40 @@ def test_charts_with_no_inputs_is_a_controlled_refusal(
     assert code == 2
 
 
+def test_charts_with_a_duplicate_seed_within_one_e1_arm_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """MEASURED gap this pins: ``pair_final_metrics`` raises ``ValueError``
+    on a same-arm duplicate seed (see
+    tests/test_analysis_series.py::test_pair_final_metrics_rejects_a_duplicate_seed_within_one_arm),
+    but ``cmd_charts``'s ``try`` block only caught ``TelemetryGap`` — so this
+    ValueError propagated straight through ``main()`` as an unhandled
+    exception (a raw traceback) instead of the controlled exit-2 idiom every
+    OTHER input-validation refusal in this subcommand uses (see
+    ``--e1-fisher``/``--e1-control`` must-both-be-given, above)."""
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    fisher_1a = _e1_jsonl(tmp_path / "f1a.jsonl", 1, 1.5)
+    fisher_1b = _e1_jsonl(tmp_path / "f1b.jsonl", 1, 1.9)  # same seed as f1a
+    control_1 = _e1_jsonl(tmp_path / "c1.jsonl", 1, 1.6)
+
+    code = main(
+        [
+            "charts",
+            "--e1-fisher",
+            str(fisher_1a),
+            "--e1-fisher",
+            str(fisher_1b),
+            "--e1-control",
+            str(control_1),
+            "--out-dir",
+            str(tmp_path / "charts"),
+        ]
+    )
+
+    assert code == 2
+    assert "seed" in capsys.readouterr().err.lower()
+
+
 def test_charts_with_only_e1_fisher_is_a_controlled_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -285,6 +319,48 @@ def test_charts_attaches_e1_seed_band_to_the_aggregate_parent(
     artifact_paths = {a.path for a in client.list_artifacts(parent.info.run_id, "charts")}
     assert "charts/e1_paired_loss_curves.png" in artifact_paths
     assert "charts/e1_log_steps_washout.png" in artifact_paths
+
+
+def test_charts_with_a_trailing_newline_on_config_hash_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """MEASURED regression this pins: ``re.match`` (used pre-fix) does not
+    require a match to reach the end of the string — Python's ``$`` anchor
+    matches at end-of-string OR immediately before a single trailing
+    ``\\n``, so a value like ``'deadbeefcafe\\n'`` (e.g. an unstripped
+    ``$(cat file)`` or an env var carrying a trailing newline) satisfied
+    ``_CONFIG_HASH_RE.match(...)`` despite not being a clean 12-char hex
+    digest. ``fullmatch`` has no such carve-out. Exercises the actual CLI
+    validation path (not the regex object in isolation), otherwise this
+    test would pass regardless of whether ``cmd_charts`` used ``match`` or
+    ``fullmatch``.
+    """
+    monkeypatch.chdir(tmp_path)
+    import mlflow.tracking
+
+    tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+    mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).create_experiment("exp")
+    fisher = [_e1_jsonl(tmp_path / f"f{s}.jsonl", s, 1.5) for s in (1, 2)]
+    control = [_e1_jsonl(tmp_path / f"c{s}.jsonl", s, 1.6) for s in (1, 2)]
+
+    code = main(
+        [
+            "charts",
+            *[arg for p in fisher for arg in ("--e1-fisher", str(p))],
+            *[arg for p in control for arg in ("--e1-control", str(p))],
+            "--config-hash",
+            "deadbeefcafe\n",
+            "--experiment",
+            "exp",
+            "--tracking-uri",
+            tracking_uri,
+            "--out-dir",
+            str(tmp_path / "charts"),
+        ]
+    )
+
+    assert code == 2
+    assert "config-hash" in capsys.readouterr().err.lower()
 
 
 def test_charts_with_a_malformed_config_hash_is_a_controlled_refusal_not_a_silent_skip(

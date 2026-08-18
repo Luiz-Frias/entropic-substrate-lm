@@ -490,6 +490,17 @@ def cmd_charts(args: argparse.Namespace) -> int:
         # preflight (entropic_substrate.telemetry.EXIT_TELEMETRY_GAP).
         logger.error(f"charts: telemetry gap: {gap}")
         return EXIT_TELEMETRY_GAP
+    except ValueError as exc:
+        # A chart-builder / series-loader input-validation refusal (e.g.
+        # pair_final_metrics's same-arm duplicate-seed check) — a caller
+        # mistake, not a defect in this command. MEASURED gap this closes:
+        # main() catches no bare ValueError, so this used to reach the
+        # operator as an unhandled traceback instead of the controlled
+        # exit-2 idiom every OTHER input-validation refusal here uses (see
+        # tests/test_cli_charts.py::
+        # test_charts_with_a_duplicate_seed_within_one_e1_arm_is_a_controlled_refusal).
+        logger.error(f"charts: {exc}")
+        return 2
 
     if not figures:
         logger.error(
@@ -528,7 +539,14 @@ def cmd_charts(args: argparse.Namespace) -> int:
 
     seed_band_figures = {name: fig for name, fig in figures.items() if name.startswith("e1_")}
     if seed_band_figures and args.config_hash:
-        if not _CONFIG_HASH_RE.match(args.config_hash):
+        if not _CONFIG_HASH_RE.fullmatch(args.config_hash):
+            # fullmatch, not match: re.match's trailing "$" anchor matches
+            # end-of-string OR just before a SINGLE trailing "\n" — MEASURED
+            # regression, see tests/test_cli_charts.py::
+            # test_charts_with_a_trailing_newline_on_config_hash_is_a_controlled_refusal
+            # (a value like "deadbeefcafe\n" — an unstripped $(cat file) or
+            # an env var with a trailing newline — satisfied .match() despite
+            # not being a clean 12-char hex digest).
             # A shape check, not an existence check: this fires on a
             # malformed value BEFORE the best-effort MLflow path ever sees
             # it, so it cannot be confused with "no aggregate parent yet" —
