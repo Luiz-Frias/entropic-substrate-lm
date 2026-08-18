@@ -25,7 +25,7 @@ dependencies = [
 deploy = [
   # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
   # Keep that operational dependency explicit without shipping test tooling.
-  "dvc[s3]>=3.59.0",
+  "dvc[s3]>=3.67.1",
   # MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
   # mlflow-native, but mlflow-skinny does NOT declare either as a dependency
   # (verified 2026-08-17 via `importlib.metadata.requires("mlflow-skinny")`)
