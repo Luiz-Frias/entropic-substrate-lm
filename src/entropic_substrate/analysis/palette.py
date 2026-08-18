@@ -69,7 +69,10 @@ OKABE_ITO: dict[str, str] = {
 # once. Individual channels still repeat sooner (color repeats every 8,
 # e.g.) but at least one of {color, linestyle, marker} always differs
 # between any two of the 12 real heads, which is what "redundant channel"
-# requires — no single channel needs to be unique alone.
+# requires — no single channel needs to be unique alone. Concretely: heads 0
+# and 8 STILL share both color (index 8%8=0) and linestyle (index 8%4=0)
+# post-fix — the marker (index 8%7=1) is the one channel telling them apart,
+# by design, not an oversight.
 _HEAD_COLOR_CYCLE: tuple[str, ...] = (
     "blue",
     "vermillion",

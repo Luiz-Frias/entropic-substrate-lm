@@ -204,13 +204,19 @@ def test_read_eval_series_with_no_eval_records_is_a_gap(tmp_path: Path) -> None:
         read_eval_series(path)
 
 
-def test_read_eval_series_refuses_a_nonfinite_row_anywhere_in_the_series(tmp_path: Path) -> None:
+@pytest.mark.parametrize("field", ["loss", "nats_per_byte"])
+def test_read_eval_series_refuses_a_nonfinite_row_anywhere_in_the_series(
+    tmp_path: Path, field: str
+) -> None:
     """A curve that looks healthy right up to a NaN-poisoned tail must not
-    silently truncate — the whole series is inadmissible, not a prefix of it."""
+    silently truncate — the whole series is inadmissible, not a prefix of it.
+    Parametrized over BOTH chart-consumed numeric fields — the pre-fix
+    version only ever poisoned ``nats_per_byte``, leaving ``loss``'s
+    identical ``_finite_field`` call unexercised by any test."""
     path = _write(
         tmp_path / "e2.jsonl",
         _eval(step=1, nats_per_byte=1.5),
-        _eval(step=2, nats_per_byte=float("nan")),
+        _eval(step=2, **{field: float("nan")}),
     )
     with pytest.raises(TelemetryGap, match="non-finite"):
         read_eval_series(path)

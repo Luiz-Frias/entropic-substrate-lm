@@ -84,6 +84,16 @@ def test_notebook_is_tracked_by_git_despite_the_notebooks_scratch_gitignore() ->
     # opposite, so a non-zero exit here is the passing case.
     assert result.returncode != 0, f"{NOTEBOOK} is still gitignored — check .gitignore"
 
+    # "not ignored" and "actually tracked" are different claims — a file can
+    # be un-ignored yet never have reached `git add` at all. `git ls-files
+    # --error-unmatch` exits 0 ONLY when the path is in git's index.
+    tracked = subprocess.run(  # nosec B603 B607 -- fixed argv, no shell
+        ["git", "ls-files", "--error-unmatch", "--", str(NOTEBOOK.relative_to(REPO_ROOT))],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert tracked.returncode == 0, f"{NOTEBOOK} is not tracked by git"
+
 
 def test_notebook_covers_all_six_lane_a_chart_titles() -> None:
     """Chart-set parity guard: Lane B must render the same six charts Lane A
