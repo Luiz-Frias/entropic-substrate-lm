@@ -18,6 +18,7 @@ from entropic_substrate.init.fisher import (
 )
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
 from entropic_substrate.models.blocks import CausalSelfAttention, build_block, build_norm
+from entropic_substrate.models.field_encoder import FieldEncoder
 
 __all__ = [
     "LMOutput",
@@ -62,6 +63,8 @@ class LanguageModel(nn.Module):
 
     # Registered as None on the non-hypersphere path.
     sz: nn.Parameter | None
+    # Registered as None unless cfg.state_source == "field" (E1.5c).
+    field_encoder: FieldEncoder | None
 
     def __init__(self, cfg: ModelConfig, fisher_source: bytes | None = None) -> None:
         super().__init__()
@@ -90,6 +93,22 @@ class LanguageModel(nn.Module):
         if self.hypersphere:
             self.normalize_weights()
         self._apply_embedding_freeze()
+
+        # E1.5c: built AFTER the backbone's own init/normalize/freeze
+        # sequence above, so FieldEncoder's internal `self.apply(...)` (its
+        # own field_d_model-scaled init) is never re-walked by the
+        # backbone's own `self.apply(self._init_weights)` call, which
+        # already ran. wte/lm_head stay in place as the output classifier
+        # (still Fisher-seeded above when embedding_init="fisher_sqrt") —
+        # state_source only swaps which tensor becomes `h` at the start of
+        # forward(), never the classifier.
+        if cfg.state_source == "field":
+            self.field_encoder = FieldEncoder(cfg)
+        elif cfg.state_source == "table":
+            self.field_encoder = None
+        else:
+            msg = f"unknown state_source {cfg.state_source!r}"
+            raise ValueError(msg)
 
     # ---------------------------------------------------------------- init
     def _init_weights(self, module: nn.Module) -> None:
@@ -229,6 +248,15 @@ class LanguageModel(nn.Module):
             total -= self.wte.weight.numel()
         return total
 
+    def field_encoder_parameter_count(self) -> int | None:
+        """Parameter count of the field-estimator submodule (E1.5c), or
+        ``None`` when ``state_source != "field"`` — absent channel is
+        absent, the same convention E1.5b's ``gram_frob_sq``/``gram_penalty``
+        already use for a feature most arms don't carry."""
+        if self.field_encoder is None:
+            return None
+        return sum(p.numel() for p in self.field_encoder.parameters())
+
     # ------------------------------------------------------------- forward
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> LMOutput:
         """``idx``/``targets``: ``(B, T)`` int64 token ids."""
@@ -237,7 +265,15 @@ class LanguageModel(nn.Module):
             msg = f"sequence length {t} exceeds block_size {self.cfg.block_size}"
             raise ValueError(msg)
 
-        h = self.drop(self.wte(idx))
+        if self.field_encoder is not None:
+            # E1.5c: z_t = Q . sqrt(p_phi(. | x_<=t)) replaces the static
+            # table lookup — z_t ALONE (the registered v1 combination;
+            # docs/e1_5-instruction.md's z_t (+) E[b_t] variant is a declared
+            # follow-up, not built here). wte/lm_head remain the output
+            # classifier untouched by this branch.
+            h = self.drop(self.field_encoder(idx))
+        else:
+            h = self.drop(self.wte(idx))
         if self.hypersphere:
             h = self.norm_f(h)
         for block in self.blocks:

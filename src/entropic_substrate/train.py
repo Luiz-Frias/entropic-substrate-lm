@@ -435,18 +435,24 @@ class Trainer:
         fresh_start = self.step == 0
         order_attested = False
 
-        self.log(
-            {
-                "event": "run_start",
-                "config": self.cfg.to_dict(),
-                "params": self.raw_model.num_parameters(),
-                "device": str(self.device),
-                "tokenizer": self.meta.tokenizer,
-                "bytes_per_token": self.meta.bytes_per_token,
-                "train_tokens": self.meta.train_tokens,
-                "val_tokens": self.meta.val_tokens,
-            }
-        )
+        run_start_record: dict[str, Any] = {
+            "event": "run_start",
+            "config": self.cfg.to_dict(),
+            "params": self.raw_model.num_parameters(),
+            "device": str(self.device),
+            "tokenizer": self.meta.tokenizer,
+            "bytes_per_token": self.meta.bytes_per_token,
+            "train_tokens": self.meta.train_tokens,
+            "val_tokens": self.meta.val_tokens,
+        }
+        # E1.5c: absent from the record entirely unless state_source ==
+        # "field" (same "absent channel is absent" convention E1.5b's
+        # gram_* eval keys use) — matched-backbone params, the matched-total
+        # twin is a prereg-time variant (docs/e1_5-instruction.md).
+        field_encoder_params = self.raw_model.field_encoder_parameter_count()
+        if field_encoder_params is not None:
+            run_start_record["field_encoder_params"] = field_encoder_params
+        self.log(run_start_record)
 
         while self.step < total:
             metrics = self.train_step()
