@@ -18,6 +18,7 @@ from entropic_substrate.init.fisher import (
 )
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
 from entropic_substrate.models.blocks import CausalSelfAttention, build_block, build_norm
+from entropic_substrate.models.field_encoder import FieldEncoder
 
 __all__ = [
     "LMOutput",
@@ -62,6 +63,8 @@ class LanguageModel(nn.Module):
 
     # Registered as None on the non-hypersphere path.
     sz: nn.Parameter | None
+    # Registered as None unless cfg.state_source == "field" (E1.5c).
+    field_encoder: FieldEncoder | None
 
     def __init__(self, cfg: ModelConfig, fisher_source: bytes | None = None) -> None:
         super().__init__()
@@ -90,6 +93,47 @@ class LanguageModel(nn.Module):
         if self.hypersphere:
             self.normalize_weights()
         self._apply_embedding_freeze()
+
+        # E1.5c: built AFTER the backbone's own init/normalize/freeze
+        # sequence above, so FieldEncoder's internal `self.apply(...)` (its
+        # own field_d_model-scaled init) is never re-walked by the
+        # backbone's own `self.apply(self._init_weights)` call, which
+        # already ran. wte/lm_head stay in place as the output classifier
+        # (still Fisher-seeded above when embedding_init="fisher_sqrt") —
+        # state_source only swaps which tensor becomes `h` at the start of
+        # forward(), never the classifier. embedding_freeze="input"/"both"
+        # is refused above for this same reason (self.wte.weight stops
+        # being the input representation); gram_lambda gets the symmetric
+        # guard immediately below, for the same root cause — L2 finding,
+        # 2026-08-19.
+        if cfg.state_source == "field":
+            if cfg.gram_lambda != 0.0:
+                # train.py's Gram penalty (_gram_penalty_terms) is defined
+                # over normalized_gram(self.wte.weight) — the input table
+                # E1.5b was built against. Under state_source="field" that
+                # tensor is not what generates the model's input
+                # (field_encoder.wte is, and forward() never reads
+                # self.wte(idx) on this path), so the penalty would
+                # silently co-optimize a tensor disconnected from the
+                # measured "preserve input geometry" claim. Measured: with
+                # gram_lambda=0.5, gram_penalty moved self.wte.weight across
+                # steps (0 -> 5.72039 -> 1.58559 -> 1.14893 -> 1.09639)
+                # while field_encoder was never referenced by the penalty.
+                # No registered arm combines these two axes.
+                msg = (
+                    "gram_lambda != 0.0 requires state_source='table': the "
+                    "Gram penalty is defined over self.wte.weight, which is "
+                    "not the input representation under state_source='field' "
+                    "(field_encoder.wte is) — the penalty would silently "
+                    "co-optimize a tensor the forward pass never reads"
+                )
+                raise ValueError(msg)
+            self.field_encoder = FieldEncoder(cfg)
+        elif cfg.state_source == "table":
+            self.field_encoder = None
+        else:
+            msg = f"unknown state_source {cfg.state_source!r}"
+            raise ValueError(msg)
 
     # ---------------------------------------------------------------- init
     def _init_weights(self, module: nn.Module) -> None:
@@ -176,6 +220,25 @@ class LanguageModel(nn.Module):
                 "and lm_head.weight are the SAME nn.Parameter when tied)"
             )
             raise ValueError(msg)
+        if mode in ("input", "both") and self.cfg.state_source == "field":
+            # L2 finding, 2026-08-19: under state_source="field" wte.weight
+            # is not the input representation (field_encoder.wte is —
+            # field_encoder.py, LanguageModel.forward's field_encoder
+            # branch); freezing it is a silent no-op on the axis this mode
+            # promises to control (measured: field_encoder.wte stayed
+            # requires_grad=True and trained fully unfrozen while
+            # embedding_freeze="input" froze self.wte.weight). "output" is
+            # exempt: lm_head.weight remains the real output classifier
+            # under state_source="field" regardless (see the field_encoder
+            # branch below), so freezing it keeps its name's promise.
+            msg = (
+                f"embedding_freeze={mode!r} requires state_source='table': "
+                "under state_source='field' self.wte.weight is not the input "
+                "representation (field_encoder.wte is), so freezing it is a "
+                "silent no-op on the axis this mode promises to control — "
+                "no registered arm combines these two axes"
+            )
+            raise ValueError(msg)
         if mode in ("input", "both"):
             self.wte.weight.requires_grad_(False)
         if mode in ("output", "both"):
@@ -229,6 +292,15 @@ class LanguageModel(nn.Module):
             total -= self.wte.weight.numel()
         return total
 
+    def field_encoder_parameter_count(self) -> int | None:
+        """Parameter count of the field-estimator submodule (E1.5c), or
+        ``None`` when ``state_source != "field"`` — absent channel is
+        absent, the same convention E1.5b's ``gram_frob_sq``/``gram_penalty``
+        already use for a feature most arms don't carry."""
+        if self.field_encoder is None:
+            return None
+        return sum(p.numel() for p in self.field_encoder.parameters())
+
     # ------------------------------------------------------------- forward
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> LMOutput:
         """``idx``/``targets``: ``(B, T)`` int64 token ids."""
@@ -237,7 +309,15 @@ class LanguageModel(nn.Module):
             msg = f"sequence length {t} exceeds block_size {self.cfg.block_size}"
             raise ValueError(msg)
 
-        h = self.drop(self.wte(idx))
+        if self.field_encoder is not None:
+            # E1.5c: z_t = Q . sqrt(p_phi(. | x_<=t)) replaces the static
+            # table lookup — z_t ALONE (the registered v1 combination;
+            # docs/e1_5-instruction.md's z_t (+) E[b_t] variant is a declared
+            # follow-up, not built here). wte/lm_head remain the output
+            # classifier untouched by this branch.
+            h = self.drop(self.field_encoder(idx))
+        else:
+            h = self.drop(self.wte(idx))
         if self.hypersphere:
             h = self.norm_f(h)
         for block in self.blocks:
