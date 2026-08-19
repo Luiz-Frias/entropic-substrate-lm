@@ -296,6 +296,43 @@ def test_field_ce_reported_matches_backward_seam(tmp_path: Path) -> None:
     assert torch.isfinite(torch.tensor(metrics["field_ce"]))
 
 
+def test_field_loss_is_included_in_the_backward_total_not_reported_loss(
+    tmp_path: Path,
+) -> None:
+    """Mirrors test_gram_penalty.py::test_gram_penalty_is_included_in_the_
+    backward_total_not_reported_loss: ``total`` (used for backward) carries
+    the weighted ``field_weighted`` term, but the reported ``loss`` metric
+    from ``train_step`` stays pure backbone cross-entropy — same contract
+    ``aux_loss``/``gram_penalty`` already have (train.py's
+    ``loss = float(out.loss.detach())`` line, which reads the model's OWN
+    loss, never the locally-accumulated ``total``).
+
+    Pinned by a λ-counterfactual: two identically seeded trainers
+    (``field_loss_lambda`` on vs 0) stepping on the SAME frozen batch under
+    the SAME RNG state must report the IDENTICAL ``loss`` — a regression
+    folding ``field_weighted`` into the reported value shifts the λ arm by
+    ``field_ce * field_loss_lambda`` (>> the tolerance here) and fails."""
+    trainer_on = Trainer(_calib_cfg(tmp_path, field_loss_lambda=5.0))
+    trainer_off = Trainer(_calib_cfg(tmp_path, field_loss_lambda=0.0))
+
+    fixed_batch = trainer_on.train_sampler.batch()
+    trainer_on.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+    trainer_off.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+
+    torch.manual_seed(7)
+    metrics_on = trainer_on.train_step()
+    torch.manual_seed(7)
+    metrics_off = trainer_off.train_step()
+
+    assert metrics_on["field_ce"] > 0.0
+    # Discriminating power guard: the weighted term must dwarf the loss
+    # tolerance, else the equality below could not catch a fold-in
+    # regression.
+    assert metrics_on["field_ce"] * trainer_on.cfg.model.field_loss_lambda > 1e-6
+    assert "field_ce" not in metrics_off
+    assert metrics_on["loss"] == pytest.approx(metrics_off["loss"], abs=1e-9)
+
+
 def test_eval_loss_and_nats_per_byte_exclude_l_field(tmp_path: Path) -> None:
     """Same trainer, same weights, same deterministic eval batches
     (mirrors test_gram_penalty.py::test_eval_loss_and_nats_per_byte_

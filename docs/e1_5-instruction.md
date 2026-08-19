@@ -226,12 +226,17 @@ declared follow-up arm; all four registered arms use state replacement.
 ### Implementation status vs this contract (2026-08-19)
 
 Merged (PR #69): F-arm state path, causality tests, FP32 island, byte-only
-refusals, param reporting. Still to build before the prereg's pods:
-(1) the `λ_field` calibration seam + frozen-field mode; (2) H and P arm
-variants sharing one `p_φ`; (3) field calibration telemetry (CE/Brier/ECE/
-entropy/top-1) in train+eval records and sinks; (4) the behavioral
-anti-leakage and geometry-correspondence tests; (5) matched-total-parameter
-configs.
+refusals, param reporting. Merged (PR #74): the `λ_field` calibration seam
+(`train.py`'s `_field_loss_terms`, folded into the backward `total` at the
+same seam `geometry/gram.py`'s Gram penalty uses, NOT `aux_loss`) +
+frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /
+`field_ckpt_path`, guard-teeth in `tests/test_field_calibration.py`) — CE-only
+telemetry (`field_ce`) at this stage, not yet the fuller Brier/ECE/entropy/
+top-1 surface. Still to build before the prereg's pods:
+(2) H and P arm variants sharing one `p_φ`; (3) the remaining field
+calibration telemetry (Brier/ECE/entropy/top-1) in train+eval records and
+sinks; (4) the behavioral anti-leakage and geometry-correspondence tests;
+(5) matched-total-parameter configs.
 
 ## Multi-scale field (E1.5c″ — horizon, feeds E4)
 
