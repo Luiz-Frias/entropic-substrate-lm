@@ -49,10 +49,15 @@ def assert_bitwise_equal(actual: torch.Tensor, expected: torch.Tensor) -> None:
     of its tied counterpart), so shape/dtype/device already match in
     practice — these asserts exist so a future mismatched-pair call fails on
     a clear message here rather than on a silently-broadcast ``!=`` between
-    differently-shaped byte views three lines below. ``.contiguous()`` before
+    differently-shaped byte views three lines below (MEASURED:
+    ``zeros(4).view(uint8) != zeros(1, 4).view(uint8)`` broadcasts to shape
+    ``(1, 16)`` and reports 0 mismatches without raising — a false
+    "bitwise equal" on a shape mismatch). ``.contiguous()`` before
     ``.view(torch.uint8)`` for the same reason: a non-contiguous input would
-    otherwise raise an opaque ``view size is not compatible`` RuntimeError
-    instead of comparing the bytes it was asked to compare.
+    otherwise raise ``self.stride(-1) must be 1 to view Float as Byte
+    (different element sizes), but got N`` (MEASURED on a transposed
+    ``(3, 4)`` tensor) instead of comparing the bytes it was asked to
+    compare.
     """
     assert actual.shape == expected.shape, f"shape mismatch: {actual.shape} vs {expected.shape}"
     assert actual.dtype == expected.dtype, f"dtype mismatch: {actual.dtype} vs {expected.dtype}"
