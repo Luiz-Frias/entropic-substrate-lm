@@ -65,26 +65,37 @@ def test_normalized_gram_clamp_is_load_bearing_against_fp32_overshoot() -> None:
     output from an unclamped one and removing ``.clamp(-1.0, 1.0)`` leaves
     it green.
 
-    ``torch.manual_seed(0); torch.randn(16, 64)`` is a MEASURED overshoot
-    case instead: its raw (unclamped) dot product reaches
-    1.0000003576278687 — confirming the docstring's O(1e-7) claim with an
-    actual repro rather than trusting the comment. This test recomputes
-    ``normalized_gram``'s pre-clamp arithmetic by hand to prove the
-    overshoot is real on THIS input before checking that the real function's
-    output has been clamped away from it.
+    fp32 dot-product overshoot is a real but BLAS-backend/summation-order
+    -dependent effect (MEASURED here, darwin/Accelerate,
+    ``torch.manual_seed(0); torch.randn(16, 64)``: raw pre-clamp max
+    1.0000003576278687), not something a single pinned seed can promise on
+    every platform (a different BLAS on CI's linux runners may sum in a
+    different order). So this test SEARCHES a small, deterministic seed
+    range for a fixture that reproduces the overshoot on whatever backend is
+    running it, recomputing ``normalized_gram``'s pre-clamp arithmetic by
+    hand each time, then checks the real function's output has been clamped
+    away from the overshoot it found.
     """
-    torch.manual_seed(0)
-    e = torch.randn(16, 64)
-
-    unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12)
-    raw = unit @ unit.T
-    assert raw.max().item() > 1.0, (
-        "fixture no longer reproduces the fp32 overshoot it exists to test "
-        "(BLAS backend or torch version changed the rounding) — pick a new seed/shape"
+    raw_max = None
+    seed = None
+    for candidate_seed in range(64):
+        torch.manual_seed(candidate_seed)
+        e = torch.randn(16, 64)
+        unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12)
+        raw = unit @ unit.T
+        if raw.max().item() > 1.0:
+            raw_max = raw.max().item()
+            seed = candidate_seed
+            break
+    assert seed is not None, (
+        "no seed in range(64) reproduced an fp32 dot-product overshoot on this "
+        "BLAS backend — widen the search range or pick a different shape"
     )
 
+    torch.manual_seed(seed)
+    e = torch.randn(16, 64)
     gram = normalized_gram(e)
-    assert gram.max().item() <= 1.0
+    assert gram.max().item() <= 1.0, f"raw overshoot was {raw_max} at seed {seed}"
     assert torch.all(gram <= 1.0) and torch.all(gram >= -1.0)
 
 
