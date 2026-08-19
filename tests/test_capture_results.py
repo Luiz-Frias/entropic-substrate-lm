@@ -215,16 +215,67 @@ def test_capture_checkpoints_include_tiny_opt_in(tmp_path: Path) -> None:
     captured = capture_checkpoints(
         client, ["entropic-substrate-lm"], tmp_path / "ckpts", include_tiny=True
     )
-    assert len(captured) == 2
+    assert sorted(p.name for p in captured) == [
+        "e1-fisher-run-full-e1-fisher-final.pt",
+        "e1-fisher-tiny-run-tiny-e1-fisher-tiny-final.pt",
+    ]
+    # The -best.pt twin and the RUNNING run stay excluded on this arm too.
+    assert sorted(client.download_calls) == [
+        ("run-full-0001", "checkpoints/e1-fisher-final.pt"),
+        ("run-tiny-0002", "checkpoints/e1-fisher-tiny-final.pt"),
+    ]
 
 
 def test_capture_checkpoints_strips_optimizer_by_default(tmp_path: Path) -> None:
-    client = _ckpt_client(payload=_checkpoint_bytes(seed=6, with_optimizer=True))
+    original = _checkpoint_bytes(seed=6, with_optimizer=True)
+    expected = torch.load(io.BytesIO(original), map_location="cpu", weights_only=True)
+    client = _ckpt_client(payload=original)
     (captured,) = capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")
     reloaded = torch.load(captured, map_location="cpu", weights_only=True)
     assert set(reloaded) == {"format_version", "step", "model", "config"}
     assert "optimizer" not in reloaded
     assert "sampler" not in reloaded
+    # Stripping drops resume machinery ONLY — the trained weights and the
+    # step they belong to must survive the re-save byte-for-byte, on CPU.
+    assert reloaded["step"] == expected["step"]
+    torch.testing.assert_close(reloaded["model"]["wte.weight"], expected["model"]["wte.weight"])
+    assert reloaded["model"]["wte.weight"].device.type == "cpu"
+
+
+def test_capture_checkpoints_strip_write_failure_leaves_no_corrupt_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A strip-resave that fails PARTWAY must not leave ``target`` — the
+    idempotency-checked final path — holding truncated bytes: a future
+    invocation's ``target.exists()`` check would otherwise treat that
+    corrupt file as already-captured forever, and re-running the capture
+    would never repair it.
+
+    RED against the pre-fix ``torch.save(stripped, target)`` (writes
+    straight to the idempotency-checked path — a failure partway through
+    truncates and corrupts it in place); the atomic tmp-then-``os.replace``
+    fix writes the stripped payload to a sibling ``.partial`` file first, so
+    a failure there never touches ``target`` at all and the ORIGINAL
+    (unstripped, still fully valid) download survives.
+    """
+    client = _ckpt_client()
+    dest = tmp_path / "ckpts"
+    real_save = torch.save
+
+    def _flaky_save(obj: object, f: object, *args: object, **kwargs: object) -> None:
+        Path(str(f)).write_bytes(b"PARTIAL-GARBAGE-FROM-INTERRUPTED-WRITE")
+        raise RuntimeError("simulated interrupted write")
+
+    monkeypatch.setattr(torch, "save", _flaky_save)
+    with pytest.raises(RuntimeError, match="simulated interrupted write"):
+        capture_checkpoints(client, ["entropic-substrate-lm"], dest)
+    monkeypatch.setattr(torch, "save", real_save)
+
+    (target,) = dest.glob("*-final.pt")
+    # target must still be the intact ORIGINAL download, loadable and
+    # carrying its optimizer state — the strip attempt never completed.
+    reloaded = torch.load(target, map_location="cpu", weights_only=True)
+    assert "optimizer" in reloaded
 
 
 def test_capture_checkpoints_keeps_optimizer_when_strip_optimizer_is_false(tmp_path: Path) -> None:

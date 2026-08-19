@@ -18,6 +18,7 @@ not science — excluded unless explicitly asked for.
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from collections.abc import Sequence
@@ -178,7 +179,19 @@ def capture_checkpoints(
                     "model": model_state,
                     "config": state["config"],
                 }
-                torch.save(stripped, target)
+                # Atomic swap, not in-place: `target.exists()` above is the
+                # idempotency key this loop re-checks on every future
+                # invocation, so a strip write interrupted partway through
+                # would otherwise leave a truncated file sitting AT that
+                # exact path — corrupt, but still "captured" forever as far
+                # as this function is concerned. Writing the stripped
+                # payload to a sibling path first and swapping it in with
+                # `os.replace` (same filesystem, so it is atomic) means a
+                # failed strip leaves the ORIGINAL, still-valid download in
+                # place instead.
+                tmp_target = target.with_suffix(target.suffix + ".partial")
+                torch.save(stripped, tmp_target)
+                os.replace(tmp_target, target)
             captured.append(target)
             logger.info(f"captured {target}")
     return captured
