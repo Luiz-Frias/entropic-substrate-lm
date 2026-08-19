@@ -28,9 +28,13 @@ is edited retroactively):
 ## E1.5-D — diagnostics on existing artifacts (exploratory; runs first)
 
 No new training. Computed from the 18 paired-run final checkpoints (MLflow
-artifacts) plus deterministically reconstructed init tables (fisher: corpus +
-lift seed; random_sphere: run seed). No decision rules — these select the
-next rung's design, they do not gate it.
+artifacts) plus deterministically reconstructed init tables — fisher: the
+saved table (`data/fisher_init_d768.pt`) or the exact corpus rebuild;
+random_sphere: **fixed seed 0** (CORRECTED 2026-08-18: `backbone.py:109`
+calls `random_sphere_init` with its default seed, so every e1-random run
+shares ONE init table regardless of `train.seed` — reconstruction follows
+the code, and cross-seed drift on the random arm shares a single origin).
+No decision rules — these select the next rung's design, they do not gate it.
 
 1. **Angular drift from init**: mean over the 256 rows of
    `arccos(cos(e_i^(0), e_i^(final)))`, per arm per seed.

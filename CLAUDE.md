@@ -8,14 +8,27 @@ Prove or falsify one thesis: statistics-first symbol encoding _induces_ spherica
 rather than assuming it — under the square-root map, byte transition distributions land on
 the positive orthant of the unit hypersphere with Fisher–Rao as (4×) the angular metric —
 and downstream of the substrate, geometry belongs in the layers, not around the model:
-projection/retraction as layer operators, curvature as a learnable parameter. The repo is a
-controlled ablation ladder (E0→E3, one variable per rung; see `docs/e-3-instruction.md`),
-not a framework. The readout is nats/byte plus per-head κ-trajectory diagnostics.
+projection/retraction as layer operators, curvature as a learnable parameter. The encoding
+is a **field, not a lookup** (ratified 2026-08-18): a symbol's representation is its
+context-conditioned predictive distribution mapped through √p — the online contextual
+Fisher state — with the byte as the observation entering the system, never the
+representation used by it. The repo is a controlled ablation ladder (E0→E4, one variable
+per rung), not a framework: initialization geometry (E1, `docs/e-3-instruction.md`) →
+**state construction** (E1.5, `docs/e1_5-instruction.md`: fixed point vs
+context-conditioned distribution) → state dynamics (E2) → relational kernel (E3) →
+coarse-graining (E4). The readout is nats/byte plus per-head κ-trajectory diagnostics.
 
 ## Horizon
 
-E4 in full (`docs/e-4-instruction.md`), then follow-on:
+The E1.5 state-construction series next, then E2→E3, then E4 in full:
 
+- **E1.5 series** (`docs/e1_5-instruction.md`) — E1.5-D endpoint diagnostics on the
+  captured E1 checkpoints (no new training); E1.5a freeze variants; E1.5b
+  Gram-preserving regularization; **E1.5c online contextual Fisher state, v1 = tiny
+  causal transformer, pure-torch** — the series is done enough when E1.5c v1's
+  registered readout files. v2 (Mamba2 `p_φ`) rides the E4 container lane; the
+  multi-scale E1.5c″ field waits for v1's conclusion. Preregistrations follow the
+  flywheel: committed after the E1 extension verdict files, before any confirmatory pod.
 - **E4a** — fixed-W=8 chunk-superposition control on the settled E3 winner (HoloByte
   bind/unbind + micro-decoder pattern), isolating "hierarchy at all" from "learned
   boundaries". **Precondition:** E3 concluded with 3-seed nats/byte numbers.
