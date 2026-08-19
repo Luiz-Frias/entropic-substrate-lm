@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from entropic_substrate.analysis.embedding_geometry import GramRetention
 from entropic_substrate.analysis.palette import (
     OKABE_ITO,
     SeriesStyle,
@@ -44,6 +43,15 @@ from entropic_substrate.telemetry import max_kappa_spread
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
+
+    # Type-only: GramRetention is never instantiated or introspected at
+    # runtime in this module (only used inside a `from __future__ import
+    # annotations`-lazy signature below) — importing it for real would pull
+    # embedding_geometry's much heavier runtime chain (torch, checkpoint,
+    # config, data.build, models.backbone, ...) into every caller of this
+    # module, exactly the dependency-footprint hazard this module's own
+    # docstring documents for matplotlib itself.
+    from entropic_substrate.analysis.embedding_geometry import GramRetention
 
 __all__ = [
     "fig_e1_log_steps_washout",

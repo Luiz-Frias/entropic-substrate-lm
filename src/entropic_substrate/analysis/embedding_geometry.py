@@ -80,6 +80,10 @@ _ANALYSIS_FISHER_CORPUS_BYTES: int = 20_000_000
 # arccos(1 + 1e-10) is NaN.
 _COS_CLAMP = 1.0
 _ROW_NORM_EPS: float = 1e-12
+# Same value as _ROW_NORM_EPS, kept as its own name: this one clamps a
+# Pearson-correlation denominator (_pearson), a different hazard site than
+# a row-norm floor even though the guard-magnitude happens to match.
+_CORR_DENOM_EPS: float = 1e-12
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -259,7 +263,11 @@ def _rank(x: torch.Tensor) -> torch.Tensor:
 def _pearson(x: torch.Tensor, y: torch.Tensor) -> float:
     xc = x - x.mean()
     yc = y - y.mean()
-    denom = (xc.norm() * yc.norm()).clamp_min(_ROW_NORM_EPS)
+    # A degenerate (constant) side yields 0.0, not NaN — a deliberate choice.
+    # Named separately from _ROW_NORM_EPS (same value, different site: this
+    # clamps a Pearson denominator, not a row norm) so a reader never has to
+    # check whether the two clamps are coupled on purpose.
+    denom = (xc.norm() * yc.norm()).clamp_min(_CORR_DENOM_EPS)
     return float((xc * yc).sum() / denom)
 
 
