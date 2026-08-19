@@ -31,7 +31,11 @@ import pytest
 import torch
 
 from entropic_substrate.config import Config
-from entropic_substrate.geometry.gram import gram_frobenius_sq, normalized_gram
+from entropic_substrate.geometry.gram import (
+    _clamp_cosine,
+    gram_frobenius_sq,
+    normalized_gram,
+)
 from entropic_substrate.sinks import MlflowSink
 from entropic_substrate.train import Trainer
 from helpers import tiny_config
@@ -81,6 +85,21 @@ def test_normalized_gram_suppresses_a_near_zero_row_instead_of_amplifying_noise(
     torch.testing.assert_close(gram.diagonal()[1:], torch.ones(3), atol=1e-4, rtol=0)
     gram.sum().backward()
     assert e.grad is not None and torch.isfinite(e.grad).all()
+
+
+def test_clamp_cosine_bounds_out_of_range_cosines_deterministically() -> None:
+    """The deterministic complement to the backend-dependent seed search
+    below: feeds the extracted clamp values just outside ``[-1, 1]``
+    directly, so this arm cannot vary with BLAS summation order. The seed
+    search is RETAINED (conductor ruling, 2026-08-19): it is the only test
+    that MEASURES the overshoot hazard actually occurring on the running
+    backend; this test pins that the clamp clamps."""
+    overshoot = torch.tensor([1.0 + 1e-6, -1.0 - 1e-6, 0.5])
+    clamped = _clamp_cosine(overshoot)
+    assert clamped[0].item() == 1.0
+    assert clamped[1].item() == -1.0
+    assert clamped[2].item() == 0.5
+    assert torch.arccos(clamped).isfinite().all()
 
 
 def test_normalized_gram_clamp_is_load_bearing_against_fp32_overshoot() -> None:
@@ -261,15 +280,37 @@ def test_gram_penalty_is_included_in_the_backward_total_not_reported_loss(
     """``total`` (used for backward) carries the penalty; the reported
     ``loss`` metric stays pure cross-entropy — same contract ``aux_loss``
     already has (train.py's ``loss = float(out.loss.detach())`` line, which
-    reads the model's OWN loss, never the locally-accumulated ``total``)."""
-    trainer = Trainer(_gram_cfg(tmp_path))
-    with torch.no_grad():
-        trainer.raw_model.wte.weight.add_(torch.randn_like(trainer.raw_model.wte.weight) * 0.1)
-    metrics = trainer.train_step()
-    assert metrics["gram_frob_sq"] > 0.0
-    assert metrics["gram_penalty"] == pytest.approx(
-        metrics["gram_frob_sq"] * trainer.cfg.model.gram_lambda
+    reads the model's OWN loss, never the locally-accumulated ``total``).
+
+    The reported-loss arm is pinned by a λ-counterfactual: two identically
+    seeded trainers (``gram_lambda`` on vs 0) stepping on the SAME frozen
+    batch under the SAME RNG state must report the IDENTICAL ``loss`` —
+    a regression folding the penalty into the reported value shifts the
+    λ arm by ``gram_penalty`` (>> the tolerance here) and fails."""
+    trainer_on = Trainer(_gram_cfg(tmp_path))
+    trainer_off = Trainer(_gram_cfg(tmp_path, gram_lambda=0.0))
+    for trainer in (trainer_on, trainer_off):
+        torch.manual_seed(1234)
+        with torch.no_grad():
+            trainer.raw_model.wte.weight.add_(torch.randn_like(trainer.raw_model.wte.weight) * 0.1)
+
+    fixed_batch = trainer_on.train_sampler.batch()
+    trainer_on.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+    trainer_off.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+
+    torch.manual_seed(7)
+    metrics_on = trainer_on.train_step()
+    torch.manual_seed(7)
+    metrics_off = trainer_off.train_step()
+
+    assert metrics_on["gram_frob_sq"] > 0.0
+    assert metrics_on["gram_penalty"] == pytest.approx(
+        metrics_on["gram_frob_sq"] * trainer_on.cfg.model.gram_lambda
     )
+    # Discriminating power guard: the penalty must dwarf the loss tolerance,
+    # else the equality below could not catch a fold-in regression.
+    assert metrics_on["gram_penalty"] > 1e-6
+    assert metrics_on["loss"] == pytest.approx(metrics_off["loss"], abs=1e-9)
 
 
 def test_gram_penalty_gradient_reaches_the_backward_total_seam(tmp_path: Path) -> None:
@@ -386,8 +427,10 @@ def test_gram_reference_is_resume_safe_snapshotting_deterministic_init_not_the_c
     live table has moved well away from both."""
     cfg = _gram_cfg(tmp_path)
     trainer_a = Trainer(cfg)
+    # Assert on the SOURCE before touching it: `.clone()` on a None would
+    # die as AttributeError, and a clone can never be None afterwards.
+    assert trainer_a._gram_ref is not None
     ref_at_init = trainer_a._gram_ref.clone()
-    assert ref_at_init is not None
     for _ in range(3):
         trainer_a.train_step()
     ckpt_path = trainer_a.save_checkpoint("resume-gram-test")

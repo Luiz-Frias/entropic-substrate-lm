@@ -39,6 +39,16 @@ __all__ = ["gram_frobenius_sq", "normalized_gram"]
 _NORM_EPS: float = 1e-12
 
 
+def _clamp_cosine(gram: torch.Tensor) -> torch.Tensor:
+    """Clamp cosines into ``[-1, 1]``: fp32 unit-row dot products overshoot
+    the bound by O(1e-7) (backend/summation-order dependent — see the two
+    load-bearing tests in ``tests/test_gram_penalty.py``), and a caller's
+    ``arccos`` of ``1 + 1e-7`` is NaN. Extracted so the clamp itself is
+    deterministically testable, independent of whichever BLAS backend's
+    overshoot behaviour the composed ``normalized_gram`` path exhibits."""
+    return gram.clamp(-1.0, 1.0)
+
+
 def normalized_gram(embedding: torch.Tensor) -> torch.Tensor:
     """Row-normalized Gram matrix ``G[i, j] = cos(E[i], E[j])`` of ``embedding``.
 
@@ -63,8 +73,7 @@ def normalized_gram(embedding: torch.Tensor) -> torch.Tensor:
     with torch.autocast(device_type=embedding.device.type, enabled=False):
         e = embedding.float()
         unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(_NORM_EPS)
-        gram = unit @ unit.T
-        return gram.clamp(-1.0, 1.0)
+        return _clamp_cosine(unit @ unit.T)
 
 
 def gram_frobenius_sq(gram_a: torch.Tensor, gram_b: torch.Tensor) -> torch.Tensor:
