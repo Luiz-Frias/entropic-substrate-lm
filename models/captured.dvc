@@ -1,0 +1,6 @@
+outs:
+- md5: 64c3c75e6c71efa20a4633572d982c4e.dir
+  size: 6796422505
+  nfiles: 21
+  hash: md5
+  path: captured
