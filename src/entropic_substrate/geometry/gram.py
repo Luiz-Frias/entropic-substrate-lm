@@ -55,6 +55,21 @@ def gram_frobenius_sq(gram_a: torch.Tensor, gram_b: torch.Tensor) -> torch.Tenso
     reclamp, only promotes to FP32 inside its own ``autocast(enabled=False)``
     block so the reduction itself stays well-conditioned under an ambient
     bf16 autocast.
+
+    MEASURED (2026-08-18, CPU): this wrapper's own ops (subtract, multiply,
+    ``.sum()``) are not on ``torch.autocast``'s CPU downcast list — a bf16
+    input run through them under ``torch.autocast("cpu", dtype=bfloat16)``
+    stays bf16 whether or not this ``enabled=False`` block is present.
+    Callers' upstream ``.float()`` (this module's own ``normalized_gram``,
+    and ``train.py``'s ``_gram_penalty_terms``) already guarantees fp32
+    inputs by the time this function runs, so no CPU test can distinguish
+    this wrapper's presence from its absence — see
+    ``test_gram_primitives_are_fp32_finite_and_differentiable_under_bf16_autocast``
+    in ``tests/test_gram_penalty.py``, which passes either way. Retained per
+    CLAUDE.md's non-negotiable geometry-numerics invariant (defense in depth
+    against a caller that skips the ``.float()`` upstream, and against a
+    CUDA autocast op-list that may differ from CPU's) — this is a coverage
+    gap in the test suite, not evidence the wrapper is unnecessary.
     """
     with torch.autocast(device_type=gram_a.device.type, enabled=False):
         diff = gram_a.float() - gram_b.float()

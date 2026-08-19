@@ -58,6 +58,36 @@ def test_normalized_gram_is_clamped_to_valid_cosine_range() -> None:
     assert torch.isfinite(gram).all()
 
 
+def test_normalized_gram_clamp_is_load_bearing_against_fp32_overshoot() -> None:
+    """The ``ones(4, 3)`` case above never actually overshoots 1.0 in fp32
+    (its raw, pre-clamp diagonal lands at 0.9999999403953552 on this
+    machine's CPU BLAS backend — UNDER 1.0), so it cannot tell a clamped
+    output from an unclamped one and removing ``.clamp(-1.0, 1.0)`` leaves
+    it green.
+
+    ``torch.manual_seed(0); torch.randn(16, 64)`` is a MEASURED overshoot
+    case instead: its raw (unclamped) dot product reaches
+    1.0000003576278687 — confirming the docstring's O(1e-7) claim with an
+    actual repro rather than trusting the comment. This test recomputes
+    ``normalized_gram``'s pre-clamp arithmetic by hand to prove the
+    overshoot is real on THIS input before checking that the real function's
+    output has been clamped away from it.
+    """
+    torch.manual_seed(0)
+    e = torch.randn(16, 64)
+
+    unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12)
+    raw = unit @ unit.T
+    assert raw.max().item() > 1.0, (
+        "fixture no longer reproduces the fp32 overshoot it exists to test "
+        "(BLAS backend or torch version changed the rounding) — pick a new seed/shape"
+    )
+
+    gram = normalized_gram(e)
+    assert gram.max().item() <= 1.0
+    assert torch.all(gram <= 1.0) and torch.all(gram >= -1.0)
+
+
 def test_normalized_gram_ignores_row_scale() -> None:
     """Relational geometry, not absolute scale: rescaling rows independently
     must not move the Gram matrix — this is the property row-normalization
@@ -155,6 +185,62 @@ def test_gram_penalty_is_included_in_the_backward_total_not_reported_loss(
     assert metrics["gram_frob_sq"] > 0.0
     assert metrics["gram_penalty"] == pytest.approx(
         metrics["gram_frob_sq"] * trainer.cfg.model.gram_lambda
+    )
+
+
+def test_gram_penalty_gradient_reaches_the_backward_total_seam(tmp_path: Path) -> None:
+    """Guard-tooth for the ACTUAL ``total = total + gram_penalty`` seam in
+    ``train_step`` — not just the reported ``gram_frob_sq``/``gram_penalty``
+    metrics. Those metrics are computed independently of whether they are
+    folded into ``total`` (``_gram_penalty_terms()`` is called either way),
+    so a regression that computes the penalty but never adds it to ``total``
+    leaves every OTHER test in this module green — that gap is exactly what
+    this test closes.
+
+    Captures the REAL gradient reaching ``wte.weight`` during a live
+    ``train_step()`` call via a backward hook, then compares it against a
+    gradient reconstructed with the gram term deliberately excluded from the
+    total — same starting weights (full state_dict snapshot/restore, not
+    just the embedding table) and the same input batch (the sampler is
+    frozen to return one fixed draw). If the two gradients match, the seam
+    is a no-op.
+    """
+    trainer = Trainer(_gram_cfg(tmp_path, gram_lambda=5.0))
+    with torch.no_grad():
+        trainer.raw_model.wte.weight.add_(torch.randn_like(trainer.raw_model.wte.weight) * 0.1)
+
+    # Freeze the batch train_step will draw so the real run and the manual
+    # "no-penalty" reconstruction below see identical inputs.
+    fixed_batch = trainer.train_sampler.batch()
+    trainer.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+
+    state_before = {k: v.detach().clone() for k, v in trainer.model.state_dict().items()}
+
+    captured: dict[str, torch.Tensor] = {}
+
+    def _capture(grad: torch.Tensor) -> None:
+        captured["grad"] = grad.detach().clone()
+
+    handle = trainer.raw_model.wte.weight.register_hook(_capture)
+    trainer.train_step()
+    handle.remove()
+    assert "grad" in captured, "backward hook never fired — train_step did not call .backward()"
+
+    # Reconstruct the gradient WITHOUT the gram term, from the identical
+    # pre-step weights (every param, not just wte) and the identical batch.
+    trainer.model.load_state_dict(state_before)
+    x, y = fixed_batch
+    with trainer._autocast():
+        out = trainer.model(x, y)
+    aux = out.aux_loss
+    total_without_penalty = out.loss if aux is None else out.loss + aux
+    (grad_without_penalty,) = torch.autograd.grad(
+        total_without_penalty, trainer.raw_model.wte.weight
+    )
+
+    assert not torch.allclose(captured["grad"], grad_without_penalty), (
+        "gradient reaching wte.weight during train_step matches the gram-free "
+        "reconstruction exactly — gram_penalty is not being folded into `total`"
     )
 
 
