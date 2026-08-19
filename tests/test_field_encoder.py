@@ -164,13 +164,17 @@ def test_build_model_permits_field_state_source_with_axis_defaults() -> None:
     assert model.field_encoder is not None
 
 
-def test_build_model_rejects_field_state_axis_with_table_source() -> None:
+@pytest.mark.parametrize("field_state", ["prob", "hidden"])
+def test_build_model_rejects_field_state_axis_with_table_source(field_state: str) -> None:
     """P7 (FOR-924): field_state selects among F/P/H CONSTRUCTIONS of a
     field encoder's output — meaningless without one. Same loud-refusal
     posture as field_loss_lambda/field_ckpt_path/field_mode above, for the
     same root cause: a non-default field_state under state_source='table'
-    would be silently ignored (no field encoder exists to read it)."""
-    cfg = tiny_model_config(state_source="table", field_state="prob")
+    would be silently ignored (no field encoder exists to read it).
+    Parametrized over BOTH non-default legs (P and H) — the guard's
+    condition is a flat `!= "sqrt_prob"` check with no leg-specific branch,
+    so one arm passing does not establish the other does."""
+    cfg = tiny_model_config(state_source="table", field_state=field_state)
     with pytest.raises(ValueError, match="field_state"):
         build_model(cfg)
 
