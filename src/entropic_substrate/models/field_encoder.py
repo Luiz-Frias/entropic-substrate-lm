@@ -33,6 +33,19 @@ Non-negotiable numerics (CLAUDE.md): the ``softmax -> sqrt -> lift`` step
 runs in FP32 inside an explicit ``torch.autocast(enabled=False)`` block
 regardless of the caller's ambient autocast state, mirroring
 ``geometry/gram.py`` and ``geometry/kappa.py``.
+
+Cross-axis compatibility (L2 finding, 2026-08-19): E1.5a's
+``embedding_freeze`` and E1.5b's ``gram_lambda`` both predate this axis and
+are defined over the backbone's ``self.wte.weight`` being the INPUT
+representation. Under ``state_source="field"`` that stops being true —
+``self.wte(idx)`` is never called on this path, ``FieldEncoder.wte`` is —
+so ``backbone.py``'s ``LanguageModel.__init__`` refuses
+``embedding_freeze in ("input", "both")`` and any nonzero ``gram_lambda``
+together with ``state_source="field"`` rather than silently measuring a
+tensor the forward pass never reads. ``embedding_freeze="output"`` stays
+legal: ``lm_head.weight`` remains the real output classifier regardless of
+``state_source``. No registered arm (``configs/e1-5*.yaml``) combines these
+axes — each varies exactly one from baseline.
 """
 
 from __future__ import annotations

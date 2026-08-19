@@ -114,6 +114,56 @@ def test_build_model_with_table_state_source_has_no_field_encoder() -> None:
     assert model.field_encoder_parameter_count() is None
 
 
+# ---------------------------------------------- cross-axis guards (L2 finding)
+# state_source="field" swaps which tensor generates the model's INPUT
+# (field_encoder.wte replaces self.wte(idx) in forward — see
+# LanguageModel.forward). E1.5a's embedding_freeze and E1.5b's gram_lambda
+# both predate this axis and are defined in terms of self.wte.weight being
+# that input generator. Verified 2026-08-19 (L2 review, this branch): with
+# gram_lambda=0.5 + state_source="field", gram_penalty co-optimizes
+# self.wte.weight across steps (0 -> 5.72039 -> 1.58559 -> 1.14893 ->
+# 1.09639) while field_encoder.wte -- the tensor forward() actually reads --
+# is never referenced by the penalty; symmetrically,
+# embedding_freeze="input"+state_source="field" freezes self.wte.weight
+# (requires_grad=False, bit-identical after 3 steps) while
+# field_encoder.wte trains fully unfrozen (requires_grad=True), making the
+# freeze a no-op on the axis its name promises to control. Neither
+# registered arm combines these axes (each e1-5*.yaml varies exactly one),
+# so the fix is to refuse the combination loudly rather than invent
+# untested redirect semantics onto field_encoder.wte.
+def test_build_model_rejects_field_state_source_with_gram_lambda() -> None:
+    cfg = tiny_model_config(state_source="field", gram_lambda=0.5)
+    with pytest.raises(ValueError, match="gram_lambda"):
+        build_model(cfg)
+
+
+@pytest.mark.parametrize("mode", ["input", "both"])
+def test_build_model_rejects_field_state_source_with_input_freeze(mode: str) -> None:
+    cfg = tiny_model_config(state_source="field", embedding_freeze=mode, tie_embeddings=False)
+    with pytest.raises(ValueError, match="embedding_freeze"):
+        build_model(cfg)
+
+
+def test_build_model_permits_field_state_source_with_output_freeze() -> None:
+    """embedding_freeze='output' still freezes the REAL output classifier
+    (lm_head.weight) under state_source='field' -- wte/lm_head stay in
+    place as the output classifier regardless of state_source (backbone.py)
+    -- so this combination is legitimate and must NOT be refused."""
+    model = build_model(
+        tiny_model_config(state_source="field", embedding_freeze="output", tie_embeddings=False)
+    )
+    assert not model.lm_head.weight.requires_grad
+    assert model.field_encoder is not None
+
+
+def test_build_model_permits_field_state_source_with_axis_defaults() -> None:
+    """The guard must not over-fire on state_source='field' alone (the
+    registered e1-5c-field arm's own defaults: gram_lambda=0.0,
+    embedding_freeze='none')."""
+    model = build_model(tiny_model_config(state_source="field"))
+    assert model.field_encoder is not None
+
+
 # ------------------------------------------------------------------- geometry
 def test_field_encoder_output_matches_backbone_width() -> None:
     cfg = _field_model_config(d_model=32)
