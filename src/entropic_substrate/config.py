@@ -48,6 +48,11 @@ StateSource = Literal["table", "field"]
 # transformer is registered; docs/e1_5-instruction.md's v0/v2 rungs add
 # members here when they're registered, not before.
 FieldEstimator = Literal["transformer_v1"]
+# E1.5c Repair 1 (docs/e1_5-instruction.md, PR #73): does p_phi train jointly
+# with the backbone under the calibration CE (field_loss_lambda), or does it
+# load a checkpoint and freeze — the cleaner test, since it prevents p_phi
+# from becoming a private code negotiated with the backbone.
+FieldMode = Literal["joint", "frozen"]
 
 EXPERIMENTS: tuple[str, ...] = (
     "e0-byte",
@@ -129,6 +134,22 @@ class ModelConfig:
     field_d_model: int = 128
     # E1.5c: field estimator attention head count.
     field_n_heads: int = 4
+    # E1.5c Repair 1: weight on the calibration CE that keeps p_phi an
+    # honest next-byte predictor (L_total = L_backbone + field_loss_lambda *
+    # L_field). 0.0 disables the seam entirely — the merged-but-uncalibrated
+    # simplex-bottleneck configuration docs/e1_5-instruction.md's design
+    # correction names as the flaw this repairs.
+    field_loss_lambda: float = 0.0
+    # E1.5c Repair 1: "joint" trains p_phi and the backbone together under
+    # the calibration CE; "frozen" loads p_phi from field_ckpt_path and
+    # freezes it before the backbone ever trains over sqrt(p_phi).Q.
+    field_mode: FieldMode = "joint"
+    # E1.5c Repair 1: checkpoint p_phi's frozen weights load from. Required
+    # when field_mode="frozen" (refused loudly at build otherwise); must be
+    # None when field_mode="joint" (a set path there would be silently
+    # ignored, which is exactly the kind of quiet misconfiguration CLAUDE.md's
+    # Errors principle refuses).
+    field_ckpt_path: str | None = None
 
 
 @dataclass(slots=True)
