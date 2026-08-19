@@ -719,10 +719,17 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
                     raise ValueError(msg)
             final_a = ckpt_a.model.wte.weight.detach()
             final_b = ckpt_b.model.wte.weight.detach()
-            drift_a = eg.angular_drift(eg.reconstruct_init_table(ckpt_a.config), final_a)
-            drift_b = eg.angular_drift(eg.reconstruct_init_table(ckpt_b.config), final_b)
-            retention_a = eg.gram_retention(eg.reconstruct_init_table(ckpt_a.config), final_a)
-            retention_b = eg.gram_retention(eg.reconstruct_init_table(ckpt_b.config), final_b)
+            # Reconstruct once per arm, not once per diagnostic: the
+            # fisher_sqrt/no-saved-path fallback rebuilds the table from a
+            # 20MB corpus stream (reconstruct_init_table's own docstring),
+            # so calling it twice per arm doubled that cost for nothing —
+            # angular_drift and gram_retention both want the SAME table.
+            init_a = eg.reconstruct_init_table(ckpt_a.config)
+            init_b = eg.reconstruct_init_table(ckpt_b.config)
+            drift_a = eg.angular_drift(init_a, final_a)
+            drift_b = eg.angular_drift(init_b, final_b)
+            retention_a = eg.gram_retention(init_a, final_a)
+            retention_b = eg.gram_retention(init_b, final_b)
             entry: dict[str, Any] = {
                 "seed": seed,
                 "drift_a": drift_a,
