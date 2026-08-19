@@ -17,6 +17,7 @@ import torch
 
 from entropic_substrate.cli import main
 from entropic_substrate.config import configs_dir, resolve_experiment_config
+from entropic_substrate.models.field_encoder import FieldEncoder
 from entropic_substrate.train import Trainer, cosine_lr, resolve_device, seed_everything
 from helpers import tiny_config
 
@@ -224,7 +225,18 @@ def test_cli_train_tiny_e1_5c_field_end_to_end(
     records = [json.loads(line) for line in results.read_text().splitlines() if line]
     start = next(r for r in records if r["event"] == "run_start")
     assert start["config"]["model"]["field_d_model"] == 32
-    assert start["field_encoder_params"] > 0
+    # Equality against an independently constructed tiny encoder, not `> 0`:
+    # the config echo above only proves the CONFIG carried 32 — a build that
+    # ignored field_* and constructed the full-size default would still pass
+    # it. MEASURED 2026-08-19: tiny 32/1/2 encoder = 20,576 params vs
+    # 426,624 at the full 128/2/4 — a 20x gap this equality cannot miss.
+    expected_params = sum(
+        p.numel()
+        for p in FieldEncoder(
+            resolve_experiment_config("e1-5c-field", tiny=True).model
+        ).parameters()
+    )
+    assert start["field_encoder_params"] == expected_params
     assert (tmp_path / "models" / "e1-5c-field-tiny-final.pt").exists(), (
         "checkpoint escaped tmp_path"
     )
@@ -447,6 +459,14 @@ def test_tiny_overlay_shrinks_the_field_encoder() -> None:
     assert tiny.model.field_n_layers == 1
     assert tiny.model.field_n_heads == 2
     assert tiny.model.state_source == "field"
+    # Config -> construction: the assertions above only pin the resolved
+    # CONFIG; these pin that FieldEncoder's constructor actually consumes
+    # each field_* value (head count leaves param counts unchanged, so the
+    # CLI e2e's param-equality alone cannot cover n_heads).
+    encoder = FieldEncoder(tiny.model)
+    assert len(encoder.blocks) == 1
+    assert encoder.wte.weight.shape[1] == 32
+    assert encoder.blocks[0].attn.n_heads == 2
 
 
 def test_tiny_overlay_preserves_e1_5_arm_axes() -> None:
@@ -457,7 +477,11 @@ def test_tiny_overlay_preserves_e1_5_arm_axes() -> None:
     fails for e1-5c-field, since the overlay would silently turn the field
     arm back into a table-lookup arm under --tiny while the full run stays
     "field" - exactly the divergence between what is smoke-tested and what
-    ships that this test exists to catch."""
+    ships that this test exists to catch.
+
+    Scope: iterates every entry in test_config._E1_5_ARM_AXES — all five
+    E1.5 arms at time of writing — so a new arm added there is covered
+    here with no edit."""
     from test_config import _E1_5_ARM_AXES  # tests/ is on sys.path (conftest.py)
 
     for exp, axis in _E1_5_ARM_AXES.items():
