@@ -59,6 +59,30 @@ def test_normalized_gram_is_clamped_to_valid_cosine_range() -> None:
     assert torch.isfinite(gram).all()
 
 
+def test_normalized_gram_suppresses_a_near_zero_row_instead_of_amplifying_noise() -> None:
+    """Pins the _NORM_EPS floor's documented behavior (geometry/gram.py):
+    a row whose norm is far below the floor gets its cosine values
+    suppressed toward zero (correctly signaling "no real direction here"),
+    not blown up into a spurious unit-norm direction manufactured from fp32
+    rounding noise. Also checks the degenerate row's gradient stays finite,
+    since a divide this close to its floor is exactly where a gradient
+    could blow up if the floor were chosen wrong."""
+    torch.manual_seed(0)
+    e = torch.randn(4, 5, requires_grad=True)
+    with torch.no_grad():
+        e[0] = torch.randn(5) * 1e-20  # degenerate: norm far below _NORM_EPS
+    gram = normalized_gram(e)
+    assert torch.isfinite(gram).all()
+    # The degenerate row's cosine with every OTHER row (including itself)
+    # is suppressed near zero, not a fabricated unit-magnitude value.
+    assert torch.all(gram[0].abs() < 1e-3)
+    assert torch.all(gram[:, 0].abs() < 1e-3)
+    # The three normal rows are unaffected: still unit self-cosine.
+    torch.testing.assert_close(gram.diagonal()[1:], torch.ones(3), atol=1e-4, rtol=0)
+    gram.sum().backward()
+    assert e.grad is not None and torch.isfinite(e.grad).all()
+
+
 def test_normalized_gram_clamp_is_load_bearing_against_fp32_overshoot() -> None:
     """The ``ones(4, 3)`` case above never actually overshoots 1.0 in fp32
     (its raw, pre-clamp diagonal lands at 0.9999999403953552 on this
@@ -152,6 +176,18 @@ def test_gram_frobenius_sq_rejects_mismatched_shapes() -> None:
     gram_b = normalized_gram(torch.randn(5, 6))
     with pytest.raises(ValueError, match="shape"):
         gram_frobenius_sq(gram_a, gram_b)
+
+
+def test_normalized_gram_rejects_non_2d_input() -> None:
+    """``embedding`` is documented as ``(n_symbols, d)``; a 1-D or 3-D input
+    reaching ``e.norm(p=2, dim=1, ...)`` would either error confusingly
+    (1-D: no dim 1) or silently normalize per-slice instead of per-row
+    (3-D), so fail fast on the actual contract instead (CLAUDE.md Errors
+    principle) rather than let either happen."""
+    with pytest.raises(ValueError, match="2-D"):
+        normalized_gram(torch.randn(6))
+    with pytest.raises(ValueError, match="2-D"):
+        normalized_gram(torch.randn(2, 6, 5))
 
 
 def test_gram_primitives_are_fp32_finite_and_differentiable_under_bf16_autocast() -> None:

@@ -48,7 +48,18 @@ def normalized_gram(embedding: torch.Tensor) -> torch.Tensor:
     range by O(1e-7) from rounding, and an unclamped value there would make a
     caller's ``arccos`` of it (E1.5-D's FR-init distance,
     ``docs/e1_5-instruction.md``) silently return NaN.
+
+    Raises:
+        ValueError: if ``embedding`` is not 2-D. A 1-D input would fail
+            confusingly inside ``.norm(p=2, dim=1, ...)`` (no dim 1 to
+            reduce); a 3-D+ input would not fail at all, silently
+            normalizing per-slice instead of per-row against the
+            documented ``(n_symbols, d)`` contract. Fail fast instead
+            (CLAUDE.md Errors principle).
     """
+    if embedding.ndim != 2:
+        msg = f"normalized_gram: expected a 2-D embedding, got shape {tuple(embedding.shape)}"
+        raise ValueError(msg)
     with torch.autocast(device_type=embedding.device.type, enabled=False):
         e = embedding.float()
         unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(_NORM_EPS)
