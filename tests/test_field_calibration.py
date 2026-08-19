@@ -228,7 +228,12 @@ def test_frozen_field_loads_state_lift_for_the_hidden_arm(tmp_path: Path) -> Non
     )
     frozen = FieldEncoder(frozen_cfg)
     assert frozen.state_lift is not None
-    torch.testing.assert_close(frozen.state_lift.weight, expected_state_lift, atol=0, rtol=0)
+    torch.testing.assert_close(
+        frozen.state_lift.weight,
+        expected_state_lift,
+        atol=0,
+        rtol=0,
+    )
     assert not frozen.state_lift.weight.requires_grad
 
 
