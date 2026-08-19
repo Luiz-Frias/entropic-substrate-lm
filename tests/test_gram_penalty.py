@@ -211,6 +211,11 @@ def test_gram_gradient_reaches_embedding_once_table_diverges_from_reference(
         trainer.raw_model.wte.weight.add_(torch.randn_like(trainer.raw_model.wte.weight) * 0.1)
     _frob_sq, penalty = trainer._gram_penalty_terms()
     (grad,) = torch.autograd.grad(penalty, trainer.raw_model.wte.weight)
+    # Finite BEFORE nonzero: `nan != 0` is True, so a NaN-poisoned gradient
+    # would otherwise slip past `torch.any(grad != 0)` and read as "reached
+    # the embedding" — MEASURED: torch.any(torch.tensor([float("nan")]) !=
+    # 0) is True.
+    assert torch.isfinite(grad).all()
     assert torch.any(grad != 0)
 
 
@@ -281,6 +286,13 @@ def test_gram_penalty_gradient_reaches_the_backward_total_seam(tmp_path: Path) -
         total_without_penalty, trainer.raw_model.wte.weight
     )
 
+    # Finite BEFORE the difference check: `torch.allclose` with the default
+    # equal_nan=False already returns False when either side has a NaN, so a
+    # NaN-poisoned `captured["grad"]` would otherwise slip past `not
+    # torch.allclose(...)` and read as "the seam changed the gradient"
+    # instead of "the seam broke the gradient."
+    assert torch.isfinite(captured["grad"]).all()
+    assert torch.isfinite(grad_without_penalty).all()
     assert not torch.allclose(captured["grad"], grad_without_penalty), (
         "gradient reaching wte.weight during train_step matches the gram-free "
         "reconstruction exactly — gram_penalty is not being folded into `total`"

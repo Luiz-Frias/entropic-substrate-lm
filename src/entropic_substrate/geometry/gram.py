@@ -24,7 +24,18 @@ import torch
 __all__ = ["gram_frobenius_sq", "normalized_gram"]
 
 # Row-norm floor: guards the divide against an all-zero row without moving
-# any genuinely non-degenerate row's cosine values.
+# any genuinely non-degenerate row's cosine values. Deliberately NOT
+# torch.finfo(torch.float32).tiny (~1.1755e-38, the smallest floor that
+# would still let a technically-nonzero row through) — MEASURED: a row at
+# norm ~3e-20 (well above that floor, i.e. still "nonzero" by it) divided by
+# a fp32-tiny floor produces a full unit-norm vector whose direction is
+# pure fp32 rounding noise from values near the representable limit, not a
+# recoverable direction; the same row under this 1e-12 floor instead comes
+# out correctly suppressed (norm ~3e-8), signaling "no real direction here"
+# rather than fabricating one. 1e-12 is chosen as "far enough above fp32
+# rounding noise to trust the division, far enough below any real embedding
+# row's norm (rows are ~unit-norm by construction under this repo's nGPT
+# retraction) to never clip a legitimate row."
 _NORM_EPS: float = 1e-12
 
 
