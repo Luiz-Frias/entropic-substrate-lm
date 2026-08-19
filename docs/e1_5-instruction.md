@@ -233,11 +233,17 @@ same seam `geometry/gram.py`'s Gram penalty uses, NOT `aux_loss`) +
 frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /
 `field_ckpt_path`, guard-teeth in `tests/test_field_calibration.py`) — CE-only
 telemetry (`field_ce`) at this stage, not yet the fuller Brier/ECE/entropy/
-top-1 surface. Still to build before the prereg's pods:
-(1) H and P arm variants sharing one `p_φ`; (2) the remaining field
-calibration telemetry (Brier/ECE/entropy/top-1) in train+eval records and
-sinks; (3) the behavioral anti-leakage and geometry-correspondence tests;
-(4) matched-total-parameter configs.
+top-1 surface. Landed (FOR-924, this branch): H and P arm variants sharing
+one `p_φ` — `field_state: Literal["sqrt_prob","prob","hidden"]` in
+`config.py`, `configs/e1-5c-hidden.yaml` + `configs/e1-5c-prob.yaml`,
+`FieldEncoder` branching in `field_encoder.py` (F/P share the FP32 softmax
+island against the fixed semi-orthogonal lift; H is a plain trainable
+`Linear(field_d_model, d_model)` over the encoder's hidden state, the only
+arm with a trainable lift), and per-arm construction + causality guard-teeth
+in `tests/`. Still to build before the prereg's pods:
+(1) the remaining field calibration telemetry (Brier/ECE/entropy/top-1) in
+train+eval records and sinks; (2) the behavioral anti-leakage and
+geometry-correspondence tests; (3) matched-total-parameter configs.
 
 ## Multi-scale field (E1.5c″ — horizon, feeds E4)
 

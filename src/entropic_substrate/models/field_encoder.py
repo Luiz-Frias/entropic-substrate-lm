@@ -307,7 +307,7 @@ class FieldEncoder(nn.Module):
                 # Unreachable given __init__'s field_state -> state_lift
                 # wiring — restated as a real control-flow check rather than
                 # `assert` (bandit B101: stripped under `python -O`, per
-                # this module's own `_load_frozen_weights` docstring).
+                # this repo's own `_require_loss` docstring in train.py).
                 msg = "field_state='hidden' reached _encode with state_lift=None"
                 raise RuntimeError(msg)
             z = self.state_lift(h)
