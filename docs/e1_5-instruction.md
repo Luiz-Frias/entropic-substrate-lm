@@ -226,7 +226,8 @@ declared follow-up arm; all four registered arms use state replacement.
 ### Implementation status vs this contract (2026-08-19)
 
 Merged (PR #69): F-arm state path, causality tests, FP32 island, byte-only
-refusals, param reporting. Merged (PR #74): the `λ_field` calibration seam
+refusals, param reporting. Open (PR #74, this branch, not yet merged): the
+`λ_field` calibration seam
 (`train.py`'s `_field_loss_terms`, folded into the backward `total` at the
 same seam `geometry/gram.py`'s Gram penalty uses, NOT `aux_loss`) +
 frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /

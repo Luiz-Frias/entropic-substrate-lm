@@ -7,11 +7,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+import torch
 import yaml
 
 from entropic_substrate.config import Config, DataConfig, ModelConfig, TrainConfig
 
 __all__ = [
+    "assert_bitwise_equal",
     "assert_no_foreign_mlflow_stack",
     "capture_container_logs",
     "discover_host_port",
@@ -36,6 +38,19 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # `agx-qdrant` container resident on this machine — i.e. the filter is specific
 # enough to be a precondition and cheap enough to run on every fixture entry.
 _MLFLOW_SERVICE_FILTER = "label=com.docker.compose.service=mlflow"
+
+
+def assert_bitwise_equal(actual: torch.Tensor, expected: torch.Tensor) -> None:
+    """Bit-pattern equality, stricter than value equality: ``assert_close``
+    with zero tolerances still passes a ``-0.0``/``+0.0`` flip and treats
+    NaN pairs as equal — a byte view has no such blind spots."""
+    mismatched = int(
+        (actual.detach().view(torch.uint8) != expected.detach().view(torch.uint8)).sum()
+    )
+    assert mismatched == 0, (
+        f"{mismatched} of {actual.element_size() * actual.numel()} bytes differ "
+        "between tensors that must be bit-identical"
+    )
 
 
 def tiny_model_config(**overrides: object) -> ModelConfig:

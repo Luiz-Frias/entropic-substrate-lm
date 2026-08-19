@@ -55,8 +55,7 @@ from entropic_substrate.config import Config, ModelConfig
 from entropic_substrate.models.field_encoder import FieldEncoder
 from entropic_substrate.sinks import MlflowSink
 from entropic_substrate.train import Trainer
-from helpers import tiny_config, tiny_model_config
-from test_freeze import _assert_bitwise_equal
+from helpers import assert_bitwise_equal, tiny_config, tiny_model_config
 from test_sinks import FakeMlflowClient
 
 pytestmark = pytest.mark.unit
@@ -407,7 +406,7 @@ def test_frozen_field_bitwise_unchanged_after_training(tmp_path: Path) -> None:
         trainer.train_step()
     after = field_encoder.state_dict()
     for key, value in before.items():
-        _assert_bitwise_equal(after[key], value)
+        assert_bitwise_equal(after[key], value)
 
 
 def test_frozen_field_params_absent_from_optimizer(tmp_path: Path) -> None:
