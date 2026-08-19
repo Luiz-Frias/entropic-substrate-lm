@@ -234,10 +234,10 @@ frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /
 `field_ckpt_path`, guard-teeth in `tests/test_field_calibration.py`) — CE-only
 telemetry (`field_ce`) at this stage, not yet the fuller Brier/ECE/entropy/
 top-1 surface. Still to build before the prereg's pods:
-(2) H and P arm variants sharing one `p_φ`; (3) the remaining field
+(1) H and P arm variants sharing one `p_φ`; (2) the remaining field
 calibration telemetry (Brier/ECE/entropy/top-1) in train+eval records and
-sinks; (4) the behavioral anti-leakage and geometry-correspondence tests;
-(5) matched-total-parameter configs.
+sinks; (3) the behavioral anti-leakage and geometry-correspondence tests;
+(4) matched-total-parameter configs.
 
 ## Multi-scale field (E1.5c″ — horizon, feeds E4)
 

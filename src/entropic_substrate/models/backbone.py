@@ -128,8 +128,38 @@ class LanguageModel(nn.Module):
                     "co-optimize a tensor the forward pass never reads"
                 )
                 raise ValueError(msg)
+            if cfg.field_mode == "frozen" and cfg.field_loss_lambda != 0.0:
+                # Frozen leaves get no gradient, so λ·L_field burns one
+                # encoder forward per training step for a term that cannot
+                # train anything — contaminating the compute-accounting
+                # lane (FLOPs/step) the E1.5c contract reports. Frozen-field
+                # CE telemetry is the EVAL-time job (FOR-925), not a
+                # train-loss rider. CR PR #74 + P6 fix-agent converged on
+                # this gap independently.
+                msg = (
+                    "field_mode='frozen' requires field_loss_lambda=0.0: frozen "
+                    "field weights receive no gradient, so the calibration term "
+                    "cannot train anything and only adds a wasted encoder forward "
+                    "per step — frozen-field CE belongs to eval telemetry"
+                )
+                raise ValueError(msg)
             self.field_encoder = FieldEncoder(cfg)
         elif cfg.state_source == "table":
+            if (
+                cfg.field_loss_lambda != 0.0
+                or cfg.field_ckpt_path is not None
+                or cfg.field_mode != "joint"
+            ):
+                # No field encoder exists on this path — a non-default
+                # calibration knob would be silently ignored, which reads
+                # as "configured" while measuring nothing (loud-refusal
+                # posture; same class as the gram_lambda × field guard).
+                msg = (
+                    "field_loss_lambda/field_ckpt_path/field_mode require "
+                    "state_source='field'; under state_source='table' no field "
+                    "encoder exists and these knobs would be silently ignored"
+                )
+                raise ValueError(msg)
             self.field_encoder = None
         else:
             msg = f"unknown state_source {cfg.state_source!r}"

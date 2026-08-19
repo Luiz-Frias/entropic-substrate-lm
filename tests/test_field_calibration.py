@@ -289,10 +289,27 @@ def test_field_loss_reaches_the_backward_total_seam(tmp_path: Path) -> None:
 
 
 def test_field_ce_reported_matches_backward_seam(tmp_path: Path) -> None:
+    """The reported ``field_ce`` must EQUAL the CE the seam actually used —
+    recomputed independently through the same exposed ``field_logits(x)``
+    path on the same frozen batch and PRE-step weights. (The prior form of
+    this test asserted only positive+finite, which any wrong-but-finite
+    value passes — CR PR #74 finding.)"""
     trainer = Trainer(_calib_cfg(tmp_path, field_loss_lambda=2.0))
+    fixed_batch = trainer.train_sampler.batch()
+    trainer.train_sampler.batch = lambda: fixed_batch  # type: ignore[method-assign]
+    x, y = fixed_batch
+    encoder = trainer.raw_model.field_encoder
+    assert encoder is not None
+
+    torch.manual_seed(7)
+    with torch.no_grad():
+        logits = encoder.field_logits(x)
+        expected = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]), y.reshape(-1)
+        )
+    torch.manual_seed(7)
     metrics = trainer.train_step()
-    assert metrics["field_ce"] > 0.0
-    assert torch.isfinite(torch.tensor(metrics["field_ce"]))
+    assert metrics["field_ce"] == pytest.approx(float(expected), rel=1e-5)
 
 
 def test_field_loss_is_included_in_the_backward_total_not_reported_loss(
@@ -480,3 +497,40 @@ def test_mlflow_sink_omits_field_ce_when_absent_from_the_record() -> None:
     sink.log({"event": "eval", "step": 1, "loss": 1.0})
     metrics = client._runs[sink.run_id].data.metrics
     assert "field_ce" not in metrics
+
+
+# ------------------------------------------------- cross-axis refusals (CR #74)
+def test_frozen_field_rejects_nonzero_field_loss_lambda(tmp_path: Path) -> None:
+    """frozen + λ≠0 is constructible but contradictory: frozen leaves get no
+    gradient, so λ·L_field burns one encoder forward per step for a term
+    that cannot train anything — measurement-lane contamination (the
+    compute-accounting lane needs clean FLOPs/step). Frozen-field CE
+    telemetry is the eval-time job (FOR-925), not a train-loss rider."""
+    ckpt = tmp_path / "field.pt"
+    cfg = _field_config(
+        tmp_path, field_loss_lambda=0.5, field_mode="frozen", field_ckpt_path=str(ckpt)
+    )
+    with pytest.raises(ValueError, match="field_mode='frozen'"):
+        Trainer(cfg)
+
+
+@pytest.mark.parametrize(
+    "knob",
+    [
+        {"field_loss_lambda": 0.5},
+        {"field_ckpt_path": "models/somewhere.pt"},
+        {"field_mode": "frozen"},
+    ],
+    ids=["lambda", "ckpt_path", "mode"],
+)
+def test_table_state_rejects_dead_field_calibration_knobs(
+    tmp_path: Path, knob: dict[str, object]
+) -> None:
+    """Under state_source='table' no field encoder exists — a non-default
+    calibration knob would be silently ignored, violating the loud-refusal
+    posture (same class as the gram_lambda × field guard)."""
+    cfg = tiny_config(tmp_path, embedding_init="random_sphere")
+    for key, value in knob.items():
+        setattr(cfg.model, key, value)
+    with pytest.raises(ValueError, match="state_source='table'"):
+        Trainer(cfg)
