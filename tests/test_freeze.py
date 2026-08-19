@@ -160,21 +160,41 @@ def test_frozen_params_absent_from_optimizer(tmp_path: Path) -> None:
     assert id(trainer.raw_model.wte.weight) not in optimizer_param_ids
 
 
-def test_ngpt_trainable_side_stays_unit_norm(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("mode", "frozen_attr", "trainable_attr"),
+    [("input", "wte", "lm_head"), ("output", "lm_head", "wte")],
+)
+def test_ngpt_partial_freeze_preserves_frozen_table(
+    tmp_path: Path, mode: str, frozen_attr: str, trainable_attr: str
+) -> None:
     """The guard must skip only the FROZEN half — the trainable half still
-    gets renormalised every step, same as an unfrozen nGPT run."""
+    gets renormalised every step, same as an unfrozen nGPT run.
+
+    Untied "input"/"output" freeze puts wte.weight and lm_head.weight in TWO
+    distinct entries of the ``normalize_weights`` dedup dict (unlike "both"
+    +tied, which collapses to one), so this is the branch that actually
+    exercises the guard discriminating a frozen entry from a trainable one
+    within the same iteration.
+    """
     cfg = tiny_config(
         tmp_path,
         block="ngpt",
         norm="ngpt_norm",
         embedding_init="random_sphere",
-        embedding_freeze="input",
+        embedding_freeze=mode,
         tie_embeddings=False,
     )
     trainer = Trainer(cfg)
+    frozen_before = getattr(trainer.raw_model, frozen_attr).weight.detach().clone()
     for _ in range(3):
         trainer.train_step()
-    weight = trainer.raw_model.lm_head.weight
+    torch.testing.assert_close(
+        getattr(trainer.raw_model, frozen_attr).weight,
+        frozen_before,
+        atol=0,
+        rtol=0,
+    )
+    weight = getattr(trainer.raw_model, trainable_attr).weight
     norms = weight.norm(p=2, dim=1)
     torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-5, rtol=0)
 
