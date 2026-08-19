@@ -168,15 +168,22 @@ def capture_checkpoints(
                 )
                 raise CheckpointFormatError(msg) from exc
             state = normalize_checkpoint(raw, source=str(target))
+            # Validated unconditionally, not only under strip_optimizer: a
+            # checkpoint missing these keys is not one Trainer.state_dict()
+            # ever wrote regardless of whether THIS call strips it — leaving
+            # it uncaught when strip_optimizer=False would let a malformed
+            # capture sit on disk unflagged until some later, harder-to-
+            # trace consumer (e.g. load_checkpoint_model's own state.get(
+            # "step", 0) silently defaults instead of refusing) trips on it.
+            missing = [key for key in ("step", "model", "config") if key not in state]
+            if missing:
+                msg = (
+                    f"{target}: normalized checkpoint is missing required key(s) "
+                    f"{missing} — not a checkpoint Trainer.state_dict() ever wrote, "
+                    "kept on disk as evidence"
+                )
+                raise CheckpointFormatError(msg)
             if strip_optimizer:
-                missing = [key for key in ("step", "model", "config") if key not in state]
-                if missing:
-                    msg = (
-                        f"{target}: normalized checkpoint is missing required key(s) "
-                        f"{missing} — not a checkpoint Trainer.state_dict() ever wrote, "
-                        "kept on disk as evidence"
-                    )
-                    raise CheckpointFormatError(msg)
                 model_state = {
                     key: value.cpu() if isinstance(value, torch.Tensor) else value
                     for key, value in state["model"].items()

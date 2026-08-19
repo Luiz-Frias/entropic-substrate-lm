@@ -572,13 +572,27 @@ def test_fig_e15d_angular_drift_renders_with_redundant_non_color_channels() -> N
     from entropic_substrate.analysis.charts import fig_e15d_angular_drift
 
     series = [
-        ("arm-a", torch.linspace(0.0, 0.5, 20, dtype=torch.float64)),
-        ("arm-b", torch.linspace(0.0, 0.9, 20, dtype=torch.float64)),
+        # Deliberately UNSORTED (descending): fig_e15d_angular_drift's own
+        # docstring promises it sorts ascending so the DISTRIBUTION shape,
+        # not symbol identity, is compared — sorted-ascending input (the
+        # prior version of this test) cannot distinguish "sorts correctly"
+        # from "torch.sort silently dropped, input happened to be sorted
+        # already".
+        ("arm-a", torch.linspace(0.0, 0.5, 20, dtype=torch.float64).flip(0)),
+        ("arm-b", torch.linspace(0.0, 0.9, 20, dtype=torch.float64).flip(0)),
     ]
     fig = fig_e15d_angular_drift(series)
     (ax,) = fig.get_axes()
     lines = [ln for ln in ax.get_lines() if ln.get_label() in {"arm-a", "arm-b"}]
     assert len(lines) == 2
+    for line in lines:
+        ys = list(line.get_ydata())
+        assert ys == sorted(ys)
+        # x is symbol RANK normalized to [0, 1] (least- to most-drifted),
+        # not a raw index.
+        xs = list(line.get_xdata())
+        assert xs[0] == pytest.approx(0.0)
+        assert xs[-1] == pytest.approx(1.0)
     assert len({ln.get_color() for ln in lines}) == 2
     # Colorblind rule: color alone is never the only channel telling two
     # series apart — linestyle AND marker must both actually differ, not

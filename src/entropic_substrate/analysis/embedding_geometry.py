@@ -264,7 +264,14 @@ def _rank(x: torch.Tensor) -> torch.Tensor:
     """
     order = torch.argsort(x)
     ranks = torch.empty_like(order, dtype=torch.float64)
-    ranks[order] = torch.arange(x.numel(), dtype=torch.float64)
+    # device=x.device: torch.arange defaults to CPU with no explicit device,
+    # while `ranks` (via empty_like(order, ...)) follows x's own device —
+    # an index-assignment across devices raises on CUDA. Every currently
+    # exercised call site runs on CPU (this module's own analysis-machine
+    # design goal), so this was dormant, not measured-broken; explicit
+    # regardless, per this repo's own house rule against silent
+    # device-dependent gaps.
+    ranks[order] = torch.arange(x.numel(), dtype=torch.float64, device=x.device)
     return ranks
 
 
