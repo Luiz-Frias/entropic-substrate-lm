@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from entropic_substrate.config import Config
 from entropic_substrate.geometry.gram import gram_frobenius_sq, normalized_gram
 from entropic_substrate.sinks import MlflowSink
 from entropic_substrate.train import Trainer
@@ -108,18 +109,49 @@ def test_normalized_gram_ignores_row_scale() -> None:
     torch.testing.assert_close(normalized_gram(e), normalized_gram(scaled), atol=1e-5, rtol=1e-5)
 
 
+def test_normalized_gram_is_invariant_to_a_genuine_orthogonal_rotation() -> None:
+    """The module docstring claims invariance to ``any orthogonal transform
+    of the table`` — a GENUINE rotation (``e @ Q`` for orthogonal ``Q``,
+    which moves every row's coordinates but preserves all pairwise angles),
+    not the additive perturbation the neighboring ``gram_frobenius_sq``
+    test below exercises (that one moves the angles on purpose, hence its
+    positive-distance assertion). This is the direct proof of the claim."""
+    torch.manual_seed(0)
+    e = torch.randn(8, 6)
+    q, _ = torch.linalg.qr(torch.randn(6, 6))  # random orthogonal matrix
+    torch.testing.assert_close(normalized_gram(e), normalized_gram(e @ q), atol=1e-4, rtol=1e-4)
+
+
 def test_gram_frobenius_sq_is_zero_for_identical_gram_matrices() -> None:
     e = torch.randn(8, 6)
     gram = normalized_gram(e)
     assert float(gram_frobenius_sq(gram, gram)) == 0.0
 
 
-def test_gram_frobenius_sq_is_positive_for_a_rotated_table() -> None:
+def test_gram_frobenius_sq_is_positive_for_a_perturbed_table() -> None:
+    """Additive per-row noise (unlike the rotation above) DOES move the
+    pairwise angles, so the Gram matrix — and this penalty term — must
+    register it as nonzero."""
     torch.manual_seed(0)
     e = torch.randn(8, 6)
     gram_a = normalized_gram(e)
     gram_b = normalized_gram(e + torch.randn(8, 6) * 0.5)
     assert float(gram_frobenius_sq(gram_a, gram_b)) > 0.0
+
+
+def test_gram_frobenius_sq_rejects_mismatched_shapes() -> None:
+    """Both callers in this repo (``Trainer._gram_penalty_terms`` and
+    E1.5-D's planned ``cross_arm_gram_agreement``) always diff two Gram
+    matrices, each ``(n_symbols, n_symbols)`` for the SAME table's own
+    symbol count — a shape mismatch can only mean two tables of different
+    vocabularies were compared (e.g. byte vs bpe), which is a caller bug,
+    not a case ``@`` broadcasting should silently paper over. Fail fast
+    (CLAUDE.md Errors principle) rather than let a mismatched pair
+    silently broadcast into a nonsense value."""
+    gram_a = normalized_gram(torch.randn(8, 6))
+    gram_b = normalized_gram(torch.randn(5, 6))
+    with pytest.raises(ValueError, match="shape"):
+        gram_frobenius_sq(gram_a, gram_b)
 
 
 def test_gram_primitives_are_fp32_finite_and_differentiable_under_bf16_autocast() -> None:
@@ -139,7 +171,7 @@ def test_gram_primitives_are_fp32_finite_and_differentiable_under_bf16_autocast(
 
 
 # ------------------------------------------------------------------ trainer
-def _gram_cfg(tmp_path: Path, gram_lambda: float = 0.5, **overrides: object):
+def _gram_cfg(tmp_path: Path, gram_lambda: float = 0.5, **overrides: object) -> Config:
     return tiny_config(
         tmp_path,
         embedding_init="random_sphere",
@@ -317,9 +349,17 @@ def test_gram_reference_is_resume_safe_snapshotting_deterministic_init_not_the_c
     trainer_b = Trainer(resumed_cfg)
 
     torch.testing.assert_close(trainer_b._gram_ref, ref_at_init, atol=0, rtol=0)
-    # The loaded table itself DID move (checkpoint is post-training) — proves
-    # the equality above isn't vacuous because nothing changed.
-    assert not torch.equal(trainer_b.raw_model.wte.weight, ref_at_init)
+    # The loaded table's OWN geometry DID move (checkpoint is post-training)
+    # — proves the equality above isn't vacuous because nothing changed.
+    # Compared via normalized_gram, not raw weights: `ref_at_init` is
+    # (n_symbols, n_symbols) while `wte.weight` is (n_symbols, d_model), so a
+    # raw-weight `torch.equal` against `ref_at_init` compares mismatched
+    # shapes whenever d_model != n_symbols (true here: tiny_config's
+    # d_model=32 vs the 256-byte vocab) — MEASURED: torch.equal on
+    # mismatched shapes returns False unconditionally rather than raising,
+    # which made the original form of this assertion pass regardless of
+    # whether resume actually worked.
+    assert not torch.allclose(normalized_gram(trainer_b.raw_model.wte.weight), ref_at_init)
 
 
 def test_mlflow_sink_forwards_gram_metrics_on_eval_events() -> None:

@@ -70,7 +70,21 @@ def gram_frobenius_sq(gram_a: torch.Tensor, gram_b: torch.Tensor) -> torch.Tenso
     against a caller that skips the ``.float()`` upstream, and against a
     CUDA autocast op-list that may differ from CPU's) — this is a coverage
     gap in the test suite, not evidence the wrapper is unnecessary.
+
+    Raises:
+        ValueError: if the two Gram matrices' shapes differ. Both callers in
+            this repo (``Trainer._gram_penalty_terms``, and E1.5-D's planned
+            cross-arm agreement) always diff two ``(n_symbols, n_symbols)``
+            matrices for the SAME table's own symbol count — a mismatch can
+            only mean two tables of different vocabularies were compared,
+            which is a caller bug. Failing fast here (CLAUDE.md Errors
+            principle) refuses that rather than letting ``-`` silently
+            broadcast (or, for shapes that happen to be broadcast-compatible,
+            silently produce a meaningless value instead of erroring at all).
     """
+    if gram_a.shape != gram_b.shape:
+        msg = f"gram_frobenius_sq: shape mismatch {tuple(gram_a.shape)} vs {tuple(gram_b.shape)}"
+        raise ValueError(msg)
     with torch.autocast(device_type=gram_a.device.type, enabled=False):
         diff = gram_a.float() - gram_b.float()
         return (diff * diff).sum()
