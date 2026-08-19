@@ -51,6 +51,7 @@ import torch
 
 from entropic_substrate.analysis.embedding_geometry import (
     CheckpointModel,
+    _pearson,
     angular_drift,
     cross_arm_gram_agreement,
     functional_divergence,
@@ -231,9 +232,48 @@ def test_gram_retention_independent_tables_have_near_zero_correlation() -> None:
     assert abs(retention.spearman_r) < 0.3
 
 
+def test_pearson_does_not_attenuate_a_true_correlation_at_small_scale() -> None:
+    """CodeRabbit finding (FOR-909 P4 follow-up): a naive ``clamp_min`` on
+    the PRODUCT of the two centered norms silently attenuates a genuine
+    strong correlation whenever both spreads are merely small (not
+    degenerate) — two perfectly-correlated vectors at norm ~2e-7 each give
+    a norm-product of ~1e-14, clamped up to the 1e-12 floor, reporting
+    r ~= 0.1 instead of the true r == 1.0. Each norm must be tested
+    SEPARATELY against the degeneracy floor instead."""
+    x = torch.tensor([0.0, 1e-7, 2e-7, 3e-7], dtype=torch.float64)
+    y = 2.0 * x  # perfectly correlated by construction
+    assert _pearson(x, y) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_pearson_is_zero_for_a_degenerate_constant_side() -> None:
+    x = torch.tensor([1.0, 1.0, 1.0, 1.0], dtype=torch.float64)
+    y = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
+    assert _pearson(x, y) == 0.0
+
+
 def test_gram_retention_needs_at_least_two_symbols() -> None:
     with pytest.raises(ValueError, match="at least 2 symbols"):
         gram_retention(torch.randn(1, 4), torch.randn(1, 4))
+
+
+def test_gram_retention_refuses_oversized_vocab_before_materializing_gram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CodeRabbit finding (FOR-909 P4 follow-up): neither this function nor
+    the CLI restricts callers to the byte alphabet, so a GPT-2-vocab table
+    (~50,257 symbols) would silently materialize two ~10GB fp32 Gram
+    matrices — an OOM kill, not a refusal. Refuses BEFORE calling
+    normalized_gram: patches it to raise if reached, proving the size check
+    runs first rather than merely coincidentally succeeding on small input."""
+    import entropic_substrate.analysis.embedding_geometry as eg_module
+
+    def _must_not_be_called(_: torch.Tensor) -> torch.Tensor:
+        raise AssertionError("normalized_gram must not run past the size guard")
+
+    monkeypatch.setattr(eg_module, "normalized_gram", _must_not_be_called)
+    n = eg_module._MAX_GRAM_SYMBOLS + 1
+    with pytest.raises(ValueError, match="would materialize two"):
+        gram_retention(torch.randn(n, 4), torch.randn(n, 4))
 
 
 # ------------------------------------------------------------ cross_arm_gram_agreement
@@ -440,14 +480,19 @@ def test_cli_embedding_geometry_requires_both_arms(capsys: pytest.CaptureFixture
     assert "--ckpt-a and --ckpt-b" in capsys.readouterr().err
 
 
-def test_cli_embedding_geometry_zero_pairs_is_a_controlled_refusal(tmp_path: Path) -> None:
+def test_cli_embedding_geometry_zero_pairs_is_a_controlled_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     ckpt_a = _train_and_capture_final(tmp_path / "a", seed=6, embedding_init="random_sphere")
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=9, embedding_init="random_sphere")
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
+    assert "no seed-paired checkpoints" in capsys.readouterr().err
 
 
-def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(tmp_path: Path) -> None:
+def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The landmine: ``tiny_config`` defaults to ``embedding_init="default"``,
     which ``reconstruct_init_table`` correctly refuses — this must surface as
     a controlled exit 2, not an unhandled traceback."""
@@ -455,6 +500,7 @@ def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(tmp_pat
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=6)
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
+    assert "no init table exists" in capsys.readouterr().err
 
 
 def test_cli_embedding_geometry_field_state_source_is_a_loud_refusal(
@@ -486,7 +532,7 @@ def test_cli_embedding_geometry_field_state_source_is_a_loud_refusal(
 
 
 def test_cli_embedding_geometry_duplicate_seed_on_one_side_is_a_loud_refusal(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ckpt_a1 = _train_and_capture_final(tmp_path / "a1", seed=6, embedding_init="random_sphere")
     ckpt_a2 = _train_and_capture_final(tmp_path / "a2", seed=6, embedding_init="random_sphere")
@@ -504,14 +550,21 @@ def test_cli_embedding_geometry_duplicate_seed_on_one_side_is_a_loud_refusal(
         ]
     )
     assert code == 2
+    assert "ambiguous pairing" in capsys.readouterr().err
 
 
-def test_cli_embedding_geometry_malformed_checkpoint_is_a_loud_refusal(tmp_path: Path) -> None:
+def test_cli_embedding_geometry_malformed_checkpoint_is_a_loud_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     bad = tmp_path / "garbage.pt"
     bad.write_bytes(b"not a torch checkpoint at all")
     good = _train_and_capture_final(tmp_path / "b", seed=6, embedding_init="random_sphere")
     code = main(["embedding-geometry", "--ckpt-a", str(bad), "--ckpt-b", str(good), "--json"])
     assert code == 2
+    # Raised as CheckpointFormatError (not ValueError), so it is caught by
+    # main()'s OUTER handler, not cmd_embedding_geometry's own ValueError
+    # catch — the message still names the offending path.
+    assert "garbage.pt" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------- fig_e15d_* charts
@@ -554,9 +607,16 @@ def test_fig_e15d_gram_retention_renders_with_redundant_non_color_channels() -> 
     (ax,) = fig.get_axes()
     lines = [ln for ln in ax.get_lines() if ln.get_label() not in (None, "")]
     markers = [ln for ln in lines if not str(ln.get_label()).startswith("_")]
+    reference = [ln for ln in lines if str(ln.get_label()).startswith("_")]
     assert len(markers) == 2
     assert len({ln.get_color() for ln in markers}) == 2
     assert len({ln.get_marker() for ln in markers}) >= 2
+    # The y=x reference line IS drawn (not merely implied by axis symmetry)
+    # — CLAUDE.md's own rule that a threshold "computed but hidden" is
+    # forbidden — and both axes are the documented fixed [-1.05, 1.05] range.
+    assert len(reference) == 1
+    assert ax.get_xlim() == pytest.approx((-1.05, 1.05))
+    assert ax.get_ylim() == pytest.approx((-1.05, 1.05))
 
 
 def test_fig_e15d_gram_retention_refuses_empty_points() -> None:

@@ -85,6 +85,14 @@ _ROW_NORM_EPS: float = 1e-12
 # a row-norm floor even though the guard-magnitude happens to match.
 _CORR_DENOM_EPS: float = 1e-12
 
+# gram_retention materializes two (n, n) fp32 Gram matrices — pair count
+# grows as n^2/2. n=256 (this module's own byte-alphabet target) costs
+# 32,640 pairs and ~260KB/matrix; n=4096 costs ~67MB/matrix, still fine;
+# a GPT-2-vocab table (n~50,257, reachable since neither this function nor
+# the CLI restricts callers to a byte tokenizer) costs ~10GB/matrix — an
+# OOM kill, not a controlled refusal, without this cap.
+_MAX_GRAM_SYMBOLS: int = 4096
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class CheckpointModel:
@@ -263,12 +271,21 @@ def _rank(x: torch.Tensor) -> torch.Tensor:
 def _pearson(x: torch.Tensor, y: torch.Tensor) -> float:
     xc = x - x.mean()
     yc = y - y.mean()
-    # A degenerate (constant) side yields 0.0, not NaN — a deliberate choice.
-    # Named separately from _ROW_NORM_EPS (same value, different site: this
-    # clamps a Pearson denominator, not a row norm) so a reader never has to
-    # check whether the two clamps are coupled on purpose.
-    denom = (xc.norm() * yc.norm()).clamp_min(_CORR_DENOM_EPS)
-    return float((xc * yc).sum() / denom)
+    x_norm = xc.norm()
+    y_norm = yc.norm()
+    # A degenerate (near-constant) side yields 0.0, not NaN — a deliberate
+    # choice, but each norm is tested SEPARATELY rather than clamping their
+    # PRODUCT: clamping the product silently attenuates a genuine strong
+    # correlation whenever both spreads are merely small (not zero) — e.g.
+    # two perfectly correlated vectors at norm ~2e-7 each give a product of
+    # ~1e-14, clamped up to 1e-12 (_CORR_DENOM_EPS), reporting r ≈ 0.1
+    # instead of the true r == 1.0 (MEASURED during CodeRabbit review,
+    # FOR-909 P4 follow-up). Named separately from _ROW_NORM_EPS (same
+    # value, different site — a correlation-degeneracy floor, not a row-norm
+    # floor) so a reader never has to check whether the two are coupled.
+    if float(x_norm) < _CORR_DENOM_EPS or float(y_norm) < _CORR_DENOM_EPS:
+        return 0.0
+    return float((xc * yc).sum() / (x_norm * y_norm))
 
 
 def gram_retention(init_table: torch.Tensor, final_table: torch.Tensor) -> GramRetention:
@@ -279,11 +296,29 @@ def gram_retention(init_table: torch.Tensor, final_table: torch.Tensor) -> GramR
     for ``arccos(cos)`` on the final side) cannot change ``spearman_r`` — rank
     correlation is transform-invariant — which is why this function's docstring
     and the plan both single Pearson out as the transform-SENSITIVE readout.
+
+    Raises:
+        ValueError: fewer than 2 symbols, or more than
+            :data:`_MAX_GRAM_SYMBOLS` — this module's own diagnostics target
+            the 256-symbol byte alphabet (CLAUDE.md's north star), but
+            neither this function nor the CLI restricts its caller to a byte
+            tokenizer; a GPT-2-vocab table (~50,257 symbols) would silently
+            materialize two ~10GB fp32 Gram matrices, an OOM kill rather
+            than a refusal.
     """
     _check_paired_shape(init_table, final_table, fn="gram_retention")
     n = init_table.shape[0]
     if n < 2:
         msg = f"gram_retention: need at least 2 symbols to form a pair, got {n}"
+        raise ValueError(msg)
+    if n > _MAX_GRAM_SYMBOLS:
+        gb_each = n * n * 4 / 1e9
+        msg = (
+            f"gram_retention: {n} symbols would materialize two {n}x{n} fp32 Gram "
+            f"matrices (~{gb_each:.1f}GB each) — this module's diagnostics target "
+            f"the byte alphabet; refusing rather than risking an OOM kill (cap: "
+            f"{_MAX_GRAM_SYMBOLS} symbols)"
+        )
         raise ValueError(msg)
     g_init = normalized_gram(init_table)
     g_final = normalized_gram(final_table)
