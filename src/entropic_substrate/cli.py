@@ -694,6 +694,29 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
         per_seed_raw: list[dict[str, Any]] = []
         for seed in common:
             ckpt_a, ckpt_b = loaded_a[seed], loaded_b[seed]
+            # L2 finding, 2026-08-19: under state_source="field" (E1.5c),
+            # ckpt.model.wte.weight is only the output classifier — the
+            # real input representation is FieldEncoder.wte
+            # (field_encoder.py), never read by wte-based diagnostics
+            # below. Mirrors backbone.py's own gram_lambda (~109-131) and
+            # embedding_freeze (~223-237) guards for this exact axis:
+            # fail loud here rather than silently emit a plausible-looking
+            # but wrong diagnostic (a paired fisher-shaped field checkpoint
+            # passes shape validation, so nothing else would catch this).
+            for label, ckpt in (("--ckpt-a", ckpt_a), ("--ckpt-b", ckpt_b)):
+                state_source = ckpt.config.model.state_source
+                if state_source != "table":
+                    msg = (
+                        f"embedding-geometry: {label} seed {seed} has "
+                        f"state_source={state_source!r} — the wte.weight-based "
+                        "diagnostics (angular_drift, gram_retention, "
+                        "cross_arm_gram_agreement, procrustes_align) require "
+                        "state_source='table': under state_source='field' "
+                        "self.wte.weight is not the input representation "
+                        "(FieldEncoder.wte is), so these diagnostics would "
+                        "silently measure the wrong tensor"
+                    )
+                    raise ValueError(msg)
             final_a = ckpt_a.model.wte.weight.detach()
             final_b = ckpt_b.model.wte.weight.detach()
             drift_a = eg.angular_drift(eg.reconstruct_init_table(ckpt_a.config), final_a)

@@ -2,7 +2,7 @@
 cross-arm agreement, Procrustes alignment, functional divergence, and the
 checkpoint-loading/init-reconstruction retrieval side.
 
-Three guard-teeth this file pins with RED-first proofs (hand-verified during
+Four guard-teeth this file pins with RED-first proofs (hand-verified during
 implementation — command + observed output recorded in the phase report, not
 shipped here, matching ``test_field_encoder.py``'s / ``test_gram_penalty.py``'s
 convention):
@@ -24,6 +24,17 @@ convention):
    :func:`~entropic_substrate.analysis.embedding_geometry.load_checkpoint_model`
    and the ``embedding-geometry`` CLI subcommand are pinned to raise/report a
    NAMED :class:`~entropic_substrate.checkpoint.CheckpointFormatError`.
+4. **field-state-source refused, not silently mismeasured** (L2 finding,
+   2026-08-19) — a ``state_source="field"`` (E1.5c) checkpoint is
+   table-shaped (same ``d_model``/vocab as any table-arm fisher checkpoint),
+   so it passes ``_check_paired_shape`` silently; without a guard the CLI
+   would read ``ckpt.model.wte.weight`` — the output classifier under
+   ``state_source="field"``, not the input representation
+   (``FieldEncoder.wte`` is) — and emit a plausible-looking but wrong
+   diagnostic with zero error or warning.
+   ``test_cli_embedding_geometry_field_state_source_is_a_loud_refusal`` is
+   RED against the pre-fix CLI (verified: without the guard it exits 0 and
+   prints a full JSON payload instead of refusing).
 """
 
 from __future__ import annotations
@@ -410,6 +421,34 @@ def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(tmp_pat
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=6)
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
+
+
+def test_cli_embedding_geometry_field_state_source_is_a_loud_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """L2 finding, 2026-08-19 (this branch): under ``state_source="field"``
+    (E1.5c) ``ckpt.model.wte.weight`` is only the output classifier, not the
+    input representation the field encoder (``FieldEncoder.wte``) actually
+    generates — a table-shaped checkpoint captured under
+    ``configs/e1-5c-field.yaml`` passes ``_check_paired_shape`` silently
+    (same ``d_model``, same vocab), so without this guard the CLI would emit
+    a plausible-looking but wrong ``angular_drift``/``gram_retention``/
+    ``cross_arm_gram_agreement``/``procrustes_align`` reading with zero
+    error or warning. Mirrors ``backbone.py``'s own ``gram_lambda``/
+    ``embedding_freeze`` guards for this exact axis (~109-131, ~223-237)."""
+    ckpt_a = _train_and_capture_final(
+        tmp_path / "a",
+        seed=6,
+        embedding_init="fisher_sqrt",
+        state_source="field",
+        field_d_model=16,
+        field_n_layers=1,
+        field_n_heads=2,
+    )
+    ckpt_b = _train_and_capture_final(tmp_path / "b", seed=6, embedding_init="fisher_sqrt")
+    code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
+    assert code == 2
+    assert "state_source" in capsys.readouterr().err
 
 
 def test_cli_embedding_geometry_duplicate_seed_on_one_side_is_a_loud_refusal(
