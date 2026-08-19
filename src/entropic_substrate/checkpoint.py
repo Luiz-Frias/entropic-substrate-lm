@@ -123,17 +123,25 @@ def _convert_legacy_tau(model_state: dict[str, Any], keys: list[str], source: st
             raise CheckpointFormatError(msg) from exc
 
 
-def normalize_checkpoint(
-    state: dict[str, Any], *, source: str, for_resume: bool = False
-) -> dict[str, Any]:
+def normalize_checkpoint(state: Any, *, source: str, for_resume: bool = False) -> dict[str, Any]:
     """Return ``state`` at the current format version, or refuse.
 
     Args:
         state: a checkpoint mapping as written by :meth:`Trainer.state_dict`.
+            Typed ``Any`` because callers hand this ``torch.load``'s raw
+            return — an unvalidated boundary where a bare list (or any
+            non-mapping) loads without error; refused here by name rather
+            than surfacing as an ``AttributeError`` deep in the body.
         source: path (or label) named in error messages.
         for_resume: ``True`` when the optimiser state will also be restored,
             which forbids the legacy-``tau`` conversion.
     """
+    if not isinstance(state, dict):
+        msg = (
+            f"{source}: checkpoint payload is {type(state).__name__}, not a mapping — "
+            "not a shape Trainer.state_dict() ever wrote"
+        )
+        raise CheckpointFormatError(msg)
     version = state.get("format_version")
     if version == CHECKPOINT_FORMAT_VERSION:
         return state

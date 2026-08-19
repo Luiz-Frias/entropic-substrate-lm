@@ -65,6 +65,24 @@ def _download_artifact(
         shutil.move(str(local), target)
 
 
+def _validated_run_name(name: str) -> str:
+    """Refuse an MLflow run name that is not a single path component.
+
+    ``run_name`` is REMOTE data interpolated into a capture target path.
+    ``dest / name`` silently REPLACES dest when ``name`` is absolute
+    (pathlib semantics) and ``..`` segments traverse out of it — so a run
+    rename on the server could steer where capture writes. Fail loud, never
+    skip silently (a skipped run would read as "captured everything").
+    """
+    if name != Path(name).name or name in ("", ".", ".."):
+        msg = (
+            f"MLflow run name {name!r} is not a safe filename component — "
+            "refusing to build a capture path from it"
+        )
+        raise ValueError(msg)
+    return name
+
+
 def capture_finished_runs(
     client: Any,
     experiment_names: Sequence[str],
@@ -89,10 +107,11 @@ def capture_finished_runs(
             continue
         if not include_tiny and info.run_name.endswith(_TINY_SUFFIX):
             continue
+        run_name = _validated_run_name(info.run_name)
         for artifact in client.list_artifacts(info.run_id, _RESULTS_PREFIX):
             if not artifact.path.endswith(".jsonl"):
                 continue
-            target = dest / f"{info.run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
+            target = dest / f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
             if target.exists():
                 continue
             _download_artifact(client, info.run_id, artifact.path, dest, target)
@@ -152,10 +171,11 @@ def capture_checkpoints(
             continue
         if not include_tiny and info.run_name.endswith(_TINY_SUFFIX):
             continue
+        run_name = _validated_run_name(info.run_name)
         for artifact in client.list_artifacts(info.run_id, _CHECKPOINT_PREFIX):
             if not artifact.path.endswith(_FINAL_SUFFIX):
                 continue
-            target = dest / f"{info.run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
+            target = dest / f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
             if target.exists():
                 continue
             _download_artifact(client, info.run_id, artifact.path, dest, target)

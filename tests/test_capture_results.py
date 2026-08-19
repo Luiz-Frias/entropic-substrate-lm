@@ -371,3 +371,45 @@ def test_cli_capture_results_unknown_experiment_is_a_controlled_refusal(
     )
     assert code == 2
     assert "not found on the tracking server" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("hostile", ["../escape", "nested/inner"])
+def test_capture_checkpoints_refuses_path_escaping_run_name(tmp_path: Path, hostile: str) -> None:
+    """``run_name`` is REMOTE data interpolated into a filesystem path:
+    ``dest / name`` silently REPLACES dest for an absolute name and ``..``
+    segments traverse out of it — a rename on the MLflow server must never
+    steer where capture writes. Refused loudly, never skipped silently."""
+    client = FakeCaptureClient(
+        experiments={"entropic-substrate-lm": "exp-1"},
+        runs=[_Run(_Info(run_id="run-evil-0001", run_name=hostile, status="FINISHED"))],
+        artifacts={},
+        payloads={},
+    )
+    with pytest.raises(ValueError, match="not a safe filename component"):
+        capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")
+
+
+@pytest.mark.parametrize("hostile", ["../escape", "nested/inner"])
+def test_capture_finished_runs_refuses_path_escaping_run_name(tmp_path: Path, hostile: str) -> None:
+    """The results lane builds its target from the same remote field — the
+    guard binds both capture lanes, not only the new checkpoint one."""
+    client = FakeCaptureClient(
+        experiments={"entropic-substrate-lm": "exp-1"},
+        runs=[_Run(_Info(run_id="run-evil-0001", run_name=hostile, status="FINISHED"))],
+        artifacts={},
+        payloads={},
+    )
+    with pytest.raises(ValueError, match="not a safe filename component"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "results")
+
+
+def test_capture_checkpoints_non_mapping_payload_raises_named_error(tmp_path: Path) -> None:
+    """torch.load can succeed on a payload that is not a checkpoint mapping
+    at all (a bare list saves and loads fine) — that must surface as the
+    repo's NAMED CheckpointFormatError, not an AttributeError from deep
+    inside normalize_checkpoint."""
+    buf = io.BytesIO()
+    torch.save([1, 2, 3], buf)
+    client = _ckpt_client(payload=buf.getvalue())
+    with pytest.raises(CheckpointFormatError, match="not a mapping"):
+        capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")

@@ -453,7 +453,7 @@ def fig_e15d_angular_drift(series: Sequence[tuple[str, torch.Tensor]]) -> Figure
             markersize=4,
             label=style.label,
         )
-    ax.set_xlabel("symbol rank (sorted by drift, 0=least moved)")
+    ax.set_xlabel("normalized symbol rank (0-1, sorted by drift, 0=least moved)")
     ax.set_ylabel("angular drift init -> final (radians)")
     ax.set_title("E1.5-D: per-symbol angular drift")
     ax.legend(fontsize=8)
