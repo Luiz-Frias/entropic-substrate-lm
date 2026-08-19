@@ -213,7 +213,7 @@ def test_field_encoder_lift_buffer_matches_e1s_fixed_lift_and_has_no_grad() -> N
 # output becomes the state z_t handed to the backbone. field_state selects
 # among the three constructions this rung registers (F is the pre-existing
 # default "sqrt_prob"; T, the static-table arm, has no field_state at all).
-_ARM_FIELD_STATES = ["sqrt_prob", "prob", "hidden"]
+_ARM_FIELD_STATES: tuple[str, ...] = ("sqrt_prob", "prob", "hidden")
 
 
 def test_field_encoder_rejects_unknown_field_state() -> None:
