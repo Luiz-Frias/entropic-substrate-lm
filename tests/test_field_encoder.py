@@ -298,6 +298,34 @@ def test_field_encoder_finite_under_bf16_autocast() -> None:
     assert torch.isfinite(z.float()).all()
 
 
+def test_field_encoder_fp32_island_holds_under_bf16_autocast() -> None:
+    """``isfinite`` alone does not pin the FP32 island (CLAUDE.md
+    non-negotiable numerics): under CPU bf16 autocast, PyTorch's own
+    autocast policy already keeps ``softmax`` in fp32 and a plain bf16
+    ``sqrt``/matmul does not overflow to inf/nan, so
+    ``test_field_encoder_finite_under_bf16_autocast`` stays GREEN even with
+    the explicit ``torch.autocast(..., enabled=False)`` island
+    (field_encoder.py, forward) deleted (verified 2026-08-19 by hand:
+    removing the island left that test passing).
+
+    This test instead re-runs ``test_field_encoder_z_rows_are_unit_norm``'s
+    own regime (``d_model=300``, where ``semi_orthogonal_lift`` is an EXACT
+    isometry and rows are unit-norm to fp32 precision, atol=1e-4) UNDER an
+    ambient bf16 autocast context. With the island intact, the sqrt/matmul
+    step still runs in fp32 regardless of the ambient context, so the norm
+    deviation stays ~1e-7 (well inside atol=1e-4). With the island removed,
+    the ambient autocast downcasts the matmul against ``self.lift`` to
+    bf16, and the measured deviation jumps to ~6e-4 -- five orders of
+    magnitude past atol=1e-4 -- so a silently-dropped island goes RED here."""
+    cfg = _field_model_config(d_model=300)
+    encoder = FieldEncoder(cfg)
+    idx = torch.randint(0, 256, (2, 10))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        z = encoder(idx)
+    norms = z.float().norm(dim=-1)
+    torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-4, rtol=0)
+
+
 # ------------------------------------------------------------------- injection
 def test_fisher_still_seeds_the_output_head_when_state_source_is_field(
     sample_bytes: bytes,
