@@ -25,6 +25,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import torch
+
+from entropic_substrate.analysis.embedding_geometry import GramRetention
 from entropic_substrate.analysis.palette import (
     OKABE_ITO,
     SeriesStyle,
@@ -49,6 +52,8 @@ __all__ = [
     "fig_e3_kappa_divergence_vs_loss_gap",
     "fig_e3_kappa_trajectories",
     "fig_e3_loss_separation_vs_e2",
+    "fig_e15d_angular_drift",
+    "fig_e15d_gram_retention",
 ]
 
 
@@ -407,4 +412,77 @@ def fig_e3_kappa_divergence_vs_loss_gap(
         labeled, [str(line.get_label()) for line in labeled], loc="upper left", fontsize=7
     )
     kappa_ax.set_title(f"{e3_run.label}: κ-divergence timing vs {e2_run.label} loss-gap timing")
+    return fig
+
+
+def fig_e15d_angular_drift(series: Sequence[tuple[str, torch.Tensor]]) -> Figure:
+    """E1.5-D: sorted per-symbol angular-drift curves, one line per (label, drift) pair.
+
+    ``drift`` is the ``(n_symbols,)`` tensor :func:`entropic_substrate.
+    analysis.embedding_geometry.angular_drift` returns; sorted ascending so
+    the shape of the drift DISTRIBUTION (not any particular symbol's
+    identity) is what's visually compared across arms. ``head_style`` cycles
+    color+linestyle+marker together (``analysis.palette``) since an arbitrary
+    number of arms, not a fixed fisher/control pair, is being compared here.
+    """
+    if not series:
+        msg = "fig_e15d_angular_drift: no drift series given"
+        raise ValueError(msg)
+    fig = _figure((8.5, 5.0))
+    ax = fig.add_subplot(111)
+    for i, (label, drift) in enumerate(series):
+        style = head_style(i, label=label)
+        sorted_drift = torch.sort(drift).values.tolist()
+        n = len(sorted_drift)
+        xs = [j / max(n - 1, 1) for j in range(n)]
+        ax.plot(
+            xs,
+            sorted_drift,
+            color=style.color,
+            linestyle=style.linestyle,
+            marker=style.marker,
+            markevery=max(n // 10, 1),
+            markersize=4,
+            label=style.label,
+        )
+    ax.set_xlabel("symbol rank (sorted by drift, 0=least moved)")
+    ax.set_ylabel("angular drift init -> final (radians)")
+    ax.set_title("E1.5-D: per-symbol angular drift")
+    ax.legend(fontsize=8)
+    return fig
+
+
+def fig_e15d_gram_retention(points: Sequence[tuple[str, GramRetention]]) -> Figure:
+    """E1.5-D: Pearson-r vs Spearman-rho scatter, one point per (label, retention).
+
+    Both axes measure the SAME question (does relational geometry survive
+    training?) through differently-sensitive estimators — points near the
+    ``y = x`` reference line (drawn, not merely implied) mean the two
+    estimators agree; points far from it flag a distribution where the
+    monotonic-only Spearman estimator and the linear Pearson estimator tell
+    different stories (e.g. a strong but nonlinear relationship).
+    """
+    if not points:
+        msg = "fig_e15d_gram_retention: no retention points given"
+        raise ValueError(msg)
+    fig = _figure((7.0, 5.5))
+    ax = fig.add_subplot(111)
+    for i, (label, retention) in enumerate(points):
+        style = head_style(i, label=label)
+        ax.plot(
+            [retention.pearson_r],
+            [retention.spearman_r],
+            color=style.color,
+            marker=style.marker,
+            linestyle="none",
+            markersize=10,
+            label=f"{label} (r={retention.pearson_r:.3f}, ρ={retention.spearman_r:.3f})",
+        )
+    ax.axline((0, 0), slope=1, color=OKABE_ITO["black"], linestyle=":", linewidth=1.0)
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_xlabel("Pearson r (FR-init distance vs final cosine distance)")
+    ax.set_ylabel("Spearman ρ")
+    ax.set_title("E1.5-D: Gram-retention — relational geometry survival")
+    ax.legend(fontsize=8, loc="lower right")
     return fig
