@@ -21,6 +21,13 @@ RUN pip install causal-conv1d mamba-ssm --no-build-isolation \
  || (git clone https://github.com/state-spaces/mamba && cd mamba && pip install .)
 ```
 
+**Shared container lane (2026-08-18):** the E4 image is common infrastructure, not
+E4-private. `Containerfile.e4` (base: the `-devel` CUDA tag — the training image's
+`-runtime` tag has no nvcc — plus `mamba_ssm`/`causal_conv1d` per the sketch above,
+published via a `container-publish-e4` just recipe) serves BOTH E4b's Mamba-2 stages and
+**E1.5c v2's Mamba2 field estimator** (`docs/e1_5-instruction.md`). Build it once, when
+the first of those two rungs is preregistered; neither rung builds a private toolchain.
+
 Escape hatch: the dynamic-chunking mechanism itself (routing module → boundary probability,
 smoothing module, downsampling-ratio auxiliary loss, straight-through estimators) is pure
 differentiable PyTorch. At ~85M scale, small transformer encoders in place of Mamba-2

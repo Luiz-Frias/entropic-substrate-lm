@@ -5,8 +5,11 @@ Subcommands
 ``train``            run one rung of the experiment ladder
 ``init-fisher``      precompute and cache the sqrt(p) Fisher embedding table
 ``eval``             evaluate a checkpoint on its held-out split
-``capture-results``  pull finished runs' results JSONLs into DVC
-``charts``           render E1/E2/E3 interpretation charts, attach to MLflow
+``capture-results``    pull finished runs' results JSONLs (or, with
+                       ``--checkpoints``, final checkpoints) into DVC
+``charts``             render E1/E2/E3 interpretation charts, attach to MLflow
+``embedding-geometry`` E1.5-D angular-drift / Gram-retention / functional-
+                       divergence diagnostics on captured checkpoints
 """
 
 from __future__ import annotations
@@ -17,9 +20,12 @@ import os
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
+
+if TYPE_CHECKING:
+    from entropic_substrate.analysis.embedding_geometry import CheckpointModel
 
 from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.config import (
@@ -113,6 +119,17 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument(
         "--no-dvc", action="store_true", help="download + validate only; skip dvc add/push"
     )
+    capture.add_argument(
+        "--checkpoints",
+        action="store_true",
+        help="capture each run's final checkpoint (not results JSONLs) — writes to --ckpt-dest",
+    )
+    capture.add_argument(
+        "--ckpt-dest",
+        type=Path,
+        default=Path("models/captured"),
+        help="capture destination when --checkpoints is given",
+    )
 
     aggregate_p = sub.add_parser(
         "mlflow-aggregate", help="idempotently roll seed runs into a parent run by config_hash"
@@ -174,6 +191,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--tracking-uri",
         default=None,
         help=f"defaults to ${MLFLOW_TRACKING_ENV}; omit both to render locally only",
+    )
+
+    geometry = sub.add_parser(
+        "embedding-geometry",
+        help="E1.5-D angular-drift / Gram-retention / functional-divergence diagnostics",
+    )
+    geometry.add_argument(
+        "--ckpt-a",
+        action="append",
+        dest="ckpt_a",
+        default=[],
+        type=Path,
+        help="arm-A checkpoint path (repeatable, one per seed)",
+    )
+    geometry.add_argument(
+        "--ckpt-b",
+        action="append",
+        dest="ckpt_b",
+        default=[],
+        type=Path,
+        help="arm-B checkpoint path (repeatable, one per seed)",
+    )
+    geometry.add_argument("--out-dir", type=Path, default=Path("results/charts"))
+    geometry.add_argument("--json", action="store_true", help="print JSON only (no charts written)")
+    geometry.add_argument(
+        "--no-functional", action="store_true", help="skip the functional-divergence pass"
+    )
+    geometry.add_argument(
+        "--num-eval-batches", type=int, default=8, help="batches sampled for functional_divergence"
     )
 
     return parser
@@ -337,7 +383,16 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_capture_results(args: argparse.Namespace) -> int:
-    """Handle ``capture-results``."""
+    """Handle ``capture-results``.
+
+    ``--checkpoints`` is a MODE SWITCH, not additive: results JSONLs (small,
+    ~KB each) and checkpoints (~340MB each, own ``--ckpt-dest``) are two
+    differently-sized DVC-tracked directories, each with its own ``dvc
+    add``/``dvc push`` pair — running both in one invocation would need two
+    separate DVC command pairs anyway, so one flag choosing which capture
+    runs keeps this command's ``dvc_commands(dest)`` call singular and
+    unambiguous about which ``dest`` it is adding.
+    """
     tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV)
     if not tracking_uri:
         logger.error(f"capture-results: ${MLFLOW_TRACKING_ENV} is not set")
@@ -346,25 +401,46 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
 
     import mlflow.tracking
 
-    from entropic_substrate.capture_results import capture_finished_runs, dvc_commands
+    from entropic_substrate.capture_results import (
+        capture_checkpoints,
+        capture_finished_runs,
+        dvc_commands,
+    )
 
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
     experiments = args.experiments or [
         os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
     ]
-    captured = capture_finished_runs(client, experiments, args.dest, include_tiny=args.include_tiny)
+    try:
+        if args.checkpoints:
+            dest, label = args.ckpt_dest, "checkpoint(s)"
+            captured = capture_checkpoints(
+                client, experiments, dest, include_tiny=args.include_tiny
+            )
+        else:
+            dest, label = args.dest, "file(s)"
+            captured = capture_finished_runs(
+                client, experiments, dest, include_tiny=args.include_tiny
+            )
+    except LookupError as exc:
+        # An unknown experiment name (capture_finished_runs/
+        # capture_checkpoints' shared _resolve_experiment_ids) is an
+        # operator typo, not a defect — same controlled-refusal idiom as
+        # the missing-tracking-URI check above, not an unhandled traceback.
+        logger.error(f"capture-results: {exc}")
+        return 2
     if not captured:
         logger.info("capture-results: nothing new to capture")
         return 0
     if args.no_dvc:
-        logger.info(f"capture-results: {len(captured)} file(s) captured; dvc skipped (--no-dvc)")
+        logger.info(f"capture-results: {len(captured)} {label} captured; dvc skipped (--no-dvc)")
         return 0
-    for command in dvc_commands(args.dest):
+    for command in dvc_commands(dest):
         # nosec B603 B607 -- argv is the fixed list from dvc_commands(), no
         # shell; "dvc" deliberately resolved from PATH, same idiom as sinks'
         # git_sha().
         subprocess.run(command, check=True)  # nosec B603 B607
-    logger.info(f"capture-results: {len(captured)} file(s) captured and pushed via dvc")
+    logger.info(f"capture-results: {len(captured)} {label} captured and pushed via dvc")
     return 0
 
 
@@ -572,6 +648,183 @@ def cmd_charts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, CheckpointModel]:
+    """Load each checkpoint in ``paths`` and key it by ``config.train.seed``.
+
+    Refuses (ValueError, a controlled caller mistake — see ``cmd_embedding_
+    geometry``'s own catch) two checkpoints on the SAME side sharing a seed:
+    a silent dict-comprehension clobber there would pick whichever path
+    happened to load last with no signal to the operator that the other one
+    was ever discarded.
+    """
+    from entropic_substrate.analysis.embedding_geometry import load_checkpoint_model
+
+    loaded: dict[int, CheckpointModel] = {}
+    for path in paths:
+        ckpt = load_checkpoint_model(path)
+        seed = ckpt.config.train.seed
+        if seed in loaded:
+            msg = (
+                f"embedding-geometry: {label} has two checkpoints at seed {seed} "
+                f"({loaded[seed].path} and {path}) — ambiguous pairing"
+            )
+            raise ValueError(msg)
+        loaded[seed] = ckpt
+    return loaded
+
+
+def cmd_embedding_geometry(args: argparse.Namespace) -> int:
+    """Handle ``embedding-geometry``: E1.5-D diagnostics on captured checkpoints.
+
+    ``--ckpt-a``/``--ckpt-b`` are repeatable, seed-paired lists — the same
+    shape ``charts``'s ``--e1-fisher``/``--e1-control`` already uses. A seed
+    present on only one side is reported (never silently dropped) and
+    excluded from every pairwise diagnostic; zero paired seeds is a
+    controlled refusal (exit 2), same idiom as ``charts``'s "no chart
+    inputs" refusal.
+    """
+    if not args.ckpt_a or not args.ckpt_b:
+        logger.error("embedding-geometry: --ckpt-a and --ckpt-b must both be given (repeatable)")
+        return 2
+
+    from entropic_substrate.analysis import embedding_geometry as eg
+
+    try:
+        loaded_a = _load_ckpts_by_seed(args.ckpt_a, label="--ckpt-a")
+        loaded_b = _load_ckpts_by_seed(args.ckpt_b, label="--ckpt-b")
+        seeds_a, seeds_b = set(loaded_a), set(loaded_b)
+        common = sorted(seeds_a & seeds_b)
+        unpaired = sorted(seeds_a ^ seeds_b)
+        if unpaired:
+            logger.warning(
+                "embedding-geometry: seed(s) present on only one side — excluded from "
+                f"pairing, reported not silently dropped: {unpaired}"
+            )
+        if not common:
+            logger.error(
+                "embedding-geometry: no seed-paired checkpoints between --ckpt-a and --ckpt-b"
+            )
+            return 2
+
+        per_seed_raw: list[dict[str, Any]] = []
+        for seed in common:
+            ckpt_a, ckpt_b = loaded_a[seed], loaded_b[seed]
+            # L2 finding, 2026-08-19: under state_source="field" (E1.5c),
+            # ckpt.model.wte.weight is only the output classifier — the
+            # real input representation is FieldEncoder.wte
+            # (field_encoder.py), never read by wte-based diagnostics
+            # below. Mirrors backbone.py's own gram_lambda (~109-131) and
+            # embedding_freeze (~223-237) guards for this exact axis:
+            # fail loud here rather than silently emit a plausible-looking
+            # but wrong diagnostic (a paired fisher-shaped field checkpoint
+            # passes shape validation, so nothing else would catch this).
+            for label, ckpt in (("--ckpt-a", ckpt_a), ("--ckpt-b", ckpt_b)):
+                state_source = ckpt.config.model.state_source
+                if state_source != "table":
+                    msg = (
+                        f"embedding-geometry: {label} seed {seed} has "
+                        f"state_source={state_source!r} — the wte.weight-based "
+                        "diagnostics (angular_drift, gram_retention, "
+                        "cross_arm_gram_agreement, procrustes_align) require "
+                        "state_source='table': under state_source='field' "
+                        "self.wte.weight is not the input representation "
+                        "(FieldEncoder.wte is), so these diagnostics would "
+                        "silently measure the wrong tensor"
+                    )
+                    raise ValueError(msg)
+            final_a = ckpt_a.model.wte.weight.detach()
+            final_b = ckpt_b.model.wte.weight.detach()
+            # Reconstruct once per arm, not once per diagnostic: the
+            # fisher_sqrt/no-saved-path fallback rebuilds the table from a
+            # 20MB corpus stream (reconstruct_init_table's own docstring),
+            # so calling it twice per arm doubled that cost for nothing —
+            # angular_drift and gram_retention both want the SAME table.
+            init_a = eg.reconstruct_init_table(ckpt_a.config)
+            init_b = eg.reconstruct_init_table(ckpt_b.config)
+            drift_a = eg.angular_drift(init_a, final_a)
+            drift_b = eg.angular_drift(init_b, final_b)
+            retention_a = eg.gram_retention(init_a, final_a)
+            retention_b = eg.gram_retention(init_b, final_b)
+            entry: dict[str, Any] = {
+                "seed": seed,
+                "drift_a": drift_a,
+                "drift_b": drift_b,
+                "retention_a": retention_a,
+                "retention_b": retention_b,
+                "agreement": eg.cross_arm_gram_agreement(final_a, final_b),
+                "procrustes": eg.procrustes_align(final_a, final_b),
+                "functional_divergence": (
+                    None
+                    if args.no_functional
+                    else eg.functional_divergence(ckpt_a, ckpt_b, num_batches=args.num_eval_batches)
+                ),
+            }
+            per_seed_raw.append(entry)
+    except ValueError as exc:
+        # A diagnostic-function input-validation refusal (mismatched shapes,
+        # embedding_init="default" with no init table to reconstruct,
+        # DataConfig/tokenizer mismatch in functional_divergence, or the
+        # duplicate-seed guard above) — a caller mistake, not a defect in
+        # this tool. Same idiom as cmd_charts's own bare-ValueError catch.
+        logger.error(f"embedding-geometry: {exc}")
+        return 2
+
+    def _arm_summary(drift: Any, retention: Any) -> dict[str, Any]:
+        return {
+            "angular_drift_mean": float(drift.mean()),
+            "angular_drift_max": float(drift.max()),
+            "gram_retention_pearson": retention.pearson_r,
+            "gram_retention_spearman": retention.spearman_r,
+        }
+
+    results_payload: list[dict[str, Any]] = []
+    for raw in per_seed_raw:
+        payload_entry: dict[str, Any] = {
+            "seed": raw["seed"],
+            "arm_a": _arm_summary(raw["drift_a"], raw["retention_a"]),
+            "arm_b": _arm_summary(raw["drift_b"], raw["retention_b"]),
+            "cross_arm_gram_agreement": raw["agreement"],
+            "procrustes_residual": raw["procrustes"].residual,
+        }
+        fd = raw["functional_divergence"]
+        if fd is not None:
+            payload_entry["functional_divergence"] = {
+                "kl_a_to_b": fd.kl_a_to_b,
+                "kl_b_to_a": fd.kl_b_to_a,
+                "js": fd.js,
+                "n_positions": fd.n_positions,
+            }
+        results_payload.append(payload_entry)
+
+    payload = {"paired_seeds": common, "unpaired_seeds": unpaired, "results": results_payload}
+    if args.json:
+        # MACHINE-CONSUMED STDOUT, NOT LOGS — same idiom as cmd_eval's --json.
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+
+    for entry in results_payload:
+        logger.bind(report=True).info(f"seed {entry['seed']}: {entry}")
+
+    from entropic_substrate.analysis import charts as chart_fns
+
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    drift_series = [(f"seed{raw['seed']}-a", raw["drift_a"]) for raw in per_seed_raw] + [
+        (f"seed{raw['seed']}-b", raw["drift_b"]) for raw in per_seed_raw
+    ]
+    retention_points = [(f"seed{raw['seed']}-a", raw["retention_a"]) for raw in per_seed_raw] + [
+        (f"seed{raw['seed']}-b", raw["retention_b"]) for raw in per_seed_raw
+    ]
+    figures = {
+        "fig_e15d_angular_drift": chart_fns.fig_e15d_angular_drift(drift_series),
+        "fig_e15d_gram_retention": chart_fns.fig_e15d_gram_retention(retention_points),
+    }
+    for name, figure in figures.items():
+        out_path = args.out_dir / f"{name}.png"
+        figure.savefig(out_path, dpi=150)
+        logger.info(f"embedding-geometry: wrote {out_path}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
@@ -583,6 +836,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "capture-results": cmd_capture_results,
         "mlflow-aggregate": cmd_mlflow_aggregate,
         "charts": cmd_charts,
+        "embedding-geometry": cmd_embedding_geometry,
     }
     try:
         return handlers[args.command](args)

@@ -1,0 +1,72 @@
+# E1 review packet manifest
+#
+# md5  file
+6e0deb09a69bdba774c730abe5b4fe4c  abstract.md
+05bfd13e6504abfd55484b6daab61700  data/A-seed1.jsonl
+4127a48c7f184cf245f6b16b285fceb1  data/A-seed2.jsonl
+a846d3eceace2bac3ce0d09aef75db72  data/A-seed3.jsonl
+308038a9a31c6a17c47692f0d599710e  data/A-seed4.jsonl
+3df29981e57e947d02cefa3fb70b01e3  data/A-seed5.jsonl
+ad82e12ab7ee65a7985cbf8e224c0e1c  data/A-seed6.jsonl
+931d08b71913b98fa5ca7bab46f7a242  data/A-seed7.jsonl
+69554b0f4d9c7e638f71c0ba34c9d281  data/A-seed8.jsonl
+42cfd8d9224517c92a5f223e531d3abf  data/A-seed9.jsonl
+c8e6570c9990272c3959f4ca2fb91781  data/B-seed1.jsonl
+1fddf06adc61d80cefe0086db0aab514  data/B-seed2.jsonl
+d19202904c1256887d361c1bdc21888b  data/B-seed3.jsonl
+c0c17ea0943944989ee0f9de461fab20  data/B-seed4.jsonl
+a2a5a529059110a8e23c967261d5f771  data/B-seed5.jsonl
+4b61639446095bb5440b17c62eced77f  data/B-seed6.jsonl
+c661027c82b5323afd01cd7735e406c2  data/B-seed7.jsonl
+079b800928c63de6b35725faf2722b94  data/B-seed8.jsonl
+cc398ff4357b698a7ca86eed5126af5b  data/B-seed9.jsonl
+ac23eaf307250ef8f72a291999bcfa49  preregistration.md
+733ca1e63f3961f88bdf190ced6504a1  reader.py
+#
+# Registration commits (UTC):
+# preregistration committed: 0a917c3812a6 2026-08-18T14:46:29Z
+# amendment 1 (epsilon) committed: 224a3eb59eff 2026-08-18T17:19:15Z
+# extension registration committed: ab2f63e 2026-08-18T19:22:29Z
+# clause precedence committed: 3166519 2026-08-18T20:20:15Z
+#
+# Run times, operator-supplied from the tracking server (UTC).
+# These are asserted metadata, not raw record content:
+# A-seed5.jsonl  start=2026-08-18T16:26:40.786000+00:00
+# A-seed5.jsonl  end=2026-08-18T17:04:36.425000+00:00
+# A-seed7.jsonl  start=2026-08-18T20:04:43.667000+00:00
+# A-seed7.jsonl  end=2026-08-18T20:42:27.350000+00:00
+# A-seed6.jsonl  start=2026-08-18T20:04:57.799000+00:00
+# A-seed6.jsonl  end=2026-08-18T20:43:42.288000+00:00
+# A-seed2.jsonl  start=2026-08-18T16:26:41.109000+00:00
+# A-seed2.jsonl  end=2026-08-18T17:05:04.376000+00:00
+# A-seed4.jsonl  start=2026-08-18T16:27:00.008000+00:00
+# A-seed4.jsonl  end=2026-08-18T17:05:50.393000+00:00
+# A-seed9.jsonl  start=2026-08-18T20:21:00.405000+00:00
+# A-seed9.jsonl  end=2026-08-18T21:01:23.785000+00:00
+# A-seed8.jsonl  start=2026-08-18T20:04:42.294000+00:00
+# A-seed8.jsonl  end=2026-08-18T20:43:02.676000+00:00
+# A-seed3.jsonl  start=2026-08-18T16:27:00.088000+00:00
+# A-seed3.jsonl  end=2026-08-18T17:06:11.280000+00:00
+# A-seed1.jsonl  start=2026-08-18T16:26:49.998000+00:00
+# A-seed1.jsonl  end=2026-08-18T17:04:36.909000+00:00
+# B-seed6.jsonl  start=2026-08-18T20:04:39.760000+00:00
+# B-seed6.jsonl  end=2026-08-18T20:43:07.582000+00:00
+# B-seed8.jsonl  start=2026-08-18T20:04:32.247000+00:00
+# B-seed8.jsonl  end=2026-08-18T20:42:13.637000+00:00
+# B-seed3.jsonl  start=2026-08-18T16:27:03.925000+00:00
+# B-seed3.jsonl  end=2026-08-18T17:05:40.490000+00:00
+# B-seed4.jsonl  start=2026-08-18T16:26:49.491000+00:00
+# B-seed4.jsonl  end=2026-08-18T17:10:14.730000+00:00
+# B-seed9.jsonl  start=2026-08-18T20:04:31.757000+00:00
+# B-seed9.jsonl  end=2026-08-18T20:43:03.798000+00:00
+# B-seed5.jsonl  start=2026-08-18T16:26:31.610000+00:00
+# B-seed5.jsonl  end=2026-08-18T17:04:06.215000+00:00
+# B-seed1.jsonl  start=2026-08-18T16:26:31.935000+00:00
+# B-seed1.jsonl  end=2026-08-18T17:04:41.407000+00:00
+# B-seed7.jsonl  start=2026-08-18T20:04:39.863000+00:00
+# B-seed7.jsonl  end=2026-08-18T20:43:28.705000+00:00
+# B-seed2.jsonl  start=2026-08-18T16:26:33.152000+00:00
+# B-seed2.jsonl  end=2026-08-18T17:05:03+00:00
+#
+# Complete run ledger — abandoned/incomplete runs (operator-declared):
+# one KILLED duplicate of the seed-9 A-arm run exists on the tracking server (id prefix 7561f0b1): the pod's container auto-restarted after the registered run completed and re-executed the launch script; killed ~10 min in on discovery, no results artifact, tagged 'abandoned' server-side. The registered seed-9 A-arm run in this packet (A-seed9) completed before the duplicate started.

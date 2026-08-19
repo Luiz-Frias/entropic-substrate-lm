@@ -34,6 +34,20 @@ AnchorMode = Literal["none", "global", "per_head"]
 KappaGranularity = Literal["per_head", "global"]
 Tokenizer = Literal["byte", "gpt2"]
 DataSource = Literal["enwik8", "fineweb", "synthetic"]
+# E1.5a: which half of the (possibly untied) embedding stays frozen at its
+# init value while the rest of the backbone trains freely.
+EmbeddingFreeze = Literal["none", "input", "output", "both"]
+# E1.5b: which Gram matrix the geometry-preserving penalty pulls the live
+# embedding's Gram matrix toward. Only "init" exists today; the Literal
+# names the axis so a second reference point is a type-checked addition.
+GramReference = Literal["init"]
+# E1.5c: does the per-symbol state come from a static lookup table (E1) or
+# a causal, context-conditioned field p_phi(.|x_<=t) (E1.5c)?
+StateSource = Literal["table", "field"]
+# E1.5c: architecture of the field estimator p_phi. Only the v1 causal
+# transformer is registered; docs/e1_5-instruction.md's v0/v2 rungs add
+# members here when they're registered, not before.
+FieldEstimator = Literal["transformer_v1"]
 
 EXPERIMENTS: tuple[str, ...] = (
     "e0-byte",
@@ -46,6 +60,14 @@ EXPERIMENTS: tuple[str, ...] = (
     # (per-head kappa divergence); see docs/e-3-instruction.md.
     "e3-anchor",
     "e3-vantage",
+    # E1.5 arms — code-ready; NOT in the gated ladder (scripts/run_ladder.sh)
+    # until each arm's preregistration is committed; see
+    # docs/e1_5-instruction.md.
+    "e1-5a-input",
+    "e1-5a-output",
+    "e1-5a-both",
+    "e1-5b-gram",
+    "e1-5c-field",
 )
 
 
@@ -85,6 +107,28 @@ class ModelConfig:
     router_noise: float = 0.0
     # nGPT options
     alpha_init: float = 0.05
+    # E1.5a: freeze the named half of the embedding at its init value
+    # (frozen Fisher geometry); "input"/"output" require tie_embeddings=False
+    # since a tied table cannot be frozen on only one of its two roles.
+    embedding_freeze: EmbeddingFreeze = "none"
+    # E1.5b: weight on the geometry-preserving Gram penalty
+    # L_CE + gram_lambda * ||G(E_t) - G(E_reference)||_F^2; 0.0 disables it.
+    gram_lambda: float = 0.0
+    # E1.5b: which Gram matrix gram_lambda penalizes divergence from.
+    gram_reference: GramReference = "init"
+    # E1.5c: symbol state is a static table lookup (E1) or the live output
+    # of a causal field estimator conditioned on x_<=t (E1.5c).
+    state_source: StateSource = "table"
+    # E1.5c: architecture of the field estimator p_phi when state_source
+    # is "field".
+    field_estimator: FieldEstimator = "transformer_v1"
+    # E1.5c: field estimator depth (number of causal transformer layers).
+    field_n_layers: int = 2
+    # E1.5c: field estimator width (d_model of the small causal encoder,
+    # independent of the backbone's own d_model).
+    field_d_model: int = 128
+    # E1.5c: field estimator attention head count.
+    field_n_heads: int = 4
 
 
 @dataclass(slots=True)

@@ -100,6 +100,30 @@ runs only: a resumed run never attests (absence = not attested, never "same
 order").
 """
 
+EXTENSION_REGISTRATION = """\
+
+## Extension registration — seeds 6-9 (outcome-aware; committed before any extension run)
+
+The stage-1 confirmatory phase closed with its filed verdict. This extension
+was registered AFTER that outcome was known and BEFORE any extension run
+launched: seeds {6, 7, 8, 9}, same paired design, same container image
+digest, same GPU class, same corpus and configs.
+
+- Primary: cumulative paired analysis over seeds {1..9}. STRONGLY_SUPPORTED
+  iff mean(d) / (sd(d)/√9) > t_{0.99865, 8} = 4.277 (the one-sided 99.865%
+  lower confidence bound of mean(d) exceeds 0). Otherwise
+  NOT_STRONGLY_SUPPORTED. This label is reported ALONGSIDE — never
+  replacing — the stage-1 verdict.
+- Practical relevance is read against the ratified epsilon = 0.01 nats/byte,
+  unchanged.
+- Clause precedence (declared after extension runs launched, before any
+  completed or was analyzed): the direction label is primary; the
+  practical-relevance rider is mandatory on every quotation of the verdict.
+- Exclusion rule unchanged (non-finite final loss drops the whole pair);
+  pairing rule unchanged (a within-pair data_order_digest mismatch
+  invalidates the pair).
+"""
+
 _READER_HEADER = '"""Validated reader for the packet\'s JSONL run series.\n\nProse (docstrings/comments) was stripped from the original for blinding;\nlogic is unmodified. Parse the data ONLY through these functions.\n"""\n'
 _LOGGING_SHIM = (
     "import logging\n"
@@ -206,6 +230,23 @@ def main() -> int:
     parser.add_argument("--run-times", type=Path, required=True, help="run_id -> times JSON")
     parser.add_argument("--prereg-commit", required=True, help="'<sha> <iso-utc>'")
     parser.add_argument("--amendment-commit", required=True, help="'<sha> <iso-utc>'")
+    parser.add_argument(
+        "--ext-prereg-commit",
+        default=None,
+        help="'<sha> <iso-utc>' — include the extension registration (n=9 packet)",
+    )
+    parser.add_argument(
+        "--precedence-commit",
+        default=None,
+        help="'<sha> <iso-utc>' of the clause-precedence declaration",
+    )
+    parser.add_argument(
+        "--abandoned-note",
+        action="append",
+        default=[],
+        help="operator disclosure line(s) for abandoned/incomplete runs "
+        "(the complete-run-ledger requirement)",
+    )
     args = parser.parse_args()
 
     packet = args.packet_out
@@ -216,7 +257,10 @@ def main() -> int:
     run_times = json.loads(args.run_times.read_text(encoding="utf-8"))
 
     (packet / "abstract.md").write_text(ABSTRACT, encoding="utf-8")
-    (packet / "preregistration.md").write_text(PREREGISTRATION, encoding="utf-8")
+    prereg_text = PREREGISTRATION
+    if args.ext_prereg_commit:
+        prereg_text += EXTENSION_REGISTRATION
+    (packet / "preregistration.md").write_text(prereg_text, encoding="utf-8")
     (packet / "reader.py").write_text(
         build_reader(args.telemetry.read_text(encoding="utf-8")), encoding="utf-8"
     )
@@ -266,10 +310,26 @@ def main() -> int:
         "# Registration commits (UTC):",
         f"# preregistration committed: {args.prereg_commit}",
         f"# amendment 1 (epsilon) committed: {args.amendment_commit}",
+        *(
+            [f"# extension registration committed: {args.ext_prereg_commit}"]
+            if args.ext_prereg_commit
+            else []
+        ),
+        *(
+            [f"# clause precedence committed: {args.precedence_commit}"]
+            if args.precedence_commit
+            else []
+        ),
         "#",
         "# Run times, operator-supplied from the tracking server (UTC).",
         "# These are asserted metadata, not raw record content:",
         *time_rows,
+        *(
+            ["#", "# Complete run ledger — abandoned/incomplete runs (operator-declared):"]
+            + [f"# {note}" for note in args.abandoned_note]
+            if args.abandoned_note
+            else []
+        ),
     ]
     (packet / "manifest.txt").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
 

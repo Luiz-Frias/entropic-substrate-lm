@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
 
 from entropic_substrate.config import (
     EXPERIMENTS,
+    Config,
+    DataConfig,
+    ModelConfig,
+    TrainConfig,
     config_from_dict,
     configs_dir,
     is_execution_gated,
@@ -18,6 +23,20 @@ from entropic_substrate.config import (
 from entropic_substrate.models.backbone import build_model, vocab_size_for
 
 pytestmark = pytest.mark.unit
+
+# E1.5 arms (docs/e1_5-instruction.md): exact total param counts, pinned.
+# The extended formula must reproduce every one of these exactly, not just
+# land the shared 80-100M band assertion (which the pre-extension formula
+# already satisfies for every arm here, so the band alone is not
+# RED-capable for this change).
+E1_5_EXACT_TOTAL_PARAMS: dict[str, int] = {
+    "e1-fisher": 85_131_264,
+    "e1-5a-input": 85_327_872,
+    "e1-5a-output": 85_327_872,
+    "e1-5a-both": 85_131_264,
+    "e1-5b-gram": 85_131_264,
+    "e1-5c-field": 85_557_248,
+}
 
 
 def test_merge_dicts_is_recursive() -> None:
@@ -79,17 +98,45 @@ def test_experiment_ladder_wiring() -> None:
         assert getattr(e3, field) == getattr(cfgs["e2"].model, field), field
 
 
-@pytest.mark.parametrize("exp", EXPERIMENTS)
-def test_experiment_configs_are_parameter_matched(exp: str) -> None:
-    """All rungs must land in the 80-100M band from the spec."""
-    cfg = resolve_experiment_config(exp)
+def _total_params(cfg: Config) -> int:
     d, layers = cfg.model.d_model, cfg.model.n_layers
     per_layer = (
         4 * d * d + (3 if cfg.model.block == "ngpt" else 2) * int(cfg.model.mlp_ratio * d) * d
     )
-    embedding = vocab_size_for(cfg.model) * d
+    # Untied embeddings hold a separate input table AND output classifier,
+    # so the vocab*d term is paid twice (E1.5a input/output variants).
+    embedding_multiplier = 1 if cfg.model.tie_embeddings else 2
+    embedding = vocab_size_for(cfg.model) * d * embedding_multiplier
     total = per_layer * layers + embedding
+    if cfg.model.state_source == "field":
+        # E1.5c: the causal density estimator p_phi is its own small
+        # transformer encoder (256-way input embedding + field_n_layers
+        # baseline-shaped blocks, 12*d^2/layer at mlp_ratio=4) sitting in
+        # front of the backbone - its params are additive, not swapped in.
+        fd = cfg.model.field_d_model
+        total += 256 * fd + cfg.model.field_n_layers * 12 * fd * fd
+    return total
+
+
+@pytest.mark.parametrize("exp", EXPERIMENTS)
+def test_experiment_configs_are_parameter_matched(exp: str) -> None:
+    """All rungs must land in the 80-100M band from the spec."""
+    cfg = resolve_experiment_config(exp)
+    total = _total_params(cfg)
     assert 80e6 <= total <= 100e6, f"{exp}: {total / 1e6:.1f}M"
+
+
+def test_e1_5_arm_membership_matches_the_pinned_exact_totals() -> None:
+    """TDD trip-wire: every arm this pin covers must actually be a
+    registered experiment before the exact-total test below can mean
+    anything (fails loud, not by silently not collecting cases)."""
+    assert set(E1_5_EXACT_TOTAL_PARAMS) <= set(EXPERIMENTS)
+
+
+@pytest.mark.parametrize("exp", sorted(E1_5_EXACT_TOTAL_PARAMS))
+def test_e1_5_arms_hit_their_pinned_exact_param_total(exp: str) -> None:
+    cfg = resolve_experiment_config(exp)
+    assert _total_params(cfg) == E1_5_EXACT_TOTAL_PARAMS[exp], exp
 
 
 def test_tiny_overlay_shrinks_without_changing_the_experiment() -> None:
@@ -182,3 +229,43 @@ def test_execution_gate_catches_a_hand_rolled_anchored_config() -> None:
         {"name": "my-own-arm", "model": {"attn_kernel": "kappa", "anchor_mode": "global"}}
     )
     assert is_execution_gated(cfg)
+
+
+# E1.5 arms declare exactly one axis change from e1-fisher (docs/e1_5-instruction.md).
+# "input"/"output" freeze entails untying, since a tied table cannot be frozen on
+# only one of its two roles - that entailment is part of the declared axis, not a
+# stray extra change.
+_E1_5_ARM_AXES: dict[str, frozenset[str]] = {
+    "e1-5a-input": frozenset({"embedding_freeze", "tie_embeddings"}),
+    "e1-5a-output": frozenset({"embedding_freeze", "tie_embeddings"}),
+    "e1-5a-both": frozenset({"embedding_freeze"}),
+    "e1-5b-gram": frozenset({"gram_lambda"}),
+    "e1-5c-field": frozenset({"state_source"}),
+}
+
+
+@pytest.mark.parametrize("exp", sorted(_E1_5_ARM_AXES))
+def test_e1_5_arms_extend_e1_fisher_only_on_their_axis(exp: str) -> None:
+    """Every E1.5 arm must match e1-fisher on every ModelConfig/DataConfig/
+    TrainConfig field except its declared axis - one variable per rung
+    (docs/e1_5-instruction.md), mirroring
+    test_anchor_arm_configs_extend_e3_only_on_the_anchor_axes but over the
+    full field set rather than a hand-picked subset."""
+    base = resolve_experiment_config("e1-fisher")
+    cfg = resolve_experiment_config(exp)
+    axis = _E1_5_ARM_AXES[exp]
+
+    for section_name, section_cls in (
+        ("model", ModelConfig),
+        ("data", DataConfig),
+        ("train", TrainConfig),
+    ):
+        base_section = getattr(base, section_name)
+        cfg_section = getattr(cfg, section_name)
+        for f in dataclasses.fields(section_cls):
+            base_val = getattr(base_section, f.name)
+            cfg_val = getattr(cfg_section, f.name)
+            if section_name == "model" and f.name in axis:
+                assert cfg_val != base_val, f"{exp}: axis field {f.name!r} did not change"
+            else:
+                assert cfg_val == base_val, f"{exp}: unexpected change on {section_name}.{f.name}"
