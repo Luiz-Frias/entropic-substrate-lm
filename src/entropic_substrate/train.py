@@ -38,6 +38,7 @@ from entropic_substrate.data.batching import (
     SequenceSampler,
 )
 from entropic_substrate.data.build import build_corpus, corpus_byte_stream
+from entropic_substrate.geometry.gram import gram_frobenius_sq, normalized_gram
 from entropic_substrate.logging import logger
 from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
 from entropic_substrate.sinks import JsonlSink, MetricSink
@@ -130,6 +131,11 @@ class EvalResult:
     kappa: list[list[float]]
     gate_fraction: list[list[float]]
     router_entropy: list[float]
+    # E1.5b: None when gram_lambda == 0.0 (disabled) — never 0.0-filled, so a
+    # run without the penalty carries no gram_* keys at all (same "absent
+    # channel is absent" convention `kappa`/`gate_fraction` already use).
+    gram_frob_sq: float | None = None
+    gram_penalty: float | None = None
 
 
 class Trainer:
@@ -196,6 +202,21 @@ class Trainer:
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.best_nats_per_byte = math.inf
 
+        # E1.5b: snapshot the Gram-penalty reference BEFORE any resume load.
+        # Init is deterministic (embedding_init draws from a fixed generator
+        # seed — see init/fisher.py), so this snapshot is identical whether
+        # or not the run resumes; snapshotting from the model's CURRENT
+        # (fresh) weights here, rather than re-deriving it after a resumed
+        # load, is what makes "preserve the init geometry" mean the same
+        # thing on a resumed run as on a fresh one — the checkpoint is never
+        # consulted for this reference, so nothing needs to persist it.
+        # `gram_lambda == 0.0` (every arm except e1-5b-gram) skips the
+        # snapshot entirely: no reference, no seam, no extra compute.
+        self._gram_ref: torch.Tensor | None = None
+        if cfg.model.gram_lambda != 0.0:
+            with torch.no_grad():
+                self._gram_ref = normalized_gram(self.raw_model.wte.weight).detach().clone()
+
         if cfg.train.resume:
             self.load_checkpoint(cfg.train.resume)
 
@@ -245,6 +266,27 @@ class Trainer:
         record = {"run": self.cfg.name, "step": self.step, **record}
         self.sink.log(record)
 
+    def _gram_penalty_terms(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """E1.5b Gram-preserving penalty: ``(frob_sq, gram_lambda * frob_sq)``.
+
+        Only called when :attr:`_gram_ref` is set (``gram_lambda != 0.0`` at
+        construction) — callers guard that themselves. FP32 throughout, inside
+        an explicit ``autocast(enabled=False)`` block: this runs OUTSIDE
+        ``train_step``'s own ``_autocast()`` context (the forward pass has
+        already returned by the time this is called), but the geometry-
+        numerics invariant (CLAUDE.md) binds unconditionally, not only when
+        the caller happens to already be under bf16 — matches
+        ``geometry/kappa.py``'s scalar reductions.
+        """
+        if self._gram_ref is None:
+            msg = "_gram_penalty_terms called with the Gram seam disabled (gram_lambda == 0.0)"
+            raise RuntimeError(msg)
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            gram_t = normalized_gram(self.raw_model.wte.weight)
+            frob_sq = gram_frobenius_sq(gram_t, self._gram_ref)
+            penalty = self.cfg.model.gram_lambda * frob_sq
+        return frob_sq, penalty
+
     # --------------------------------------------------------------- steps
     def train_step(self) -> dict[str, float]:
         """One optimisation step; returns scalar metrics."""
@@ -256,6 +298,17 @@ class Trainer:
         loss = _require_loss(out, "train_step")
         aux = out.aux_loss
         total = loss if aux is None else loss + aux
+        gram_metrics: dict[str, float] = {}
+        if self._gram_ref is not None:
+            gram_frob_sq, gram_penalty = self._gram_penalty_terms()
+            # NOT via aux_loss: that channel is the dead GatedKappaNorm
+            # load-balance term (CLAUDE.md architecture section). This is a
+            # second, independent term added directly to the optimized total.
+            total = total + gram_penalty
+            gram_metrics = {
+                "gram_frob_sq": float(gram_frob_sq.detach()),
+                "gram_penalty": float(gram_penalty.detach()),
+            }
         self.optimizer.zero_grad(set_to_none=True)
         total.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.train.grad_clip)
@@ -270,6 +323,7 @@ class Trainer:
             "lr": lr,
             "grad_norm": float(grad_norm),
             "nats_per_byte": loss / self.meta.bytes_per_token,
+            **gram_metrics,
         }
 
     def evaluate(self, num_batches: int | None = None) -> EvalResult:
@@ -292,6 +346,17 @@ class Trainer:
                     entropies = [s.entropy for s in out.kappa_stats]
             mean_loss = float(np.mean(losses))
             npb = mean_loss / self.meta.bytes_per_token
+            # E1.5b: recomputed here (no_grad, already inside this method's
+            # outer torch.no_grad()) from the CURRENT table only — it does
+            # not depend on the eval batches above and must never perturb
+            # `mean_loss`/`npb`: the penalty is a training regularizer, not
+            # part of the measured likelihood.
+            gram_frob_sq: float | None = None
+            gram_penalty: float | None = None
+            if self._gram_ref is not None:
+                frob_sq, penalty = self._gram_penalty_terms()
+                gram_frob_sq = float(frob_sq)
+                gram_penalty = float(penalty)
             self.model.train()
             return EvalResult(
                 loss=mean_loss,
@@ -301,6 +366,8 @@ class Trainer:
                 kappa=kappas,
                 gate_fraction=gates,
                 router_entropy=entropies,
+                gram_frob_sq=gram_frob_sq,
+                gram_penalty=gram_penalty,
             )
 
     # ----------------------------------------------------------- lifecycle
@@ -350,6 +417,9 @@ class Trainer:
             record["kappa"] = result.kappa
             record["gate_usage"] = result.gate_fraction
             record["router_entropy"] = [round(e, 6) for e in result.router_entropy]
+        if result.gram_frob_sq is not None and result.gram_penalty is not None:
+            record["gram_frob_sq"] = round(result.gram_frob_sq, 6)
+            record["gram_penalty"] = round(result.gram_penalty, 6)
         return record
 
     def fit(self, max_steps: int | None = None, verbose: bool = True) -> list[dict[str, Any]]:
