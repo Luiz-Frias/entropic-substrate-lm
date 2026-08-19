@@ -21,10 +21,11 @@ Two independent hazards guard the frozen table's BITS, not just its
 2. the nGPT bypass trap — ``normalize_weights()`` (backbone.py) runs
    unconditionally after every optimiser step and does an in-place
    ``weight.copy_(weight / weight.norm(...))`` on ``wte.weight`` /
-   ``lm_head.weight``. Even a frozen table starts EXACTLY unit-norm from
-   init, but dividing by a fp32 norm that is not bit-exactly ``1.0`` still
-   changes the bits every step — ``requires_grad=False`` does not stop an
-   in-place ``copy_``. ``test_frozen_table_bitwise_unchanged_after_training``
+   ``lm_head.weight``. Even a frozen table starts unit-norm from init to
+   fp32 precision (recomputed row norms measure ~1.19e-07 off 1.0), but
+   dividing by that not-bit-exactly-``1.0`` norm still changes the bits
+   every step — ``requires_grad=False`` does not stop an in-place
+   ``copy_``. ``test_frozen_table_bitwise_unchanged_after_training``
    is RED on both hazards independently: on ``baseline`` it is RED until (1)
    is fixed (baseline's ``normalize_weights`` is a no-op, so (2) never bites
    there); on ``ngpt`` it stays RED until (2) is ALSO fixed, even after (1)
@@ -45,13 +46,38 @@ from helpers import tiny_config, tiny_model_config
 pytestmark = pytest.mark.unit
 
 
+def _assert_bitwise_equal(actual: torch.Tensor, expected: torch.Tensor) -> None:
+    """Bit-pattern equality, stricter than value equality: ``assert_close``
+    with zero tolerances still passes a ``-0.0``/``+0.0`` flip and treats
+    NaN pairs as equal — a byte view has no such blind spots."""
+    mismatched = int(
+        (actual.detach().view(torch.uint8) != expected.detach().view(torch.uint8)).sum()
+    )
+    assert mismatched == 0, (
+        f"{mismatched} of {actual.element_size() * actual.numel()} bytes differ "
+        "between tensors that must be bit-identical"
+    )
+
+
 # --------------------------------------------------------- _init_embeddings
-def test_untied_init_seeds_both_tables() -> None:
+@pytest.mark.parametrize("freeze", ["none", "input", "output", "both"])
+def test_untied_init_seeds_both_tables(freeze: str) -> None:
     """Untied + non-default init: the output table starts at the SAME point
-    the tied E1 arm's shared table would have — not a fresh random draw."""
-    model = build_model(tiny_model_config(embedding_init="random_sphere", tie_embeddings=False))
+    the tied E1 arm's shared table would have — not a fresh random draw.
+
+    Parametrized over freeze modes: seeding lives in ``_init_embeddings``
+    and conditions on ``tie_embeddings``, never on freeze, and ``__init__``
+    applies freeze AFTER init — so no freeze mode may perturb the seeded
+    point."""
+    model = build_model(
+        tiny_model_config(
+            embedding_init="random_sphere",
+            tie_embeddings=False,
+            embedding_freeze=freeze,
+        )
+    )
     assert model.wte.weight.data_ptr() != model.lm_head.weight.data_ptr()
-    torch.testing.assert_close(model.wte.weight, model.lm_head.weight, atol=0, rtol=0)
+    _assert_bitwise_equal(model.wte.weight, model.lm_head.weight)
 
 
 def test_untied_default_init_leaves_embeddings_untouched() -> None:
@@ -129,7 +155,7 @@ def test_frozen_table_bitwise_unchanged_after_training(
     before = trainer.raw_model.wte.weight.clone()
     for _ in range(3):
         trainer.train_step()
-    torch.testing.assert_close(trainer.raw_model.wte.weight, before, atol=0, rtol=0)
+    _assert_bitwise_equal(trainer.raw_model.wte.weight, before)
 
 
 def test_trainable_side_still_learns(tmp_path: Path) -> None:
@@ -186,15 +212,15 @@ def test_ngpt_partial_freeze_preserves_frozen_table(
     )
     trainer = Trainer(cfg)
     frozen_before = getattr(trainer.raw_model, frozen_attr).weight.detach().clone()
+    trainable_before = getattr(trainer.raw_model, trainable_attr).weight.detach().clone()
     for _ in range(3):
         trainer.train_step()
-    torch.testing.assert_close(
-        getattr(trainer.raw_model, frozen_attr).weight,
-        frozen_before,
-        atol=0,
-        rtol=0,
-    )
+    _assert_bitwise_equal(getattr(trainer.raw_model, frozen_attr).weight, frozen_before)
     weight = getattr(trainer.raw_model, trainable_attr).weight
+    # The trainable half must have actually MOVED — the init is already
+    # unit-norm, so the row-norm check alone would pass a run where training
+    # never touched this table at all.
+    assert not torch.equal(weight, trainable_before)
     norms = weight.norm(p=2, dim=1)
     torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-5, rtol=0)
 

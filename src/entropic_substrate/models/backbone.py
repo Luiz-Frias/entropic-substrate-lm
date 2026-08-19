@@ -196,11 +196,12 @@ class LanguageModel(nn.Module):
                 id(self.lm_head.weight): self.lm_head.weight,
             }.values():
                 if not weight.requires_grad:
-                    # E1.5a bypass guard: a frozen table starts EXACTLY
-                    # unit-norm from init, but `copy_` is in-place and does
-                    # not consult requires_grad — dividing by a fp32 norm
-                    # that is not bit-exactly 1.0 would silently change the
-                    # "frozen" bits on every single step otherwise.
+                    # E1.5a bypass guard: a frozen table is already unit-norm
+                    # from init to fp32 precision (recomputed row norms
+                    # measure ~1.19e-07 off 1.0, 2026-08-18), but `copy_` is
+                    # in-place and does not consult requires_grad — dividing
+                    # by that not-bit-exactly-1.0 norm would silently change
+                    # the "frozen" bits on every single step otherwise.
                     continue
                 weight.copy_(weight / weight.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12))
 
