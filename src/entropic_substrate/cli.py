@@ -20,9 +20,12 @@ import os
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
+
+if TYPE_CHECKING:
+    from entropic_substrate.analysis.embedding_geometry import CheckpointModel
 
 from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.config import (
@@ -408,12 +411,24 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
     experiments = args.experiments or [
         os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
     ]
-    if args.checkpoints:
-        dest, label = args.ckpt_dest, "checkpoint(s)"
-        captured = capture_checkpoints(client, experiments, dest, include_tiny=args.include_tiny)
-    else:
-        dest, label = args.dest, "file(s)"
-        captured = capture_finished_runs(client, experiments, dest, include_tiny=args.include_tiny)
+    try:
+        if args.checkpoints:
+            dest, label = args.ckpt_dest, "checkpoint(s)"
+            captured = capture_checkpoints(
+                client, experiments, dest, include_tiny=args.include_tiny
+            )
+        else:
+            dest, label = args.dest, "file(s)"
+            captured = capture_finished_runs(
+                client, experiments, dest, include_tiny=args.include_tiny
+            )
+    except LookupError as exc:
+        # An unknown experiment name (capture_finished_runs/
+        # capture_checkpoints' shared _resolve_experiment_ids) is an
+        # operator typo, not a defect — same controlled-refusal idiom as
+        # the missing-tracking-URI check above, not an unhandled traceback.
+        logger.error(f"capture-results: {exc}")
+        return 2
     if not captured:
         logger.info("capture-results: nothing new to capture")
         return 0
@@ -633,7 +648,7 @@ def cmd_charts(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, Any]:
+def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, CheckpointModel]:
     """Load each checkpoint in ``paths`` and key it by ``config.train.seed``.
 
     Refuses (ValueError, a controlled caller mistake — see ``cmd_embedding_
@@ -644,7 +659,7 @@ def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, Any]:
     """
     from entropic_substrate.analysis.embedding_geometry import load_checkpoint_model
 
-    loaded: dict[int, Any] = {}
+    loaded: dict[int, CheckpointModel] = {}
     for path in paths:
         ckpt = load_checkpoint_model(path)
         seed = ckpt.config.train.seed

@@ -276,6 +276,22 @@ def test_capture_checkpoints_strip_write_failure_leaves_no_corrupt_target(
     # carrying its optimizer state — the strip attempt never completed.
     reloaded = torch.load(target, map_location="cpu", weights_only=True)
     assert "optimizer" in reloaded
+    # Other arm: the failed strip must leave no residue either. `dest` is
+    # the directory cmd_capture_results hands to `dvc add`, so a surviving
+    # .partial sibling would be committed as tracked content.
+    assert list(dest.glob("*.partial")) == []
+
+
+def test_capture_checkpoints_missing_required_key_raises_named_error(tmp_path: Path) -> None:
+    """A checkpoint dict that normalizes without raising (format_version OK,
+    no tau) but is missing "step"/"model"/"config" is not a shape
+    Trainer.state_dict() ever writes — must raise the repo's own NAMED
+    CheckpointFormatError, not a bare unhelpful KeyError."""
+    buf = io.BytesIO()
+    torch.save({"format_version": CHECKPOINT_FORMAT_VERSION, "model": {}}, buf)
+    client = _ckpt_client(payload=buf.getvalue())
+    with pytest.raises(CheckpointFormatError, match="missing required key"):
+        capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")
 
 
 def test_capture_checkpoints_keeps_optimizer_when_strip_optimizer_is_false(tmp_path: Path) -> None:
@@ -314,3 +330,44 @@ def test_capture_checkpoints_unknown_experiment_name_fails_loud(tmp_path: Path) 
     client = _ckpt_client()
     with pytest.raises(LookupError):
         capture_checkpoints(client, ["no-such-experiment"], tmp_path / "ckpts")
+
+
+# ------------------------------------------------------------- CLI wiring
+def test_cli_capture_results_unknown_experiment_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CodeRabbit finding (FOR-909 P4 follow-up): cmd_capture_results called
+    capture_finished_runs/capture_checkpoints with no try/except around
+    them at all — an unknown experiment name (LookupError, raised by their
+    shared _resolve_experiment_ids) propagated straight past main()'s own
+    handler (which only catches CheckpointFormatError) as an unhandled
+    traceback, instead of the same controlled exit-2 refusal every other
+    named-input mistake in this command already gets (e.g. the missing-
+    tracking-URI check just above it)."""
+    import mlflow.tracking
+
+    from entropic_substrate.cli import main
+    from entropic_substrate.sinks import MLFLOW_TRACKING_ENV
+
+    class _FakeMlflowClient:
+        def __init__(self, *, tracking_uri: str) -> None:
+            del tracking_uri
+
+        def get_experiment_by_name(self, name: str) -> None:
+            del name
+            return None
+
+    monkeypatch.setattr(mlflow.tracking, "MlflowClient", _FakeMlflowClient)
+    monkeypatch.setenv(MLFLOW_TRACKING_ENV, "http://fake-tracking-server.invalid")
+
+    code = main(
+        [
+            "capture-results",
+            "--dest",
+            str(tmp_path / "cap"),
+            "--experiment",
+            "no-such-experiment",
+        ]
+    )
+    assert code == 2
+    assert "not found on the tracking server" in capsys.readouterr().err

@@ -169,6 +169,14 @@ def capture_checkpoints(
                 raise CheckpointFormatError(msg) from exc
             state = normalize_checkpoint(raw, source=str(target))
             if strip_optimizer:
+                missing = [key for key in ("step", "model", "config") if key not in state]
+                if missing:
+                    msg = (
+                        f"{target}: normalized checkpoint is missing required key(s) "
+                        f"{missing} — not a checkpoint Trainer.state_dict() ever wrote, "
+                        "kept on disk as evidence"
+                    )
+                    raise CheckpointFormatError(msg)
                 model_state = {
                     key: value.cpu() if isinstance(value, torch.Tensor) else value
                     for key, value in state["model"].items()
@@ -190,8 +198,16 @@ def capture_checkpoints(
                 # failed strip leaves the ORIGINAL, still-valid download in
                 # place instead.
                 tmp_target = target.with_suffix(target.suffix + ".partial")
-                torch.save(stripped, tmp_target)
-                os.replace(tmp_target, target)
+                try:
+                    torch.save(stripped, tmp_target)
+                    os.replace(tmp_target, target)
+                finally:
+                    # An interrupted strip leaves the .partial sibling
+                    # behind; `dvc add <dest>` (cmd_capture_results, after
+                    # this function returns) would otherwise track that
+                    # orphan alongside the real capture set. A no-op once
+                    # os.replace has already consumed it.
+                    tmp_target.unlink(missing_ok=True)
             captured.append(target)
             logger.info(f"captured {target}")
     return captured
