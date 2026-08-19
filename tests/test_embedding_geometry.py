@@ -214,6 +214,23 @@ def test_gram_retention_identical_tables_have_spearman_one() -> None:
     assert retention.n_pairs == 8 * 7 // 2
 
 
+def test_gram_retention_independent_tables_have_near_zero_correlation() -> None:
+    """The other arm of the identical-tables pin: two INDEPENDENTLY drawn
+    tables (nothing preserved) must score near ZERO on both estimators — a
+    stub that always returned ``1.0`` (or any implementation that measured
+    the same underlying cosine values on both sides by mistake) would pass
+    the identical-tables test above but fail this one loudly."""
+    torch.manual_seed(0)
+    n, d = 64, 32
+    init = torch.randn(n, d)
+    init = init / init.norm(dim=1, keepdim=True)
+    final = torch.randn(n, d)
+    final = final / final.norm(dim=1, keepdim=True)
+    retention = gram_retention(init, final)
+    assert abs(retention.pearson_r) < 0.3
+    assert abs(retention.spearman_r) < 0.3
+
+
 def test_gram_retention_needs_at_least_two_symbols() -> None:
     with pytest.raises(ValueError, match="at least 2 symbols"):
         gram_retention(torch.randn(1, 4), torch.randn(1, 4))
@@ -273,16 +290,29 @@ def test_functional_divergence_is_zero_against_itself(tmp_path: Path) -> None:
 
 def test_functional_divergence_is_bounded_by_ln2_and_deterministic(tmp_path: Path) -> None:
     """JS is a bounded property of JS divergence itself, not a fact about
-    these particular (independently-initialized, hence maximally-different)
-    models — it must hold even for two models that agree nowhere."""
+    these particular models — it must hold for two GENUINELY different
+    models (distinct ``train.seed`` — ``seed_everything`` reseeds torch's
+    global RNG before every non-embedding weight is drawn, ``train.py``'s
+    own ``Trainer.__init__``, so same-seed configs of otherwise-identical
+    shape build BIT-IDENTICAL backbones, not merely similar ones: an
+    earlier version of this test used ``d_model=32`` to vary cfg_b, but
+    ``tiny_config``'s own default is ALSO ``d_model=32`` — a no-op override
+    that silently made "maximally different" mean "the same model twice",
+    js == 0.0 exactly, and the js > 0 guard-tooth below RED against it)."""
     cfg_a = _seeded_tiny_config(tmp_path / "a", seed=6, embedding_init="random_sphere")
-    cfg_b = _seeded_tiny_config(tmp_path / "b", seed=6, embedding_init="random_sphere", d_model=32)
+    cfg_b = _seeded_tiny_config(tmp_path / "b", seed=11, embedding_init="random_sphere")
     ckpt_a = load_checkpoint_model(Trainer(cfg_a).save_checkpoint("final"))
     ckpt_b = load_checkpoint_model(Trainer(cfg_b).save_checkpoint("final"))
 
     first = functional_divergence(ckpt_a, ckpt_b, num_batches=3)
     second = functional_divergence(ckpt_a, ckpt_b, num_batches=3)
     assert first.js <= math.log(2.0) + 1e-6
+    # The other arm of the zero-against-itself pin (test above): two
+    # actually-different models must actually disagree, or an
+    # always-returns-zero implementation would satisfy both tests.
+    assert first.js > 0.0
+    assert first.kl_a_to_b > 0.0
+    assert first.kl_b_to_a > 0.0
     assert first == second  # deterministic eval-split iteration (train=False stride walk)
 
 
@@ -404,6 +434,10 @@ def test_cli_embedding_geometry_reports_unpaired_seeds_never_drops_them(
 def test_cli_embedding_geometry_requires_both_arms(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["embedding-geometry", "--ckpt-a", "somewhere.pt"])
     assert code == 2
+    # Exit 2 alone does not distinguish THIS refusal from any other
+    # controlled refusal in this command — pin the message so a
+    # wrong-reason exit 2 fails here too.
+    assert "--ckpt-a and --ckpt-b" in capsys.readouterr().err
 
 
 def test_cli_embedding_geometry_zero_pairs_is_a_controlled_refusal(tmp_path: Path) -> None:
