@@ -493,10 +493,10 @@ def test_five_step_tiny_train_decreases_loss_for_e1_5_arms(tmp_path: Path, exp: 
             },
         },
     )
-    started = time.time()
+    started = time.monotonic()
     trainer = Trainer(cfg)
     history = trainer.fit(verbose=False)
-    elapsed = time.time() - started
+    elapsed = time.monotonic() - started
 
     assert len(history) == 5
     losses = [h["loss"] for h in history]
