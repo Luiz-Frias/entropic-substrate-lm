@@ -1,0 +1,61 @@
+"""Normalized-Gram-matrix geometry, shared by E1.5b's regularizer and E1.5-D's
+cross-arm diagnostics (`docs/e1_5-instruction.md`).
+
+A symbol table's RELATIONAL geometry — the pairwise angles between its rows —
+is what E1.5b's penalty and E1.5-D's cross-arm agreement both actually care
+about, not the rows' absolute scale or their absolute position in ambient
+space (which a random rotation of the whole table would change while leaving
+every downstream prediction identical). The normalized Gram matrix
+`G = E_hat @ E_hat.T` (rows L2-normalized first) is exactly that: it is
+invariant to any orthogonal transform of the table and to any PER-ROW
+rescale, and it collapses to the pairwise cosine similarity matrix — stronger
+than row-normalization alone, which fixes each row's radius but says nothing
+about the angles between rows.
+
+Non-negotiable numerics (CLAUDE.md): both functions run in FP32 inside an
+explicit ``torch.autocast(enabled=False)`` block regardless of the caller's
+ambient autocast state — mirrors ``geometry/kappa.py``'s scalar reductions.
+"""
+
+from __future__ import annotations
+
+import torch
+
+__all__ = ["gram_frobenius_sq", "normalized_gram"]
+
+# Row-norm floor: guards the divide against an all-zero row without moving
+# any genuinely non-degenerate row's cosine values.
+_NORM_EPS: float = 1e-12
+
+
+def normalized_gram(embedding: torch.Tensor) -> torch.Tensor:
+    """Row-normalized Gram matrix ``G[i, j] = cos(E[i], E[j])`` of ``embedding``.
+
+    ``embedding`` is ``(n_symbols, d)``. Always computed in FP32 (promoted
+    from whatever dtype the caller passes, including bf16 under autocast) and
+    clamped to ``[-1, 1]``: unit rows dotted in floating point can exceed that
+    range by O(1e-7) from rounding, and an unclamped value there would make a
+    caller's ``arccos`` of it (E1.5-D's FR-init distance,
+    ``docs/e1_5-instruction.md``) silently return NaN.
+    """
+    with torch.autocast(device_type=embedding.device.type, enabled=False):
+        e = embedding.float()
+        unit = e / e.norm(p=2, dim=1, keepdim=True).clamp_min(_NORM_EPS)
+        gram = unit @ unit.T
+        return gram.clamp(-1.0, 1.0)
+
+
+def gram_frobenius_sq(gram_a: torch.Tensor, gram_b: torch.Tensor) -> torch.Tensor:
+    """``||gram_a - gram_b||_F^2`` — the squared Frobenius norm of the difference.
+
+    This IS the E1.5b penalty term, up to the ``gram_lambda`` scale:
+    ``L = L_CE + gram_lambda * gram_frobenius_sq(G(E_t), G(E_init))``. Callers
+    are expected to pass ``normalized_gram`` outputs (or anything already
+    respecting its fp32-and-clamped contract); this function does not
+    reclamp, only promotes to FP32 inside its own ``autocast(enabled=False)``
+    block so the reduction itself stays well-conditioned under an ambient
+    bf16 autocast.
+    """
+    with torch.autocast(device_type=gram_a.device.type, enabled=False):
+        diff = gram_a.float() - gram_b.float()
+        return (diff * diff).sum()

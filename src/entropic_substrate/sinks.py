@@ -504,7 +504,18 @@ class MlflowSink:
         try:
             step = int(record.get("step", 0))
             metrics: dict[str, float] = {}
-            for key in ("loss", "nats_per_byte", "bits_per_byte", "perplexity"):
+            for key in (
+                "loss",
+                "nats_per_byte",
+                "bits_per_byte",
+                "perplexity",
+                # E1.5b: absent from the record entirely on every arm except
+                # e1-5b-gram (train.py's EvalResult carries None there), so
+                # this `if key in record` guard is what keeps every other
+                # run's MLflow metrics untouched.
+                "gram_frob_sq",
+                "gram_penalty",
+            ):
                 if key in record:
                     metrics[key] = float(record[key])
             kappa = record.get("kappa")
