@@ -149,13 +149,17 @@ class LanguageModel(nn.Module):
                 cfg.field_loss_lambda != 0.0
                 or cfg.field_ckpt_path is not None
                 or cfg.field_mode != "joint"
+                or cfg.field_state != "sqrt_prob"
             ):
                 # No field encoder exists on this path — a non-default
-                # calibration knob would be silently ignored, which reads
-                # as "configured" while measuring nothing (loud-refusal
-                # posture; same class as the gram_lambda × field guard).
+                # calibration knob (or, P7/FOR-924: a non-default
+                # field_state — F/P/H selects a CONSTRUCTION of a field
+                # encoder's output, meaningless without one) would be
+                # silently ignored, which reads as "configured" while
+                # measuring nothing (loud-refusal posture; same class as
+                # the gram_lambda × field guard).
                 msg = (
-                    "field_loss_lambda/field_ckpt_path/field_mode require "
+                    "field_loss_lambda/field_ckpt_path/field_mode/field_state require "
                     "state_source='field'; under state_source='table' no field "
                     "encoder exists and these knobs would be silently ignored"
                 )

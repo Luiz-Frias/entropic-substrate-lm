@@ -46,6 +46,18 @@ tensor the forward pass never reads. ``embedding_freeze="output"`` stays
 legal: ``lm_head.weight`` remains the real output classifier regardless of
 ``state_source``. No registered arm (``configs/e1-5*.yaml``) combines these
 axes — each varies exactly one from baseline.
+
+Four-arm table, P7 (``docs/e1_5-instruction.md`` Repair 2, FOR-924):
+``cfg.field_state`` selects among three CONSTRUCTIONS of ``z_t`` from the
+SAME ``p_phi`` — F (``"sqrt_prob"``, the formula above, unit-norm rows), P
+(``"prob"``, ``p_phi @ lift`` with no sqrt — the control for the sqrt map
+itself, rows NOT unit-norm in general), and H (``"hidden"``, ``W @ h_phi,t``
+through a TRAINABLE ``state_lift`` — contextual preprocessing without
+probability geometry, the only leg with a trainable lift). T, the E1
+reference, is ``state_source="table"`` and carries no ``field_state`` at
+all. See ``_encode`` for the per-leg construction and its FP32-island
+scoping (F/P share it; H does not — it is a plain learned layer, not
+geometric math).
 """
 
 from __future__ import annotations
@@ -86,6 +98,10 @@ class FieldEncoder(nn.Module):
     # resolves attribute access as Tensor rather than nn.Module's generic
     # `Tensor | Module` __getattr__ overload.
     lift: torch.Tensor
+    # P7 (FOR-924): registered as a real nn.Linear only when
+    # cfg.field_state == "hidden" — the ONE arm with a trainable lift; None
+    # on the F/P legs, which share the fixed `lift` buffer above instead.
+    state_lift: nn.Linear | None
 
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
@@ -109,6 +125,9 @@ class FieldEncoder(nn.Module):
                 "pretrained/frozen regime)"
             )
             raise ValueError(msg)
+        if cfg.field_state not in ("sqrt_prob", "prob", "hidden"):
+            msg = f"unknown field_state {cfg.field_state!r}"
+            raise ValueError(msg)
         if cfg.field_mode == "joint" and cfg.field_ckpt_path is not None:
             # Fail loud rather than silently ignore the path (CLAUDE.md Errors
             # principle): a set field_ckpt_path with field_mode="joint" is an
@@ -127,6 +146,7 @@ class FieldEncoder(nn.Module):
             raise ValueError(msg)
 
         self.field_d_model = cfg.field_d_model
+        self.field_state = cfg.field_state
         # Internal ModelConfig replica (docs/e1_5-instruction.md v1: "a
         # 2-layer, d=128 causal transformer p_phi"): the geometry-defining
         # fields are pinned to the baseline shape regardless of what the
@@ -157,9 +177,24 @@ class FieldEncoder(nn.Module):
         # E1's fixed lift: (256, cfg.d_model) semi-orthogonal, seed=0 — a
         # buffer (never trained, always checkpointed), cast to fp32
         # explicitly since semi_orthogonal_lift returns fp64 (the precision
-        # its own QR factorisation runs in).
+        # its own QR factorisation runs in). Shared by the F and P legs
+        # (field_state in {"sqrt_prob", "prob"}) — always registered
+        # regardless of field_state, so a run that starts "hidden" and is
+        # later reconfigured to "sqrt_prob"/"prob" still finds a valid lift
+        # in its own checkpoint rather than a missing buffer.
         self.register_buffer(
             "lift", semi_orthogonal_lift(256, cfg.d_model, seed=0).float(), persistent=True
+        )
+        # P7 (FOR-924): H's own trainable lift — Linear(field_d_model,
+        # d_model, bias=False). The ONLY field_state with a trainable lift;
+        # F/P read the fixed `lift` buffer above instead. Built here (before
+        # `self.apply(self._init_weights)` below) so it receives the SAME
+        # field_d_model-scaled init pass every other Linear in this module
+        # gets, not a separate uninitialised draw.
+        self.state_lift = (
+            nn.Linear(cfg.field_d_model, cfg.d_model, bias=False)
+            if self.field_state == "hidden"
+            else None
         )
 
         # Own init pass, AFTER wte/blocks/head/lift are all built (mirrors
@@ -230,13 +265,26 @@ class FieldEncoder(nn.Module):
 
         Returns ``(logits, z)``: ``logits`` is the ambient-dtype ``(B, T,
         256)`` pre-softmax output of ``self.head``; ``z`` is the ``(B, T,
-        cfg.d_model)`` unit-norm Fisher state, ambient dtype. Both callers
-        below invoke this INDEPENDENTLY — the E1.5c Repair 1 calibration seam
-        (``train.py``'s ``Trainer._field_loss_terms``) calls
-        ``field_logits(idx)`` as a second, separate forward pass through this
-        (small) encoder rather than one shared with whatever call
-        ``LanguageModel.forward`` already made through ``forward(idx)`` for
-        injection. That duplicates this module's own compute when both
+        cfg.d_model)`` state handed to the backbone, ambient dtype — its
+        CONSTRUCTION depends on ``self.field_state`` (P7, FOR-924, the
+        four-arm table's F/P/H legs):
+
+        - ``"sqrt_prob"`` (F, the full thesis) — ``sqrt(p_phi) @ lift``,
+          unit-norm rows (``lift`` semi-orthogonal).
+        - ``"prob"`` (P, the sqrt-map control) — ``p_phi @ lift``, no sqrt;
+          rows are NOT unit-norm in general (Cauchy-Schwarz:
+          ``sum(p_i^2) <= 1`` with equality only at a one-hot distribution).
+        - ``"hidden"`` (H, contextual preprocessing without probability
+          geometry) — ``state_lift(h_phi)``, the encoder's own pre-head
+          hidden state through a TRAINABLE lift; unconstrained, no relation
+          to ``p_phi`` or the fixed ``lift`` buffer at all.
+
+        Both callers below invoke this INDEPENDENTLY — the E1.5c Repair 1
+        calibration seam (``train.py``'s ``Trainer._field_loss_terms``)
+        calls ``field_logits(idx)`` as a second, separate forward pass
+        through this (small) encoder rather than one shared with whatever
+        call ``LanguageModel.forward`` already made through ``forward(idx)``
+        for injection. That duplicates this module's own compute when both
         injection AND calibration are active in the same train step, but
         NOT the backbone's — ``field_d_model``/``field_n_layers`` (v1: 128,
         2) keep this submodule negligible next to the ~85M backbone it feeds
@@ -249,12 +297,31 @@ class FieldEncoder(nn.Module):
             h = block(h)
         h = self.norm_f(h)
         logits = self.head(h)
-        # FP32 island: softmax -> clamp -> sqrt -> lift, regardless of the
-        # caller's ambient autocast (CLAUDE.md non-negotiable numerics).
-        with torch.autocast(device_type=idx.device.type, enabled=False):
-            probs = F.softmax(logits.float(), dim=-1).clamp_min(_PROB_EPS)
-            z = probs.sqrt() @ self.lift
-        return logits, z.to(h.dtype)
+        if self.field_state == "hidden":
+            # H: a plain trainable Linear over the encoder's own hidden
+            # state, run in the caller's ambient dtype like every other
+            # learned layer in this module — no probability geometry, no
+            # unit-norm claim, so no FP32 island (CLAUDE.md's non-negotiable
+            # numerics govern GEOMETRIC math; this is neither).
+            if self.state_lift is None:
+                # Unreachable given __init__'s field_state -> state_lift
+                # wiring — restated as a real control-flow check rather than
+                # `assert` (bandit B101: stripped under `python -O`, per
+                # this module's own `_load_frozen_weights` docstring).
+                msg = "field_state='hidden' reached _encode with state_lift=None"
+                raise RuntimeError(msg)
+            z = self.state_lift(h)
+        else:
+            # F/P share this island: softmax -> clamp -> (sqrt) -> lift, in
+            # FP32 regardless of the caller's ambient autocast (CLAUDE.md
+            # non-negotiable numerics) — the map from p_phi to a point
+            # against the fixed semi-orthogonal `lift` is exactly the
+            # "geometric math" that rule covers, for both legs.
+            with torch.autocast(device_type=idx.device.type, enabled=False):
+                probs = F.softmax(logits.float(), dim=-1).clamp_min(_PROB_EPS)
+                state = probs.sqrt() if self.field_state == "sqrt_prob" else probs
+                z = (state @ self.lift).to(h.dtype)
+        return logits, z
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` unit-norm ``z_t`` rows.
