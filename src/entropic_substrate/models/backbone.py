@@ -89,6 +89,7 @@ class LanguageModel(nn.Module):
         self._init_embeddings(fisher_source)
         if self.hypersphere:
             self.normalize_weights()
+        self._apply_embedding_freeze()
 
     # ---------------------------------------------------------------- init
     def _init_weights(self, module: nn.Module) -> None:
@@ -114,6 +115,13 @@ class LanguageModel(nn.Module):
             raise ValueError(msg)
         with torch.no_grad():
             self.wte.weight.copy_(weights.to(self.wte.weight.dtype))
+            if not self.cfg.tie_embeddings:
+                # Untied: the output table gets no init pass of its own
+                # otherwise (only `_init_weights`'s generic normal draw), so
+                # e1-5a-output's "frozen at its Fisher point" reading would
+                # be false — this seeds it from the SAME table the tied E1
+                # arm would have given it.
+                self.lm_head.weight.copy_(weights.to(self.lm_head.weight.dtype))
 
     def _fisher_weights(self, fisher_source: bytes | None) -> torch.Tensor:
         if self.cfg.tokenizer != "byte":
@@ -139,6 +147,40 @@ class LanguageModel(nn.Module):
             raise ValueError(msg)
         return build_fisher_init(fisher_source, self.cfg.d_model)
 
+    def _apply_embedding_freeze(self) -> None:
+        """E1.5a: freeze the named half of the embedding at its init value.
+
+        Runs at model-build time, AFTER init + the first ``normalize_weights``
+        pass (so a frozen table is captured at its true, already-normalised
+        init point) and BEFORE ``Trainer._build_optimizer`` ever runs
+        (train.py:190) — the optimiser's existing ``if not
+        param.requires_grad: continue`` filter therefore excludes frozen
+        params by construction, with no freeze-awareness of its own needed.
+
+        "input"/"output" require ``tie_embeddings=False``: a tied table is
+        one ``nn.Parameter`` shared by both roles (``__init__`` sets
+        ``self.lm_head.weight = self.wte.weight``), so it cannot be frozen on
+        only ONE of the two. "both" has no such contradiction and is allowed
+        tied or untied.
+        """
+        mode = self.cfg.embedding_freeze
+        if mode == "none":
+            return
+        if mode not in ("input", "output", "both"):
+            msg = f"unknown embedding_freeze {mode!r}"
+            raise ValueError(msg)
+        if mode in ("input", "output") and self.cfg.tie_embeddings:
+            msg = (
+                f"embedding_freeze={mode!r} requires tie_embeddings=False: a tied "
+                "table cannot be frozen on only one of its two roles (wte.weight "
+                "and lm_head.weight are the SAME nn.Parameter when tied)"
+            )
+            raise ValueError(msg)
+        if mode in ("input", "both"):
+            self.wte.weight.requires_grad_(False)
+        if mode in ("output", "both"):
+            self.lm_head.weight.requires_grad_(False)
+
     # ------------------------------------------------------------- helpers
     def normalize_weights(self) -> None:
         """Unit-norm every embedding-dimension weight row (nGPT constraint)."""
@@ -153,6 +195,13 @@ class LanguageModel(nn.Module):
                 id(self.wte.weight): self.wte.weight,
                 id(self.lm_head.weight): self.lm_head.weight,
             }.values():
+                if not weight.requires_grad:
+                    # E1.5a bypass guard: a frozen table starts EXACTLY
+                    # unit-norm from init, but `copy_` is in-place and does
+                    # not consult requires_grad — dividing by a fp32 norm
+                    # that is not bit-exactly 1.0 would silently change the
+                    # "frozen" bits on every single step otherwise.
+                    continue
                 weight.copy_(weight / weight.norm(p=2, dim=1, keepdim=True).clamp_min(1e-12))
 
     def kappa_modules(self) -> list[GatedKappaNorm]:
