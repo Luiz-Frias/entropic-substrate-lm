@@ -7,6 +7,9 @@ model:
   n_heads: 4
   block_size: 256
   fisher_init_path: null
+  field_d_model: 32
+  field_n_layers: 1
+  field_n_heads: 2
 
 data:
   source: synthetic

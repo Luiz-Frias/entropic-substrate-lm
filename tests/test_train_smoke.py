@@ -197,6 +197,39 @@ def test_cli_train_tiny_e3_end_to_end(tmp_path: Path, monkeypatch: pytest.Monkey
     assert (tmp_path / "models" / "e3-tiny-final.pt").exists(), "checkpoint escaped tmp_path"
 
 
+def test_cli_train_tiny_e1_5c_field_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P5 pod-ready acceptance: `train --exp e1-5c-field --tiny` runs on CPU
+    end to end through the real CLI, and the run_start record proves the
+    tiny overlay actually reached the field encoder (field_d_model: 32)."""
+    monkeypatch.chdir(tmp_path)
+    results = tmp_path / "e1-5c-field.jsonl"
+    code = main(
+        [
+            "train",
+            "--exp",
+            "e1-5c-field",
+            "--tiny",
+            "--device",
+            "cpu",
+            "--steps",
+            "4",
+            "--results",
+            str(results),
+            "--quiet",
+        ]
+    )
+    assert code == 0
+    records = [json.loads(line) for line in results.read_text().splitlines() if line]
+    start = next(r for r in records if r["event"] == "run_start")
+    assert start["config"]["model"]["field_d_model"] == 32
+    assert start["field_encoder_params"] > 0
+    assert (tmp_path / "models" / "e1-5c-field-tiny-final.pt").exists(), (
+        "checkpoint escaped tmp_path"
+    )
+
+
 def test_cli_init_fisher_writes_a_table(tmp_path: Path) -> None:
     out = tmp_path / "fisher.pt"
     assert (
@@ -403,6 +436,73 @@ def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:
         trainer = Trainer(cfg)
         metrics = trainer.train_step()
         assert math.isfinite(metrics["loss"]), exp
+
+
+def test_tiny_overlay_shrinks_the_field_encoder() -> None:
+    """P5: configs/tiny.yaml gains field_* shrink keys so an e1-5c-field CPU
+    smoke does not pay the full 128-wide/2-layer p_phi estimator. Shrink-only
+    - the arm's defining axis (state_source) must survive untouched."""
+    tiny = resolve_experiment_config("e1-5c-field", tiny=True)
+    assert tiny.model.field_d_model == 32
+    assert tiny.model.field_n_layers == 1
+    assert tiny.model.field_n_heads == 2
+    assert tiny.model.state_source == "field"
+
+
+def test_tiny_overlay_preserves_e1_5_arm_axes() -> None:
+    """Pin: the --tiny overlay must never touch the field(s) that make an
+    E1.5 arm what it is (embedding_freeze/tie_embeddings/gram_lambda/
+    state_source). RED proof (run manually, not committed): add
+    `state_source: table` under `model:` in configs/tiny.yaml and this test
+    fails for e1-5c-field, since the overlay would silently turn the field
+    arm back into a table-lookup arm under --tiny while the full run stays
+    "field" - exactly the divergence between what is smoke-tested and what
+    ships that this test exists to catch."""
+    from test_config import _E1_5_ARM_AXES  # tests/ is on sys.path (conftest.py)
+
+    for exp, axis in _E1_5_ARM_AXES.items():
+        full = resolve_experiment_config(exp).model
+        tiny = resolve_experiment_config(exp, tiny=True).model
+        for field_name in axis:
+            assert getattr(tiny, field_name) == getattr(full, field_name), (exp, field_name)
+
+
+@pytest.mark.parametrize(
+    "exp",
+    ["e1-5a-input", "e1-5a-output", "e1-5a-both", "e1-5b-gram", "e1-5c-field"],
+)
+def test_five_step_tiny_train_decreases_loss_for_e1_5_arms(tmp_path: Path, exp: str) -> None:
+    """Mirrors test_five_step_tiny_train_decreases_loss but drives the REAL
+    shipped configs/<exp>.yaml through the REAL configs/tiny.yaml overlay
+    (the CLI's own path via --exp/--tiny), one parametrized case per new
+    mechanism: input/output/both freeze, the Gram penalty, and the field
+    encoder. `metrics["loss"]` is the CE-only loss (train.py:319) — the Gram
+    penalty is added only to the optimized `total`, never to the reported
+    metric — so the decrease assertion is comparable across every arm here.
+    """
+    cfg = resolve_experiment_config(
+        exp,
+        tiny=True,
+        overrides={
+            "data": {"synthetic_bytes": 40_000, "seq_len": 32, "batch_size": 2},
+            "train": {
+                "max_steps": 5,
+                "results_dir": str(tmp_path / "results"),
+                "models_dir": str(tmp_path / "models"),
+                "save_interval": 0,
+            },
+        },
+    )
+    started = time.time()
+    trainer = Trainer(cfg)
+    history = trainer.fit(verbose=False)
+    elapsed = time.time() - started
+
+    assert len(history) == 5
+    losses = [h["loss"] for h in history]
+    assert all(math.isfinite(v) for v in losses), (exp, losses)
+    assert losses[-1] < losses[0], (exp, losses)
+    assert elapsed < 60.0, f"{exp}: {elapsed:.1f}s"
 
 
 def test_train_records_attest_a_paired_reproducible_data_order(tmp_path: Path) -> None:
