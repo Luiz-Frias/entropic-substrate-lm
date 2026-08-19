@@ -77,5 +77,27 @@ def test_path_filters_live_under_reviews_not_auto_review() -> None:
     # The never-review intent from the retired top-level `ignore:` block —
     # spot-pin the entries whose loss would quietly re-enable review of
     # vendored submodules and DVC-tracked bulk.
-    for required in ("!**/references/**", "!**/data/**", "!**/results/**"):
+    # data/models/results are ROOT-ANCHORED (not **/-prefixed) since
+    # 2026-08-19 — the unanchored forms also excluded src/**/models/** from
+    # review; see test_dvc_bulk_negations_are_repo_root_anchored below.
+    for required in ("!**/references/**", "!data/**", "!results/**"):
         assert required in filters, f"exclusion glob {required!r} lost in the migration"
+
+
+def test_dvc_bulk_negations_are_repo_root_anchored() -> None:
+    """The DVC bulk dirs (data/, models/, results/) live at the REPO ROOT.
+    An unanchored ``!**/models/**`` also matches
+    ``src/entropic_substrate/models/**`` — MEASURED on PR #77 (2026-08-19):
+    CodeRabbit's own "Files ignored due to path filters" banner listed
+    backbone.py and field_encoder.py, i.e. the core model code of the whole
+    E1.5 stack was structurally excluded from every remote review. Anchored
+    globs exclude only the intended DVC dirs."""
+    config = _config()
+    filters = config["reviews"]["path_filters"]
+    for dvc_dir in ("data", "models", "results"):
+        assert f"!{dvc_dir}/**" in filters, f"expected root-anchored !{dvc_dir}/**"
+        assert f"!**/{dvc_dir}/**" not in filters, (
+            f"unanchored !**/{dvc_dir}/** also excludes src/**/{dvc_dir}/** "
+            "from review (measured on PR #77: backbone.py/field_encoder.py "
+            "were never remote-reviewed)"
+        )
