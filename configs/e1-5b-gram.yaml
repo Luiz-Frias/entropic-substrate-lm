@@ -1,0 +1,43 @@
+# E1.5b-gram: e1-fisher with the geometry-preserving Gram penalty
+# L_CE + gram_lambda * ||G(E_t) - G(E_init)||_F^2 added on top of an
+# otherwise freely-trainable embedding table. Axis: gram_lambda.
+# 0.1 is a PLACEHOLDER value - the sweep grid is named at prereg
+# (docs/e1_5-instruction.md, E1.5b).
+name: e1-5b-gram
+
+model:
+  d_model: 768
+  n_layers: 12
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: baseline
+  norm: layernorm
+  embedding_init: fisher_sqrt
+  fisher_init_path: data/fisher_init_d768.pt
+  tie_embeddings: true
+  gram_lambda: 0.1
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0006
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.1
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto
