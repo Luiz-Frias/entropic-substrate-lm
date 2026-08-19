@@ -324,7 +324,11 @@ class FieldEncoder(nn.Module):
         return logits, z
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` unit-norm ``z_t`` rows.
+        """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` ``z_t`` rows.
+
+        ``z_t`` rows are unit-norm ONLY for ``field_state="sqrt_prob"`` (F);
+        the "prob" (P) and "hidden" (H) arms are NOT unit-norm in general —
+        see :meth:`_encode`'s docstring for the per-arm construction.
 
         Only ``idx`` is consumed — no ``targets`` parameter exists on this
         signature, so the estimator structurally cannot see the label it
