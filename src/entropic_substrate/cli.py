@@ -10,6 +10,8 @@ Subcommands
 ``charts``             render E1/E2/E3 interpretation charts, attach to MLflow
 ``embedding-geometry`` E1.5-D angular-drift / Gram-retention / functional-
                        divergence diagnostics on captured checkpoints
+``field-pretrain``     train a standalone p_phi and save the checkpoint
+                       ``field_mode="frozen"`` loads (E1.5c Repair 1)
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from entropic_substrate.data.build import build_corpus
 from entropic_substrate.data.enwik8 import load_enwik8_bytes
 from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
+from entropic_substrate.field_pretrain import add_field_pretrain_parser, cmd_field_pretrain
 from entropic_substrate.init.fisher import build_fisher_init, save_init
 from entropic_substrate.logging import configure_logging, logger
 from entropic_substrate.mlflow_aggregate import aggregate
@@ -223,6 +226,8 @@ def build_parser() -> argparse.ArgumentParser:
     geometry.add_argument(
         "--num-eval-batches", type=int, default=8, help="batches sampled for functional_divergence"
     )
+
+    add_field_pretrain_parser(sub)
 
     return parser
 
@@ -955,6 +960,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mlflow-aggregate": cmd_mlflow_aggregate,
         "charts": cmd_charts,
         "embedding-geometry": cmd_embedding_geometry,
+        "field-pretrain": cmd_field_pretrain,
     }
     try:
         return handlers[args.command](args)
