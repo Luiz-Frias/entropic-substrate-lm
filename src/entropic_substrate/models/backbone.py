@@ -18,7 +18,7 @@ from entropic_substrate.init.fisher import (
 )
 from entropic_substrate.layers.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
 from entropic_substrate.models.blocks import CausalSelfAttention, build_block, build_norm
-from entropic_substrate.models.field_encoder import FieldEncoder
+from entropic_substrate.models.field_encoder import FieldEncoder, FieldEncoding
 
 __all__ = [
     "LMOutput",
@@ -51,6 +51,17 @@ class LMOutput:
     loss: torch.Tensor | None = None
     aux_loss: torch.Tensor | None = None
     kappa_stats: list[KappaNormStats] = field(default_factory=list)
+    # E1.5c: the field encoder's own ``(B, T, 256)`` next-byte logits, from
+    # the SAME pass that produced the injected ``z`` — so ``Trainer.
+    # evaluate``'s calibration diagnostics read them here instead of running
+    # ``field_encoder.field_logits(x)`` as a second forward over the same
+    # input (CR PR #79). ``None`` under ``state_source="table"``, where no
+    # field encoder exists at all — absent channel is absent, the same
+    # convention ``aux_loss``/``kappa_stats`` already use for features most
+    # arms do not carry. AMBIENT dtype, not fp32: see
+    # :class:`~entropic_substrate.models.field_encoder.FieldEncoding` for
+    # why the cast belongs to the consumer.
+    field_logits: torch.Tensor | None = None
 
 
 class LanguageModel(nn.Module):
@@ -343,13 +354,23 @@ class LanguageModel(nn.Module):
             msg = f"sequence length {t} exceeds block_size {self.cfg.block_size}"
             raise ValueError(msg)
 
+        field_logits: torch.Tensor | None = None
         if self.field_encoder is not None:
             # E1.5c: z_t = Q . sqrt(p_phi(. | x_<=t)) replaces the static
             # table lookup — z_t ALONE (the registered v1 combination;
             # docs/e1_5-instruction.md's z_t (+) E[b_t] variant is a declared
             # follow-up, not built here). wte/lm_head remain the output
             # classifier untouched by this branch.
-            h = self.drop(self.field_encoder(idx))
+            #
+            # Called through `__call__` (not `.forward(...)`/`._encode(...)`)
+            # so the module's forward hooks still fire on the injection path
+            # — tests/test_field_encoder.py's anti-leakage hook test reads
+            # exactly that. The FP32 island around the softmax -> sqrt ->
+            # lift step lives INSIDE `_encode` and is untouched by this
+            # branch.
+            encoded: FieldEncoding = self.field_encoder(idx)
+            field_logits = encoded.logits
+            h = self.drop(encoded.z)
         else:
             h = self.drop(self.wte(idx))
         if self.hypersphere:
@@ -392,6 +413,7 @@ class LanguageModel(nn.Module):
             loss=loss,
             aux_loss=aux,
             kappa_stats=stats,
+            field_logits=field_logits,
         )
 
     def generate(

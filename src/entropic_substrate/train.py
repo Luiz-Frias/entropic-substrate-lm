@@ -460,25 +460,66 @@ class Trainer:
                 # metric (`mean_loss`/`npb` below) must stay pure backbone
                 # CE, test-pinned in test_field_calibration.py.
                 #
-                # `field_logits(x)` is computed at most ONCE per eval batch
-                # here and shared by both consumers below (the CE loss and
-                # the calibration accumulator), instead of each calling
-                # `field_encoder.field_logits(x)` independently.
+                # The field encoder runs ONCE per eval batch, inside the
+                # `self.model(x, y)` call above: `LanguageModel.forward`
+                # carries its next-byte logits out on `LMOutput.field_logits`
+                # (CR PR #79), and both consumers below (the CE loss and the
+                # calibration accumulator) read them from there.
+                #
+                # RETRACTION (2026-08-20) of the note that stood here: it
+                # claimed `field_logits(x)` was "computed at most ONCE per
+                # eval batch" — true of the two consumers BELOW, but false of
+                # the encoder as a whole, which ran its full forward twice
+                # per batch (once for `z` inside `LanguageModel.forward`,
+                # once here). MEASURED before the fix, by counting
+                # `FieldEncoder._encode` calls across `evaluate(num_batches=
+                # 3)`: 6 calls, now 3 (tests/test_field_calibration.py::
+                # test_evaluate_runs_the_field_encoder_exactly_once_per_batch).
+                #
+                # This also drops the `autocast(enabled=False)` island that
+                # used to wrap the second call: the encoder now runs in the
+                # AMBIENT dtype on the eval path, like every other forward.
+                # MEASURED no-op where the tests run (`amp_dtype="off"`/CPU
+                # makes `_autocast()` itself `enabled=False`, so the two
+                # shapes are bit-identical — pinned by
+                # test_deduped_eval_reproduces_the_two_pass_field_metrics_
+                # exactly). Under a real bf16 autocast it is NOT a no-op: the
+                # calibration diagnostics now describe p_phi as the model
+                # actually runs it, rather than an FP32 re-run of it. The CE
+                # reduction itself stays FP32 either way —
+                # `_field_ce_from_logits` supplies its own island, and
+                # `FieldCalibrationAccumulator.update` refuses non-fp32 input
+                # loudly.
                 field_logits: torch.Tensor | None = None
+                # Annotated local, not `out.field_logits` read inline: the
+                # model attribute comes back through `nn.Module.__call__`,
+                # typed `Any`, and an `Any` assigned into a declared
+                # `Tensor | None` slot stays `Tensor | None` no matter what
+                # check precedes it (basedpyright: "reshape is not a known
+                # attribute of None"). Binding it once here gives the
+                # `is None` check below something it can actually narrow.
+                encoded_field_logits: torch.Tensor | None = out.field_logits
                 if field_encoder is not None:
-                    # FP32-compute island, mirroring `_field_loss_terms`
-                    # EXACTLY: `field_logits`'s own `.float()` is a type
-                    # contract, not a compute guarantee (its docstring) — the
-                    # caller must supply the actual FP32 island.
-                    with torch.autocast(device_type=self.device.type, enabled=False):
-                        field_logits = field_encoder.field_logits(x)
-                    # Nested (not a second top-level `field_encoder is not
-                    # None` check) so `field_logits` stays narrowed to
-                    # `torch.Tensor` here without an `assert` — bandit
-                    # (B101) flags `assert` as optimise-away-able, and this
-                    # repo avoids it for the same reason
-                    # `_field_loss_terms` raises `RuntimeError` instead of
-                    # asserting (its own docstring).
+                    if encoded_field_logits is None:
+                        # Same fail-loud posture as the `_field_loss_enabled`
+                        # branch below: a field encoder exists, so the
+                        # forward pass MUST have populated this channel.
+                        # Reaching here means backbone and trainer disagree
+                        # about the contract — never silently skip the
+                        # diagnostics (a measurement path fails loud, it
+                        # does not fail open).
+                        msg = (
+                            "model has a field encoder but forward returned no "
+                            "field_logits — LMOutput.field_logits is the eval-time "
+                            "calibration channel"
+                        )
+                        raise RuntimeError(msg)
+                    # `.float()` here, not in `LanguageModel.forward`: the
+                    # channel is ambient-dtype by design (a training forward
+                    # never reads it and must not pay a (B, T, 256) fp32 copy
+                    # per step), and `FieldCalibrationAccumulator.update`
+                    # requires fp32.
+                    field_logits = encoded_field_logits.float()
                     if field_calib is not None:
                         field_calib.update(
                             field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)

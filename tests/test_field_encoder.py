@@ -52,7 +52,11 @@ import torch
 from entropic_substrate.config import Config
 from entropic_substrate.init.fisher import build_fisher_init, semi_orthogonal_lift
 from entropic_substrate.models.backbone import build_model
-from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator, FieldEncoder
+from entropic_substrate.models.field_encoder import (
+    FieldCalibrationAccumulator,
+    FieldEncoder,
+    FieldEncoding,
+)
 from entropic_substrate.train import Trainer
 from helpers import tiny_config, tiny_model_config
 
@@ -185,7 +189,7 @@ def test_field_encoder_output_matches_backbone_width() -> None:
     cfg = _field_model_config(d_model=32)
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 10))
-    z = encoder(idx)
+    z = encoder(idx).z
     assert z.shape == (2, 10, 32)
 
 
@@ -199,7 +203,7 @@ def test_field_encoder_z_rows_are_unit_norm() -> None:
     cfg = _field_model_config(d_model=300)
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 10))
-    z = encoder(idx)
+    z = encoder(idx).z
     norms = z.norm(dim=-1)
     torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-4, rtol=0)
 
@@ -237,7 +241,7 @@ def test_field_encoder_prob_rows_are_generally_not_unit_norm() -> None:
     cfg = _field_model_config(field_state="prob", d_model=300)
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 10))
-    z = encoder(idx)
+    z = encoder(idx).z
     norms = z.norm(dim=-1)
     assert torch.all(norms < 0.999), norms
     assert not torch.allclose(norms, torch.ones_like(norms), atol=1e-2)
@@ -291,11 +295,11 @@ def test_field_encoder_is_strictly_causal(field_state: str) -> None:
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (2, 10))
-    base = encoder(idx)
+    base = encoder(idx).z
 
     bumped = idx.clone()
     bumped[:, -1] = (bumped[:, -1] + 137) % 256
-    perturbed = encoder(bumped)
+    perturbed = encoder(bumped).z
     torch.testing.assert_close(perturbed[:, :-1], base[:, :-1], atol=1e-6, rtol=0)
 
 
@@ -310,11 +314,11 @@ def test_field_encoder_next_byte_alignment(field_state: str) -> None:
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (1, 6))
-    base = encoder(idx)
+    base = encoder(idx).z
 
     changed_t = idx.clone()
     changed_t[:, 3] = (changed_t[:, 3] + 91) % 256
-    z_changed_t = encoder(changed_t)
+    z_changed_t = encoder(changed_t).z
     # Finite BEFORE nonzero: `nan != nan`/`allclose(nan, nan)==False` means a
     # NaN-poisoned z_changed_t would otherwise slip past `not allclose(...)`
     # and read as "position t changed" instead of "the encoder broke"
@@ -324,7 +328,7 @@ def test_field_encoder_next_byte_alignment(field_state: str) -> None:
 
     changed_future = idx.clone()
     changed_future[:, 4] = (changed_future[:, 4] + 91) % 256
-    z_changed_future = encoder(changed_future)
+    z_changed_future = encoder(changed_future).z
     torch.testing.assert_close(z_changed_future[:, 3], base[:, 3], atol=1e-6, rtol=0)
 
 
@@ -390,7 +394,7 @@ def test_field_encoder_finite_under_bf16_autocast(field_state: str) -> None:
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 8))
     with torch.autocast("cpu", dtype=torch.bfloat16):
-        z = encoder(idx)
+        z = encoder(idx).z
     assert torch.isfinite(z.float()).all()
 
 
@@ -417,7 +421,7 @@ def test_field_encoder_fp32_island_holds_under_bf16_autocast() -> None:
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 10))
     with torch.autocast("cpu", dtype=torch.bfloat16):
-        z = encoder(idx)
+        z = encoder(idx).z
     norms = z.float().norm(dim=-1)
     torch.testing.assert_close(norms, torch.ones_like(norms), atol=1e-4, rtol=0)
 
@@ -590,8 +594,8 @@ def test_field_encoder_prefix_identical_sequences_share_prefix_states_and_diverg
     seq_a = torch.cat([prefix, tail_a], dim=1)
     seq_b = torch.cat([prefix, tail_b], dim=1)
 
-    z_a = encoder(seq_a)
-    z_b = encoder(seq_b)
+    z_a = encoder(seq_a).z
+    z_b = encoder(seq_b).z
 
     torch.testing.assert_close(z_a[:, : t + 1], z_b[:, : t + 1], atol=1e-6, rtol=0)
     assert torch.isfinite(z_a[:, t + 1]).all()
@@ -602,21 +606,30 @@ def test_field_encoder_prefix_identical_sequences_share_prefix_states_and_diverg
 def test_targets_never_alter_the_field_encoders_own_output(tmp_path: Path) -> None:
     """Behavioral complement to test_field_encoder_forward_has_no_targets_
     parameter: a forward hook on the field encoder itself, inside a REAL
-    ``LanguageModel.forward`` call, proves z_t is bit-identical whether
-    ``targets`` is ``None``, the real batch targets, or an unrelated
-    garbage tensor — a check the pure signature pin and even the
-    logits-level integration test cannot make, since both stop at the
-    encoder's caller rather than its own output."""
+    ``LanguageModel.forward`` call, proves the encoder's output is
+    bit-identical whether ``targets`` is ``None``, the real batch targets,
+    or an unrelated garbage tensor — a check the pure signature pin and even
+    the logits-level integration test cannot make, since both stop at the
+    encoder's caller rather than its own output.
+
+    The hook FIRING at all is itself load-bearing (asserted below): the
+    backbone must reach the encoder through ``nn.Module.__call__``, not by
+    calling ``forward``/``_encode`` directly, or this whole check would
+    silently observe nothing. Both channels of :class:`FieldEncoding` are
+    compared, since the calibration logits now leave the encoder too
+    (``LMOutput.field_logits``) and are just as target-blind as ``z``."""
     trainer = Trainer(_field_config(tmp_path))
     field_encoder = trainer.raw_model.field_encoder
     assert field_encoder is not None
     x, y = trainer.train_sampler.batch()
     trainer.model.eval()
 
-    captured: list[torch.Tensor] = []
+    captured: list[FieldEncoding] = []
 
-    def _capture(_module: object, _inputs: object, output: torch.Tensor) -> None:
-        captured.append(output.detach().clone())
+    def _capture(_module: object, _inputs: object, output: FieldEncoding) -> None:
+        captured.append(
+            FieldEncoding(logits=output.logits.detach().clone(), z=output.z.detach().clone())
+        )
 
     handle = field_encoder.register_forward_hook(_capture)
     with torch.no_grad():
@@ -626,9 +639,10 @@ def test_targets_never_alter_the_field_encoders_own_output(tmp_path: Path) -> No
         trainer.model(x, garbage_targets)
     handle.remove()
 
-    assert len(captured) == 3
-    torch.testing.assert_close(captured[0], captured[1], atol=0, rtol=0)
-    torch.testing.assert_close(captured[0], captured[2], atol=0, rtol=0)
+    assert len(captured) == 3, "forward hook never fired — the backbone bypassed __call__"
+    for other in captured[1:]:
+        torch.testing.assert_close(captured[0].z, other.z, atol=0, rtol=0)
+        torch.testing.assert_close(captured[0].logits, other.logits, atol=0, rtol=0)
 
 
 # --------------------------------------------------------- geometry correspondence
@@ -640,14 +654,25 @@ def test_geometry_correspondence_hellinger_identity_under_the_semiorthogonal_lif
     semi_orthogonal_lift's own isometry regime, same as
     test_field_encoder_z_rows_are_unit_norm), z_t . z_s reproduces BC(p_t,
     p_s) numerically — this proves the correspondence the docs section
-    claims, rather than assuming it holds by construction."""
+    claims, rather than assuming it holds by construction.
+
+    Seeded (see below): the theta-level assertion's tolerance is DERIVED
+    from this fixture's measured Bhattacharyya coefficient, so the fixture
+    has to be the same one on every run."""
+    # Seeds BOTH the encoder's own init draw and `idx` below — everything
+    # `bhattacharyya` depends on. Without it this test's measured value
+    # (and therefore the arccos tolerance derived from it) is a per-run
+    # lottery; 11 is the same arbitrary seed the mixture-path test below
+    # uses, chosen before measuring rather than picked for a flattering
+    # number.
+    torch.manual_seed(11)
     cfg = _field_model_config(d_model=300)
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (2, 6))
     logits = encoder.field_logits(idx)
     probs = torch.softmax(logits, dim=-1)
-    z = encoder(idx)
+    z = encoder(idx).z
 
     p_t, p_s = probs[0, 0], probs[0, 3]
     z_t, z_s = z[0, 0], z[0, 3]
@@ -662,17 +687,57 @@ def test_geometry_correspondence_hellinger_identity_under_the_semiorthogonal_lif
     cos_theta = torch.dot(z_t, z_s)
 
     torch.testing.assert_close(cos_theta, bhattacharyya, atol=1e-4, rtol=1e-4)
-    # A second `assert_close(1.0 - hellinger_sq, cos_theta, ...)` previously
-    # sat here — algebraically identical to the assertion above, so it
-    # could never fail independently (house rule 5: a test that cannot
-    # fail is not evidence). A genuine theta-level check
-    # (`arccos(cos_theta)` vs `arccos(bhattacharyya)`) is deferred rather
-    # than added here UNMEASURED: this test has no `torch.manual_seed`, so
-    # `cos_theta` varies run to run, and arccos amplifies a cos-space
-    # residual by `1/sqrt(1 - cos^2)` as `cos_theta -> 1` — the same
-    # fp32-near-1 trap 85ee3fd fixed in the context-sensitivity test.
-    # Committing an arccos tolerance here without measuring this fixture's
-    # actual bhattacharyya value first would risk exactly that flakiness.
+
+    # RETRACTION of the note that stood here: it deferred this theta-level
+    # check as unmeasurable because the test carried no `torch.manual_seed`.
+    # It is seeded now, so the measurement exists and the check lands.
+    #
+    # MEASURED at seed 11 (2026-08-20, fp32, CPU/arm64):
+    #   cos_theta     = 0.7361146211624146
+    #   bhattacharyya = 0.7361146211624146   (bit-identical at this fixture)
+    #   theta         = 0.743484357 rad, for both -> residual exactly 0.0
+    # Same probe over seeds 0/7/23 to size the fp32 noise this identity
+    # actually carries (the lift's own QR is only semi-orthogonal to fp32,
+    # and the two sides sum different numbers of terms in different
+    # orders): worst cos-space residual 1.192e-07 (seed 0), worst
+    # theta-space residual 1.797e-07.
+    #
+    # DERIVATION. d/dx arccos(x) = -1/sqrt(1 - x^2), so a cos-space
+    # residual r shows up in theta as ~A*r with A = 1/sqrt(1 - cos^2). At
+    # the measured cos_theta, A = 1/sqrt(1 - 0.73611462^2) = 1.4774. That
+    # fixes the tolerance from BOTH sides:
+    #
+    #   floor   — it must clear the amplified fp32 noise:
+    #             1.4774 * 1.192e-7 = 1.8e-7 (matching the measured 1.797e-7).
+    #             A loose naive-summation bound over the 300-term dot,
+    #             300 * 6e-8 * A ~= 2.7e-5, is the pessimistic cross-BLAS
+    #             version of the same number.
+    #   ceiling — it must stay BELOW what the cos assertion above already
+    #             implies, or this line could never fail on its own (house
+    #             rule 5). That assertion tolerates
+    #             atol + rtol*|bc| = 1e-4 + 1e-4*0.73611 = 1.7361e-4 in cos
+    #             space, i.e. 1.4774 * 1.7361e-4 = 2.565e-4 in theta.
+    #
+    # atol=5e-5 (rtol=0) sits between them: ~280x over the measured noise,
+    # ~2x over the pessimistic cross-BLAS bound, and ~5x under the ceiling
+    # — so it is a genuinely independent constraint, not a restatement.
+    # GUARD-TOOTH (2026-08-20): with `bhattacharyya + 1.2e-4` substituted
+    # into both assertions, the cos-space assert_close still PASSED (1.2e-4
+    # < 1.7361e-4) while this one went RED at |dtheta| = 1.7732e-4 > 5e-5 —
+    # the residual band where only this assertion bites is real and
+    # reachable, which is exactly what the removed `1 - (1 - x)` assertion
+    # could never claim.
+    #
+    # The fp32-near-1 trap 85ee3fd fixed for the context-sensitivity test
+    # (A -> infinity as cos -> 1) does not bite here, and the seed is what
+    # makes that a fact rather than a hope: this fixture sits at
+    # cos_theta = 0.736, where A is 1.48. No `.clamp(-1, 1)` before arccos
+    # for the same reason — at 0.736 the domain edge is 0.26 away, ~4.4e6
+    # fp32 ULPs, so a clamp here could only ever hide a fixture that had
+    # silently become a different test.
+    theta_cos = torch.arccos(cos_theta)
+    theta_bc = torch.arccos(bhattacharyya)
+    torch.testing.assert_close(theta_cos, theta_bc, atol=5e-5, rtol=0)
 
 
 def _kl_divergence(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
@@ -735,7 +800,7 @@ def test_context_sensitivity_field_gives_nonzero_spread_table_gives_exactly_zero
     field_encoder = FieldEncoder(_field_model_config(d_model=300))
     field_encoder.eval()
     with torch.no_grad():
-        field_states = [field_encoder(ctx)[0, -1] for ctx in contexts]
+        field_states = [field_encoder(ctx).z[0, -1] for ctx in contexts]
     # Direct tensor-equality check FIRST: this is the load-bearing
     # assertion. An arccos-based spread check alone cannot catch a
     # context-blind (one-hot-per-byte lookup) encoder, because even a

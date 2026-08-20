@@ -48,12 +48,13 @@ import dataclasses
 import inspect
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
 from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION
 from entropic_substrate.config import Config, ModelConfig
-from entropic_substrate.models.field_encoder import FieldEncoder
+from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator, FieldEncoder
 from entropic_substrate.sinks import MlflowSink
 from entropic_substrate.train import Trainer
 from helpers import assert_bitwise_equal, tiny_config, tiny_model_config
@@ -125,16 +126,21 @@ def test_field_logits_shape_and_dtype() -> None:
 
 
 def test_field_logits_and_forward_are_independent_calls_over_the_same_weights() -> None:
-    """Both call sites share `_encode` internally but are genuinely separate
-    forward passes (docstring's documented double-compute tradeoff) — in
-    eval mode (dropout inert either way at the tiny configs' dropout=0.0),
-    they must agree exactly: field_logits's own softmax before the sqrt/lift
-    step must reproduce the same probabilities forward()'s z_t used."""
+    """`field_logits(idx)` and `forward(idx)` share `_encode` internally but
+    remain genuinely separate forward passes — that is what the TRAIN-time
+    calibration seam (`Trainer._field_loss_terms`) still needs, since its
+    logits must be produced inside its own FP32 island (the eval path no
+    longer takes a second pass; see
+    test_evaluate_runs_the_field_encoder_exactly_once_per_batch). In eval
+    mode (dropout inert either way at the tiny configs' dropout=0.0) the two
+    passes must agree exactly: field_logits's own softmax before the
+    sqrt/lift step must reproduce the same probabilities forward()'s z_t
+    used."""
     cfg = _field_model_config(d_model=300)
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (2, 10))
-    z = encoder(idx)
+    z = encoder(idx).z
     logits = encoder.field_logits(idx)
     probs = torch.softmax(logits, dim=-1).clamp_min(1e-12)
     reconstructed_z = (probs.sqrt() @ encoder.lift).to(z.dtype)
@@ -653,6 +659,86 @@ def test_field_nats_per_byte_equals_field_ce_for_the_byte_only_estimator(tmp_pat
     assert result.field_ce is not None
     assert result.field_nats_per_byte is not None
     assert result.field_nats_per_byte == pytest.approx(result.field_ce, rel=1e-4)
+
+
+# ------------------------------------------- eval-time encoder dedupe (CR PR #79)
+def test_evaluate_runs_the_field_encoder_exactly_once_per_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``Trainer.evaluate`` must run ``p_phi`` ONCE per eval batch.
+
+    Before the dedupe, each eval batch ran the encoder's full forward
+    TWICE over the SAME input: once inside ``LanguageModel.forward``
+    (keeping ``z``, discarding the logits) and once more through
+    ``field_encoder.field_logits(x)`` (keeping the logits, discarding
+    ``z``). MEASURED RED on this exact test, 2026-08-20, before the fix:
+    ``assert 6 == 3`` for ``num_batches=3``.
+
+    Counting ``_encode`` (the shared body) rather than ``forward``/
+    ``field_logits`` is deliberate: it is the single place the encoder's
+    real compute happens, so no re-routing between those two public
+    entry points can make this pin pass without actually removing a
+    forward pass.
+    """
+    trainer = Trainer(_calib_cfg(tmp_path, field_loss_lambda=1.0))
+    calls: list[int] = []
+    original = FieldEncoder._encode
+
+    def _counting(self: FieldEncoder, idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        calls.append(1)
+        return original(self, idx)
+
+    monkeypatch.setattr(FieldEncoder, "_encode", _counting)
+    trainer.evaluate(num_batches=3)
+    assert sum(calls) == 3
+
+
+def test_deduped_eval_reproduces_the_two_pass_field_metrics_exactly(tmp_path: Path) -> None:
+    """The dedupe is an efficiency fix, so every field metric it feeds must
+    come out BIT-identical to the two-pass shape it replaces.
+
+    The reference below is the pre-dedupe computation written out by hand
+    (a second, independently ``autocast(enabled=False)``-islanded
+    ``field_logits(x)`` per batch) rather than a recorded constant, so it
+    keeps checking the real thing if the encoder's init or the sampler's
+    batches ever change.
+
+    Exact ``==`` is admissible here, not approximate: eval runs under
+    ``no_grad`` + ``eval()`` (dropout inert) and ``tiny_config`` sets
+    ``amp_dtype="off"`` on CPU, where ``Trainer._autocast()`` IS
+    ``autocast(enabled=False)`` — so the two shapes execute the identical
+    FP32 kernels on the identical inputs. NOTE the one place they would
+    NOT agree: under a real bf16 autocast (GPU runs), the pre-dedupe shape
+    ran the WHOLE encoder in FP32 because the caller's island wrapped it,
+    while the deduped shape runs it in the ambient dtype like every other
+    forward — see ``Trainer.evaluate``'s own comment.
+    """
+    trainer = Trainer(_calib_cfg(tmp_path, field_loss_lambda=1.0))
+    encoder = trainer.raw_model.field_encoder
+    assert encoder is not None
+    n = 3
+
+    reference = FieldCalibrationAccumulator()
+    reference_ces: list[float] = []
+    with torch.no_grad():
+        trainer.model.eval()
+        trainer.val_sampler.reset_eval()
+        for x, y in trainer.val_sampler.iter_batches(n):
+            with torch.autocast(device_type=trainer.device.type, enabled=False):
+                logits = encoder.field_logits(x)
+            reference.update(logits.reshape(-1, logits.shape[-1]), y.reshape(-1))
+            reference_ces.append(float(trainer._field_ce_from_logits(logits, y)))
+        trainer.model.train()
+    expected = reference.finalize()
+
+    result = trainer.evaluate(num_batches=n)
+
+    assert result.field_ce == float(np.mean(reference_ces))
+    assert result.field_nats_per_byte == expected["ce"] / trainer.meta.bytes_per_token
+    assert result.field_brier == expected["brier"]
+    assert result.field_ece == expected["ece"]
+    assert result.field_entropy == expected["entropy"]
+    assert result.field_top1 == expected["top1"]
 
 
 def test_frozen_field_still_reports_calibration_diagnostics_at_eval(tmp_path: Path) -> None:
