@@ -66,9 +66,9 @@ reviews:
     - "!**/.pytest_cache/**"
     - "!**/.mypy_cache/**"
     - "!**/.ruff_cache/**"
-    - "!**/data/**"
-    - "!**/models/**"
-    - "!**/results/**"
+    - "!data/**"
+    - "!models/**"
+    - "!results/**"
 
     # Focus on source code
     - "**/*.py"

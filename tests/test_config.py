@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import random
 from pathlib import Path
 
 import pytest
@@ -25,17 +26,35 @@ from entropic_substrate.models.backbone import build_model, vocab_size_for
 pytestmark = pytest.mark.unit
 
 # E1.5 arms (docs/e1_5-instruction.md): exact total param counts, pinned.
-# The extended formula must reproduce every one of these exactly, not just
-# land the shared 80-100M band assertion (which the pre-extension formula
-# already satisfies for every arm here, so the band alone is not
-# RED-capable for this change).
+# The formula must reproduce every one of these exactly, not just land the
+# shared 80-100M band assertion (which every arm here satisfies either way,
+# so the band alone is not RED-capable for a counting change).
+#
+# CORRECTED 2026-08-20 (see `_total_params`' own retraction note): every
+# value below was previously the formula's own output, and the formula
+# omitted the LayerNorm gains — so each arm was pinned 19,200 (table arms)
+# or 19,840 (field arms) below what `build_model` actually constructs. The
+# numbers here are now REAL counts — e1-5c-hidden's is tied directly to a
+# real build by test_pinned_exact_total_matches_a_real_build_at_full_width,
+# and the formula that reproduces all of them is itself cross-checked
+# against real builds of every arm by test_total_params_formula_matches_a_
+# real_build.
 E1_5_EXACT_TOTAL_PARAMS: dict[str, int] = {
-    "e1-fisher": 85_131_264,
-    "e1-5a-input": 85_327_872,
-    "e1-5a-output": 85_327_872,
-    "e1-5a-both": 85_131_264,
-    "e1-5b-gram": 85_131_264,
-    "e1-5c-field": 85_557_248,
+    "e1-fisher": 85_150_464,
+    "e1-5a-input": 85_347_072,
+    "e1-5a-output": 85_347_072,
+    "e1-5a-both": 85_150_464,
+    "e1-5b-gram": 85_150_464,
+    "e1-5c-field": 85_577_088,
+    # P7 (FOR-924): H/P share e1-5c-field's p_phi (field_d_model=128,
+    # field_n_layers=2) exactly, so e1-5c-prob (no sqrt, same lift, no new
+    # params) lands on the SAME total as e1-5c-field. e1-5c-hidden adds the
+    # one trainable lift W: Linear(field_d_model=128, d_model=768,
+    # bias=False) = 128*768 = 98_304 params over that shared base — measured
+    # against real builds as 85,675,392 - 85,577,088 = 98,304 exactly, i.e.
+    # the H-arm delta was always right; only the shared base was low.
+    "e1-5c-hidden": 85_675_392,
+    "e1-5c-prob": 85_577_088,
 }
 
 
@@ -98,23 +117,115 @@ def test_experiment_ladder_wiring() -> None:
         assert getattr(e3, field) == getattr(cfgs["e2"].model, field), field
 
 
+def _norm_params(model: ModelConfig, width: int) -> int:
+    """Parameters of ONE `build_norm(...)` layer at `width` (models/blocks.py).
+
+    `nn.LayerNorm(width, bias=cfg.bias)` is weight-only while `bias=False`
+    (guarded in `_total_params`); `UnitNorm` (`norm="ngpt_norm"`) is a pure
+    function with no state at all.
+    """
+    if model.norm == "layernorm":
+        return width
+    if model.norm == "ngpt_norm":
+        return 0
+    # kappa_moe (GatedKappaNorm) carries a router + per-component curvatures.
+    # It is measured radially-annihilated and no registered arm selects it
+    # (CLAUDE.md architecture section), so it is refused rather than modelled
+    # from memory — an unmodelled term must fail loud, never miscount quietly.
+    msg = f"_total_params does not model norm={model.norm!r}"
+    raise ValueError(msg)
+
+
+def _block_params(model: ModelConfig) -> int:
+    """Parameters of ONE transformer block, term for term against
+    `models/blocks.py` (`BaselineBlock` / `NGPTBlock` + `CausalSelfAttention`
+    + `MLP`)."""
+    d = model.d_model
+    hidden = int(model.mlp_ratio * d)
+    # q/k/v/out projections, bias=False.
+    total = 4 * d * d
+    if model.block == "ngpt":
+        # SwiGLU: fc is d -> 2*hidden, proj is hidden -> d.
+        total += 3 * hidden * d
+        # nGPT's learned scales: sqk (d), suv (2*hidden), and the two
+        # eigen-learning-rate vectors attn_alpha/mlp_alpha (d each).
+        total += d + 2 * hidden + 2 * d
+    else:
+        total += 2 * hidden * d
+    # norm_attn + norm_mlp. NGPTBlock's third norm (`retract`) is always
+    # UnitNorm and therefore always free.
+    total += 2 * _norm_params(model, d)
+    if model.attn_kernel == "kappa":
+        # E3: one learnable curvature per head — or a single shared one on
+        # the vantage ablation — plus one per-head temperature tau.
+        total += 1 if model.kappa_granularity == "global" else model.n_heads
+        total += model.n_heads
+        if model.anchor_mode != "none":
+            # Asymmetric Mobius anchors p_q, p_k, each (1, n_anchor, 1, head_dim).
+            n_anchor = 1 if model.anchor_mode == "global" else model.n_heads
+            total += 2 * n_anchor * (d // model.n_heads)
+    return total
+
+
+def _field_encoder_params(model: ModelConfig) -> int:
+    """Parameters of the E1.5c estimator p_phi (models/field_encoder.py).
+
+    Its blocks are pinned to a baseline/layernorm/cosine shape at
+    `field_d_model` regardless of what the OUTER config selects (the
+    `inner_cfg` replace in `FieldEncoder.__init__`), so this reads those
+    constants rather than the outer arm's block/norm/kernel. The fixed
+    `lift` is a buffer, not a parameter, and the tied 256-way head shares
+    `wte.weight`.
+    """
+    fd, layers = model.field_d_model, model.field_n_layers
+    per_layer = 4 * fd * fd + 2 * (4 * fd) * fd + 2 * fd  # attn + GELU MLP + 2 norms
+    total = 256 * fd + layers * per_layer + fd  # wte (tied head) + blocks + norm_f
+    if model.field_state == "hidden":
+        # P7 (FOR-924): H is the ONLY arm with a trainable lift — a
+        # Linear(field_d_model, d_model, bias=False) standing in for the
+        # fixed semi_orthogonal_lift buffer that F/P share.
+        total += fd * model.d_model
+    return total
+
+
 def _total_params(cfg: Config) -> int:
-    d, layers = cfg.model.d_model, cfg.model.n_layers
-    per_layer = (
-        4 * d * d + (3 if cfg.model.block == "ngpt" else 2) * int(cfg.model.mlp_ratio * d) * d
-    )
-    # Untied embeddings hold a separate input table AND output classifier,
-    # so the vocab*d term is paid twice (E1.5a input/output variants).
-    embedding_multiplier = 1 if cfg.model.tie_embeddings else 2
-    embedding = vocab_size_for(cfg.model) * d * embedding_multiplier
-    total = per_layer * layers + embedding
-    if cfg.model.state_source == "field":
-        # E1.5c: the causal density estimator p_phi is its own small
-        # transformer encoder (256-way input embedding + field_n_layers
-        # baseline-shaped blocks, 12*d^2/layer at mlp_ratio=4) sitting in
-        # front of the backbone - its params are additive, not swapped in.
-        fd = cfg.model.field_d_model
-        total += 256 * fd + cfg.model.field_n_layers * 12 * fd * fd
+    """Total parameters implied by `cfg`, without building the model.
+
+    Cross-checked against real `build_model(...)` counts by
+    `test_total_params_formula_matches_a_real_build[_at_full_width]` below —
+    that pair is what keeps this honest. RETRACTION (2026-08-20): this
+    formula previously omitted every normalisation gain, so each arm it
+    pinned came out low by exactly the LayerNorm weights. MEASURED against
+    a real build of e1-5c-field: formula 85,557,248 vs real 85,577,088, a
+    uniform -19,840 across the E1.5 arms, which decomposes as the backbone's
+    (2 norms/block * 12 blocks + 1 final norm_f) * 768 = 25 * 768 = 19,200
+    plus the field encoder's (2 * 2 + 1) * 128 = 640. The nGPT arms were
+    additionally short their sqk/suv/alpha/sz scales (e2: 76,288) and the
+    E3 arms their kappa/tau/anchors (e3: +216, e3-anchor: +1,152,
+    e3-vantage: +13,941 over e2) — all now modelled and all verified
+    against real builds.
+    """
+    model = cfg.model
+    if model.bias:
+        # Every shipped config is bias=False, so the Linear/LayerNorm bias
+        # terms are deliberately unmodelled — refuse rather than under-count
+        # a future config by exactly the amount this helper exists to get
+        # right.
+        msg = "_total_params models bias=False only; a bias=True config needs the bias terms added"
+        raise ValueError(msg)
+    d = model.d_model
+    embedding_multiplier = 1 if model.tie_embeddings else 2
+    total = vocab_size_for(model) * d * embedding_multiplier
+    total += model.n_layers * _block_params(model)
+    # LanguageModel.norm_f: UnitNorm (free) whenever the block is nGPT,
+    # regardless of cfg.norm — backbone.py picks it off `hypersphere`, not
+    # off the norm setting the blocks use.
+    total += 0 if model.block == "ngpt" else _norm_params(model, d)
+    if model.block == "ngpt":
+        # nGPT's per-class logit temperature `sz`.
+        total += vocab_size_for(model)
+    if model.state_source == "field":
+        total += _field_encoder_params(model)
     return total
 
 
@@ -137,6 +248,154 @@ def test_e1_5_arm_membership_matches_the_pinned_exact_totals() -> None:
 def test_e1_5_arms_hit_their_pinned_exact_param_total(exp: str) -> None:
     cfg = resolve_experiment_config(exp)
     assert _total_params(cfg) == E1_5_EXACT_TOTAL_PARAMS[exp], exp
+
+
+# ---------------------------------------------------- P8 (FOR-925): matched-total
+# Shrunken-backbone twins so N_backbone + N_field ~= e1-fisher's 85,131,264
+# total (docs/e1_5-instruction.md "Comparison lanes": matched-BACKBONE vs
+# matched-TOTAL-parameter — "is predictive-state construction a better use
+# of a FIXED budget?"). Deliberately NOT registered in config.py's
+# EXPERIMENTS (execution is prereg-time scope, build-plan Phase D — same
+# code-ready-but-ungated posture as e3-anchor/e3-vantage) — loaded here by
+# explicit path, mirroring resolve_experiment_config's own `--config` path,
+# rather than by name.
+_MATCHED_TOTAL_EXACT_PARAMS: dict[str, int] = {
+    # 144*756^2 + 256*756 + (256*128 + 2*12*128^2) + norms
+    #   = 82,494,720 + 193,536 + 425,984 + 19,540.
+    # CORRECTED 2026-08-20 from 82,920,704: the arithmetic in the retracted
+    # comment was the norm-blind formula's, missing the backbone's
+    # 25 * 756 = 18,900 LayerNorm gains and the field encoder's 5 * 128 =
+    # 640. It also mislabelled its own second term — 256*756 = 193,536 is
+    # the byte embedding table, not part of the 82,494,720 block total.
+    "e1-5c-field-matched-total": 82_940_244,
+    # Field twin's total + H's own trainable state_lift (128*756 = 96,768).
+    "e1-5c-hidden-matched-total": 83_037_012,
+    # P shares F's p_phi exactly (no sqrt, same fixed lift, no new params).
+    "e1-5c-prob-matched-total": 82_940_244,
+}
+
+# The matched-BACKBONE config each matched-total twin shrinks from.
+_MATCHED_TOTAL_BASE: dict[str, str] = {
+    "e1-5c-field-matched-total": "e1-5c-field",
+    "e1-5c-hidden-matched-total": "e1-5c-hidden",
+    "e1-5c-prob-matched-total": "e1-5c-prob",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_exist_and_parse(name: str) -> None:
+    path = configs_dir() / f"{name}.yaml"
+    assert path.exists(), path
+    cfg = load_config(path)
+    assert cfg.name == name
+    assert cfg.model.d_model % cfg.model.n_heads == 0
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_hit_their_pinned_exact_param_total(name: str) -> None:
+    cfg = load_config(configs_dir() / f"{name}.yaml")
+    assert _total_params(cfg) == _MATCHED_TOTAL_EXACT_PARAMS[name], name
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_land_in_the_shared_band(name: str) -> None:
+    """Same 80-100M band every registered rung is held to
+    (test_experiment_configs_are_parameter_matched), applied here by hand
+    since these configs are deliberately unregistered."""
+    cfg = load_config(configs_dir() / f"{name}.yaml")
+    total = _total_params(cfg)
+    assert 80e6 <= total <= 100e6, f"{name}: {total / 1e6:.1f}M"
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_only_change_d_model_and_fisher_init_path_from_their_base(
+    name: str,
+) -> None:
+    """A matched-total twin is a DELIBERATE two-field change from its own
+    matched-backbone base config: d_model (to shrink the total) and
+    fisher_init_path (the checkpointed d768 table no longer matches a
+    shrunk width, so this falls back to the corpus-computed path) —
+    everything else, including the field_state axis that already
+    distinguishes the base config from e1-fisher, must carry over
+    unchanged. Mirrors test_e1_5_arms_extend_e1_fisher_only_on_their_axis's
+    shape but against the base config rather than e1-fisher."""
+    base = resolve_experiment_config(_MATCHED_TOTAL_BASE[name])
+    twin = load_config(configs_dir() / f"{name}.yaml")
+    for f in dataclasses.fields(ModelConfig):
+        base_val = getattr(base.model, f.name)
+        twin_val = getattr(twin.model, f.name)
+        if f.name in ("d_model", "fisher_init_path"):
+            assert twin_val != base_val, f"{name}: axis field {f.name!r} did not change"
+        else:
+            assert twin_val == base_val, f"{name}: unexpected change on model.{f.name}"
+    assert twin.data == base.data
+    assert twin.train == base.train
+
+
+# ------------------------------------------- formula vs a REAL build (FOR-9xx)
+# `_total_params` is a hand-rolled duplicate of the model's own parameter
+# accounting, and a duplicate drifts silently: measured 2026-08-20, it was
+# under-counting every arm by the LayerNorm gains (see its own comment), and
+# nothing in the suite noticed because the only other check on it was an
+# 80-100M band 20k parameters wide. These two tests remove the silence by
+# comparing the formula against `build_model(...)` itself.
+#
+# Deterministic corpus stand-in for the `fisher_sqrt` arms: `build_fisher_init`
+# only needs bytes to count transitions over, and Laplace smoothing keeps every
+# row well-defined even on uniform noise. Parameter COUNT does not depend on
+# the values, only on the shapes, so this never has to be the real corpus.
+_FISHER_SOURCE: bytes = random.Random(0).randbytes(20_000)
+
+# Exactly ONE full-width build, and the number below is why. MEASURED
+# 2026-08-20 on the full `-m unit` suite: no cross-check 40.83s, + the
+# 19-config shrunken sweep 39.65s (free, inside run-to-run noise), + five
+# full-width builds 99.2s. A full-width 85M build costs ~1.8s alone but
+# 3.2-5.6s once ~950 tests of allocation sit behind it, and the unit budget
+# is 60s (pyproject's own marker text). The shrunken sweep is what carries
+# the coverage — the `--tiny` overlay moves only WIDTHS, so every MECHANISM
+# (block, norm, attn_kernel, anchor_mode, kappa_granularity, tie_embeddings,
+# state_source, field_state, and e0-bpe's 50257-wide vocab, which `--tiny`
+# does not shrink) is exercised against a real build there. This one arm
+# exists to tie a PINNED LITERAL to a real count at the width it was pinned
+# at; e1-5c-hidden is the richest such arm (baseline blocks + LayerNorm
+# gains + tied byte tables + p_phi + H's trainable state_lift).
+_FULL_WIDTH_CROSSCHECK: tuple[str, ...] = ("e1-5c-hidden",)
+
+
+def _resolve_by_name(name: str, *, tiny: bool = False) -> Config:
+    """Registered experiments by name; the unregistered matched-total twins by
+    path (mirroring how their own tests above load them)."""
+    if name in EXPERIMENTS:
+        return resolve_experiment_config(name, tiny=tiny)
+    return resolve_experiment_config(config_path=configs_dir() / f"{name}.yaml", tiny=tiny)
+
+
+def _real_total_params(cfg: Config) -> int:
+    """Ground truth: parameters of a model that was actually BUILT."""
+    model = build_model(cfg.model, fisher_source=_FISHER_SOURCE)
+    return sum(p.numel() for p in model.parameters())
+
+
+@pytest.mark.parametrize("name", (*EXPERIMENTS, *sorted(_MATCHED_TOTAL_EXACT_PARAMS)))
+def test_total_params_formula_matches_a_real_build(name: str) -> None:
+    """Every registered arm (and every matched-total twin), shrunken by the
+    repo's own `--tiny` overlay — which changes only WIDTHS (d_model, n_layers,
+    n_heads, field_*) and leaves every mechanism switch alone, so a real build
+    here constructs exactly the modules the full-size arm would."""
+    cfg = _resolve_by_name(name, tiny=True)
+    assert _total_params(cfg) == _real_total_params(cfg), name
+
+
+@pytest.mark.parametrize("name", _FULL_WIDTH_CROSSCHECK)
+def test_pinned_exact_total_matches_a_real_build_at_full_width(name: str) -> None:
+    """The pinned literal, checked against a model that was actually built at
+    the width it was pinned at — not against the formula (that comparison is
+    `test_e1_5_arms_hit_their_pinned_exact_param_total`'s job, and a formula
+    and a pin can be edited into agreement while both are wrong)."""
+    cfg = _resolve_by_name(name)
+    real = _real_total_params(cfg)
+    assert E1_5_EXACT_TOTAL_PARAMS[name] == real, name
+    assert _total_params(cfg) == real, name
 
 
 def test_tiny_overlay_shrinks_without_changing_the_experiment() -> None:
@@ -241,6 +500,12 @@ _E1_5_ARM_AXES: dict[str, frozenset[str]] = {
     "e1-5a-both": frozenset({"embedding_freeze"}),
     "e1-5b-gram": frozenset({"gram_lambda"}),
     "e1-5c-field": frozenset({"state_source"}),
+    # P7 (FOR-924): H/P share e1-5c-field's declared state_source axis (a
+    # field_encoder must exist for field_state to mean anything - see
+    # backbone.py's state_source='table' guard) PLUS their own field_state
+    # value away from the shared default "sqrt_prob" (== the F arm).
+    "e1-5c-hidden": frozenset({"state_source", "field_state"}),
+    "e1-5c-prob": frozenset({"state_source", "field_state"}),
 }
 
 
@@ -269,3 +534,15 @@ def test_e1_5_arms_extend_e1_fisher_only_on_their_axis(exp: str) -> None:
                 assert cfg_val != base_val, f"{exp}: axis field {f.name!r} did not change"
             else:
                 assert cfg_val == base_val, f"{exp}: unexpected change on {section_name}.{f.name}"
+
+
+def test_model_config_rejects_gram_lambda_with_non_byte_tokenizer() -> None:
+    """Guard (FOR-915): gram_lambda != 0 with a non-byte tokenizer allocates
+    O(V²) fp32 Gram memory — ≈20.2 GB at gpt2's V=50257."""
+    with pytest.raises(ValueError, match="gram_lambda"):
+        ModelConfig(gram_lambda=0.5, tokenizer="gpt2")
+
+
+def test_gram_lambda_with_byte_tokenizer_is_allowed() -> None:
+    cfg = ModelConfig(gram_lambda=0.5, tokenizer="byte")
+    assert cfg.gram_lambda == 0.5

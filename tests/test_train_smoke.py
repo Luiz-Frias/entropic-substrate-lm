@@ -169,31 +169,45 @@ def test_run_start_record_captures_the_config(tmp_path: Path) -> None:
     assert json.dumps(start)  # round-trips
 
 
-# ------------------------------------------------------------------ CLI
-def test_cli_train_tiny_e3_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # chdir FIRST. `--results` redirects only the metrics sink; `models_dir` stays
-    # the relative default "models", so without an isolated cwd this test writes
-    # models/e3-tiny-final.pt into the repo working tree and overwrites a real
-    # smoke artifact every time the unit suite runs. The assertion below pins it.
+# --------------------------------------------------------------- helpers
+def _run_tiny_cli(
+    exp: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[dict[str, object]]:
+    # chdir FIRST. `--results` redirects only the metrics sink; `models_dir`
+    # stays the relative default "models", so without an isolated cwd this
+    # helper writes models/<exp>-tiny-final.pt into the repo working tree.
     monkeypatch.chdir(tmp_path)
-    results = tmp_path / "e3.jsonl"
+    results = tmp_path / f"{exp}.jsonl"
     code = main(
         [
             "train",
-            "--exp",
-            "e3",
+            "--exp", exp,
             "--tiny",
-            "--device",
-            "cpu",
-            "--steps",
-            "4",
-            "--results",
-            str(results),
+            "--device", "cpu",
+            "--steps", "4",
+            "--results", str(results),
             "--quiet",
         ]
     )
     assert code == 0
-    records = [json.loads(line) for line in results.read_text().splitlines() if line]
+    return [json.loads(line) for line in results.read_text().splitlines() if line]
+
+
+def _tiny_trainer_overrides(tmp_path: Path, *, max_steps: int) -> dict[str, object]:
+    return {
+        "data": {"synthetic_bytes": 40_000, "seq_len": 32, "batch_size": 2},
+        "train": {
+            "max_steps": max_steps,
+            "results_dir": str(tmp_path / "results"),
+            "models_dir": str(tmp_path / "models"),
+            "save_interval": 0,
+        },
+    }
+
+
+# ------------------------------------------------------------------ CLI
+def test_cli_train_tiny_e3_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    records = _run_tiny_cli("e3", tmp_path, monkeypatch)
     assert any(r["event"] == "eval" and "kappa" in r for r in records)
     assert (tmp_path / "models" / "e3-tiny-final.pt").exists(), "checkpoint escaped tmp_path"
 
@@ -204,25 +218,7 @@ def test_cli_train_tiny_e1_5c_field_end_to_end(
     """P5 pod-ready acceptance: `train --exp e1-5c-field --tiny` runs on CPU
     end to end through the real CLI, and the run_start record proves the
     tiny overlay actually reached the field encoder (field_d_model: 32)."""
-    monkeypatch.chdir(tmp_path)
-    results = tmp_path / "e1-5c-field.jsonl"
-    code = main(
-        [
-            "train",
-            "--exp",
-            "e1-5c-field",
-            "--tiny",
-            "--device",
-            "cpu",
-            "--steps",
-            "4",
-            "--results",
-            str(results),
-            "--quiet",
-        ]
-    )
-    assert code == 0
-    records = [json.loads(line) for line in results.read_text().splitlines() if line]
+    records = _run_tiny_cli("e1-5c-field", tmp_path, monkeypatch)
     start = next(r for r in records if r["event"] == "run_start")
     assert start["config"]["model"]["field_d_model"] == 32
     # Equality against an independently constructed tiny encoder, not `> 0`:
@@ -435,15 +431,7 @@ def test_tiny_configs_for_every_rung_build_a_trainer(tmp_path: Path) -> None:
         cfg = resolve_experiment_config(
             exp,
             tiny=True,
-            overrides={
-                "data": {"synthetic_bytes": 40_000, "seq_len": 32, "batch_size": 2},
-                "train": {
-                    "max_steps": 1,
-                    "results_dir": str(tmp_path / "results"),
-                    "models_dir": str(tmp_path / "models"),
-                    "save_interval": 0,
-                },
-            },
+            overrides=_tiny_trainer_overrides(tmp_path, max_steps=1),
         )
         trainer = Trainer(cfg)
         metrics = trainer.train_step()
@@ -493,7 +481,15 @@ def test_tiny_overlay_preserves_e1_5_arm_axes() -> None:
 
 @pytest.mark.parametrize(
     "exp",
-    ["e1-5a-input", "e1-5a-output", "e1-5a-both", "e1-5b-gram", "e1-5c-field"],
+    [
+        "e1-5a-input",
+        "e1-5a-output",
+        "e1-5a-both",
+        "e1-5b-gram",
+        "e1-5c-field",
+        "e1-5c-hidden",
+        "e1-5c-prob",
+    ],
 )
 def test_five_step_tiny_train_decreases_loss_for_e1_5_arms(tmp_path: Path, exp: str) -> None:
     """Mirrors test_five_step_tiny_train_decreases_loss but drives the REAL
@@ -507,15 +503,7 @@ def test_five_step_tiny_train_decreases_loss_for_e1_5_arms(tmp_path: Path, exp: 
     cfg = resolve_experiment_config(
         exp,
         tiny=True,
-        overrides={
-            "data": {"synthetic_bytes": 40_000, "seq_len": 32, "batch_size": 2},
-            "train": {
-                "max_steps": 5,
-                "results_dir": str(tmp_path / "results"),
-                "models_dir": str(tmp_path / "models"),
-                "save_interval": 0,
-            },
-        },
+        overrides=_tiny_trainer_overrides(tmp_path, max_steps=5),
     )
     started = time.monotonic()
     trainer = Trainer(cfg)

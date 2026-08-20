@@ -515,6 +515,17 @@ class MlflowSink:
                 # run's MLflow metrics untouched.
                 "gram_frob_sq",
                 "gram_penalty",
+                # E1.5c Repair 1: same "absent channel is absent" convention,
+                # present only when field_loss_lambda != 0.0.
+                "field_ce",
+                # P8 (FOR-925): calibration diagnostics for p_phi, present
+                # whenever a field encoder exists at all (decoupled from
+                # field_loss_lambda — see train.py's EvalResult docstring).
+                "field_nats_per_byte",
+                "field_brier",
+                "field_ece",
+                "field_entropy",
+                "field_top1",
             ):
                 if key in record:
                     metrics[key] = float(record[key])

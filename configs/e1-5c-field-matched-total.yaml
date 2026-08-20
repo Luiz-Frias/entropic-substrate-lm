@@ -1,0 +1,67 @@
+# E1.5c-field, MATCHED-TOTAL twin (docs/e1_5-instruction.md "Comparison
+# lanes"; FOR-925): e1-5c-field.yaml shrunk in d_model so
+# N_backbone + N_field ~= e1-fisher's 85,150,464 total, answering "is
+# predictive-state construction a better use of a FIXED budget?" rather than
+# e1-5c-field's own matched-BACKBONE question ("does the field help an
+# otherwise-identical model?"). Axis vs e1-5c-field: d_model (768 -> 756,
+# still a multiple of n_heads=12) + fisher_init_path (the checkpointed
+# d768 table no longer matches this shrunk width, so this falls back to the
+# corpus-computed fisher_sqrt init path Trainer.__init__ already supports
+# when fisher_init_path is None).
+#
+# Exact total (test_config.py, _total_params, cross-checked against a real
+# build_model count): blocks 144*756^2 = 82,301,184 + byte table 256*756 =
+# 193,536 + backbone LayerNorm gains 25*756 = 18,900 + p_phi 426,624
+# = 82,940,244.
+# RETRACTION 2026-08-20: this read "= 82,494,720 + 425,984 = 82,920,704",
+# which was the norm-blind formula's output — short the 18,900 backbone
+# gains and the 640 inside p_phi — and its term labels did not line up with
+# its own numbers (82,494,720 was already blocks + byte table, not
+# 144*756^2). The lane's claim is unchanged by the correction: still ~2.6%
+# UNDER e1-fisher's 85,150,464, not over it. At v1's field size (426,624)
+# d_model granularity (multiples of n_heads=12) cannot land closer without
+# moving mlp_ratio into tensor-core-hostile widths, which would contaminate
+# the GPU-seconds comparison lane (docs/e1_5-instruction.md). Code-ready,
+# NOT registered in config.py's EXPERIMENTS (same posture as e3-anchor/
+# e3-vantage): execution is prereg-time scope (Phase D).
+name: e1-5c-field-matched-total
+
+model:
+  d_model: 756
+  n_layers: 12
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: baseline
+  norm: layernorm
+  embedding_init: fisher_sqrt
+  fisher_init_path: null
+  tie_embeddings: true
+  state_source: field
+  field_n_layers: 2
+  field_d_model: 128
+  field_n_heads: 4
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0006
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.1
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto

@@ -48,6 +48,20 @@ StateSource = Literal["table", "field"]
 # transformer is registered; docs/e1_5-instruction.md's v0/v2 rungs add
 # members here when they're registered, not before.
 FieldEstimator = Literal["transformer_v1"]
+# E1.5c Repair 1 (docs/e1_5-instruction.md, PR #73): does p_phi train jointly
+# with the backbone under the calibration CE (field_loss_lambda), or does it
+# load a checkpoint and freeze — the cleaner test, since it prevents p_phi
+# from becoming a private code negotiated with the backbone.
+FieldMode = Literal["joint", "frozen"]
+# E1.5c Repair 2 (docs/e1_5-instruction.md, PR #73, FOR-924): which
+# CONSTRUCTION of p_phi's output becomes the state z_t handed to the
+# backbone, once state_source="field" — the four-arm table's F/P/H legs
+# (T, the static-table arm, is state_source="table" and carries no
+# field_state at all). "sqrt_prob" = F = sqrt(p_phi).Q, the full thesis
+# (docs default, matches the arm merged pre-P7); "prob" = P = p_phi.Q, no
+# sqrt — the control for the sqrt map itself; "hidden" = H = W.h_phi,t via
+# a trainable lift — contextual preprocessing without probability geometry.
+FieldState = Literal["sqrt_prob", "prob", "hidden"]
 
 EXPERIMENTS: tuple[str, ...] = (
     "e0-byte",
@@ -68,6 +82,10 @@ EXPERIMENTS: tuple[str, ...] = (
     "e1-5a-both",
     "e1-5b-gram",
     "e1-5c-field",
+    # P7 (FOR-924): H and P — the two other legs of the four-arm table, sharing
+    # e1-5c-field's p_phi and differing only in field_state.
+    "e1-5c-hidden",
+    "e1-5c-prob",
 )
 
 
@@ -129,6 +147,38 @@ class ModelConfig:
     field_d_model: int = 128
     # E1.5c: field estimator attention head count.
     field_n_heads: int = 4
+    # E1.5c Repair 1: weight on the calibration CE that keeps p_phi an
+    # honest next-byte predictor (L_total = L_backbone + field_loss_lambda *
+    # L_field). 0.0 disables the seam entirely — the merged-but-uncalibrated
+    # simplex-bottleneck configuration docs/e1_5-instruction.md's design
+    # correction names as the flaw this repairs.
+    field_loss_lambda: float = 0.0
+    # E1.5c Repair 1: "joint" trains p_phi and the backbone together under
+    # the calibration CE; "frozen" loads p_phi from field_ckpt_path and
+    # freezes it before the backbone ever trains over sqrt(p_phi).Q.
+    field_mode: FieldMode = "joint"
+    # E1.5c Repair 1: checkpoint p_phi's frozen weights load from. Required
+    # when field_mode="frozen" (refused loudly at build otherwise); must be
+    # None when field_mode="joint" (a set path there would be silently
+    # ignored, which is exactly the kind of quiet misconfiguration CLAUDE.md's
+    # Errors principle refuses).
+    field_ckpt_path: str | None = None
+    # E1.5c Repair 2 (P7, FOR-924): which construction of p_phi's output
+    # becomes z_t — see FieldState above. Only meaningful when
+    # state_source="field"; refused loudly at build otherwise (backbone.py),
+    # same posture as field_loss_lambda/field_ckpt_path/field_mode.
+    field_state: FieldState = "sqrt_prob"
+
+    def __post_init__(self) -> None:
+        if self.gram_lambda != 0.0 and self.tokenizer != "byte":
+            msg = (
+                "gram_lambda != 0.0 requires tokenizer='byte': "
+                "normalized_gram allocates an (n_symbols, n_symbols) fp32 matrix — "
+                "trivial at the 256-byte vocab (256² × 4 B ≈ 262 KB × 2) but "
+                f"O(V²) at tokenizer={self.tokenizer!r}; at gpt2 (V=50257) the "
+                "reference + live matrices cost ≈20.2 GB before autograd storage"
+            )
+            raise ValueError(msg)
 
 
 @dataclass(slots=True)

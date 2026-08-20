@@ -84,34 +84,184 @@ harmful overconstraint / transient warm-start information.
 
 ## E1.5c — online contextual Fisher state (the original thesis)
 
-At each position, a causal density estimator produces
-`p_φ(b_{t+1} | x_{≤t})`; the state entering the backbone is
-`z_t = Q·√p_φ(· | x_{≤t})` (same fixed semi-orthogonal lift as E1). The byte
-is the observation; `z_t` is the representation.
+**DESIGN CORRECTION, 2026-08-19 (operator-ratified; supersedes the two-arm
+v1 sketch this section previously carried).** The FieldEncoder machinery
+merged in PR #69 has the right object — causal encoder, √p map, exact lift,
+FP32 island, state replacement — but as merged it does NOT yet test the
+thesis: `p_φ = softmax(field logits)` is optimized only through the backbone
+loss, so nothing forces it to remain an honest next-byte predictive
+distribution. Unconstrained, it can degenerate into an arbitrary 256-category
+latent code that merely passes through softmax and sqrt — an experiment on a
+**simplex bottleneck**, not a Fisher predictive state. The repairs and the
+full four-arm contract below are the direction now.
 
-**Estimator ladder (ascending cost; pure-torch first, per the E4b toolchain
-quarantine — `mamba_ssm` builds only in the container lane):**
+### Thesis
 
-- **v0**: order-k sliding-window count model (no learned params) — isolates
-  "contextual at all" from "learned estimator".
-- **v1** (the first registered rung): tiny causal transformer `p_φ`
-  (~2 layers, d≈128, 256-way softmax) — runs on the current image.
-- **v2**: Mamba2/SSM `p_φ` — same interface, built in the E4 container lane.
+A symbol enters the model not as a fixed learned identity vector but as a
+causal predictive distribution over continuations. A lightweight causal
+estimator produces `p_φ,t = p_φ(b_{t+1} | b_{≤t})`; the backbone receives
+`z_t = √p_φ,t · Q` with `Q ∈ R^{256×d}` semi-orthogonal. `‖√p‖₂ = 1`, and
+`z_t·z_sᵀ` is the Bhattacharyya coefficient between the two predictions —
+angular separation IS distinguishability of predictions, not arbitrary
+ID distance. The discrete byte remains the **observation** consumed by
+`p_φ`; it is no longer the **state** supplied to the backbone.
 
-**Registration-time pins:**
+Four separable value claims, never compressed into one "faster" claim:
+**statistical efficiency** (lower held-out nats/byte at the same source
+bytes — the core scientific claim), **optimization efficiency** (fewer
+bytes/steps to a registered target — the claim the E1 evidence points at),
+**compute efficiency** (fewer FLOPs/GPU-seconds — NOT guaranteed; the field
+adds compute), and **architectural efficiency** (a smaller backbone matches
+a larger static one — a later width/depth experiment).
 
-1. **Anti-leakage**: `p_φ` consumes `x_{≤t}` only, never the target byte —
-   pinned by a unit test the way the data-order digest is.
-2. **Param parity**: `p_φ` adds parameters; report matched-total-param AND
-   matched-backbone variants with param/FLOP counts (E0-bpe precedent — the
-   asymmetry is part of the measurement).
-3. **Combination rule**: `z_t` alone vs `z_t ⊕ E[b_t]` is a variable; v1
-   registers exactly one (default: `z_t` alone — the stronger form of the
-   thesis) and the other is a declared follow-up arm.
-4. Primary endpoint declared at registration: E1's primary stays final
-   nats/byte; if E1.5c registers **steps-to-target** as primary (the
-   engineering claim the E1 evidence points at), that is declared ex-ante
-   with the target level named (e0-byte terminal, 0.7738).
+### Repair 1 — calibrated field (the critical one)
+
+An explicit calibration objective keeps `p_φ` an honest predictor:
+`L_total = L_backbone + λ_field · L_field` with
+`L_field = −log p_φ(b_{t+1} | b_{≤t})`. This does not leak the target into
+the input: `p_φ` still consumes `x_{≤t}` only; the target scores the
+prediction during training exactly as the main LM loss does. Two registered
+training regimes:
+
+- **Joint calibrated field** — `p_φ` and backbone train jointly with the
+  auxiliary field CE;
+- **Pretrained/frozen field** — `p_φ` trains independently as a small causal
+  LM, freezes, then the backbone trains over `√p_φ·Q`. The frozen variant is
+  the cleanest test: it prevents the field from becoming a private code
+  negotiated with the backbone.
+
+### Repair 2 — the four-arm table (replaces the two-arm design)
+
+A single table-vs-field comparison cannot identify where a gain came from
+(the encoder adds parameters, compute, depth, and nonlinear preprocessing).
+
+| Arm | State entering backbone | What it isolates |
+|---|---|---|
+| **T** | `E_fisher[b_t]` (static Fisher table) | the E1 reference |
+| **H** | `W·h_φ,t` (contextual hidden state) | contextual preprocessing without probability geometry |
+| **P** | `p_φ,t·Q` (raw probability state) | predictive distribution without the √ map |
+| **F** | `√p_φ,t·Q` (Fisher state) | the full thesis |
+
+H/P/F share the same `p_φ`, parameter budget, context, and data. Critical
+contrasts: **H−T** (contextual at all), **P−H** (explicitly predictive),
+**F−P** (Fisher geometry beyond exposing probabilities), **F−T** (headline).
+Budget-limited start: T/H/F, with P as the declared follow-up (P is the
+cleanest control for the √ map itself).
+
+### Comparison lanes (both run; they answer different questions)
+
+- **Matched-backbone**: 85M backbone unchanged + `p_φ` added — does the
+  field provide useful information to an otherwise identical model?
+- **Matched-total-parameter**: shrink the backbone so
+  `N_backbone + N_field ≈ N_baseline` — is predictive-state construction a
+  better use of a fixed budget? (the architecture-value test)
+
+Report estimated training FLOPs and measured GPU-seconds in both lanes;
+steps alone are not a fair compute comparison once the encoder exists.
+
+### Endpoints (registered ex-ante in the prereg)
+
+- **Scientific primary — learning-curve estimand**: paired gap
+  `d_B = L_control(B) − L_field(B)` at preregistered source-byte budgets
+  (e.g. `B ∈ {50M, 100M, 200M, 300M}`), and the primary statistic is the
+  mean over budgets `d̄ = (1/K)·Σ_k d_{B_k}` — a discrete area-under-the-
+  learning-curve. E1 showed a front-loaded effect; a contextual-state
+  architecture is expected to change the CURVE, so a single terminal value
+  is not primary. ε_L = 0.01 nats/byte retained for continuity with E1.
+- **Engineering co-primary — steps/bytes-to-target**: one target every arm
+  can reach; `L* = 0.80` nats/byte (NOT e0-byte terminal 0.7738, which sits
+  too near the horizon — E1's convergence probe right-censored 2/9 random
+  runs there). Per paired seed, `S = (steps_T − steps_F)/steps_T`;
+  ε_S = 10%. Decision language: convergence improvement (LCB of S > 0);
+  practically relevant (point estimate ≥ 10%); strong support (LCB > 10%).
+  Bytes/step is constant across byte arms, so steps- and bytes-to-target
+  coincide; report both.
+- **Guardrail — terminal noninferiority**:
+  `L_F(B_max) − L_T(B_max) < δ = 0.005` nats/byte, so "reaches useful
+  quality sooner" cannot hide "plateaus worse".
+- **Compute/systems readouts, reported but never merged into the primary**:
+  FLOPs-to-target, GPU-seconds-to-target, peak VRAM, tokens/s, field share
+  of params and FLOPs. A 10% step reduction is not a compute win if each
+  step costs 25% more.
+
+### Hierarchical decision rule
+
+**Thesis supported** (all three): (1) F beats T on the learning-curve
+estimand, CI entirely above 0; (2) F noninferior at final budget within δ;
+(3) the field stays calibrated on its own held-out next-byte CE +
+calibration metrics. **Practically valuable** (additionally, any one):
+≥10% fewer bytes/steps to L*; ≥0.01 lower nats/byte at a fixed budget;
+matched-total F matches/beats the 85M static baseline. **Compute-efficient**
+(separately): fewer FLOPs- or GPU-seconds-to-target.
+
+### Calibration, geometry, and context-sensitivity diagnostics
+
+- **Predictive calibration** (logged for `p_φ` throughout): field nats/byte,
+  Brier score, expected calibration error, entropy `H(p_φ,t)`, top-1
+  next-byte accuracy. Field CE worsening while backbone CE improves is the
+  private-code signature.
+- **Geometry**: `θ(z_t, z_s) = arccos(z_t·z_sᵀ)` against Hellinger and
+  Jensen–Shannon between the predictions; nearby states should have similar
+  continuation distributions; corruption robustness. `Q` semi-orthogonal ⇒
+  these correspondences are preserved numerically — tests prove it.
+- **Context sensitivity**: for the SAME current byte in different contexts,
+  the distribution of pairwise state angles. A static table gives zero
+  within-byte variation; a genuine contextual field separates contexts in
+  ways correlated with different futures — the clearest demonstration that
+  the state is no longer "byte encoding".
+
+### Anti-leakage: structural pin + behavioral test
+
+The structural guarantee (`forward(idx)` takes no targets) is necessary but
+insufficient. Registered behavioral test: two sequences identical through
+position `t`, divergent after; assert `z_{≤t}^(A) = z_{≤t}^(B)` within
+tolerance AND that post-divergence states can differ; separately, changing
+the target tensor with `idx` fixed must not alter any `z_t`.
+
+**Estimator ladder (unchanged):** v0 count model → **v1 tiny causal
+transformer (this contract; pure-torch, current image)** → v2 Mamba2/SSM in
+the shared E4 container lane. The `z_t ⊕ E[b_t]` combination stays a
+declared follow-up arm; all four registered arms use state replacement.
+
+### Implementation status vs this contract (2026-08-19)
+
+Merged (PR #69): F-arm state path, causality tests, FP32 island, byte-only
+refusals, param reporting. Open (PR #74, this branch, not yet merged): the
+`λ_field` calibration seam
+(`train.py`'s `_field_loss_terms`, folded into the backward `total` at the
+same seam `geometry/gram.py`'s Gram penalty uses, NOT `aux_loss`) +
+frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /
+`field_ckpt_path`, guard-teeth in `tests/test_field_calibration.py`) — CE-only
+telemetry (`field_ce`) at this stage, not yet the fuller Brier/ECE/entropy/
+top-1 surface. Landed (FOR-924, this branch): H and P arm variants sharing
+one `p_φ` — `field_state: Literal["sqrt_prob","prob","hidden"]` in
+`config.py`, `configs/e1-5c-hidden.yaml` + `configs/e1-5c-prob.yaml`,
+`FieldEncoder` branching in `field_encoder.py` (F/P share the FP32 softmax
+island against the fixed semi-orthogonal lift; H is a plain trainable
+`Linear(field_d_model, d_model)` over the encoder's hidden state, the only
+arm with a trainable lift), and per-arm construction + causality guard-teeth
+in `tests/`. Landed (P8, FOR-925, this branch): the remaining field
+calibration telemetry — Brier/ECE/entropy/top-1, via a streaming
+`FieldCalibrationAccumulator`, computed at eval time whenever a field
+encoder exists at all (decoupled from `field_loss_lambda`, so a frozen field
+still reports them) — surfaced through `telemetry.py`'s `EvalRecord`/
+`read_eval_series` and forwarded by `sinks.py`; the behavioral anti-leakage
+proofs (prefix-identical/suffix-divergent sequences share `z_<=t` and
+diverge after; a forward hook proves targets never alter the field
+encoder's own output) and the geometry-correspondence proofs (`z_t·z_s`
+reproduces the Bhattacharyya coefficient to fp32 tolerance —
+atol=rtol=1e-4 at d_model=300, not exactly — under the semi-orthogonal
+lift, so θ = arccos(z_t·z_s) carries the Hellinger correspondence; θ and
+Jensen–Shannon move together along a mixture path, and a
+context-sensitivity probe against the static-table zero control); and three
+matched-total-parameter configs
+(`configs/e1-5c-{field,hidden,prob}-matched-total.yaml`, this section's
+second comparison lane) shrinking the backbone so `N_backbone + N_field`
+lands in the shared 80–100M band — code-ready, not yet registered in
+`EXPERIMENTS` (execution stays prereg-time scope, same
+posture as `e3-anchor`/`e3-vantage`). Still to build before the prereg's
+pods: none from this list — the prereg gate is the registration/execution
+step itself, not further implementation.
 
 ## Multi-scale field (E1.5c″ — horizon, feeds E4)
 
@@ -127,7 +277,11 @@ Unchanged and still one-variable: E2 tests whether respecting spherical
 geometry downstream preserves/magnifies the substrate advantage; E3 tests
 the relational kernel. Both currently carry the STATIC table; once an E1.5
 winner exists, the ladder's carry-forward rule applies to it like any other
-settled component.
+settled component. If F wins, the ladder reads as one pipeline: discrete
+observations → causal predictive field → Fisher state → spherical dynamics
+(E2: does the backbone preserve the contextual field?) → curvature-aware
+relations (E3: do Fisher states benefit from κ-kernels?) → learned
+coarse-graining (E4: when to merge adjacent predictive states).
 
 ## Process
 
