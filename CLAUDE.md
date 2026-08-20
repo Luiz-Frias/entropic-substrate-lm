@@ -24,8 +24,11 @@ The E1.5 state-construction series next, then E2→E3, then E4 in full:
 
 - **E1.5 series** (`docs/e1_5-instruction.md`) — E1.5-D endpoint diagnostics on the
   captured E1 checkpoints (no new training); E1.5a freeze variants; E1.5b
-  Gram-preserving regularization; **E1.5c online contextual Fisher state, v1 = tiny
-  causal transformer, pure-torch** — the series is done enough when E1.5c v1's
+  Gram-preserving regularization; **E1.5c online contextual Fisher state — four-arm
+  contract T/H/P/F with a CALIBRATED field (`docs/e1_5-instruction.md` §E1.5c,
+  ratified 2026-08-19: without the auxiliary field CE or a frozen pretrained
+  estimator, `p_φ` degenerates into a simplex bottleneck), v1 = tiny causal
+  transformer, pure-torch** — the series is done enough when E1.5c v1's
   registered readout files. v2 (Mamba2 `p_φ`) rides the E4 container lane; the
   multi-scale E1.5c″ field waits for v1's conclusion. Preregistrations follow the
   flywheel: committed after the E1 extension verdict files, before any confirmatory pod.
