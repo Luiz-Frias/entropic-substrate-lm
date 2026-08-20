@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F
@@ -74,7 +75,7 @@ from entropic_substrate.config import ModelConfig
 from entropic_substrate.init.fisher import semi_orthogonal_lift
 from entropic_substrate.models.blocks import build_block, build_norm
 
-__all__ = ["FieldCalibrationAccumulator", "FieldEncoder"]
+__all__ = ["FieldCalibrationAccumulator", "FieldEncoder", "FieldEncoding"]
 
 # clamp_min floor for the post-softmax probabilities, before the sqrt: a
 # softmax output is strictly positive by construction, so this floor only
@@ -87,6 +88,39 @@ _PROB_EPS: float = 1e-12
 # et al. 2017, "On Calibration of Modern Neural Networks") — named so a
 # future change is a one-line, reviewable diff rather than a buried literal.
 _ECE_BINS: int = 15
+
+
+class FieldEncoding(NamedTuple):
+    """One field-encoder pass: BOTH of the things ``_encode`` produces.
+
+    ``FieldEncoder.forward`` returns this rather than ``z`` alone so a
+    caller that needs the next-byte logits too (``LanguageModel.forward``,
+    which forwards them on ``LMOutput.field_logits`` for
+    ``Trainer.evaluate``'s calibration diagnostics) gets them from the pass
+    it already paid for, instead of running the encoder a second time
+    through :meth:`FieldEncoder.field_logits`. Returning a NamedTuple
+    rather than a bare 2-tuple keeps the two channels named at every call
+    site — and keeps ``forward`` the module's single entry point, so the
+    injection path still goes through ``nn.Module.__call__`` (hooks fire;
+    ``tests/test_field_encoder.py``'s anti-leakage hook test depends on
+    exactly that).
+
+    ``logits``: ``(B, T, 256)`` pre-softmax, AMBIENT dtype — deliberately
+    not ``.float()``-cast here the way :meth:`FieldEncoder.field_logits`
+    casts its own return. A train-time forward never reads this channel, so
+    casting at construction would spend a ``(B, T, 256)`` fp32 copy per
+    training step for nothing; the fp32 cast belongs to the consumer that
+    actually reads it (``Trainer.evaluate``), and
+    ``FieldCalibrationAccumulator.update`` refuses non-fp32 input loudly if
+    a future consumer forgets.
+
+    ``z``: ``(B, T, cfg.d_model)`` state handed to the backbone, ambient
+    dtype — see :meth:`FieldEncoder._encode` for its per-``field_state``
+    construction.
+    """
+
+    logits: torch.Tensor
+    z: torch.Tensor
 
 
 class FieldEncoder(nn.Module):
@@ -284,18 +318,27 @@ class FieldEncoder(nn.Module):
           hidden state through a TRAINABLE lift; unconstrained, no relation
           to ``p_phi`` or the fixed ``lift`` buffer at all.
 
-        Both callers below invoke this INDEPENDENTLY — the E1.5c Repair 1
-        calibration seam (``train.py``'s ``Trainer._field_loss_terms``)
-        calls ``field_logits(idx)`` as a second, separate forward pass
-        through this (small) encoder rather than one shared with whatever
-        call ``LanguageModel.forward`` already made through ``forward(idx)``
-        for injection. That duplicates this module's own compute when both
-        injection AND calibration are active in the same train step, but
-        NOT the backbone's — ``field_d_model``/``field_n_layers`` (v1: 128,
-        2) keep this submodule negligible next to the ~85M backbone it feeds
-        (``run_start``'s ``field_encoder_params``), and threading a shared
-        result through ``LanguageModel.forward``/``LMOutput`` instead would
-        touch ``backbone.py``, out of this phase's scope (FOR-923).
+        The two callers below no longer both pay for their own pass.
+        RETRACTION (2026-08-20, CR PR #79): this docstring previously said
+        both callers "invoke this INDEPENDENTLY", accepting a duplicated
+        encoder forward on BOTH the train and the eval path because
+        threading a shared result through ``LanguageModel.forward``/
+        ``LMOutput`` was out of that phase's scope (FOR-923). That is now
+        done for the EVAL path — :meth:`forward` returns
+        :class:`FieldEncoding` (logits AND z), ``LanguageModel.forward``
+        carries the logits out on ``LMOutput.field_logits``, and
+        ``Trainer.evaluate`` reads them there instead of calling
+        :meth:`field_logits` a second time.
+
+        The TRAIN path still runs a genuinely separate pass on purpose:
+        ``Trainer._field_loss_terms`` needs the calibration logits computed
+        INSIDE its own ``autocast(enabled=False)`` island (they are on the
+        gradient path — CLAUDE.md non-negotiable numerics), which the
+        injection forward, running in the ambient training dtype, cannot
+        supply. Its cost stays bounded for the reason the original note
+        gave: ``field_d_model``/``field_n_layers`` (v1: 128, 2) keep this
+        submodule negligible next to the ~85M backbone it feeds
+        (``run_start``'s ``field_encoder_params``).
         """
         h = self.wte(idx)
         for block in self.blocks:
@@ -328,19 +371,25 @@ class FieldEncoder(nn.Module):
                 z = (state @ self.lift).to(h.dtype)
         return logits, z
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` ``z_t`` rows.
+    def forward(self, idx: torch.Tensor) -> FieldEncoding:
+        """``(B, T)`` byte ids -> :class:`FieldEncoding` ``(logits, z)``.
 
-        ``z_t`` rows are unit-norm ONLY for ``field_state="sqrt_prob"`` (F);
-        the "prob" (P) and "hidden" (H) arms are NOT unit-norm in general —
-        see :meth:`_encode`'s docstring for the per-arm construction.
+        ``z`` is the ``(B, T, cfg.d_model)`` state; its rows are unit-norm
+        ONLY for ``field_state="sqrt_prob"`` (F) — the "prob" (P) and
+        "hidden" (H) arms are NOT unit-norm in general, see :meth:`_encode`
+        for the per-arm construction. ``logits`` is the ``(B, T, 256)``
+        pre-softmax output of the SAME pass, returned rather than discarded
+        so the eval-time calibration consumer does not have to run this
+        encoder again (see :class:`FieldEncoding`).
 
         Only ``idx`` is consumed — no ``targets`` parameter exists on this
         signature, so the estimator structurally cannot see the label it
-        will be scored against (docs/e1_5-instruction.md's anti-leakage pin).
+        will be scored against (docs/e1_5-instruction.md's anti-leakage pin;
+        adding the logits to the RETURN cannot weaken that, since a return
+        value carries no information the pass did not already have).
         """
-        _logits, z = self._encode(idx)
-        return z
+        logits, z = self._encode(idx)
+        return FieldEncoding(logits=logits, z=z)
 
     def field_logits(self, idx: torch.Tensor) -> torch.Tensor:
         """``(B, T)`` byte ids -> ``(B, T, 256)`` FP32 next-byte logits.
