@@ -250,6 +250,14 @@ class Trainer:
                 "no field encoder exists to calibrate under state_source='table'"
             )
             raise ValueError(msg)
+        if self._field_loss_enabled and cfg.model.field_mode == "frozen":
+            msg = (
+                "field_mode='frozen' requires field_loss_lambda == 0.0 — "
+                "frozen field weights receive no gradient, so the calibration "
+                "term cannot train anything; frozen-field CE telemetry is "
+                "the eval-time job (FOR-925, docs/e1_5-instruction.md §E1.5c Repair 1)"
+            )
+            raise ValueError(msg)
 
         if cfg.train.resume:
             self.load_checkpoint(cfg.train.resume)
