@@ -41,6 +41,7 @@ recorded in the phase report, not shipped here):
 from __future__ import annotations
 
 import inspect
+import itertools
 import json
 import math
 from pathlib import Path
@@ -51,7 +52,7 @@ import torch
 from entropic_substrate.config import Config
 from entropic_substrate.init.fisher import build_fisher_init, semi_orthogonal_lift
 from entropic_substrate.models.backbone import build_model
-from entropic_substrate.models.field_encoder import FieldEncoder
+from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator, FieldEncoder
 from entropic_substrate.train import Trainer
 from helpers import tiny_config, tiny_model_config
 
@@ -490,3 +491,284 @@ def test_five_step_tiny_train_with_field_encoder_decreases_loss(tmp_path: Path) 
     losses = [h["loss"] for h in history]
     assert all(math.isfinite(v) for v in losses)
     assert losses[-1] < losses[0], losses
+
+
+# ============================================================== P8 (FOR-925)
+# Calibration telemetry, behavioral anti-leakage, geometry correspondence and
+# context-sensitivity diagnostics for p_phi (docs/e1_5-instruction.md
+# "Calibration, geometry, and context-sensitivity diagnostics").
+
+
+# --------------------------------------------------- calibration accumulator
+def test_field_calibration_accumulator_matches_hand_computed_toy_values() -> None:
+    """4-sample, 2-class toy input, entirely hand-derived (not reusing the
+    implementation under test): two samples land in one confidence bin
+    (0.5, one correct/one wrong), two in another (0.9, both correct) — the
+    minimal case that exercises binning as well as the four scalar
+    reductions. ln(9) makes softmax([ln9, 0]) exactly [0.9, 0.1]."""
+    ln9 = 2.1972245773362196
+    logits = torch.tensor([[0.0, 0.0], [0.0, 0.0], [ln9, 0.0], [ln9, 0.0]])
+    targets = torch.tensor([0, 1, 0, 0])
+
+    acc = FieldCalibrationAccumulator()
+    acc.update(logits, targets)
+    stats = acc.finalize()
+
+    assert stats["ce"] == pytest.approx(0.3992538481088858, rel=1e-6)
+    assert stats["brier"] == pytest.approx(0.26, rel=1e-6)
+    assert stats["entropy"] == pytest.approx(0.5091150769756968, rel=1e-6)
+    assert stats["top1"] == pytest.approx(0.75, rel=1e-9)
+    assert stats["ece"] == pytest.approx(0.05, rel=1e-6)
+
+
+def test_field_calibration_accumulator_rejects_non_fp32_logits() -> None:
+    acc = FieldCalibrationAccumulator()
+    with pytest.raises(ValueError, match="fp32"):
+        acc.update(torch.zeros(2, 4, dtype=torch.float64), torch.zeros(2, dtype=torch.long))
+
+
+def test_field_calibration_accumulator_finalize_without_update_fails_loud() -> None:
+    """Empty-input pin: never silently return a NaN-poisoned summary (mirrors
+    ``Trainer.evaluate``'s np.mean-on-empty hazard the module docstring warns
+    against, at the accumulator level)."""
+    acc = FieldCalibrationAccumulator()
+    with pytest.raises(RuntimeError, match="no updates"):
+        acc.finalize()
+
+
+def test_field_calibration_accumulator_ignores_a_zero_sized_update() -> None:
+    """An empty batch (N=0) must be a no-op, not a div-by-zero inside update
+    itself — the RuntimeError above is reserved for NEVER having updated at
+    all, not for one incidental zero-sized call among real ones."""
+    acc = FieldCalibrationAccumulator()
+    acc.update(torch.zeros(0, 4), torch.zeros(0, dtype=torch.long))
+    acc.update(torch.tensor([[0.0, 0.0]]), torch.tensor([0]))
+    stats = acc.finalize()
+    assert stats["top1"] == pytest.approx(1.0)
+
+
+def test_field_calibration_accumulator_streaming_matches_a_single_shot_call() -> None:
+    """The eval loop calls ``update`` once per batch; the reported summary
+    must not depend on how the eval set was chunked. Same data, fed as four
+    ragged batches vs one single call, must finalize to matching stats."""
+    torch.manual_seed(3)
+    n_classes = 256
+    all_logits = torch.randn(60, n_classes)
+    all_targets = torch.randint(0, n_classes, (60,))
+
+    streamed = FieldCalibrationAccumulator()
+    for lo, hi in ((0, 10), (10, 25), (25, 45), (45, 60)):
+        streamed.update(all_logits[lo:hi], all_targets[lo:hi])
+    streamed_stats = streamed.finalize()
+
+    single_shot = FieldCalibrationAccumulator()
+    single_shot.update(all_logits, all_targets)
+    single_shot_stats = single_shot.finalize()
+
+    for key in streamed_stats:
+        assert streamed_stats[key] == pytest.approx(single_shot_stats[key], rel=1e-6), key
+
+
+# ------------------------------------------------------ behavioral anti-leakage
+def test_field_encoder_prefix_identical_sequences_share_prefix_states_and_diverge_after() -> None:
+    """Registered behavioral complement (docs/e1_5-instruction.md's
+    anti-leakage section) to the structural no-targets signature pin: two
+    FULL sequences identical through position t, divergent after, must
+    produce bit-tolerant-EQUAL z_{<=t} AND states that differ once the
+    inputs do — the positive control ruling out a degenerate constant
+    encoder trivially passing the equality half."""
+    cfg = _field_model_config(d_model=48)
+    encoder = FieldEncoder(cfg)
+    encoder.eval()
+    t = 4
+    torch.manual_seed(5)
+    prefix = torch.randint(0, 256, (1, t + 1))
+    tail_a = torch.randint(0, 256, (1, 5))
+    tail_b = tail_a.clone()
+    tail_b[:, 0] = (tail_a[:, 0] + 113) % 256  # force genuine divergence at t+1
+
+    seq_a = torch.cat([prefix, tail_a], dim=1)
+    seq_b = torch.cat([prefix, tail_b], dim=1)
+
+    z_a = encoder(seq_a)
+    z_b = encoder(seq_b)
+
+    torch.testing.assert_close(z_a[:, : t + 1], z_b[:, : t + 1], atol=1e-6, rtol=0)
+    assert torch.isfinite(z_a[:, t + 1]).all()
+    assert torch.isfinite(z_b[:, t + 1]).all()
+    assert not torch.allclose(z_a[:, t + 1], z_b[:, t + 1])
+
+
+def test_targets_never_alter_the_field_encoders_own_output(tmp_path: Path) -> None:
+    """Behavioral complement to test_field_encoder_forward_has_no_targets_
+    parameter: a forward hook on the field encoder itself, inside a REAL
+    ``LanguageModel.forward`` call, proves z_t is bit-identical whether
+    ``targets`` is ``None``, the real batch targets, or an unrelated
+    garbage tensor — a check the pure signature pin and even the
+    logits-level integration test cannot make, since both stop at the
+    encoder's caller rather than its own output."""
+    trainer = Trainer(_field_config(tmp_path))
+    field_encoder = trainer.raw_model.field_encoder
+    assert field_encoder is not None
+    x, y = trainer.train_sampler.batch()
+    trainer.model.eval()
+
+    captured: list[torch.Tensor] = []
+
+    def _capture(_module: object, _inputs: object, output: torch.Tensor) -> None:
+        captured.append(output.detach().clone())
+
+    handle = field_encoder.register_forward_hook(_capture)
+    with torch.no_grad():
+        trainer.model(x, None)
+        trainer.model(x, y)
+        garbage_targets = (y + 173) % 256
+        trainer.model(x, garbage_targets)
+    handle.remove()
+
+    assert len(captured) == 3
+    torch.testing.assert_close(captured[0], captured[1], atol=0, rtol=0)
+    torch.testing.assert_close(captured[0], captured[2], atol=0, rtol=0)
+
+
+# --------------------------------------------------------- geometry correspondence
+def test_geometry_correspondence_hellinger_identity_under_the_semiorthogonal_lift() -> None:
+    """theta(z_t, z_s) = arccos(z_t . z_s) against the Hellinger distance
+    between the underlying predictions: H^2(p, q) = 1 - BC(p, q), with the
+    Bhattacharyya coefficient BC(p, q) = sum(sqrt(p_i * q_i)). Because
+    z = sqrt(p) @ Q and Q is EXACTLY semi-orthogonal at d_model=300 (>=256 —
+    semi_orthogonal_lift's own isometry regime, same as
+    test_field_encoder_z_rows_are_unit_norm), z_t . z_s reproduces BC(p_t,
+    p_s) numerically — this proves the correspondence the docs section
+    claims, rather than assuming it holds by construction."""
+    cfg = _field_model_config(d_model=300)
+    encoder = FieldEncoder(cfg)
+    encoder.eval()
+    idx = torch.randint(0, 256, (2, 6))
+    logits = encoder.field_logits(idx)
+    probs = torch.softmax(logits, dim=-1)
+    z = encoder(idx)
+
+    p_t, p_s = probs[0, 0], probs[0, 3]
+    z_t, z_s = z[0, 0], z[0, 3]
+
+    # H^2(p, q) = 1 - BC(p, q) (docstring above) — bhattacharyya below IS
+    # BC(p_t, p_s); no separate hellinger_sq local is kept, since
+    # `1.0 - (1.0 - bhattacharyya)` collapses back to `bhattacharyya`
+    # exactly and computing it just to re-derive that identity was the
+    # redundant second assertion removed below (CodeRabbit finding, P8
+    # review round).
+    bhattacharyya = torch.sum(torch.sqrt(p_t * p_s))
+    cos_theta = torch.dot(z_t, z_s)
+
+    torch.testing.assert_close(cos_theta, bhattacharyya, atol=1e-4, rtol=1e-4)
+    # A second `assert_close(1.0 - hellinger_sq, cos_theta, ...)` previously
+    # sat here — algebraically identical to the assertion above, so it
+    # could never fail independently (house rule 5: a test that cannot
+    # fail is not evidence). A genuine theta-level check
+    # (`arccos(cos_theta)` vs `arccos(bhattacharyya)`) is deferred rather
+    # than added here UNMEASURED: this test has no `torch.manual_seed`, so
+    # `cos_theta` varies run to run, and arccos amplifies a cos-space
+    # residual by `1/sqrt(1 - cos^2)` as `cos_theta -> 1` — the same
+    # fp32-near-1 trap 85ee3fd fixed in the context-sensitivity test.
+    # Committing an arccos tolerance here without measuring this fixture's
+    # actual bhattacharyya value first would risk exactly that flakiness.
+
+
+def _kl_divergence(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    eps = 1e-12
+    p = p.clamp_min(eps)
+    q = q.clamp_min(eps)
+    return torch.sum(p * (p.log() - q.log()))
+
+
+def _jensen_shannon(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    m = 0.5 * (p + q)
+    return 0.5 * _kl_divergence(p, m) + 0.5 * _kl_divergence(q, m)
+
+
+def test_geometry_correspondence_theta_and_js_move_together_along_a_mixture_path() -> None:
+    """JS divergence is NOT a closed function of theta in general (only
+    Hellinger has the exact arccos identity proven above) — a bare
+    rank-correlation-1 assertion over arbitrary distribution pairs would be
+    FALSE. This instead proves the weaker, honest claim
+    docs/e1_5-instruction.md actually makes ("nearby states have similar
+    continuation distributions") along a deterministic mixture path
+    p_alpha = (1-alpha)*p0 + alpha*p1: both theta(z_0, z_alpha) and
+    JS(p_0, p_alpha) must increase monotonically as alpha grows."""
+    torch.manual_seed(11)
+    d_model = 300
+    lift = semi_orthogonal_lift(256, d_model, seed=0).float()
+    p0 = torch.softmax(torch.randn(256), dim=-1)
+    p1 = torch.softmax(torch.randn(256), dim=-1)
+    z0 = torch.sqrt(p0.clamp_min(1e-12)) @ lift
+
+    alphas = [0.1, 0.3, 0.5, 0.7, 0.9]
+    thetas: list[float] = []
+    jss: list[float] = []
+    for alpha in alphas:
+        p_alpha = (1.0 - alpha) * p0 + alpha * p1
+        z_alpha = torch.sqrt(p_alpha.clamp_min(1e-12)) @ lift
+        cos_theta = torch.clamp(torch.dot(z0, z_alpha), -1.0, 1.0)
+        thetas.append(float(torch.arccos(cos_theta)))
+        jss.append(float(_jensen_shannon(p0, p_alpha)))
+
+    assert all(b > a for a, b in itertools.pairwise(thetas)), thetas
+    assert all(b > a for a, b in itertools.pairwise(jss)), jss
+
+
+# ----------------------------------------------------------- context sensitivity
+def test_context_sensitivity_field_gives_nonzero_spread_table_gives_exactly_zero() -> None:
+    """The clearest demonstration the state is no longer "byte encoding"
+    (docs/e1_5-instruction.md): for the SAME current byte in different
+    contexts, a genuine contextual field separates the resulting states
+    (nonzero pairwise angle spread). A static table lookup is the
+    DISCRIMINATING CONTROL — it must give EXACTLY zero spread, since it is
+    indexed by the byte id alone and never reads what precedes it."""
+    byte_value = 42
+    contexts = [
+        torch.tensor([[10, 20, byte_value]]),
+        torch.tensor([[200, 5, byte_value]]),
+        torch.tensor([[byte_value, byte_value, byte_value]]),
+    ]
+
+    field_encoder = FieldEncoder(_field_model_config(d_model=300))
+    field_encoder.eval()
+    with torch.no_grad():
+        field_states = [field_encoder(ctx)[0, -1] for ctx in contexts]
+    # Direct tensor-equality check FIRST: this is the load-bearing
+    # assertion. An arccos-based spread check alone cannot catch a
+    # context-blind (one-hot-per-byte lookup) encoder, because even a
+    # BIT-IDENTICAL pair of states returns torch.dot(state, state) ==
+    # 1 - 2**-23 (one fp32 ULP below 1.0, from non-associative float32
+    # summation across d_model=300 terms) rather than exactly 1.0, and
+    # arccos amplifies that residual to sqrt(2 * 2**-23) == 4.8828125e-04
+    # rad — ABOVE a naive 1e-4 threshold even for a genuinely
+    # context-blind encoder. Measured directly against a one-hot@lift
+    # regression that made `_encode` byte-lookup-only: this test PASSED
+    # under that regression before this fix (PR #79 review finding).
+    for i in range(len(field_states)):
+        for j in range(i + 1, len(field_states)):
+            assert not torch.allclose(field_states[i], field_states[j], atol=0.0, rtol=0.0), (
+                i,
+                j,
+                "field states must differ across contexts sharing the same trailing byte",
+            )
+    field_angles = [
+        torch.arccos(torch.clamp(torch.dot(field_states[i], field_states[j]), -1.0, 1.0))
+        for i in range(len(field_states))
+        for j in range(i + 1, len(field_states))
+    ]
+    # Secondary spread check, threshold set ~10x above the measured fp32
+    # arccos-near-1 noise floor (4.8828125e-04 rad, see comment above) so
+    # it stays a meaningful spread assertion rather than an instrument
+    # that a bit-identical pair can pass by fp32 accident.
+    assert any(float(angle) > 5e-3 for angle in field_angles), field_angles
+
+    table_model = build_model(tiny_model_config(state_source="table", d_model=300))
+    table_model.eval()
+    with torch.no_grad():
+        table_states = [table_model.wte(ctx)[0, -1] for ctx in contexts]
+    for i in range(len(table_states)):
+        for j in range(i + 1, len(table_states)):
+            torch.testing.assert_close(table_states[i], table_states[j], atol=0, rtol=0)

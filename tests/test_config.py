@@ -152,6 +152,82 @@ def test_e1_5_arms_hit_their_pinned_exact_param_total(exp: str) -> None:
     assert _total_params(cfg) == E1_5_EXACT_TOTAL_PARAMS[exp], exp
 
 
+# ---------------------------------------------------- P8 (FOR-925): matched-total
+# Shrunken-backbone twins so N_backbone + N_field ~= e1-fisher's 85,131,264
+# total (docs/e1_5-instruction.md "Comparison lanes": matched-BACKBONE vs
+# matched-TOTAL-parameter — "is predictive-state construction a better use
+# of a FIXED budget?"). Deliberately NOT registered in config.py's
+# EXPERIMENTS (execution is prereg-time scope, build-plan Phase D — same
+# code-ready-but-ungated posture as e3-anchor/e3-vantage) — loaded here by
+# explicit path, mirroring resolve_experiment_config's own `--config` path,
+# rather than by name.
+_MATCHED_TOTAL_EXACT_PARAMS: dict[str, int] = {
+    # 144*756^2 + 256*756 + (256*128 + 2*12*128^2) = 82,494,720 + 425,984.
+    "e1-5c-field-matched-total": 82_920_704,
+    # Field twin's total + H's own trainable state_lift (128*756 = 96,768).
+    "e1-5c-hidden-matched-total": 83_017_472,
+    # P shares F's p_phi exactly (no sqrt, same fixed lift, no new params).
+    "e1-5c-prob-matched-total": 82_920_704,
+}
+
+# The matched-BACKBONE config each matched-total twin shrinks from.
+_MATCHED_TOTAL_BASE: dict[str, str] = {
+    "e1-5c-field-matched-total": "e1-5c-field",
+    "e1-5c-hidden-matched-total": "e1-5c-hidden",
+    "e1-5c-prob-matched-total": "e1-5c-prob",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_exist_and_parse(name: str) -> None:
+    path = configs_dir() / f"{name}.yaml"
+    assert path.exists(), path
+    cfg = load_config(path)
+    assert cfg.name == name
+    assert cfg.model.d_model % cfg.model.n_heads == 0
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_hit_their_pinned_exact_param_total(name: str) -> None:
+    cfg = load_config(configs_dir() / f"{name}.yaml")
+    assert _total_params(cfg) == _MATCHED_TOTAL_EXACT_PARAMS[name], name
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_land_in_the_shared_band(name: str) -> None:
+    """Same 80-100M band every registered rung is held to
+    (test_experiment_configs_are_parameter_matched), applied here by hand
+    since these configs are deliberately unregistered."""
+    cfg = load_config(configs_dir() / f"{name}.yaml")
+    total = _total_params(cfg)
+    assert 80e6 <= total <= 100e6, f"{name}: {total / 1e6:.1f}M"
+
+
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+def test_matched_total_configs_only_change_d_model_and_fisher_init_path_from_their_base(
+    name: str,
+) -> None:
+    """A matched-total twin is a DELIBERATE two-field change from its own
+    matched-backbone base config: d_model (to shrink the total) and
+    fisher_init_path (the checkpointed d768 table no longer matches a
+    shrunk width, so this falls back to the corpus-computed path) —
+    everything else, including the field_state axis that already
+    distinguishes the base config from e1-fisher, must carry over
+    unchanged. Mirrors test_e1_5_arms_extend_e1_fisher_only_on_their_axis's
+    shape but against the base config rather than e1-fisher."""
+    base = resolve_experiment_config(_MATCHED_TOTAL_BASE[name])
+    twin = load_config(configs_dir() / f"{name}.yaml")
+    for f in dataclasses.fields(ModelConfig):
+        base_val = getattr(base.model, f.name)
+        twin_val = getattr(twin.model, f.name)
+        if f.name in ("d_model", "fisher_init_path"):
+            assert twin_val != base_val, f"{name}: axis field {f.name!r} did not change"
+        else:
+            assert twin_val == base_val, f"{name}: unexpected change on model.{f.name}"
+    assert twin.data == base.data
+    assert twin.train == base.train
+
+
 def test_tiny_overlay_shrinks_without_changing_the_experiment() -> None:
     full = resolve_experiment_config("e3")
     tiny = resolve_experiment_config("e3", tiny=True)

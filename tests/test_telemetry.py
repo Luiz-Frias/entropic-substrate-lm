@@ -294,6 +294,122 @@ def test_read_eval_series_accepts_a_consistent_kappa_shape_across_records(tmp_pa
     ]
 
 
+# ------------------------------------------------- eval series: P8 (FOR-925)
+# field calibration diagnostics: field_nats_per_byte/field_brier/field_ece/
+# field_entropy/field_top1. Same "absent channel is absent" per-record
+# optionality as kappa above (a table-arm run — or any E0-E1.5b run — never
+# reports them at all).
+_CALIBRATION_KEYS: tuple[str, ...] = (
+    "field_nats_per_byte",
+    "field_brier",
+    "field_ece",
+    "field_entropy",
+    "field_top1",
+)
+
+
+def test_read_eval_series_carries_the_five_calibration_keys_when_present(
+    tmp_path: Path,
+) -> None:
+    path = _write(
+        tmp_path / "e15c.jsonl",
+        _eval(
+            step=1,
+            field_nats_per_byte=0.42,
+            field_brier=0.2,
+            field_ece=0.05,
+            field_entropy=0.6,
+            field_top1=0.75,
+        ),
+    )
+    series = read_eval_series(path)
+    assert series[0].field_nats_per_byte == pytest.approx(0.42)
+    assert series[0].field_brier == pytest.approx(0.2)
+    assert series[0].field_ece == pytest.approx(0.05)
+    assert series[0].field_entropy == pytest.approx(0.6)
+    assert series[0].field_top1 == pytest.approx(0.75)
+
+
+def test_read_eval_series_treats_the_five_calibration_keys_as_optional_per_record(
+    tmp_path: Path,
+) -> None:
+    """A table-arm (or E1/E1.5b) eval record carries none of these keys —
+    absence is a valid reading, never a gap."""
+    path = _write(tmp_path / "e1.jsonl", _eval(step=1))
+    series = read_eval_series(path)
+    assert series[0].field_nats_per_byte is None
+    assert series[0].field_brier is None
+    assert series[0].field_ece is None
+    assert series[0].field_entropy is None
+    assert series[0].field_top1 is None
+
+
+@pytest.mark.parametrize("key", _CALIBRATION_KEYS)
+def test_read_eval_series_refuses_a_nonfinite_calibration_field(tmp_path: Path, key: str) -> None:
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: float("nan")}))
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize("key", _CALIBRATION_KEYS)
+def test_read_eval_series_refuses_a_bool_calibration_field(tmp_path: Path, key: str) -> None:
+    """``bool`` is an ``int`` subclass — a JSON ``true`` must not silently
+    read as ``1.0`` (mirrors ``test_train_series_refuses_a_bool_metric``)."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: True}))
+    with pytest.raises(TelemetryGap, match="not numeric"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("field_nats_per_byte", -0.1),
+        ("field_brier", -0.1),
+        ("field_entropy", -0.1),
+        ("field_ece", -0.1),
+        ("field_ece", 1.1),
+        ("field_top1", -0.1),
+        ("field_top1", 1.1),
+    ],
+)
+def test_read_eval_series_refuses_an_out_of_range_calibration_field(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    """ECE/top-1 are documented probabilities/rates in [0, 1]; nats/Brier/
+    entropy are documented non-negative — a value outside that domain is
+    corruption (a NaN-adjacent hazard the plain finite check would miss),
+    refused the same way a non-finite value is."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: value}))
+    with pytest.raises(TelemetryGap, match=r"minimum|maximum"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        # Positive control (CodeRabbit finding, P8 review round) for the
+        # THREE calibration keys that carry no documented upper bound —
+        # only ECE and top-1 do (the out-of-range test above already pins
+        # both of those). A value legitimately above 1.0 must still be
+        # accepted for these: Brier uses the sum-over-classes convention
+        # (max 2.0 for a one-hot target against a full simplex), entropy
+        # over 256 byte classes reaches ln(256) == 5.5452, and nats/byte
+        # has no finite ceiling at all.
+        ("field_brier", 1.5),
+        ("field_entropy", 5.5451774444795625),
+        ("field_nats_per_byte", 7.5),
+    ],
+)
+def test_read_eval_series_accepts_the_unbounded_calibration_fields_above_one(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    # Full-group fixture (the partial-group refusal below makes a single-key
+    # record inadmissible by design), varying only the key under test.
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **_calibration_group(**{key: value})))
+    series = read_eval_series(path)
+    assert getattr(series[0], key) == pytest.approx(value)
+
+
 # ------------------------------------------------------------ kappa spread
 def test_kappa_readout_spreads_delegate_to_the_shared_helper(tmp_path: Path) -> None:
     """Pins the delegation so ``KappaReadout`` and the shared helper cannot
@@ -424,3 +540,58 @@ def test_cli_final_eval_prints_only_the_number(tmp_path: Path, capsys) -> None:
 def test_cli_final_eval_refuses_a_missing_file(tmp_path: Path, capsys) -> None:
     assert main(["final-eval", str(tmp_path / "absent.jsonl"), "--metric", "nats_per_byte"]) == 2
     assert "no such file" in capsys.readouterr().err
+
+
+def _calibration_group(**overrides: Any) -> dict[str, Any]:
+    group: dict[str, Any] = {
+        "field_nats_per_byte": 0.42,
+        "field_brier": 0.2,
+        "field_ece": 0.05,
+        "field_entropy": 0.6,
+        "field_top1": 0.75,
+    }
+    group.update(overrides)
+    return group
+
+
+@pytest.mark.parametrize(
+    "partial",
+    [
+        {"field_ece": 0.05},
+        {k: v for k, v in _calibration_group().items() if k != "field_top1"},
+    ],
+    ids=["only-one", "all-but-one"],
+)
+def test_read_eval_series_refuses_a_partial_calibration_group(
+    tmp_path: Path, partial: dict[str, Any]
+) -> None:
+    """The five calibration metrics travel as ONE group — train.py emits all
+    or none — so a record carrying only some siblings is telemetry
+    corruption, not an optional channel (CR PR #79). Per-field corruption
+    (non-finite/bool/out-of-range) still raises its own specific error
+    first; this refusal fires on otherwise-VALID partial records, the case
+    the independent per-field checks cannot see."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **partial))
+    with pytest.raises(TelemetryGap, match="PARTIAL field-calibration"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("field_ece", 0.0),
+        ("field_ece", 1.0),
+        ("field_top1", 0.0),
+        ("field_top1", 1.0),
+    ],
+)
+def test_bounded_calibration_fields_accept_their_inclusive_boundaries(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    """The rejection cases use -0.1/1.1 and the acceptance cases 0.05/0.75 —
+    neither proves the documented [0, 1] bounds are INCLUSIVE (CR PR #79).
+    A perfectly calibrated field (ECE 0.0) or an always-right one (top-1
+    1.0) must read back, not refuse."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **_calibration_group(**{key: value})))
+    series = read_eval_series(path)
+    assert getattr(series[0], key) == pytest.approx(value)

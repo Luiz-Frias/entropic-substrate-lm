@@ -44,6 +44,7 @@ Three independent hazards this file pins with RED-first proofs (mirrors
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from pathlib import Path
 
@@ -573,3 +574,195 @@ def test_table_state_rejects_dead_field_calibration_knobs(
         setattr(cfg.model, key, value)
     with pytest.raises(ValueError, match="state_source='table'"):
         Trainer(cfg)
+
+
+# ================================================================ P8 (FOR-925)
+# Calibration TELEMETRY: field nats/byte, Brier, ECE, mean entropy, top-1 —
+# decoupled from field_loss_lambda (docs/e1_5-instruction.md: "logged for
+# p_phi THROUGHOUT"). This is DELIBERATELY a different gate from the
+# `_field_loss_enabled`-gated `field_ce`/`field_losses` pair above (P6,
+# FOR-923): those stay a pure train-loss-seam readout, byte-identical to
+# before this phase. The five keys here surface whenever a field encoder
+# exists at all — see test_table_state_rejects_dead_field_calibration_knobs
+# above and test_frozen_field_rejects_nonzero_field_loss_lambda's own
+# docstring, which names exactly this: "Frozen-field CE telemetry is the
+# eval-time job (FOR-925), not a train-loss rider."
+_CALIBRATION_KEYS: tuple[str, ...] = (
+    "field_nats_per_byte",
+    "field_brier",
+    "field_ece",
+    "field_entropy",
+    "field_top1",
+)
+
+
+def test_eval_result_carries_calibration_diagnostics_when_field_encoder_exists(
+    tmp_path: Path,
+) -> None:
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    assert result.field_brier is not None
+    assert result.field_ece is not None
+    assert result.field_entropy is not None
+    assert result.field_top1 is not None
+
+
+def test_eval_result_omits_calibration_diagnostics_under_table_state_source(
+    tmp_path: Path,
+) -> None:
+    trainer = Trainer(tiny_config(tmp_path, state_source="table"))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is None
+    assert result.field_brier is None
+    assert result.field_ece is None
+    assert result.field_entropy is None
+    assert result.field_top1 is None
+
+
+def test_calibration_diagnostics_land_in_their_documented_ranges(tmp_path: Path) -> None:
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_ece is not None
+    assert 0.0 <= result.field_ece <= 1.0
+    assert result.field_top1 is not None
+    assert 0.0 <= result.field_top1 <= 1.0
+    assert result.field_brier is not None
+    assert result.field_brier >= 0.0
+    assert result.field_entropy is not None
+    assert result.field_entropy >= 0.0
+    assert result.field_nats_per_byte is not None
+    assert result.field_nats_per_byte >= 0.0
+
+
+def test_field_nats_per_byte_equals_field_ce_for_the_byte_only_estimator(tmp_path: Path) -> None:
+    """FieldEncoder is byte-only by construction (rejects tokenizer != byte
+    at build), so bytes_per_token is MEASURED as exactly 1.0 for every run
+    that can carry a field encoder at all (data/build.py's
+    `bytes_per_token = 1.0` byte-tokenizer branch). field_nats_per_byte
+    (this phase's eval-time diagnostic accumulator) and field_ce (P6's
+    train-loss-seam readout, active here since field_loss_lambda != 0) must
+    therefore agree numerically: both consume the SAME per-batch
+    field_logits (evaluate() computes it once and shares it, 85ee3fd — they
+    are NOT independent passes), so this pins the bytes_per_token == 1.0
+    scaling and the accumulator's own streaming CE reduction against the
+    plain cross-entropy field_ce reports."""
+    trainer = Trainer(_calib_cfg(tmp_path, field_loss_lambda=1.0))
+    assert trainer.meta.bytes_per_token == pytest.approx(1.0)
+    result = trainer.evaluate()
+    assert result.field_ce is not None
+    assert result.field_nats_per_byte is not None
+    assert result.field_nats_per_byte == pytest.approx(result.field_ce, rel=1e-4)
+
+
+def test_frozen_field_still_reports_calibration_diagnostics_at_eval(tmp_path: Path) -> None:
+    """The exact hazard test_frozen_field_rejects_nonzero_field_loss_lambda's
+    docstring names: a frozen field ALWAYS has field_loss_lambda == 0.0 (the
+    construction guard forbids the combination), yet its calibration
+    diagnostics must still surface at eval time, decoupled from that
+    train-time seam."""
+    source_cfg = _field_model_config()
+    ckpt_path = _save_field_checkpoint(tmp_path, source_cfg, name="frozen-diag")
+    cfg = _field_config(tmp_path, field_mode="frozen", field_ckpt_path=str(ckpt_path))
+    trainer = Trainer(cfg)
+    assert trainer._field_loss_enabled is False
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    assert result.field_top1 is not None
+
+
+def test_eval_record_carries_the_five_calibration_keys(tmp_path: Path) -> None:
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    record = trainer._eval_record(result, wall=0.0)
+    for key in _CALIBRATION_KEYS:
+        assert key in record, key
+
+
+def test_eval_record_omits_the_five_calibration_keys_under_table_state_source(
+    tmp_path: Path,
+) -> None:
+    trainer = Trainer(tiny_config(tmp_path, state_source="table"))
+    result = trainer.evaluate()
+    record = trainer._eval_record(result, wall=0.0)
+    for key in _CALIBRATION_KEYS:
+        assert key not in record, key
+
+
+def test_eval_record_rejects_field_nats_per_byte_set_with_a_sibling_missing(
+    tmp_path: Path,
+) -> None:
+    """_eval_record's "five calibration keys must be set together" guard,
+    direction 1: field_nats_per_byte present, a sibling corrupted to None.
+    Built from a REAL EvalResult (Trainer.evaluate() on a field-state
+    config), not a hand-rolled one, so the only thing under test is the
+    guard itself. RED-proved 2026-08-19 by neutering the guard's `raise`
+    (replacing it with `pass`): the corrupted record then reaches
+    `round(None, 6)` and fails with TypeError, not RuntimeError, so
+    `pytest.raises(RuntimeError)` here goes red — proving this test is not
+    vacuous."""
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    broken = dataclasses.replace(result, field_top1=None)
+    with pytest.raises(RuntimeError, match="must be set together"):
+        trainer._eval_record(broken, wall=0.0)
+
+
+def test_eval_record_rejects_field_nats_per_byte_missing_with_a_sibling_set(
+    tmp_path: Path,
+) -> None:
+    """_eval_record's guard, direction 2 — the arm the original guard
+    MISSED: it only checked `if result.field_nats_per_byte is not None`, so
+    an EvalResult with field_nats_per_byte=None but a sibling still set
+    skipped the whole five-key block silently (record ends up missing ALL
+    five keys, no raise at all) instead of failing loud. Pins the guard now
+    checking "any of the five set" rather than "field_nats_per_byte set".
+    RED-proved 2026-08-19 against the PRE-FIX guard (`git stash` the fix
+    on train.py, rerun): failed with "DID NOT RAISE RuntimeError",
+    reproducing exactly the silent-drop bug this test pins. Also RED-proved
+    against a neutered post-fix guard (`raise` replaced with `pass`),
+    alongside the sibling test above — both go red together."""
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    broken = dataclasses.replace(result, field_nats_per_byte=None)
+    with pytest.raises(RuntimeError, match="must be set together"):
+        trainer._eval_record(broken, wall=0.0)
+
+
+# ------------------------------------------------------------------------ sinks (P8)
+def test_mlflow_sink_forwards_the_five_calibration_keys_on_eval_events() -> None:
+    client = FakeMlflowClient()
+    sink = MlflowSink(
+        tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
+    )
+    sink.log(
+        {
+            "event": "eval",
+            "step": 3,
+            "loss": 1.0,
+            "field_nats_per_byte": 0.5,
+            "field_brier": 0.2,
+            "field_ece": 0.1,
+            "field_entropy": 0.6,
+            "field_top1": 0.75,
+        }
+    )
+    metrics = client._runs[sink.run_id].data.metrics
+    assert metrics["field_nats_per_byte"] == pytest.approx(0.5)
+    assert metrics["field_brier"] == pytest.approx(0.2)
+    assert metrics["field_ece"] == pytest.approx(0.1)
+    assert metrics["field_entropy"] == pytest.approx(0.6)
+    assert metrics["field_top1"] == pytest.approx(0.75)
+
+
+def test_mlflow_sink_omits_the_five_calibration_keys_when_absent_from_the_record() -> None:
+    client = FakeMlflowClient()
+    sink = MlflowSink(
+        tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
+    )
+    sink.log({"event": "eval", "step": 1, "loss": 1.0})
+    metrics = client._runs[sink.run_id].data.metrics
+    for key in _CALIBRATION_KEYS:
+        assert key not in metrics

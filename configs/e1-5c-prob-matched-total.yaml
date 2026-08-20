@@ -1,0 +1,51 @@
+# E1.5c-prob, MATCHED-TOTAL twin (docs/e1_5-instruction.md "Comparison
+# lanes"; FOR-925) — see e1-5c-field-matched-total.yaml's header for the
+# lane's rationale. Axis vs e1-5c-prob: d_model (768 -> 756) +
+# fisher_init_path (null; see the field twin's header).
+#
+# Exact total (test_config.py, _total_params): same as the field twin — P
+# shares F's p_phi exactly (no sqrt, same fixed lift, no new params):
+# 144*756^2 + 256*756 + (256*128 + 2*12*128^2) = 82,494,720 + 425,984 =
+# 82,920,704.
+name: e1-5c-prob-matched-total
+
+model:
+  d_model: 756
+  n_layers: 12
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  tokenizer: byte
+  block: baseline
+  norm: layernorm
+  embedding_init: fisher_sqrt
+  fisher_init_path: null
+  tie_embeddings: true
+  state_source: field
+  field_state: prob
+  field_n_layers: 2
+  field_d_model: 128
+  field_n_heads: 4
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+
+train:
+  max_steps: 20000
+  lr: 0.0006
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.1
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto
