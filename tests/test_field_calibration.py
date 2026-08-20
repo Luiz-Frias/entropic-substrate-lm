@@ -44,6 +44,7 @@ Three independent hazards this file pins with RED-first proofs (mirrors
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from pathlib import Path
 
@@ -683,6 +684,48 @@ def test_eval_record_omits_the_five_calibration_keys_under_table_state_source(
     record = trainer._eval_record(result, wall=0.0)
     for key in _CALIBRATION_KEYS:
         assert key not in record, key
+
+
+def test_eval_record_rejects_field_nats_per_byte_set_with_a_sibling_missing(
+    tmp_path: Path,
+) -> None:
+    """_eval_record's "five calibration keys must be set together" guard,
+    direction 1: field_nats_per_byte present, a sibling corrupted to None.
+    Built from a REAL EvalResult (Trainer.evaluate() on a field-state
+    config), not a hand-rolled one, so the only thing under test is the
+    guard itself. RED-proved 2026-08-19 by neutering the guard's `raise`
+    (replacing it with `pass`): the corrupted record then reaches
+    `round(None, 6)` and fails with TypeError, not RuntimeError, so
+    `pytest.raises(RuntimeError)` here goes red — proving this test is not
+    vacuous."""
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    broken = dataclasses.replace(result, field_top1=None)
+    with pytest.raises(RuntimeError, match="must be set together"):
+        trainer._eval_record(broken, wall=0.0)
+
+
+def test_eval_record_rejects_field_nats_per_byte_missing_with_a_sibling_set(
+    tmp_path: Path,
+) -> None:
+    """_eval_record's guard, direction 2 — the arm the original guard
+    MISSED: it only checked `if result.field_nats_per_byte is not None`, so
+    an EvalResult with field_nats_per_byte=None but a sibling still set
+    skipped the whole five-key block silently (record ends up missing ALL
+    five keys, no raise at all) instead of failing loud. Pins the guard now
+    checking "any of the five set" rather than "field_nats_per_byte set".
+    RED-proved 2026-08-19 against the PRE-FIX guard (`git stash` the fix
+    on train.py, rerun): failed with "DID NOT RAISE RuntimeError",
+    reproducing exactly the silent-drop bug this test pins. Also RED-proved
+    against a neutered post-fix guard (`raise` replaced with `pass`),
+    alongside the sibling test above — both go red together."""
+    trainer = Trainer(_field_config(tmp_path))
+    result = trainer.evaluate()
+    assert result.field_nats_per_byte is not None
+    broken = dataclasses.replace(result, field_nats_per_byte=None)
+    with pytest.raises(RuntimeError, match="must be set together"):
+        trainer._eval_record(broken, wall=0.0)
 
 
 # ------------------------------------------------------------------------ sinks (P8)

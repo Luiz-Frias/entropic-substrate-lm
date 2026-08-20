@@ -553,34 +553,37 @@ class Trainer:
             record["gram_penalty"] = round(result.gram_penalty, 6)
         if result.field_ce is not None:
             record["field_ce"] = round(result.field_ce, 6)
-        if result.field_nats_per_byte is not None:
+        field_calib_values = (
+            result.field_nats_per_byte,
+            result.field_brier,
+            result.field_ece,
+            result.field_entropy,
+            result.field_top1,
+        )
+        if any(v is not None for v in field_calib_values):
             # P8 (FOR-925): the five calibration-diagnostic keys are always
             # computed together (one FieldCalibrationAccumulator.finalize()
-            # call in evaluate()) — guarding on the first is equivalent to
-            # guarding on all five. `assert` is not used here (stripped
-            # under `python -O`, CLAUDE.md's documented rationale for
-            # `_require_loss`/`_field_loss_terms`'s own control-flow
-            # checks): a caller that constructs an EvalResult with
-            # field_nats_per_byte set but one of the other four left None
-            # (evaluate() never does this — they come from one dict) must
-            # fail loud here, not silently write a partial record.
-            if (
-                result.field_brier is None
-                or result.field_ece is None
-                or result.field_entropy is None
-                or result.field_top1 is None
-            ):
+            # call in evaluate()) — guarding on "any set" and requiring "all
+            # set" is equivalent to guarding on all five, in BOTH directions.
+            # `assert` is not used here (stripped under `python -O`,
+            # CLAUDE.md's documented rationale for `_require_loss`/
+            # `_field_loss_terms`'s own control-flow checks): a caller that
+            # constructs an EvalResult with any one of the five set but
+            # another left None (evaluate() never does this — they come from
+            # one dict) must fail loud here, not silently write a partial —
+            # or, previously, an entirely empty — record.
+            if any(v is None for v in field_calib_values):
                 msg = (
-                    "EvalResult carries field_nats_per_byte but is missing one of "
+                    "EvalResult carries some but not all of field_nats_per_byte/"
                     "field_brier/field_ece/field_entropy/field_top1 — the five "
                     "calibration keys must be set together"
                 )
                 raise RuntimeError(msg)
-            record["field_nats_per_byte"] = round(result.field_nats_per_byte, 6)
-            record["field_brier"] = round(result.field_brier, 6)
-            record["field_ece"] = round(result.field_ece, 6)
-            record["field_entropy"] = round(result.field_entropy, 6)
-            record["field_top1"] = round(result.field_top1, 6)
+            record["field_nats_per_byte"] = round(result.field_nats_per_byte, 6)  # type: ignore[arg-type]
+            record["field_brier"] = round(result.field_brier, 6)  # type: ignore[arg-type]
+            record["field_ece"] = round(result.field_ece, 6)  # type: ignore[arg-type]
+            record["field_entropy"] = round(result.field_entropy, 6)  # type: ignore[arg-type]
+            record["field_top1"] = round(result.field_top1, 6)  # type: ignore[arg-type]
         return record
 
     def fit(self, max_steps: int | None = None, verbose: bool = True) -> list[dict[str, Any]]:

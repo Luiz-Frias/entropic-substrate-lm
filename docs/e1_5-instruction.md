@@ -240,10 +240,26 @@ one `p_φ` — `field_state: Literal["sqrt_prob","prob","hidden"]` in
 island against the fixed semi-orthogonal lift; H is a plain trainable
 `Linear(field_d_model, d_model)` over the encoder's hidden state, the only
 arm with a trainable lift), and per-arm construction + causality guard-teeth
-in `tests/`. Still to build before the prereg's pods:
-(1) the remaining field calibration telemetry (Brier/ECE/entropy/top-1) in
-train+eval records and sinks; (2) the behavioral anti-leakage and
-geometry-correspondence tests; (3) matched-total-parameter configs.
+in `tests/`. Landed (P8, FOR-925, this branch): the remaining field
+calibration telemetry — Brier/ECE/entropy/top-1, via a streaming
+`FieldCalibrationAccumulator`, computed at eval time whenever a field
+encoder exists at all (decoupled from `field_loss_lambda`, so a frozen field
+still reports them) — surfaced through `telemetry.py`'s `EvalRecord`/
+`read_eval_series` and forwarded by `sinks.py`; the behavioral anti-leakage
+proofs (prefix-identical/suffix-divergent sequences share `z_<=t` and
+diverge after; a forward hook proves targets never alter the field
+encoder's own output) and the geometry-correspondence proofs (arccos(z·z)
+reproduces the Bhattacharyya coefficient exactly under the semi-orthogonal
+lift, θ and Jensen–Shannon move together along a mixture path, and a
+context-sensitivity probe against the static-table zero control); and three
+matched-total-parameter configs
+(`configs/e1-5c-{field,hidden,prob}-matched-total.yaml`, this section's
+second comparison lane) shrinking the backbone so `N_backbone + N_field`
+lands in the shared 80–100M band — code-ready, not yet registered in
+`EXPERIMENTS` (execution stays prereg-time scope, same
+posture as `e3-anchor`/`e3-vantage`). Still to build before the prereg's
+pods: none from this list — the prereg gate is the registration/execution
+step itself, not further implementation.
 
 ## Multi-scale field (E1.5c″ — horizon, feeds E4)
 
