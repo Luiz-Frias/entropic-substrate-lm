@@ -74,7 +74,7 @@ from entropic_substrate.config import ModelConfig
 from entropic_substrate.init.fisher import semi_orthogonal_lift
 from entropic_substrate.models.blocks import build_block, build_norm
 
-__all__ = ["FieldEncoder"]
+__all__ = ["FieldCalibrationAccumulator", "FieldEncoder"]
 
 # clamp_min floor for the post-softmax probabilities, before the sqrt: a
 # softmax output is strictly positive by construction, so this floor only
@@ -82,6 +82,11 @@ __all__ = ["FieldEncoder"]
 # sqrt would otherwise round to exactly 0.0 (which the E1.5c doc's `z_t`
 # formula spells out explicitly as `.clamp_min(1e-12)`).
 _PROB_EPS: float = 1e-12
+
+# P8 (FOR-925): expected-calibration-error bin count. A STANDARD choice (Guo
+# et al. 2017, "On Calibration of Modern Neural Networks") — named so a
+# future change is a one-line, reviewable diff rather than a buried literal.
+_ECE_BINS: int = 15
 
 
 class FieldEncoder(nn.Module):
@@ -358,3 +363,106 @@ class FieldEncoder(nn.Module):
         """
         logits, _z = self._encode(idx)
         return logits.float()
+
+
+class FieldCalibrationAccumulator:
+    """Streaming next-byte calibration diagnostics for ``p_phi`` over an eval pass.
+
+    Predictive calibration (docs/e1_5-instruction.md "Calibration, geometry,
+    and context-sensitivity diagnostics", FOR-925): field nats/byte, Brier
+    score, expected calibration error (ECE), mean predictive entropy, and
+    top-1 next-byte accuracy — "logged for p_phi THROUGHOUT", i.e. whenever a
+    field encoder exists, independent of whether the calibration training
+    seam (``field_loss_lambda``, ``train.py``'s ``_field_loss_terms``) is
+    active. ``Trainer.evaluate`` calls :meth:`update` once per eval batch and
+    :meth:`finalize` once at the end.
+
+    Accumulates SCALAR reductions per :meth:`update` call — never the raw
+    ``(N, num_classes)`` probability tensor across calls — so a full eval
+    pass (many batches) costs O(batches) transient memory, not
+    O(eval_set_size x num_classes): at production eval sizes (e.g. 20 batches
+    x 16 x 1024 x 256 fp32) concatenating logits across the whole pass would
+    be ~336MB kept live for the duration of the eval; this keeps only O(1)
+    running totals plus one O(n_bins) histogram between calls.
+
+    Trusts its input is already FP32 (mirrors :meth:`FieldEncoder.field_logits`'s
+    own documented contract: its own ``.float()`` is a type contract, not a
+    compute guarantee) — a caller must produce ``logits`` inside its own
+    ``torch.autocast(enabled=False)`` island, exactly as ``Trainer.
+    _field_loss_terms`` already does for the calibration-loss seam.
+    """
+
+    def __init__(self) -> None:
+        self._count: int = 0
+        self._ce_sum: float = 0.0
+        self._brier_sum: float = 0.0
+        self._entropy_sum: float = 0.0
+        self._correct_sum: float = 0.0
+        # float64 running histograms: O(n_bins) state, independent of how
+        # many `update` calls (eval batches) contribute to it.
+        self._bin_count = torch.zeros(_ECE_BINS, dtype=torch.float64)
+        self._bin_correct = torch.zeros(_ECE_BINS, dtype=torch.float64)
+        self._bin_conf = torch.zeros(_ECE_BINS, dtype=torch.float64)
+
+    def update(self, logits: torch.Tensor, targets: torch.Tensor) -> None:
+        """Fold one batch's worth of tokens into the running totals.
+
+        ``logits``: ``(N, num_classes)`` FP32 pre-softmax; ``targets``:
+        ``(N,)`` int64 class ids. A zero-sized batch (``N == 0``) is a
+        deliberate no-op, not an error — distinct from calling
+        :meth:`finalize` having NEVER updated at all (see its docstring).
+        """
+        if logits.dtype != torch.float32:
+            msg = f"FieldCalibrationAccumulator.update expects fp32 logits, got {logits.dtype}"
+            raise ValueError(msg)
+        n = logits.shape[0]
+        if n == 0:
+            return
+        probs = F.softmax(logits, dim=-1)
+        ce_per_token = F.cross_entropy(logits, targets, reduction="none")
+        onehot = F.one_hot(targets, num_classes=logits.shape[-1]).to(probs.dtype)
+        brier_per_token = (probs - onehot).pow(2).sum(dim=-1)
+        clamped = probs.clamp_min(_PROB_EPS)
+        entropy_per_token = -(clamped * clamped.log()).sum(dim=-1)
+        confidence, preds = probs.max(dim=-1)
+        correct = (preds == targets).to(probs.dtype)
+
+        self._count += n
+        self._ce_sum += float(ce_per_token.sum())
+        self._brier_sum += float(brier_per_token.sum())
+        self._entropy_sum += float(entropy_per_token.sum())
+        self._correct_sum += float(correct.sum())
+
+        bin_idx = (confidence * _ECE_BINS).floor().clamp(0, _ECE_BINS - 1).long().cpu()
+        ones = torch.ones_like(bin_idx, dtype=torch.float64)
+        self._bin_count.index_add_(0, bin_idx, ones)
+        self._bin_correct.index_add_(0, bin_idx, correct.double().cpu())
+        self._bin_conf.index_add_(0, bin_idx, confidence.double().cpu())
+
+    def finalize(self) -> dict[str, float]:
+        """Mean CE / Brier / entropy, top-1 accuracy, and ECE over every
+        token seen across all :meth:`update` calls so far.
+
+        Fails loud on an accumulator that never received a nonempty batch —
+        the same fail-loud posture ``Trainer.evaluate``'s own ``np.mean``
+        over an eval-batch loss list would need if that list ever came back
+        empty (division by a zero count must never silently read as NaN).
+        """
+        if self._count == 0:
+            msg = "FieldCalibrationAccumulator.finalize() called with no updates"
+            raise RuntimeError(msg)
+        ece = 0.0
+        for b in range(_ECE_BINS):
+            count_b = float(self._bin_count[b])
+            if count_b == 0.0:
+                continue
+            acc_b = float(self._bin_correct[b]) / count_b
+            conf_b = float(self._bin_conf[b]) / count_b
+            ece += (count_b / self._count) * abs(acc_b - conf_b)
+        return {
+            "ce": self._ce_sum / self._count,
+            "brier": self._brier_sum / self._count,
+            "entropy": self._entropy_sum / self._count,
+            "top1": self._correct_sum / self._count,
+            "ece": ece,
+        }

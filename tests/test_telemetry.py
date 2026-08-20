@@ -294,6 +294,96 @@ def test_read_eval_series_accepts_a_consistent_kappa_shape_across_records(tmp_pa
     ]
 
 
+# ------------------------------------------------- eval series: P8 (FOR-925)
+# field calibration diagnostics: field_nats_per_byte/field_brier/field_ece/
+# field_entropy/field_top1. Same "absent channel is absent" per-record
+# optionality as kappa above (a table-arm run — or any E0-E1.5b run — never
+# reports them at all).
+_CALIBRATION_KEYS: tuple[str, ...] = (
+    "field_nats_per_byte",
+    "field_brier",
+    "field_ece",
+    "field_entropy",
+    "field_top1",
+)
+
+
+def test_read_eval_series_carries_the_five_calibration_keys_when_present(
+    tmp_path: Path,
+) -> None:
+    path = _write(
+        tmp_path / "e15c.jsonl",
+        _eval(
+            step=1,
+            field_nats_per_byte=0.42,
+            field_brier=0.2,
+            field_ece=0.05,
+            field_entropy=0.6,
+            field_top1=0.75,
+        ),
+    )
+    series = read_eval_series(path)
+    assert series[0].field_nats_per_byte == pytest.approx(0.42)
+    assert series[0].field_brier == pytest.approx(0.2)
+    assert series[0].field_ece == pytest.approx(0.05)
+    assert series[0].field_entropy == pytest.approx(0.6)
+    assert series[0].field_top1 == pytest.approx(0.75)
+
+
+def test_read_eval_series_treats_the_five_calibration_keys_as_optional_per_record(
+    tmp_path: Path,
+) -> None:
+    """A table-arm (or E1/E1.5b) eval record carries none of these keys —
+    absence is a valid reading, never a gap."""
+    path = _write(tmp_path / "e1.jsonl", _eval(step=1))
+    series = read_eval_series(path)
+    assert series[0].field_nats_per_byte is None
+    assert series[0].field_brier is None
+    assert series[0].field_ece is None
+    assert series[0].field_entropy is None
+    assert series[0].field_top1 is None
+
+
+@pytest.mark.parametrize("key", _CALIBRATION_KEYS)
+def test_read_eval_series_refuses_a_nonfinite_calibration_field(tmp_path: Path, key: str) -> None:
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: float("nan")}))
+    with pytest.raises(TelemetryGap, match="non-finite"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize("key", _CALIBRATION_KEYS)
+def test_read_eval_series_refuses_a_bool_calibration_field(tmp_path: Path, key: str) -> None:
+    """``bool`` is an ``int`` subclass — a JSON ``true`` must not silently
+    read as ``1.0`` (mirrors ``test_train_series_refuses_a_bool_metric``)."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: True}))
+    with pytest.raises(TelemetryGap, match="not numeric"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("field_nats_per_byte", -0.1),
+        ("field_brier", -0.1),
+        ("field_entropy", -0.1),
+        ("field_ece", -0.1),
+        ("field_ece", 1.1),
+        ("field_top1", -0.1),
+        ("field_top1", 1.1),
+    ],
+)
+def test_read_eval_series_refuses_an_out_of_range_calibration_field(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    """ECE/top-1 are documented probabilities/rates in [0, 1]; nats/Brier/
+    entropy are documented non-negative — a value outside that domain is
+    corruption (a NaN-adjacent hazard the plain finite check would miss),
+    refused the same way a non-finite value is."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: value}))
+    with pytest.raises(TelemetryGap, match=r"minimum|maximum"):
+        read_eval_series(path)
+
+
 # ------------------------------------------------------------ kappa spread
 def test_kappa_readout_spreads_delegate_to_the_shared_helper(tmp_path: Path) -> None:
     """Pins the delegation so ``KappaReadout`` and the shared helper cannot

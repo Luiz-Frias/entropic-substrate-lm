@@ -20,7 +20,12 @@ What "admissible" means, and why each rule exists:
   series — chart code derives ``n_layers``/``n_heads`` from the first
   kappa-bearing record and then indexes ``kappa[layer][head]`` across the
   rest, so a later record with a different shape is refused here rather than
-  surfacing as a bare ``IndexError`` inside a plotting comprehension.
+  surfacing as a bare ``IndexError`` inside a plotting comprehension;
+* a value with a documented domain must land IN it — E1.5c's calibration
+  keys (P8, FOR-925) are probabilities/rates in ``[0, 1]`` (ECE, top-1) or
+  non-negative (nats/byte, Brier, entropy); a finite-but-impossible reading
+  (e.g. a negative entropy) is corruption the same way NaN is, just not
+  caught by the finiteness check alone.
 
 An inadmissible readout is a :class:`TelemetryGap`, never a value: callers turn
 it into a refusal, so nothing downstream can mistake absence for a measurement.
@@ -220,6 +225,15 @@ class EvalRecord:
     loss: float
     nats_per_byte: float
     kappa: list[list[float]] | None
+    # P8 (FOR-925): field-calibration diagnostics for p_phi — same "absent
+    # channel is absent" per-record optionality as `kappa` above. Present
+    # only on runs with a field encoder (state_source="field"); every other
+    # arm's eval records simply never carry these keys.
+    field_nats_per_byte: float | None = None
+    field_brier: float | None = None
+    field_ece: float | None = None
+    field_entropy: float | None = None
+    field_top1: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +257,36 @@ def _finite_field(path: Path, record: dict[str, Any], key: str) -> float:
         msg = f"{path}: non-finite {key} {value!r}"
         raise TelemetryGap(msg)
     return float(value)
+
+
+def _finite_field_or_none(
+    path: Path,
+    record: dict[str, Any],
+    key: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
+    """Same admissibility rule as :func:`_finite_field`, but ``key`` is
+    OPTIONAL per record (absent -> ``None``) — the convention every "absent
+    channel is absent" telemetry key (``kappa``, and now the P8 calibration
+    diagnostics) uses. ``minimum``/``maximum`` are inclusive range checks
+    for metrics with a documented domain (ECE/top-1 accuracy are
+    probabilities in ``[0, 1]``; nats/Brier/entropy are non-negative) — a
+    value outside that domain is corruption the same way a non-finite value
+    is, so it is refused here rather than passed through as a technically-
+    finite-but-impossible reading.
+    """
+    if key not in record:
+        return None
+    value = _finite_field(path, record, key)
+    if minimum is not None and value < minimum:
+        msg = f"{path}: {key} is below its documented minimum {minimum}: {value!r}"
+        raise TelemetryGap(msg)
+    if maximum is not None and value > maximum:
+        msg = f"{path}: {key} is above its documented maximum {maximum}: {value!r}"
+        raise TelemetryGap(msg)
+    return value
 
 
 def _int_field(path: Path, record: dict[str, Any], key: str) -> int:
@@ -295,7 +339,26 @@ def read_eval_series(path: str | Path) -> list[EvalRecord]:
                     "IndexError inside a plotting comprehension rather than a refusal"
                 )
                 raise TelemetryGap(msg)
-        records.append(EvalRecord(step=step, loss=loss, nats_per_byte=nats_per_byte, kappa=rows))
+        field_nats_per_byte = _finite_field_or_none(
+            path, record, "field_nats_per_byte", minimum=0.0
+        )
+        field_brier = _finite_field_or_none(path, record, "field_brier", minimum=0.0)
+        field_ece = _finite_field_or_none(path, record, "field_ece", minimum=0.0, maximum=1.0)
+        field_entropy = _finite_field_or_none(path, record, "field_entropy", minimum=0.0)
+        field_top1 = _finite_field_or_none(path, record, "field_top1", minimum=0.0, maximum=1.0)
+        records.append(
+            EvalRecord(
+                step=step,
+                loss=loss,
+                nats_per_byte=nats_per_byte,
+                kappa=rows,
+                field_nats_per_byte=field_nats_per_byte,
+                field_brier=field_brier,
+                field_ece=field_ece,
+                field_entropy=field_entropy,
+                field_top1=field_top1,
+            )
+        )
     if not records:
         msg = f"{path}: no eval record — the run never reached an eval"
         raise TelemetryGap(msg)

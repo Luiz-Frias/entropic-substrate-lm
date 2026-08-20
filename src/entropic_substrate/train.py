@@ -42,6 +42,7 @@ from entropic_substrate.data.build import build_corpus, corpus_byte_stream
 from entropic_substrate.geometry.gram import gram_frobenius_sq, normalized_gram
 from entropic_substrate.logging import logger
 from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
+from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator
 from entropic_substrate.sinks import JsonlSink, MetricSink
 
 __all__ = [
@@ -143,6 +144,18 @@ class EvalResult:
     # `nats_per_byte` above (train.py's registered likelihood metric stays
     # pure backbone CE, test-pinned in test_field_calibration.py).
     field_ce: float | None = None
+    # P8 (FOR-925): predictive-calibration diagnostics for p_phi, "logged
+    # THROUGHOUT" (docs/e1_5-instruction.md) — present whenever a field
+    # encoder exists at all, DECOUPLED from field_loss_lambda/
+    # _field_loss_enabled above (which gate only the train-loss calibration
+    # seam, P6/FOR-923, unchanged). None under state_source="table" (no
+    # field encoder to diagnose) — same absent-channel convention as
+    # gram_frob_sq/field_ce.
+    field_nats_per_byte: float | None = None
+    field_brier: float | None = None
+    field_ece: float | None = None
+    field_entropy: float | None = None
+    field_top1: float | None = None
 
 
 class Trainer:
@@ -408,6 +421,16 @@ class Trainer:
             gates: list[list[float]] = []
             entropies: list[float] = []
             field_losses: list[float] = []
+            # P8 (FOR-925): decoupled from `_field_loss_enabled` — whenever a
+            # field encoder exists at all (state_source == "field"), even
+            # with the calibration seam off or frozen (field_loss_lambda ==
+            # 0.0 either way), its own predictive-calibration diagnostics
+            # still accumulate here ("logged for p_phi THROUGHOUT",
+            # docs/e1_5-instruction.md). See FieldCalibrationAccumulator's
+            # docstring for why this streams scalar reductions per batch
+            # rather than concatenating logits across the whole eval pass.
+            field_encoder = self.raw_model.field_encoder
+            field_calib = FieldCalibrationAccumulator() if field_encoder is not None else None
             for x, y in self.val_sampler.iter_batches(n):
                 with self._autocast():
                     out = self.model(x, y)
@@ -423,9 +446,31 @@ class Trainer:
                 if self._field_loss_enabled:
                     field_loss, _weighted = self._field_loss_terms(x, y)
                     field_losses.append(float(field_loss.detach()))
+                if field_encoder is not None and field_calib is not None:
+                    # FP32-compute island, mirroring `_field_loss_terms`
+                    # EXACTLY: `field_logits`'s own `.float()` is a type
+                    # contract, not a compute guarantee (its docstring) — the
+                    # caller must supply the actual FP32 island.
+                    with torch.autocast(device_type=self.device.type, enabled=False):
+                        field_logits = field_encoder.field_logits(x)
+                    field_calib.update(
+                        field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)
+                    )
             mean_loss = float(np.mean(losses))
             npb = mean_loss / self.meta.bytes_per_token
             field_ce: float | None = float(np.mean(field_losses)) if field_losses else None
+            field_nats_per_byte: float | None = None
+            field_brier: float | None = None
+            field_ece: float | None = None
+            field_entropy: float | None = None
+            field_top1: float | None = None
+            if field_calib is not None:
+                diag = field_calib.finalize()
+                field_nats_per_byte = diag["ce"] / self.meta.bytes_per_token
+                field_brier = diag["brier"]
+                field_ece = diag["ece"]
+                field_entropy = diag["entropy"]
+                field_top1 = diag["top1"]
             # E1.5b: recomputed here (no_grad, already inside this method's
             # outer torch.no_grad()) from the CURRENT table only — it does
             # not depend on the eval batches above and must never perturb
@@ -449,6 +494,11 @@ class Trainer:
                 gram_frob_sq=gram_frob_sq,
                 gram_penalty=gram_penalty,
                 field_ce=field_ce,
+                field_nats_per_byte=field_nats_per_byte,
+                field_brier=field_brier,
+                field_ece=field_ece,
+                field_entropy=field_entropy,
+                field_top1=field_top1,
             )
 
     # ----------------------------------------------------------- lifecycle
@@ -503,6 +553,34 @@ class Trainer:
             record["gram_penalty"] = round(result.gram_penalty, 6)
         if result.field_ce is not None:
             record["field_ce"] = round(result.field_ce, 6)
+        if result.field_nats_per_byte is not None:
+            # P8 (FOR-925): the five calibration-diagnostic keys are always
+            # computed together (one FieldCalibrationAccumulator.finalize()
+            # call in evaluate()) — guarding on the first is equivalent to
+            # guarding on all five. `assert` is not used here (stripped
+            # under `python -O`, CLAUDE.md's documented rationale for
+            # `_require_loss`/`_field_loss_terms`'s own control-flow
+            # checks): a caller that constructs an EvalResult with
+            # field_nats_per_byte set but one of the other four left None
+            # (evaluate() never does this — they come from one dict) must
+            # fail loud here, not silently write a partial record.
+            if (
+                result.field_brier is None
+                or result.field_ece is None
+                or result.field_entropy is None
+                or result.field_top1 is None
+            ):
+                msg = (
+                    "EvalResult carries field_nats_per_byte but is missing one of "
+                    "field_brier/field_ece/field_entropy/field_top1 — the five "
+                    "calibration keys must be set together"
+                )
+                raise RuntimeError(msg)
+            record["field_nats_per_byte"] = round(result.field_nats_per_byte, 6)
+            record["field_brier"] = round(result.field_brier, 6)
+            record["field_ece"] = round(result.field_ece, 6)
+            record["field_entropy"] = round(result.field_entropy, 6)
+            record["field_top1"] = round(result.field_top1, 6)
         return record
 
     def fit(self, max_steps: int | None = None, verbose: bool = True) -> list[dict[str, Any]]:
@@ -530,8 +608,13 @@ class Trainer:
         }
         # E1.5c: absent from the record entirely unless state_source ==
         # "field" (same "absent channel is absent" convention E1.5b's
-        # gram_* eval keys use) — matched-backbone params, the matched-total
-        # twin is a prereg-time variant (docs/e1_5-instruction.md).
+        # gram_* eval keys use) — this trainer always builds the
+        # matched-BACKBONE lane (whatever d_model the resolved config
+        # names); the matched-TOTAL-parameter twins are separate, shrunk
+        # configs (configs/e1-5c-*-matched-total.yaml, P8/FOR-925) that
+        # report their own field_encoder_params the same way. RUNNING either
+        # lane for real stays prereg-time scope (docs/e1_5-instruction.md
+        # Phase D) — only the configs themselves are built here.
         field_encoder_params = self.raw_model.field_encoder_parameter_count()
         if field_encoder_params is not None:
             run_start_record["field_encoder_params"] = field_encoder_params
