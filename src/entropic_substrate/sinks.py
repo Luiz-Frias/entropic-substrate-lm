@@ -515,6 +515,9 @@ class MlflowSink:
                 # run's MLflow metrics untouched.
                 "gram_frob_sq",
                 "gram_penalty",
+                # E1.5c Repair 1: same "absent channel is absent" convention,
+                # present only when field_loss_lambda != 0.0.
+                "field_ce",
             ):
                 if key in record:
                     metrics[key] = float(record[key])

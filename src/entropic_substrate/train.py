@@ -28,6 +28,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_checkpoint
@@ -136,6 +137,12 @@ class EvalResult:
     # channel is absent" convention `kappa`/`gate_fraction` already use).
     gram_frob_sq: float | None = None
     gram_penalty: float | None = None
+    # E1.5c Repair 1: None when field_loss_lambda == 0.0 (disabled) — same
+    # "absent channel is absent" convention as the gram_* pair above. Mean
+    # calibration CE over this eval's batches; NEVER folded into `loss`/
+    # `nats_per_byte` above (train.py's registered likelihood metric stays
+    # pure backbone CE, test-pinned in test_field_calibration.py).
+    field_ce: float | None = None
 
 
 class Trainer:
@@ -217,6 +224,20 @@ class Trainer:
             with torch.no_grad():
                 self._gram_ref = normalized_gram(self.raw_model.wte.weight).detach().clone()
 
+        # E1.5c Repair 1: field_loss_lambda != 0.0 requires an actual field
+        # encoder to calibrate — a table-arm run (state_source="table") has
+        # raw_model.field_encoder is None, and reaching
+        # `_field_loss_terms` on it would surface as an AttributeError deep
+        # inside train_step/evaluate rather than a clear construction-time
+        # refusal (CLAUDE.md Errors principle: fail fast on invalid state).
+        self._field_loss_enabled = cfg.model.field_loss_lambda != 0.0
+        if self._field_loss_enabled and self.raw_model.field_encoder is None:
+            msg = (
+                "field_loss_lambda != 0.0 requires state_source='field' — "
+                "no field encoder exists to calibrate under state_source='table'"
+            )
+            raise ValueError(msg)
+
         if cfg.train.resume:
             self.load_checkpoint(cfg.train.resume)
 
@@ -287,6 +308,49 @@ class Trainer:
             penalty = self.cfg.model.gram_lambda * frob_sq
         return frob_sq, penalty
 
+    def _field_loss_terms(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """E1.5c Repair 1 calibration seam: ``(L_field, field_loss_lambda * L_field)``.
+
+        Only called when :attr:`_field_loss_enabled` (``field_loss_lambda !=
+        0.0``, validated + raised at construction if no field encoder
+        exists — callers do not need to guard that themselves). ``p_phi``
+        still consumes ``x`` only (``FieldEncoder.field_logits`` takes no
+        ``targets`` parameter, the same structural anti-leakage pin
+        ``forward`` carries); ``y`` scores the prediction here exactly as
+        the backbone's own CE does in ``LanguageModel.forward`` — target
+        scores, never feeds. ``y[:, t] == x[:, t+1]`` by construction
+        (``data/batching.py``'s ``SequenceSampler.batch``), which is exactly
+        the byte ``z_t = f(x_<=t)`` already predicts (verified by
+        ``test_field_encoder.py``'s causality suite) — so this scores
+        ``field_logits`` against ``y`` ELEMENTWISE, with no slice, the same
+        shape ``LanguageModel.forward`` uses for its own CE.
+
+        FP32 throughout, inside an explicit ``autocast(enabled=False)``
+        block — mirrors ``_gram_penalty_terms`` EXACTLY: this runs OUTSIDE
+        ``train_step``'s own ``_autocast()`` context (the forward pass has
+        already returned by the time this is called), but the geometry/
+        numerics invariant (CLAUDE.md) binds unconditionally, not only when
+        the caller happens to already be under bf16. NOT via ``aux_loss``
+        (that channel is the dead ``GatedKappaNorm`` load-balance term).
+        """
+        field_encoder = self.raw_model.field_encoder
+        if field_encoder is None:
+            # Construction-time validation (Trainer.__init__) already
+            # refuses field_loss_lambda != 0.0 without a field encoder, so
+            # reaching here means that guard was bypassed (e.g. a caller
+            # mutating `_field_loss_enabled` by hand) — fail loud rather
+            # than silently `assert`, which `python -O` strips (mirrors
+            # `_require_loss`'s documented rationale for the same choice).
+            msg = "_field_loss_terms called with no field encoder on the model (state_source != 'field')"
+            raise RuntimeError(msg)
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            logits = field_encoder.field_logits(x)
+            field_loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), y.reshape(-1))
+            weighted = self.cfg.model.field_loss_lambda * field_loss
+        return field_loss, weighted
+
     # --------------------------------------------------------------- steps
     def train_step(self) -> dict[str, float]:
         """One optimisation step; returns scalar metrics."""
@@ -309,6 +373,12 @@ class Trainer:
                 "gram_frob_sq": float(gram_frob_sq.detach()),
                 "gram_penalty": float(gram_penalty.detach()),
             }
+        field_metrics: dict[str, float] = {}
+        if self._field_loss_enabled:
+            field_loss, field_weighted = self._field_loss_terms(x, y)
+            # NOT via aux_loss — same rationale as the gram term above.
+            total = total + field_weighted
+            field_metrics = {"field_ce": float(field_loss.detach())}
         self.optimizer.zero_grad(set_to_none=True)
         total.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.train.grad_clip)
@@ -324,6 +394,7 @@ class Trainer:
             "grad_norm": float(grad_norm),
             "nats_per_byte": loss / self.meta.bytes_per_token,
             **gram_metrics,
+            **field_metrics,
         }
 
     def evaluate(self, num_batches: int | None = None) -> EvalResult:
@@ -336,6 +407,7 @@ class Trainer:
             kappas: list[list[float]] = []
             gates: list[list[float]] = []
             entropies: list[float] = []
+            field_losses: list[float] = []
             for x, y in self.val_sampler.iter_batches(n):
                 with self._autocast():
                     out = self.model(x, y)
@@ -344,8 +416,16 @@ class Trainer:
                     kappas = [s.kappa for s in out.kappa_stats]
                     gates = [s.gate_fraction for s in out.kappa_stats]
                     entropies = [s.entropy for s in out.kappa_stats]
+                # E1.5c Repair 1: accumulated into its OWN list, never
+                # `losses` above — the registered likelihood metric
+                # (`mean_loss`/`npb` below) must stay pure backbone CE,
+                # test-pinned in test_field_calibration.py.
+                if self._field_loss_enabled:
+                    field_loss, _weighted = self._field_loss_terms(x, y)
+                    field_losses.append(float(field_loss.detach()))
             mean_loss = float(np.mean(losses))
             npb = mean_loss / self.meta.bytes_per_token
+            field_ce: float | None = float(np.mean(field_losses)) if field_losses else None
             # E1.5b: recomputed here (no_grad, already inside this method's
             # outer torch.no_grad()) from the CURRENT table only — it does
             # not depend on the eval batches above and must never perturb
@@ -368,6 +448,7 @@ class Trainer:
                 router_entropy=entropies,
                 gram_frob_sq=gram_frob_sq,
                 gram_penalty=gram_penalty,
+                field_ce=field_ce,
             )
 
     # ----------------------------------------------------------- lifecycle
@@ -420,6 +501,8 @@ class Trainer:
         if result.gram_frob_sq is not None and result.gram_penalty is not None:
             record["gram_frob_sq"] = round(result.gram_frob_sq, 6)
             record["gram_penalty"] = round(result.gram_penalty, 6)
+        if result.field_ce is not None:
+            record["field_ce"] = round(result.field_ce, 6)
         return record
 
     def fit(self, max_steps: int | None = None, verbose: bool = True) -> list[dict[str, Any]]:

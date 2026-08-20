@@ -41,22 +41,9 @@ import torch
 
 from entropic_substrate.models.backbone import build_model
 from entropic_substrate.train import Trainer
-from helpers import tiny_config, tiny_model_config
+from helpers import assert_bitwise_equal, tiny_config, tiny_model_config
 
 pytestmark = pytest.mark.unit
-
-
-def _assert_bitwise_equal(actual: torch.Tensor, expected: torch.Tensor) -> None:
-    """Bit-pattern equality, stricter than value equality: ``assert_close``
-    with zero tolerances still passes a ``-0.0``/``+0.0`` flip and treats
-    NaN pairs as equal — a byte view has no such blind spots."""
-    mismatched = int(
-        (actual.detach().view(torch.uint8) != expected.detach().view(torch.uint8)).sum()
-    )
-    assert mismatched == 0, (
-        f"{mismatched} of {actual.element_size() * actual.numel()} bytes differ "
-        "between tensors that must be bit-identical"
-    )
 
 
 # --------------------------------------------------------- _init_embeddings
@@ -77,7 +64,7 @@ def test_untied_init_seeds_both_tables(freeze: str) -> None:
         )
     )
     assert model.wte.weight.data_ptr() != model.lm_head.weight.data_ptr()
-    _assert_bitwise_equal(model.wte.weight, model.lm_head.weight)
+    assert_bitwise_equal(model.wte.weight, model.lm_head.weight)
 
 
 def test_untied_default_init_leaves_embeddings_untouched() -> None:
@@ -155,7 +142,7 @@ def test_frozen_table_bitwise_unchanged_after_training(
     before = trainer.raw_model.wte.weight.clone()
     for _ in range(3):
         trainer.train_step()
-    _assert_bitwise_equal(trainer.raw_model.wte.weight, before)
+    assert_bitwise_equal(trainer.raw_model.wte.weight, before)
 
 
 def test_trainable_side_still_learns(tmp_path: Path) -> None:
@@ -215,7 +202,7 @@ def test_ngpt_partial_freeze_preserves_frozen_table(
     trainable_before = getattr(trainer.raw_model, trainable_attr).weight.detach().clone()
     for _ in range(3):
         trainer.train_step()
-    _assert_bitwise_equal(getattr(trainer.raw_model, frozen_attr).weight, frozen_before)
+    assert_bitwise_equal(getattr(trainer.raw_model, frozen_attr).weight, frozen_before)
     weight = getattr(trainer.raw_model, trainable_attr).weight
     # The trainable half must have actually MOVED — the init is already
     # unit-norm, so the row-norm check alone would pass a run where training

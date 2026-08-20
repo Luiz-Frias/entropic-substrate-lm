@@ -51,11 +51,13 @@ axes — each varies exactly one from baseline.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
+from entropic_substrate.checkpoint import normalize_checkpoint
 from entropic_substrate.config import ModelConfig
 from entropic_substrate.init.fisher import semi_orthogonal_lift
 from entropic_substrate.models.blocks import build_block, build_norm
@@ -95,6 +97,33 @@ class FieldEncoder(nn.Module):
             raise ValueError(msg)
         if cfg.field_estimator != "transformer_v1":
             msg = f"unknown field_estimator {cfg.field_estimator!r}"
+            raise ValueError(msg)
+        if cfg.field_mode not in ("joint", "frozen"):
+            msg = f"unknown field_mode {cfg.field_mode!r}"
+            raise ValueError(msg)
+        if cfg.field_mode == "frozen" and cfg.field_ckpt_path is None:
+            msg = (
+                "field_mode='frozen' requires field_ckpt_path — a frozen field "
+                "cannot start from a random draw, only from a checkpoint of a "
+                "previously trained p_phi (docs/e1_5-instruction.md Repair 1's "
+                "pretrained/frozen regime)"
+            )
+            raise ValueError(msg)
+        if cfg.field_mode == "joint" and cfg.field_ckpt_path is not None:
+            # Fail loud rather than silently ignore the path (CLAUDE.md Errors
+            # principle): a set field_ckpt_path with field_mode="joint" is an
+            # UNREGISTERED combination today (no arm loads a checkpoint and
+            # then keeps training it jointly), not a permanently nonsensical
+            # one — pretrain-then-finetune is a plausible later arm — so this
+            # refuses the specific unregistered pairing rather than claiming
+            # the combination can never mean anything.
+            msg = (
+                "field_ckpt_path is set but field_mode='joint' — loading a "
+                "checkpoint into a field that also trains jointly would "
+                "silently discard the checkpoint's frozen-p_phi purpose and "
+                "no registered arm combines these; set field_mode='frozen' "
+                "or clear field_ckpt_path"
+            )
             raise ValueError(msg)
 
         self.field_d_model = cfg.field_d_model
@@ -141,6 +170,52 @@ class FieldEncoder(nn.Module):
         # 2.4x smaller std than the estimator's own width calls for).
         self.apply(self._init_weights)
 
+        # E1.5c Repair 1, frozen regime: overwrite the fresh init above with
+        # a previously trained p_phi and freeze it — mirrors E1.5a's
+        # model-build-time freeze in backbone.py (`_apply_embedding_freeze`),
+        # timed the same way (AFTER init, so the frozen snapshot is the
+        # checkpoint's true weights, never the local random draw). Unlike
+        # that freeze, this module has no `normalize_weights`-style in-place
+        # renormalisation pass of its own to bypass-guard against: nothing in
+        # LanguageModel.normalize_weights walks `self.field_encoder` (it only
+        # iterates the BACKBONE's own blocks/wte/lm_head), so `requires_grad_
+        # (False)` alone is sufficient here — there is no copy_ trap to close.
+        if cfg.field_mode == "frozen":
+            ckpt_path = cfg.field_ckpt_path
+            if ckpt_path is None:
+                # Unreachable given the raise above — restated as a real
+                # control-flow check, not `assert`, since CI's bandit gate
+                # (B101) flags asserts as stripped-by-`python -O` and this
+                # repo's own `_require_loss` docstring names exactly that
+                # hazard: a narrowing check must fail loud even under -O,
+                # not silently vanish into a `Path(None)` TypeError instead.
+                msg = "field_mode='frozen' with field_ckpt_path=None reached model build"
+                raise RuntimeError(msg)
+            self._load_frozen_weights(ckpt_path)
+            self.requires_grad_(False)
+
+    def _load_frozen_weights(self, path: str) -> None:
+        """Load this module's own weights from a checkpoint's ``model`` key.
+
+        Wire format: ``{"format_version": ..., "model": <FieldEncoder.state_
+        dict()>}`` — a checkpoint scoped to THIS module alone (not a full
+        ``Trainer.state_dict()``), produced by whatever separate run trained
+        p_phi as its own small causal LM (docs/e1_5-instruction.md's
+        pretrained/frozen regime). Nothing in this repo produces that
+        checkpoint yet (the standalone-p_phi training pipeline is a later
+        rung); this defines the format the loader expects. Routed through
+        ``normalize_checkpoint`` for the same reason ``Trainer.load_checkpoint``
+        is: a stray legacy/malformed payload fails loud here rather than
+        surfacing as an opaque shape error three lines later. ``for_resume=
+        False`` — this is a fresh module taking a frozen INITIAL value, not
+        this Trainer resuming its own prior optimiser/step state.
+        """
+        # weights_only=True matches Trainer.load_checkpoint: self-produced
+        # checkpoints hold only tensors and primitives (bandit B614).
+        raw = torch.load(Path(path), map_location="cpu", weights_only=True)
+        state = normalize_checkpoint(raw, source=str(path), for_resume=False)
+        self.load_state_dict(state["model"])
+
     def _init_weights(self, module: nn.Module) -> None:
         std = self.field_d_model**-0.5
         if isinstance(module, nn.Linear):
@@ -150,12 +225,24 @@ class FieldEncoder(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=std)
 
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` unit-norm ``z_t`` rows.
+    def _encode(self, idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Shared body for :meth:`forward` / :meth:`field_logits`.
 
-        Only ``idx`` is consumed — no ``targets`` parameter exists on this
-        signature, so the estimator structurally cannot see the label it
-        will be scored against (docs/e1_5-instruction.md's anti-leakage pin).
+        Returns ``(logits, z)``: ``logits`` is the ambient-dtype ``(B, T,
+        256)`` pre-softmax output of ``self.head``; ``z`` is the ``(B, T,
+        cfg.d_model)`` unit-norm Fisher state, ambient dtype. Both callers
+        below invoke this INDEPENDENTLY — the E1.5c Repair 1 calibration seam
+        (``train.py``'s ``Trainer._field_loss_terms``) calls
+        ``field_logits(idx)`` as a second, separate forward pass through this
+        (small) encoder rather than one shared with whatever call
+        ``LanguageModel.forward`` already made through ``forward(idx)`` for
+        injection. That duplicates this module's own compute when both
+        injection AND calibration are active in the same train step, but
+        NOT the backbone's — ``field_d_model``/``field_n_layers`` (v1: 128,
+        2) keep this submodule negligible next to the ~85M backbone it feeds
+        (``run_start``'s ``field_encoder_params``), and threading a shared
+        result through ``LanguageModel.forward``/``LMOutput`` instead would
+        touch ``backbone.py``, out of this phase's scope (FOR-923).
         """
         h = self.wte(idx)
         for block in self.blocks:
@@ -167,4 +254,36 @@ class FieldEncoder(nn.Module):
         with torch.autocast(device_type=idx.device.type, enabled=False):
             probs = F.softmax(logits.float(), dim=-1).clamp_min(_PROB_EPS)
             z = probs.sqrt() @ self.lift
-        return z.to(h.dtype)
+        return logits, z.to(h.dtype)
+
+    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+        """``(B, T)`` byte ids -> ``(B, T, cfg.d_model)`` unit-norm ``z_t`` rows.
+
+        Only ``idx`` is consumed — no ``targets`` parameter exists on this
+        signature, so the estimator structurally cannot see the label it
+        will be scored against (docs/e1_5-instruction.md's anti-leakage pin).
+        """
+        _logits, z = self._encode(idx)
+        return z
+
+    def field_logits(self, idx: torch.Tensor) -> torch.Tensor:
+        """``(B, T)`` byte ids -> ``(B, T, 256)`` FP32 next-byte logits.
+
+        The E1.5c Repair 1 calibration target: ``train.py``'s seam scores
+        these against the SAME targets the backbone's own CE uses (``L_field
+        = CE(field_logits, y)``) — never fed back in, only scored, matching
+        this method's signature: no ``targets`` parameter, same anti-leakage
+        pin ``forward`` carries. ``.float()`` here only guarantees the
+        RETURNED dtype; it does not by itself guarantee FP32 *compute* for
+        ``self.head``'s matmul under an ambient bf16 autocast (PyTorch's
+        autocast policy may still run that matmul in bf16 before this casts
+        the result). The calibration seam that calls this (``Trainer.
+        _field_loss_terms``) supplies the actual FP32-compute guarantee by
+        wrapping the call in its own explicit ``autocast(enabled=False)``
+        island, mirroring ``geometry/gram.py`` (CLAUDE.md non-negotiable
+        numerics) — this method's own `.float()` is a type contract for
+        callers that do NOT provide that island themselves, not a substitute
+        for one.
+        """
+        logits, _z = self._encode(idx)
+        return logits.float()
