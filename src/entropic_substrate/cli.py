@@ -15,6 +15,7 @@ Subcommands
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import re
@@ -673,6 +674,69 @@ def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, Checkpoin
     return loaded
 
 
+def _init_table_cache_key(cfg: Config) -> tuple[object, ...]:
+    """Hashable identity for the subset of ``cfg`` that determines
+    ``reconstruct_init_table``'s output (FOR-920).
+
+    Two configs sharing this key are guaranteed to reconstruct to the SAME
+    table: ``embedding_init``/``d_model``/``tokenizer``/``vocab_size`` (the
+    ``vocab_size_for`` inputs the ``random_sphere`` arm draws against —
+    seed-0-shared by construction, per ``reconstruct_init_table``'s own
+    docstring), ``fisher_init_path`` (``None`` selects the corpus-rebuild
+    fallback below), and the FULL ``DataConfig`` identity — the fallback
+    reads ``corpus_byte_stream(cfg.data, ...)``, so any data-config field
+    could in principle change the rebuilt corpus stream; including the
+    whole tuple (``DataConfig`` is small and all-primitive) costs nothing
+    and avoids a class of "the fallback grew a new data-dependent knob and
+    nobody widened the cache key" bugs.
+
+    ``cfg.train`` is deliberately EXCLUDED: nothing in
+    ``reconstruct_init_table`` reads it — the random-arm seed-0-sharing pin
+    (this module's own finding #2, pinned in
+    ``test_reconstruct_init_table_random_sphere_shares_seed_0_across_
+    train_seeds``) is exactly the guarantee that ``cfg.train.seed`` must
+    NOT appear here, since two seeds of the same arm are the common case
+    this cache exists to collapse.
+    """
+    model_cfg = cfg.model
+    return (
+        model_cfg.embedding_init,
+        model_cfg.d_model,
+        model_cfg.tokenizer,
+        model_cfg.vocab_size,
+        model_cfg.fisher_init_path,
+        dataclasses.astuple(cfg.data),
+    )
+
+
+def _cached_reconstruct_init_table(
+    cache: dict[tuple[object, ...], torch.Tensor], cfg: Config
+) -> torch.Tensor:
+    """Memoized ``reconstruct_init_table``, scoped to the ``cache`` dict the
+    caller owns (FOR-920).
+
+    ``cmd_embedding_geometry`` creates a FRESH ``cache`` per invocation —
+    never a module-level or disk cache — so nothing here leaks reconstructed
+    tables across separate CLI runs. A multi-seed sweep pairs N seeds of the
+    SAME arm; every one of those seeds' configs shares an identical
+    :func:`_init_table_cache_key` (``train.seed`` is excluded by
+    construction), so without this memoization every seed rebuilt the
+    IDENTICAL table redundantly — measured 2026-08-19: 9 fisher-arm rebuilds
+    x ~7.5 min each (the 20MB corpus-stream fallback in
+    ``reconstruct_init_table``) = ~68 min duplicated work in one invocation.
+
+    Returns a CLONE on every call, including the first (cache miss): two
+    callers holding "the same" cached table must never be able to corrupt
+    each other's view by mutating their own copy in place.
+    """
+    from entropic_substrate.analysis import embedding_geometry as eg
+
+    key = _init_table_cache_key(cfg)
+    if key not in cache:
+        cache[key] = eg.reconstruct_init_table(cfg).clone()
+    return cache[key].clone()
+
+
 def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     """Handle ``embedding-geometry``: E1.5-D diagnostics on captured checkpoints.
 
@@ -707,6 +771,11 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
             return 2
 
         per_seed_raw: list[dict[str, Any]] = []
+        # In-memory, per-invocation only (FOR-920) — a fresh dict created
+        # right here, never module-level or disk-backed, so nothing leaks
+        # across separate CLI runs. See _cached_reconstruct_init_table's
+        # own docstring for why this exists.
+        init_table_cache: dict[tuple[object, ...], torch.Tensor] = {}
         for seed in common:
             ckpt_a, ckpt_b = loaded_a[seed], loaded_b[seed]
             # L2 finding, 2026-08-19: under state_source="field" (E1.5c),
@@ -734,13 +803,19 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
                     raise ValueError(msg)
             final_a = ckpt_a.model.wte.weight.detach()
             final_b = ckpt_b.model.wte.weight.detach()
-            # Reconstruct once per arm, not once per diagnostic: the
-            # fisher_sqrt/no-saved-path fallback rebuilds the table from a
-            # 20MB corpus stream (reconstruct_init_table's own docstring),
-            # so calling it twice per arm doubled that cost for nothing —
-            # angular_drift and gram_retention both want the SAME table.
-            init_a = eg.reconstruct_init_table(ckpt_a.config)
-            init_b = eg.reconstruct_init_table(ckpt_b.config)
+            # Reconstruct once per arm PER DISTINCT CONFIG — not once per
+            # diagnostic (angular_drift and gram_retention both want the
+            # SAME table) and not once per SEED either (FOR-920): a
+            # multi-seed sweep pairs N seeds of the same arm, whose configs
+            # share an identical init-table identity regardless of
+            # train.seed, so the fisher_sqrt/no-saved-path fallback's 20MB
+            # corpus-stream rebuild (reconstruct_init_table's own
+            # docstring) would otherwise redo the SAME rebuild once per
+            # seed for nothing. _cached_reconstruct_init_table memoizes on
+            # _init_table_cache_key within this one invocation's
+            # init_table_cache — never across invocations.
+            init_a = _cached_reconstruct_init_table(init_table_cache, ckpt_a.config)
+            init_b = _cached_reconstruct_init_table(init_table_cache, ckpt_b.config)
             drift_a = eg.angular_drift(init_a, final_a)
             drift_b = eg.angular_drift(init_b, final_b)
             retention_a = eg.gram_retention(init_a, final_a)

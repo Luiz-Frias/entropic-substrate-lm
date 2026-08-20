@@ -2,7 +2,7 @@
 cross-arm agreement, Procrustes alignment, functional divergence, and the
 checkpoint-loading/init-reconstruction retrieval side.
 
-Four guard-teeth this file pins with RED-first proofs (hand-verified during
+Five guard-teeth this file pins with RED-first proofs (hand-verified during
 implementation — command + observed output recorded in the phase report, not
 shipped here, matching ``test_field_encoder.py``'s / ``test_gram_penalty.py``'s
 convention):
@@ -35,6 +35,15 @@ convention):
    ``test_cli_embedding_geometry_field_state_source_is_a_loud_refusal`` is
    RED against the pre-fix CLI (verified: without the guard it exits 0 and
    prints a full JSON payload instead of refusing).
+5. **init-table cache-key discrimination** (FOR-920) — the memoized
+   ``reconstruct_init_table`` wrapper in ``cli.py`` keys its cache on a
+   tuple derived from ``cfg``; a key that dropped a component (e.g. keyed
+   on ``embedding_init`` alone) would silently SHARE a cache entry between
+   two configs that could reconstruct to DIFFERENT tables.
+   ``test_cached_reconstruct_init_table_key_discriminates_on_d_model`` is
+   RED against a ``_init_table_cache_key`` narrowed to ``embedding_init``
+   only (hand-verified during implementation — command + observed output
+   recorded in the phase report).
 """
 
 from __future__ import annotations
@@ -61,7 +70,7 @@ from entropic_substrate.analysis.embedding_geometry import (
     reconstruct_init_table,
 )
 from entropic_substrate.checkpoint import CheckpointFormatError
-from entropic_substrate.cli import main
+from entropic_substrate.cli import _cached_reconstruct_init_table, _init_table_cache_key, main
 from entropic_substrate.config import Config
 from entropic_substrate.init.fisher import build_fisher_init, random_sphere_init, save_init
 from entropic_substrate.train import Trainer
@@ -565,6 +574,199 @@ def test_cli_embedding_geometry_malformed_checkpoint_is_a_loud_refusal(
     # main()'s OUTER handler, not cmd_embedding_geometry's own ValueError
     # catch — the message still names the offending path.
     assert "garbage.pt" in capsys.readouterr().err
+
+
+# ------------------------------------------------ init-table cache (FOR-920)
+#
+# cmd_embedding_geometry reconstructs each checkpoint's init embedding table
+# via reconstruct_init_table, and a multi-seed sweep pairs N seeds of the
+# SAME arm against each other — every one of those seeds' configs shares an
+# init-table identity (embedding_init/d_model/tokenizer/vocab_size/
+# fisher_init_path/data) that does NOT vary with train.seed (that's exactly
+# reconstruct_init_table's own random-arm seed-0-sharing guarantee, guard-
+# tooth #2 above). Reconstructing per-seed therefore rebuilt the IDENTICAL
+# table redundantly: measured 2026-08-19, 9 fisher-arm rebuilds x ~7.5 min
+# each (the 20MB corpus-stream fallback) = ~68 min duplicated work in one
+# invocation.
+#
+# These tests exercise the memoizing wrapper directly (`_cached_
+# reconstruct_init_table` / `_init_table_cache_key` in cli.py) against bare
+# Config objects with a monkeypatched stand-in for the expensive
+# `reconstruct_init_table` call — the property under test is config-key
+# identity, not the reconstruction math itself (already covered by the
+# `reconstruct_init_table` tests above), so a real Trainer/corpus round trip
+# would only add cost without adding coverage.
+def _monkeypatch_reconstruct(monkeypatch: pytest.MonkeyPatch, calls: list[Config]) -> None:
+    """Replace the real ``reconstruct_init_table`` with a counting stub that
+    returns a config-shaped-but-otherwise-arbitrary tensor, so these tests
+    never pay for a real corpus stream or fisher build."""
+
+    def _fake(cfg: Config) -> torch.Tensor:
+        calls.append(cfg)
+        return torch.full((4, cfg.model.d_model), float(len(calls)))
+
+    monkeypatch.setattr(
+        "entropic_substrate.analysis.embedding_geometry.reconstruct_init_table", _fake
+    )
+
+
+def test_cached_reconstruct_init_table_reconstructs_identical_configs_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two DISTINCT ``Config`` objects (different ``train.seed``, otherwise
+    identical — exactly what two seeds of the SAME arm look like in a
+    multi-seed sweep) must trigger exactly ONE underlying reconstruction,
+    and both callers must see BITWISE-IDENTICAL tables."""
+    calls: list[Config] = []
+    _monkeypatch_reconstruct(monkeypatch, calls)
+
+    cfg_seed6 = _seeded_tiny_config(tmp_path, seed=6, embedding_init="fisher_sqrt")
+    cfg_seed9 = _seeded_tiny_config(tmp_path, seed=9, embedding_init="fisher_sqrt")
+    assert cfg_seed6 != cfg_seed9  # sanity: genuinely two distinct Config objects
+
+    cache: dict[tuple[object, ...], torch.Tensor] = {}
+    table_a = _cached_reconstruct_init_table(cache, cfg_seed6)
+    table_b = _cached_reconstruct_init_table(cache, cfg_seed9)
+
+    assert len(calls) == 1  # ONE underlying reconstruction, not two
+    assert torch.equal(table_a, table_b)  # bitwise-identical, not merely close
+
+
+def test_cached_reconstruct_init_table_key_discriminates_on_embedding_init(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Configs differing ONLY on ``embedding_init`` must NOT share a cache
+    entry — they can reconstruct to entirely different tables."""
+    calls: list[Config] = []
+    _monkeypatch_reconstruct(monkeypatch, calls)
+
+    cfg_fisher = _seeded_tiny_config(tmp_path, seed=6, embedding_init="fisher_sqrt")
+    cfg_random = _seeded_tiny_config(tmp_path, seed=6, embedding_init="random_sphere")
+
+    cache: dict[tuple[object, ...], torch.Tensor] = {}
+    _cached_reconstruct_init_table(cache, cfg_fisher)
+    _cached_reconstruct_init_table(cache, cfg_random)
+
+    assert len(calls) == 2  # separate reconstructions, never shared
+
+
+def test_cached_reconstruct_init_table_key_discriminates_on_d_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Configs differing ONLY on ``d_model`` must NOT share a cache entry —
+    the reconstructed table's shape (and, for fisher_sqrt, its values)
+    depends on ``d_model``."""
+    calls: list[Config] = []
+    _monkeypatch_reconstruct(monkeypatch, calls)
+
+    cfg_small = _seeded_tiny_config(tmp_path, seed=6, embedding_init="random_sphere", d_model=16)
+    cfg_large = _seeded_tiny_config(tmp_path, seed=6, embedding_init="random_sphere", d_model=32)
+
+    cache: dict[tuple[object, ...], torch.Tensor] = {}
+    _cached_reconstruct_init_table(cache, cfg_small)
+    _cached_reconstruct_init_table(cache, cfg_large)
+
+    assert len(calls) == 2  # separate reconstructions, never shared
+
+
+def test_cached_reconstruct_init_table_protects_against_caller_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller that mutates ITS OWN returned table in place must never
+    corrupt the cache entry (or a later caller's view of it)."""
+    calls: list[Config] = []
+    _monkeypatch_reconstruct(monkeypatch, calls)
+
+    cfg = _seeded_tiny_config(tmp_path, seed=6, embedding_init="fisher_sqrt")
+    cache: dict[tuple[object, ...], torch.Tensor] = {}
+
+    first = _cached_reconstruct_init_table(cache, cfg)
+    expected = first.clone()
+    first += 999.0  # mutate the CALLER's own returned tensor in place
+
+    second = _cached_reconstruct_init_table(cache, cfg)
+    assert len(calls) == 1  # still only one underlying reconstruction
+    assert torch.equal(second, expected)  # unaffected by `first`'s mutation
+    assert not torch.equal(second, first)  # the mutation really did happen
+
+
+def test_init_table_cache_key_differs_on_fisher_init_path(tmp_path: Path) -> None:
+    """A saved ``fisher_init_path`` selects an entirely different
+    reconstruction branch (load-from-disk vs. corpus-stream rebuild) than
+    ``None`` — the two must never share a cache entry."""
+    cfg_no_path = _seeded_tiny_config(tmp_path, seed=6, embedding_init="fisher_sqrt")
+    cfg_with_path = dataclasses.replace(
+        cfg_no_path,
+        model=dataclasses.replace(cfg_no_path.model, fisher_init_path=str(tmp_path / "f.pt")),
+    )
+    assert _init_table_cache_key(cfg_no_path) != _init_table_cache_key(cfg_with_path)
+
+
+def test_init_table_cache_key_ignores_train_seed(tmp_path: Path) -> None:
+    """The key must be blind to ``train.seed`` — that is exactly what makes
+    same-arm-different-seed configs collapse to one cache entry."""
+    cfg_seed6 = _seeded_tiny_config(tmp_path, seed=6, embedding_init="fisher_sqrt")
+    cfg_seed9 = _seeded_tiny_config(tmp_path, seed=9, embedding_init="fisher_sqrt")
+    assert _init_table_cache_key(cfg_seed6) == _init_table_cache_key(cfg_seed9)
+
+
+def test_cli_embedding_geometry_reconstructs_shared_arm_configs_once_across_seeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End-to-end wiring proof: TWO seeds of the SAME two arms (fisher_sqrt
+    with no saved path -> corpus fallback; random_sphere -> seed-0-shared by
+    construction — the two cases FOR-920 names by name) through the REAL
+    CLI must reconstruct each arm's table exactly ONCE, not once per seed."""
+    ckpt_a6 = _train_and_capture_final(tmp_path / "a6", seed=6, embedding_init="fisher_sqrt")
+    ckpt_a9 = _train_and_capture_final(tmp_path / "a9", seed=9, embedding_init="fisher_sqrt")
+    ckpt_b6 = _train_and_capture_final(tmp_path / "b6", seed=6, embedding_init="random_sphere")
+    ckpt_b9 = _train_and_capture_final(tmp_path / "b9", seed=9, embedding_init="random_sphere")
+
+    calls: list[Config] = []
+    real_reconstruct = reconstruct_init_table
+
+    def _counting(cfg: Config) -> torch.Tensor:
+        calls.append(cfg)
+        return real_reconstruct(cfg)
+
+    monkeypatch.setattr(
+        "entropic_substrate.analysis.embedding_geometry.reconstruct_init_table", _counting
+    )
+
+    code = main(
+        [
+            "embedding-geometry",
+            "--ckpt-a",
+            str(ckpt_a6),
+            "--ckpt-a",
+            str(ckpt_a9),
+            "--ckpt-b",
+            str(ckpt_b6),
+            "--ckpt-b",
+            str(ckpt_b9),
+            "--json",
+            "--no-functional",
+        ]
+    )
+    assert code == 0
+    # MEASURED 2026-08-19 (this test, temporarily reverting the two wired
+    # call sites in cmd_embedding_geometry back to bare
+    # eg.reconstruct_init_table(...) calls): 4 — one call per seed per side,
+    # with no memoization. With _cached_reconstruct_init_table wired in, the
+    # same scenario measures exactly one reconstruction per DISTINCT
+    # arm-config identity.
+    # (angular_drift compares init against each seed's own FINAL trained
+    # table, which legitimately differs by seed — so drift readings are
+    # NOT expected to match across seeds even with a shared init table;
+    # bitwise-identity of the init table itself is pinned directly by
+    # test_cached_reconstruct_init_table_reconstructs_identical_configs_once
+    # above, this test's job is only to prove the real CLI path is wired to
+    # the memoizing wrapper at all.)
+    assert len(calls) == 2
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["paired_seeds"] == [6, 9]
+    assert {entry["seed"] for entry in payload["results"]} == {6, 9}
 
 
 # --------------------------------------------------------------- fig_e15d_* charts
