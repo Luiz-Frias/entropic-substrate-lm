@@ -403,7 +403,9 @@ def test_read_eval_series_refuses_an_out_of_range_calibration_field(
 def test_read_eval_series_accepts_the_unbounded_calibration_fields_above_one(
     tmp_path: Path, key: str, value: float
 ) -> None:
-    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: value}))
+    # Full-group fixture (the partial-group refusal below makes a single-key
+    # record inadmissible by design), varying only the key under test.
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **_calibration_group(**{key: value})))
     series = read_eval_series(path)
     assert getattr(series[0], key) == pytest.approx(value)
 
@@ -538,3 +540,58 @@ def test_cli_final_eval_prints_only_the_number(tmp_path: Path, capsys) -> None:
 def test_cli_final_eval_refuses_a_missing_file(tmp_path: Path, capsys) -> None:
     assert main(["final-eval", str(tmp_path / "absent.jsonl"), "--metric", "nats_per_byte"]) == 2
     assert "no such file" in capsys.readouterr().err
+
+
+def _calibration_group(**overrides: Any) -> dict[str, Any]:
+    group: dict[str, Any] = {
+        "field_nats_per_byte": 0.42,
+        "field_brier": 0.2,
+        "field_ece": 0.05,
+        "field_entropy": 0.6,
+        "field_top1": 0.75,
+    }
+    group.update(overrides)
+    return group
+
+
+@pytest.mark.parametrize(
+    "partial",
+    [
+        {"field_ece": 0.05},
+        {k: v for k, v in _calibration_group().items() if k != "field_top1"},
+    ],
+    ids=["only-one", "all-but-one"],
+)
+def test_read_eval_series_refuses_a_partial_calibration_group(
+    tmp_path: Path, partial: dict[str, Any]
+) -> None:
+    """The five calibration metrics travel as ONE group — train.py emits all
+    or none — so a record carrying only some siblings is telemetry
+    corruption, not an optional channel (CR PR #79). Per-field corruption
+    (non-finite/bool/out-of-range) still raises its own specific error
+    first; this refusal fires on otherwise-VALID partial records, the case
+    the independent per-field checks cannot see."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **partial))
+    with pytest.raises(TelemetryGap, match="PARTIAL field-calibration"):
+        read_eval_series(path)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("field_ece", 0.0),
+        ("field_ece", 1.0),
+        ("field_top1", 0.0),
+        ("field_top1", 1.0),
+    ],
+)
+def test_bounded_calibration_fields_accept_their_inclusive_boundaries(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    """The rejection cases use -0.1/1.1 and the acceptance cases 0.05/0.75 —
+    neither proves the documented [0, 1] bounds are INCLUSIVE (CR PR #79).
+    A perfectly calibrated field (ECE 0.0) or an always-right one (top-1
+    1.0) must read back, not refuse."""
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **_calibration_group(**{key: value})))
+    series = read_eval_series(path)
+    assert getattr(series[0], key) == pytest.approx(value)

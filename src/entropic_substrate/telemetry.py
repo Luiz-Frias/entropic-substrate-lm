@@ -346,6 +346,28 @@ def read_eval_series(path: str | Path) -> list[EvalRecord]:
         field_ece = _finite_field_or_none(path, record, "field_ece", minimum=0.0, maximum=1.0)
         field_entropy = _finite_field_or_none(path, record, "field_entropy", minimum=0.0)
         field_top1 = _finite_field_or_none(path, record, "field_top1", minimum=0.0, maximum=1.0)
+        calibration_group = {
+            "field_nats_per_byte": field_nats_per_byte,
+            "field_brier": field_brier,
+            "field_ece": field_ece,
+            "field_entropy": field_entropy,
+            "field_top1": field_top1,
+        }
+        present = sorted(k for k, v in calibration_group.items() if v is not None)
+        if present and len(present) < len(calibration_group):
+            # All five travel as ONE group (train.py's eval record emits all
+            # or none) — validating each independently would let a record
+            # with a lost sibling read as admissible (CR PR #79). Runs after
+            # the per-field checks above so corruption keeps its specific
+            # error; this fires only on otherwise-valid partial records.
+            missing = sorted(set(calibration_group) - set(present))
+            msg = (
+                f"{path}: step {step} carries a PARTIAL field-calibration group "
+                f"({present} without {missing}) — the five calibration metrics "
+                "are emitted together or not at all, so a partial group is "
+                "telemetry corruption, not an optional channel"
+            )
+            raise TelemetryGap(msg)
         records.append(
             EvalRecord(
                 step=step,
