@@ -169,6 +169,17 @@ class ModelConfig:
     # same posture as field_loss_lambda/field_ckpt_path/field_mode.
     field_state: FieldState = "sqrt_prob"
 
+    def __post_init__(self) -> None:
+        if self.gram_lambda != 0.0 and self.tokenizer != "byte":
+            msg = (
+                "gram_lambda != 0.0 requires tokenizer='byte': "
+                "normalized_gram allocates an (n_symbols, n_symbols) fp32 matrix — "
+                "trivial at the 256-byte vocab (256² × 4 B ≈ 262 KB × 2) but "
+                f"O(V²) at tokenizer={self.tokenizer!r}; at gpt2 (V=50257) the "
+                "reference + live matrices cost ≈20.2 GB before autograd storage"
+            )
+            raise ValueError(msg)
+
 
 @dataclass(slots=True)
 class DataConfig:

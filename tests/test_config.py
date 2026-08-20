@@ -534,3 +534,15 @@ def test_e1_5_arms_extend_e1_fisher_only_on_their_axis(exp: str) -> None:
                 assert cfg_val != base_val, f"{exp}: axis field {f.name!r} did not change"
             else:
                 assert cfg_val == base_val, f"{exp}: unexpected change on {section_name}.{f.name}"
+
+
+def test_model_config_rejects_gram_lambda_with_non_byte_tokenizer() -> None:
+    """Guard (FOR-915): gram_lambda != 0 with a non-byte tokenizer allocates
+    O(V²) fp32 Gram memory — ≈20.2 GB at gpt2's V=50257."""
+    with pytest.raises(ValueError, match="gram_lambda"):
+        ModelConfig(gram_lambda=0.5, tokenizer="gpt2")
+
+
+def test_gram_lambda_with_byte_tokenizer_is_allowed() -> None:
+    cfg = ModelConfig(gram_lambda=0.5, tokenizer="byte")
+    assert cfg.gram_lambda == 0.5
