@@ -248,9 +248,11 @@ still reports them) — surfaced through `telemetry.py`'s `EvalRecord`/
 `read_eval_series` and forwarded by `sinks.py`; the behavioral anti-leakage
 proofs (prefix-identical/suffix-divergent sequences share `z_<=t` and
 diverge after; a forward hook proves targets never alter the field
-encoder's own output) and the geometry-correspondence proofs (arccos(z·z)
-reproduces the Bhattacharyya coefficient exactly under the semi-orthogonal
-lift, θ and Jensen–Shannon move together along a mixture path, and a
+encoder's own output) and the geometry-correspondence proofs (`z_t·z_s`
+reproduces the Bhattacharyya coefficient to fp32 tolerance —
+atol=rtol=1e-4 at d_model=300, not exactly — under the semi-orthogonal
+lift, so θ = arccos(z_t·z_s) carries the Hellinger correspondence; θ and
+Jensen–Shannon move together along a mixture path, and a
 context-sensitivity probe against the static-table zero control); and three
 matched-total-parameter configs
 (`configs/e1-5c-{field,hidden,prob}-matched-total.yaml`, this section's

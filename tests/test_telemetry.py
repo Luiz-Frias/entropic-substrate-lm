@@ -384,6 +384,30 @@ def test_read_eval_series_refuses_an_out_of_range_calibration_field(
         read_eval_series(path)
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        # Positive control (CodeRabbit finding, P8 review round) for the
+        # THREE calibration keys that carry no documented upper bound —
+        # only ECE and top-1 do (the out-of-range test above already pins
+        # both of those). A value legitimately above 1.0 must still be
+        # accepted for these: Brier uses the sum-over-classes convention
+        # (max 2.0 for a one-hot target against a full simplex), entropy
+        # over 256 byte classes reaches ln(256) == 5.5452, and nats/byte
+        # has no finite ceiling at all.
+        ("field_brier", 1.5),
+        ("field_entropy", 5.5451774444795625),
+        ("field_nats_per_byte", 7.5),
+    ],
+)
+def test_read_eval_series_accepts_the_unbounded_calibration_fields_above_one(
+    tmp_path: Path, key: str, value: float
+) -> None:
+    path = _write(tmp_path / "e15c.jsonl", _eval(step=1, **{key: value}))
+    series = read_eval_series(path)
+    assert getattr(series[0], key) == pytest.approx(value)
+
+
 # ------------------------------------------------------------ kappa spread
 def test_kappa_readout_spreads_delegate_to_the_shared_helper(tmp_path: Path) -> None:
     """Pins the delegation so ``KappaReadout`` and the shared helper cannot

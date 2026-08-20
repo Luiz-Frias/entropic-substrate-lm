@@ -652,12 +652,27 @@ def test_geometry_correspondence_hellinger_identity_under_the_semiorthogonal_lif
     p_t, p_s = probs[0, 0], probs[0, 3]
     z_t, z_s = z[0, 0], z[0, 3]
 
+    # H^2(p, q) = 1 - BC(p, q) (docstring above) — bhattacharyya below IS
+    # BC(p_t, p_s); no separate hellinger_sq local is kept, since
+    # `1.0 - (1.0 - bhattacharyya)` collapses back to `bhattacharyya`
+    # exactly and computing it just to re-derive that identity was the
+    # redundant second assertion removed below (CodeRabbit finding, P8
+    # review round).
     bhattacharyya = torch.sum(torch.sqrt(p_t * p_s))
-    hellinger_sq = 1.0 - bhattacharyya
     cos_theta = torch.dot(z_t, z_s)
 
     torch.testing.assert_close(cos_theta, bhattacharyya, atol=1e-4, rtol=1e-4)
-    torch.testing.assert_close(1.0 - hellinger_sq, cos_theta, atol=1e-4, rtol=1e-4)
+    # A second `assert_close(1.0 - hellinger_sq, cos_theta, ...)` previously
+    # sat here — algebraically identical to the assertion above, so it
+    # could never fail independently (house rule 5: a test that cannot
+    # fail is not evidence). A genuine theta-level check
+    # (`arccos(cos_theta)` vs `arccos(bhattacharyya)`) is deferred rather
+    # than added here UNMEASURED: this test has no `torch.manual_seed`, so
+    # `cos_theta` varies run to run, and arccos amplifies a cos-space
+    # residual by `1/sqrt(1 - cos^2)` as `cos_theta -> 1` — the same
+    # fp32-near-1 trap 85ee3fd fixed in the context-sensitivity test.
+    # Committing an arccos tolerance here without measuring this fixture's
+    # actual bhattacharyya value first would risk exactly that flakiness.
 
 
 def _kl_divergence(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:

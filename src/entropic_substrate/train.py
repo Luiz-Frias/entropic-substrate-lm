@@ -360,9 +360,25 @@ class Trainer:
             raise RuntimeError(msg)
         with torch.autocast(device_type=self.device.type, enabled=False):
             logits = field_encoder.field_logits(x)
-            field_loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), y.reshape(-1))
+            field_loss = self._field_ce_from_logits(logits, y)
             weighted = self.cfg.model.field_loss_lambda * field_loss
         return field_loss, weighted
+
+    def _field_ce_from_logits(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Field cross-entropy from already-computed FP32 field logits.
+
+        Extracted (CodeRabbit finding, P8 review round) so the
+        ``autocast(enabled=False)`` + ``F.cross_entropy`` island is defined
+        once rather than duplicated verbatim between :meth:`_field_loss_terms`
+        (train seam) and :meth:`evaluate` (eval-time calibration diagnostic,
+        P8/FOR-925) — both need the identical FP32 field CE, one weighted by
+        ``field_loss_lambda`` for the backward pass, one plain for
+        telemetry. Nesting this inside a caller's own already-active
+        ``autocast(enabled=False)`` block (as :meth:`_field_loss_terms`
+        does) is a harmless no-op — the context managers compose.
+        """
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            return F.cross_entropy(logits.reshape(-1, logits.shape[-1]), y.reshape(-1))
 
     # --------------------------------------------------------------- steps
     def train_step(self) -> dict[str, float]:
@@ -479,10 +495,10 @@ class Trainer:
                             "(state_source != 'field')"
                         )
                         raise RuntimeError(msg)
-                    with torch.autocast(device_type=self.device.type, enabled=False):
-                        field_loss = F.cross_entropy(
-                            field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)
-                        )
+                    # Shared with `_field_loss_terms` — see
+                    # `_field_ce_from_logits`'s own docstring for why this
+                    # was previously duplicated inline here.
+                    field_loss = self._field_ce_from_logits(field_logits, y)
                     field_losses.append(float(field_loss.detach()))
             mean_loss = float(np.mean(losses))
             npb = mean_loss / self.meta.bytes_per_token
@@ -581,12 +597,17 @@ class Trainer:
             record["gram_penalty"] = round(result.gram_penalty, 6)
         if result.field_ce is not None:
             record["field_ce"] = round(result.field_ce, 6)
+        field_nats_per_byte = result.field_nats_per_byte
+        field_brier = result.field_brier
+        field_ece = result.field_ece
+        field_entropy = result.field_entropy
+        field_top1 = result.field_top1
         field_calib_values = (
-            result.field_nats_per_byte,
-            result.field_brier,
-            result.field_ece,
-            result.field_entropy,
-            result.field_top1,
+            field_nats_per_byte,
+            field_brier,
+            field_ece,
+            field_entropy,
+            field_top1,
         )
         if any(v is not None for v in field_calib_values):
             # P8 (FOR-925): the five calibration-diagnostic keys are always
@@ -600,18 +621,31 @@ class Trainer:
             # another left None (evaluate() never does this — they come from
             # one dict) must fail loud here, not silently write a partial —
             # or, previously, an entirely empty — record.
-            if any(v is None for v in field_calib_values):
+            #
+            # Checked as five explicit `is None` arms (not a loop/`any()`
+            # over the tuple above) so basedpyright narrows each LOCAL to
+            # `float` past this point — the tuple-membership form cannot
+            # narrow, which is why the round() calls below previously each
+            # needed a `# type: ignore[arg-type]` (CodeRabbit finding, P8
+            # review round).
+            if (
+                field_nats_per_byte is None
+                or field_brier is None
+                or field_ece is None
+                or field_entropy is None
+                or field_top1 is None
+            ):
                 msg = (
                     "EvalResult carries some but not all of field_nats_per_byte/"
                     "field_brier/field_ece/field_entropy/field_top1 — the five "
                     "calibration keys must be set together"
                 )
                 raise RuntimeError(msg)
-            record["field_nats_per_byte"] = round(result.field_nats_per_byte, 6)  # type: ignore[arg-type]
-            record["field_brier"] = round(result.field_brier, 6)  # type: ignore[arg-type]
-            record["field_ece"] = round(result.field_ece, 6)  # type: ignore[arg-type]
-            record["field_entropy"] = round(result.field_entropy, 6)  # type: ignore[arg-type]
-            record["field_top1"] = round(result.field_top1, 6)  # type: ignore[arg-type]
+            record["field_nats_per_byte"] = round(field_nats_per_byte, 6)
+            record["field_brier"] = round(field_brier, 6)
+            record["field_ece"] = round(field_ece, 6)
+            record["field_entropy"] = round(field_entropy, 6)
+            record["field_top1"] = round(field_top1, 6)
         return record
 
     def fit(self, max_steps: int | None = None, verbose: bool = True) -> list[dict[str, Any]]:

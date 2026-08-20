@@ -642,8 +642,11 @@ def test_field_nats_per_byte_equals_field_ce_for_the_byte_only_estimator(tmp_pat
     `bytes_per_token = 1.0` byte-tokenizer branch). field_nats_per_byte
     (this phase's eval-time diagnostic accumulator) and field_ce (P6's
     train-loss-seam readout, active here since field_loss_lambda != 0) must
-    therefore agree numerically even though they come from two independent
-    passes through field_logits."""
+    therefore agree numerically: both consume the SAME per-batch
+    field_logits (evaluate() computes it once and shares it, 85ee3fd — they
+    are NOT independent passes), so this pins the bytes_per_token == 1.0
+    scaling and the accumulator's own streaming CE reduction against the
+    plain cross-entropy field_ce reports."""
     trainer = Trainer(_calib_cfg(tmp_path, field_loss_lambda=1.0))
     assert trainer.meta.bytes_per_token == pytest.approx(1.0)
     result = trainer.evaluate()
