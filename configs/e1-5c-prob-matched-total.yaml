@@ -3,10 +3,12 @@
 # lane's rationale. Axis vs e1-5c-prob: d_model (768 -> 756) +
 # fisher_init_path (null; see the field twin's header).
 #
-# Exact total (test_config.py, _total_params): same as the field twin — P
-# shares F's p_phi exactly (no sqrt, same fixed lift, no new params):
-# 144*756^2 + 256*756 + (256*128 + 2*12*128^2) = 82,494,720 + 425,984 =
-# 82,920,704.
+# Exact total (test_config.py, _total_params, cross-checked against a real
+# build_model count): same as the field twin — P shares F's p_phi exactly
+# (no sqrt, same fixed lift, no new params) — 82,940,244.
+# RETRACTION 2026-08-20: this read "82,494,720 + 425,984 = 82,920,704",
+# the norm-blind formula's output; see the field twin's header for the
+# corrected decomposition.
 name: e1-5c-prob-matched-total
 
 model:
