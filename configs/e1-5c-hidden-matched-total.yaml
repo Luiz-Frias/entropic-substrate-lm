@@ -3,9 +3,13 @@
 # lane's rationale. Axis vs e1-5c-hidden: d_model (768 -> 756) +
 # fisher_init_path (null; see the field twin's header).
 #
-# Exact total (test_config.py, _total_params): 144*756^2 + 256*756 +
-# (256*128 + 2*12*128^2) + 128*756 [H's own trainable state_lift] =
-# 82,494,720 + 425,984 + 96,768 = 83,017,472.
+# Exact total (test_config.py, _total_params, cross-checked against a real
+# build_model count): the field twin's 82,940,244 + 128*756 = 96,768 [H's
+# own trainable state_lift] = 83,037,012.
+# RETRACTION 2026-08-20: this read "82,494,720 + 425,984 + 96,768 =
+# 83,017,472" — the norm-blind formula's output, short the 19,540 of
+# LayerNorm gains the real build carries. The state_lift term itself was
+# always correct; see the field twin's header for the full decomposition.
 name: e1-5c-hidden-matched-total
 
 model:

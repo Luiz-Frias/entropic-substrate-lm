@@ -1,6 +1,6 @@
 # E1.5c-field, MATCHED-TOTAL twin (docs/e1_5-instruction.md "Comparison
 # lanes"; FOR-925): e1-5c-field.yaml shrunk in d_model so
-# N_backbone + N_field ~= e1-fisher's 85,131,264 total, answering "is
+# N_backbone + N_field ~= e1-fisher's 85,150,464 total, answering "is
 # predictive-state construction a better use of a FIXED budget?" rather than
 # e1-5c-field's own matched-BACKBONE question ("does the field help an
 # otherwise-identical model?"). Axis vs e1-5c-field: d_model (768 -> 756,
@@ -9,9 +9,16 @@
 # corpus-computed fisher_sqrt init path Trainer.__init__ already supports
 # when fisher_init_path is None).
 #
-# Exact total (test_config.py, _total_params): 144*756^2 + 256*756 +
-# (256*128 + 2*12*128^2) = 82,494,720 + 425,984 = 82,920,704 — ~2.6% UNDER
-# e1-fisher's 85,131,264, not over it: at v1's field size (425,984 params)
+# Exact total (test_config.py, _total_params, cross-checked against a real
+# build_model count): blocks 144*756^2 = 82,301,184 + byte table 256*756 =
+# 193,536 + backbone LayerNorm gains 25*756 = 18,900 + p_phi 426,624
+# = 82,940,244.
+# RETRACTION 2026-08-20: this read "= 82,494,720 + 425,984 = 82,920,704",
+# which was the norm-blind formula's output — short the 18,900 backbone
+# gains and the 640 inside p_phi — and its term labels did not line up with
+# its own numbers (82,494,720 was already blocks + byte table, not
+# 144*756^2). The lane's claim is unchanged by the correction: still ~2.6%
+# UNDER e1-fisher's 85,150,464, not over it. At v1's field size (426,624)
 # d_model granularity (multiples of n_heads=12) cannot land closer without
 # moving mlp_ratio into tensor-core-hostile widths, which would contaminate
 # the GPU-seconds comparison lane (docs/e1_5-instruction.md). Code-ready,
