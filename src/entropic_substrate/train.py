@@ -439,23 +439,51 @@ class Trainer:
                     kappas = [s.kappa for s in out.kappa_stats]
                     gates = [s.gate_fraction for s in out.kappa_stats]
                     entropies = [s.entropy for s in out.kappa_stats]
-                # E1.5c Repair 1: accumulated into its OWN list, never
-                # `losses` above — the registered likelihood metric
-                # (`mean_loss`/`npb` below) must stay pure backbone CE,
-                # test-pinned in test_field_calibration.py.
-                if self._field_loss_enabled:
-                    field_loss, _weighted = self._field_loss_terms(x, y)
-                    field_losses.append(float(field_loss.detach()))
-                if field_encoder is not None and field_calib is not None:
+                # E1.5c Repair 1: `field_loss` is accumulated into its OWN
+                # list, never `losses` above — the registered likelihood
+                # metric (`mean_loss`/`npb` below) must stay pure backbone
+                # CE, test-pinned in test_field_calibration.py.
+                #
+                # `field_logits(x)` is computed at most ONCE per eval batch
+                # here and shared by both consumers below (the CE loss and
+                # the calibration accumulator), instead of each calling
+                # `field_encoder.field_logits(x)` independently.
+                field_logits: torch.Tensor | None = None
+                if field_encoder is not None:
                     # FP32-compute island, mirroring `_field_loss_terms`
                     # EXACTLY: `field_logits`'s own `.float()` is a type
                     # contract, not a compute guarantee (its docstring) — the
                     # caller must supply the actual FP32 island.
                     with torch.autocast(device_type=self.device.type, enabled=False):
                         field_logits = field_encoder.field_logits(x)
-                    field_calib.update(
-                        field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)
-                    )
+                    # Nested (not a second top-level `field_encoder is not
+                    # None` check) so `field_logits` stays narrowed to
+                    # `torch.Tensor` here without an `assert` — bandit
+                    # (B101) flags `assert` as optimise-away-able, and this
+                    # repo avoids it for the same reason
+                    # `_field_loss_terms` raises `RuntimeError` instead of
+                    # asserting (its own docstring).
+                    if field_calib is not None:
+                        field_calib.update(
+                            field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)
+                        )
+                if self._field_loss_enabled:
+                    if field_logits is None:
+                        # Same fail-loud contract as `_field_loss_terms`
+                        # (construction-time validation already refuses
+                        # field_loss_lambda != 0.0 without a field encoder;
+                        # reaching here means that guard was bypassed, e.g.
+                        # a caller mutating `_field_loss_enabled` by hand).
+                        msg = (
+                            "_field_loss_enabled but no field encoder on the model "
+                            "(state_source != 'field')"
+                        )
+                        raise RuntimeError(msg)
+                    with torch.autocast(device_type=self.device.type, enabled=False):
+                        field_loss = F.cross_entropy(
+                            field_logits.reshape(-1, field_logits.shape[-1]), y.reshape(-1)
+                        )
+                    field_losses.append(float(field_loss.detach()))
             mean_loss = float(np.mean(losses))
             npb = mean_loss / self.meta.bytes_per_token
             field_ce: float | None = float(np.mean(field_losses)) if field_losses else None

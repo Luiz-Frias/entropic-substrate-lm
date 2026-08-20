@@ -721,12 +721,34 @@ def test_context_sensitivity_field_gives_nonzero_spread_table_gives_exactly_zero
     field_encoder.eval()
     with torch.no_grad():
         field_states = [field_encoder(ctx)[0, -1] for ctx in contexts]
+    # Direct tensor-equality check FIRST: this is the load-bearing
+    # assertion. An arccos-based spread check alone cannot catch a
+    # context-blind (one-hot-per-byte lookup) encoder, because even a
+    # BIT-IDENTICAL pair of states returns torch.dot(state, state) ==
+    # 1 - 2**-23 (one fp32 ULP below 1.0, from non-associative float32
+    # summation across d_model=300 terms) rather than exactly 1.0, and
+    # arccos amplifies that residual to sqrt(2 * 2**-23) == 4.8828125e-04
+    # rad — ABOVE a naive 1e-4 threshold even for a genuinely
+    # context-blind encoder. Measured directly against a one-hot@lift
+    # regression that made `_encode` byte-lookup-only: this test PASSED
+    # under that regression before this fix (PR #79 review finding).
+    for i in range(len(field_states)):
+        for j in range(i + 1, len(field_states)):
+            assert not torch.allclose(field_states[i], field_states[j], atol=0.0, rtol=0.0), (
+                i,
+                j,
+                "field states must differ across contexts sharing the same trailing byte",
+            )
     field_angles = [
         torch.arccos(torch.clamp(torch.dot(field_states[i], field_states[j]), -1.0, 1.0))
         for i in range(len(field_states))
         for j in range(i + 1, len(field_states))
     ]
-    assert any(float(angle) > 1e-4 for angle in field_angles), field_angles
+    # Secondary spread check, threshold set ~10x above the measured fp32
+    # arccos-near-1 noise floor (4.8828125e-04 rad, see comment above) so
+    # it stays a meaningful spread assertion rather than an instrument
+    # that a bit-identical pair can pass by fp32 accident.
+    assert any(float(angle) > 5e-3 for angle in field_angles), field_angles
 
     table_model = build_model(tiny_model_config(state_source="table", d_model=300))
     table_model.eval()
