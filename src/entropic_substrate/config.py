@@ -246,7 +246,7 @@ class Config:
 # protocol.md: committed before any confirmatory run).
 E15_PREREGISTRATIONS: dict[str, str | None] = {
     "embedding_freeze": "docs/e1-5a-preregistration.md",
-    "gram_lambda": None,  # E1.5b preregistration not yet committed
+    "gram_lambda": "docs/e1-5b-preregistration.md",
     "state_source": None,  # E1.5c preregistration not yet committed
 }
 
