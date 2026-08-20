@@ -69,6 +69,12 @@ smoothing + ratio-loss mechanism replaces fixed granularity. Note its heavier to
 - [BLT — Byte Latent Transformer (Meta, 2024)](https://arxiv.org/abs/2412.09871) and
   [MambaByte (2024)](https://arxiv.org/abs/2401.13660): the tokenizer-free lineage E4 will
   rejoin.
+- [Lourie, Cho, Ullrich & Lotfi — Small-Scale Experiments: Are We There Yet?, 2026](https://arxiv.org/abs/2608.11859):
+  small-scale (≤100M) comparisons are confounded by per-arm hyperparameter sensitivity,
+  which fades with scale; fixed pretraining data makes loss the sufficient readout
+  (perplexity–capability correspondence); extrapolated scaling laws compare irreducible-error
+  noise. The E1.5 preregistrations declare their shared-configuration estimand, the
+  mid-schedule budget readings, and the E1.5c LR-sensitivity diagnostic against this paper.
 
 ## Datasets
 

@@ -33,6 +33,7 @@ from entropic_substrate.config import (
     EXPERIMENTS,
     Config,
     is_execution_gated,
+    required_preregistrations,
     resolve_experiment_config,
 )
 from entropic_substrate.data.build import build_corpus
@@ -280,6 +281,45 @@ def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
     return 0
 
 
+def _e15_prereg_preflight(cfg: Config, *, tiny: bool) -> int:
+    """Refuse an E1.5 arm whose axis has no committed preregistration (FOR-914).
+
+    SANITY ONLY, same posture as :func:`_anchored_arm_preflight`: the check is
+    "a registration is committed", read from ``config.E15_PREREGISTRATIONS``
+    (the runtime half of the gate — the training image carries no ``docs/``,
+    so the file itself is CI's half to pin, tests/test_execution_gate.py).
+    ``--tiny`` runs pass ungated: the capture lane excludes ``-tiny`` runs by
+    construction, so a tiny smoke cannot enter a confirmatory set.
+    """
+    if tiny:
+        return 0
+    axes = required_preregistrations(cfg)
+    unregistered = [axis for axis, path in axes if path is None]
+    if not unregistered:
+        for axis, path in axes:
+            logger.bind(report=True).info(
+                f"[{cfg.name}] axis {axis!r} runs under committed registration {path}"
+            )
+        return 0
+    if os.environ.get(UNGATED_ENV) == "1":
+        logger.warning(
+            f"E1.5 axes {unregistered} have no committed preregistration, but "
+            f"{UNGATED_ENV}=1 is set — launching {cfg.name} on an ungated premise."
+        )
+        return 0
+    listing = "\n".join(f"  {axis}" for axis in unregistered)
+    logger.error(
+        "\n=============================== DECISION-NEEDED ==============================="
+        f"\n{cfg.name} activates E1.5 axes with no committed preregistration:\n{listing}"
+        "\nThe rung-lifecycle flywheel (docs/rung-lifecycle-protocol.md) commits each"
+        "\narm's registration BEFORE its first confirmatory run; register the axis in"
+        "\nconfig.E15_PREREGISTRATIONS in the same commit as the preregistration document."
+        f"\nDeliberate ungated run: {UNGATED_ENV}=1"
+        "\n==============================================================================="
+    )
+    return 2
+
+
 def cmd_train(args: argparse.Namespace) -> int:
     """Handle ``train``."""
     if args.exp is None and args.config is None:
@@ -294,6 +334,9 @@ def cmd_train(args: argparse.Namespace) -> int:
         code = _anchored_arm_preflight(cfg, tiny=args.tiny)
         if code != 0:
             return code
+    code = _e15_prereg_preflight(cfg, tiny=args.tiny)
+    if code != 0:
+        return code
 
     results_path = resolve_results_path(cfg, args.results)
     # STARTUP ABORT, RUNTIME CONTINUE: the MLflow startup probe runs BEFORE
