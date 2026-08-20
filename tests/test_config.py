@@ -36,6 +36,13 @@ E1_5_EXACT_TOTAL_PARAMS: dict[str, int] = {
     "e1-5a-both": 85_131_264,
     "e1-5b-gram": 85_131_264,
     "e1-5c-field": 85_557_248,
+    # P7 (FOR-924): H/P share e1-5c-field's p_phi (field_d_model=128,
+    # field_n_layers=2) exactly, so e1-5c-prob (no sqrt, same lift, no new
+    # params) lands on the SAME total as e1-5c-field. e1-5c-hidden adds the
+    # one trainable lift W: Linear(field_d_model=128, d_model=768,
+    # bias=False) = 128*768 = 98_304 params over that shared base.
+    "e1-5c-hidden": 85_655_552,
+    "e1-5c-prob": 85_557_248,
 }
 
 
@@ -115,6 +122,12 @@ def _total_params(cfg: Config) -> int:
         # front of the backbone - its params are additive, not swapped in.
         fd = cfg.model.field_d_model
         total += 256 * fd + cfg.model.field_n_layers * 12 * fd * fd
+        if cfg.model.field_state == "hidden":
+            # P7 (FOR-924): H is the ONLY arm with a trainable lift - a
+            # Linear(field_d_model, d_model, bias=False) replacing the fixed
+            # semi_orthogonal_lift buffer that F/P share (buffers are not
+            # parameters and are already excluded from this formula).
+            total += fd * d
     return total
 
 
@@ -241,6 +254,12 @@ _E1_5_ARM_AXES: dict[str, frozenset[str]] = {
     "e1-5a-both": frozenset({"embedding_freeze"}),
     "e1-5b-gram": frozenset({"gram_lambda"}),
     "e1-5c-field": frozenset({"state_source"}),
+    # P7 (FOR-924): H/P share e1-5c-field's declared state_source axis (a
+    # field_encoder must exist for field_state to mean anything - see
+    # backbone.py's state_source='table' guard) PLUS their own field_state
+    # value away from the shared default "sqrt_prob" (== the F arm).
+    "e1-5c-hidden": frozenset({"state_source", "field_state"}),
+    "e1-5c-prob": frozenset({"state_source", "field_state"}),
 }
 
 

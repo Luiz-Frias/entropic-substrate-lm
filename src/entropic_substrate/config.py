@@ -53,6 +53,15 @@ FieldEstimator = Literal["transformer_v1"]
 # load a checkpoint and freeze — the cleaner test, since it prevents p_phi
 # from becoming a private code negotiated with the backbone.
 FieldMode = Literal["joint", "frozen"]
+# E1.5c Repair 2 (docs/e1_5-instruction.md, PR #73, FOR-924): which
+# CONSTRUCTION of p_phi's output becomes the state z_t handed to the
+# backbone, once state_source="field" — the four-arm table's F/P/H legs
+# (T, the static-table arm, is state_source="table" and carries no
+# field_state at all). "sqrt_prob" = F = sqrt(p_phi).Q, the full thesis
+# (docs default, matches the arm merged pre-P7); "prob" = P = p_phi.Q, no
+# sqrt — the control for the sqrt map itself; "hidden" = H = W.h_phi,t via
+# a trainable lift — contextual preprocessing without probability geometry.
+FieldState = Literal["sqrt_prob", "prob", "hidden"]
 
 EXPERIMENTS: tuple[str, ...] = (
     "e0-byte",
@@ -73,6 +82,10 @@ EXPERIMENTS: tuple[str, ...] = (
     "e1-5a-both",
     "e1-5b-gram",
     "e1-5c-field",
+    # P7 (FOR-924): H and P — the two other legs of the four-arm table, sharing
+    # e1-5c-field's p_phi and differing only in field_state.
+    "e1-5c-hidden",
+    "e1-5c-prob",
 )
 
 
@@ -150,6 +163,11 @@ class ModelConfig:
     # ignored, which is exactly the kind of quiet misconfiguration CLAUDE.md's
     # Errors principle refuses).
     field_ckpt_path: str | None = None
+    # E1.5c Repair 2 (P7, FOR-924): which construction of p_phi's output
+    # becomes z_t — see FieldState above. Only meaningful when
+    # state_source="field"; refused loudly at build otherwise (backbone.py),
+    # same posture as field_loss_lambda/field_ckpt_path/field_mode.
+    field_state: FieldState = "sqrt_prob"
 
 
 @dataclass(slots=True)

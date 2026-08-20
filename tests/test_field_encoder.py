@@ -164,6 +164,21 @@ def test_build_model_permits_field_state_source_with_axis_defaults() -> None:
     assert model.field_encoder is not None
 
 
+@pytest.mark.parametrize("field_state", ["prob", "hidden"])
+def test_build_model_rejects_field_state_axis_with_table_source(field_state: str) -> None:
+    """P7 (FOR-924): field_state selects among F/P/H CONSTRUCTIONS of a
+    field encoder's output — meaningless without one. Same loud-refusal
+    posture as field_loss_lambda/field_ckpt_path/field_mode above, for the
+    same root cause: a non-default field_state under state_source='table'
+    would be silently ignored (no field encoder exists to read it).
+    Parametrized over BOTH non-default legs (P and H) — the guard's
+    condition is a flat `!= "sqrt_prob"` check with no leg-specific branch,
+    so one arm passing does not establish the other does."""
+    cfg = tiny_model_config(state_source="table", field_state=field_state)
+    with pytest.raises(ValueError, match="field_state"):
+        build_model(cfg)
+
+
 # ------------------------------------------------------------------- geometry
 def test_field_encoder_output_matches_backbone_width() -> None:
     cfg = _field_model_config(d_model=32)
@@ -196,13 +211,82 @@ def test_field_encoder_lift_buffer_matches_e1s_fixed_lift_and_has_no_grad() -> N
     assert not encoder.lift.requires_grad
 
 
+# ---------------------------------------------------------- P7: H/P arms
+# docs/e1_5-instruction.md Repair 2 (the four-arm table): F/P/H share ONE
+# p_phi (architecture, size, context, data) and differ only in how p_phi's
+# output becomes the state z_t handed to the backbone. field_state selects
+# among the three constructions this rung registers (F is the pre-existing
+# default "sqrt_prob"; T, the static-table arm, has no field_state at all).
+_ARM_FIELD_STATES: tuple[str, ...] = ("sqrt_prob", "prob", "hidden")
+
+
+def test_field_encoder_rejects_unknown_field_state() -> None:
+    cfg = _field_model_config(field_state="quantum")
+    with pytest.raises(ValueError, match="unknown field_state"):
+        FieldEncoder(cfg)
+
+
+def test_field_encoder_prob_rows_are_generally_not_unit_norm() -> None:
+    """P (field_state='prob'): z = p . Q, no sqrt. Cauchy-Schwarz pins
+    Sum(p_i^2) <= (Sum p_i)^2 = 1 with equality only at a one-hot
+    distribution, so ||z|| = sqrt(Sum p_i^2) < 1 for any non-degenerate
+    p_phi (certainly the near-uniform output of a freshly-initialised
+    estimator) — the documented deliberate contrast with F's unit-norm rows,
+    P being the control for the sqrt map itself."""
+    cfg = _field_model_config(field_state="prob", d_model=300)
+    encoder = FieldEncoder(cfg)
+    idx = torch.randint(0, 256, (2, 10))
+    z = encoder(idx)
+    norms = z.norm(dim=-1)
+    assert torch.all(norms < 0.999), norms
+    assert not torch.allclose(norms, torch.ones_like(norms), atol=1e-2)
+
+
+def test_field_encoder_hidden_state_uses_a_trainable_linear_lift() -> None:
+    """H (field_state='hidden'): z = W . h_phi,t via a trainable
+    Linear(field_d_model, d_model, bias=False) — the ONLY arm whose lift
+    trains. F/P share the fixed semi_orthogonal_lift buffer and carry no
+    such parameter."""
+    cfg = _field_model_config(field_state="hidden", d_model=48)
+    encoder = FieldEncoder(cfg)
+    assert encoder.state_lift is not None
+    assert isinstance(encoder.state_lift, torch.nn.Linear)
+    assert encoder.state_lift.weight.requires_grad
+    assert tuple(encoder.state_lift.weight.shape) == (48, cfg.field_d_model)
+    assert encoder.state_lift.bias is None
+
+
+@pytest.mark.parametrize("field_state", ["sqrt_prob", "prob"])
+def test_field_encoder_non_hidden_states_carry_no_trainable_lift(field_state: str) -> None:
+    cfg = _field_model_config(field_state=field_state)
+    encoder = FieldEncoder(cfg)
+    assert encoder.state_lift is None
+
+
+def test_hidden_state_adds_exactly_the_trainable_lift_over_prob() -> None:
+    """Direct measurement of the "only trainable lift, param delta" claim
+    (FOR-924), independent of test_config.py's whole-model band pin: H's
+    FieldEncoder must carry EXACTLY field_d_model*d_model more parameters
+    than an otherwise-identical P encoder — no more, no less (both share
+    the same fixed 256x256... buffer-excluded p_phi backbone)."""
+    prob_cfg = _field_model_config(field_state="prob", d_model=64)
+    hidden_cfg = _field_model_config(field_state="hidden", d_model=64)
+    prob_params = sum(p.numel() for p in FieldEncoder(prob_cfg).parameters())
+    hidden_params = sum(p.numel() for p in FieldEncoder(hidden_cfg).parameters())
+    assert hidden_params - prob_params == hidden_cfg.field_d_model * hidden_cfg.d_model
+
+
 # ----------------------------------------------------------------- causality
-def test_field_encoder_is_strictly_causal() -> None:
+@pytest.mark.parametrize("field_state", _ARM_FIELD_STATES)
+def test_field_encoder_is_strictly_causal(field_state: str) -> None:
     """Perturbing the LAST position's input byte must not move any earlier
     position's z_t. RED-first proof recorded in the phase report:
     monkeypatching the underlying attention to `is_causal=False` fails this
-    test immediately."""
-    cfg = _field_model_config()
+    test immediately. Parametrized over all three registered field_state
+    arms (FOR-924): F/P/H share the same causal p_phi backbone this proof
+    already covers, but the STATE CONSTRUCTION differs downstream of it, so
+    the guarantee must be re-proven for each rather than assumed to transfer."""
+    cfg = _field_model_config(field_state=field_state)
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (2, 10))
@@ -214,12 +298,14 @@ def test_field_encoder_is_strictly_causal() -> None:
     torch.testing.assert_close(perturbed[:, :-1], base[:, :-1], atol=1e-6, rtol=0)
 
 
-def test_field_encoder_next_byte_alignment() -> None:
+@pytest.mark.parametrize("field_state", _ARM_FIELD_STATES)
+def test_field_encoder_next_byte_alignment(field_state: str) -> None:
     """x_t affects z_t (positive control — rules out a trivially-causal
     constant encoder); x_{t+1} (a future byte) does not affect z_t (the
     causality contract restated at a single position, independent of the
-    whole-sequence proof above)."""
-    cfg = _field_model_config(field_n_layers=1)
+    whole-sequence proof above). Parametrized over all three arms — see
+    test_field_encoder_is_strictly_causal."""
+    cfg = _field_model_config(field_state=field_state, field_n_layers=1)
     encoder = FieldEncoder(cfg)
     encoder.eval()
     idx = torch.randint(0, 256, (1, 6))
@@ -269,10 +355,11 @@ def test_backbone_logits_are_unaffected_by_the_targets_argument(tmp_path: Path) 
 
 
 # -------------------------------------------------------------- differentiability
+@pytest.mark.parametrize("field_state", _ARM_FIELD_STATES)
 def test_field_encoder_gradients_reach_its_own_parameters_through_backbone_ce(
-    tmp_path: Path,
+    tmp_path: Path, field_state: str
 ) -> None:
-    trainer = Trainer(_field_config(tmp_path))
+    trainer = Trainer(_field_config(tmp_path, field_state=field_state))
     encoder = trainer.raw_model.field_encoder
     assert encoder is not None
     x, y = trainer.train_sampler.batch()
@@ -287,10 +374,18 @@ def test_field_encoder_gradients_reach_its_own_parameters_through_backbone_ce(
     assert any(torch.any(g != 0) for g in grads if g is not None)
     # lift is a buffer (requires_grad=False), never touched by backward.
     assert encoder.lift.grad is None
+    if field_state == "hidden":
+        # H's own trainable lift must be among the params gradient reached —
+        # this is what "the only trainable lift" (FOR-924) actually promises.
+        assert encoder.state_lift is not None
+        assert encoder.state_lift.weight.grad is not None
+        assert torch.isfinite(encoder.state_lift.weight.grad).all()
+        assert torch.any(encoder.state_lift.weight.grad != 0)
 
 
-def test_field_encoder_finite_under_bf16_autocast() -> None:
-    cfg = _field_model_config(field_n_layers=1)
+@pytest.mark.parametrize("field_state", _ARM_FIELD_STATES)
+def test_field_encoder_finite_under_bf16_autocast(field_state: str) -> None:
+    cfg = _field_model_config(field_state=field_state, field_n_layers=1)
     encoder = FieldEncoder(cfg)
     idx = torch.randint(0, 256, (2, 8))
     with torch.autocast("cpu", dtype=torch.bfloat16):
@@ -361,6 +456,20 @@ def test_run_start_reports_field_encoder_params_when_state_source_is_field(
     start = next(r for r in records if r["event"] == "run_start")
     assert start["field_encoder_params"] == expected
     assert json.dumps(start)  # round-trips
+
+
+@pytest.mark.parametrize("field_state", _ARM_FIELD_STATES)
+def test_run_start_records_field_state(tmp_path: Path, field_state: str) -> None:
+    """FOR-924: "run_start records field_state" — satisfied structurally by
+    ``run_start_record["config"] = self.cfg.to_dict()`` (train.py) once
+    ``field_state`` is a real ``ModelConfig`` field (``dataclasses.asdict``
+    walks it automatically); this pins that channel rather than trusting it
+    stays wired as the record's shape evolves."""
+    trainer = Trainer(_field_config(tmp_path, field_state=field_state))
+    trainer.fit(verbose=False)
+    records = list(trainer.iter_history())
+    start = next(r for r in records if r["event"] == "run_start")
+    assert start["config"]["model"]["field_state"] == field_state
 
 
 def test_run_start_omits_field_encoder_params_when_state_source_is_table(

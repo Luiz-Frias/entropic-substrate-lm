@@ -493,7 +493,15 @@ def test_tiny_overlay_preserves_e1_5_arm_axes() -> None:
 
 @pytest.mark.parametrize(
     "exp",
-    ["e1-5a-input", "e1-5a-output", "e1-5a-both", "e1-5b-gram", "e1-5c-field"],
+    [
+        "e1-5a-input",
+        "e1-5a-output",
+        "e1-5a-both",
+        "e1-5b-gram",
+        "e1-5c-field",
+        "e1-5c-hidden",
+        "e1-5c-prob",
+    ],
 )
 def test_five_step_tiny_train_decreases_loss_for_e1_5_arms(tmp_path: Path, exp: str) -> None:
     """Mirrors test_five_step_tiny_train_decreases_loss but drives the REAL
