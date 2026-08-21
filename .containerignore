@@ -4,6 +4,11 @@
 .env
 data/
 models/
+# E1.5c frozen arm: p_phi's pretrained weights ride INSIDE the image (pods
+# are credential-free, so they cannot pull from R2), which also puts the
+# field weights under the launch record's image digest. 2.5MB. Paired with
+# the Containerfile COPY by tests/test_deploy_config.py.
+!models/field-pphi-v1.pt
 results/
 references/
 .venv
