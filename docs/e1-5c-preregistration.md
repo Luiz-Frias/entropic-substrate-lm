@@ -225,3 +225,52 @@ collapsing them into one label misquotes this registration.
 Pilots: pretrain ≈ $0 (local) or ≤$1 (pod); λ grid 4 × ~$0.3 ≈ $1.2; LR
 diagnostic 6 × ~$0.3 ≈ $1.8. Frozen wave: 12 pods ≈ $21. Joint secondary:
 +12 ≈ $21 when budgeted. WSD diagnostic: ≈ $7 when machinery lands.
+
+## Amendment 1 — matched-total width correction (2026-08-21, post-run, pre-analysis)
+
+The matched-total configs as registered carried `d_model: 756` with
+`n_heads: 12`, giving **head_dim 63 — odd**. RoPE rotates coordinate PAIRS,
+so `models/blocks.py`'s `rotary_embeddings` refuses an odd head_dim: the
+arm raised `ValueError: head_dim must be even for RoPE, got 63` on its
+first forward pass and **could never have trained**, on any hardware. This
+was not a tuning choice; it was an invalid configuration, and the first
+attempt at this lane produced no data at all (four pods, zero metrics,
+terminated — reported as a registered deviation on FOR-907).
+
+The lane therefore ran at **`d_model: 744`** (head_dim 62, even), the
+nearest valid width below 768 that preserves `n_heads: 12`. Heads were held
+fixed deliberately: this lane's declared axis is `d_model`, so changing
+`n_heads` instead (756/14 and 756/6 are also even) would have introduced a
+SECOND axis into a one-variable comparison.
+
+**Consequence, stated rather than buried.** Total parameters move
+**82,940,244 → 80,344,872**, i.e. from 2.6% under `e1-fisher`'s 85,150,464
+to **5.6% under**. With `n_heads: 12` there is no width between 744 and 768,
+so "matched-total" is approximate either way. **The bias runs AGAINST the
+field hypothesis**: the field arm now carries *less* total budget than the
+baseline it must match, so a favourable result is conservative and an
+unfavourable one is partly attributable to the shortfall. The analysis must
+report the actual total, never the registered one.
+
+**Timing and information access.** Recorded after the matched-total runs
+completed but BEFORE any analysis session opened, and before any
+matched-total outcome had been read by anyone. The width was chosen from
+arithmetic constraints alone (divisibility and the 80–100M band) at a
+moment when the lane had produced **zero** data — the prior attempt having
+failed before its first metric. No endpoint, estimator, decision rule,
+seed set or clause precedence is altered by this amendment.
+
+**Not amended, and still open:** whether to prefer an exact-total variant at
+a different head count (756 with `n_heads` 14 or 6 preserves 82,940,244
+exactly, at the cost of a second axis) remains an operator preference. The
+conservative setting stands until ruled otherwise.
+
+**Related measurement, replacing a retracted claim.** The 744 arm ran at
+470–480 steps/min against ~513 for the 768-wide F/H arms — a **~6%**
+penalty for head_dim 62 vs 64, measured. An earlier note on FOR-907
+asserting "3–5× slower, tensor-core artifact" was retracted: the wall-clock
+gap it described belonged to the hung runs, which were not slow but dead.
+Achieved throughput is ~63 TFLOP/s ≈ 20% MFU on the A100, the model being
+occupancy-starved at the registered batch 16 × seq 1024 — a deliberate cost
+of pairing with E1's captured controls, and a further reason GPU-seconds
+stay "reported, never merged into the primary".
