@@ -59,10 +59,12 @@ E1_5_EXACT_TOTAL_PARAMS: dict[str, int] = {
     # preregistration commit (docs/e1-5c-preregistration.md — execution was
     # prereg-time scope). Exact totals measured against real builds when the
     # configs landed (P8, FOR-925); see each yaml's own arithmetic comment.
-    "e1-5c-field-matched-total": 82_940_244,
-    "e1-5c-hidden-matched-total": 83_037_012,
+    # CORRECTED 2026-08-21 with the width fix below: these were 82,940,244 /
+    # 83,037,012 / 82,940,244 at the retired d_model=756.
+    "e1-5c-field-matched-total": 80_344_872,
+    "e1-5c-hidden-matched-total": 80_440_104,
     # P shares F's p_phi exactly (no sqrt, same fixed lift, no new params).
-    "e1-5c-prob-matched-total": 82_940_244,
+    "e1-5c-prob-matched-total": 80_344_872,
 }
 
 
@@ -517,3 +519,30 @@ def test_model_config_rejects_gram_lambda_with_non_byte_tokenizer() -> None:
 def test_gram_lambda_with_byte_tokenizer_is_allowed() -> None:
     cfg = ModelConfig(gram_lambda=0.5, tokenizer="byte")
     assert cfg.gram_lambda == 0.5
+
+
+@pytest.mark.parametrize("exp", EXPERIMENTS)
+def test_registered_arms_have_an_even_head_dim_at_full_width(exp: str) -> None:
+    """RoPE needs an EVEN head_dim (`blocks.py::rotary_embeddings`), and the
+    registered width is the one that runs on pods.
+
+    MEASURED 2026-08-21, the reason this test exists: four
+    `e1-5c-field-matched-total` pods burned ~4 GPU-hours each and produced
+    nothing. `d_model=756 / n_heads=12 = 63` — odd — so the FIRST forward
+    pass raised `ValueError: head_dim must be even for RoPE, got 63`. The
+    config could never have trained.
+
+    Nothing in the suite caught it because every other check either builds
+    at `--tiny` width (`d_model: 64, n_heads: 4` -> head_dim 16, even) or
+    counts parameters, which the head split does not affect. Construction
+    succeeds too — the failure lives in the forward pass. So this pins the
+    ARITHMETIC at the registered width, which is cheap, exhaustive, and
+    needs no model build."""
+    cfg = resolve_experiment_config(exp)
+    d_model, n_heads = cfg.model.d_model, cfg.model.n_heads
+    assert d_model % n_heads == 0, f"{exp}: d_model {d_model} not divisible by n_heads {n_heads}"
+    head_dim = d_model // n_heads
+    assert head_dim % 2 == 0, (
+        f"{exp}: head_dim {head_dim} (d_model {d_model} / n_heads {n_heads}) is ODD — "
+        "RoPE requires an even head_dim, so this arm cannot run at its registered width"
+    )

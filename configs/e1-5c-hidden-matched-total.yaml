@@ -1,3 +1,19 @@
+# CORRECTED 2026-08-21 — d_model was 756, which is INVALID: 756 / n_heads 12
+# = head_dim 63, and RoPE rotates coordinate PAIRS, so an odd head_dim is
+# refused (models/blocks.py rotary_embeddings). MEASURED: four pods carrying
+# the 756 config raised `ValueError: head_dim must be even for RoPE, got 63`
+# on their first forward pass, and — because the pod command joins with
+# `; sleep infinity` — kept billing for ~4 GPU-hours each while their MLflow
+# runs sat at RUNNING with zero metrics. Config parse now refuses an odd
+# head_dim outright (config.py __post_init__); this file moves to 744
+# (head_dim 62, even), the nearest valid width BELOW 768 that keeps
+# n_heads=12 — the lane's declared axis is d_model, so changing n_heads
+# instead (756/14 or 756/6 are also even) would introduce a SECOND axis.
+# COST OF THE FIX, stated plainly: the total moves 82,940,244 -> 80,344,872,
+# i.e. from 2.6% under e1-fisher's 85,150,464 to 5.6% under. With n_heads=12
+# there is no width between 744 and 768, so "matched-total" is approximate
+# either way; DECISION-NEEDED if the operator prefers exact-total at the
+# cost of the head count.
 # E1.5c-hidden, MATCHED-TOTAL twin (docs/e1_5-instruction.md "Comparison
 # lanes"; FOR-925) — see e1-5c-field-matched-total.yaml's header for the
 # lane's rationale. Axis vs e1-5c-hidden: d_model (768 -> 756) +
@@ -13,7 +29,7 @@
 name: e1-5c-hidden-matched-total
 
 model:
-  d_model: 756
+  d_model: 744
   n_layers: 12
   n_heads: 12
   mlp_ratio: 4.0
