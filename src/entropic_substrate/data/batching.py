@@ -143,9 +143,18 @@ class SequenceSampler:
         ys = np.stack([tokens[s + 1 : s + 1 + self.seq_len] for s in starts])
         x = torch.from_numpy(xs.astype(np.int64))
         y = torch.from_numpy(ys.astype(np.int64))
-        if self.device.type != "cpu":
+        if self.device.type == "cuda":
+            # pin_memory is a CUDA page-locked host-buffer optimization and is
+            # only meaningful on that path. MEASURED 2026-08-20 (torch 2.13,
+            # mps): the previous `!= "cpu"` guard sent mps through
+            # pin_memory().to("mps"), which raises "Attempted to set the
+            # storage of a tensor on device cpu to a storage on different
+            # device mps:0" — first batch, every time.
             x = x.pin_memory().to(self.device, non_blocking=True)
             y = y.pin_memory().to(self.device, non_blocking=True)
+        elif self.device.type != "cpu":
+            x = x.to(self.device)
+            y = y.to(self.device)
         return x, y
 
     def data_order_digest(self) -> tuple[str, int] | None:
