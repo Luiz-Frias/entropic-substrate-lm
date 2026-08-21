@@ -274,3 +274,51 @@ Achieved throughput is ~63 TFLOP/s ≈ 20% MFU on the A100, the model being
 occupancy-starved at the registered batch 16 × seq 1024 — a deliberate cost
 of pairing with E1's captured controls, and a further reason GPU-seconds
 stay "reported, never merged into the primary".
+
+## Amendment 2 — extended λ pilot (2026-08-21, declared BEFORE the runs)
+
+**Outcome-aware by construction, and exploratory by declaration.** The
+registered pilot (§Pilots item 2) has already run and its mechanical rule
+has already selected **λ\* = 0.1** (`docs/verdicts/e1-5c-lambda-pilot.md`).
+This extension is motivated by what that readout showed, so it cannot be
+treated as a fresh registered selection. It is declared here, before any
+extended run, with an explicit statement of what it may and may not do.
+
+**What motivated it (measured, from the filed readout).** Field CE and
+backbone nats/byte move in direct opposition across the grid: field CE
+2.2137002 → 1.718257 as λ goes 0.1 → 1.0, while backbone nats/byte goes
+0.9980398 → 1.013958. Because the feasibility filter is anchored to the
+BEST backbone arm, and the best backbone arm is always the one carrying the
+LEAST calibration pressure, the filter tightens around minimum calibration
+by construction — the selected λ\* = 0.1 is also the grid's least
+favourable arm on field CE, Brier and ECE. Separately, the registered
+joint-arm calibration gate requires terminal field CE ≤ reference + 0.05 =
+**1.308881**, and at 3000 steps every swept λ sits far above it (best:
+1.718257). Whether that gate is reachable at all is currently unknown.
+
+**Design.** λ ∈ {0.1, 0.2, 0.3, 0.5, 1.0} (adding 0.2), joint regime, seed
+42, **6000 steps** — double the registered pilot's budget, still ~30% of a
+full run. One pod per λ.
+
+**What this extension MAY do:**
+- characterise the λ-vs-(field CE, backbone loss) trade-off curve, including
+  the knee / Pareto frontier and where the curves cross once normalised;
+- measure whether field CE is converging toward the 1.308881 calibration
+  gate as budget grows, and at which λ;
+- inform an OPERATOR decision about whether §Pilots item 2's selection rule
+  should be amended for the joint lane (e.g. adding the field-CE gate as a
+  filter rather than leaving it to clause 3 after the fact).
+
+**What this extension MAY NOT do:**
+- silently re-select λ\*. The registered rule's output stands at 0.1 unless
+  the operator amends the rule explicitly, in writing, before the joint lane
+  runs. Any different λ used by the joint lane is an amended rule, dated and
+  declared, never an inferred upgrade from this diagnostic.
+- alter any E1.5c endpoint, estimator, decision rule, seed set, clause
+  precedence, or the frozen lane in any way. The frozen wave is complete and
+  untouched by this.
+- support full-budget claims. 6000 steps is 30% of the registered budget;
+  any statement about λ behaviour at 20000 steps is extrapolation and must
+  be labelled as such.
+
+**Cost:** 5 pods × ~18 min ≈ $2.4.
