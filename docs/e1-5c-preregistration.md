@@ -322,3 +322,63 @@ full run. One pod per λ.
   be labelled as such.
 
 **Cost:** 5 pods × ~18 min ≈ $2.4.
+
+## Amendment 3 — full-budget λ bridge + gate-first rule (2026-08-21, declared BEFORE the runs)
+
+**Outcome-aware, declared, operator-authorised.** The operator read
+`docs/verdicts/e1-5c-lambda-tradeoff.md` before choosing this design. It is
+recorded as an amendment, in writing, before any bridge run — the condition
+Amendment 2 set for changing the joint lane's λ. The registered pilot rule's
+output (λ\* = 0.1) is superseded FOR THE JOINT LANE ONLY by the rule below;
+nothing about the frozen lane, its endpoints, or its completed data changes.
+
+**Why a full-budget bridge and not more short pilots.** The 3000- and
+6000-step grids are terminal points of DIFFERENTLY SCALED schedules — the
+trainer scales cosine decay to `max_steps`, so a 6000-step run is fully
+decayed at step 6000 while a 20000-step run is not. They are therefore not
+two samples of one curve, which is precisely why the two extrapolations in
+the diagnostic disagreed (log-linear: all four arms cross; inverse-step:
+only λ=0.5, at ~step 19857). No short-pilot arrangement resolves terminal
+reachability; only a run at the joint lane's own schedule does.
+
+**Design.** λ ∈ {0.3, 0.5, 1.0}, F arm (`e1-5c-field`), `field_mode=joint`,
+seed 42, **20000 steps — the registered joint-lane schedule**. Three pods,
+≈$5.2. λ=0.1 is excluded (largest measured calibration gap, 0.486 at 6k, and
+the diagnostic's own recommendation drops it); λ=0.2 is excluded as
+dominated by λ=0.3 on BOTH objectives in the 6k grid.
+
+**Gate-first selection rule (pre-committed, mechanical).** Applied to
+terminal last-k(=5) readings from the bridge:
+
+1. **Feasibility (calibration first):** λ is feasible iff terminal held-out
+   field CE ≤ **1.308881** (= standalone reference 1.258881 + 0.05, the
+   registered clause-(3) gate, unchanged).
+2. **Objective among feasible λ:** minimum terminal backbone nats/byte.
+3. **Tie-break:** smaller λ (less intervention).
+4. **If the feasible set is EMPTY:** the joint lane DOES NOT RUN. The
+   declared reading is that a jointly-trained `p_φ` cannot remain honest at
+   this estimator size within the registered threshold — a substantive
+   result about the joint regime, not a null, and one that leaves the frozen
+   lane as the primary evidence for the four-arm contract.
+
+This deliberately INVERTS the registered pilot rule's order. That rule
+filtered on backbone quality first, and since the best-backbone arm is
+always the one under least calibration pressure, it structurally selected
+minimum calibration (measured: it chose λ=0.1, the grid's worst arm on field
+CE, Brier and ECE). Calibration is a precondition of the thesis, not a
+tiebreaker, so it goes first.
+
+**The threshold is NOT loosened.** +0.05 stands as registered. If no λ
+passes, that is reported as-is; relaxing a gate because the data missed it
+would void the registration's value. A future rung may register a different
+threshold with its rationale stated ex ante — this one does not.
+
+**Joint-lane status if a λ is selected: EXPLORATORY, no confirmatory claim.**
+The lane is already the registered SECONDARY. Running it carries no CI-based
+verdict and no alpha allocation; the selected λ is the headline reading and
+any companion λ is a sensitivity report. This is what keeps two λ from
+becoming two shots at one hypothesis.
+
+**Bridge limits.** n=1 (seed 42) per λ. No confidence intervals, and seed
+noise could plausibly reorder adjacent arms — the bridge answers *does any λ
+clear the gate at full budget*, not *which λ is best by a margin*.
