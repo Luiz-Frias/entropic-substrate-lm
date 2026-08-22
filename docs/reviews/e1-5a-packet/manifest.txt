@@ -1,0 +1,48 @@
+# E1.5a review packet manifest
+#
+# md5  file
+4065e477dcb742a894e8e7bf1dd04e19  abstract.md
+42a17eb35162dc6e1f6be8c093c879a6  data/A-seed1.jsonl
+3ffa8060676156aed9a3b426dd93437d  data/A-seed2.jsonl
+f97a9dc3d1b0fdd2bef860f21f1aca24  data/A-seed3.jsonl
+4e1617ff94d49f65a7947e214711c44a  data/A-seed4.jsonl
+6cad1d5dcb13d289c50d9c21f122163a  data/B-seed1.jsonl
+755ef70e1f1042ce9b5868ec2685b65f  data/B-seed2.jsonl
+9a880ed10fe6dc9b30dd8f3996c17090  data/B-seed3.jsonl
+21ad741d48a92d1f8bc8ac5debc71b27  data/B-seed4.jsonl
+8b103d3c2045d6db9ced3af9ff0b6911  data/C-seed1.jsonl
+0acd80e67af263ed2ccb74f68ac97287  data/C-seed2.jsonl
+eb91f8d7c93e0f44178d00aae940a8ba  data/C-seed3.jsonl
+17eeaa9f94755360fb9f6cb5bba251f1  data/C-seed4.jsonl
+c912360192edd2fce3cea32e80eef50b  preregistration.md
+5e6161a2a5ec37eb547d4b2b16927880  reader.py
+#
+# Registration commits (UTC):
+# preregistration committed: be85f0c3f5e7 2026-08-20T22:07:44Z
+#
+# Run times, operator-supplied from the tracking server (UTC).
+# These are asserted metadata, not raw record content:
+# A-seed1.jsonl  start=2026-08-21T02:21:58.805000+00:00
+# A-seed1.jsonl  end=2026-08-21T02:59:41.060000+00:00
+# A-seed2.jsonl  start=2026-08-21T01:48:20.686000+00:00
+# A-seed2.jsonl  end=2026-08-21T02:29:02.799000+00:00
+# A-seed3.jsonl  start=2026-08-21T01:48:20.238000+00:00
+# A-seed3.jsonl  end=2026-08-21T02:28:39.486000+00:00
+# A-seed4.jsonl  start=2026-08-21T01:48:33.345000+00:00
+# A-seed4.jsonl  end=2026-08-21T02:29:24.145000+00:00
+# B-seed1.jsonl  start=2026-08-21T02:10:02.812000+00:00
+# B-seed1.jsonl  end=2026-08-21T02:47:37.558000+00:00
+# B-seed2.jsonl  start=2026-08-21T01:48:22.197000+00:00
+# B-seed2.jsonl  end=2026-08-21T02:31:41.242000+00:00
+# B-seed3.jsonl  start=2026-08-21T01:48:29.827000+00:00
+# B-seed3.jsonl  end=2026-08-21T02:26:09.106000+00:00
+# B-seed4.jsonl  start=2026-08-21T01:48:32.586000+00:00
+# B-seed4.jsonl  end=2026-08-21T02:44:31.399000+00:00
+# C-seed1.jsonl  start=2026-08-18T16:26:49.998000+00:00
+# C-seed1.jsonl  end=2026-08-18T17:04:36.909000+00:00
+# C-seed2.jsonl  start=2026-08-18T16:26:41.109000+00:00
+# C-seed2.jsonl  end=2026-08-18T17:05:04.376000+00:00
+# C-seed3.jsonl  start=2026-08-18T16:27:00.088000+00:00
+# C-seed3.jsonl  end=2026-08-18T17:06:11.280000+00:00
+# C-seed4.jsonl  start=2026-08-18T16:27:00.008000+00:00
+# C-seed4.jsonl  end=2026-08-18T17:05:50.393000+00:00

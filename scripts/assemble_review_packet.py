@@ -1,16 +1,31 @@
-"""Assemble the double-blind E1 review packet (docs/peer-review-protocol.md).
+"""Assemble a double-blind review packet for a rung (docs/peer-review-protocol.md).
 
-Operator-side tool. It relabels the arms A/B (A = the registered-favored
-arm), SCRUBS arm-identifying fields from every record of the captured JSONLs
-(filename relabeling alone is not blinding: ``run_start`` carries
-``embedding_init`` and every record carries ``run``), emits a self-contained
-reader with all prose stripped (docstrings/comments carry project vocabulary),
-and writes ``manifest.txt``. The A/B mapping is written OUTSIDE the packet
-(``--sealed-out``) and disclosed only after the review is filed.
+Operator-side tool. It relabels the arms, SCRUBS arm-identifying fields from
+every record of the captured JSONLs (filename relabeling alone is not
+blinding: ``run_start`` carries the arm axis and every record carries
+``run``), emits a self-contained reader with all prose stripped
+(docstrings/comments carry project vocabulary), and writes ``manifest.txt``.
+The arm mapping is written OUTSIDE the packet (``--sealed-out``) and
+disclosed only after the review is filed.
 
-Fail-loud gate: every emitted packet file is scanned for BANNED substrings;
-any hit aborts assembly. A packet that leaks arm identity is worse than no
-packet — the review it produces looks blind and is not.
+Per-rung differences live in a ``RungSpec`` (the ``RUNGS`` registry below) —
+arms, which config keys carry the arm axis, which records fields must be
+dropped, the banned vocabulary, and the packet prose. The engine is shared;
+selecting a rung is ``--rung``.
+
+Fail-loud gates, all of which abort assembly:
+
+1. **Banned-substring scan** over every emitted file. A packet that leaks arm
+   identity is worse than no packet — the review it produces looks blind and
+   is not.
+2. **Completeness** — the captures must yield exactly one file per (arm,
+   seed) named by the spec. A missing or duplicated pair is never silently
+   dropped.
+3. **Parity** — post-scrub, the *blinded* arms' ``run_start`` configs must be
+   identical outside the declared exemptions. This is the gate that catches a
+   NEW arm-identifying field appearing in the schema: E1's arms were
+   parameter-identical, but E1.5a's differ in ``params`` (85.33M untied vs
+   85.13M tied), which alone would unblind the packet.
 """
 
 from __future__ import annotations
@@ -21,20 +36,79 @@ import hashlib
 import json
 import shutil
 import subprocess  # nosec B404 -- ruff-normalize the packet only, fixed argv below
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-# Arm mapping: A is the registered-favored arm by protocol construction —
-# the packet restates the direction as "A better than B"; what stays sealed
-# is WHICH initialization A is.
-ARM_MAP = {"e1-fisher": "A", "e1-random": "B"}
-INIT_MAP = {"fisher_sqrt": "init-A", "random_sphere": "init-B"}
-
 # Substrings that must not survive into any packet file (case-insensitive).
-BANNED = ("entropic", "fisher", "random_sphere", "sqrt", "e1-", "e3", "ladder", "anchor")
+# Shared across rungs; a spec adds its own axis vocabulary via banned_extra.
+BANNED_BASE = ("entropic", "fisher", "random_sphere", "sqrt", "e1-", "e3", "ladder", "anchor")
 
-ABSTRACT = """\
+
+@dataclass(frozen=True)
+class ArmSpec:
+    """One arm of the comparison.
+
+    ``run_name`` is the captured run name, which is also the capture
+    filename's prefix (``<run_name>-<run_id8>-<pod_name>.jsonl``). Matching on
+    that prefix — longest first — is what lets ``e1-5c-field`` and
+    ``e1-5c-field-matched-total`` coexist in one capture directory.
+
+    ``blinded=False`` marks an arm whose ROLE is disclosed in the packet prose
+    (E1.5a's control: the paired gaps are signed against it, so its role
+    cannot be hidden). Its arm-axis values are still scrubbed — disclosure is
+    of role, never of vocabulary.
+    """
+
+    label: str
+    run_name: str
+    blinded: bool = True
+
+
+@dataclass(frozen=True)
+class RungSpec:
+    """Everything that varies between rungs. The engine reads only this."""
+
+    name: str
+    arms: tuple[ArmSpec, ...]
+    seeds: tuple[str, ...]
+    abstract: str
+    preregistration: str
+    sealed_slug: str
+    sealed_mapping_note: str
+    manifest_title: str
+    # config.model key -> replacement token; "{arm}" interpolates the label.
+    # A token WITHOUT "{arm}" is deliberate: the value is shared across arms,
+    # so a per-arm token would manufacture a difference the parity gate then
+    # reports as a leak.
+    value_scrub: Mapping[str, str] = field(default_factory=dict)
+    model_drop: tuple[str, ...] = ()
+    record_drop: tuple[str, ...] = ()
+    banned_extra: tuple[str, ...] = ()
+    # config keys (top level) exempt from the blinded-arm parity assertion.
+    parity_exempt: tuple[str, ...] = ("name",)
+    extension_registration: str | None = None
+
+    @property
+    def banned(self) -> tuple[str, ...]:
+        return BANNED_BASE + self.banned_extra
+
+    def resolve_arm(self, capture_name: str) -> ArmSpec | None:
+        """Longest-prefix match, so a shorter run name cannot shadow a longer."""
+        for arm in sorted(self.arms, key=lambda a: -len(a.run_name)):
+            if capture_name.startswith(arm.run_name + "-"):
+                return arm
+        return None
+
+
+# --------------------------------------------------------------------------
+# E1 — paired two-arm initialization comparison. Filed 2026-08-18/19; its
+# prose is reproduced verbatim so the committed packets regenerate byte-identically.
+# --------------------------------------------------------------------------
+
+_E1_ABSTRACT = """\
 # Abstract
 
 Paired comparison of two embedding initializations (A, B) for a byte-level
@@ -47,7 +121,7 @@ captured per-run JSONL series, a self-contained validated reader, and a
 manifest of file hashes and registration timestamps.
 """
 
-PREREGISTRATION = """\
+_E1_PREREGISTRATION = """\
 # Pre-registration — paired two-arm comparison (arms A, B)
 
 Committed before any confirmatory run; binding. Amendment 1 (epsilon) was
@@ -100,7 +174,7 @@ runs only: a resumed run never attests (absence = not attested, never "same
 order").
 """
 
-EXTENSION_REGISTRATION = """\
+_E1_EXTENSION = """\
 
 ## Extension registration — seeds 6-9 (outcome-aware; committed before any extension run)
 
@@ -124,6 +198,281 @@ digest, same GPU class, same corpus and configs.
   invalidates the pair).
 """
 
+_E1_SEALED_NOTE = """\
+Mapping: **A = e1-fisher, B = e1-random** (A = registered-favored arm by
+protocol construction; the blind hides which initialization A is).
+
+Scrub transform applied to every record: run -> arm-<X>; config.name ->
+arm-<X>; config.model.embedding_init -> init-<X>; config.model.
+fisher_init_path and config.model.anchor_mode dropped. reader.py =
+telemetry.py with all docstrings/comments stripped (ast.unparse), the
+package logging import shimmed, and the operator CLI removed.
+"""
+
+# --------------------------------------------------------------------------
+# E1.5a — frozen-table sufficiency. THREE arms: two blinded freeze variants
+# paired against a disclosed control.
+#
+# What is blindable here is NOT "which arm is the control" — the gaps are
+# signed against it, so its role is structural and disclosed. What is blinded
+# is WHICH PHYSICAL FREEZE MODE each variant is. Arm A is defined by ROLE, as
+# in E1: A := the variant the registration expects to rank >= the other. That
+# is exactly the prior a reviewer would otherwise confirm by expectation, so
+# sealing it is what gives this blind teeth.
+# --------------------------------------------------------------------------
+
+_E15A_ABSTRACT = """\
+# Abstract
+
+Paired sufficiency comparison of two embedding-parameter freezing variants
+(A, B) against a shared trainable control (C), for a byte-level language
+model trained on enwik8 (~85M parameters, 20,000 steps). Four seeds
+(1-4); within a seed all three arms share the seed, the data order, and
+every non-embedding initialization. Each variant freezes a registered subset
+of the embedding parameters at their initialized values; WHICH subset each
+of A and B freezes is sealed. C trains all parameters.
+
+Primary metric: the mean of the final five held-out eval readings of
+nats/byte, lower is better. The registered question is SUFFICIENCY — whether
+freezing costs less than a pre-registered practical-relevance threshold —
+not direction. This packet contains the pre-registration, the captured
+per-run JSONL series, a self-contained validated reader, and a manifest of
+file hashes and registration timestamps.
+"""
+
+_E15A_PREREGISTRATION = """\
+# Pre-registration — paired sufficiency, two variants (A, B) vs control (C)
+
+Committed BEFORE any confirmatory run of this rung; binding. Any analysis
+deviating from it must say so explicitly and is exploratory by definition.
+
+## Question
+
+A prior filed comparison established that this model's embedding
+initialization carries real, confidently-signed predictive structure, with a
+mandatory co-equal rider that the terminal gap was below the practical
+threshold. A subsequent endpoint readout measured 0.840 Pearson retention of
+the initialized relational structure (Gram matrix) in the TRAINED embedding
+table — unconstrained training keeps 84% of the induced structure on its own.
+
+This rung asks the sharpest follow-up: **was the remaining 16% of adaptation
+necessary?** If a frozen table performs on par with a trainable one, the
+initialized geometry carries the durable predictive structure. If freezing
+fails, the initialization is a launch ramp rather than a substrate.
+
+## Arms and seeds
+
+| Arm | Description | Seeds |
+|---|---|---|
+| A | freezes a registered subset of the embedding parameters (sealed) | {1,2,3,4} |
+| B | freezes a different registered subset (sealed) | {1,2,3,4} |
+| C | control: all parameters trainable; PREVIOUSLY CAPTURED, no new runs | {1,2,3,4} |
+
+Arm A is defined by ROLE: it is the variant the registration expects to rank
+at least as high as B on the verdict ordering below (it leaves strictly more
+capacity free to adapt). Which physical freezing subset A is, is sealed.
+
+Seeds {1,2,3,4} are fixed by an ordinal rule (the lowest-numbered seeds of
+the prior stage-1 set). **Outcome-awareness disclosure:** the designer had
+read the per-seed control outcomes, since the prior comparison was already
+filed. The ordinal rule removes seed-level discretion, and the seed choice
+cannot bias a paired gap in any case: the variant arms were unrun at
+registration, and under pairing the estimand is the within-seed difference,
+not the control's level.
+
+A third variant (freezing a further subset) is DEFERRED-TO-LAST, not
+excluded: it runs only if the Trigger below fires. It is not part of this
+packet.
+
+## Primary metric — last-k(=5) eval mean
+
+Per run: the mean of nats_per_byte over the FINAL FIVE eval records (steps
+18000-20000 at eval_interval 500), read exclusively via reader.py's
+read_eval_series on the captured JSONLs — never a live tracking server. The
+k = 1 terminal reading (the prior rung's endpoint) is reported alongside for
+continuity.
+
+This endpoint was adopted from the prior rung's blind review, which found
+single-eval jitter to be roughly 40% of pair variance, and from that rung's
+k-sensitivity table, in which the margin WIDENED under smoothing.
+
+## Estimator and decision rule
+
+Paired gaps per variant, per seed: g_s = y_variant,s - y_C,s (positive =
+freezing costs nats/byte). n = 4, df = 3. Two registered variants, so the
+total 5% alpha is Bonferroni-split: per-variant TWO-SIDED CI at 97.5%
+(t_{0.9875,3} = 4.177), ONE look (no stage 2).
+
+**Clause precedence (declared here):** this rung's registered question is
+SUFFICIENCY, not direction, so — deliberately INVERTING the prior rung's
+precedence — the epsilon-clause is the PRIMARY verdict label and the
+direction-vs-0 clause is the MANDATORY CO-EQUAL rider. Both are always
+reported; quoting either without the other misquotes this registration.
+epsilon = 0.01 nats/byte, unchanged from the prior rung and ratified there.
+
+Per-variant verdict vocabulary:
+
+- **GEOMETRY-SUFFICIENT** — CI upper bound < epsilon: freezing costs less
+  than the practical-relevance threshold; the frozen geometry carries the
+  structure.
+- **GEOMETRY-INSUFFICIENT** — CI entirely above epsilon: freezing
+  practically hurts.
+- **INCONCLUSIVE** — otherwise.
+- Rider (direction): the CI's position versus 0, reported verbatim (entirely
+  below 0 = frozen strictly better; contains 0 = no detectable cost; entirely
+  within (0, epsilon) = detectable cost below practical relevance).
+
+**Power context** [projected from the prior rung's measured cumulative
+sd(d) = 0.00300307 at n = 9; DECLARED ASSUMPTION: the frozen-vs-trainable
+within-pair sd is of the same order as that measured between-arm sd — no
+direct measurement of it existed at registration]: se = sd/√4 ~= 0.0015, CI
+half-width ~= 4.177 x 0.0015 ~= 0.0063. If freezing truly costs ~= 0, the
+expected upper bound ~= +0.0063 < epsilon, readable as SUFFICIENT. If the sd
+doubles, half-width ~= 0.0125, giving INCONCLUSIVE — an informative
+heterogeneity result, not a nullity.
+
+## Trigger — when the deferred third variant runs
+
+Order the labels GEOMETRY-SUFFICIENT > INCONCLUSIVE > GEOMETRY-INSUFFICIENT.
+The expected pattern is label(A) >= label(B). The trigger is the STRANGE
+DIVERGENCE label(A) < label(B): the variant with strictly more free capacity
+reading WORSE than the more constrained one. Only then does the deferred
+variant run, to isolate which part of the registered difference drives the
+inversion. Under any other outcome it does not run under this registration.
+
+## Regime and hyperparameter scope (declared)
+
+All arms run at the SHARED configuration of the prior rung (lr 6e-4, batch
+16 x seq 1024, cosine to 20k steps), modulo the freeze axis. The registered
+estimand is therefore the ARM EFFECT AT THIS FIXED CONFIGURATION, not at each
+arm's individually tuned frontier. Published work (arXiv:2608.11859) shows
+that at <=100M parameters comparisons can be confounded by per-arm
+hyperparameter sensitivity — an arm can lose at a shared configuration purely
+by being harder to tune. The exposure here is bounded: all arms share the
+backbone architecture and differ only in which parameters receive gradients,
+so their tuning response is expected to be close. But freezing does change
+effective trainable capacity, so this remains a DECLARED LIMITATION of the
+estimand, not an assumption of equivalence. Verdicts are scoped to this
+configuration and this ~85M/enwik8 regime.
+
+## Pairing evidence — data_order_digest
+
+SHA-256 over the source offsets of the first 32 training batches, emitted
+ONCE as the additive fields data_order_digest + data_order_batches on the
+first logged train record at/after the window. A within-seed mismatch across
+arms INVALIDATES that seed (reported, excluded). Fresh runs only: a resumed
+run never attests (absence = not attested, never "same order").
+
+## Exclusion rule
+
+A run is excluded solely for a non-finite final loss; an exclusion always
+drops the whole SEED across all arms, and is reported.
+
+## Note on the control arm's schema
+
+Arm C was captured under an earlier revision of the training code, before the
+freeze axis existed. Its records may therefore lack fields that A and B
+carry. This is expected and is not evidence about any arm: the fields
+distinguishing A from B have been removed from ALL arms by the packet's
+scrub, and the packet asserts, as a build-time gate, that A's and B's
+run_start configurations are IDENTICAL after scrubbing.
+
+The scrub additionally removes configuration keys belonging to OTHER,
+unrelated comparisons that share this codebase. Every arm here is identical
+on those keys and all of them are INACTIVE in this rung (they configure
+machinery none of these runs use), so their removal withholds nothing
+relevant to the registered comparison; they are removed because their default
+values name vocabulary that would identify the project.
+"""
+
+_E15A_SEALED_NOTE = """\
+Mapping: **A = e1-5a-input (input-only freeze; untie entailed), B =
+e1-5a-both (freeze-both, tied), C = e1-fisher (trainable control)**.
+
+A is the registered expected-`>=` variant by protocol construction (it frees
+strictly more capacity to adapt — a trainable output classifier); the blind
+hides WHICH physical freeze subset A is, which is exactly the prior a
+reviewer would otherwise confirm by expectation. C's ROLE is disclosed in the
+packet prose — the paired gaps are signed against it, so it cannot be
+hidden — but its arm vocabulary is scrubbed like every other arm's.
+
+Scrub transform applied to every record: run -> arm-<X>; config.name ->
+arm-<X>; config.model.embedding_init -> the SHARED token init-shared (all
+three arms share one initialization here, so a per-arm token would
+manufacture a difference); config.model.embedding_freeze,
+config.model.tie_embeddings, config.model.fisher_init_path and
+config.model.anchor_mode DROPPED; the top-level run_start field `params`
+DROPPED.
+
+`params` is the field E1's packet never had to scrub: E1's arms were
+parameter-identical, whereas untying doubles the embedding table (85.33M
+untied vs 85.13M tied) and that single integer would have unblinded the
+packet on its own. reader.py = telemetry.py with all docstrings/comments
+stripped (ast.unparse), the package logging import shimmed, and the operator
+CLI removed.
+"""
+
+
+RUNGS: dict[str, RungSpec] = {
+    "e1": RungSpec(
+        name="E1",
+        arms=(ArmSpec("A", "e1-fisher"), ArmSpec("B", "e1-random")),
+        seeds=("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+        abstract=_E1_ABSTRACT,
+        preregistration=_E1_PREREGISTRATION,
+        extension_registration=_E1_EXTENSION,
+        sealed_slug="e1-review-sealed-mapping",
+        sealed_mapping_note=_E1_SEALED_NOTE,
+        manifest_title="E1 review packet manifest",
+        value_scrub={"embedding_init": "init-{arm}"},
+        model_drop=("fisher_init_path", "anchor_mode"),
+    ),
+    "e1-5a": RungSpec(
+        name="E1.5a",
+        arms=(
+            ArmSpec("A", "e1-5a-input"),
+            ArmSpec("B", "e1-5a-both"),
+            ArmSpec("C", "e1-fisher", blinded=False),
+        ),
+        seeds=("1", "2", "3", "4"),
+        abstract=_E15A_ABSTRACT,
+        preregistration=_E15A_PREREGISTRATION,
+        sealed_slug="e1-5a-review-sealed-mapping",
+        sealed_mapping_note=_E15A_SEALED_NOTE,
+        manifest_title="E1.5a review packet manifest",
+        # Shared token, NOT per-arm: all three arms use one initialization, so
+        # "init-{arm}" would fabricate a difference the parity gate then flags.
+        value_scrub={"embedding_init": "init-shared"},
+        model_drop=(
+            "embedding_freeze",
+            "tie_embeddings",
+            "fisher_init_path",
+            "anchor_mode",
+            # INERT cross-rung keys. Every E1.5a arm is table-sourced, so the
+            # field lane is entirely inactive here — but its DEFAULT value
+            # carries banned vocabulary ("sqrt_prob"), and the control was
+            # captured before these keys existed, so they are also a schema
+            # asymmetry. Caught by the banned scan on first assembly
+            # (2026-08-22): a later rung's default leaking into an earlier
+            # rung's packet is a standing hazard, not a one-off.
+            "state_source",
+            "field_state",
+            "field_mode",
+            "field_loss_lambda",
+            "field_ckpt_path",
+            "field_estimator",
+            "field_n_layers",
+            "field_d_model",
+            "field_n_heads",
+            "gram_lambda",
+            "gram_reference",
+        ),
+        record_drop=("params",),
+        banned_extra=("embedding_freeze", "tie_embeddings", "input-only", "freeze-both"),
+    ),
+}
+
+
 _READER_HEADER = '"""Validated reader for the packet\'s JSONL run series.\n\nProse (docstrings/comments) was stripped from the original for blinding;\nlogic is unmodified. Parse the data ONLY through these functions.\n"""\n'
 _LOGGING_SHIM = (
     "import logging\n"
@@ -138,22 +487,24 @@ def md5(path: Path) -> str:
     return hashlib.md5(path.read_bytes(), usedforsecurity=False).hexdigest()
 
 
-def scrub_record(record: dict[str, Any], arm: str) -> dict[str, Any]:
-    """Map arm-identifying values to the blind label; drop init-path keys."""
+def scrub_record(record: dict[str, Any], arm: str, spec: RungSpec) -> dict[str, Any]:
+    """Map arm-identifying values to blind labels; drop arm-axis keys."""
     out = dict(record)
     if "run" in out:
         out["run"] = f"arm-{arm}"
+    for key in spec.record_drop:
+        out.pop(key, None)
     config = out.get("config")
     if isinstance(config, dict):
         config = json.loads(json.dumps(config))  # deep copy
         if "name" in config:
             config["name"] = f"arm-{arm}"
         model = config.get("model", {})
-        if "embedding_init" in model:
-            model["embedding_init"] = INIT_MAP[model["embedding_init"]]
-        model.pop("fisher_init_path", None)
-        # symmetric across arms but project vocabulary — a staged-variant key
-        model.pop("anchor_mode", None)
+        for key, token in spec.value_scrub.items():
+            if key in model:
+                model[key] = token.format(arm=arm)
+        for key in spec.model_drop:
+            model.pop(key, None)
         out["config"] = config
     return out
 
@@ -214,13 +565,95 @@ def build_reader(telemetry_source: str) -> str:
     return _READER_HEADER + code + "\n"
 
 
-def banned_scan(path: Path) -> list[str]:
+def banned_scan(path: Path, banned: Sequence[str]) -> list[str]:
     text = path.read_text(encoding="utf-8").lower()
-    return [word for word in BANNED if word in text]
+    return [word for word in banned if word in text]
+
+
+def select_captures(captured: Path, spec: RungSpec) -> list[tuple[Path, ArmSpec, str]]:
+    """Resolve capture files to (path, arm, seed), fail-loud on incompleteness.
+
+    A capture directory accumulates every rung's runs, so files that match no
+    arm of THIS rung are skipped — but the selection is then required to be
+    exactly one file per (arm, seed). Silent under-selection is the failure
+    mode this gate exists to prevent: a packet missing a seed still assembles,
+    still looks complete, and quietly changes n.
+    """
+    chosen: dict[tuple[str, str], tuple[Path, ArmSpec, str]] = {}
+    for src in sorted(captured.glob("*.jsonl")):
+        arm = spec.resolve_arm(src.name)
+        if arm is None:
+            continue
+        seed = src.stem.rsplit("-s", 1)[-1]
+        if seed not in spec.seeds:
+            continue
+        key = (arm.label, seed)
+        if key in chosen:
+            msg = f"duplicate capture for arm {arm.label} seed {seed}: {chosen[key][0].name}, {src.name}"
+            raise AssertionError(msg)
+        chosen[key] = (src, arm, seed)
+
+    missing = [
+        f"{arm.label}-seed{seed}"
+        for arm in spec.arms
+        for seed in spec.seeds
+        if (arm.label, seed) not in chosen
+    ]
+    if missing:
+        msg = f"{spec.name}: no capture for {missing}"
+        raise AssertionError(msg)
+    return [chosen[(arm.label, seed)] for arm in spec.arms for seed in spec.seeds]
+
+
+def assert_blinded_parity(configs: Mapping[str, dict[str, Any]], spec: RungSpec) -> None:
+    """Post-scrub, blinded arms must carry identical run_start configs.
+
+    This is the gate that catches a NEW arm-identifying field entering the
+    schema between rungs. Comparing whole configs (minus declared exemptions)
+    rather than an allow-list means a field nobody thought about is a FAILURE,
+    not an omission.
+
+    A key whose ``value_scrub`` token interpolates ``{arm}`` is a DECLARED
+    difference — that token IS the blind label (E1's ``embedding_init`` ->
+    ``init-A``/``init-B``) — so it is exempt. A key mapped to a shared token,
+    or not mapped at all, must match. That asymmetry is the whole rule: the
+    per-arm tokens are the only differences anyone declared, and every other
+    difference is a leak by definition.
+    """
+    blinded = [arm.label for arm in spec.arms if arm.blinded]
+    if len(blinded) < 2:
+        return
+
+    per_arm = {key for key, token in spec.value_scrub.items() if "{arm}" in token}
+
+    def strip(cfg: dict[str, Any]) -> dict[str, Any]:
+        out = {k: v for k, v in cfg.items() if k not in spec.parity_exempt}
+        model = out.get("model")
+        if isinstance(model, dict) and per_arm:
+            out["model"] = {k: v for k, v in model.items() if k not in per_arm}
+        return out
+
+    reference_label = blinded[0]
+    reference = strip(configs[reference_label])
+    for label in blinded[1:]:
+        other = strip(configs[label])
+        if other != reference:
+            diff = sorted(
+                k
+                for k in set(reference) | set(other)
+                if reference.get(k, "<absent>") != other.get(k, "<absent>")
+            )
+            detail = {k: (reference.get(k, "<absent>"), other.get(k, "<absent>")) for k in diff}
+            msg = (
+                f"blinded arms {reference_label} and {label} differ post-scrub "
+                f"at {diff} -> {detail}; these fields identify the arm"
+            )
+            raise AssertionError(msg)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rung", choices=sorted(RUNGS), default="e1")
     parser.add_argument("--captured", type=Path, default=Path("results/captured"))
     parser.add_argument(
         "--telemetry", type=Path, default=Path("src/entropic_substrate/telemetry.py")
@@ -229,7 +662,7 @@ def main() -> int:
     parser.add_argument("--sealed-out", type=Path, required=True)
     parser.add_argument("--run-times", type=Path, required=True, help="run_id -> times JSON")
     parser.add_argument("--prereg-commit", required=True, help="'<sha> <iso-utc>'")
-    parser.add_argument("--amendment-commit", required=True, help="'<sha> <iso-utc>'")
+    parser.add_argument("--amendment-commit", default=None, help="'<sha> <iso-utc>'")
     parser.add_argument(
         "--ext-prereg-commit",
         default=None,
@@ -248,6 +681,7 @@ def main() -> int:
         "(the complete-run-ledger requirement)",
     )
     args = parser.parse_args()
+    spec = RUNGS[args.rung]
 
     packet = args.packet_out
     if packet.exists():
@@ -256,10 +690,10 @@ def main() -> int:
 
     run_times = json.loads(args.run_times.read_text(encoding="utf-8"))
 
-    (packet / "abstract.md").write_text(ABSTRACT, encoding="utf-8")
-    prereg_text = PREREGISTRATION
-    if args.ext_prereg_commit:
-        prereg_text += EXTENSION_REGISTRATION
+    (packet / "abstract.md").write_text(spec.abstract, encoding="utf-8")
+    prereg_text = spec.preregistration
+    if args.ext_prereg_commit and spec.extension_registration:
+        prereg_text += spec.extension_registration
     (packet / "preregistration.md").write_text(prereg_text, encoding="utf-8")
     (packet / "reader.py").write_text(
         build_reader(args.telemetry.read_text(encoding="utf-8")), encoding="utf-8"
@@ -267,16 +701,17 @@ def main() -> int:
 
     sealed_rows: list[str] = []
     time_rows: list[str] = []
-    for src in sorted(args.captured.glob("e1-*.jsonl")):
-        # capture names look like: e1-fisher-<runid8>-e1-fisher-s<N>.jsonl
-        arm_name = "e1-fisher" if "fisher" in src.name else "e1-random"
-        seed = src.stem.rsplit("-s", 1)[-1]
-        arm = ARM_MAP[arm_name]
-        dst = packet / "data" / f"{arm}-seed{seed}.jsonl"
+    start_configs: dict[str, dict[str, Any]] = {}
+    for src, arm, seed in select_captures(args.captured, spec):
+        dst = packet / "data" / f"{arm.label}-seed{seed}.jsonl"
         with src.open(encoding="utf-8") as fin, dst.open("w", encoding="utf-8") as fout:
             for line in fin:
-                fout.write(json.dumps(scrub_record(json.loads(line), arm)) + "\n")
-        run_id8 = src.name.split("-")[2]
+                record = json.loads(line)
+                scrubbed = scrub_record(record, arm.label, spec)
+                if record.get("event") == "run_start":
+                    start_configs.setdefault(arm.label, scrubbed.get("config", {}))
+                fout.write(json.dumps(scrubbed) + "\n")
+        run_id8 = src.name[len(arm.run_name) + 1 :][:8]
         full = next((k for k in run_times if k.startswith(run_id8)), None)
         if full is None:
             msg = f"no tracking-server times for {src.name} (id prefix {run_id8})"
@@ -286,6 +721,8 @@ def main() -> int:
             iso = datetime.fromtimestamp(stamp / 1000, tz=UTC).isoformat()
             time_rows.append(f"# {dst.name}  {stamp_key}={iso}")
         sealed_rows.append(f"| {src.name} | {md5(src)} | {dst.name} | {md5(dst)} | run_id {full} |")
+
+    assert_blinded_parity(start_configs, spec)
 
     # Hook-stability: the repo's lint hooks rewrite any committed .py — if
     # that happened AFTER hashing, the manifest would invalidate the packet
@@ -298,18 +735,22 @@ def main() -> int:
     )
 
     files = sorted(p for p in packet.rglob("*") if p.is_file())
-    leaks = {str(p): banned_scan(p) for p in files if banned_scan(p)}
+    leaks = {str(p): banned_scan(p, spec.banned) for p in files if banned_scan(p, spec.banned)}
     if leaks:
         msg = f"identity leak(s) in packet files: {leaks}"
         raise AssertionError(msg)
 
-    manifest_lines = ["# E1 review packet manifest", "#", "# md5  file"]
+    manifest_lines = [f"# {spec.manifest_title}", "#", "# md5  file"]
     manifest_lines += [f"{md5(p)}  {p.relative_to(packet)}" for p in files]
     manifest_lines += [
         "#",
         "# Registration commits (UTC):",
         f"# preregistration committed: {args.prereg_commit}",
-        f"# amendment 1 (epsilon) committed: {args.amendment_commit}",
+        *(
+            [f"# amendment 1 (epsilon) committed: {args.amendment_commit}"]
+            if args.amendment_commit
+            else []
+        ),
         *(
             [f"# extension registration committed: {args.ext_prereg_commit}"]
             if args.ext_prereg_commit
@@ -336,18 +777,12 @@ def main() -> int:
     args.sealed_out.parent.mkdir(parents=True, exist_ok=True)
     args.sealed_out.write_text(
         "---\n"
-        "name: e1-review-sealed-mapping\n"
-        'description: "SEALED A/B mapping for the E1 review packet — disclose only '
-        'after the review is filed (docs/peer-review-protocol.md)"\n'
+        f"name: {spec.sealed_slug}\n"
+        f'description: "SEALED arm mapping for the {spec.name} review packet — '
+        'disclose only after the review is filed (docs/peer-review-protocol.md)"\n'
         "metadata:\n  type: project\n---\n\n"
-        "# SEALED — E1 review packet arm mapping\n\n"
-        "Mapping: **A = e1-fisher, B = e1-random** (A = registered-favored arm by\n"
-        "protocol construction; the blind hides which initialization A is).\n\n"
-        "Scrub transform applied to every record: run -> arm-<X>; config.name ->\n"
-        "arm-<X>; config.model.embedding_init -> init-<X>; config.model.\n"
-        "fisher_init_path and config.model.anchor_mode dropped. reader.py =\n"
-        "telemetry.py with all docstrings/comments stripped (ast.unparse), the\n"
-        "package logging import shimmed, and the operator CLI removed.\n\n"
+        f"# SEALED — {spec.name} review packet arm mapping\n\n"
+        f"{spec.sealed_mapping_note}\n"
         "| capture file | capture md5 | packet file | packet md5 | run |\n"
         "|---|---|---|---|---|\n" + "\n".join(sealed_rows) + "\n",
         encoding="utf-8",
