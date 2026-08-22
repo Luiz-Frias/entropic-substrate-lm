@@ -94,3 +94,14 @@ review with sealed mapping, and verdict artifacts
 ## Cost (measured $1.59/hr A100-SXM4-80GB, ~65 min/run)
 
 Stage S: 6 × ~$1.7 ≈ $10. Stage C: 4 × ~$1.7 ≈ $7.
+
+## Amendment 1 — operator ratification (2026-08-21, pre-run)
+
+The operator ratifies the three DECISION-NEEDED terms exactly as drafted:
+λ grid **{0.01, 0.1, 1.0}**; retention threshold **0.95**; stage-C seed set
+**{3, 4, 5, 6}**. Recorded before any E1.5b run exists (the arm has never
+been launched — the execution gate held it), with no arm-level E1.5b
+outcome in existence to condition on. Every other registration term is
+unchanged; the banner above is resolved by this amendment and retained
+verbatim for the record. Ratification also recorded on FOR-904
+(2026-08-21).
