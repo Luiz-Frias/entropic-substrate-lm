@@ -273,11 +273,15 @@ class FieldEncoder(nn.Module):
 
         Wire format: ``{"format_version": ..., "model": <FieldEncoder.state_
         dict()>}`` — a checkpoint scoped to THIS module alone (not a full
-        ``Trainer.state_dict()``), produced by whatever separate run trained
+        ``Trainer.state_dict()``), produced by a separate run that trained
         p_phi as its own small causal LM (docs/e1_5-instruction.md's
-        pretrained/frozen regime). Nothing in this repo produces that
-        checkpoint yet (the standalone-p_phi training pipeline is a later
-        rung); this defines the format the loader expects. Routed through
+        pretrained/frozen regime). RETRACTION (2026-08-20): this docstring
+        said "Nothing in this repo produces that checkpoint yet (the
+        standalone-p_phi training pipeline is a later rung)" — true when
+        written, false as of ``entropic_substrate.field_pretrain``, which is
+        that producer and writes exactly this shape (its own roundtrip test
+        loads it back through THIS method). The format is still DEFINED
+        here, by the loader. Routed through
         ``normalize_checkpoint`` for the same reason ``Trainer.load_checkpoint``
         is: a stray legacy/malformed payload fails loud here rather than
         surfacing as an opaque shape error three lines later. ``for_resume=
