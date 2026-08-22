@@ -184,3 +184,21 @@ def test_eval_sampler_never_attests_a_data_order() -> None:
     sampler = SequenceSampler(_split(), 4, 16, train=False)
     sampler.batch()
     assert sampler.data_order_digest() is None
+
+
+@pytest.mark.skipif(
+    not torch.backends.mps.is_available(), reason="needs an Apple-silicon mps device"
+)
+def test_batch_reaches_mps_without_cuda_pinning() -> None:
+    """pin_memory() is a CUDA page-locked host-buffer optimization; applied
+    on the way to any other accelerator it is invalid. MEASURED 2026-08-20
+    (torch 2.13, mps): the unguarded ``pin_memory().to("mps")`` path raised
+    ``RuntimeError: Attempted to set the storage of a tensor on device "cpu"
+    to a storage on different device "mps:0"`` — killing the field-pretrain
+    pilot at its first batch. CI has no mps runner, so this guards the local
+    venue only; the cpu path keeps its own coverage above and the cuda path
+    is exercised on pods."""
+    sampler = SequenceSampler(_split(), batch_size=2, seq_len=16, seed=0, device="mps")
+    x, y = sampler.batch()
+    assert x.device.type == "mps"
+    assert y.device.type == "mps"
