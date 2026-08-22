@@ -225,3 +225,160 @@ collapsing them into one label misquotes this registration.
 Pilots: pretrain ≈ $0 (local) or ≤$1 (pod); λ grid 4 × ~$0.3 ≈ $1.2; LR
 diagnostic 6 × ~$0.3 ≈ $1.8. Frozen wave: 12 pods ≈ $21. Joint secondary:
 +12 ≈ $21 when budgeted. WSD diagnostic: ≈ $7 when machinery lands.
+
+## Amendment 1 — matched-total width correction (2026-08-21, post-run, pre-analysis)
+
+The matched-total configs as registered carried `d_model: 756` with
+`n_heads: 12`, giving **head_dim 63 — odd**. RoPE rotates coordinate PAIRS,
+so `models/blocks.py`'s `rotary_embeddings` refuses an odd head_dim: the
+arm raised `ValueError: head_dim must be even for RoPE, got 63` on its
+first forward pass and **could never have trained**, on any hardware. This
+was not a tuning choice; it was an invalid configuration, and the first
+attempt at this lane produced no data at all (four pods, zero metrics,
+terminated — reported as a registered deviation on FOR-907).
+
+The lane therefore ran at **`d_model: 744`** (head_dim 62, even), the
+nearest valid width below 768 that preserves `n_heads: 12`. Heads were held
+fixed deliberately: this lane's declared axis is `d_model`, so changing
+`n_heads` instead (756/14 and 756/6 are also even) would have introduced a
+SECOND axis into a one-variable comparison.
+
+**Consequence, stated rather than buried.** Total parameters move
+**82,940,244 → 80,344,872**, i.e. from 2.6% under `e1-fisher`'s 85,150,464
+to **5.6% under**. With `n_heads: 12` there is no width between 744 and 768,
+so "matched-total" is approximate either way. **The bias runs AGAINST the
+field hypothesis**: the field arm now carries *less* total budget than the
+baseline it must match, so a favourable result is conservative and an
+unfavourable one is partly attributable to the shortfall. The analysis must
+report the actual total, never the registered one.
+
+**Timing and information access.** Recorded after the matched-total runs
+completed but BEFORE any analysis session opened, and before any
+matched-total outcome had been read by anyone. The width was chosen from
+arithmetic constraints alone (divisibility and the 80–100M band) at a
+moment when the lane had produced **zero** data — the prior attempt having
+failed before its first metric. No endpoint, estimator, decision rule,
+seed set or clause precedence is altered by this amendment.
+
+**Not amended, and still open:** whether to prefer an exact-total variant at
+a different head count (756 with `n_heads` 14 or 6 preserves 82,940,244
+exactly, at the cost of a second axis) remains an operator preference. The
+conservative setting stands until ruled otherwise.
+
+**Related measurement, replacing a retracted claim.** The 744 arm ran at
+470–480 steps/min against ~513 for the 768-wide F/H arms — a **~6%**
+penalty for head_dim 62 vs 64, measured. An earlier note on FOR-907
+asserting "3–5× slower, tensor-core artifact" was retracted: the wall-clock
+gap it described belonged to the hung runs, which were not slow but dead.
+Achieved throughput is ~63 TFLOP/s ≈ 20% MFU on the A100, the model being
+occupancy-starved at the registered batch 16 × seq 1024 — a deliberate cost
+of pairing with E1's captured controls, and a further reason GPU-seconds
+stay "reported, never merged into the primary".
+
+## Amendment 2 — extended λ pilot (2026-08-21, declared BEFORE the runs)
+
+**Outcome-aware by construction, and exploratory by declaration.** The
+registered pilot (§Pilots item 2) has already run and its mechanical rule
+has already selected **λ\* = 0.1** (`docs/verdicts/e1-5c-lambda-pilot.md`).
+This extension is motivated by what that readout showed, so it cannot be
+treated as a fresh registered selection. It is declared here, before any
+extended run, with an explicit statement of what it may and may not do.
+
+**What motivated it (measured, from the filed readout).** Field CE and
+backbone nats/byte move in direct opposition across the grid: field CE
+2.2137002 → 1.718257 as λ goes 0.1 → 1.0, while backbone nats/byte goes
+0.9980398 → 1.013958. Because the feasibility filter is anchored to the
+BEST backbone arm, and the best backbone arm is always the one carrying the
+LEAST calibration pressure, the filter tightens around minimum calibration
+by construction — the selected λ\* = 0.1 is also the grid's least
+favourable arm on field CE, Brier and ECE. Separately, the registered
+joint-arm calibration gate requires terminal field CE ≤ reference + 0.05 =
+**1.308881**, and at 3000 steps every swept λ sits far above it (best:
+1.718257). Whether that gate is reachable at all is currently unknown.
+
+**Design.** λ ∈ {0.1, 0.2, 0.3, 0.5, 1.0} (adding 0.2), joint regime, seed
+42, **6000 steps** — double the registered pilot's budget, still ~30% of a
+full run. One pod per λ.
+
+**What this extension MAY do:**
+- characterise the λ-vs-(field CE, backbone loss) trade-off curve, including
+  the knee / Pareto frontier and where the curves cross once normalised;
+- measure whether field CE is converging toward the 1.308881 calibration
+  gate as budget grows, and at which λ;
+- inform an OPERATOR decision about whether §Pilots item 2's selection rule
+  should be amended for the joint lane (e.g. adding the field-CE gate as a
+  filter rather than leaving it to clause 3 after the fact).
+
+**What this extension MAY NOT do:**
+- silently re-select λ\*. The registered rule's output stands at 0.1 unless
+  the operator amends the rule explicitly, in writing, before the joint lane
+  runs. Any different λ used by the joint lane is an amended rule, dated and
+  declared, never an inferred upgrade from this diagnostic.
+- alter any E1.5c endpoint, estimator, decision rule, seed set, clause
+  precedence, or the frozen lane in any way. The frozen wave is complete and
+  untouched by this.
+- support full-budget claims. 6000 steps is 30% of the registered budget;
+  any statement about λ behaviour at 20000 steps is extrapolation and must
+  be labelled as such.
+
+**Cost:** 5 pods × ~18 min ≈ $2.4.
+
+## Amendment 3 — full-budget λ bridge + gate-first rule (2026-08-21, declared BEFORE the runs)
+
+**Outcome-aware, declared, operator-authorised.** The operator read
+`docs/verdicts/e1-5c-lambda-tradeoff.md` before choosing this design. It is
+recorded as an amendment, in writing, before any bridge run — the condition
+Amendment 2 set for changing the joint lane's λ. The registered pilot rule's
+output (λ\* = 0.1) is superseded FOR THE JOINT LANE ONLY by the rule below;
+nothing about the frozen lane, its endpoints, or its completed data changes.
+
+**Why a full-budget bridge and not more short pilots.** The 3000- and
+6000-step grids are terminal points of DIFFERENTLY SCALED schedules — the
+trainer scales cosine decay to `max_steps`, so a 6000-step run is fully
+decayed at step 6000 while a 20000-step run is not. They are therefore not
+two samples of one curve, which is precisely why the two extrapolations in
+the diagnostic disagreed (log-linear: all four arms cross; inverse-step:
+only λ=0.5, at ~step 19857). No short-pilot arrangement resolves terminal
+reachability; only a run at the joint lane's own schedule does.
+
+**Design.** λ ∈ {0.3, 0.5, 1.0}, F arm (`e1-5c-field`), `field_mode=joint`,
+seed 42, **20000 steps — the registered joint-lane schedule**. Three pods,
+≈$5.2. λ=0.1 is excluded (largest measured calibration gap, 0.486 at 6k, and
+the diagnostic's own recommendation drops it); λ=0.2 is excluded as
+dominated by λ=0.3 on BOTH objectives in the 6k grid.
+
+**Gate-first selection rule (pre-committed, mechanical).** Applied to
+terminal last-k(=5) readings from the bridge:
+
+1. **Feasibility (calibration first):** λ is feasible iff terminal held-out
+   field CE ≤ **1.308881** (= standalone reference 1.258881 + 0.05, the
+   registered clause-(3) gate, unchanged).
+2. **Objective among feasible λ:** minimum terminal backbone nats/byte.
+3. **Tie-break:** smaller λ (less intervention).
+4. **If the feasible set is EMPTY:** the joint lane DOES NOT RUN. The
+   declared reading is that a jointly-trained `p_φ` cannot remain honest at
+   this estimator size within the registered threshold — a substantive
+   result about the joint regime, not a null, and one that leaves the frozen
+   lane as the primary evidence for the four-arm contract.
+
+This deliberately INVERTS the registered pilot rule's order. That rule
+filtered on backbone quality first, and since the best-backbone arm is
+always the one under least calibration pressure, it structurally selected
+minimum calibration (measured: it chose λ=0.1, the grid's worst arm on field
+CE, Brier and ECE). Calibration is a precondition of the thesis, not a
+tiebreaker, so it goes first.
+
+**The threshold is NOT loosened.** +0.05 stands as registered. If no λ
+passes, that is reported as-is; relaxing a gate because the data missed it
+would void the registration's value. A future rung may register a different
+threshold with its rationale stated ex ante — this one does not.
+
+**Joint-lane status if a λ is selected: EXPLORATORY, no confirmatory claim.**
+The lane is already the registered SECONDARY. Running it carries no CI-based
+verdict and no alpha allocation; the selected λ is the headline reading and
+any companion λ is a sensitivity report. This is what keeps two λ from
+becoming two shots at one hypothesis.
+
+**Bridge limits.** n=1 (seed 42) per λ. No confidence intervals, and seed
+noise could plausibly reorder adjacent arms — the bridge answers *does any λ
+clear the gate at full budget*, not *which λ is best by a margin*.
