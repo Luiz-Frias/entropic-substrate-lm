@@ -59,6 +59,10 @@ RUN uv export --frozen --no-dev --group deploy --prune torch --no-emit-project -
 COPY src/ ./src/
 COPY configs/ ./configs/
 COPY scripts/ ./scripts/
+# E1.5c frozen field: the pretrained p_phi (2.5MB) the frozen arms load via
+# field_ckpt_path. Baked because pods are credential-free — and baking is
+# what puts these weights under the image digest the launch record pins.
+COPY models/field-pphi-v1.pt ./models/field-pphi-v1.pt
 RUN uv pip install --system --no-cache --no-deps .
 
 ENV PYTHONPATH=/app/src
