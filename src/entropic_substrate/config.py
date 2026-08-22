@@ -179,6 +179,29 @@ class ModelConfig:
     field_state: FieldState = "sqrt_prob"
 
     def __post_init__(self) -> None:
+        if self.d_model % self.n_heads != 0:
+            msg = (
+                f"d_model {self.d_model} is not divisible by n_heads {self.n_heads} — "
+                "attention splits d_model evenly across heads"
+            )
+            raise ValueError(msg)
+        if (self.d_model // self.n_heads) % 2 != 0:
+            # MEASURED 2026-08-21: `e1-5c-field-matched-total` shipped
+            # d_model=756 / n_heads=12 = 63, an ODD head_dim. RoPE halves
+            # head_dim to build its rotation pairs, so `blocks.py`'s
+            # `rotary_embeddings` refuses it — but only on the FIRST FORWARD
+            # PASS, long after config parse, model build and data load. On
+            # pods that surfaced as four runs registered on the tracking
+            # server, logging zero metrics, while the pod's `; sleep infinity`
+            # tail kept the container billing: ~4 GPU-hours each, no output,
+            # and a failure indistinguishable from slowness from the outside.
+            # Refusing here turns that into a millisecond-one error message.
+            msg = (
+                f"head_dim {self.d_model // self.n_heads} (d_model {self.d_model} / "
+                f"n_heads {self.n_heads}) must be EVEN — RoPE rotates coordinate "
+                "pairs, so an odd head_dim cannot be split (models/blocks.py)"
+            )
+            raise ValueError(msg)
         if self.gram_lambda != 0.0 and self.tokenizer != "byte":
             msg = (
                 "gram_lambda != 0.0 requires tokenizer='byte': "
