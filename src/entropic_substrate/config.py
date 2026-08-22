@@ -88,6 +88,13 @@ EXPERIMENTS: tuple[str, ...] = (
     # e1-5c-field's p_phi and differing only in field_state.
     "e1-5c-hidden",
     "e1-5c-prob",
+    # Matched-total twins (docs/e1_5-instruction.md "Comparison lanes"):
+    # shrunken backbones so N_backbone + N_field ~= e1-fisher's total.
+    # Registered by the E1.5c preregistration commit
+    # (docs/e1-5c-preregistration.md) — execution was prereg-time scope.
+    "e1-5c-field-matched-total",
+    "e1-5c-hidden-matched-total",
+    "e1-5c-prob-matched-total",
 )
 
 
@@ -247,7 +254,7 @@ class Config:
 E15_PREREGISTRATIONS: dict[str, str | None] = {
     "embedding_freeze": "docs/e1-5a-preregistration.md",
     "gram_lambda": "docs/e1-5b-preregistration.md",
-    "state_source": None,  # E1.5c preregistration not yet committed
+    "state_source": "docs/e1-5c-preregistration.md",
 }
 
 

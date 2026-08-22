@@ -55,6 +55,14 @@ E1_5_EXACT_TOTAL_PARAMS: dict[str, int] = {
     # the H-arm delta was always right; only the shared base was low.
     "e1-5c-hidden": 85_675_392,
     "e1-5c-prob": 85_577_088,
+    # Matched-total twins, registered in EXPERIMENTS by the E1.5c
+    # preregistration commit (docs/e1-5c-preregistration.md — execution was
+    # prereg-time scope). Exact totals measured against real builds when the
+    # configs landed (P8, FOR-925); see each yaml's own arithmetic comment.
+    "e1-5c-field-matched-total": 82_940_244,
+    "e1-5c-hidden-matched-total": 83_037_012,
+    # P shares F's p_phi exactly (no sqrt, same fixed lift, no new params).
+    "e1-5c-prob-matched-total": 82_940_244,
 }
 
 
@@ -251,28 +259,15 @@ def test_e1_5_arms_hit_their_pinned_exact_param_total(exp: str) -> None:
 
 
 # ---------------------------------------------------- P8 (FOR-925): matched-total
-# Shrunken-backbone twins so N_backbone + N_field ~= e1-fisher's 85,131,264
+# Shrunken-backbone twins so N_backbone + N_field ~= e1-fisher's 85,150,464
 # total (docs/e1_5-instruction.md "Comparison lanes": matched-BACKBONE vs
 # matched-TOTAL-parameter — "is predictive-state construction a better use
-# of a FIXED budget?"). Deliberately NOT registered in config.py's
-# EXPERIMENTS (execution is prereg-time scope, build-plan Phase D — same
-# code-ready-but-ungated posture as e3-anchor/e3-vantage) — loaded here by
-# explicit path, mirroring resolve_experiment_config's own `--config` path,
-# rather than by name.
-_MATCHED_TOTAL_EXACT_PARAMS: dict[str, int] = {
-    # 144*756^2 + 256*756 + (256*128 + 2*12*128^2) + norms
-    #   = 82,494,720 + 193,536 + 425,984 + 19,540.
-    # CORRECTED 2026-08-20 from 82,920,704: the arithmetic in the retracted
-    # comment was the norm-blind formula's, missing the backbone's
-    # 25 * 756 = 18,900 LayerNorm gains and the field encoder's 5 * 128 =
-    # 640. It also mislabelled its own second term — 256*756 = 193,536 is
-    # the byte embedding table, not part of the 82,494,720 block total.
-    "e1-5c-field-matched-total": 82_940_244,
-    # Field twin's total + H's own trainable state_lift (128*756 = 96,768).
-    "e1-5c-hidden-matched-total": 83_037_012,
-    # P shares F's p_phi exactly (no sqrt, same fixed lift, no new params).
-    "e1-5c-prob-matched-total": 82_940_244,
-}
+# of a FIXED budget?"). Registered in config.py's EXPERIMENTS by the E1.5c
+# preregistration commit (docs/e1-5c-preregistration.md), so existence/
+# parse, the 80-100M band, and the exact pins above are all carried by the
+# EXPERIMENTS-wide tests now — what remains here is the axis pin no generic
+# sweep covers: each twin is a deliberate two-field change from its own
+# matched-backbone base.
 
 # The matched-BACKBONE config each matched-total twin shrinks from.
 _MATCHED_TOTAL_BASE: dict[str, str] = {
@@ -282,32 +277,7 @@ _MATCHED_TOTAL_BASE: dict[str, str] = {
 }
 
 
-@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
-def test_matched_total_configs_exist_and_parse(name: str) -> None:
-    path = configs_dir() / f"{name}.yaml"
-    assert path.exists(), path
-    cfg = load_config(path)
-    assert cfg.name == name
-    assert cfg.model.d_model % cfg.model.n_heads == 0
-
-
-@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
-def test_matched_total_configs_hit_their_pinned_exact_param_total(name: str) -> None:
-    cfg = load_config(configs_dir() / f"{name}.yaml")
-    assert _total_params(cfg) == _MATCHED_TOTAL_EXACT_PARAMS[name], name
-
-
-@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
-def test_matched_total_configs_land_in_the_shared_band(name: str) -> None:
-    """Same 80-100M band every registered rung is held to
-    (test_experiment_configs_are_parameter_matched), applied here by hand
-    since these configs are deliberately unregistered."""
-    cfg = load_config(configs_dir() / f"{name}.yaml")
-    total = _total_params(cfg)
-    assert 80e6 <= total <= 100e6, f"{name}: {total / 1e6:.1f}M"
-
-
-@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_EXACT_PARAMS))
+@pytest.mark.parametrize("name", sorted(_MATCHED_TOTAL_BASE))
 def test_matched_total_configs_only_change_d_model_and_fisher_init_path_from_their_base(
     name: str,
 ) -> None:
@@ -376,12 +346,13 @@ def _real_total_params(cfg: Config) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
-@pytest.mark.parametrize("name", (*EXPERIMENTS, *sorted(_MATCHED_TOTAL_EXACT_PARAMS)))
+@pytest.mark.parametrize("name", EXPERIMENTS)
 def test_total_params_formula_matches_a_real_build(name: str) -> None:
-    """Every registered arm (and every matched-total twin), shrunken by the
-    repo's own `--tiny` overlay — which changes only WIDTHS (d_model, n_layers,
-    n_heads, field_*) and leaves every mechanism switch alone, so a real build
-    here constructs exactly the modules the full-size arm would."""
+    """Every registered arm (matched-total twins included, now that the
+    E1.5c preregistration registered them), shrunken by the repo's own
+    `--tiny` overlay — which changes only WIDTHS (d_model, n_layers,
+    n_heads, field_*) and leaves every mechanism switch alone, so a real
+    build here constructs exactly the modules the full-size arm would."""
     cfg = _resolve_by_name(name, tiny=True)
     assert _total_params(cfg) == _real_total_params(cfg), name
 
