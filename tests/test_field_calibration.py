@@ -205,43 +205,47 @@ def test_frozen_field_checkpoint_shape_mismatch_fails_loud(
         FieldEncoder(mismatched_cfg)
 
 
-def test_frozen_field_loads_state_lift_for_the_hidden_arm(tmp_path: Path) -> None:
-    """``state_lift`` (H's arm, field_encoder.py's four-arm table) is the
-    only TRAINABLE lift among F/P/H — F/P share the fixed ``lift`` buffer
-    this section's other frozen tests already cover via ``head.weight``,
-    but that leaves H's own frozen-load path with zero coverage: nothing
-    pinned that ``state_lift``'s weights survive
-    ``_load_frozen_weights``'s ``load_state_dict`` roundtrip, or that they
-    land ``requires_grad=False`` same as every other frozen parameter.
-    A shape mismatch here would already fail loud through PyTorch's own
-    strict ``load_state_dict`` (mirrors
-    ``test_frozen_field_checkpoint_shape_mismatch_fails_loud`` above) —
-    this pins the SUCCESS path, which that test does not exercise.
-    RED-staged (2026-08-19, review follow-up on P7/FOR-924): with
-    ``__init__``'s ``self._load_frozen_weights(ckpt_path)`` call commented
-    out (``requires_grad_(False)`` left in place), this test failed —
-    ``state_lift.weight`` mismatched 512/512 elements against the
-    checkpoint, greatest absolute difference 1.4928271770477295 — proving
-    the fresh random init and the checkpointed weight are distinguishable
-    and the assertion is load-bearing, not vacuous. Restoring the load
-    call returned it to green with zero mismatched elements."""
+def test_frozen_field_leaves_state_lift_trainable_for_the_hidden_arm(tmp_path: Path) -> None:
+    """RETRACTION (2026-08-21) of ``test_frozen_field_loads_state_lift_for_
+    the_hidden_arm``, which asserted the opposite: that a frozen load
+    RESTORES ``state_lift`` from the checkpoint and lands it
+    ``requires_grad=False``. Its RED-staging evidence was sound (the
+    checkpointed and freshly-initialised weights are distinguishable), but
+    the behaviour it pinned was wrong on two counts, both measured:
+
+    1. ``state_lift`` receives NO GRADIENT during standalone pretraining —
+       ``field_pretrain``'s loss is the field CE through ``head``, and
+       ``state_lift`` participates only in ``z``, which that loss never
+       touches. So a "restored" ``state_lift`` is exactly its random init,
+       and freezing it made H a FIXED RANDOM PROJECTION of a frozen hidden
+       state rather than the registered "contextual preprocessing" arm.
+    2. The registered frozen wave (``docs/e1-5c-preregistration.md``) has
+       F, H and the matched-total twins load ONE shared p_phi — and the
+       real artifact is F-shaped, so it has no ``state_lift`` key at all.
+       Under the retracted behaviour H could not load it: measured
+       ``Missing key(s) in state_dict: "state_lift.weight"``.
+
+    "Frozen" scopes to p_phi — the field — not to the backbone-facing
+    adapter. W stays trainable, which is what makes H "the only arm with a
+    trainable lift" (``docs/e1_5-instruction.md`` Repair 2). Full contract
+    + guard teeth: ``tests/test_frozen_field_sharing.py``."""
     source_cfg = _field_model_config(field_state="hidden")
     path = _save_field_checkpoint(tmp_path, source_cfg, name="frozen-hidden-src")
     raw = torch.load(path, map_location="cpu", weights_only=True)
-    expected_state_lift = raw["model"]["state_lift.weight"]
+    checkpointed_state_lift = raw["model"]["state_lift.weight"]
 
     frozen_cfg = _field_model_config(
         field_state="hidden", field_mode="frozen", field_ckpt_path=str(path)
     )
     frozen = FieldEncoder(frozen_cfg)
     assert frozen.state_lift is not None
-    torch.testing.assert_close(
-        frozen.state_lift.weight,
-        expected_state_lift,
-        atol=0,
-        rtol=0,
-    )
-    assert not frozen.state_lift.weight.requires_grad
+    # Trainable, and NOT taken from the checkpoint: this arm's adapter is
+    # its own, freshly initialised, and learns during the backbone's run.
+    assert frozen.state_lift.weight.requires_grad
+    assert not torch.equal(frozen.state_lift.weight, checkpointed_state_lift)
+    # ...while the field body it reads from IS frozen and IS restored.
+    assert not frozen.wte.weight.requires_grad
+    torch.testing.assert_close(frozen.wte.weight, raw["model"]["wte.weight"], atol=0, rtol=0)
 
 
 # -------------------------------------------------------------------- trainer
