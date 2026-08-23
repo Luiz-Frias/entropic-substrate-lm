@@ -4,43 +4,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## North star
 
-Prove or falsify one thesis: statistics-first symbol encoding _induces_ spherical geometry
-rather than assuming it — under the square-root map, byte transition distributions land on
-the positive orthant of the unit hypersphere with Fisher–Rao as (4×) the angular metric —
-and downstream of the substrate, geometry belongs in the layers, not around the model:
-projection/retraction as layer operators, curvature as a learnable parameter. The encoding
-is a **field, not a lookup** (ratified 2026-08-18): a symbol's representation is its
-context-conditioned predictive distribution mapped through √p — the online contextual
-Fisher state — with the byte as the observation entering the system, never the
-representation used by it. The repo is a controlled ablation ladder (E0→E4, one variable
-per rung), not a framework: initialization geometry (E1, `docs/e-3-instruction.md`) →
-**state construction** (E1.5, `docs/e1_5-instruction.md`: fixed point vs
-context-conditioned distribution) → state dynamics (E2) → relational kernel (E3) →
-coarse-graining (E4). The readout is nats/byte plus per-head κ-trajectory diagnostics.
+Prove or falsify one forward thesis: **the hidden state stays latent; future laws determine
+which latent displacements matter, and geometry is consumed as an operator on latent
+dynamics—not substituted for latent state.** Bytes remain the first observation/readout
+codec because enwik8 is the measured task, but byte IDs, table rows, and 256-coordinate
+predictive distributions are boundary objects, never the ontology or width of the semantic
+core. A causal state `h_t` is supervised by a codec-independent law over future latent
+targets; that law induces a local Fisher pullback (conservatively, a predictive semimetric)
+which downstream dynamics may consume. “Predictive manifold” is a hypothesis to earn from
+rank, regularity, stability, and codec-equivariance measurements, not an implementation
+assumption.
+
+The filed E-series remains the binding historical evidence: E1 Fisher initialization,
+E1.5 static/contextual state-construction controls, E2 hypersphere dynamics, E3 relational
+κ-kernels, and the deferred E4 chunking design. The forward program is the D1→D5 controlled
+ablation ladder in `docs/architecture.md` and `docs/pivoted-implementation.plan.md`, not a
+framework: stabilized latent predictive state → decoder-induced geometry → future-law
+horizons → predictive coarse-graining → codec equivariance. Readouts keep nats/byte and add
+registered collapse, grounding, geometry, scale, and resource diagnostics without mixing
+evidence classes.
 
 ## Horizon
 
-The E1.5 state-construction series next, then E2→E3, then E4 in full:
+Complete D1→D5 through the entire rung flywheel. Every rung is done only after tested
+implementation, excluded pilot, committed preregistration, paired confirmatory execution,
+authoritative DVC capture, fresh-session analysis, arm-blind review where technically
+possible, filed Markdown/JSON verdicts, and an explicit successor gate.
 
-- **E1.5 series** (`docs/e1_5-instruction.md`) — E1.5-D endpoint diagnostics on the
-  captured E1 checkpoints (no new training); E1.5a freeze variants; E1.5b
-  Gram-preserving regularization; **E1.5c online contextual Fisher state — four-arm
-  contract T/H/P/F with a CALIBRATED field (`docs/e1_5-instruction.md` §E1.5c,
-  ratified 2026-08-19: without the auxiliary field CE or a frozen pretrained
-  estimator, `p_φ` degenerates into a simplex bottleneck), v1 = tiny causal
-  transformer, pure-torch** — the series is done enough when E1.5c v1's
-  registered readout files. v2 (Mamba2 `p_φ`) rides the E4 container lane; the
-  multi-scale E1.5c″ field waits for v1's conclusion. Preregistrations follow the
-  flywheel: committed after the E1 extension verdict files, before any confirmatory pod.
-- **E4a** — fixed-W=8 chunk-superposition control on the settled E3 winner (HoloByte
-  bind/unbind + micro-decoder pattern), isolating "hierarchy at all" from "learned
-  boundaries". **Precondition:** E3 concluded with 3-seed nats/byte numbers.
-- **E4b** — learned dynamic chunking per H-Net (`references/hnet`). Toolchain is
-  quarantined to the container (`mamba_ssm`/`causal_conv1d`, possibly nvcc source builds);
-  the pure-torch escape hatch (small transformer encoders in place of Mamba-2 stages) is
-  acceptable for a first pass at ~85M scale.
-- **Follow-on** — if E3 shows signal, graduate κ-components from the projection pattern to
-  `geoopt.ManifoldParameter` + `RiemannianAdam`.
+- **D1 — stabilized latent predictive state.** Build the complete vertical tracer bullet.
+  Keep the online state latent; add a future-target encoder and simple probabilistic future
+  law; test the full 2×2 of stop-gradient target encoder and moment anti-collapse
+  regularization. D2 requires at least one noncollapsed, causally clean, predictively grounded
+  arm under the filed D1 rule.
+- **D2 — decoder-induced geometry.** Within each D1-eligible stabilization block, separate
+  predictive supervision (`S−L`) from consuming its Fisher pullback (`G−S`) under matched
+  Euclidean and geometry-aware consumers. Predictive state may advance without Fisher if S
+  passes and G fails; both failing retires D3/D4 scale-up.
+- **D3 — future-law family and horizon sweep.** Compare fixed source-byte horizons
+  `{1,4,16,64}` and one preregistered multihorizon composite in matched-backbone and
+  matched-total lanes. Longer/learned scale is earned only by complementary registered value.
+- **D4 — multiscale coarse-graining.** Run an identity/fixed-window control first. Launch a
+  pure-Torch learned predictive-boundary arm only behind the filed trigger; keep H-Net/Mamba
+  tooling quarantined as conditional scale-up, and do not target an English token-length ratio.
+- **D5 — codec quarantine and interface generalization.** Test identity bytes against
+  deterministic bijective byte permutations before any non-isomorphic codec. Permit
+  “codec-equivariant” only if performance, function, relational geometry, and scale-policy
+  clauses all pass.
+
+The existing `Auditable compute-to-quality telemetry` work (`FOR-938`–`FOR-947`) is a
+cross-project dependency, not work to duplicate. A post-D5 topology capstone is report-only
+and requires its own preregistration; TDA is not a D1–D5 loss or a rescue gate.
 
 ## Commands
 
