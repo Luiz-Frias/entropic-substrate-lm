@@ -1,0 +1,411 @@
+{
+  "rung": "E1.5c",
+  "stage": "confirmatory_analysis_frozen",
+  "regime": "frozen",
+  "preregistration": "docs/e1-5c-preregistration.md",
+  "preregistration_commit": {"algorithm": "sha1", "ordered_hex_chunks": ["975d9a37", "6acfc0c0", "ca7a45e9", "67dc4ed1", "56f140e9"]},
+  "preregistration_commit_evidence_class": "MEASURED from git log --follow on the preregistration file",
+  "binding_preregistration_revision": {"algorithm": "sha1", "ordered_hex_chunks": ["8f31e62c", "ba024c0e", "97af1c37", "c4854180", "3b87004b"]},
+  "binding_preregistration_revision_evidence_class": "MEASURED from git log --follow on the preregistration file",
+  "verdict": {
+    "registered_label": "Thesis supported",
+    "applies": false,
+    "evidence_class": "MEASURED application of QUOTED clauses",
+    "clause_results": {
+      "learning_curve_ci_entirely_above_zero": false,
+      "terminal_noninferiority_within_delta": false,
+      "field_stays_calibrated": true
+    },
+    "practically_valuable": false,
+    "compute_efficient": null,
+    "compute_efficient_status": "not established: F is censored at L* for all seeds and FLOP measurements are absent",
+    "verdict_scope": "The registration defines the positive phrase Thesis supported but no negative rung word. This object preserves the registered vocabulary as a boolean application rather than inventing a label."
+  },
+  "registered_constants": {
+    "evidence_class": "QUOTED",
+    "arms": ["T", "H", "P", "F", "F_matched_total"],
+    "seeds": [1, 2, 3, 4],
+    "last_k": 5,
+    "eval_interval_steps": 500,
+    "budget_steps": [3000, 6000, 12000, 18000],
+    "budget_bytes": [49152000, 98304000, 196608000, 294912000],
+    "bytes_per_step": 16384,
+    "batch_size": 16,
+    "sequence_length": 1024,
+    "per_seed_primary_statistic": "(1/4) * sum_B d_B,s",
+    "n_pairs": 4,
+    "df": 3,
+    "primary_ci": "paired, one look, two-sided 95%",
+    "t_critical_primary": 3.182,
+    "epsilon_L": 0.01,
+    "L_star": 0.8,
+    "crossing_rule": "first eval whose last-5-ending-there mean is <= L*",
+    "censor_step": 20000,
+    "minimum_uncensored_pairs": 3,
+    "co_primary_ci": "one-sided 95% lower confidence bound",
+    "epsilon_S": 0.1,
+    "terminal_step": 20000,
+    "terminal_bytes": 327680000,
+    "delta": 0.005,
+    "standalone_field_ce_reference": 1.258881,
+    "frozen_calibration_tolerance": 0.02,
+    "ece_bins": 15,
+    "learning_rate": 0.0006,
+    "max_steps": 20000,
+    "field_estimator": {
+      "layers": 2,
+      "d_model": 128,
+      "heads": 4,
+      "head_vocab": 256
+    },
+    "matched_total_amendment": {
+      "original_d_model": 756,
+      "original_head_dim": 63,
+      "actual_d_model": 744,
+      "actual_head_dim": 62,
+      "n_heads": 12,
+      "original_total_params": 82940244,
+      "actual_total_params": 80344872,
+      "static_baseline_params": 85150464,
+      "quoted_shortfall_percent": 5.6
+    },
+    "joint_lane_scope": "separate registered-secondary report; not applied"
+  },
+  "primary": {
+    "evidence_class": "MEASURED",
+    "orientation": "For candidate-base scientific names, arithmetic is L_base - L_candidate; positive means the candidate is better.",
+    "critical_value_source": "QUOTED literal t = 3.182",
+    "contrasts": {
+      "H-T": {
+        "base": "T",
+        "candidate": "H",
+        "per_seed_curve_average": [-0.07776660000000005, -0.07165659999999999, -0.07498410000000003, -0.07986584999999999],
+        "mean": -0.07606828750000001,
+        "sd": 0.0035564118350698702,
+        "se": 0.0017782059175349351,
+        "ci": [-0.08172653872959618, -0.07041003627040385],
+        "direction_vs_zero": "entirely below 0; H worse",
+        "curve_point_ge_epsilon_L": false,
+        "any_budget_point_ge_epsilon_L": false,
+        "by_budget": {
+          "3000": {"mean": -0.17093390000000003, "sd": 0.004317799416369456, "ci": [-0.17780351887144383, -0.16406428112855623]},
+          "6000": {"mean": -0.0739619, "sd": 0.007623431284314598, "ci": [-0.08609077917334453, -0.06183302082665547]},
+          "12000": {"mean": -0.03387545000000003, "sd": 0.003515293127180147, "ci": [-0.039468281365343645, -0.028282618634656413]},
+          "18000": {"mean": -0.025501899999999994, "sd": 0.0027438119687762954, "ci": [-0.02986730484232308, -0.021136495157676908]}
+        }
+      },
+      "P-H": {
+        "base": "H",
+        "candidate": "P",
+        "per_seed_curve_average": [-0.05117925000000004, -0.05506295, -0.0502214, -0.04665345000000001],
+        "mean": -0.05077926250000001,
+        "sd": 0.0034565641877387877,
+        "se": 0.0017282820938693939,
+        "ci": [-0.05627865612269242, -0.0452798688773076],
+        "direction_vs_zero": "entirely below 0; P worse",
+        "curve_point_ge_epsilon_L": false,
+        "any_budget_point_ge_epsilon_L": false,
+        "by_budget": {
+          "3000": {"mean": -0.03903555000000003, "sd": 0.006998675435394892, "ci": [-0.05017044261771331, -0.027900657382286757]},
+          "6000": {"mean": -0.060858050000000025, "sd": 0.010215871659824185, "ci": [-0.0771115018107803, -0.044604598189219746]},
+          "12000": {"mean": -0.05545039999999998, "sd": 0.00529964862483046, "ci": [-0.06388214096210525, -0.04701865903789472]},
+          "18000": {"mean": -0.04777305000000001, "sd": 0.005220674864102015, "ci": [-0.05607914370878632, -0.0394669562912137]}
+        }
+      },
+      "F-P": {
+        "base": "P",
+        "candidate": "F",
+        "per_seed_curve_average": [0.016185750000000027, 0.01796605000000004, 0.010796, 0.010425349999999972],
+        "mean": 0.01384328750000001,
+        "sd": 0.0038058095528142074,
+        "se": 0.0019029047764071037,
+        "ci": [0.007788244501472605, 0.019898330498527413],
+        "direction_vs_zero": "entirely above 0; F better",
+        "curve_point_ge_epsilon_L": true,
+        "any_budget_point_ge_epsilon_L": true,
+        "by_budget": {
+          "3000": {"mean": -0.0004828499999999236, "sd": 0.005184581534704564, "ci": [-0.008731519221714884, 0.007765819221715037]},
+          "6000": {"mean": 0.018646549999999984, "sd": 0.006783518759218307, "ci": [0.007853971654083658, 0.02943912834591631]},
+          "12000": {"mean": 0.019635050000000015, "sd": 0.007225160599599193, "ci": [0.0081398194860377, 0.03113028051396233]},
+          "18000": {"mean": 0.017574399999999962, "sd": 0.005977702091383706, "ci": [0.008063875972608487, 0.02708492402739144]}
+        }
+      },
+      "F-H": {
+        "base": "H",
+        "candidate": "F",
+        "status": "direct critical contrast explicitly registered in the binding text",
+        "per_seed_curve_average": [-0.03499350000000001, -0.03709689999999996, -0.0394254, -0.03622810000000004],
+        "mean": -0.036935975,
+        "sd": 0.001870599710208813,
+        "se": 0.0009352998551044064,
+        "ci": [-0.039912099138942225, -0.03395985086105778],
+        "direction_vs_zero": "entirely below 0; F worse",
+        "curve_point_ge_epsilon_L": false,
+        "any_budget_point_ge_epsilon_L": false,
+        "by_budget": {
+          "3000": {"mean": -0.039518399999999954, "sd": 0.0029182998292384627, "ci": [-0.04416141502831835, -0.03487538497168156]},
+          "6000": {"mean": -0.04221150000000004, "sd": 0.006806770624410179, "ci": [-0.05304107206343664, -0.03138192793656344]},
+          "12000": {"mean": -0.03581534999999997, "sd": 0.002843104450537589, "ci": [-0.04033872918080527, -0.031291970819194666]},
+          "18000": {"mean": -0.03019865000000005, "sd": 0.002818987153216565, "ci": [-0.034683658560767605, -0.025713641439232493]}
+        }
+      },
+      "F-T": {
+        "base": "T",
+        "candidate": "F",
+        "status": "headline",
+        "per_seed_curve_average": [-0.11276010000000006, -0.10875349999999995, -0.11440950000000003, -0.11609395000000003],
+        "mean": -0.11300426250000001,
+        "sd": 0.003143748210701978,
+        "se": 0.001571874105350989,
+        "ci": [-0.11800596590322686, -0.10800255909677316],
+        "direction_vs_zero": "entirely below 0; F worse",
+        "curve_point_ge_epsilon_L": false,
+        "any_budget_point_ge_epsilon_L": false,
+        "by_budget": {
+          "3000": {"mean": -0.21045229999999998, "sd": 0.003308060851919211, "ci": [-0.21571542481540346, -0.2051891751845965]},
+          "6000": {"mean": -0.11617340000000004, "sd": 0.0051570492312303364, "ci": [-0.1243782653268875, -0.10796853467311257]},
+          "12000": {"mean": -0.0696908, "sd": 0.0053818101168039804, "ci": [-0.07825325989583513, -0.06112834010416486]},
+          "18000": {"mean": -0.05570055000000004, "sd": 0.005008657516407632, "ci": [-0.06366932410860458, -0.0477317758913955]}
+        }
+      },
+      "F_matched_total-T": {
+        "base": "T",
+        "candidate": "F_matched_total",
+        "per_seed_curve_average": [-0.11125164999999998, -0.10953084999999999, -0.11231615, -0.11522545000000001],
+        "mean": -0.112081025,
+        "sd": 0.002389835961420794,
+        "se": 0.001194917980710397,
+        "ci": [-0.11588325401462049, -0.10827879598537951],
+        "direction_vs_zero": "entirely below 0; matched-total F worse",
+        "curve_point_ge_epsilon_L": false,
+        "any_budget_point_ge_epsilon_L": false,
+        "by_budget": {
+          "3000": {"mean": -0.20952065000000003, "sd": 0.005190399415266637, "ci": [-0.21777857546968926, -0.2012627245303108]},
+          "6000": {"mean": -0.11383704999999994, "sd": 0.001994418540995508, "ci": [-0.11701016989872379, -0.11066393010127609]},
+          "12000": {"mean": -0.06891185, "sd": 0.0027504440677825455, "ci": [-0.07328780651184202, -0.06453589348815797]},
+          "18000": {"mean": -0.05605455000000001, "sd": 0.003085016686610756, "ci": [-0.06096281154839772, -0.051146288451602295]}
+        }
+      }
+    },
+    "arm_means_by_budget": {
+      "T": {"3000": 1.0140855, "6000": 0.88825555, "12000": 0.80542505, "18000": 0.76997855, "20000": 0.7674019},
+      "H": {"3000": 1.1850194, "6000": 0.96221745, "12000": 0.8393005, "18000": 0.79548045, "20000": 0.7920399499999999},
+      "P": {"3000": 1.22405495, "6000": 1.0230755, "12000": 0.8947509, "18000": 0.8432535, "20000": 0.83726015},
+      "F": {"3000": 1.2245378, "6000": 1.00442895, "12000": 0.87511585, "18000": 0.8256791, "20000": 0.8193682},
+      "F_matched_total": {"3000": 1.22360615, "6000": 1.0020926, "12000": 0.8743369, "18000": 0.8260331, "20000": 0.8195974}
+    }
+  },
+  "co_primary": {
+    "evidence_class": "MEASURED",
+    "registered_decision_terms_evidence_class": "QUOTED",
+    "crossings": {
+      "T": [
+        {"seed": 1, "step": 13000, "bytes": 212992000, "k5_nats_per_byte": 0.7962222, "gpu_seconds": 1480.142},
+        {"seed": 2, "step": 13000, "bytes": 212992000, "k5_nats_per_byte": 0.7984608, "gpu_seconds": 1506.215},
+        {"seed": 3, "step": 12500, "bytes": 204800000, "k5_nats_per_byte": 0.7997213999999999, "gpu_seconds": 1476.504},
+        {"seed": 4, "step": 13000, "bytes": 212992000, "k5_nats_per_byte": 0.7965635999999999, "gpu_seconds": 1521.443}
+      ],
+      "H": [
+        {"seed": 1, "step": 17500, "bytes": 286720000, "k5_nats_per_byte": 0.7991195999999999, "gpu_seconds": 2025.517},
+        {"seed": 2, "step": 17500, "bytes": 286720000, "k5_nats_per_byte": 0.7977568, "gpu_seconds": 2045.288},
+        {"seed": 3, "step": 16000, "bytes": 262144000, "k5_nats_per_byte": 0.7998852, "gpu_seconds": 1890.195},
+        {"seed": 4, "step": 17500, "bytes": 286720000, "k5_nats_per_byte": 0.7998308, "gpu_seconds": 2009.892}
+      ],
+      "P": [null, null, null, null],
+      "F": [null, null, null, null],
+      "F_matched_total": [null, null, null, null]
+    },
+    "contrast_results": {
+      "H-T": {
+        "n_uncensored": 4,
+        "S_by_seed": [-0.34615384615384615, -0.34615384615384615, -0.28, -0.34615384615384615],
+        "mean_S": -0.32961538461538464,
+        "sd_S": 0.03307692307692306,
+        "one_sided_t_critical": 2.3533634348018233,
+        "one_sided_95_lcb": -0.3685363952678763,
+        "convergence_improvement": false,
+        "practically_relevant": false,
+        "strong_support": false
+      },
+      "P-H": {"n_uncensored": 0, "censored_pairs": [1, 2, 3, 4], "decision": "INCONCLUSIVE"},
+      "F-P": {"n_uncensored": 0, "censored_pairs": [1, 2, 3, 4], "decision": "INCONCLUSIVE"},
+      "F-H": {"n_uncensored": 0, "censored_pairs": [1, 2, 3, 4], "decision": "INCONCLUSIVE"},
+      "F-T": {"n_uncensored": 0, "censored_pairs": [1, 2, 3, 4], "decision": "INCONCLUSIVE"},
+      "F_matched_total-T": {"n_uncensored": 0, "censored_pairs": [1, 2, 3, 4], "decision": "INCONCLUSIVE"}
+    }
+  },
+  "terminal": {
+    "evidence_class": "MEASURED",
+    "orientation": "L_candidate - L_base; negative favors candidate",
+    "critical_value_source": "QUOTED literal t = 3.182",
+    "contrasts": {
+      "H-T": {"values": [0.02551800000000004, 0.02447620000000006, 0.019322399999999962, 0.029235599999999917], "mean": 0.024638049999999995, "sd": 0.004090399668736528, "ci": [0.018130224127040177, 0.031145875872959812], "point_gap_below_delta": false},
+      "P-H": {"values": [0.051510999999999973, 0.04416319999999996, 0.04148020000000008, 0.043726400000000054], "mean": 0.045220200000000016, "sd": 0.004355473647415744, "ci": [0.03829064142696157, 0.05214975857303846], "point_gap_below_delta": false},
+      "F-P": {"values": [-0.026351800000000036, -0.018844399999999983, -0.014036800000000071, -0.012334799999999979], "mean": -0.017891950000000018, "sd": 0.006277481466055217, "ci": [-0.027879423012493867, -0.007904476987506168], "point_gap_below_delta": true},
+      "F-H": {"values": [0.025159199999999937, 0.025318799999999975, 0.027443400000000007, 0.031391600000000075], "mean": 0.02732825, "sd": 0.002902110723249602, "ci": [0.022710991839309882, 0.03194550816069011], "point_gap_below_delta": false},
+      "F-T": {"values": [0.05067719999999998, 0.049795000000000034, 0.04676579999999997, 0.06062719999999999], "mean": 0.05196629999999999, "sd": 0.006012007750050452, "ci": [0.042401195669669725, 0.06153140433033026], "point_gap_below_delta": false},
+      "F_matched_total-T": {"values": [0.05015500000000006, 0.05413620000000008, 0.048158400000000046, 0.05633239999999995], "mean": 0.052195500000000034, "sd": 0.003712235389447499, "ci": [0.046289333495389065, 0.058101666504611], "point_gap_below_delta": false}
+    }
+  },
+  "calibration": {
+    "evidence_class": "MEASURED",
+    "applies_to_arms": ["H", "P", "F", "F_matched_total"],
+    "applies_to_seeds": [1, 2, 3, 4],
+    "all_16_arm_seed_readings_identical": true,
+    "terminal_last5": {
+      "field_nats_per_byte": 1.256355,
+      "field_brier": 0.464835,
+      "field_ece": 0.012982,
+      "field_entropy": 1.287068,
+      "field_top1": 0.631744
+    },
+    "field_ce_minus_quoted_reference": -0.002525999999999806,
+    "all_16_within_quoted_frozen_tolerance": true,
+    "gate_passes": true,
+    "non_gate_diagnostics_role": "reported, never promoted into unregistered criteria"
+  },
+  "matched_total": {
+    "evidence_class": "MEASURED except where marked QUOTED",
+    "actual_d_model": 744,
+    "actual_total_params": 80344872,
+    "static_baseline_params": 85150464,
+    "measured_shortfall_fraction": 0.05643647461510016,
+    "amendment_shortfall_description": "5.6% under",
+    "amendment_shortfall_description_evidence_class": "QUOTED",
+    "terminal_point_gap": 0.052195500000000034,
+    "terminal_point_gap_below_delta": false,
+    "H_P_matched_total_twins": "declared follow-ups; no admissible captures supplied or analyzed"
+  },
+  "pairing": {
+    "evidence_class": "MEASURED",
+    "rule_evidence_class": "QUOTED",
+    "rule": "data_order_digest equality at the same seed",
+    "pairs_checked": 16,
+    "pairs_matched": 16,
+    "pairs_invalidated": 0,
+    "digests": [
+      {"seed": 1, "digest": {"algorithm": "sha256", "ordered_hex_chunks": ["3f054123", "24b70543", "fba0e653", "7d130ecf", "240b1339", "355ea4a3", "66d0db4f", "18626e27"]}, "H": true, "P": true, "F": true, "F_matched_total": true},
+      {"seed": 2, "digest": {"algorithm": "sha256", "ordered_hex_chunks": ["8a39105f", "5aa9f1ed", "382a5103", "765f3dcd", "106be704", "04044231", "f9805d10", "a6d0f91e"]}, "H": true, "P": true, "F": true, "F_matched_total": true},
+      {"seed": 3, "digest": {"algorithm": "sha256", "ordered_hex_chunks": ["4f26fe90", "84deda26", "957f274a", "c7147c84", "df6f91d8", "f9e7daf0", "d40d10c2", "08c67a26"]}, "H": true, "P": true, "F": true, "F_matched_total": true},
+      {"seed": 4, "digest": {"algorithm": "sha256", "ordered_hex_chunks": ["6e4e1104", "6c3f652c", "28e813d3", "1aad31b1", "0dd76d1d", "84623439", "ae9b38bb", "11c8cb5b"]}, "H": true, "P": true, "F": true, "F_matched_total": true}
+    ]
+  },
+  "exclusions": {
+    "rule": "a non-finite final loss drops the whole pair",
+    "rule_evidence_class": "QUOTED",
+    "final_losses_checked": 20,
+    "final_losses_checked_evidence_class": "MEASURED",
+    "all_final_losses_finite": true,
+    "excluded_pairs": []
+  },
+  "regime_checks": {
+    "evidence_class": "MEASURED from run_start",
+    "shared": {
+      "data_source": "enwik8",
+      "tokenizer": "byte",
+      "batch_size": 16,
+      "sequence_length": 1024,
+      "n_layers": 12,
+      "n_heads": 12,
+      "learning_rate": 0.0006,
+      "max_steps": 20000,
+      "eval_interval": 500,
+      "amp_dtype": "bf16",
+      "device": "cuda",
+      "resume": null
+    },
+    "T": {"config_name": "e1-fisher", "state_source": null, "d_model": 768, "params": 85150464},
+    "H": {"config_name": "e1-5c-hidden", "state_source": "field", "field_state": "hidden", "field_mode": "frozen", "field_loss_lambda": 0.0, "d_model": 768, "params": 85675392, "field_encoder_params": 524928},
+    "P": {"config_name": "e1-5c-prob", "state_source": "field", "field_state": "prob", "field_mode": "frozen", "field_loss_lambda": 0.0, "d_model": 768, "params": 85577088, "field_encoder_params": 426624},
+    "F": {"config_name": "e1-5c-field", "state_source": "field", "field_state": "sqrt_prob", "field_mode": "frozen", "field_loss_lambda": 0.0, "d_model": 768, "params": 85577088, "field_encoder_params": 426624},
+    "F_matched_total": {"config_name": "e1-5c-field-matched-total", "state_source": "field", "field_state": "sqrt_prob", "field_mode": "frozen", "field_loss_lambda": 0.0, "d_model": 744, "params": 80344872, "field_encoder_params": 426624}
+  },
+  "inputs": [
+    {"arm": "T", "seed": 1, "path": "results/captured/e1-fisher-bd0fb0d3-e1-fisher-s1.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["f9e3498a", "b923b27a", "e233aa9e", "1b85c2bc"]}},
+    {"arm": "T", "seed": 2, "path": "results/captured/e1-fisher-56d129a1-e1-fisher-s2.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["e57e834f", "c356ef35", "b9618c15", "ae151af8"]}},
+    {"arm": "T", "seed": 3, "path": "results/captured/e1-fisher-7d84caf7-e1-fisher-s3.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["ba7d6114", "0cc2b7cc", "281aa881", "d2f67e35"]}},
+    {"arm": "T", "seed": 4, "path": "results/captured/e1-fisher-6015d8d1-e1-fisher-s4.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["82699451", "08deacfa", "a8f0adcc", "e83c61bf"]}},
+    {"arm": "H", "seed": 1, "path": "results/captured/e1-5c-hidden-07b96872-e1-5c-hidden-frozen-s1.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["08002099", "79d30712", "a383bb7d", "f26498a0"]}},
+    {"arm": "H", "seed": 2, "path": "results/captured/e1-5c-hidden-56cb0255-e1-5c-hidden-frozen-s2.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["8eb7a218", "515969b7", "f666072b", "b1aaa616"]}},
+    {"arm": "H", "seed": 3, "path": "results/captured/e1-5c-hidden-fdbd546a-e1-5c-hidden-frozen-s3.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["267d492e", "ea241b62", "b8747fb6", "f50b5f5f"]}},
+    {"arm": "H", "seed": 4, "path": "results/captured/e1-5c-hidden-473f6f95-e1-5c-hidden-frozen-s4.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["54f86615", "7d8cacdb", "48a6f2d7", "7106658c"]}},
+    {"arm": "P", "seed": 1, "path": "results/captured/e1-5c-prob-2790013d-e1-5c-prob-frozen-s1.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["44be506c", "ae8c8e81", "eaeb8d4f", "e03d440e"]}},
+    {"arm": "P", "seed": 2, "path": "results/captured/e1-5c-prob-dd1af0fc-e1-5c-prob-frozen-s2.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["9f3630a7", "d47827ae", "dd5c7f1a", "f87477c3"]}},
+    {"arm": "P", "seed": 3, "path": "results/captured/e1-5c-prob-ecc1e957-e1-5c-prob-frozen-s3.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["6d461b6c", "4f3ca668", "7bc42c99", "4c3dc9a5"]}},
+    {"arm": "P", "seed": 4, "path": "results/captured/e1-5c-prob-ea3e2da0-e1-5c-prob-frozen-s4.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["4c041877", "73de5cba", "98a9aa1d", "f8e289f4"]}},
+    {"arm": "F", "seed": 1, "path": "results/captured/e1-5c-field-08356fe7-e1-5c-field-frozen-s1.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["fc1f9d95", "1005536c", "036221d9", "a3ce08b6"]}},
+    {"arm": "F", "seed": 2, "path": "results/captured/e1-5c-field-9697c9f4-e1-5c-field-frozen-s2.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["5511d7b2", "2fe2d6ce", "9f26a556", "b87b07d9"]}},
+    {"arm": "F", "seed": 3, "path": "results/captured/e1-5c-field-60eec6a2-e1-5c-field-frozen-s3.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["c5c972eb", "73e03cdc", "1685f696", "6da0a40a"]}},
+    {"arm": "F", "seed": 4, "path": "results/captured/e1-5c-field-768068a9-e1-5c-field-frozen-s4.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["6164e004", "b3f311cc", "7fd850b0", "2bbd2e34"]}},
+    {"arm": "F_matched_total", "seed": 1, "path": "results/captured/e1-5c-field-matched-total-c1be4bc8-e1-5c-field-matched-total-frozen-s1.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["33827cd4", "00291cce", "d7513e65", "5e98b064"]}},
+    {"arm": "F_matched_total", "seed": 2, "path": "results/captured/e1-5c-field-matched-total-12d8c962-e1-5c-field-matched-total-frozen-s2.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["5dd49f8d", "c6b1aeea", "2c7d8453", "8fd92f68"]}},
+    {"arm": "F_matched_total", "seed": 3, "path": "results/captured/e1-5c-field-matched-total-a900cb5d-e1-5c-field-matched-total-frozen-s3.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["f41daf8f", "e76b4e9a", "292e858c", "47d0dc20"]}},
+    {"arm": "F_matched_total", "seed": 4, "path": "results/captured/e1-5c-field-matched-total-729217e7-e1-5c-field-matched-total-frozen-s4.jsonl", "md5": {"algorithm": "md5", "ordered_hex_chunks": ["1ef5457e", "add7e5c3", "cfc249c0", "c84287be"]}}
+  ],
+  "integrity": {
+    "evidence_class": "MEASURED",
+    "dvc_status": "Data and pipelines are up to date.",
+    "captured_directory_md5": {"algorithm": "md5", "ordered_hex_chunks": ["b7793451", "28e5484f", "99b33363", "83c5dbe7"], "directory_hash": true},
+    "enwik8_dvc_md5": {"algorithm": "md5", "ordered_hex_chunks": ["7722de7a", "ce657529", "9cd8ab78", "8c2fd201"], "directory_hash": true},
+    "field_checkpoint_md5": {"algorithm": "md5", "ordered_hex_chunks": ["edc3e3e5", "5ccc340b", "f565e14a", "c547618c"]},
+    "field_checkpoint_matches_dvc_pointer": true,
+    "field_pretrain_results_md5": {"algorithm": "md5", "ordered_hex_chunks": ["893e3722", "5011c973", "22f6cf5c", "0d68c4e0"]},
+    "field_pretrain_results_matches_dvc_pointer": true,
+    "field_pretrain_results_usage": "hashed only; contents not parsed or pooled",
+    "eval_records_per_input": 40,
+    "missing_links": ["wave image digest", "per-run config_hash", "per-run git_sha"]
+  },
+  "systems": {
+    "evidence_class": "MEASURED",
+    "processed_bytes_per_run_evidence_class": "QUOTED terminal budget",
+    "processed_bytes_per_run": 327680000,
+    "byte_token_equivalence": "run_start reports one byte per token",
+    "arms": {
+      "T": {"params": 85150464, "field_params": 0, "field_param_share": 0.0, "full_run_gpu_seconds_by_seed": [2263.148, 2299.342, 2346.719, 2326.291], "mean_full_run_gpu_seconds": 2308.875, "mean_bytes_per_second": 141948.11875735782, "gpu_seconds_to_target_by_seed": [1480.142, 1506.215, 1476.504, 1521.443]},
+      "H": {"params": 85675392, "field_params": 524928, "field_param_share": 0.006126940160367168, "full_run_gpu_seconds_by_seed": [2308.06, 2334.8, 2337.526, 2287.949], "mean_full_run_gpu_seconds": 2317.08375, "mean_bytes_per_second": 141430.12189108934, "gpu_seconds_to_target_by_seed": [2025.517, 2045.288, 1890.195, 2009.892]},
+      "P": {"params": 85577088, "field_params": 426624, "field_param_share": 0.004985259605935645, "full_run_gpu_seconds_by_seed": [2345.375, 2352.901, 2348.955, 2354.293], "mean_full_run_gpu_seconds": 2350.381, "mean_bytes_per_second": 139416.0024332637, "gpu_seconds_to_target_by_seed": [null, null, null, null]},
+      "F": {"params": 85577088, "field_params": 426624, "field_param_share": 0.004985259605935645, "full_run_gpu_seconds_by_seed": [2315.598, 2339.788, 2306.164, 2329.829], "mean_full_run_gpu_seconds": 2322.84475, "mean_bytes_per_second": 141072.76016528404, "gpu_seconds_to_target_by_seed": [null, null, null, null]},
+      "F_matched_total": {"params": 80344872, "field_params": 426624, "field_param_share": 0.005309909511088648, "full_run_gpu_seconds_by_seed": [2537.772, 2545.418, 2529.67, 2593.344], "mean_full_run_gpu_seconds": 2551.551, "mean_bytes_per_second": 128435.83246988268, "gpu_seconds_to_target_by_seed": [null, null, null, null]}
+    },
+    "missing_registered_readouts": ["estimated training FLOPs", "FLOPs-to-target", "peak VRAM", "field FLOP share"]
+  },
+  "probes": {
+    "lr_sensitivity_rider": {
+      "status": "not evaluated",
+      "reason": "all *lrdiag* captures are explicitly out of scope and were not read",
+      "decision_role": "mandatory rider if its registered condition fires; no claim about firing is made"
+    },
+    "context_sensitivity_angle_spread": {
+      "status": "not measurable from admissible JSONLs",
+      "field_arm_spread": null,
+      "T_exact_zero": null,
+      "required_measurement": "registered confirmatory checkpoint within-byte state-angle-spread probe"
+    },
+    "wsd_branch_decay": {
+      "status": "not available in scoped inputs",
+      "decision_role": "registered machinery-gated diagnostic; never gates the frozen wave"
+    },
+    "calibration_diagnostics": {
+      "status": "reported",
+      "decision_role": "field CE gates clause (3); Brier, ECE, entropy, and top-1 report but never decide"
+    }
+  },
+  "analysis_deviations": [
+    {
+      "type": "review-path search leakage",
+      "description": "A repository-wide filename search surfaced two isolated path-and-line snippets from docs/reviews. No review file was opened; the snippets contained no E1.5c frozen outcome and support no claim.",
+      "effect_on_estimator": "none",
+      "effect_on_decision_rule": "none"
+    }
+  ],
+  "limitations": [
+    "The estimand is scoped to the shared lr=6e-4, approximately 85M, enwik8, byte-level, cosine-to-20k regime; it is not tuned-frontier or scale-general.",
+    "The amended 744-wide matched-total arm is 5.6% under T, so it is approximate rather than exact-total and an unfavorable result is partly attributable to the registered shortfall.",
+    "Wave image digest, per-run config_hash, and per-run git_sha are unavailable from admissible captures.",
+    "FLOPs, FLOPs-to-target, peak VRAM, and field FLOP share are absent; no inferred values replace them.",
+    "LR rider status, checkpoint angle spread, and WSD schedule sensitivity are unavailable under the supplied boundary.",
+    "No negative rung vocabulary is invented; the three clause booleans are the machine-readable verdict."
+  ],
+  "review": null,
+  "review_status": "not intentionally read or created; out of scope for this analysis session"
+}
