@@ -181,11 +181,15 @@ def _run_tiny_cli(
     code = main(
         [
             "train",
-            "--exp", exp,
+            "--exp",
+            exp,
             "--tiny",
-            "--device", "cpu",
-            "--steps", "4",
-            "--results", str(results),
+            "--device",
+            "cpu",
+            "--steps",
+            "4",
+            "--results",
+            str(results),
             "--quiet",
         ]
     )

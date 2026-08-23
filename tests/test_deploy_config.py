@@ -278,3 +278,33 @@ def test_dockerignore_matches_containerignore_byte_for_byte() -> None:
         "written to prevent"
     )
     assert ".env" in container.split(), ".containerignore must exclude .env"
+
+
+def test_baked_model_copies_carry_a_matching_containerignore_negation() -> None:
+    """E1.5c's frozen arm ships its p_phi weights INSIDE the image.
+
+    Pods are credential-free (no R2 keys), so the frozen field checkpoint
+    cannot be pulled at runtime — the preregistration
+    (docs/e1-5c-preregistration.md Pilots) delivers it baked in, which is
+    also what puts the field weights under the image digest the launch
+    record pins.
+
+    `models/` is excluded wholesale from the build context, so every baked
+    model path needs its own `!`-negation. The two must move together: a
+    COPY without its negation fails the BUILD (context missing), while a
+    negation without its COPY silently fattens the context. This pins the
+    pair rather than either half.
+    """
+    containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
+    ignore_lines = (REPO_ROOT / ".containerignore").read_text(encoding="utf-8").split()
+    copied = [
+        line.split()[1]
+        for line in containerfile.splitlines()
+        if line.startswith("COPY ") and line.split()[1].startswith("models/")
+    ]
+    assert copied, "expected the frozen p_phi checkpoint to be COPYed into the image"
+    for path in copied:
+        assert f"!{path}" in ignore_lines, (
+            f"Containerfile COPYs {path!r} but .containerignore has no "
+            f"'!{path}' negation — `models/` excludes it from the build context"
+        )

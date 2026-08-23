@@ -16,6 +16,7 @@ from typing import Any, Literal
 import yaml
 
 __all__ = [
+    "E15_PREREGISTRATIONS",
     "Config",
     "DataConfig",
     "ModelConfig",
@@ -23,6 +24,7 @@ __all__ = [
     "is_execution_gated",
     "load_config",
     "merge_dicts",
+    "required_preregistrations",
     "resolve_experiment_config",
 ]
 
@@ -86,6 +88,13 @@ EXPERIMENTS: tuple[str, ...] = (
     # e1-5c-field's p_phi and differing only in field_state.
     "e1-5c-hidden",
     "e1-5c-prob",
+    # Matched-total twins (docs/e1_5-instruction.md "Comparison lanes"):
+    # shrunken backbones so N_backbone + N_field ~= e1-fisher's total.
+    # Registered by the E1.5c preregistration commit
+    # (docs/e1-5c-preregistration.md) — execution was prereg-time scope.
+    "e1-5c-field-matched-total",
+    "e1-5c-hidden-matched-total",
+    "e1-5c-prob-matched-total",
 )
 
 
@@ -170,6 +179,29 @@ class ModelConfig:
     field_state: FieldState = "sqrt_prob"
 
     def __post_init__(self) -> None:
+        if self.d_model % self.n_heads != 0:
+            msg = (
+                f"d_model {self.d_model} is not divisible by n_heads {self.n_heads} — "
+                "attention splits d_model evenly across heads"
+            )
+            raise ValueError(msg)
+        if (self.d_model // self.n_heads) % 2 != 0:
+            # MEASURED 2026-08-21: `e1-5c-field-matched-total` shipped
+            # d_model=756 / n_heads=12 = 63, an ODD head_dim. RoPE halves
+            # head_dim to build its rotation pairs, so `blocks.py`'s
+            # `rotary_embeddings` refuses it — but only on the FIRST FORWARD
+            # PASS, long after config parse, model build and data load. On
+            # pods that surfaced as four runs registered on the tracking
+            # server, logging zero metrics, while the pod's `; sleep infinity`
+            # tail kept the container billing: ~4 GPU-hours each, no output,
+            # and a failure indistinguishable from slowness from the outside.
+            # Refusing here turns that into a millisecond-one error message.
+            msg = (
+                f"head_dim {self.d_model // self.n_heads} (d_model {self.d_model} / "
+                f"n_heads {self.n_heads}) must be EVEN — RoPE rotates coordinate "
+                "pairs, so an odd head_dim cannot be split (models/blocks.py)"
+            )
+            raise ValueError(msg)
         if self.gram_lambda != 0.0 and self.tokenizer != "byte":
             msg = (
                 "gram_lambda != 0.0 requires tokenizer='byte': "
@@ -231,6 +263,42 @@ class Config:
     def to_dict(self) -> dict[str, Any]:
         """Plain-dict view (JSON serialisable), used for run metadata."""
         return dataclasses.asdict(self)
+
+
+# FOR-914: each E1.5 axis maps to its committed preregistration, or None
+# while unregistered. This in-code map — not a docs/ stat — is the RUNTIME
+# half of the execution gate because the training image carries no docs/
+# (Containerfile copies src/ configs/ scripts/ only), so a pod cannot check
+# the file. The CI half (tests/test_execution_gate.py) pins every non-None
+# entry to a file that actually exists in the repo, so the assertion and
+# the artifact cannot drift. Flip an entry to a path ONLY in the same
+# commit that adds the preregistration document (docs/rung-lifecycle-
+# protocol.md: committed before any confirmatory run).
+E15_PREREGISTRATIONS: dict[str, str | None] = {
+    "embedding_freeze": "docs/e1-5a-preregistration.md",
+    "gram_lambda": "docs/e1-5b-preregistration.md",
+    "state_source": "docs/e1-5c-preregistration.md",
+}
+
+
+def required_preregistrations(cfg: Config) -> tuple[tuple[str, str | None], ...]:
+    """Every E1.5 axis ``cfg`` activates, with its registered preregistration.
+
+    Read off the RESOLVED config, never off ``--exp``, for the same reason
+    :func:`is_execution_gated` is: ``--config`` outranks ``--exp`` and a
+    hand-rolled config never names an experiment. Returns ``(axis, path)``
+    pairs; ``path is None`` means the axis is active but unregistered —
+    the CLI preflight refuses that combination for non-tiny runs.
+    """
+    axes: list[tuple[str, str | None]] = []
+    model = cfg.model
+    if model.embedding_freeze != "none":
+        axes.append(("embedding_freeze", E15_PREREGISTRATIONS.get("embedding_freeze")))
+    if model.gram_lambda != 0.0:
+        axes.append(("gram_lambda", E15_PREREGISTRATIONS.get("gram_lambda")))
+    if model.state_source == "field":
+        axes.append(("state_source", E15_PREREGISTRATIONS.get("state_source")))
+    return tuple(axes)
 
 
 def is_execution_gated(cfg: Config) -> bool:

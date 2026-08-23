@@ -10,6 +10,8 @@ Subcommands
 ``charts``             render E1/E2/E3 interpretation charts, attach to MLflow
 ``embedding-geometry`` E1.5-D angular-drift / Gram-retention / functional-
                        divergence diagnostics on captured checkpoints
+``field-pretrain``     train a standalone p_phi and save the checkpoint
+                       ``field_mode="frozen"`` loads (E1.5c Repair 1)
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
+import yaml
 
 if TYPE_CHECKING:
     from entropic_substrate.analysis.embedding_geometry import CheckpointModel
@@ -33,12 +36,15 @@ from entropic_substrate.config import (
     EXPERIMENTS,
     Config,
     is_execution_gated,
+    merge_dicts,
+    required_preregistrations,
     resolve_experiment_config,
 )
 from entropic_substrate.data.build import build_corpus
 from entropic_substrate.data.enwik8 import load_enwik8_bytes
 from entropic_substrate.data.fineweb import stream_fineweb_bytes
 from entropic_substrate.data.synthetic import synthetic_text
+from entropic_substrate.field_pretrain import add_field_pretrain_parser, cmd_field_pretrain
 from entropic_substrate.init.fisher import build_fisher_init, save_init
 from entropic_substrate.logging import configure_logging, logger
 from entropic_substrate.mlflow_aggregate import aggregate
@@ -54,6 +60,37 @@ from entropic_substrate.train import Trainer, resolve_device, resolve_results_pa
 __all__ = ["build_parser", "main"]
 
 UNGATED_ENV: str = "ENTROPIC_ALLOW_UNGATED"
+
+
+# YAML-1.1 float-resolver gap: dotless scientific notation ("3e-4").
+_DOTLESS_SCI_FLOAT = re.compile(r"[-+]?\d+[eE][-+]?\d+")
+
+
+def _override_kv(item: str) -> tuple[str, str, Any]:
+    """argparse ``type`` for ``--override``: ``section.key=value`` → parsed triple.
+
+    Malformed spellings fail INSIDE argparse (usage error, exit 2) before any
+    config is resolved. The value goes through ``yaml.safe_load`` so the flag
+    types values by the SAME rules the config files use — ``3e-4`` arrives as
+    a float, ``frozen`` as a string, ``null`` as None — instead of smuggling
+    every override in as a string for a dataclass field to choke on later.
+    """
+    key, eq, raw = item.partition("=")
+    section, dot, field_name = key.partition(".")
+    if not eq or not dot or not section or not field_name:
+        msg = f"expected SECTION.KEY=VALUE (e.g. model.field_loss_lambda=0.3), got {item!r}"
+        raise argparse.ArgumentTypeError(msg)
+    value = yaml.safe_load(raw)
+    if isinstance(value, str) and _DOTLESS_SCI_FLOAT.fullmatch(value):
+        # PyYAML implements YAML 1.1, whose float resolver demands a dot
+        # before the exponent — MEASURED 2026-08-20: safe_load("3e-4")
+        # returns the STRING "3e-4", which then explodes inside AdamW far
+        # from the flag that caused it. The registered LR-diagnostic grid
+        # (docs/e1-5c-preregistration.md §Pilots) is written in exactly
+        # this dotless form, so resolve it here, narrowly (a dotless
+        # mantissa with an exponent cannot be an int or anything else).
+        value = float(value)
+    return section, field_name, value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +118,21 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--resume", type=Path, default=None, help="checkpoint to resume")
     train.add_argument("--results", type=Path, default=None, help="metrics JSONL path")
     train.add_argument("--quiet", action="store_true", help="suppress stdout logging")
+    train.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        type=_override_kv,
+        metavar="SECTION.KEY=VALUE",
+        help=(
+            "override one resolved-config knob (repeatable), e.g. "
+            "model.field_loss_lambda=0.3 or train.lr=3e-4 — the registered sweep "
+            "surface (docs/e1-5b-preregistration.md, docs/e1-5c-preregistration.md "
+            "pilots). Values parse as YAML (0.3 is a float, frozen a string, null "
+            "is None); unknown keys are refused by the config loader. The dedicated "
+            "--steps/--seed/--device/--resume flags win over --override."
+        ),
+    )
 
     fisher = sub.add_parser("init-fisher", help="build the sqrt(p) Fisher init table")
     fisher.add_argument(
@@ -223,10 +275,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--num-eval-batches", type=int, default=8, help="batches sampled for functional_divergence"
     )
 
+    add_field_pretrain_parser(sub)
+
     return parser
 
 
 def _overrides(args: argparse.Namespace) -> dict[str, Any]:
+    generic: dict[str, Any] = {}
+    for section, field_name, value in args.override:
+        generic.setdefault(section, {})[field_name] = value
     train: dict[str, Any] = {}
     if args.device is not None:
         train["device"] = args.device
@@ -236,7 +293,10 @@ def _overrides(args: argparse.Namespace) -> dict[str, Any]:
         train["seed"] = args.seed
     if args.resume is not None:
         train["resume"] = str(args.resume)
-    return {"train": train} if train else {}
+    # Overlay order = precedence: the dedicated flags are the more specific
+    # spelling of the same intent, so they win over --override (merge_dicts:
+    # overlay beats base).
+    return merge_dicts(generic, {"train": train}) if train else generic
 
 
 def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
@@ -280,6 +340,45 @@ def _anchored_arm_preflight(cfg: Config, *, tiny: bool) -> int:
     return 0
 
 
+def _e15_prereg_preflight(cfg: Config, *, tiny: bool) -> int:
+    """Refuse an E1.5 arm whose axis has no committed preregistration (FOR-914).
+
+    SANITY ONLY, same posture as :func:`_anchored_arm_preflight`: the check is
+    "a registration is committed", read from ``config.E15_PREREGISTRATIONS``
+    (the runtime half of the gate — the training image carries no ``docs/``,
+    so the file itself is CI's half to pin, tests/test_execution_gate.py).
+    ``--tiny`` runs pass ungated: the capture lane excludes ``-tiny`` runs by
+    construction, so a tiny smoke cannot enter a confirmatory set.
+    """
+    if tiny:
+        return 0
+    axes = required_preregistrations(cfg)
+    unregistered = [axis for axis, path in axes if path is None]
+    if not unregistered:
+        for axis, path in axes:
+            logger.bind(report=True).info(
+                f"[{cfg.name}] axis {axis!r} runs under committed registration {path}"
+            )
+        return 0
+    if os.environ.get(UNGATED_ENV) == "1":
+        logger.warning(
+            f"E1.5 axes {unregistered} have no committed preregistration, but "
+            f"{UNGATED_ENV}=1 is set — launching {cfg.name} on an ungated premise."
+        )
+        return 0
+    listing = "\n".join(f"  {axis}" for axis in unregistered)
+    logger.error(
+        "\n=============================== DECISION-NEEDED ==============================="
+        f"\n{cfg.name} activates E1.5 axes with no committed preregistration:\n{listing}"
+        "\nThe rung-lifecycle flywheel (docs/rung-lifecycle-protocol.md) commits each"
+        "\narm's registration BEFORE its first confirmatory run; register the axis in"
+        "\nconfig.E15_PREREGISTRATIONS in the same commit as the preregistration document."
+        f"\nDeliberate ungated run: {UNGATED_ENV}=1"
+        "\n==============================================================================="
+    )
+    return 2
+
+
 def cmd_train(args: argparse.Namespace) -> int:
     """Handle ``train``."""
     if args.exp is None and args.config is None:
@@ -294,6 +393,9 @@ def cmd_train(args: argparse.Namespace) -> int:
         code = _anchored_arm_preflight(cfg, tiny=args.tiny)
         if code != 0:
             return code
+    code = _e15_prereg_preflight(cfg, tiny=args.tiny)
+    if code != 0:
+        return code
 
     results_path = resolve_results_path(cfg, args.results)
     # STARTUP ABORT, RUNTIME CONTINUE: the MLflow startup probe runs BEFORE
@@ -912,6 +1014,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mlflow-aggregate": cmd_mlflow_aggregate,
         "charts": cmd_charts,
         "embedding-geometry": cmd_embedding_geometry,
+        "field-pretrain": cmd_field_pretrain,
     }
     try:
         return handlers[args.command](args)

@@ -266,18 +266,62 @@ class FieldEncoder(nn.Module):
                 msg = "field_mode='frozen' with field_ckpt_path=None reached model build"
                 raise RuntimeError(msg)
             self._load_frozen_weights(ckpt_path)
-            self.requires_grad_(False)
+            self._freeze_field_body()
+
+    # The learned content of p_phi: everything sized by `field_d_model`, and
+    # nothing sized by the BACKBONE's `d_model`. See _load_frozen_weights.
+    _BODY_PREFIXES = ("wte.", "blocks.", "norm_f.", "head.")
+
+    def _freeze_field_body(self) -> None:
+        """Freeze p_phi's learned body — and ONLY that.
+
+        Not ``self.requires_grad_(False)``: ``state_lift`` is H's own
+        trainable adapter (``docs/e1_5-instruction.md`` Repair 2 defines H as
+        "the only arm with a trainable lift"), created fresh by this arm and
+        never part of the pretrained field. Freezing it too would leave a
+        frozen random projection over a frozen hidden state — a different
+        experiment than the registered H arm. ``lift`` is a buffer, so it
+        carries no ``requires_grad`` either way.
+        """
+        for name, param in self.named_parameters():
+            if name.startswith(self._BODY_PREFIXES):
+                param.requires_grad_(False)
 
     def _load_frozen_weights(self, path: str) -> None:
-        """Load this module's own weights from a checkpoint's ``model`` key.
+        """Restore p_phi's LEARNED BODY from a checkpoint's ``model`` key.
+
+        Body = everything sized by ``field_d_model`` (``wte``, ``blocks``,
+        ``norm_f``, the tied ``head``). Deliberately NOT the whole module:
+
+        * ``lift`` is the fixed ``semi_orthogonal_lift(256, d_model, seed=0)``
+          buffer, sized by the BACKBONE's width — the matched-total lane runs
+          d_model=756 against a checkpoint written at 768. It is
+          deterministic, so this arm's own construction is the source of
+          truth and the checkpoint's copy is ignored.
+        * ``state_lift`` is H's own trainable adapter, which an F-shaped
+          checkpoint never contained.
+
+        MEASURED 2026-08-21 against the real pretrained artifact: a
+        whole-module ``load_state_dict`` raised ``size mismatch for lift`` on
+        both matched-total twins and ``Missing key(s): "state_lift.weight"``
+        on H — i.e. it could not deliver the registered contract that F, H
+        and the matched-total twins all share ONE p_phi
+        (``docs/e1-5c-preregistration.md``). Because the body depends only on
+        ``field_d_model``, that shared field transfers to every arm at every
+        backbone width. Guard teeth in
+        ``tests/test_frozen_field_sharing.py``.
 
         Wire format: ``{"format_version": ..., "model": <FieldEncoder.state_
         dict()>}`` — a checkpoint scoped to THIS module alone (not a full
-        ``Trainer.state_dict()``), produced by whatever separate run trained
+        ``Trainer.state_dict()``), produced by a separate run that trained
         p_phi as its own small causal LM (docs/e1_5-instruction.md's
-        pretrained/frozen regime). Nothing in this repo produces that
-        checkpoint yet (the standalone-p_phi training pipeline is a later
-        rung); this defines the format the loader expects. Routed through
+        pretrained/frozen regime). RETRACTION (2026-08-20): this docstring
+        said "Nothing in this repo produces that checkpoint yet (the
+        standalone-p_phi training pipeline is a later rung)" — true when
+        written, false as of ``entropic_substrate.field_pretrain``, which is
+        that producer and writes exactly this shape (its own roundtrip test
+        loads it back through THIS method). The format is still DEFINED
+        here, by the loader. Routed through
         ``normalize_checkpoint`` for the same reason ``Trainer.load_checkpoint``
         is: a stray legacy/malformed payload fails loud here rather than
         surfacing as an opaque shape error three lines later. ``for_resume=
@@ -288,7 +332,28 @@ class FieldEncoder(nn.Module):
         # checkpoints hold only tensors and primitives (bandit B614).
         raw = torch.load(Path(path), map_location="cpu", weights_only=True)
         state = normalize_checkpoint(raw, source=str(path), for_resume=False)
-        self.load_state_dict(state["model"])
+        model_state = state["model"]
+        if not isinstance(model_state, dict):
+            msg = f"{path}: checkpoint 'model' is not a state dict"
+            raise RuntimeError(msg)
+        body = {k: v for k, v in model_state.items() if k.startswith(self._BODY_PREFIXES)}
+        if not body:
+            msg = (
+                f"{path}: checkpoint carries no p_phi body "
+                f"({'/'.join(self._BODY_PREFIXES)}) — a frozen field must load a "
+                "PRETRAINED estimator, and silently keeping this module's fresh "
+                "random init would report an untrained field as a frozen one"
+            )
+            raise RuntimeError(msg)
+        # strict=False tolerates exactly the two arm-local tensors above being
+        # absent from the payload; it does NOT weaken shape checking (a size
+        # mismatch still raises), and a missing BODY key is re-raised below —
+        # so a genuinely wrong field still fails loud.
+        incompatible = self.load_state_dict(body, strict=False)
+        body_missing = [k for k in incompatible.missing_keys if k.startswith(self._BODY_PREFIXES)]
+        if body_missing:
+            msg = f"{path}: checkpoint is missing p_phi body keys {sorted(body_missing)}"
+            raise RuntimeError(msg)
 
     def _init_weights(self, module: nn.Module) -> None:
         std = self.field_d_model**-0.5

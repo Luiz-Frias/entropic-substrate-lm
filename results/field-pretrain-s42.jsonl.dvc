@@ -1,0 +1,5 @@
+outs:
+- md5: 893e37225011c97322f6cf5c0d68c4e0
+  size: 4769
+  hash: md5
+  path: field-pretrain-s42.jsonl
