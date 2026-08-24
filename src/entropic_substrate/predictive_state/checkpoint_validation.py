@@ -168,6 +168,10 @@ def _validate_typed_evidence(
     step: int,
 ) -> None:
     baseline = _baseline_from_mapping(state["baseline_calibration"])
+    model = require_mapping(state["model"], "model")
+    serialized_mean = model.get("mean_displacement_baseline._mean")
+    if type(serialized_mean) is not torch.Tensor:
+        raise D1CheckpointError("model baseline mean must be a tensor")
     try:
         ledger = resource_ledger_state_from_mapping(state["resource_ledger"])
     except ResourceLedgerCodecGap as exc:
@@ -184,6 +188,7 @@ def _validate_typed_evidence(
         baseline=baseline,
         ledger=ledger,
         journal=journal,
+        serialized_mean=serialized_mean,
     )
 
 
