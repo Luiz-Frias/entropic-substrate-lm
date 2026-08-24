@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+from entropic_substrate.evidence.d1_filing_graph import ValidatedD1Filing
 from entropic_substrate.evidence.d1_types import (
     FiledGateAuthorization,
     FiledGateOutcome,
     FiledGateRetirement,
     FiledGateValidNegative,
 )
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
 
 
-def decide_filed_verdict(verdict: ValidatedD1Verdict, /) -> FiledGateOutcome:
-    """Return the filed human decision without inspecting or recomputing data."""
+def decide_filed_verdict(filing: ValidatedD1Filing, /) -> FiledGateOutcome:
+    """Return a filed decision only after semantic evidence-graph verification."""
+
+    if type(filing) is not ValidatedD1Filing:
+        raise TypeError("D1 filed gate requires a verified semantic evidence graph")
+    verdict = filing.verdict
 
     match verdict.successor.authorization:
         case SuccessorAuthorization.AUTHORIZED:

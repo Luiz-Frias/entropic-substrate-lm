@@ -14,9 +14,9 @@ from entropic_substrate.evidence.d1_filing import (
     D1DetachedFiling,
     D1FilingManifest,
     D1FilingValidationError,
-    ValidatedD1Filing,
     validate_d1_filing_manifest,
 )
+from entropic_substrate.evidence.d1_filing_graph import ValidatedD1Filing, verify_d1_filing
 from entropic_substrate.evidence.d1_gate import decide_filed_verdict
 from entropic_substrate.evidence.d1_types import (
     D1_ARM_IDS,
@@ -73,4 +73,5 @@ __all__ = [
     "ValidatedD1Verdict",
     "decide_filed_verdict",
     "validate_d1_filing_manifest",
+    "verify_d1_filing",
 ]
