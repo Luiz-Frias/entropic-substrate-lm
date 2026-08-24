@@ -88,7 +88,7 @@ def test_termination_refuses_clock_identity_and_cursor_drift() -> None:
             capture_d1_trainer_termination(**values)  # type: ignore[arg-type]
 
 
-def test_failure_handoff_names_pending_nonterminal_journal_transition() -> None:
+def test_failure_handoff_attests_the_durable_trainer_event() -> None:
     _, start, journal, ledger = _states()
     termination = capture_d1_trainer_termination(
         start=start,
@@ -99,7 +99,9 @@ def test_failure_handoff_names_pending_nonterminal_journal_transition() -> None:
     )
     handoff = D1TrainerFailureHandoff.from_error(termination, RuntimeError("boom"))
 
-    assert handoff.pending_journal_event == "TRAINER_ABORTED"
+    assert handoff.trainer_event_kind == "TRAINER_ABORTED"
+    assert handoff.manifest["trainer_event_kind"] == "TRAINER_ABORTED"
+    assert handoff.manifest["termination"] == termination.manifest
     assert handoff.rollback_claimed is False
     assert handoff.operator_finalization_required is True
     assert handoff.error_type == "RuntimeError"

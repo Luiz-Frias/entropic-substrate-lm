@@ -26,7 +26,7 @@ __all__ = [
     "capture_d1_trainer_termination",
 ]
 
-_PENDING_ABORT_EVENT = "TRAINER_ABORTED"
+_TRAINER_ABORT_EVENT = "TRAINER_ABORTED"
 
 
 def _utc(value: datetime, *, label: str) -> None:
@@ -176,12 +176,12 @@ class D1FreshRunCompletion:
 
 @dataclass(frozen=True, slots=True)
 class D1TrainerFailureHandoff:
-    """Nonterminal defect evidence pending a journal-level TRAINER_ABORTED event."""
+    """Nonterminal defect evidence after durable ``TRAINER_ABORTED`` append."""
 
     termination: D1TrainerTermination
     error_type: str
     error_message: str
-    pending_journal_event: str = _PENDING_ABORT_EVENT
+    trainer_event_kind: str = _TRAINER_ABORT_EVENT
     rollback_claimed: bool = False
     operator_finalization_required: bool = True
 
@@ -192,12 +192,23 @@ class D1TrainerFailureHandoff:
             raise ValueError("D1 failure handoff error_type must be nonempty")
         if type(self.error_message) is not str or not self.error_message.strip():
             raise ValueError("D1 failure handoff error_message must be nonempty")
-        if self.pending_journal_event != _PENDING_ABORT_EVENT:
-            raise ValueError("D1 failure handoff must name pending TRAINER_ABORTED")
+        if self.trainer_event_kind != _TRAINER_ABORT_EVENT:
+            raise ValueError("D1 failure handoff must attest TRAINER_ABORTED")
         if self.rollback_claimed is not False:
             raise ValueError("D1 failure handoff cannot claim rollback")
         if self.operator_finalization_required is not True:
             raise ValueError("D1 failure still requires operator finalization")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "error_message": self.error_message,
+            "error_type": self.error_type,
+            "operator_finalization_required": self.operator_finalization_required,
+            "rollback_claimed": self.rollback_claimed,
+            "termination": self.termination.manifest,
+            "trainer_event_kind": self.trainer_event_kind,
+        }
 
     @classmethod
     def from_error(
