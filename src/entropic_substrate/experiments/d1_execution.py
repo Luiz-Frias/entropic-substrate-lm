@@ -101,8 +101,8 @@ class D1OptimizationSpec:
             msg = "warmup_steps must be a nonnegative integer"
             raise ValueError(msg)
         _positive_int(self.max_steps, label="max_steps")
-        if self.warmup_steps > self.max_steps:
-            msg = "warmup_steps cannot exceed max_steps"
+        if self.warmup_steps >= self.max_steps:
+            msg = "warmup_steps must be strictly less than max_steps"
             raise ValueError(msg)
         _nonnegative_float(self.weight_decay, label="weight_decay")
         if (

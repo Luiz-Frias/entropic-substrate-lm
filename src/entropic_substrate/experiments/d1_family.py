@@ -18,6 +18,7 @@ from entropic_substrate.experiments.d1_primitives import (
     CollapseStrategy,
     D1Arm,
     D1BoundaryStateSpec,
+    EMAKind,
     GeometryConsumer,
     MatchedEncoderPairSpec,
     PredictiveMetric,
@@ -127,6 +128,13 @@ class D1DraftSpec:
             != self.future_law.mean_baseline_sampling
         ):
             msg = "D1 execution baseline protocol must match the future-law calibration"
+            raise ValueError(msg)
+        if (
+            self.ema is not None
+            and self.ema.kind is EMAKind.COSINE_SCHEDULE
+            and self.ema.schedule_steps != self.execution_protocol.optimization.max_steps
+        ):
+            msg = "D1 cosine EMA schedule_steps must equal optimization max_steps"
             raise ValueError(msg)
 
     @property

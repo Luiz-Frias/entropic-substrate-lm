@@ -133,6 +133,14 @@ def test_ema_and_moment_conventions_are_bound_into_the_family_digest() -> None:
     scheduled_family = build_d1_experiment_family(
         codec=_codec(),
         encoder_pair=baseline.drafts[0].encoder_pair,
+        execution_protocol=replace(
+            baseline.drafts[0].execution_protocol,
+            optimization=replace(
+                baseline.drafts[0].execution_protocol.optimization,
+                max_steps=100,
+                warmup_steps=50,
+            ),
+        ),
         ema=scheduled,
     )
     changed_moment_convention = build_d1_experiment_family(

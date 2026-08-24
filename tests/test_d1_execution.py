@@ -78,6 +78,7 @@ def test_complete_execution_protocol_has_a_canonical_registered_digest() -> None
         ("learning_rate", 0.0, "learning_rate"),
         ("min_learning_rate_ratio", 1.1, "min_learning_rate_ratio"),
         ("warmup_steps", -1, "warmup_steps"),
+        ("warmup_steps", 20_000, "warmup_steps"),
         ("max_steps", 0, "max_steps"),
         ("weight_decay", -0.1, "weight_decay"),
         ("betas", (0.9, 1.0), "betas"),
