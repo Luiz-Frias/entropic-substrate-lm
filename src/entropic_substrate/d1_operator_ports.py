@@ -8,6 +8,10 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol
 
+from entropic_substrate.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    D1TrainerInputEnvelope,
+)
 from entropic_substrate.d1_operator_values import (
     D1ImageBuildRequest,
     D1ImmutableImage,
@@ -15,6 +19,7 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     D1RuntimeObservation,
 )
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.evidence.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
@@ -90,3 +95,11 @@ class D1RunPodPort(Protocol):
     def billing(
         self, pod_id: str, *, start: RunStartProvenance
     ) -> ProviderBilling | BillingGap: ...
+
+
+class D1TrainerEvidencePort(Protocol):
+    """Transport canonical inputs and return exported bytes, never loose metrics."""
+
+    def stage_inputs(self, pod_id: str, envelope: D1TrainerInputEnvelope) -> ArtifactIdentity: ...
+
+    def await_exported_handoff(self, pod_id: str) -> D1ExportedTrainerHandoff: ...
