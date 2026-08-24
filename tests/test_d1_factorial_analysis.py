@@ -171,3 +171,22 @@ def test_unknown_estimator_and_nonfinite_extracted_value_are_refused() -> None:
 
     with pytest.raises(ValueError, match="finite"):
         D1MetricPoint(step=1, eval_index=0, value=float("nan"))
+
+
+def test_registered_nonexcluded_n_accepts_only_complete_surviving_seed_blocks() -> None:
+    decision = contract()
+    rules = {
+        name: replace(rule, n_rule="NONEXCLUDED_SEED_COUNT", registered_n=None)
+        for name, rule in decision.contrast_rules.items()
+    }
+    decision = _with_contrast_rules(decision, rules)
+
+    result = compute_d1_factorial(
+        design=_design(decision),
+        decision_contract=decision,
+        cells=_cells()[:-4],
+    )
+
+    assert result.included_seeds == SEEDS[:-1]
+    assert result.excluded_seeds == SEEDS[-1:]
+    assert all(value.n == 3 and value.df == 2 for value in result.registered_contrasts.values())
