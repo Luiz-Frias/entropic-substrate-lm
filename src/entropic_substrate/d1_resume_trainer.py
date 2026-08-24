@@ -15,6 +15,7 @@ from entropic_substrate.d1_resume_runtime import (
     open_d1_resume,
     restore_d1_resume_runtime,
 )
+from entropic_substrate.d1_terminal_failure import terminal_numerical_defect_for_failure
 from entropic_substrate.d1_trainer_handoff import (
     D1TrainerFailureHandoff,
     D1TrainerTermination,
@@ -186,29 +187,41 @@ def _trainer_failure(
     clock: D1TrainerClock,
     step: int,
     error: Exception,
+    checkpoint_sha256: str | None,
 ) -> D1TrainerFailureHandoff:
     trainer_ended_at = clock.utc_now()
     journal_cursor = journal.state
     resource_state = ledger.current_state()
     error_message = str(error) or repr(error)
+    payload: dict[str, object] = {
+        "error_message": error_message,
+        "error_type": type(error).__name__,
+        "execution_segment_id": start.execution_segment_id,
+        "execution_segment_index": start.execution_segment_index,
+        "journal_cursor": journal_cursor.manifest,
+        "logical_run_id": start.logical_run_id,
+        "operator_finalization_required": True,
+        "resource_ledger_state": resource_state.manifest,
+        "rollback_claimed": False,
+        "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
+    }
+    numerical_defect = terminal_numerical_defect_for_failure(
+        error,
+        plan=plan,
+        start=start,
+        resource_state=resource_state,
+        successful_step=step,
+        checkpoint_sha256=checkpoint_sha256,
+    )
+    if numerical_defect is not None:
+        payload["numerical_defect"] = numerical_defect.manifest
     journal.append(
         _event(
             plan,
             journal,
             JournalEventKind.TRAINER_ABORTED,
             step,
-            {
-                "error_message": error_message,
-                "error_type": type(error).__name__,
-                "execution_segment_id": start.execution_segment_id,
-                "execution_segment_index": start.execution_segment_index,
-                "journal_cursor": journal_cursor.manifest,
-                "logical_run_id": start.logical_run_id,
-                "operator_finalization_required": True,
-                "resource_ledger_state": resource_state.manifest,
-                "rollback_claimed": False,
-                "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
-            },
+            payload,
         )
     )
     termination = capture_d1_trainer_termination(
@@ -245,6 +258,7 @@ def run_d1_resume(
     )
     step = admission.successful_step
     ledger = admission.resource_ledger
+    latest_checkpoint_sha256 = admission.checkpoint_receipt.sha256
     with admission.journal as journal:
         try:
             restored = restore_d1_resume_runtime(admission)
@@ -316,6 +330,7 @@ def run_d1_resume(
                             step,
                             best_nats,
                         )
+                        latest_checkpoint_sha256 = final_receipt.sha256
             if final_eval is None or final_work is None or final_receipt is None:
                 raise RuntimeError("D1 resumed terminal boundary lacks evaluation/checkpoint")
             order = components.train_sampler.data_order_digest()
@@ -348,5 +363,6 @@ def run_d1_resume(
                 active_clock,
                 step,
                 error,
+                latest_checkpoint_sha256,
             )
             raise D1ResumeRunFailure(handoff) from error

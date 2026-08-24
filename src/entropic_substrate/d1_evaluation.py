@@ -8,6 +8,7 @@ from typing import Final
 
 import torch
 
+from entropic_substrate.d1_numerical_defect import d1_nonfinite_metric_error
 from entropic_substrate.data.batching import SequenceSampler
 from entropic_substrate.experiments.d1_execution import (
     PAIRWISE_COSINE_SEMANTIC,
@@ -351,6 +352,12 @@ def _finish_result(
 ) -> D1EvalResult:
     covariance, variance, eigenvalues, effective_rank, numerical_rank, pairwise = states.finish()
     language = float((sums["language"] / positions).item())
+    if not math.isfinite(language):
+        raise d1_nonfinite_metric_error(
+            metric_name="nats_per_byte",
+            value=language,
+            source_exception_code="d1.eval.nats_per_byte.nonfinite.v1",
+        )
     future = float((sums["future"] / residual_elements).item())
     zero = float((sums["zero"] / residual_elements).item())
     mean = float((sums["mean"] / residual_elements).item())

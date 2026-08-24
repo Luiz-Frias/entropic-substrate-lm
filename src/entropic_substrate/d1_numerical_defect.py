@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final, cast
@@ -295,17 +296,21 @@ def terminal_numerical_defect_from_mapping(
     value: object,
 ) -> D1TerminalNumericalDefectRecord:
     """Strictly admit the sole canonical nested defect representation."""
-    if type(value) is not dict or any(type(key) is not str for key in value):
+    if not isinstance(value, Mapping) or any(type(key) is not str for key in value):
         raise ValueError("terminal numerical defect must be a JSON object")
-    item = cast(dict[str, object], value)
+    item = dict(cast(Mapping[str, object], value))
     if frozenset(item) != _FIELDS:
         raise ValueError("terminal numerical defect has missing or unknown fields")
     if item["schema_version"] != D1_TERMINAL_DEFECT_SCHEMA:
         raise ValueError("terminal numerical defect schema is unsupported")
     checkpoint_raw = item["checkpoint"]
-    if type(checkpoint_raw) is not dict or set(checkpoint_raw) != {"gap_code", "kind", "sha256"}:
+    if not isinstance(checkpoint_raw, Mapping) or set(checkpoint_raw) != {
+        "gap_code",
+        "kind",
+        "sha256",
+    }:
         raise ValueError("terminal numerical defect checkpoint is malformed")
-    checkpoint_item = cast(dict[str, object], checkpoint_raw)
+    checkpoint_item = dict(cast(Mapping[str, object], checkpoint_raw))
     try:
         checkpoint = D1DefectCheckpointReference(
             kind=D1CheckpointReferenceKind(cast(str, checkpoint_item["kind"])),
