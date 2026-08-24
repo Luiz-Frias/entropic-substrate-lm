@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import Protocol
 
@@ -34,6 +35,7 @@ __all__ = [
 _SCHEMA = "d1-analysis-execution-receipt-v1"
 _COMPLETE_READER = "entropic_substrate.telemetry.read_d1_run_evidence"
 _DEFECT_READER = "entropic_substrate.telemetry.read_d1_terminal_defect"
+_EXTERNAL_ATTESTATION_TOKEN = object()
 
 
 def _sha256(value: str, *, label: str) -> None:
@@ -147,6 +149,7 @@ class D1ExternalIsolationAttestation:
     live_tracking_blocked: bool
     mechanism: str
     execution_evidence: D1IsolationExecutionEvidence | None
+    _factory_token: object | None = dataclass_field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _sha256(self.request_digest, label="D1 isolation request_digest")
@@ -161,13 +164,17 @@ class D1ExternalIsolationAttestation:
         if type(self.mechanism) is not str or not self.mechanism.strip():
             raise ValueError("D1 isolation attestation mechanism must be nonempty")
         if self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED:
+            if self._factory_token is not _EXTERNAL_ATTESTATION_TOKEN:
+                raise TypeError(
+                    "D1 enforced isolation is factory-only; use the verified external adapter"
+                )
             if type(self.execution_evidence) is not D1IsolationExecutionEvidence:
                 raise TypeError("D1 enforced isolation requires process execution evidence")
         elif self.execution_evidence is not None:
             raise ValueError("D1 test isolation cannot carry external execution evidence")
 
     @classmethod
-    def enforced(
+    def _verified_external(
         cls,
         *,
         request: D1IsolationRequest,
@@ -184,6 +191,7 @@ class D1ExternalIsolationAttestation:
             True,
             mechanism,
             execution_evidence,
+            _EXTERNAL_ATTESTATION_TOKEN,
         )
 
     @classmethod
@@ -202,6 +210,7 @@ class D1ExternalIsolationAttestation:
     def filing_eligible(self) -> bool:
         return (
             self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED
+            and self._factory_token is _EXTERNAL_ATTESTATION_TOKEN
             and type(self.execution_evidence) is D1IsolationExecutionEvidence
         )
 

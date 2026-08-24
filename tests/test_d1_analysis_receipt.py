@@ -113,13 +113,9 @@ def test_in_process_fake_satisfies_port_but_cannot_issue_filing_eligible_receipt
     ]
 
 
-def test_external_execution_evidence_is_filing_eligible_and_deterministic() -> None:
+def test_receipt_is_deterministic_without_promoting_the_in_process_fake() -> None:
     packet, admitted = _admitted()
-    isolation = D1ExternalIsolationAttestation.enforced(
-        request=D1IsolationRequest(),
-        mechanism="rootless-container-read-only-network-none",
-        execution_evidence=_execution_evidence(),
-    )
+    isolation = D1ExternalIsolationAttestation.test_fake(D1IsolationRequest())
     first = issue_d1_analysis_receipt(
         analysis=packet,
         admitted=admitted,
@@ -137,7 +133,7 @@ def test_external_execution_evidence_is_filing_eligible_and_deterministic() -> N
 
     assert first.canonical_json == second.canonical_json
     assert first.receipt_digest == second.receipt_digest
-    assert first.manifest["filing_eligible"] is True
+    assert first.manifest["filing_eligible"] is False
     changed = issue_d1_analysis_receipt(
         analysis=packet,
         admitted=admitted,
@@ -148,16 +144,18 @@ def test_external_execution_evidence_is_filing_eligible_and_deterministic() -> N
     assert changed.receipt_digest != first.receipt_digest
 
 
-def test_enforced_attestation_requires_observed_execution_evidence() -> None:
-    with pytest.raises(TypeError, match="execution evidence"):
+def test_enforced_attestation_cannot_be_constructed_outside_verified_adapter() -> None:
+    request = D1IsolationRequest()
+
+    with pytest.raises(TypeError, match="factory-only"):
         D1ExternalIsolationAttestation(
-            D1IsolationRequest().request_digest,
+            request.request_digest,
             D1ExecutorKind.EXTERNAL_ENFORCED,
             True,
             True,
             True,
-            "missing-evidence",
-            None,
+            "fabricated",
+            _execution_evidence(),
         )
 
 
