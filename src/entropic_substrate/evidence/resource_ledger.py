@@ -280,6 +280,21 @@ class ResourceLedger:
             self._quality_bytes += quality_source_byte_exposures
             self._quality_tokens += online_positions
 
+    def record_discarded_work(
+        self,
+        *,
+        online_train_positions: int,
+        target_train_positions: int,
+        eval_positions: int,
+    ) -> None:
+        """Carry quarantined post-checkpoint work without advancing quality evidence."""
+        _count(online_train_positions, label="online_train_positions")
+        _count(target_train_positions, label="target_train_positions")
+        _count(eval_positions, label="eval_positions")
+        self._online += online_train_positions
+        self._target += target_train_positions
+        self._eval += eval_positions
+
     def _wall_seconds(self, monotonic_ns: int) -> float:
         _monotonic_ns(monotonic_ns, label="monotonic_ns")
         if monotonic_ns < self._last_monotonic_ns:
