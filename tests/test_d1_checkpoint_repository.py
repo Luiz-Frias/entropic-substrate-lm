@@ -17,6 +17,7 @@ from entropic_substrate.predictive_state.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
     D1CheckpointRepositoryError,
     load_and_validate,
+    load_checkpoint_candidate,
     save_atomic,
 )
 
@@ -64,6 +65,22 @@ def test_atomic_save_returns_post_replace_receipt_and_validated_load(tmp_path: P
     assert loaded["successful_step"] == state["successful_step"]
     assert loaded_receipt == receipt
     assert _temporary_siblings(target) == []
+
+
+def test_candidate_load_verifies_receipt_before_runtime_materialization(tmp_path: Path) -> None:
+    state, _case = checkpoint_state()
+    target = tmp_path / "candidate.pt"
+    receipt = save_atomic(target, state)
+
+    candidate, loaded_receipt = load_checkpoint_candidate(
+        target,
+        expected_sha256=receipt.sha256,
+    )
+
+    assert candidate["successful_step"] == state["successful_step"]
+    assert loaded_receipt == receipt
+    with pytest.raises(D1CheckpointRepositoryError, match="SHA-256 mismatch"):
+        load_checkpoint_candidate(target, expected_sha256="0" * 64)
 
 
 def test_short_os_writes_are_completed_before_replace(
