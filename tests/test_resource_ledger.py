@@ -207,3 +207,29 @@ def test_checkpoint_restore_carries_counters_optional_continuity_and_next_segmen
     assert after.execution_segment_index == 1
     assert after.eval_positions == before.eval_positions + 4
     assert after.trainer_wall_seconds == pytest.approx(before.trainer_wall_seconds + 1e-8)
+
+
+def test_recovered_tail_work_advances_total_counters_without_quality_or_eval_index() -> None:
+    first = ResourceLedger(_start(), monotonic_origin_ns=0)
+    first.record_eval(
+        online_positions=2,
+        target_positions=2,
+        training_step=0,
+        observed_at=_start().trainer_started_at,
+        monotonic_ns=10,
+    )
+    restored = ResourceLedger.restore(_start(1), first.current_state(), monotonic_origin_ns=100)
+
+    restored.record_discarded_work(
+        online_train_positions=4,
+        target_train_positions=5,
+        eval_positions=9,
+    )
+
+    state = restored.current_state()
+    assert state.online_train_token_positions == 4
+    assert state.target_train_token_positions == 5
+    assert state.eval_positions == 13
+    assert state.committed_quality_source_bytes == 0
+    assert state.committed_quality_model_tokens == 0
+    assert state.next_eval_index == 1
