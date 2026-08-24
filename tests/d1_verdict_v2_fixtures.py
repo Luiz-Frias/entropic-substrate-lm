@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from entropic_substrate.evidence.d1_contract import D1DecisionContract, D1DecisionRule
-from entropic_substrate.evidence.d1_types import D1_ARM_IDS, D1FamilyIdentity
+from entropic_substrate.evidence.d1_contract import (
+    D1DecisionContract,
+    D1DecisionRule,
+    D1RegisteredClause,
+    D1RegisteredContrast,
+    D1RegisteredEndpoint,
+    D1RegisteredExclusion,
+)
+from entropic_substrate.evidence.d1_types import D1_ARM_IDS, D1ContrastTerm, D1FamilyIdentity
 from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
 
 
@@ -23,12 +30,83 @@ def family_identity() -> D1FamilyIdentity:
 
 
 def decision_contract() -> D1DecisionContract:
+    endpoint = D1RegisteredEndpoint(
+        metric="nats_per_byte",
+        estimator="last_k_mean",
+        smoothing_window=5,
+    )
+    contrast_rules = {
+        "sg-main": D1RegisteredContrast(
+            contrast_id="sg-main",
+            contrast_kind="PAIRWISE",
+            terms=(D1ContrastTerm("sg", 1.0), D1ContrastTerm("none", -1.0)),
+            endpoint=endpoint,
+            n_rule="EXACT",
+            registered_n=4,
+            df_rule="N_MINUS_ONE",
+            confidence_level=0.975,
+            multiplicity="BONFERRONI_TWO_SIDED",
+            margins={"practical": 0.01},
+            decision_vocabulary="d1-contrast/v1",
+        ),
+        "ac-main": D1RegisteredContrast(
+            contrast_id="ac-main",
+            contrast_kind="PAIRWISE",
+            terms=(D1ContrastTerm("ac", 1.0), D1ContrastTerm("none", -1.0)),
+            endpoint=endpoint,
+            n_rule="EXACT",
+            registered_n=4,
+            df_rule="N_MINUS_ONE",
+            confidence_level=0.975,
+            multiplicity="BONFERRONI_TWO_SIDED",
+            margins={"practical": 0.01},
+            decision_vocabulary="d1-contrast/v1",
+        ),
+        "interaction": D1RegisteredContrast(
+            contrast_id="interaction",
+            contrast_kind="FACTORIAL_INTERACTION",
+            terms=tuple(
+                D1ContrastTerm(arm, coefficient)
+                for arm, coefficient in (("none", 1.0), ("sg", -1.0), ("ac", -1.0), ("both", 1.0))
+            ),
+            endpoint=endpoint,
+            n_rule="EXACT",
+            registered_n=4,
+            df_rule="N_MINUS_ONE",
+            confidence_level=0.975,
+            multiplicity="BONFERRONI_TWO_SIDED",
+            margins={"practical": 0.01},
+            decision_vocabulary="d1-contrast/v1",
+        ),
+    }
+    clause_rules = {
+        name: D1RegisteredClause(
+            clause_id=name,
+            registered_rule=f"d1.{name}.v1",
+            decision_vocabulary="d1-clause/v1",
+            threshold=None,
+            margin=None,
+        )
+        for name in ("noncollapse", "future_grounding", "language")
+    }
     return D1DecisionContract(
         family_identity=family_identity(),
         registered_constants={"seeds": [1, 2, 3, 4], "primary": {"alpha": 0.025}},
         arm_ids=D1_ARM_IDS,
         contrast_ids=("sg-main", "ac-main", "interaction"),
         clause_ids=("noncollapse", "future_grounding", "language"),
+        contrast_rules=contrast_rules,
+        clause_rules=clause_rules,
+        exclusion_rules=(
+            D1RegisteredExclusion(
+                reason_id="nonfinite-final-loss",
+                measurement="registered-final-loss",
+                predicate="NONFINITE",
+                scope="WHOLE_SEED_BLOCK",
+            ),
+        ),
+        clause_precedence=("noncollapse", "future_grounding", "language"),
+        verdict_vocabulary="d1-verdict-decision/v1",
         decision_rules={
             "SUPPORTED": D1DecisionRule(
                 successor_authorization=SuccessorAuthorization.AUTHORIZED,
@@ -39,7 +117,7 @@ def decision_contract() -> D1DecisionContract:
                 },
                 require_integrity_pass=True,
                 require_review_clearance=True,
-                require_eligible_strategies=True,
+                eligible_strategies=("d2-pullback",),
             ),
             "VALID_NEGATIVE": D1DecisionRule(
                 successor_authorization=SuccessorAuthorization.VALID_NEGATIVE,
@@ -50,7 +128,7 @@ def decision_contract() -> D1DecisionContract:
                 },
                 require_integrity_pass=True,
                 require_review_clearance=True,
-                require_eligible_strategies=False,
+                eligible_strategies=(),
             ),
         },
     )
@@ -87,11 +165,18 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
                     {"arm_id": "sg", "coefficient": 1.0},
                     {"arm_id": "none", "coefficient": -1.0},
                 ],
+                "endpoint": {
+                    "metric": "nats_per_byte",
+                    "estimator": "last_k_mean",
+                    "smoothing_window": 5,
+                },
                 "estimate": 0.0123456789012345,
                 "sample_sd": 0.02,
                 "interval_lower": -0.02,
                 "interval_upper": 0.04,
                 "confidence_level": 0.975,
+                "multiplicity": "BONFERRONI_TWO_SIDED",
+                "margins": {"practical": 0.01},
                 "n": 4,
                 "df": 3,
                 "evidence_class": "DERIVED_FROM_MEASURED",
@@ -106,11 +191,18 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
                     {"arm_id": "ac", "coefficient": 1.0},
                     {"arm_id": "none", "coefficient": -1.0},
                 ],
+                "endpoint": {
+                    "metric": "nats_per_byte",
+                    "estimator": "last_k_mean",
+                    "smoothing_window": 5,
+                },
                 "estimate": 0.01,
                 "sample_sd": 0.02,
                 "interval_lower": -0.03,
                 "interval_upper": 0.05,
                 "confidence_level": 0.975,
+                "multiplicity": "BONFERRONI_TWO_SIDED",
+                "margins": {"practical": 0.01},
                 "n": 4,
                 "df": 3,
                 "evidence_class": "DERIVED_FROM_MEASURED",
@@ -127,11 +219,18 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
                     {"arm_id": "ac", "coefficient": -1.0},
                     {"arm_id": "both", "coefficient": 1.0},
                 ],
+                "endpoint": {
+                    "metric": "nats_per_byte",
+                    "estimator": "last_k_mean",
+                    "smoothing_window": 5,
+                },
                 "estimate": -0.003,
                 "sample_sd": 0.02,
                 "interval_lower": -0.04,
                 "interval_upper": 0.03,
                 "confidence_level": 0.975,
+                "multiplicity": "BONFERRONI_TWO_SIDED",
+                "margins": {"practical": 0.01},
                 "n": 4,
                 "df": 3,
                 "evidence_class": "DERIVED_FROM_MEASURED",
@@ -165,6 +264,8 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
             "open_major_findings": [],
             "adjudication": {"status": "NOT_REQUIRED", "major_findings": []},
         },
+        "clause_precedence": ["noncollapse", "future_grounding", "language"],
+        "verdict_vocabulary": "d1-verdict-decision/v1",
         "verdict": verdict,
         "successor": {
             "authorization": "AUTHORIZED" if verdict == "SUPPORTED" else "VALID_NEGATIVE",

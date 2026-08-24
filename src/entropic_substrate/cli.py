@@ -12,6 +12,7 @@ Subcommands
                        divergence diagnostics on captured checkpoints
 ``field-pretrain``     train a standalone p_phi and save the checkpoint
                        ``field_mode="frozen"`` loads (E1.5c Repair 1)
+``d1-*``               dispatch one strict D1 application manifest
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import yaml
 
 if TYPE_CHECKING:
     from entropic_substrate.analysis.embedding_geometry import CheckpointModel
+    from entropic_substrate.d1_cli import D1CliApplication
 
 from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.config import (
@@ -276,6 +278,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add_field_pretrain_parser(sub)
+
+    from entropic_substrate.d1_cli import D1CliCommand
+
+    for command in D1CliCommand:
+        d1 = sub.add_parser(
+            command.value,
+            help=f"execute the {command.value} application manifest",
+        )
+        d1.add_argument(
+            "--manifest",
+            type=Path,
+            required=True,
+            help="strict d1-cli-command-v1 JSON manifest",
+        )
 
     return parser
 
@@ -1008,10 +1024,48 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _unavailable_d1_application() -> D1CliApplication:
+    from entropic_substrate.d1_cli import (
+        D1CliApplication,
+        D1CliCommand,
+        D1CliServiceUnavailable,
+    )
+
+    return D1CliApplication(
+        {
+            command: D1CliServiceUnavailable(
+                f"{command.value} composition service is unavailable; "
+                "inject a fully admitted D1 application service"
+            )
+            for command in D1CliCommand
+        }
+    )
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    d1_application: D1CliApplication | None = None,
+) -> int:
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
     args = build_parser().parse_args(argv)
+    from entropic_substrate.d1_cli import D1CliCommand
+
+    if args.command in {command.value for command in D1CliCommand}:
+        command = D1CliCommand(args.command)
+        application = d1_application or _unavailable_d1_application()
+        outcome = application.execute(command, args.manifest)
+        print(
+            json.dumps(
+                outcome.manifest,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return outcome.exit_code
     handlers = {
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,

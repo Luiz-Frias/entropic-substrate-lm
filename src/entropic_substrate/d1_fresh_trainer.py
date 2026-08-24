@@ -12,6 +12,7 @@ from entropic_substrate.d1_calibration import (
     D1BaselineCalibrator,
 )
 from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
+from entropic_substrate.d1_terminal_failure import terminal_numerical_defect_for_failure
 from entropic_substrate.d1_trainer_handoff import (
     D1FreshRunCompletion,
     D1FreshRunFailure,
@@ -234,6 +235,7 @@ def run_d1_fresh(
     )
     with journal_factory(locations.journal_path, start_event) as journal:
         successful_step = 0
+        latest_checkpoint_sha256: str | None = None
         try:
             components = build_d1_fresh_components(
                 plan=plan,
@@ -339,6 +341,7 @@ def run_d1_fresh(
                             successful_step=successful_step,
                             best_nats_per_byte=best_nats,
                         )
+                        latest_checkpoint_sha256 = final_receipt.sha256
             if final_receipt is None:
                 raise RuntimeError("D1 terminal evaluation did not produce a checkpoint")
             order_sha256, order_batches = _data_order(components)
@@ -362,24 +365,35 @@ def run_d1_fresh(
             journal_cursor = journal.state
             resource_ledger_state = ledger.current_state()
             error_message = str(error) or repr(error)
+            failure_payload: dict[str, object] = {
+                "error_message": error_message,
+                "error_type": type(error).__name__,
+                "execution_segment_id": start.execution_segment_id,
+                "execution_segment_index": start.execution_segment_index,
+                "journal_cursor": journal_cursor.manifest,
+                "logical_run_id": start.logical_run_id,
+                "operator_finalization_required": True,
+                "resource_ledger_state": resource_ledger_state.manifest,
+                "rollback_claimed": False,
+                "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
+            }
+            numerical_defect = terminal_numerical_defect_for_failure(
+                error,
+                plan=plan,
+                start=start,
+                resource_state=resource_ledger_state,
+                successful_step=successful_step,
+                checkpoint_sha256=latest_checkpoint_sha256,
+            )
+            if numerical_defect is not None:
+                failure_payload["numerical_defect"] = numerical_defect.manifest
             journal.append(
                 _next_event(
                     journal,
                     plan,
                     JournalEventKind.TRAINER_ABORTED,
                     successful_step=successful_step,
-                    payload={
-                        "error_message": error_message,
-                        "error_type": type(error).__name__,
-                        "execution_segment_id": start.execution_segment_id,
-                        "execution_segment_index": start.execution_segment_index,
-                        "journal_cursor": journal_cursor.manifest,
-                        "logical_run_id": start.logical_run_id,
-                        "operator_finalization_required": True,
-                        "resource_ledger_state": resource_ledger_state.manifest,
-                        "rollback_claimed": False,
-                        "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
-                    },
+                    payload=failure_payload,
                 )
             )
             termination = capture_d1_trainer_termination(

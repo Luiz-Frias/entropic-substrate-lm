@@ -71,7 +71,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
 
 
 def _meters(gpu_seconds: float) -> ResourceMeterSnapshot:
-    gap = UnavailableMeterStrategy().snapshot()
+    gap = UnavailableMeterStrategy().snapshot(trainer_wall_seconds=0.0)
     return ResourceMeterSnapshot(
         gpu_train_device_seconds=ScalarReading(
             value=gpu_seconds,
@@ -79,9 +79,13 @@ def _meters(gpu_seconds: float) -> ResourceMeterSnapshot:
             method=ReadingMethod.GPU_DEVICE_COUNTER,
         ),
         gpu_eval_device_seconds=gap.gpu_eval_device_seconds,
+        peak_gpu_allocated_bytes=gap.peak_gpu_allocated_bytes,
+        peak_gpu_reserved_bytes=gap.peak_gpu_reserved_bytes,
         cumulative_train_flops=gap.cumulative_train_flops,
         cumulative_eval_flops=gap.cumulative_eval_flops,
+        flop_model_identity=gap.flop_model_identity,
         energy_joules=gap.energy_joules,
+        energy_sample_count=gap.energy_sample_count,
         rate_estimated_cost=CostReading(
             amount=Money(amount=Decimal("0.42"), currency="USD"),
             evidence_class=EvidenceClass.RATE_ESTIMATE,
@@ -94,7 +98,8 @@ class _SequenceMeter:
     def __init__(self, *snapshots: ResourceMeterSnapshot) -> None:
         self._snapshots = list(snapshots)
 
-    def snapshot(self) -> ResourceMeterSnapshot:
+    def snapshot(self, *, trainer_wall_seconds: float) -> ResourceMeterSnapshot:
+        assert trainer_wall_seconds >= 0.0
         return self._snapshots.pop(0)
 
 
@@ -187,7 +192,7 @@ def test_checkpoint_restore_carries_counters_optional_continuity_and_next_segmen
         monotonic_ns=10,
     )
     state = first.current_state()
-    assert state.manifest["schema_version"] == "resource-ledger/v1"
+    assert state.manifest["schema_version"] == "resource-ledger/v2"
     assert state.manifest["total_model_token_positions"] == 4
     assert state.manifest["last_optional_readings"]["gpu_train_device_seconds"]["value"] == 10.0
     restored = ResourceLedger.restore(

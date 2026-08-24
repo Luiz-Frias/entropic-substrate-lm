@@ -132,9 +132,13 @@ def resource(step: int, eval_index: int, *, segment: int = 0) -> ResourceWorkSna
         total_model_token_positions=train_positions * 2 + baseline_positions + eval_positions,
         gpu_train_device_seconds=_gap("gpu_train_device_seconds"),
         gpu_eval_device_seconds=_gap("gpu_eval_device_seconds"),
+        peak_gpu_allocated_bytes=_gap("peak_gpu_allocated_bytes"),
+        peak_gpu_reserved_bytes=_gap("peak_gpu_reserved_bytes"),
         cumulative_train_flops=_gap("cumulative_train_flops"),
         cumulative_eval_flops=_gap("cumulative_eval_flops"),
+        flop_model_identity=_gap("flop_model_identity"),
         energy_joules=_gap("energy_joules"),
+        energy_sample_count=_gap("energy_sample_count"),
         rate_estimated_cost=_gap("rate_estimated_cost"),
     )
 
@@ -241,6 +245,8 @@ def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
         baseline_calibration_positions=8,
         eval_positions=0,
         last_optional_readings=(),
+        last_flop_model_identity=None,
+        last_energy_sample_count=None,
     )
     items = [
         event(

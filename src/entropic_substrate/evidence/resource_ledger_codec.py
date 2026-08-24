@@ -23,6 +23,8 @@ _EVENT = "resource.ledger_state"
 _READING_FIELDS = {
     "gpu_train_device_seconds",
     "gpu_eval_device_seconds",
+    "peak_gpu_allocated_bytes",
+    "peak_gpu_reserved_bytes",
     "cumulative_train_flops",
     "cumulative_eval_flops",
     "energy_joules",
@@ -45,6 +47,8 @@ _KEYS = {
     "eval_positions",
     "total_model_token_positions",
     "last_optional_readings",
+    "last_flop_model_identity",
+    "last_energy_sample_count",
 }
 
 
@@ -95,6 +99,8 @@ def _scalar(field: str, mapping: dict[str, object]) -> ScalarReading:
     allowed = {
         "gpu_train_device_seconds": {(EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER)},
         "gpu_eval_device_seconds": {(EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER)},
+        "peak_gpu_allocated_bytes": {(EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER)},
+        "peak_gpu_reserved_bytes": {(EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER)},
         "cumulative_train_flops": {
             (EvidenceClass.MEASURED, ReadingMethod.FLOP_PROFILER),
             (EvidenceClass.MODEL_ESTIMATE, ReadingMethod.FLOP_MODEL),
@@ -194,6 +200,8 @@ def resource_ledger_state_from_mapping(value: object) -> ResourceLedgerState:
             baseline_calibration_positions=cast(int, mapping["baseline_calibration_positions"]),
             eval_positions=cast(int, mapping["eval_positions"]),
             last_optional_readings=_last_readings(mapping["last_optional_readings"]),
+            last_flop_model_identity=cast(str | None, mapping["last_flop_model_identity"]),
+            last_energy_sample_count=cast(int | None, mapping["last_energy_sample_count"]),
             schema_version=cast(str, mapping["schema_version"]),
         )
     except (TypeError, ValueError) as exc:

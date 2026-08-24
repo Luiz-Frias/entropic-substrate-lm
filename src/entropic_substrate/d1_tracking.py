@@ -62,8 +62,11 @@ _REQUIRED_RESOURCE_COUNTERS: Final = (
 _OPTIONAL_RESOURCE_READINGS: Final = (
     "gpu_train_device_seconds",
     "gpu_eval_device_seconds",
+    "peak_gpu_allocated_bytes",
+    "peak_gpu_reserved_bytes",
     "cumulative_train_flops",
     "cumulative_eval_flops",
+    "energy_sample_count",
     "energy_joules",
     "rate_estimated_cost",
 )
@@ -197,6 +200,9 @@ class D1MetricExtractor:
         for field in _OPTIONAL_RESOURCE_READINGS:
             reading = getattr(resource, field)
             if type(reading) is EvidenceGap:
+                continue
+            if type(reading) is int:
+                metrics[f"d1/resource/{EvidenceClass.MEASURED.value}/{field}"] = float(reading)
                 continue
             if type(reading) is ScalarReading:
                 metrics[f"d1/resource/{reading.evidence_class.value}/{field}"] = reading.value

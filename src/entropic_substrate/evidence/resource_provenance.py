@@ -78,8 +78,9 @@ def _canonical_decimal(value: Decimal) -> str:
     if not value.is_finite() or value < 0:
         msg = "money amount must be finite and nonnegative"
         raise ValueError(msg)
-    canonical = "0" if value.is_zero() else format(value.normalize(), "f")
-    if str(value) != canonical:
+    normalized = value.normalize()
+    canonical = "0" if value.is_zero() else format(normalized, "f")
+    if value.as_tuple() != Decimal(canonical).as_tuple():
         msg = f"money amount must use canonical decimal spelling {canonical!r}"
         raise ValueError(msg)
     return canonical
