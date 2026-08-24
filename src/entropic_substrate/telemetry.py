@@ -41,19 +41,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from entropic_substrate.evidence.d1_telemetry import (
+    D1EvalEvidence,
+    D1QualityEvidence,
+    D1RunEvidence,
+    D1RunStatus,
+    D1TelemetryGap,
+    final_d1_eval_metric,
+    read_d1_eval_series,
+    read_d1_run_evidence,
+)
 from entropic_substrate.logging import configure_logging, logger
 
 __all__ = [
     "EXIT_TELEMETRY_GAP",
+    "D1EvalEvidence",
+    "D1QualityEvidence",
+    "D1RunEvidence",
+    "D1RunStatus",
+    "D1TelemetryGap",
     "EvalRecord",
     "KappaReadout",
     "TelemetryGap",
     "TrainRecord",
+    "final_d1_eval_metric",
     "final_eval_metric",
     "final_eval_record",
     "kappa_spreads",
     "main",
     "max_kappa_spread",
+    "read_d1_eval_series",
+    "read_d1_run_evidence",
     "read_eval_series",
     "read_final_kappa",
     "read_seed",
