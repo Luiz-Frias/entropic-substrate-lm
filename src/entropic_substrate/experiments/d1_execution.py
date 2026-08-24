@@ -122,8 +122,8 @@ class D1OptimizationSpec:
         if type(self.amp) is not D1AmpPolicy:
             msg = "D1 amp must be BF16 or off"
             raise ValueError(msg)
-        if type(self.compile) is not bool:
-            msg = "compile must be a bool"
+        if self.compile is not False:
+            msg = "D1 compile must remain disabled until the typed runtime supports it"
             raise ValueError(msg)
         if self.optimizer is not OptimizerKind.ADAMW:
             msg = "D1 optimizer must be AdamW"
