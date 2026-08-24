@@ -125,6 +125,12 @@ def test_fp16_and_unregistered_optimizer_policies_are_not_representable() -> Non
             num_batches=1,
             eval_interval=5,
             log_interval=1,
+            save_interval=3,
+        ),
+        lambda: D1EvaluationSpec(
+            num_batches=1,
+            eval_interval=5,
+            log_interval=1,
             save_interval=0,
             evaluate_at_step_zero=False,
         ),

@@ -236,6 +236,9 @@ class D1EvaluationSpec:
         if type(self.save_interval) is not int or self.save_interval < 0:
             msg = "save_interval must be a nonnegative integer"
             raise ValueError(msg)
+        if self.save_interval and self.save_interval % self.eval_interval:
+            msg = "D1 save_interval must land on an evaluation boundary"
+            raise ValueError(msg)
         if self.evaluate_at_step_zero is not True:
             msg = "D1 requires a step-zero evaluation"
             raise ValueError(msg)
