@@ -1,0 +1,241 @@
+"""Sequential fresh-segment controller for the D1 cloud execution lane."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
+
+from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
+from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
+from entropic_substrate.d1_operator_evidence import (
+    D1TrainerExportReceipt,
+    D1TrainerInputEnvelope,
+    verify_d1_trainer_export,
+)
+from entropic_substrate.d1_operator_ports import (
+    D1RunPodAuthReceipt,
+    D1RunPodPort,
+    D1TrainerEvidencePort,
+)
+from entropic_substrate.d1_operator_values import (
+    D1OperatorLaunchIntent,
+    D1PodPlacement,
+    attest_d1_run_start,
+)
+from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
+from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
+from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
+from entropic_substrate.evidence.resource_billing import (
+    BillingGap,
+    ExecutionSegmentTermination,
+    ProviderBilling,
+)
+from entropic_substrate.evidence.resource_provenance import RunStartProvenance
+from entropic_substrate.experiments.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
+from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+
+
+class D1OperatorClock(Protocol):
+    def now_utc(self) -> datetime: ...
+
+
+class D1OperatorCustodyPort(Protocol):
+    """Durably persist each operator fact before the next external transition."""
+
+    def persist_precreate(
+        self,
+        intent: D1OperatorLaunchIntent,
+        ledger: D1LaunchAttemptLedger,
+        auth: D1RunPodAuthReceipt,
+    ) -> ArtifactIdentity: ...
+
+    def persist_attempt_ledger(self, ledger: D1LaunchAttemptLedger) -> ArtifactIdentity: ...
+
+    def persist_run_start(self, start: RunStartProvenance) -> ArtifactIdentity: ...
+
+    def persist_finalization(self, finalization: D1BillingFinalization) -> ArtifactIdentity: ...
+
+
+@dataclass(frozen=True, slots=True)
+class D1OperatorRunResult:
+    process_manager: D1ProcessManager
+    attempt_ledger: D1LaunchAttemptLedger
+    start: RunStartProvenance
+    placement: D1PodPlacement
+    export: D1TrainerExportReceipt
+    termination: ExecutionSegmentTermination
+    billing: ProviderBilling | BillingGap
+    finalization: D1BillingFinalization
+    queue_admissible: bool
+
+
+def _validate_fresh(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) -> None:
+    plan = intent.plan
+    if type(plan) is not ConfirmatoryD1RunPlan or intent.execution_segment_index != 0:
+        raise ValueError("D1 fresh operator requires a segment-zero confirmatory plan")
+    if intent.registered_design_digest != design.design_digest:
+        raise ValueError("D1 launch intent differs from the registered design")
+    if (
+        plan.seed not in design.registered_seeds
+        or plan.profile.family.family_digest != design.family_digest
+        or plan.run.construction_digest != design.arm_construction_digests[plan.profile.arm.value]
+    ):
+        raise ValueError("D1 launch cell is absent from the registered design")
+    preregistration = plan.run.preregistration
+    if preregistration is None or (
+        preregistration.path,
+        preregistration.commit,
+        preregistration.family_digest,
+    ) != (
+        design.preregistration.path,
+        design.preregistration.commit,
+        design.family_digest,
+    ):
+        raise ValueError("D1 plan preregistration differs from the registered design")
+
+
+def _identity(intent: D1OperatorLaunchIntent) -> D1LaunchAttemptIdentity:
+    plan = intent.plan
+    return D1LaunchAttemptIdentity(
+        run_class=RunClass.CONFIRMATORY,
+        family_digest=plan.profile.family.family_digest,
+        arm=plan.profile.arm,
+        seed=plan.seed,
+        logical_run_id=plan.logical_run_id,
+        registered_design_digest=intent.registered_design_digest,
+    )
+
+
+class D1SequentialOperatorController:
+    """Own one active attempt; campaign iteration belongs to the later queue."""
+
+    def __init__(
+        self,
+        *,
+        design: D1RegisteredDesign,
+        process_manager: D1ProcessManager,
+        attempt_ledger: D1LaunchAttemptLedger,
+        runpod: D1RunPodPort,
+        trainer: D1TrainerEvidencePort,
+        custody: D1OperatorCustodyPort,
+        operator: ActorIdentity,
+        automation: ActorIdentity,
+        clock: D1OperatorClock,
+    ) -> None:
+        if type(design) is not D1RegisteredDesign:
+            raise TypeError("D1 operator requires a registered design")
+        if type(process_manager) is not D1ProcessManager:
+            raise TypeError("D1 operator requires D1ProcessManager")
+        if type(attempt_ledger) is not D1LaunchAttemptLedger:
+            raise TypeError("D1 operator requires D1LaunchAttemptLedger")
+        if operator.role is not ActorRole.OPERATOR or automation.role is not ActorRole.AUTOMATION:
+            raise ValueError("D1 operator actors have incorrect lifecycle roles")
+        self.design, self.process_manager, self.attempt_ledger = (
+            design,
+            process_manager,
+            attempt_ledger,
+        )
+        self._runpod, self._trainer, self._custody = runpod, trainer, custody
+        self._operator, self._automation, self._clock = operator, automation, clock
+        self._executing = False
+
+    def execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult:
+        if self._executing or self.process_manager.active_subject is not None:
+            raise RuntimeError("D1 operator already has one active attempt")
+        _validate_fresh(self.design, intent)
+        self._executing = True
+        subject = intent.plan.logical_run_id
+        attempt = _identity(intent)
+        auth = self._runpod.verify_authenticated()
+        ledger = self.attempt_ledger.record(attempt, observed_at=self._clock.now_utc())
+        precreate = self._custody.persist_precreate(intent, ledger, auth)
+        manager = self.process_manager.admit_launch(
+            subject_id=subject,
+            actor=self._operator,
+            artifact=precreate,
+            event_id=f"{subject}:admit",
+        )
+        placement = self._runpod.create(intent)
+        runtime = self._runpod.runtime(placement.pod_id)
+        start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
+        self._custody.persist_run_start(start)
+        input_artifact = self._trainer.stage_inputs(
+            placement.pod_id, D1TrainerInputEnvelope(intent.plan, start)
+        )
+        manager = manager.start_running(
+            subject_id=subject,
+            actor=self._automation,
+            artifact=input_artifact,
+            event_id=f"{subject}:running:0",
+        )
+        ledger = ledger.transition(
+            attempt,
+            status=D1LaunchAttemptStatus.TRAINER_STARTED,
+            observed_at=start.trainer_started_at,
+        )
+        self._custody.persist_attempt_ledger(ledger)
+        candidate = self._trainer.await_exported_handoff(placement.pod_id)
+        export = verify_d1_trainer_export(candidate)
+        handoff = export.handoff
+        stopped = handoff.termination
+        if (
+            stopped.logical_run_id,
+            stopped.execution_segment_index,
+        ) != (subject, 0):
+            raise ValueError("trainer handoff differs from the active execution segment")
+        manager = manager.record_trainer_stop(
+            subject_id=subject,
+            actor=self._automation,
+            artifact=export.journal,
+            event_id=f"{subject}:trainer-stop:0",
+        )
+        termination = self._runpod.terminate(
+            placement.pod_id,
+            start=start,
+            trainer_ended_at=stopped.trainer_ended_at,
+        )
+        billing = self._runpod.billing(placement.pod_id, start=start)
+        finalization = finalize_d1_billing(
+            plan=intent.plan,
+            segment_starts=(start,),
+            segment_terminations=(termination,),
+            provider_billings=(billing,),
+            handoff=handoff,
+            journal_path=candidate.journal_path,
+            expected_journal_state=stopped.journal_state,
+        )
+        finalization_artifact = self._custody.persist_finalization(finalization)
+        manager = manager.finalize_operator(
+            subject_id=subject,
+            actor=self._operator,
+            artifact=finalization_artifact,
+            event_id=f"{subject}:operator-finalized",
+        )
+        failed = isinstance(handoff, D1TrainerFailureHandoff)
+        ledger = ledger.transition(
+            attempt,
+            status=(D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED),
+            observed_at=termination.pod_terminated_at,
+            reason=(handoff.error_message if failed else None),
+        )
+        self._custody.persist_attempt_ledger(ledger)
+        self.process_manager, self.attempt_ledger, self._executing = manager, ledger, False
+        queue_admissible = not failed and not isinstance(billing, BillingGap)
+        return D1OperatorRunResult(
+            manager,
+            ledger,
+            start,
+            placement,
+            export,
+            termination,
+            billing,
+            finalization,
+            queue_admissible,
+        )
