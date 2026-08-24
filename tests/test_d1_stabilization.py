@@ -20,6 +20,11 @@ pytestmark = pytest.mark.unit
         (lambda: D1TargetSpec(rms_normalized=False), "RMS-normalized"),
         (lambda: FutureLawSpec(variance=2.0), "variance=1"),
         (lambda: FutureLawSpec(future_loss_weight=0.5), "weight=1"),
+        (lambda: FutureLawSpec(mean_baseline_calibration_batches=0), "calibration batches"),
+        (
+            lambda: FutureLawSpec(mean_baseline_sampling="random_train"),
+            "deterministic train-grid",
+        ),
         (
             lambda: StateConstructionSpec(legacy_e15_field_axis="frozen"),
             "E1.5 field axis",
@@ -31,3 +36,12 @@ def test_d1_fixed_tracer_constants_reject_axis_leakage(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         factory()
+
+
+def test_mean_baseline_calibration_protocol_is_construction_identity() -> None:
+    law = FutureLawSpec()
+
+    assert law.mean_baseline_calibration_batches == 32
+    assert law.mean_baseline_sampling == "deterministic_train_grid_v1"
+    assert law.manifest["mean_baseline_calibration_batches"] == 32
+    assert law.manifest["mean_baseline_sampling"] == "deterministic_train_grid_v1"
