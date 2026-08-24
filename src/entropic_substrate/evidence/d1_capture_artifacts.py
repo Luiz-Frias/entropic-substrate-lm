@@ -107,6 +107,7 @@ class D1DvcBinding:
 class D1ArtifactRole(StrEnum):
     JOURNAL = "authoritative_journal"
     CHECKPOINT = "terminal_checkpoint"
+    NUMERICAL_DEFECT_CHECKPOINT = "numerical_defect_prior_checkpoint"
     BILLING_SIDECAR = "provider_billing_sidecar"
     QUARANTINED_SIBLING = "quarantined_sibling"
 
