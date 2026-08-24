@@ -53,6 +53,8 @@ class FutureLawSpec:
     variance: float = 1.0
     future_loss_weight: float = 1.0
     reduce_per_latent_dimension: bool = True
+    mean_baseline_calibration_batches: int = 32
+    mean_baseline_sampling: str = "deterministic_train_grid_v1"
 
     def __post_init__(self) -> None:
         if type(self.predictor_hidden_width) is not int or self.predictor_hidden_width < 1:
@@ -76,6 +78,15 @@ class FutureLawSpec:
         if self.reduce_per_latent_dimension is not True:
             msg = "D1 future law requires per-latent-dimension reduction"
             raise ValueError(msg)
+        if (
+            type(self.mean_baseline_calibration_batches) is not int
+            or self.mean_baseline_calibration_batches != 32
+        ):
+            msg = "D1 mean-baseline calibration batches are fixed at 32"
+            raise ValueError(msg)
+        if self.mean_baseline_sampling != "deterministic_train_grid_v1":
+            msg = "D1 mean-baseline calibration requires deterministic train-grid sampling"
+            raise ValueError(msg)
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -83,6 +94,8 @@ class FutureLawSpec:
             "activation": self.activation.value,
             "family": self.family.value,
             "future_loss_weight": float(self.future_loss_weight),
+            "mean_baseline_calibration_batches": self.mean_baseline_calibration_batches,
+            "mean_baseline_sampling": self.mean_baseline_sampling,
             "predictor_hidden_width": self.predictor_hidden_width,
             "reduce_per_latent_dimension": self.reduce_per_latent_dimension,
             "variance": float(self.variance),
