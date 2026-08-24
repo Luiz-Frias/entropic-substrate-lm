@@ -344,7 +344,10 @@ class DockerD1ExternalAnalysisAdapter(D1AnalysisRunnerPort):
                 image_digest=self._launch.image_digest,
                 platform=_PLATFORM,
             )
-            isolation = D1ExternalIsolationAttestation.enforced(
+            # Friend boundary: ordinary callers cannot mint enforced posture;
+            # this adapter reaches the protected issuer only after every
+            # observable process and filesystem control above has passed.
+            isolation = D1ExternalIsolationAttestation._verified_external(  # pyright: ignore[reportPrivateUsage]
                 request=request.isolation,
                 mechanism=_MECHANISM,
                 execution_evidence=evidence,
