@@ -110,7 +110,7 @@ def _checkpoint_contract(defect: D1ValidatedTerminalDefect) -> None:
     checkpoints = tuple(
         item
         for item in defect.capture_input.supporting_artifacts
-        if item.role is D1ArtifactRole.CHECKPOINT
+        if item.role is D1ArtifactRole.NUMERICAL_DEFECT_CHECKPOINT
     )
     reference = defect.record.checkpoint
     if reference.kind is D1CheckpointReferenceKind.RECEIPT:
