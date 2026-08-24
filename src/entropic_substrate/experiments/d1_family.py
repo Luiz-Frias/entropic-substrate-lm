@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
+from entropic_substrate.experiments.d1_execution import (
+    D1ExecutionProtocol,
+    default_d1_execution_protocol,
+)
 from entropic_substrate.experiments.d1_primitives import (
     CONSTRUCTION_SCHEMA,
     FAMILY_SCHEMA,
@@ -76,6 +80,7 @@ class D1DraftSpec:
     target: D1TargetSpec
     future_law: FutureLawSpec
     geometry: D1GeometrySpec
+    execution_protocol: D1ExecutionProtocol
     target_update: TargetUpdateStrategy
     collapse_strategy: CollapseStrategy
     ema: EMAParameters | None
@@ -107,10 +112,24 @@ class D1DraftSpec:
         ):
             msg = "D1 requires Euclidean metric and geometry off"
             raise ValueError(msg)
+        if type(self.execution_protocol) is not D1ExecutionProtocol:
+            msg = "D1 draft requires a validated execution protocol"
+            raise TypeError(msg)
+        if self.execution_protocol.batching.horizon != self.target.horizon:
+            msg = "D1 execution batching horizon must match the target horizon"
+            raise ValueError(msg)
+        if (
+            self.execution_protocol.baseline.num_batches
+            != self.future_law.mean_baseline_calibration_batches
+            or self.execution_protocol.baseline.sampling.value
+            != self.future_law.mean_baseline_sampling
+        ):
+            msg = "D1 execution baseline protocol must match the future-law calibration"
+            raise ValueError(msg)
 
     @property
     def construction_manifest(self) -> dict[str, object]:
-        """Canonical per-arm identity, intentionally excluding launch details."""
+        """Canonical per-arm identity, including its poolable execution protocol."""
         return {
             "arm": self.arm.value,
             "boundary_state": self.boundary_state.manifest,
@@ -123,6 +142,7 @@ class D1DraftSpec:
             "collapse_strategy": self.collapse_strategy.value,
             "ema": None if self.ema is None else self.ema.manifest,
             "encoder_pair": self.encoder_pair.manifest,
+            "execution_protocol": self.execution_protocol.manifest,
             "future_law": self.future_law.manifest,
             "geometry": self.geometry.manifest,
             "schema_version": CONSTRUCTION_SCHEMA,
@@ -225,6 +245,7 @@ class D1ExperimentFamily:
             "target",
             "future_law",
             "geometry",
+            "execution_protocol",
         )
         for draft in self.drafts[1:]:
             if any(getattr(draft, field) != getattr(baseline, field) for field in shared_fields):
@@ -283,6 +304,7 @@ class D1ExperimentFamily:
                     "name": baseline.codec.name,
                 },
                 "encoder_pair": baseline.encoder_pair.manifest,
+                "execution_protocol": baseline.execution_protocol.manifest,
                 "future_law": baseline.future_law.manifest,
                 "geometry": baseline.geometry.manifest,
                 "state_construction": baseline.state_construction.manifest,
@@ -327,6 +349,7 @@ def build_d1_experiment_family(
     target: D1TargetSpec | None = None,
     future_law: FutureLawSpec | None = None,
     geometry: D1GeometrySpec | None = None,
+    execution_protocol: D1ExecutionProtocol | None = None,
     ema: EMAParameters | None = None,
     collapse: CollapseParameters | None = None,
 ) -> D1ExperimentFamily:
@@ -340,6 +363,9 @@ def build_d1_experiment_family(
         else FutureLawSpec(predictor_hidden_width=encoder_pair.latent_width)
     )
     shared_geometry = geometry if geometry is not None else D1GeometrySpec()
+    shared_execution = (
+        execution_protocol if execution_protocol is not None else default_d1_execution_protocol()
+    )
     shared_ema = ema if ema is not None else EMAParameters()
     shared_collapse = collapse if collapse is not None else CollapseParameters()
 
@@ -353,6 +379,7 @@ def build_d1_experiment_family(
             target=shared_target,
             future_law=shared_law,
             geometry=shared_geometry,
+            execution_protocol=shared_execution,
             target_update=strategies_for_arm(arm)[0],
             collapse_strategy=strategies_for_arm(arm)[1],
             ema=(

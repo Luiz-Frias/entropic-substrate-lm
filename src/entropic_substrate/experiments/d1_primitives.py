@@ -18,10 +18,10 @@ from types import MappingProxyType
 from typing import Final
 
 _SHA256_LENGTH: Final[int] = 64
-CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v2"
-FAMILY_SCHEMA: Final[str] = "d1-family-v1"
-AGGREGATION_SCHEMA: Final[str] = "d1-aggregation-v2"
-EXECUTION_SCHEMA: Final[str] = "d1-execution-v2"
+CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v3"
+FAMILY_SCHEMA: Final[str] = "d1-family-v2"
+AGGREGATION_SCHEMA: Final[str] = "d1-aggregation-v3"
+EXECUTION_SCHEMA: Final[str] = "d1-execution-v3"
 
 
 def require_nonempty_string(value: str, *, label: str) -> None:

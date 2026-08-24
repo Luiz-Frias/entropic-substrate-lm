@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from entropic_substrate.experiments.d1_execution import default_d1_execution_protocol
 from entropic_substrate.experiments.d1_family import (
     D1ExperimentFamily,
     build_d1_experiment_family,
@@ -85,6 +86,7 @@ def test_four_arm_drafts_are_capacity_matched_and_factorial() -> None:
     assert {draft.geometry for draft in shared} == {D1GeometrySpec()}
     assert {draft.state_construction for draft in shared} == {StateConstructionSpec()}
     assert {draft.boundary_state for draft in shared} == {D1BoundaryStateSpec()}
+    assert {draft.execution_protocol for draft in shared} == {default_d1_execution_protocol()}
 
     assert arms[D1Arm.NONE].ema is None
     assert arms[D1Arm.AC].ema is None
@@ -129,3 +131,26 @@ def test_family_refuses_missing_duplicate_or_asymmetric_cells() -> None:
                 drafts[D1Arm.BOTH],
             )
         )
+
+
+def test_execution_protocol_is_bound_into_cell_and_family_identity() -> None:
+    baseline = _family()
+    changed_protocol = replace(
+        baseline.drafts[0].execution_protocol,
+        optimization=replace(
+            baseline.drafts[0].execution_protocol.optimization,
+            learning_rate=3e-4,
+        ),
+    )
+    encoder = _encoder()
+    changed = build_d1_experiment_family(
+        codec=_codec(),
+        encoder_pair=MatchedEncoderPairSpec(online=encoder, target=encoder),
+        execution_protocol=changed_protocol,
+    )
+
+    assert changed.family_digest != baseline.family_digest
+    assert changed.drafts[0].construction_digest != baseline.drafts[0].construction_digest
+    assert changed.family_manifest["shared_construction"]["execution_protocol"] == (
+        changed_protocol.manifest
+    )

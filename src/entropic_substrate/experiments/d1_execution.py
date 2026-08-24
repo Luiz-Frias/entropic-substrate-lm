@@ -21,6 +21,7 @@ __all__ = [
     "OptimizerKind",
     "TrainerWallOrigin",
     "WeightDecayPolicy",
+    "default_d1_execution_protocol",
 ]
 
 
@@ -328,3 +329,30 @@ class D1ExecutionProtocol:
     @property
     def protocol_digest(self) -> str:
         return canonical_digest(self.manifest)
+
+
+def default_d1_execution_protocol() -> D1ExecutionProtocol:
+    """Full-scale D1 protocol used when a caller accepts the registered defaults."""
+    return D1ExecutionProtocol(
+        optimization=D1OptimizationSpec(
+            learning_rate=6e-4,
+            min_learning_rate_ratio=0.1,
+            warmup_steps=500,
+            max_steps=20_000,
+            weight_decay=0.1,
+            betas=(0.9, 0.95),
+            epsilon=1e-8,
+            grad_clip_norm=1.0,
+            amp=D1AmpPolicy.BF16,
+            compile=False,
+        ),
+        batching=D1BatchingSpec(batch_size=16, sequence_length=1024),
+        baseline=D1BaselineCalibrationSpec(),
+        evaluation=D1EvaluationSpec(
+            num_batches=20,
+            eval_interval=500,
+            log_interval=20,
+            save_interval=1000,
+        ),
+        resources=D1ResourceProtocol(),
+    )
