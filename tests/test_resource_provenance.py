@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -18,6 +20,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
     validate_execution_segments,
 )
 from entropic_substrate.experiments.d1_primitives import EvidenceClass
@@ -47,7 +50,7 @@ def _rate(**overrides: object) -> QuotedRate:
 def _start(**overrides: object) -> RunStartProvenance:
     logical_run_id = "d1-confirmatory-both-seed-7"
     payload: dict[str, object] = {
-        "schema_version": "resource-telemetry/v2",
+        "schema_version": RESOURCE_TELEMETRY_SCHEMA_VERSION,
         "logical_run_id": logical_run_id,
         "execution_segment_index": 0,
         "execution_segment_id": execution_segment_id(logical_run_id, 0),
@@ -66,6 +69,7 @@ def _start(**overrides: object) -> RunStartProvenance:
         "pytorch_version": "2.13.0",
         "compiler_enabled": True,
         "compiler_version": "triton-3.4.0",
+        "resource_activation": unavailable_resource_activation_registration(),
         "quoted_rate": _rate(),
         "pod_created_at": datetime(2026, 8, 23, 13, 0, tzinfo=UTC),
         "trainer_started_at": datetime(2026, 8, 23, 13, 4, tzinfo=UTC),
@@ -81,6 +85,7 @@ def test_fresh_segment_carries_complete_compute_and_exact_observed_rate_provenan
     assert start.quoted_rate.amount.amount == Decimal("3.19")
     assert start.quoted_rate.amount.canonical_amount == "3.19"
     assert start.quoted_rate.evidence_class is EvidenceClass.MEASURED
+    assert start.resource_activation == unavailable_resource_activation_registration()
     assert "evidence_gaps" not in start.manifest
     assert start.identity_digest == start.identity_digest
 
@@ -96,6 +101,19 @@ def test_resume_segments_require_the_exact_next_index_id_and_checkpoint_digest()
         trainer_started_at=first.trainer_started_at + timedelta(minutes=24),
     )
     validate_execution_segments((first, resumed))
+    with pytest.raises(ValueError, match="resource activation"):
+        validate_execution_segments(
+            (
+                first,
+                replace(
+                    resumed,
+                    resource_activation=replace(
+                        resumed.resource_activation,
+                        factory_registration_digest="c" * 64,
+                    ),
+                ),
+            )
+        )
     with pytest.raises(ValueError, match="consecutive"):
         validate_execution_segments(
             (

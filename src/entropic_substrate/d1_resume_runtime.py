@@ -212,6 +212,8 @@ def open_d1_resume(
     activation_factory = resource_activation_factory or UnavailableResourceActivationFactory()
     if not isinstance(cast(object, activation_factory), D1ResourceActivationFactory):
         raise TypeError("D1 resource activation factory is invalid")
+    if activation_factory.registration != start.resource_activation:
+        raise ValueError("D1 resource activation differs from resume provenance")
     activation = activation_factory.resume(start, checkpoint_ledger)
     ledger = ResourceLedger.restore(
         start,

@@ -29,6 +29,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.evidence.resource_work import (
     CostReading,
@@ -98,6 +99,7 @@ def _start(logical_run_id: str = "d1-pilot-both-seed-7") -> RunStartProvenance:
         pytorch_version="2.13.0",
         compiler_enabled=True,
         compiler_version="triton-3.4.0",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             amount=Money(amount=Decimal("1.19"), currency="USD"),
             billing_unit=BillingUnit.HOUR,
@@ -215,6 +217,14 @@ def test_d1_descriptor_binds_plan_profile_and_execution_start_identity() -> None
     assert descriptor.params["d1/container_image_digest"] == "sha256:" + "c" * 64
     assert descriptor.tags["d1/family_digest"] == plan.profile.family.family_digest
     assert descriptor.tags["resource/start_identity_digest"] == _start().identity_digest
+    assert descriptor.params["resource/activation_mode"] == "gaps-only"
+    assert descriptor.params["resource/activation_factory_digest"] == (
+        _start().resource_activation.factory_registration_digest
+    )
+    assert descriptor.params["resource/meter_provider"] == "unavailable"
+    assert descriptor.params["resource/meter_device_scope"] == "unavailable"
+    assert descriptor.params["resource/flop_model_identity"] == "unavailable"
+    assert descriptor.params["resource/power_integration_method"] == "unavailable"
 
 
 def test_d1_descriptor_refuses_profile_logical_run_and_container_drift() -> None:

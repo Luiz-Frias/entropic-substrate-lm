@@ -98,9 +98,12 @@ def captured_step_one_case(
 
     monkeypatch.setattr(fresh_module, "save_atomic", capture_checkpoint)
     monkeypatch.setattr(AuthoritativeRunJournal, "append_checkpoint", capture_journal)
+    start = run_start(plan)
+    if resource_activation_factory is not None:
+        start = replace(start, resource_activation=resource_activation_factory.registration)
     completion = run_d1_fresh(
         plan=plan,
-        start=run_start(plan),
+        start=start,
         origin=origin(),
         locations=D1FreshRunLocations(reference_journal, reference_checkpoint),
         clock=DeterministicTrainerClock(),

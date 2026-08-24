@@ -14,6 +14,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     PurchaseOption,
     QuotedRate,
+    ResourceActivationRegistration,
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
@@ -178,10 +179,11 @@ class D1OperatorLaunchIntent:
     image: D1ImmutableImage
     resource: D1A100ResourceRequest
     quoted_rate: QuotedRate
+    resource_activation: ResourceActivationRegistration
     execution_segment_index: int
     resume_checkpoint_sha256: str | None
     terminate_after_seconds: int
-    schema_version: str = "d1-operator-launch-intent-v1"
+    schema_version: str = "d1-operator-launch-intent-v2"
 
     def __post_init__(self) -> None:
         if not isinstance(cast(object, self.plan), D1RunPlan):
@@ -192,6 +194,8 @@ class D1OperatorLaunchIntent:
             raise TypeError("D1 launch intent requires an A100 resource request")
         if type(self.quoted_rate) is not QuotedRate:
             raise TypeError("D1 launch intent requires measured quoted rate")
+        if type(self.resource_activation) is not ResourceActivationRegistration:
+            raise TypeError("D1 launch intent requires resource activation registration")
         if type(self.execution_segment_index) is not int or self.execution_segment_index < 0:
             raise ValueError("execution_segment_index must be nonnegative")
         if self.execution_segment_index == 0:
@@ -217,6 +221,8 @@ class D1OperatorLaunchIntent:
             )
         elif self.registered_design_digest is not None:
             raise ValueError("non-confirmatory launch forbids registered_design_digest")
+        if self.schema_version != "d1-operator-launch-intent-v2":
+            raise ValueError("unsupported D1 operator launch-intent schema")
 
     @property
     def segment_start_mode(self) -> SegmentStartMode:
@@ -237,6 +243,7 @@ class D1OperatorLaunchIntent:
             "quoted_rate": self.quoted_rate.manifest,
             "registered_design_digest": self.registered_design_digest,
             "resource": self.resource.manifest,
+            "resource_activation": self.resource_activation.manifest,
             "resume_checkpoint_sha256": self.resume_checkpoint_sha256,
             "schema_version": self.schema_version,
             "segment_start_mode": self.segment_start_mode.value,
@@ -366,6 +373,7 @@ def attest_d1_run_start(
         pytorch_version=runtime.pytorch_version,
         compiler_enabled=runtime.compiler_enabled,
         compiler_version=runtime.compiler_version,
+        resource_activation=intent.resource_activation,
         quoted_rate=intent.quoted_rate,
         pod_created_at=placement.pod_created_at,
         trainer_started_at=runtime.trainer_started_at,

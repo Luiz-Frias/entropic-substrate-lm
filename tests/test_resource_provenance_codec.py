@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -18,6 +19,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.evidence.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
@@ -35,7 +37,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
     logical = "d1-both-seed-7"
     created = datetime(2026, 8, 24, 1, segment, 2, 123456, tzinfo=UTC)
     return RunStartProvenance(
-        schema_version="resource-telemetry/v2",
+        schema_version=RESOURCE_TELEMETRY_SCHEMA_VERSION,
         logical_run_id=logical,
         execution_segment_index=segment,
         execution_segment_id=execution_segment_id(logical, segment),
@@ -54,6 +56,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
         pytorch_version="2.13.0",
         compiler_enabled=False,
         compiler_version="disabled",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             amount=Money(Decimal("1.39"), "USD"),
             billing_unit=BillingUnit.HOUR,
@@ -77,6 +80,9 @@ def test_run_start_mapping_and_json_line_round_trip_canonically() -> None:
     quoted = mapping["quoted_rate"]
     assert isinstance(quoted, dict)
     assert quoted["amount"] == {"amount": "1.39", "currency": "USD"}
+    activation = mapping["resource_activation"]
+    assert isinstance(activation, dict)
+    assert activation["mode"] == "gaps-only"
     assert run_start_from_mapping(mapping) == start
     line = serialize_run_start_line(start)
     assert parse_run_start_line(line) == start
@@ -90,7 +96,7 @@ def test_run_start_mapping_and_json_line_round_trip_canonically() -> None:
         ("accelerator_count", False),
         ("compiler_enabled", 0),
         ("pod_created_at", "2026-08-24T01:00:02+00:00"),
-        ("schema_version", "resource-telemetry/v1"),
+        ("schema_version", "resource-telemetry/v2"),
     ],
 )
 def test_mapping_refuses_type_schema_and_noncanonical_timestamp(field: str, value: object) -> None:
@@ -111,7 +117,11 @@ def test_mapping_refuses_unknown_missing_and_noncanonical_decimal() -> None:
     amount = quoted["amount"]
     assert isinstance(amount, dict)
     amount["amount"] = "1.390"
-    for mapping in (unknown, missing, decimal):
+    activation = run_start_to_mapping(_start())
+    activation_value = activation["resource_activation"]
+    assert isinstance(activation_value, dict)
+    activation_value["invented"] = True
+    for mapping in (unknown, missing, decimal, activation):
         with pytest.raises(ResourceProvenanceCodecGap):
             run_start_from_mapping(mapping)
 

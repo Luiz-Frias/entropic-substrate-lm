@@ -8,6 +8,7 @@ from pathlib import Path
 
 from entropic_substrate.config import merge_dicts
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -18,6 +19,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.experiments.d1_config import d1_configs_dir
 from entropic_substrate.experiments.d1_config_profile import (
@@ -100,7 +102,7 @@ def run_start(plan: SmokeD1RunPlan) -> RunStartProvenance:
     logical = plan.logical_run_id
     created = STARTED_AT - timedelta(minutes=1)
     return RunStartProvenance(
-        schema_version="resource-telemetry/v2",
+        schema_version=RESOURCE_TELEMETRY_SCHEMA_VERSION,
         logical_run_id=logical,
         execution_segment_index=0,
         execution_segment_id=execution_segment_id(logical, 0),
@@ -119,6 +121,7 @@ def run_start(plan: SmokeD1RunPlan) -> RunStartProvenance:
         pytorch_version="test-runtime",
         compiler_enabled=False,
         compiler_version="disabled",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             amount=Money(amount=Decimal("0"), currency="USD"),
             billing_unit=BillingUnit.SECOND,

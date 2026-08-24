@@ -13,9 +13,13 @@ from entropic_substrate.evidence.resource_provenance import (
     BillingRoundingPolicy,
     BillingUnit,
     Money,
+    PowerIntegrationMethod,
+    PowerSamplingRegistration,
     PurchaseOption,
     QuotedRate,
     RateScope,
+    ResourceActivationMode,
+    ResourceActivationRegistration,
     RoundingMode,
     RunStartProvenance,
     SegmentStartMode,
@@ -52,10 +56,28 @@ _KEYS = {
     "pytorch_version",
     "quoted_rate",
     "region",
+    "resource_activation",
     "resume_checkpoint_sha256",
     "schema_version",
     "segment_start_mode",
     "trainer_started_at",
+}
+_ACTIVATION_KEYS = {
+    "device_scope",
+    "factory_registration_digest",
+    "flop_model_identity",
+    "meter_provider",
+    "mode",
+    "power_sampling",
+    "schema_version",
+}
+_POWER_KEYS = {
+    "cadence_seconds",
+    "device_scope",
+    "integration_method",
+    "max_gap_seconds",
+    "provider",
+    "schema_version",
 }
 _RATE_KEYS = {
     "amount",
@@ -158,6 +180,45 @@ def _rate(value: object) -> QuotedRate:
         _fail(f"quoted_rate is invalid: {error}", error)
 
 
+def _power_registration(value: object) -> PowerSamplingRegistration | None:
+    if value is None:
+        return None
+    mapping = _mapping(value, label="resource_activation.power_sampling")
+    _exact(mapping, _POWER_KEYS, label="resource_activation.power_sampling")
+    try:
+        return PowerSamplingRegistration(
+            cadence_seconds=cast(float, mapping["cadence_seconds"]),
+            max_gap_seconds=cast(float, mapping["max_gap_seconds"]),
+            integration_method=_enum(
+                PowerIntegrationMethod,
+                mapping["integration_method"],
+                label="resource_activation.power_sampling.integration_method",
+            ),
+            provider=cast(str, mapping["provider"]),
+            device_scope=cast(str, mapping["device_scope"]),
+            schema_version=cast(str, mapping["schema_version"]),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"resource_activation.power_sampling is invalid: {error}", error)
+
+
+def _activation(value: object) -> ResourceActivationRegistration:
+    mapping = _mapping(value, label="resource_activation")
+    _exact(mapping, _ACTIVATION_KEYS, label="resource_activation")
+    try:
+        return ResourceActivationRegistration(
+            factory_registration_digest=cast(str, mapping["factory_registration_digest"]),
+            mode=_enum(ResourceActivationMode, mapping["mode"], label="resource_activation.mode"),
+            meter_provider=cast(str, mapping["meter_provider"]),
+            device_scope=cast(str, mapping["device_scope"]),
+            flop_model_identity=cast(str | None, mapping["flop_model_identity"]),
+            power_sampling=_power_registration(mapping["power_sampling"]),
+            schema_version=cast(str, mapping["schema_version"]),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"resource_activation is invalid: {error}", error)
+
+
 def _z(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
@@ -205,6 +266,7 @@ def run_start_from_mapping(value: object) -> RunStartProvenance:
             pytorch_version=cast(str, mapping["pytorch_version"]),
             compiler_enabled=cast(bool, mapping["compiler_enabled"]),
             compiler_version=cast(str, mapping["compiler_version"]),
+            resource_activation=_activation(mapping["resource_activation"]),
             quoted_rate=_rate(mapping["quoted_rate"]),
             pod_created_at=_timestamp(mapping["pod_created_at"], label="pod_created_at"),
             trainer_started_at=_timestamp(
