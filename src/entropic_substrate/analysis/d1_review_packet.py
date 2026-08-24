@@ -1,0 +1,401 @@
+"""Role-masked D1 four-arm review packet, prompt, and structural leak scan."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import cast
+
+from entropic_substrate.analysis.d1_blind_aliases import D1PreparedBlindAliases
+from entropic_substrate.analysis.d1_execution_receipt import D1AnalysisExecutionReceipt
+from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
+from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.experiments.d1_primitives import D1Arm
+
+__all__ = [
+    "D1BlindReviewPacket",
+    "D1BlindnessLabel",
+    "D1FactorialReviewerPrompt",
+    "D1PacketBlindnessError",
+    "build_d1_blind_review_packet",
+    "build_d1_factorial_reviewer_prompt",
+    "validate_d1_packet_blindness",
+]
+
+_SCHEMA = "d1-blind-review-packet-v1"
+_PROHIBITED_KEYS = frozenset(
+    {
+        "arm",
+        "arm_id",
+        "construction_digest",
+        "logical_run_id",
+        "target_update",
+        "collapse_strategy",
+        "ema",
+    }
+)
+_ARM_WORDS = frozenset(arm.value.casefold() for arm in D1Arm)
+_NONBLINDABLE = (
+    {
+        "field": "run_attestations[].segments[].accelerator/provider/runtime",
+        "reason": "required execution-parity evidence may link to operator records",
+    },
+    {
+        "field": "run_attestations[].segments[].timestamps",
+        "reason": "required run-start chronology may link to provider records",
+    },
+    {
+        "field": "run_attestations[].segments[].quoted_rate",
+        "reason": "required resource provenance may identify an execution lane",
+    },
+    {
+        "field": "capture_roster[].capture_lane",
+        "reason": "failure/completion role is reviewable integrity evidence",
+    },
+)
+
+
+class D1BlindnessLabel(StrEnum):
+    ROLE_MASKED = "ROLE_MASKED_NOT_FULLY_BLIND"
+
+
+class D1PacketBlindnessError(ValueError):
+    """The packet leaks or structurally drifts from its four-arm registration."""
+
+
+def _canonical(value: object) -> str:
+    return json.dumps(
+        value, allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class D1BlindReviewPacket:
+    canonical_json: str
+
+    @classmethod
+    def from_manifest(cls, manifest: Mapping[str, object]) -> D1BlindReviewPacket:
+        return cls(_canonical(manifest))
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        value = json.loads(self.canonical_json)
+        if type(value) is not dict:
+            raise AssertionError("D1 review packet lost its object root")
+        return cast(dict[str, object], value)
+
+    @property
+    def packet_digest(self) -> str:
+        return hashlib.sha256(self.canonical_json.encode()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class D1FactorialReviewerPrompt:
+    text: str
+
+    @property
+    def prompt_digest(self) -> str:
+        return hashlib.sha256(self.text.encode()).hexdigest()
+
+
+def _artifact(item: D1ArtifactIdentity, alias: str) -> dict[str, object]:
+    return {
+        "artifact_alias": alias,
+        "dvc_object_id": item.dvc.object_id,
+        "dvc_pointer_sha256": item.dvc.pointer_sha256,
+        "md5": item.md5,
+        "role": item.role.value,
+        "sha256": item.sha256,
+        "size_bytes": item.size_bytes,
+    }
+
+
+def _segments(run: D1RunEvidence) -> list[dict[str, object]]:
+    return [
+        {
+            "accelerator_count": start.accelerator_count,
+            "accelerator_model": start.accelerator_model,
+            "compiler_enabled": start.compiler_enabled,
+            "compiler_version": start.compiler_version,
+            "cuda_version": start.cuda_version,
+            "driver_version": start.driver_version,
+            "image_digest": start.image_digest,
+            "market": start.market,
+            "pod_created_at": start.pod_created_at.isoformat(),
+            "provider": start.provider,
+            "provider_sku": start.provider_sku,
+            "purchase_option": start.purchase_option.value,
+            "pytorch_version": start.pytorch_version,
+            "quoted_rate": start.quoted_rate.manifest,
+            "region": start.region,
+            "resource_activation": start.resource_activation.manifest,
+            "resume_checkpoint_present": start.resume_checkpoint_sha256 is not None,
+            "segment_index": start.execution_segment_index,
+            "segment_start_mode": start.segment_start_mode.value,
+            "trainer_started_at": start.trainer_started_at.isoformat(),
+        }
+        for start in run.segments
+    ]
+
+
+def _source_artifacts(aggregate: D1HeterogeneousCaptureAggregate) -> list[dict[str, object]]:
+    return [
+        _artifact(item, f"I{index:03d}")
+        for index, item in enumerate(aggregate.dvc_handoff.artifacts, start=1)
+    ]
+
+
+def _roster(
+    aggregate: D1HeterogeneousCaptureAggregate, aliases: D1PreparedBlindAliases
+) -> tuple[dict[str, object], dict[str, str], dict[str, str]]:
+    expected = aggregate.roster.expected_confirmatory
+    run_aliases = {item.logical_run_id: f"R{index:03d}" for index, item in enumerate(expected, 1)}
+    pair_aliases = {
+        value: f"P{index:03d}" for index, value in enumerate(aggregate.roster.pairing_ids, 1)
+    }
+    complete = {item.expected.logical_run_id for item in aggregate.complete_runs}
+    confirmatory = [
+        {
+            "arm_alias": aliases.aliases.for_arm(item.arm),
+            "capture_lane": "complete" if item.logical_run_id in complete else "terminal_defect",
+            "pair_alias": pair_aliases[item.pairing_id],
+            "run_alias": run_aliases[item.logical_run_id],
+            "seed": item.seed,
+        }
+        for item in expected
+    ]
+    attempts_by_id = {item.attempt.logical_run_id: item for item in aggregate.attempts}
+    if set(attempts_by_id) != {item.logical_run_id for item in aggregate.roster.attempts}:
+        raise ValueError("D1 packet requires the complete attempt evidence roster")
+    attempts = [
+        {
+            "arm_alias": aliases.aliases.for_arm(item.arm),
+            "attempt_alias": f"T{index:03d}",
+            "evidence_gap_present": attempts_by_id[item.logical_run_id].evidence_gap is not None,
+            "lane": item.lane.value,
+            "run_class": item.run_class.value,
+            "seed": item.seed,
+        }
+        for index, item in enumerate(aggregate.roster.attempts, 1)
+    ]
+    return {"attempts": attempts, "confirmatory": confirmatory}, run_aliases, pair_aliases
+
+
+def _run_attestations(
+    aggregate: D1HeterogeneousCaptureAggregate,
+    aliases: D1PreparedBlindAliases,
+    run_evidence: tuple[D1RunEvidence, ...],
+    run_aliases: Mapping[str, str],
+    pair_aliases: Mapping[str, str],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    evidence = {item.identity.logical_run_id: item for item in run_evidence}
+    expected = aggregate.roster.expected_confirmatory
+    if len(evidence) != len(run_evidence) or set(evidence) != {
+        item.logical_run_id for item in expected
+    }:
+        raise ValueError("D1 packet requires validated run evidence for every expected cell")
+    rows: list[dict[str, object]] = []
+    for item in expected:
+        run = evidence[item.logical_run_id]
+        match = run.identity.construction_digest == item.construction_digest
+        if not match or run.plan_digest != item.plan_digest:
+            raise ValueError("D1 packet run evidence differs from registered construction")
+        rows.append(
+            {
+                "arm_alias": aliases.aliases.for_arm(item.arm),
+                "pair_alias": pair_aliases[item.pairing_id],
+                "registered_construction_match": match,
+                "run_alias": run_aliases[item.logical_run_id],
+                "seed": item.seed,
+                "segments": _segments(run),
+                "status": run.status.value,
+            }
+        )
+    parity: list[dict[str, object]] = []
+    fields = (
+        "code_commit",
+        "repository_digest",
+        "image_digest",
+        "dataset_digest",
+        "split_digest",
+        "sampler_construction_digest",
+    )
+    for pair_id in aggregate.roster.pairing_ids:
+        block = tuple(item for item in expected if item.pairing_id == pair_id)
+        parity.append(
+            {
+                "pair_alias": pair_aliases[pair_id],
+                "registered_identity_parity": {
+                    field: len({getattr(item, field) for item in block}) == 1 for field in fields
+                },
+                "segment_count_equal": len(
+                    {len(evidence[item.logical_run_id].segments) for item in block}
+                )
+                == 1,
+            }
+        )
+    return rows, parity
+
+
+def _receipt_bindings(
+    receipt: D1AnalysisExecutionReceipt,
+    analysis: D1AliasedMachineAnalysis,
+    aggregate: D1HeterogeneousCaptureAggregate,
+    aliases: D1PreparedBlindAliases,
+) -> tuple[dict[str, object], dict[str, object]]:
+    data = receipt.manifest
+    if data.get("filing_eligible") is not True:
+        raise ValueError("D1 review packet requires a filing-eligible analysis receipt")
+    if data.get("analysis_digest") != analysis.analysis_digest:
+        raise ValueError("D1 review packet analysis receipt differs from analysis")
+    if data.get("alias_commitment") != aliases.aliases.sealed_commitment:
+        raise ValueError("D1 review packet alias commitment differs")
+    bindings = cast(dict[str, object], data.get("bindings"))
+    if bindings.get("capture_digest") != aggregate.manifest_digest:
+        raise ValueError("D1 review packet capture binding differs")
+    implementation = cast(dict[str, object], data.get("implementation"))
+    readers = cast(dict[str, object], implementation.get("readers"))
+    if set(readers) != {"complete", "terminal_defect"}:
+        raise ValueError("D1 review packet requires both validated reader identities")
+    return bindings, readers
+
+
+def build_d1_blind_review_packet(
+    *,
+    decision_contract: D1DecisionContract,
+    aggregate: D1HeterogeneousCaptureAggregate,
+    analysis: D1AliasedMachineAnalysis,
+    analysis_receipt: D1AnalysisExecutionReceipt,
+    aliases: D1PreparedBlindAliases,
+    run_evidence: tuple[D1RunEvidence, ...],
+) -> D1BlindReviewPacket:
+    """Assemble exact evidence without serializing canonical mechanism identities."""
+    bindings, readers = _receipt_bindings(analysis_receipt, analysis, aggregate, aliases)
+    roster, run_aliases, pair_aliases = _roster(aggregate, aliases)
+    runs, parity = _run_attestations(aggregate, aliases, run_evidence, run_aliases, pair_aliases)
+    manifest: dict[str, object] = {
+        "alias_commitment": aliases.aliases.sealed_commitment,
+        "analysis": analysis.manifest,
+        "analysis_receipt_digest": analysis_receipt.receipt_digest,
+        "bindings": bindings,
+        "blindness_label": D1BlindnessLabel.ROLE_MASKED.value,
+        "capture_roster": roster,
+        "nonblindable_fields": list(_NONBLINDABLE),
+        "parity_attestations": parity,
+        "run_attestations": runs,
+        "schema_version": _SCHEMA,
+        "source_artifacts": _source_artifacts(aggregate),
+        "validated_readers": readers,
+    }
+    packet = D1BlindReviewPacket.from_manifest(manifest)
+    validate_d1_packet_blindness(packet, decision_contract, aggregate, aliases)
+    return packet
+
+
+def _walk(value: object) -> tuple[set[str], set[str]]:
+    keys: set[str] = set()
+    strings: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            keys.add(str(key))
+            child_keys, child_strings = _walk(child)
+            keys |= child_keys
+            strings |= child_strings
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for child in value:
+            child_keys, child_strings = _walk(child)
+            keys |= child_keys
+            strings |= child_strings
+    elif isinstance(value, str):
+        strings.add(value)
+    return keys, strings
+
+
+def validate_d1_packet_blindness(
+    packet: D1BlindReviewPacket,
+    contract: D1DecisionContract,
+    aggregate: D1HeterogeneousCaptureAggregate,
+    aliases: D1PreparedBlindAliases,
+) -> None:
+    """Use schema, coefficient, key, token, and digest checks redundantly."""
+    manifest = packet.manifest
+    bindings = cast(Mapping[str, object], manifest.get("bindings", {}))
+    if (
+        manifest.get("schema_version") != _SCHEMA
+        or bindings.get("capture_digest") != aggregate.manifest_digest
+    ):
+        raise D1PacketBlindnessError("packet schema or capture binding differs")
+    keys, strings = _walk(manifest)
+    if leaked := sorted(keys & _PROHIBITED_KEYS):
+        raise D1PacketBlindnessError(f"construction-bearing field leaked: {leaked[0]}")
+    arm_tokens = {
+        token.casefold() for value in strings for token in re.findall(r"[A-Za-z0-9_]+", value)
+    }
+    if arm_tokens & _ARM_WORDS:
+        raise D1PacketBlindnessError("canonical arm identity leaked into packet")
+    if strings & set(contract.family_identity.arm_construction_digests.values()):
+        raise D1PacketBlindnessError("canonical construction digest leaked into packet")
+    analysis = cast(dict[str, object], manifest["analysis"])
+    contrasts = cast(list[dict[str, object]], analysis["contrasts"])
+    if len(contrasts) != len(contract.contrast_ids):
+        raise D1PacketBlindnessError("registered contrast count differs")
+    for index, contrast_id in enumerate(contract.contrast_ids, start=1):
+        expected = [
+            {
+                "arm_alias": aliases.aliases.for_arm(D1Arm(term.arm_id)),
+                "coefficient": term.coefficient,
+            }
+            for term in contract.contrast_rules[contrast_id].terms
+        ]
+        observed = contrasts[index - 1]
+        if observed.get("contrast_alias") != f"C{index:02d}" or observed.get("terms") != expected:
+            raise D1PacketBlindnessError(
+                "registered contrast coefficients were not exactly aliased"
+            )
+    roster = cast(dict[str, list[object]], manifest["capture_roster"])
+    if len(roster["confirmatory"]) != len(aggregate.roster.expected_confirmatory) or len(
+        roster["attempts"]
+    ) != len(aggregate.roster.attempts):
+        raise D1PacketBlindnessError("complete capture or attempt roster is absent")
+
+
+def build_d1_factorial_reviewer_prompt(
+    packet: D1BlindReviewPacket, contract: D1DecisionContract
+) -> D1FactorialReviewerPrompt:
+    """Quote the registered D1 decision surface without revealing mechanism labels."""
+    analysis = cast(dict[str, object], packet.manifest["analysis"])
+    contrasts = cast(list[dict[str, object]], analysis["contrasts"])
+    contrast_lines = [
+        f"- C{index:02d}: {_canonical({'terms': row['terms'], 'confidence_level': rule.confidence_level, 'multiplicity': rule.multiplicity, 'margins': dict(rule.margins), 'decision_vocabulary': rule.decision_vocabulary})}"
+        for index, (row, rule) in enumerate(
+            zip(contrasts, contract.contrast_rules.values(), strict=True), 1
+        )
+    ]
+    clause_lines = [
+        f"- {index}. {clause_id}: {_canonical({'registered_rule': rule.registered_rule, 'decision_vocabulary': rule.decision_vocabulary, 'threshold': rule.threshold, 'margin': rule.margin})}"
+        for index, (clause_id, rule) in enumerate(contract.clause_rules.items(), 1)
+    ]
+    text = "\n".join(
+        [
+            "D1 four-arm factorial blind review",
+            f"Packet SHA-256: {packet.packet_digest}",
+            f"Blindness: {packet.manifest['blindness_label']}",
+            "Independently recompute only from the sealed packet. Do not use repository, tracking-server, operator, or prior-answer state.",
+            "Apply every registered clause as a mandatory co-equal rider; use the quoted precedence only for presentation.",
+            f"Registered verdict vocabulary: {contract.verdict_vocabulary}",
+            "Registered aliased contrasts (coefficients are exact):",
+            *contrast_lines,
+            "Registered clauses/riders in exact precedence:",
+            *clause_lines,
+            "Report integrity findings as stable MAJOR-N identifiers and list every open MAJOR explicitly.",
+            "Do not authorize a successor gate; review ends with the report and finding IDs.",
+        ]
+    )
+    return D1FactorialReviewerPrompt(text + "\n")

@@ -1,0 +1,96 @@
+# D1 full launch profile. All construction constants are explicit.
+kind: d1
+name: d1-sg
+arm: sg
+
+codec:
+  kind: byte
+  construction_label: identity-byte-v1
+  name: identity-byte
+  construction_digest: b1f2d8afd749dd6570dc043358cfa5c97d674b8812df095b4d2959068ebaf89c  # pragma: allowlist secret
+  cardinality: 256
+
+encoder:
+  latent_width: 768
+  n_layers: 12
+  n_heads: 12
+  mlp_ratio: 4.0
+  block_size: 1024
+  dropout: 0.0
+  bias: false
+  rms_epsilon: 0.00001
+  initialization:
+    name: d1-seeded-normal-v1
+    construction_digest: 0855c739d15fb8605f466db86b1b2bc1c4fea8e1ec77e4b4208ba4995780433d  # pragma: allowlist secret
+
+boundary:
+  online_target_observation_adapters_tied: false
+  language_readout_tied_to_observation_adapter: false
+  state_lift: identity
+  dynamics: euclidean_residual
+
+state:
+  causal_latent_state: true
+
+target:
+  horizon: 1
+  latent_displacement: true
+  rms_normalized: true
+
+future_law:
+  predictor_hidden_width: 768
+  activation: silu
+  family: nonlinear_fixed_variance_gaussian
+  variance: 1.0
+  future_loss_weight: 1.0
+  reduce_per_latent_dimension: true
+  mean_baseline_calibration_batches: 32
+  mean_baseline_sampling: deterministic_train_grid_v1
+
+geometry:
+  metric: euclidean
+  consumer: "off"
+
+ema:
+  kind: fixed
+  decay: 0.99
+  final_decay: null
+  schedule_steps: null
+  updates_after_successful_optimizer_step: true
+
+collapse:
+  std_floor: 1.0
+  variance_weight: 1.0
+  covariance_weight: 0.04
+  variance_epsilon: 0.0001
+  covariance_normalization: off_diagonal_sum_per_dimension
+
+data:
+  source: enwik8
+  path: data/enwik8/enwik8
+  fineweb_name: sample-10BT
+  fineweb_chars: 20000000
+  val_fraction: 0.05
+  batch_size: 16
+  seq_len: 1024
+  num_eval_batches: 20
+  synthetic_bytes: 1000000
+
+train:
+  max_steps: 20000
+  lr: 0.0006
+  min_lr_ratio: 0.1
+  warmup_steps: 500
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  eval_interval: 500
+  log_interval: 20
+  seed: 42
+  amp_dtype: bf16
+  device: auto
+  compile: false
+  results_dir: results
+  models_dir: models
+  save_interval: 1000
+  resume: null

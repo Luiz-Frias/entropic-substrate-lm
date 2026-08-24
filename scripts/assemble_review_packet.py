@@ -626,18 +626,39 @@ class _DocstringStripper(ast.NodeTransformer):
     visit_ClassDef = _strip
 
 
+_PACKET_READER_EXCLUDED_FUNCTIONS = {
+    "_build_parser",
+    "main",
+    "read_d1_terminal_defect",
+}
+_PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
+    "entropic_substrate.d1_",
+    "entropic_substrate.evidence.d1_",
+)
+
+
 def build_reader(telemetry_source: str) -> str:
-    """Strip all prose from the telemetry module; shim the package import.
+    """Strip prose and D1-only imports from the legacy packet reader.
 
     Also drops the operator CLI (``main``/``_build_parser``/``__main__``
     block) — its argparse prog/help strings carry repository names, and the
-    reviewer parses through the functions, never argv.
+    reviewer parses through the functions, never argv. D1 evidence readers
+    live in separate modules and are not dependencies of the legacy E-series
+    packet reader; copying their package imports would both break standalone
+    execution and leak repository identity into a blinded packet.
     """
     tree = _DocstringStripper().visit(ast.parse(telemetry_source))
     tree.body = [
         node
         for node in tree.body
-        if not (isinstance(node, ast.FunctionDef) and node.name in ("main", "_build_parser"))
+        if not (
+            isinstance(node, ast.FunctionDef) and node.name in _PACKET_READER_EXCLUDED_FUNCTIONS
+        )
+        and not (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith(_PACKET_READER_EXCLUDED_IMPORT_PREFIXES)
+        )
         and not (
             isinstance(node, ast.If)
             and isinstance(node.test, ast.Compare)
