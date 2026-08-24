@@ -153,8 +153,8 @@ class SuccessorAuthorization(StrEnum):
 class FiledVerdictEvidence:
     """The machine-readable filing facts the lifecycle may consume.
 
-    ``ValidatedD1Verdict.to_filed_evidence`` is the intended construction
-    seam.  The FSM never receives losses, estimates, or telemetry records.
+    ``ValidatedD1Filing.to_filed_evidence`` is the intended construction
+    seam. The FSM never receives losses, estimates, or telemetry records.
     """
 
     narrative: ArtifactIdentity
