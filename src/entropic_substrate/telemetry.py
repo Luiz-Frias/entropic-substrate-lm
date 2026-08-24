@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from entropic_substrate.d1_numerical_defect import D1TerminalNumericalDefectRecord
 from entropic_substrate.evidence.d1_telemetry import (
     D1EvalEvidence,
     D1QualityEvidence,
@@ -50,6 +51,9 @@ from entropic_substrate.evidence.d1_telemetry import (
     final_d1_eval_metric,
     read_d1_eval_series,
     read_d1_run_evidence,
+)
+from entropic_substrate.evidence.d1_terminal_defect_query import (
+    validate_d1_terminal_defect,
 )
 from entropic_substrate.logging import configure_logging, logger
 
@@ -72,6 +76,7 @@ __all__ = [
     "max_kappa_spread",
     "read_d1_eval_series",
     "read_d1_run_evidence",
+    "read_d1_terminal_defect",
     "read_eval_series",
     "read_final_kappa",
     "read_seed",
@@ -80,6 +85,14 @@ __all__ = [
 
 # Callers exit with this when the readout a gate needs is absent or malformed.
 EXIT_TELEMETRY_GAP: int = 2
+
+
+def read_d1_terminal_defect(
+    path: str | Path, **expected: object
+) -> D1TerminalNumericalDefectRecord:
+    """Admit one measured terminal defect through the strict public D1 reader."""
+    run = read_d1_run_evidence(path, allow_incomplete=True, **expected)  # type: ignore[arg-type]
+    return validate_d1_terminal_defect(path, run)
 
 
 class TelemetryGap(Exception):
