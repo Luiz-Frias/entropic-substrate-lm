@@ -52,6 +52,12 @@ def _check_filing(manager: D1ProcessManager, filing: ValidatedD1Filing) -> Filed
         D1ProcessEventKind.ANALYSIS_FILED: filing.manifest.artifacts[
             "blinded_analysis"
         ].artifact_identity(),
+        D1ProcessEventKind.ALIAS_COMMITMENT_FILED: filing.manifest.artifacts[
+            "alias_commitment"
+        ].artifact_identity(),
+        D1ProcessEventKind.ALIAS_REVEALED: filing.manifest.artifacts[
+            "alias_reveal"
+        ].artifact_identity(),
     }
     for kind, artifact in expected.items():
         if _event_for(manager, kind).artifacts[0] != artifact:
@@ -62,6 +68,7 @@ def _check_filing(manager: D1ProcessManager, filing: ValidatedD1Filing) -> Filed
     expected_review = (
         evidence.review_packet,
         filing.manifest.artifacts["reviewer_report"].artifact_identity(),
+        filing.manifest.artifacts["reviewer_execution_receipt"].artifact_identity(),
     )
     if review.artifacts != expected_review:
         raise reject_transition(
