@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -12,6 +13,8 @@ from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonica
 
 __all__ = [
     "CostReading",
+    "CountOrGap",
+    "IdentityOrGap",
     "ReadingMethod",
     "ResourceWorkSnapshot",
     "ScalarReading",
@@ -26,6 +29,9 @@ class ReadingMethod(StrEnum):
     ENERGY_INTEGRATED = "energy-integrated"
     ENERGY_COUNTER = "energy-counter"
     RATE_TIMES_SCOPE = "rate-times-scope"
+
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _utc(value: datetime, *, label: str) -> None:
@@ -84,6 +90,8 @@ class CostReading:
 
 ScalarOrGap = ScalarReading | EvidenceGap
 CostOrGap = CostReading | EvidenceGap
+IdentityOrGap = str | EvidenceGap
+CountOrGap = int | EvidenceGap
 
 
 def _scalar_or_gap(
@@ -116,6 +124,25 @@ def _cost_or_gap(value: CostOrGap, *, field: str) -> None:
         raise TypeError(msg)
 
 
+def _identity_or_gap(value: IdentityOrGap, *, field: str) -> None:
+    if type(value) is EvidenceGap:
+        if value.field != field:
+            raise ValueError(f"evidence gap must name exactly {field!r}")
+        return
+    if type(value) is not str or _SHA256.fullmatch(value) is None:
+        raise ValueError(f"{field} must be a lowercase SHA-256 identity or EvidenceGap")
+
+
+def _count_or_gap(value: CountOrGap, *, field: str) -> None:
+    if type(value) is EvidenceGap:
+        if value.field != field:
+            raise ValueError(f"evidence gap must name exactly {field!r}")
+        return
+    if type(value) is not int:
+        raise TypeError(f"{field} must be a nonnegative integer or EvidenceGap")
+    _count(value, label=field)
+
+
 @dataclass(frozen=True, slots=True)
 class ResourceWorkSnapshot:
     """Immutable cumulative work evidence at one evaluation cursor."""
@@ -136,15 +163,19 @@ class ResourceWorkSnapshot:
     total_model_token_positions: int
     gpu_train_device_seconds: ScalarOrGap
     gpu_eval_device_seconds: ScalarOrGap
+    peak_gpu_allocated_bytes: ScalarOrGap
+    peak_gpu_reserved_bytes: ScalarOrGap
     cumulative_train_flops: ScalarOrGap
     cumulative_eval_flops: ScalarOrGap
+    flop_model_identity: IdentityOrGap
     energy_joules: ScalarOrGap
+    energy_sample_count: CountOrGap
     rate_estimated_cost: CostOrGap
-    schema_version: str = "resource-work/v1"
+    schema_version: str = "resource-work/v2"
 
     def __post_init__(self) -> None:
         _nonempty(self.logical_run_id, label="logical_run_id")
-        if self.schema_version != "resource-work/v1":
+        if self.schema_version != "resource-work/v2":
             msg = "unsupported resource work schema_version"
             raise ValueError(msg)
         _count(self.execution_segment_index, label="execution_segment_index")
@@ -193,6 +224,12 @@ class ResourceWorkSnapshot:
             field="gpu_eval_device_seconds",
             allowed=((EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER),),
         )
+        for field in ("peak_gpu_allocated_bytes", "peak_gpu_reserved_bytes"):
+            _scalar_or_gap(
+                getattr(self, field),
+                field=field,
+                allowed=((EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER),),
+            )
         flop_methods = (
             (EvidenceClass.MEASURED, ReadingMethod.FLOP_PROFILER),
             (EvidenceClass.MODEL_ESTIMATE, ReadingMethod.FLOP_MODEL),
@@ -203,6 +240,13 @@ class ResourceWorkSnapshot:
         _scalar_or_gap(
             self.cumulative_eval_flops, field="cumulative_eval_flops", allowed=flop_methods
         )
+        _identity_or_gap(self.flop_model_identity, field="flop_model_identity")
+        model_estimated = any(
+            type(value) is ScalarReading and value.evidence_class is EvidenceClass.MODEL_ESTIMATE
+            for value in (self.cumulative_train_flops, self.cumulative_eval_flops)
+        )
+        if model_estimated and type(self.flop_model_identity) is EvidenceGap:
+            raise ValueError("flop_model_identity is required for MODEL_ESTIMATE FLOPs")
         _scalar_or_gap(
             self.energy_joules,
             field="energy_joules",
@@ -211,6 +255,15 @@ class ResourceWorkSnapshot:
                 (EvidenceClass.MEASURED, ReadingMethod.ENERGY_COUNTER),
             ),
         )
+        _count_or_gap(self.energy_sample_count, field="energy_sample_count")
+        if type(self.energy_joules) is ScalarReading:
+            if self.energy_joules.method is ReadingMethod.ENERGY_INTEGRATED:
+                if type(self.energy_sample_count) is not int or self.energy_sample_count < 2:
+                    raise ValueError(
+                        "energy_sample_count must be at least two for integrated joules"
+                    )
+            elif type(self.energy_sample_count) is not EvidenceGap:
+                raise ValueError("energy_sample_count applies only to integrated energy")
         _cost_or_gap(self.rate_estimated_cost, field="rate_estimated_cost")
 
     @property
@@ -238,6 +291,16 @@ class ResourceWorkSnapshot:
                 }
             raise AssertionError("validated resource reading has an unknown type")
 
+        def identity(value: IdentityOrGap) -> dict[str, object]:
+            if type(value) is EvidenceGap:
+                return {"field": value.field, "kind": "gap", "reason": value.reason}
+            return {"kind": "identity", "sha256": value}
+
+        def count(value: CountOrGap) -> dict[str, object]:
+            if type(value) is EvidenceGap:
+                return {"field": value.field, "kind": "gap", "reason": value.reason}
+            return {"kind": "count", "value": value}
+
         return {
             "baseline_calibration_positions": self.baseline_calibration_positions,
             "committed_quality_model_tokens": self.committed_quality_model_tokens,
@@ -245,16 +308,20 @@ class ResourceWorkSnapshot:
             "cumulative_eval_flops": reading(self.cumulative_eval_flops),
             "cumulative_train_flops": reading(self.cumulative_train_flops),
             "energy_joules": reading(self.energy_joules),
+            "energy_sample_count": count(self.energy_sample_count),
             "eval_index": self.eval_index,
             "eval_positions": self.eval_positions,
             "execution_segment_id": self.execution_segment_id,
             "execution_segment_index": self.execution_segment_index,
             "gpu_eval_device_seconds": reading(self.gpu_eval_device_seconds),
             "gpu_train_device_seconds": reading(self.gpu_train_device_seconds),
+            "flop_model_identity": identity(self.flop_model_identity),
             "logical_run_id": self.logical_run_id,
             "online_train_token_positions": self.online_train_token_positions,
             "observed_at": self.observed_at.isoformat().replace("+00:00", "Z"),
             "rate_estimated_cost": reading(self.rate_estimated_cost),
+            "peak_gpu_allocated_bytes": reading(self.peak_gpu_allocated_bytes),
+            "peak_gpu_reserved_bytes": reading(self.peak_gpu_reserved_bytes),
             "required_counter_evidence": EvidenceClass.MEASURED.value,
             "schema_version": self.schema_version,
             "target_train_token_positions": self.target_train_token_positions,
@@ -285,11 +352,15 @@ def validate_resource_work_series(records: tuple[ResourceWorkSnapshot, ...]) -> 
     optional = (
         "gpu_train_device_seconds",
         "gpu_eval_device_seconds",
+        "peak_gpu_allocated_bytes",
+        "peak_gpu_reserved_bytes",
         "cumulative_train_flops",
         "cumulative_eval_flops",
         "energy_joules",
         "rate_estimated_cost",
     )
+    last_flop_identity: str | None = None
+    last_energy_sample_count: int | None = None
     for record in records:
         if type(record) is not ResourceWorkSnapshot:
             msg = "resource work series must contain ResourceWorkSnapshot values"
@@ -349,4 +420,14 @@ def validate_resource_work_series(records: tuple[ResourceWorkSnapshot, ...]) -> 
                     msg = f"{field} reading type changed across the series"
                     raise ValueError(msg)
             last_optional[field] = value
+        identity = record.flop_model_identity
+        if type(identity) is str:
+            if last_flop_identity is not None and identity != last_flop_identity:
+                raise ValueError("flop_model_identity changed across the series")
+            last_flop_identity = identity
+        sample_count = record.energy_sample_count
+        if type(sample_count) is int:
+            if last_energy_sample_count is not None and sample_count < last_energy_sample_count:
+                raise ValueError("energy_sample_count is not monotonic across gaps")
+            last_energy_sample_count = sample_count
         previous = record

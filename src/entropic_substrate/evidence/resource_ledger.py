@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast, runtime_checkable
@@ -30,11 +31,14 @@ __all__ = [
 _OPTIONAL_FIELDS = (
     "gpu_train_device_seconds",
     "gpu_eval_device_seconds",
+    "peak_gpu_allocated_bytes",
+    "peak_gpu_reserved_bytes",
     "cumulative_train_flops",
     "cumulative_eval_flops",
     "energy_joules",
     "rate_estimated_cost",
 )
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _count(value: int, *, label: str) -> None:
@@ -55,30 +59,45 @@ class ResourceMeterSnapshot:
 
     gpu_train_device_seconds: ScalarOrGap
     gpu_eval_device_seconds: ScalarOrGap
+    peak_gpu_allocated_bytes: ScalarOrGap
+    peak_gpu_reserved_bytes: ScalarOrGap
     cumulative_train_flops: ScalarOrGap
     cumulative_eval_flops: ScalarOrGap
+    flop_model_identity: str | EvidenceGap
     energy_joules: ScalarOrGap
+    energy_sample_count: int | EvidenceGap
     rate_estimated_cost: CostReading | EvidenceGap
 
 
 @runtime_checkable
 class ResourceMeterStrategy(Protocol):
-    def snapshot(self) -> ResourceMeterSnapshot: ...
+    def snapshot(self, *, trainer_wall_seconds: float) -> ResourceMeterSnapshot: ...
 
 
 class UnavailableMeterStrategy:
     """Explicit default: no optional meter is inferred from wall time or rate."""
 
-    def snapshot(self) -> ResourceMeterSnapshot:
+    def snapshot(self, *, trainer_wall_seconds: float) -> ResourceMeterSnapshot:
+        if (
+            type(trainer_wall_seconds) is not float
+            or not math.isfinite(trainer_wall_seconds)
+            or trainer_wall_seconds < 0.0
+        ):
+            raise ValueError("trainer_wall_seconds must be finite and nonnegative")
+
         def gap(field: str) -> EvidenceGap:
             return EvidenceGap(field=field, reason="meter strategy unavailable")
 
         return ResourceMeterSnapshot(
             gpu_train_device_seconds=gap("gpu_train_device_seconds"),
             gpu_eval_device_seconds=gap("gpu_eval_device_seconds"),
+            peak_gpu_allocated_bytes=gap("peak_gpu_allocated_bytes"),
+            peak_gpu_reserved_bytes=gap("peak_gpu_reserved_bytes"),
             cumulative_train_flops=gap("cumulative_train_flops"),
             cumulative_eval_flops=gap("cumulative_eval_flops"),
+            flop_model_identity=gap("flop_model_identity"),
             energy_joules=gap("energy_joules"),
+            energy_sample_count=gap("energy_sample_count"),
             rate_estimated_cost=gap("rate_estimated_cost"),
         )
 
@@ -97,12 +116,14 @@ class ResourceLedgerState:
     baseline_calibration_positions: int
     eval_positions: int
     last_optional_readings: tuple[tuple[str, ScalarReading | CostReading], ...]
-    schema_version: str = "resource-ledger/v1"
+    last_flop_model_identity: str | None
+    last_energy_sample_count: int | None
+    schema_version: str = "resource-ledger/v2"
 
     def __post_init__(self) -> None:
         if type(self.logical_run_id) is not str or not self.logical_run_id.strip():
             raise ValueError("resource ledger state logical_run_id must be nonempty")
-        if self.schema_version != "resource-ledger/v1":
+        if self.schema_version != "resource-ledger/v2":
             raise ValueError("unsupported resource ledger state schema")
         for label, value in (
             ("execution_segment_index", self.execution_segment_index),
@@ -135,6 +156,13 @@ class ResourceLedgerState:
             for _, value in self.last_optional_readings
         ):
             raise TypeError("last_optional_readings values must be typed readings")
+        if self.last_flop_model_identity is not None and (
+            type(self.last_flop_model_identity) is not str
+            or _SHA256.fullmatch(self.last_flop_model_identity) is None
+        ):
+            raise ValueError("last_flop_model_identity must be a lowercase SHA-256 or None")
+        if self.last_energy_sample_count is not None:
+            _count(self.last_energy_sample_count, label="last_energy_sample_count")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -172,6 +200,8 @@ class ResourceLedgerState:
             ),
             "execution_segment_index": self.execution_segment_index,
             "last_optional_readings": readings,
+            "last_flop_model_identity": self.last_flop_model_identity,
+            "last_energy_sample_count": self.last_energy_sample_count,
             "last_training_step": self.last_training_step,
             "logical_run_id": self.logical_run_id,
             "next_eval_index": self.next_eval_index,
@@ -220,6 +250,8 @@ class ResourceLedger:
         self._quality_bytes = self._quality_tokens = 0
         self._online = self._target = self._baseline = self._eval = 0
         self._last_optional: dict[str, ScalarReading | CostReading] = {}
+        self._last_flop_identity: str | None = None
+        self._last_energy_count: int | None = None
 
     @classmethod
     def restore(
@@ -254,6 +286,8 @@ class ResourceLedger:
         ledger._baseline = state.baseline_calibration_positions
         ledger._eval = state.eval_positions
         ledger._last_optional = dict(state.last_optional_readings)
+        ledger._last_flop_identity = state.last_flop_model_identity
+        ledger._last_energy_count = state.last_energy_sample_count
         return ledger
 
     def record_baseline(self, *, target_positions: int) -> None:
@@ -335,6 +369,21 @@ class ResourceLedger:
             candidate[field] = value
         return candidate
 
+    def _check_meter_metadata(self, meters: ResourceMeterSnapshot) -> tuple[str | None, int | None]:
+        identity = self._last_flop_identity
+        observed_identity = meters.flop_model_identity
+        if type(observed_identity) is str:
+            if identity is not None and observed_identity != identity:
+                raise ValueError("flop_model_identity changed")
+            identity = observed_identity
+        count = self._last_energy_count
+        observed_count = meters.energy_sample_count
+        if type(observed_count) is int:
+            if count is not None and observed_count < count:
+                raise ValueError("energy_sample_count regressed")
+            count = observed_count
+        return identity, count
+
     def record_eval(
         self,
         *,
@@ -351,11 +400,12 @@ class ResourceLedger:
             msg = "training_step must be nondecreasing"
             raise ValueError(msg)
         wall = self._wall_seconds(monotonic_ns)
-        meters = self._meter.snapshot()
+        meters = self._meter.snapshot(trainer_wall_seconds=wall)
         if type(meters) is not ResourceMeterSnapshot:
             msg = "meter strategy must return ResourceMeterSnapshot"
             raise TypeError(msg)
         next_optional = self._check_optional_continuity(meters)
+        next_identity, next_energy_count = self._check_meter_metadata(meters)
         next_eval = self._eval + online_positions + target_positions
         snapshot = ResourceWorkSnapshot(
             logical_run_id=self.start.logical_run_id,
@@ -374,9 +424,13 @@ class ResourceLedger:
             total_model_token_positions=self._online + self._target + self._baseline + next_eval,
             gpu_train_device_seconds=meters.gpu_train_device_seconds,
             gpu_eval_device_seconds=meters.gpu_eval_device_seconds,
+            peak_gpu_allocated_bytes=meters.peak_gpu_allocated_bytes,
+            peak_gpu_reserved_bytes=meters.peak_gpu_reserved_bytes,
             cumulative_train_flops=meters.cumulative_train_flops,
             cumulative_eval_flops=meters.cumulative_eval_flops,
+            flop_model_identity=meters.flop_model_identity,
             energy_joules=meters.energy_joules,
+            energy_sample_count=meters.energy_sample_count,
             rate_estimated_cost=meters.rate_estimated_cost,
         )
         self._eval = next_eval
@@ -384,6 +438,8 @@ class ResourceLedger:
         self._last_training_step = training_step
         self._last_monotonic_ns = monotonic_ns
         self._last_optional = next_optional
+        self._last_flop_identity = next_identity
+        self._last_energy_count = next_energy_count
         return snapshot
 
     def current_state(self) -> ResourceLedgerState:
@@ -402,4 +458,6 @@ class ResourceLedger:
             baseline_calibration_positions=self._baseline,
             eval_positions=self._eval,
             last_optional_readings=tuple(sorted(self._last_optional.items())),
+            last_flop_model_identity=self._last_flop_identity,
+            last_energy_sample_count=self._last_energy_count,
         )

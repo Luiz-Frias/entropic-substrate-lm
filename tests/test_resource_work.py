@@ -48,15 +48,25 @@ def _snapshot(**overrides: object) -> ResourceWorkSnapshot:
         "gpu_eval_device_seconds": _scalar(
             8.0, EvidenceClass.MEASURED, ReadingMethod.GPU_DEVICE_COUNTER
         ),
+        "peak_gpu_allocated_bytes": _scalar(
+            8_589_934_592.0,
+            EvidenceClass.MEASURED,
+            ReadingMethod.GPU_DEVICE_COUNTER,
+        ),
+        "peak_gpu_reserved_bytes": EvidenceGap(
+            field="peak_gpu_reserved_bytes", reason="device counter unavailable"
+        ),
         "cumulative_train_flops": _scalar(
             1.2e15, EvidenceClass.MODEL_ESTIMATE, ReadingMethod.FLOP_MODEL
         ),
         "cumulative_eval_flops": EvidenceGap(
             field="cumulative_eval_flops", reason="profiler unavailable"
         ),
+        "flop_model_identity": "f" * 64,
         "energy_joules": _scalar(
             2.3e6, EvidenceClass.DERIVED_FROM_MEASURED, ReadingMethod.ENERGY_INTEGRATED
         ),
+        "energy_sample_count": 3,
         "rate_estimated_cost": CostReading(
             amount=Money(amount=Decimal("0.42"), currency="USD"),
             evidence_class=EvidenceClass.RATE_ESTIMATE,
@@ -76,7 +86,7 @@ def test_snapshot_distinguishes_committed_quality_exposure_from_full_work_breakd
         + snapshot.baseline_calibration_positions
         + snapshot.eval_positions
     )
-    assert snapshot.manifest["schema_version"] == "resource-work/v1"
+    assert snapshot.manifest["schema_version"] == "resource-work/v2"
     assert snapshot.manifest["observed_at"] == "2026-08-23T18:00:00Z"
     assert snapshot.manifest["baseline_calibration_positions"] == 1_024
     assert snapshot.manifest["required_counter_evidence"] == EvidenceClass.MEASURED.value

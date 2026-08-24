@@ -42,6 +42,8 @@ def _states():
         baseline_calibration_positions=160,
         eval_positions=18,
         last_optional_readings=(),
+        last_flop_model_identity=None,
+        last_energy_sample_count=None,
     )
     return plan, start, journal, ledger
 
