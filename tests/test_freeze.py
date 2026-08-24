@@ -34,6 +34,7 @@ Two independent hazards guard the frozen table's BITS, not just its
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -242,3 +243,63 @@ def test_checkpoint_roundtrip_with_untied_frozen_table(tmp_path: Path) -> None:
         atol=0,
         rtol=0,
     )
+
+
+# -------------------------------------------------------------- attestation
+# MAJOR-1 (docs/reviews/e1-5a-review-cloud.md): the double-blind packet scrubs
+# every freeze-axis config field, so a reviewer cannot verify that the arms
+# froze DIFFERENT parameter subsets at all. ``parameter_attestation`` is the
+# unblinded channel that discharges it without naming the axis.
+def test_attestation_of_an_unfrozen_model_is_the_empty_mask() -> None:
+    """Every run logs a digest, control arms included — so the KEY's presence
+    never distinguishes an arm. The empty mask hashes the empty string."""
+    model = build_model(tiny_model_config(embedding_freeze="none"))
+    attestation = model.parameter_attestation()
+    assert attestation["frozen_param_count"] == 0
+    assert attestation["trainable_param_count"] == model.num_parameters()
+    assert attestation["frozen_mask_digest"] == hashlib.sha256(b"").hexdigest()
+
+
+def test_attestation_distinguishes_the_two_freeze_variants() -> None:
+    """The digest, not the counts, is what separates these two arms.
+
+    MEASURED: untied "input" freezes {wte.weight}; tied "both" freezes one
+    shared nn.Parameter under BOTH role names — same 8192 frozen elements at
+    tiny scale, so ``frozen_param_count`` alone is blind to the difference.
+    The digest therefore enumerates parameters WITHOUT torch's shared-tensor
+    dedup (``remove_duplicate=False``), which is also the honest reading:
+    freezing both roles of one table is not freezing one role of two.
+    """
+    untied = build_model(tiny_model_config(embedding_freeze="input", tie_embeddings=False))
+    tied = build_model(tiny_model_config(embedding_freeze="both", tie_embeddings=True))
+    a = untied.parameter_attestation()
+    b = tied.parameter_attestation()
+
+    assert a["frozen_mask_digest"] != b["frozen_mask_digest"]
+    for model, attestation in ((untied, a), (tied, b)):
+        assert attestation["frozen_param_count"] == model.wte.weight.numel()
+        assert (
+            attestation["trainable_param_count"] + attestation["frozen_param_count"]
+            == model.num_parameters()
+        )
+
+
+def test_attestation_digest_is_stable_across_builds() -> None:
+    """Constant within an arm: the digest reads names and shapes, never the
+    draw — so it cannot leak a seed and cannot vary across a seed sweep."""
+    kwargs = {"embedding_freeze": "output", "tie_embeddings": False}
+    first = build_model(tiny_model_config(**kwargs)).parameter_attestation()
+    torch.manual_seed(1234)
+    second = build_model(tiny_model_config(**kwargs)).parameter_attestation()
+    assert first == second
+
+
+def test_attestation_digest_ignores_weight_values() -> None:
+    """A pure function of WHICH parameters are frozen. If weights entered the
+    digest it would differ per seed and per step, and the packet's per-arm
+    equality structure — the whole point — would dissolve into noise."""
+    model = build_model(tiny_model_config(embedding_freeze="input", tie_embeddings=False))
+    before = model.parameter_attestation()
+    with torch.no_grad():
+        model.wte.weight.add_(1.0)
+    assert model.parameter_attestation() == before

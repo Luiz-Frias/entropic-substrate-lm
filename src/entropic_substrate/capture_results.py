@@ -18,10 +18,12 @@ not science — excluded unless explicitly asked for.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import subprocess  # nosec B404 -- verify_cloud_sync runs `dvc status` with a fixed argv
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +33,7 @@ from entropic_substrate.checkpoint import CheckpointFormatError, normalize_check
 from entropic_substrate.logging import logger
 from entropic_substrate.telemetry import final_eval_record
 
-__all__ = ["capture_checkpoints", "capture_finished_runs", "dvc_commands"]
+__all__ = ["capture_checkpoints", "capture_finished_runs", "dvc_commands", "verify_cloud_sync"]
 
 _RESULTS_PREFIX = "results"
 _CHECKPOINT_PREFIX = "checkpoints"
@@ -243,3 +245,42 @@ def capture_checkpoints(
 def dvc_commands(dest: str | Path) -> list[list[str]]:
     """The exact DVC invocation pair the CLI runs after a capture."""
     return [["dvc", "add", str(Path(dest))], ["dvc", "push"]]
+
+
+def verify_cloud_sync(dest: str | Path, *, runner: Callable[..., Any] = subprocess.run) -> None:
+    """Affirmatively verify the remote holds ``dest``'s current content.
+
+    Measured 2026-08-22: a checkpoint-capture ``dvc push`` exited 1 (seven
+    ``IncompleteBody`` UploadPart errors against R2) AFTER ``dvc add`` had
+    already rewritten the pointer file — the pointer on disk referenced a
+    blob the remote did not hold, and committing it shipped a capture nobody
+    could pull. ``dvc status --cloud`` exits 0 whether or not the remote is
+    in sync (measured same day), so this parses the ``--json`` payload
+    instead of trusting the return code: only an empty object means the
+    remote verifiably has everything the pointer names.
+    """
+    pointer = Path(f"{dest}.dvc")
+    if not pointer.exists():
+        msg = f"{pointer} does not exist — nothing was dvc-added for {dest}"
+        raise RuntimeError(msg)
+    proc = runner(  # nosec B603 B607 -- fixed argv; "dvc" from PATH, same idiom as dvc_commands
+        ["dvc", "status", "--cloud", "--json", str(pointer)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    try:
+        status = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        msg = (
+            "dvc status --cloud produced unparseable output — remote sync is "
+            f"UNVERIFIED, treat the capture as not pushed. stdout={proc.stdout!r} "
+            f"stderr={proc.stderr!r}"
+        )
+        raise RuntimeError(msg) from exc
+    if not isinstance(status, dict) or status:
+        msg = (
+            f"remote is NOT in sync for {pointer}: {status!r} — the pointer is "
+            "not safe to commit; re-run dvc push and re-verify"
+        )
+        raise RuntimeError(msg)

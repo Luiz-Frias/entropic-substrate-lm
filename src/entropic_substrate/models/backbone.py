@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -345,6 +346,45 @@ class LanguageModel(nn.Module):
         if self.field_encoder is None:
             return None
         return sum(p.numel() for p in self.field_encoder.parameters())
+
+    def parameter_attestation(self) -> dict[str, int | str]:
+        """Unblinded freeze attestation for the double-blind review packet.
+
+        The packet scrubs every freeze-axis config field, so a reviewer cannot
+        otherwise verify that one arm froze a subset, another a DIFFERENT
+        subset, and the control nothing (review finding MAJOR-1,
+        docs/reviews/e1-5a-review-cloud.md). These three fields distinguish
+        the arms without naming the axis.
+
+        ``frozen_mask_digest`` is a pure function of WHICH parameters are
+        frozen — names and shapes, never values — so it is constant across
+        seeds within an arm and differs between arms freezing different
+        subsets. An unfrozen model hashes the EMPTY string rather than
+        omitting the key: every run logs a digest, control arms included, so
+        the key's presence never distinguishes an arm.
+
+        The mask enumerates ``named_parameters(remove_duplicate=False)`` while
+        the counts use the deduplicated ``parameters()``. MEASURED: a tied
+        table is ONE ``nn.Parameter`` under two names, so under dedup
+        ``embedding_freeze="both"`` (tied) and ``="input"`` (untied) both
+        reduce to the mask {wte.weight} with equal frozen element counts —
+        the digest would not separate the two E1.5a arms at all. Without
+        dedup the tied arm's mask carries both role names, which is also the
+        honest reading: freezing both roles of one table is not freezing one
+        role of two. The counts stay deduplicated so
+        ``trainable + frozen == num_parameters()``.
+        """
+        frozen_names = sorted(
+            f"{name}:{tuple(p.shape)}"
+            for name, p in self.named_parameters(remove_duplicate=False)
+            if not p.requires_grad
+        )
+        digest = hashlib.sha256("\n".join(frozen_names).encode("utf-8")).hexdigest()
+        return {
+            "trainable_param_count": sum(p.numel() for p in self.parameters() if p.requires_grad),
+            "frozen_param_count": sum(p.numel() for p in self.parameters() if not p.requires_grad),
+            "frozen_mask_digest": digest,
+        }
 
     # ------------------------------------------------------------- forward
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None) -> LMOutput:

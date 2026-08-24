@@ -7,6 +7,7 @@ required to actually go down.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
@@ -167,6 +168,21 @@ def test_run_start_record_captures_the_config(tmp_path: Path) -> None:
     assert start["config"]["model"]["d_model"] == 32
     assert start["params"] > 0
     assert json.dumps(start)  # round-trips
+
+
+def test_run_start_record_attests_the_frozen_parameter_mask(tmp_path: Path) -> None:
+    """Unconditional, control arms included (review finding MAJOR-1).
+
+    A key emitted only by frozen arms would itself be the arm signal the
+    review packet exists to remove, so an unfrozen run attests the EMPTY
+    mask rather than omitting the field.
+    """
+    trainer = Trainer(tiny_config(tmp_path))
+    trainer.fit(verbose=False)
+    start = next(r for r in trainer.iter_history() if r["event"] == "run_start")
+    assert start["frozen_param_count"] == 0
+    assert start["trainable_param_count"] == start["params"]
+    assert start["frozen_mask_digest"] == hashlib.sha256(b"").hexdigest()
 
 
 # --------------------------------------------------------------- helpers

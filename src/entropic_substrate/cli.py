@@ -504,6 +504,7 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
 
     import mlflow.tracking
 
+    import entropic_substrate.capture_results as capture_results_mod
     from entropic_substrate.capture_results import (
         capture_checkpoints,
         capture_finished_runs,
@@ -543,7 +544,12 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
         # shell; "dvc" deliberately resolved from PATH, same idiom as sinks'
         # git_sha().
         subprocess.run(command, check=True)  # nosec B603 B607
-    logger.info(f"capture-results: {len(captured)} {label} captured and pushed via dvc")
+    # Module-attribute call (not a from-import) so the gate stays patchable
+    # in tests; verify_cloud_sync raises when the remote does not verifiably
+    # hold what the freshly rewritten pointer names — exit 0 from this
+    # command MEANS "remote verified", never just "push did not error".
+    capture_results_mod.verify_cloud_sync(dest)
+    logger.info(f"capture-results: {len(captured)} {label} captured, pushed, and cloud-verified")
     return 0
 
 

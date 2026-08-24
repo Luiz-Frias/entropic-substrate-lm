@@ -413,3 +413,88 @@ def test_capture_checkpoints_non_mapping_payload_raises_named_error(tmp_path: Pa
     client = _ckpt_client(payload=buf.getvalue())
     with pytest.raises(CheckpointFormatError, match="not a mapping"):
         capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")
+
+
+# ---------------------------------------------------------- cloud-sync gate
+@dataclass
+class _FakeDvcProc:
+    stdout: str
+    stderr: str = ""
+
+
+def test_verify_cloud_sync_accepts_an_empty_status(tmp_path: Path) -> None:
+    from entropic_substrate.capture_results import verify_cloud_sync
+
+    dest = tmp_path / "captured"
+    Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], **_: object) -> _FakeDvcProc:
+        calls.append(argv)
+        return _FakeDvcProc(stdout="{}")
+
+    verify_cloud_sync(dest, runner=runner)
+    assert calls == [["dvc", "status", "--cloud", "--json", f"{dest}.dvc"]]
+
+
+def test_verify_cloud_sync_raises_on_out_of_sync_remote(tmp_path: Path) -> None:
+    from entropic_substrate.capture_results import verify_cloud_sync
+
+    dest = tmp_path / "captured"
+    Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
+
+    def runner(argv: list[str], **_: object) -> _FakeDvcProc:
+        return _FakeDvcProc(stdout=json.dumps({f"{dest}.dvc": [{"changed outs": {"x": "new"}}]}))
+
+    with pytest.raises(RuntimeError, match="not safe to commit"):
+        verify_cloud_sync(dest, runner=runner)
+
+
+def test_verify_cloud_sync_raises_on_unparseable_dvc_output(tmp_path: Path) -> None:
+    from entropic_substrate.capture_results import verify_cloud_sync
+
+    dest = tmp_path / "captured"
+    Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
+
+    def runner(argv: list[str], **_: object) -> _FakeDvcProc:
+        return _FakeDvcProc(stdout="ERROR: unexpected error", stderr="boom")
+
+    with pytest.raises(RuntimeError, match="unparseable"):
+        verify_cloud_sync(dest, runner=runner)
+
+
+def test_verify_cloud_sync_requires_the_pointer_file(tmp_path: Path) -> None:
+    from entropic_substrate.capture_results import verify_cloud_sync
+
+    with pytest.raises(RuntimeError, match="\\.dvc"):
+        verify_cloud_sync(tmp_path / "never-added", runner=lambda *a, **k: _FakeDvcProc("{}"))
+
+
+def test_cli_success_path_runs_the_cloud_gate_after_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    import mlflow.tracking
+
+    import entropic_substrate.capture_results as capture_mod
+    from entropic_substrate.cli import main
+    from entropic_substrate.sinks import MLFLOW_TRACKING_ENV
+
+    fake = _client()
+    monkeypatch.setattr(mlflow.tracking, "MlflowClient", lambda *, tracking_uri: fake)
+    monkeypatch.setenv(MLFLOW_TRACKING_ENV, "http://fake-tracking-server.invalid")
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **_: events.append(" ".join(argv[:2])) or None
+    )
+    monkeypatch.setattr(
+        capture_mod, "verify_cloud_sync", lambda dest, **_: events.append(f"verify {dest}")
+    )
+
+    dest = tmp_path / "cap"
+    code = main(["capture-results", "--dest", str(dest)])
+    assert code == 0
+    # the affirmative remote check runs AFTER add+push, before success
+    assert events == ["dvc add", "dvc push", f"verify {dest}"]
