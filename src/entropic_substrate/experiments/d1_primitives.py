@@ -11,8 +11,10 @@ import hashlib
 import json
 import math
 import string
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Final
 
 _SHA256_LENGTH: Final[int] = 64
@@ -56,16 +58,29 @@ def require_positive_finite(value: float, *, label: str) -> None:
         raise ValueError(msg)
 
 
-def canonical_digest(manifest: dict[str, object]) -> str:
+def canonical_digest(manifest: Mapping[str, object]) -> str:
     """Return the SHA-256 of canonical recursively key-sorted JSON."""
     payload = json.dumps(
-        manifest,
+        dict(manifest),
         allow_nan=False,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+D1_ENCODER_INITIALIZATION_NAME: Final[str] = "d1-seeded-normal-v1"
+D1_ENCODER_INITIALIZATION_MANIFEST: Final[Mapping[str, object]] = MappingProxyType(
+    {
+        "algorithm": D1_ENCODER_INITIALIZATION_NAME,
+        "embedding": {"distribution": "normal", "mean": 0.0, "std": 0.02},
+        "layer_norm": {"bias": 0.0, "weight": 1.0},
+        "linear": {"bias": 0.0, "distribution": "normal", "mean": 0.0, "std": 0.02},
+        "schema_version": "d1-encoder-initialization-v1",
+    }
+)
+D1_ENCODER_INITIALIZATION_DIGEST: Final[str] = canonical_digest(D1_ENCODER_INITIALIZATION_MANIFEST)
 
 
 class RunClass(StrEnum):
@@ -198,6 +213,14 @@ class EncoderInitializationIdentity:
     @property
     def manifest(self) -> dict[str, object]:
         return {"construction_digest": self.construction_digest, "name": self.name}
+
+
+def default_d1_encoder_initialization_identity() -> EncoderInitializationIdentity:
+    """Identity of the one initialization algorithm executable by D1 v1."""
+    return EncoderInitializationIdentity(
+        name=D1_ENCODER_INITIALIZATION_NAME,
+        construction_digest=D1_ENCODER_INITIALIZATION_DIGEST,
+    )
 
 
 @dataclass(frozen=True, slots=True)
