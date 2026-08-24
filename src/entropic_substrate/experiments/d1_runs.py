@@ -18,6 +18,13 @@ from entropic_substrate.experiments.d1_provenance import (
     PreregistrationIdentity,
 )
 
+__all__ = [
+    "ConfirmatoryD1RunSpec",
+    "D1RunSpec",
+    "PilotD1RunSpec",
+    "SmokeD1RunSpec",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class D1RunSpec:
@@ -29,15 +36,11 @@ class D1RunSpec:
     evidence: EvidenceEnvelope
     preregistration: PreregistrationIdentity | None
     family: D1ExperimentFamily | None
-    expected_run_class: RunClass
 
     def __post_init__(self) -> None:
-        if self.execution.run_class is not self.expected_run_class:
-            msg = (
-                f"D1 lifecycle transition expected {self.expected_run_class.value}, got "
-                f"{self.execution.run_class.value}"
-            )
-            raise ValueError(msg)
+        if type(self) is D1RunSpec:
+            msg = "D1RunSpec is factory-only; construct a nominal lifecycle subtype"
+            raise TypeError(msg)
         if self.run_class is RunClass.CONFIRMATORY:
             self._validate_confirmatory_provenance()
         elif self.preregistration is not None or self.family is not None:
@@ -126,3 +129,39 @@ class D1RunSpec:
     @property
     def execution_digest(self) -> str:
         return canonical_digest(self.execution_manifest)
+
+
+@dataclass(frozen=True, slots=True)
+class SmokeD1RunSpec(D1RunSpec):
+    """Nominal smoke-run state that can never become confirmatory evidence."""
+
+    def __post_init__(self) -> None:
+        D1RunSpec.__post_init__(self)
+        if self.execution.run_class is not RunClass.SMOKE:
+            msg = f"smoke run requires run_class=smoke, got {self.execution.run_class.value}"
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class PilotD1RunSpec(D1RunSpec):
+    """Nominal excluded-pilot state."""
+
+    def __post_init__(self) -> None:
+        D1RunSpec.__post_init__(self)
+        if self.execution.run_class is not RunClass.PILOT:
+            msg = f"pilot run requires run_class=pilot, got {self.execution.run_class.value}"
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmatoryD1RunSpec(D1RunSpec):
+    """Nominal confirmatory state requiring the complete registered envelope."""
+
+    def __post_init__(self) -> None:
+        D1RunSpec.__post_init__(self)
+        if self.execution.run_class is not RunClass.CONFIRMATORY:
+            msg = (
+                "confirmatory run requires run_class=confirmatory, got "
+                f"{self.execution.run_class.value}"
+            )
+            raise ValueError(msg)

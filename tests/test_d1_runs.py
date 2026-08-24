@@ -26,6 +26,11 @@ from entropic_substrate.experiments.d1_provenance import (
     ExecutionIdentity,
     PreregistrationIdentity,
 )
+from entropic_substrate.experiments.d1_runs import (
+    ConfirmatoryD1RunSpec,
+    D1RunSpec,
+    PilotD1RunSpec,
+)
 from entropic_substrate.observation import CodecIdentity
 
 pytestmark = pytest.mark.unit
@@ -109,6 +114,7 @@ def test_draft_transitions_to_excluded_pilot_and_registered_confirmatory() -> No
         evidence=_evidence(),
     )
     assert pilot.run_class is RunClass.PILOT
+    assert type(pilot) is PilotD1RunSpec
     assert pilot.preregistration is None
     assert pilot.execution_digest != pilot.construction_digest
 
@@ -121,8 +127,36 @@ def test_draft_transitions_to_excluded_pilot_and_registered_confirmatory() -> No
         preregistration=preregistration,
     )
     assert confirmatory.run_class is RunClass.CONFIRMATORY
+    assert type(confirmatory) is ConfirmatoryD1RunSpec
     assert confirmatory.preregistration == preregistration
     assert confirmatory.execution_manifest["preregistration"] == preregistration.manifest
+
+
+def test_run_specs_are_factory_only_nominal_lifecycle_types() -> None:
+    value = _family()
+    draft = value.draft_for(D1Arm.NONE)
+    with pytest.raises(TypeError, match="factory-only"):
+        D1RunSpec(
+            draft=draft,
+            execution=ExecutionIdentity(
+                run_class=RunClass.SMOKE,
+                seed=0,
+                pairing_id="direct-construction",
+            ),
+            data=None,
+            evidence=_evidence(),
+            preregistration=None,
+            family=None,
+        )
+    with pytest.raises(ValueError, match="pilot run requires"):
+        draft.validate_pilot(
+            execution=ExecutionIdentity(
+                run_class=RunClass.SMOKE,
+                seed=0,
+                pairing_id="wrong-transition",
+            ),
+            evidence=_evidence(),
+        )
 
 
 def test_confirmatory_rejects_missing_or_mismatched_provenance() -> None:
