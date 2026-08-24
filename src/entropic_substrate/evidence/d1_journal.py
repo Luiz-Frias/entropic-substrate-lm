@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import BinaryIO, Protocol, cast
 
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
+    FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
     JournalIdentity,
@@ -19,6 +21,9 @@ from entropic_substrate.evidence.d1_journal_values import (
 )
 
 _TERMINAL = frozenset({JournalEventKind.RUN_END, JournalEventKind.RUN_ABORT})
+_RECOVERABLE_TAIL = frozenset(
+    {JournalEventKind.RUN_RESUME, JournalEventKind.TRAIN, JournalEventKind.EVAL}
+)
 
 
 def _error(code: str, path: str, detail: str) -> D1JournalError:
@@ -43,6 +48,59 @@ def _checkpoint_payload(event: D1JournalEvent) -> str:
             "checkpoint event requires exact checkpoint_sha256 payload",
         )
     return _require_sha256(event.payload["checkpoint_sha256"], path="checkpoint_sha256")
+
+
+def _resume_checkpoint_payload(event: D1JournalEvent) -> str:
+    expected = {"checkpoint_sha256", "run_start_provenance", "trainer_wall_origin"}
+    if set(event.payload) != expected:
+        raise _error(
+            "resume_payload",
+            "payload",
+            "run_resume requires checkpoint, run-start, and wall-origin evidence",
+        )
+    for field in ("run_start_provenance", "trainer_wall_origin"):
+        value = event.payload[field]
+        if not isinstance(value, Mapping) or not value:
+            raise _error("resume_payload", field, "must be a nonempty JSON object")
+    return _require_sha256(event.payload["checkpoint_sha256"], path="checkpoint_sha256")
+
+
+@dataclass(frozen=True, slots=True)
+class JournalTailQuarantineReceipt:
+    """Durable identity of a post-checkpoint journal tail preserved before rollback."""
+
+    quarantine_path: Path
+    quarantined_journal_sha256: str
+    recovered_prefix_sha256: str
+    tail_event_count: int
+    first_tail_event_sequence: int
+    last_tail_event_sequence: int
+    tail_events: tuple[D1JournalEvent, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(cast(object, self.quarantine_path), Path):
+            raise TypeError("journal quarantine_path must be a Path")
+        _require_sha256(
+            self.quarantined_journal_sha256,
+            path="quarantined_journal_sha256",
+        )
+        _require_sha256(self.recovered_prefix_sha256, path="recovered_prefix_sha256")
+        if type(self.tail_event_count) is not int or self.tail_event_count < 1:
+            raise ValueError("journal quarantine must contain at least one tail event")
+        if (
+            type(self.first_tail_event_sequence) is not int
+            or type(self.last_tail_event_sequence) is not int
+            or self.first_tail_event_sequence < 0
+            or self.last_tail_event_sequence < self.first_tail_event_sequence
+        ):
+            raise ValueError("journal quarantine event sequence range is invalid")
+        if (
+            type(self.tail_events) is not tuple
+            or len(self.tail_events) != self.tail_event_count
+            or self.tail_events[0].event_seq != self.first_tail_event_sequence
+            or self.tail_events[-1].event_seq != self.last_tail_event_sequence
+        ):
+            raise ValueError("journal quarantine tail events differ from its receipt")
 
 
 class _PrefixHasher(Protocol):
@@ -94,7 +152,7 @@ def _advance(
             raise _error(
                 "resume_factory_only", "event_kind", "run_resume requires resume admission"
             )
-        _checkpoint_payload(event)
+        _resume_checkpoint_payload(event)
         if prior.event_kind is not JournalEventKind.CHECKPOINT:
             raise _error("resume_without_checkpoint", "event_kind", "resume requires a checkpoint")
         if event.successful_step != prior.successful_step:
@@ -181,6 +239,62 @@ def read_journal(path: str | Path) -> tuple[D1JournalEvent, ...]:
     return history.events
 
 
+def _fsync_parent(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _quarantine_tail(
+    *,
+    handle: BinaryIO,
+    original: bytes,
+    recovered_prefix: bytes,
+    tail: tuple[D1JournalEvent, ...],
+    quarantine_path: Path,
+) -> JournalTailQuarantineReceipt:
+    parent = quarantine_path.parent
+    if not parent.is_dir() or parent.is_symlink() or quarantine_path.exists():
+        raise _error(
+            "tail_quarantine_path",
+            "quarantine_path",
+            "tail quarantine target must be missing under a real directory",
+        )
+    durable = False
+    try:
+        with quarantine_path.open("xb") as quarantine:
+            written = quarantine.write(original)
+            if written != len(original):
+                raise OSError(f"short quarantine write: {written}/{len(original)} bytes")
+            quarantine.flush()
+            os.fsync(quarantine.fileno())
+        _fsync_parent(parent)
+        durable = True
+        handle.seek(len(recovered_prefix))
+        handle.truncate()
+        handle.flush()
+        os.fsync(handle.fileno())
+    except OSError as exc:
+        if not durable:
+            quarantine_path.unlink(missing_ok=True)
+        detail = f"cannot durably quarantine journal tail: {exc}"
+        if durable:
+            detail += f"; original is preserved at {quarantine_path}"
+        raise _error("tail_quarantine_io", "quarantine_path", detail) from exc
+    return JournalTailQuarantineReceipt(
+        quarantine_path=quarantine_path,
+        quarantined_journal_sha256=hashlib.sha256(original).hexdigest(),
+        recovered_prefix_sha256=hashlib.sha256(recovered_prefix).hexdigest(),
+        tail_event_count=len(tail),
+        first_tail_event_sequence=tail[0].event_seq,
+        last_tail_event_sequence=tail[-1].event_seq,
+        tail_events=tail,
+    )
+
+
 class AuthoritativeRunJournal:
     """Append-only journal whose state never advances ahead of synchronized bytes."""
 
@@ -190,11 +304,13 @@ class AuthoritativeRunJournal:
         handle: BinaryIO,
         history: _History,
         hasher: _PrefixHasher,
+        tail_quarantine: JournalTailQuarantineReceipt | None = None,
     ) -> None:
         self._path = path
         self._handle = handle
         self._history = history
         self._hasher = hasher
+        self._tail_quarantine = tail_quarantine
         self._closed = False
 
     @classmethod
@@ -226,9 +342,17 @@ class AuthoritativeRunJournal:
         checkpoint: JournalCheckpointState,
         *,
         checkpoint_sha256: str,
+        segment_provenance: Mapping[str, FrozenJson],
+        quarantine_path: Path | None = None,
     ) -> AuthoritativeRunJournal:
         if type(checkpoint) is not JournalCheckpointState:
             raise TypeError("checkpoint must be a JournalCheckpointState")
+        if set(segment_provenance) != {"run_start_provenance", "trainer_wall_origin"}:
+            raise _error(
+                "resume_payload",
+                "segment_provenance",
+                "resume segment provenance keys must be exact",
+            )
         actual_checkpoint_sha256 = _require_sha256(checkpoint_sha256, path="checkpoint_sha256")
         target = Path(path)
         handle: BinaryIO | None = None
@@ -238,14 +362,21 @@ class AuthoritativeRunJournal:
             history, hasher = _replay(data)
             if history.terminal:
                 raise _error("terminal_resume", "event_kind", "terminal journal cannot resume")
-            if history.last.event_kind is not JournalEventKind.CHECKPOINT:
-                raise _error(
-                    "resume_without_checkpoint",
-                    "event_kind",
-                    "latest event must be checkpoint",
-                )
             lines = data.splitlines(keepends=True)
-            pre_history, pre_hasher = _replay(b"".join(lines[:-1]))
+            matching = [
+                index
+                for index, event in enumerate(history.events)
+                if event.event_kind is JournalEventKind.CHECKPOINT
+                and _checkpoint_payload(event) == actual_checkpoint_sha256
+            ]
+            if len(matching) != 1:
+                raise _error(
+                    "checkpoint_hash_mismatch",
+                    "checkpoint_sha256",
+                    "journal must contain exactly one matching checkpoint event",
+                )
+            checkpoint_index = matching[0]
+            pre_history, pre_hasher = _replay(b"".join(lines[:checkpoint_index]))
             if pre_history.last.event_kind is not JournalEventKind.EVAL:
                 raise _error(
                     "checkpoint_prestate",
@@ -262,27 +393,67 @@ class AuthoritativeRunJournal:
             ):
                 if getattr(checkpoint, field) != getattr(expected, field):
                     raise _error("checkpoint_mismatch", field, f"checkpoint {field} differs")
-            if _checkpoint_payload(history.last) != actual_checkpoint_sha256:
+            checkpoint_event = history.events[checkpoint_index]
+            if checkpoint_event.event_kind is not JournalEventKind.CHECKPOINT:
+                raise _error(
+                    "resume_without_checkpoint",
+                    "event_kind",
+                    "checkpoint event does not follow the checkpoint prefix",
+                )
+            if _checkpoint_payload(checkpoint_event) != actual_checkpoint_sha256:
                 raise _error(
                     "checkpoint_hash_mismatch",
                     "checkpoint_sha256",
                     "journal checkpoint_sha256 differs from the checkpoint file",
                 )
+            tail = history.events[checkpoint_index + 1 :]
+            if any(event.event_kind is JournalEventKind.CHECKPOINT for event in tail):
+                raise _error(
+                    "later_checkpoint",
+                    "event_kind",
+                    "selected checkpoint has a later checkpoint in the journal",
+                )
+            if any(event.event_kind not in _RECOVERABLE_TAIL for event in tail):
+                raise _error(
+                    "unsafe_tail",
+                    "event_kind",
+                    "post-checkpoint tail contains a nonrecoverable event",
+                )
+            recovered_prefix = b"".join(lines[: checkpoint_index + 1])
+            quarantine: JournalTailQuarantineReceipt | None = None
+            if tail:
+                if quarantine_path is None:
+                    raise _error(
+                        "tail_quarantine_required",
+                        "quarantine_path",
+                        "post-checkpoint journal tail requires an explicit quarantine path",
+                    )
+                quarantine = _quarantine_tail(
+                    handle=handle,
+                    original=data,
+                    recovered_prefix=recovered_prefix,
+                    tail=tail,
+                    quarantine_path=quarantine_path,
+                )
+                history, hasher = _replay(recovered_prefix)
             resume = D1JournalEvent(
                 event_kind=JournalEventKind.RUN_RESUME,
-                event_seq=history.last.event_seq + 1,
+                event_seq=checkpoint_event.event_seq + 1,
                 logical_run_id=history.identity.logical_run_id,
                 execution_digest=history.identity.execution_digest,
                 aggregation_digest=history.identity.aggregation_digest,
                 construction_digest=history.identity.construction_digest,
                 family_digest=history.identity.family_digest,
                 run_class=history.identity.run_class,
-                successful_step=history.last.successful_step,
-                payload={"checkpoint_sha256": actual_checkpoint_sha256},
+                successful_step=checkpoint_event.successful_step,
+                payload={
+                    "checkpoint_sha256": actual_checkpoint_sha256,
+                    **segment_provenance,
+                },
             )
             advanced = _advance(history, resume, allow_resume=True)
             handle.seek(0, os.SEEK_END)
-            journal = cls(target, handle, history, hasher)
+            journal = cls(target, handle, history, hasher, quarantine)
             journal._persist(resume, advanced)
             return journal
         except BaseException:
@@ -293,6 +464,10 @@ class AuthoritativeRunJournal:
     @property
     def state(self) -> JournalCheckpointState:
         return _checkpoint_state(self._history, self._hasher.hexdigest())
+
+    @property
+    def tail_quarantine(self) -> JournalTailQuarantineReceipt | None:
+        return self._tail_quarantine
 
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         if self._closed:
