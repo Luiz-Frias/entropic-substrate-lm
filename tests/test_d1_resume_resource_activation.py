@@ -58,6 +58,8 @@ def _factory(timers: list[_Timer]) -> D1ProductionResourceActivationFactory:
 
     return D1ProductionResourceActivationFactory(
         registration_digest="b" * 64,
+        meter_provider="torch-cuda",
+        device_scope="cuda:0",
         phase_timer_factory=timer_factory,  # type: ignore[arg-type]
         peak_memory_factory=lambda _start: _Memory(),
         flop_model=PositionFlopModel("resume-d1-flops", 2, 3, 5, 7),

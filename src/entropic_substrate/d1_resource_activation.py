@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass
 from typing import Protocol, Self, cast, runtime_checkable
 
 from entropic_substrate.evidence.resource_ledger import (
@@ -25,8 +23,13 @@ from entropic_substrate.evidence.resource_meter_strategy import (
     PeakMemoryPort,
     PowerSampleSourcePort,
 )
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.evidence.resource_provenance import (
+    PowerSamplingRegistration,
+    ResourceActivationMode,
+    ResourceActivationRegistration,
+    RunStartProvenance,
+    unavailable_resource_activation_registration,
+)
 
 __all__ = [
     "D1ActiveResourceMeter",
@@ -47,35 +50,6 @@ class D1ActiveResourceMeter(ResourceMeterStrategy, Protocol):
     def record_positions(
         self, phase: ResourcePhase, *, online_positions: int, target_positions: int
     ) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class PowerSamplingRegistration:
-    cadence_seconds: float
-    max_gap_seconds: float
-    schema_version: str = "d1-power-sampling/v1"
-
-    def __post_init__(self) -> None:
-        for field in ("cadence_seconds", "max_gap_seconds"):
-            value = getattr(self, field)
-            if type(value) is not float or not math.isfinite(value) or value <= 0.0:
-                raise ValueError(f"{field} must be a finite positive float")
-        if self.max_gap_seconds < self.cadence_seconds:
-            raise ValueError("max_gap_seconds must be at least cadence_seconds")
-        if self.schema_version != "d1-power-sampling/v1":
-            raise ValueError("unsupported D1 power-sampling registration schema")
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "cadence_seconds": self.cadence_seconds,
-            "max_gap_seconds": self.max_gap_seconds,
-            "schema_version": self.schema_version,
-        }
-
-    @property
-    def identity_digest(self) -> str:
-        return canonical_digest(self.manifest)
 
 
 @runtime_checkable
@@ -160,6 +134,8 @@ class D1ResourceActivation:
 
 @runtime_checkable
 class D1ResourceActivationFactory(Protocol):
+    @property
+    def registration(self) -> ResourceActivationRegistration: ...
     def fresh(self, start: RunStartProvenance) -> D1ResourceActivation: ...
     def resume(
         self, start: RunStartProvenance, state: ResourceLedgerState
@@ -167,6 +143,10 @@ class D1ResourceActivationFactory(Protocol):
 
 
 class UnavailableResourceActivationFactory:
+    @property
+    def registration(self) -> ResourceActivationRegistration:
+        return unavailable_resource_activation_registration()
+
     def _activation(self) -> D1ResourceActivation:
         return D1ResourceActivation(
             _UnavailableActiveResourceMeter(), _InactivePowerSamplingLifecycle()
@@ -197,6 +177,8 @@ class D1ProductionResourceActivationFactory:
         self,
         *,
         registration_digest: str,
+        meter_provider: str,
+        device_scope: str,
         phase_timer_factory: PhaseTimerFactory | None = None,
         peak_memory_factory: PeakMemoryFactory | None = None,
         flop_model: PositionFlopModel | None = None,
@@ -213,7 +195,15 @@ class D1ProductionResourceActivationFactory:
             raise TypeError("flop_model must be PositionFlopModel")
         if (power_registration is None) is not (power_lifecycle_factory is None):
             raise ValueError("power registration and lifecycle factory must be supplied together")
-        self.registration_digest = registration_digest
+        self.registration = ResourceActivationRegistration(
+            factory_registration_digest=registration_digest,
+            mode=ResourceActivationMode.PRODUCTION,
+            meter_provider=meter_provider,
+            device_scope=device_scope,
+            flop_model_identity=(None if flop_model is None else flop_model.identity_digest),
+            power_sampling=power_registration,
+        )
+        self.registration_digest = self.registration.factory_registration_digest
         self._timer_factory = phase_timer_factory
         self._memory_factory = peak_memory_factory
         self._flop_model = flop_model
