@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import cast
 
+from entropic_substrate.d1_dual_failure import D1SecondaryFailureEvidence
 from entropic_substrate.d1_evaluation import D1EvalResult
 from entropic_substrate.evidence.d1_journal_values import JournalCheckpointState
 from entropic_substrate.evidence.resource_ledger import ResourceLedgerState
@@ -181,6 +182,7 @@ class D1TrainerFailureHandoff:
     termination: D1TrainerTermination
     error_type: str
     error_message: str
+    secondary_failure: D1SecondaryFailureEvidence | None = None
     trainer_event_kind: str = _TRAINER_ABORT_EVENT
     rollback_claimed: bool = False
     operator_finalization_required: bool = True
@@ -192,6 +194,11 @@ class D1TrainerFailureHandoff:
             raise ValueError("D1 failure handoff error_type must be nonempty")
         if type(self.error_message) is not str or not self.error_message.strip():
             raise ValueError("D1 failure handoff error_message must be nonempty")
+        if (
+            self.secondary_failure is not None
+            and type(self.secondary_failure) is not D1SecondaryFailureEvidence
+        ):
+            raise TypeError("D1 failure handoff secondary_failure is invalid")
         if self.trainer_event_kind != _TRAINER_ABORT_EVENT:
             raise ValueError("D1 failure handoff must attest TRAINER_ABORTED")
         if self.rollback_claimed is not False:
@@ -206,13 +213,20 @@ class D1TrainerFailureHandoff:
             "error_type": self.error_type,
             "operator_finalization_required": self.operator_finalization_required,
             "rollback_claimed": self.rollback_claimed,
+            "secondary_failure": (
+                None if self.secondary_failure is None else self.secondary_failure.manifest
+            ),
             "termination": self.termination.manifest,
             "trainer_event_kind": self.trainer_event_kind,
         }
 
     @classmethod
     def from_error(
-        cls, termination: D1TrainerTermination, error: BaseException
+        cls,
+        termination: D1TrainerTermination,
+        error: BaseException,
+        *,
+        secondary_failure: D1SecondaryFailureEvidence | None = None,
     ) -> D1TrainerFailureHandoff:
         if not isinstance(cast(object, error), BaseException):
             raise TypeError("D1 failure handoff requires a caught exception")
@@ -220,6 +234,7 @@ class D1TrainerFailureHandoff:
             termination=termination,
             error_type=type(error).__name__,
             error_message=str(error) or repr(error),
+            secondary_failure=secondary_failure,
         )
 
 

@@ -153,7 +153,7 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
         == (
             "error_message error_type execution_segment_id execution_segment_index journal_cursor "
             "logical_run_id operator_finalization_required resource_ledger_state rollback_claimed "
-            "trainer_ended_at"
+            "secondary_failure trainer_ended_at"
         ).split()
     )
     assert payload["error_type"] == "RuntimeError"
@@ -174,6 +174,8 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
     assert payload["trainer_ended_at"] == "2026-08-23T20:01:03Z"
     assert payload["rollback_claimed"] is False
     assert payload["operator_finalization_required"] is True
+    assert payload["secondary_failure"] is None
+    assert failure.secondary_failure is None
     ledger = failure.termination.resource_ledger_state
     batching = plan.profile.draft.execution_protocol.batching
     assert ledger.committed_quality_source_bytes == batching.batch_size * batching.sequence_length

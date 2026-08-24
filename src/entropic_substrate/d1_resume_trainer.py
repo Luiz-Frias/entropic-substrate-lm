@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import cast
 
 from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
+from entropic_substrate.d1_dual_failure import (
+    D1PrimarySecondaryFailure,
+    D1SecondaryFailureEvidence,
+    D1SecondaryFailureStage,
+)
 from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
 from entropic_substrate.d1_observability import D1JournalObserver, ObservedD1Journal
 from entropic_substrate.d1_resource_activation import (
@@ -199,9 +204,18 @@ def _trainer_failure(
     step: int,
     error: Exception,
     checkpoint_sha256: str | None,
-) -> D1TrainerFailureHandoff:
+) -> tuple[D1TrainerFailureHandoff, BaseException]:
     trainer_ended_at = clock.utc_now()
-    ledger.record_meter_observation(monotonic_ns=clock.monotonic_ns())
+    secondary_failure: D1SecondaryFailureEvidence | None = None
+    failure_cause: BaseException = error
+    try:
+        ledger.record_meter_observation(monotonic_ns=clock.monotonic_ns())
+    except Exception as meter_error:
+        secondary_failure = D1SecondaryFailureEvidence.from_error(
+            D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+            meter_error,
+        )
+        failure_cause = D1PrimarySecondaryFailure(error, meter_error)
     journal_cursor = journal.state
     resource_state = ledger.current_state()
     error_message = str(error) or repr(error)
@@ -215,6 +229,7 @@ def _trainer_failure(
         "operator_finalization_required": True,
         "resource_ledger_state": resource_state.manifest,
         "rollback_claimed": False,
+        "secondary_failure": (None if secondary_failure is None else secondary_failure.manifest),
         "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
     }
     numerical_defect = terminal_numerical_defect_for_failure(
@@ -243,7 +258,14 @@ def _trainer_failure(
         journal_state=journal.state,
         resource_ledger_state=resource_state,
     )
-    return D1TrainerFailureHandoff.from_error(termination, error)
+    return (
+        D1TrainerFailureHandoff.from_error(
+            termination,
+            error,
+            secondary_failure=secondary_failure,
+        ),
+        failure_cause,
+    )
 
 
 def run_d1_resume(
@@ -379,7 +401,7 @@ def run_d1_resume(
                 tail_quarantine=journal.tail_quarantine,
             )
         except Exception as error:
-            handoff = _trainer_failure(
+            handoff, failure_cause = _trainer_failure(
                 plan,
                 journal,
                 ledger,
@@ -389,4 +411,4 @@ def run_d1_resume(
                 error,
                 latest_checkpoint_sha256,
             )
-            raise D1ResumeRunFailure(handoff) from error
+            raise D1ResumeRunFailure(handoff) from failure_cause

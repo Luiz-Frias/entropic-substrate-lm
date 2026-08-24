@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import cast
@@ -63,7 +64,7 @@ class D1SecondaryFailureEvidence:
 
 
 def secondary_failure_from_mapping(value: object) -> D1SecondaryFailureEvidence:
-    if type(value) is not dict or any(type(key) is not str for key in value):
+    if not isinstance(value, Mapping) or any(type(key) is not str for key in value):
         raise TypeError("secondary failure must be a mapping with string keys")
     expected = {"error_message", "error_type", "schema_version", "stage"}
     if set(value) != expected:
