@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import NoReturn
 
 from entropic_substrate.evidence.d1_capture_bundle import D1CaptureBundle, D1ValidatedRunCapture
 from entropic_substrate.evidence.d1_filing import D1DetachedFiling, D1FilingManifest
-from entropic_substrate.evidence.d1_filing_receipts import D1FilingRevisions
+from entropic_substrate.evidence.d1_filing_edges import verify_filing_edges
+from entropic_substrate.evidence.d1_filing_receipts import (
+    D1EvidenceGap,
+    D1EvidenceGapError,
+    D1FilingArtifactPort,
+    D1FilingGitPort,
+    D1FilingGraphError,
+    D1FilingRevisions,
+)
 from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 from entropic_substrate.evidence.lifecycle import FiledVerdictEvidence
 from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
@@ -129,3 +140,155 @@ class ValidatedD1Filing:
             successor_authorization=self.verdict.successor.authorization,
             eligible_strategies=self.verdict.successor.eligible_strategies,
         )
+
+
+def _gap(role: str, field: str, measurement: str) -> NoReturn:
+    raise D1EvidenceGapError(D1EvidenceGap(role, field, measurement))
+
+
+def _fail(code: str, path: str, detail: str) -> NoReturn:
+    raise D1FilingGraphError(code=code, path=path, detail=detail)
+
+
+def _canonical_json(payload: Mapping[str, object]) -> bytes:
+    return json.dumps(
+        dict(payload), allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    ).encode()
+
+
+def _read_payloads(
+    detached: D1DetachedFiling, artifacts: D1FilingArtifactPort
+) -> Mapping[str, bytes]:
+    if not detached.artifact_root_verified:
+        _gap("detached_filing", "artifact_root_verified", "rehashing against actual filed bytes")
+    payloads: dict[str, bytes] = {}
+    for role, identity in detached.manifest.artifacts.items():
+        payload = artifacts.read_bytes(identity.path)
+        if payload is None:
+            _gap(role, identity.path, "the actual filed artifact bytes")
+        payloads[role] = payload
+    return payloads
+
+
+def _verify_machine_inputs(detached: D1DetachedFiling, bundle: D1CaptureBundle) -> None:
+    expected = {
+        item.normalized_path: (item.md5, item.sha256) for item in bundle.dvc_handoff.artifacts
+    }
+    actual: dict[str, tuple[str, str]] = {}
+    for index, item in enumerate(detached.verdict.inputs):
+        sha256 = item.sha256
+        if sha256 is None:
+            _gap(
+                "machine_verdict",
+                f"inputs[{index}].sha256",
+                "the SHA-256 of every authoritative capture input",
+            )
+        actual[item.path] = (item.md5.digest, sha256.digest)
+    if len(actual) != len(detached.verdict.inputs) or actual != expected:
+        _fail(
+            "machine_capture_inputs",
+            "machine_verdict.inputs",
+            "must equal the actual capture manifest path, MD5, and SHA-256 set",
+        )
+
+
+def _verify_exclusions(detached: D1DetachedFiling, bundle: D1CaptureBundle) -> None:
+    expected = {
+        (
+            item.pairing_id,
+            item.reason.value,
+            canonical_digest(item.manifest),
+        )
+        for item in bundle.pair_exclusions
+    }
+    actual = {
+        (subject, reason, evidence_hash.digest)
+        for subject, reason, evidence_hash in detached.verdict.exclusions
+        if evidence_hash.algorithm == "sha256"
+    }
+    if actual != expected or len(actual) != len(detached.verdict.exclusions):
+        _fail("exclusions", "machine_verdict.exclusions", "must equal recomputed pair exclusions")
+
+
+def _verify_capture_semantics(
+    detached: D1DetachedFiling,
+    bundle: D1CaptureBundle,
+    payloads: Mapping[str, bytes],
+    integrity: D1RecomputedIntegrity,
+) -> None:
+    if payloads["raw_capture_manifest"] != _canonical_json(bundle.manifest):
+        _fail(
+            "capture_manifest",
+            "raw_capture_manifest",
+            "file bytes must equal the factory-attested capture manifest",
+        )
+    if not bundle.dvc_handoff.analysis_ready:
+        _gap("raw_capture_manifest", "dvc_handoff.analysis_ready", "bound DVC pointer objects")
+    prereg = detached.verdict.preregistration
+    roster = bundle.roster
+    if (
+        prereg.path != roster.preregistration_path
+        or prereg.commit != roster.preregistration_commit
+        or prereg.family_digest != roster.family_digest
+    ):
+        _fail("capture_preregistration", "capture.roster", "differs from machine preregistration")
+    _verify_machine_inputs(detached, bundle)
+    _verify_exclusions(detached, bundle)
+    claimed = detached.verdict.integrity
+    facts = (
+        claimed.roster_complete,
+        claimed.pairing_verified,
+        claimed.data_order_verified,
+        claimed.completion_verified,
+    )
+    recomputed = (
+        integrity.roster_complete,
+        integrity.pairing_verified,
+        integrity.data_order_verified,
+        integrity.completion_verified,
+    )
+    if (
+        facts != recomputed
+        or claimed.status != ("PASS" if integrity.passed else "FAIL")
+        or claimed.evidence_hash.algorithm != "sha256"
+        or claimed.evidence_hash.digest != integrity.evidence_digest
+    ):
+        _fail("integrity", "machine_verdict.integrity", "differs from recomputed capture facts")
+    observed_n = len(bundle.roster.pairing_ids) - len(bundle.pair_exclusions)
+    if any(contrast.n != observed_n for contrast in detached.verdict.contrasts):
+        _fail("sample_size", "machine_verdict.contrasts", "n differs from nonexcluded pairs")
+
+
+def verify_d1_filing(
+    detached: D1DetachedFiling,
+    capture: D1CaptureBundle,
+    revisions: D1FilingRevisions,
+    artifacts: D1FilingArtifactPort,
+    git: D1FilingGitPort,
+    /,
+) -> ValidatedD1Filing:
+    """Verify the full evidence graph without recomputing the scientific verdict."""
+
+    if type(detached) is not D1DetachedFiling or type(capture) is not D1CaptureBundle:
+        raise TypeError("D1 graph verification requires detached filing and capture bundle values")
+    if type(revisions) is not D1FilingRevisions:
+        raise TypeError("D1 graph verification requires typed filing revisions")
+    payloads = _read_payloads(detached, artifacts)
+    integrity = recompute_capture_integrity(capture)
+    _verify_capture_semantics(detached, capture, payloads, integrity)
+    edges = verify_filing_edges(detached.verdict, detached.manifest, revisions, payloads, git)
+    graph_digest = canonical_digest(
+        {
+            "capture_manifest_digest": capture.manifest_digest,
+            "edge_digest": edges.digest,
+            "integrity_digest": integrity.evidence_digest,
+            "schema_version": "d1-verified-filing-graph-v1",
+        }
+    )
+    return ValidatedD1Filing(
+        detached=detached,
+        revisions=revisions,
+        integrity=integrity,
+        graph_digest=graph_digest,
+        _factory_token=_VALIDATED_GRAPH_TOKEN,
+    )

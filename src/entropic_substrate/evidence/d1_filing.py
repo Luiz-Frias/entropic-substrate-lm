@@ -14,7 +14,6 @@ from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 from entropic_substrate.evidence.lifecycle import (
     ArtifactIdentity,
     ContentHash,
-    FiledVerdictEvidence,
 )
 
 REQUIRED_D1_FILING_ARTIFACTS = (
@@ -33,7 +32,6 @@ REQUIRED_D1_FILING_ARTIFACTS = (
     "alias_commitment",
     "alias_reveal",
 )
-_VALIDATED_FILING_FACTORY_TOKEN = object()
 
 
 class D1FilingValidationError(ValueError):
@@ -198,41 +196,6 @@ class D1DetachedFiling:
     verdict: ValidatedD1Verdict
     manifest: D1FilingManifest
     artifact_root_verified: bool
-
-
-@dataclass(frozen=True, slots=True, init=False)
-class ValidatedD1Filing:
-    verdict: ValidatedD1Verdict
-    manifest: D1FilingManifest
-    artifact_root_verified: bool
-
-    def __init__(
-        self,
-        *,
-        verdict: ValidatedD1Verdict,
-        manifest: D1FilingManifest,
-        artifact_root_verified: bool,
-        _factory_token: object | None = None,
-    ) -> None:
-        if _factory_token is not _VALIDATED_FILING_FACTORY_TOKEN:
-            raise TypeError("ValidatedD1Filing is factory-only; call validate_d1_filing")
-        if type(verdict) is not ValidatedD1Verdict or type(manifest) is not D1FilingManifest:
-            raise TypeError("ValidatedD1Filing requires validated verdict and manifest values")
-        if type(artifact_root_verified) is not bool:
-            raise TypeError("artifact_root_verified must be bool")
-        object.__setattr__(self, "verdict", verdict)
-        object.__setattr__(self, "manifest", manifest)
-        object.__setattr__(self, "artifact_root_verified", artifact_root_verified)
-
-    def to_filed_evidence(self) -> FiledVerdictEvidence:
-        return FiledVerdictEvidence(
-            narrative=self.manifest.artifacts["narrative"].artifact_identity(),
-            machine=self.manifest.artifacts["machine_verdict"].artifact_identity(),
-            review_packet=self.manifest.artifacts["review_packet"].artifact_identity(),
-            open_major_findings=self.verdict.review.open_major_findings,
-            successor_authorization=self.verdict.successor.authorization,
-            eligible_strategies=self.verdict.successor.eligible_strategies,
-        )
 
 
 def validate_d1_filing_manifest(
