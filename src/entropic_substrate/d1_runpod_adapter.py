@@ -229,16 +229,8 @@ class RunpodctlD1Adapter:
         except (TypeError, ValueError) as error:
             _error(operation, pod, f"invalid runtime observation: {error}", error)
 
-    def terminate(
-        self,
-        pod_id: str,
-        *,
-        start: RunStartProvenance,
-        trainer_ended_at: datetime,
-    ) -> ExecutionSegmentTermination:
+    def cancel(self, pod_id: str) -> datetime:
         pod = _text(pod_id, label="pod_id")
-        if type(start) is not RunStartProvenance:
-            raise TypeError("RunPod termination requires RunStartProvenance")
         operation = "terminate_pod"
         payload = self._run(
             operation,
@@ -254,15 +246,29 @@ class RunpodctlD1Adapter:
         if payload["schema_version"] != "d1-runpod-termination-v1" or payload["pod_id"] != pod:
             _error(operation, pod, "termination response identity or schema differs")
         try:
+            return _timestamp(payload["pod_terminated_at"], label="pod_terminated_at")
+        except (TypeError, ValueError) as error:
+            _error(operation, pod, f"invalid termination evidence: {error}", error)
+
+    def terminate(
+        self,
+        pod_id: str,
+        *,
+        start: RunStartProvenance,
+        trainer_ended_at: datetime,
+    ) -> ExecutionSegmentTermination:
+        if type(start) is not RunStartProvenance:
+            raise TypeError("RunPod termination requires RunStartProvenance")
+        try:
             return ExecutionSegmentTermination(
                 start.logical_run_id,
                 start.execution_segment_index,
                 start.execution_segment_id,
                 trainer_ended_at,
-                _timestamp(payload["pod_terminated_at"], label="pod_terminated_at"),
+                self.cancel(pod_id),
             )
         except (TypeError, ValueError) as error:
-            _error(operation, pod, f"invalid termination evidence: {error}", error)
+            _error("terminate_pod", pod_id, f"invalid termination evidence: {error}", error)
 
     def billing(self, pod_id: str, *, start: RunStartProvenance) -> ProviderBilling | BillingGap:
         pod = _text(pod_id, label="pod_id")
