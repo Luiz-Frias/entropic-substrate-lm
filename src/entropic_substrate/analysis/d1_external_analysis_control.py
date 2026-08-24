@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 from collections.abc import Mapping
@@ -13,21 +15,29 @@ from typing import NoReturn, cast
 from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
 from entropic_substrate.evidence.d1_capture_aggregate_codec import (
     D1CaptureAggregateDeclaration,
+    parse_d1_capture_aggregate_declaration,
 )
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1DvcBindingState,
 )
 from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
+from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,
 )
 from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
-from entropic_substrate.experiments.d1_registered_design import D1PreregistrationArtifact
+from entropic_substrate.experiments.d1_registered_design import (
+    D1PreregistrationArtifact,
+    decision_contract_digest,
+)
 from entropic_substrate.experiments.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     D1RegisteredDesignDeclaration,
+    parse_decision_contract,
+    parse_registered_design_declaration,
+    serialize_decision_contract,
 )
 
 __all__ = [
@@ -39,10 +49,12 @@ __all__ = [
     "D1AliasRevealControl",
     "D1CaptureReceiptControl",
     "D1ExternalAnalysisControlError",
+    "D1ExternalAnalysisInputControl",
     "D1PreregistrationControl",
     "D1ReaderSourceEntry",
     "D1ReaderSourceManifestControl",
     "decode_d1_alias_application_control",
+    "decode_d1_external_analysis_input_control",
     "derive_d1_analysis_code_digest",
     "parse_d1_alias_commitment_control",
     "parse_d1_alias_reveal_control",
@@ -57,6 +69,7 @@ _COMMITMENT_FIELDS = frozenset({"reveal_sha256", "schema_version"})
 _REVEAL_FIELDS = frozenset({"mapping", "nonce", "schema_version"})
 _ALIASES = frozenset({"A", "B", "C", "D"})
 _APPLICATION_TOKEN = object()
+_INPUT_TOKEN = object()
 _CAPTURE_RECEIPT_SCHEMA = "d1-heterogeneous-capture-receipt-v1"
 _CAPTURE_RECEIPT_FIELDS = frozenset(
     {"aggregate_digest", "analysis_ready", "pointer_commit", "pointer_identity", "schema_version"}
@@ -102,6 +115,26 @@ D1_READER_SOURCE_MODULES = (
     "entropic_substrate.experiments.d1_execution",
     "entropic_substrate.d1_calibration",
     "entropic_substrate.d1_training_step",
+)
+_INPUT_SCHEMA = "d1-external-analysis-input-v1"
+_INPUT_BASE64_FIELDS = (
+    "alias_commitment_base64",
+    "alias_reveal_base64",
+    "capture_aggregate_base64",
+    "capture_receipt_base64",
+    "decision_contract_base64",
+    "preregistration_control_base64",
+    "reader_source_manifest_base64",
+    "registered_design_base64",
+)
+_INPUT_FIELDS = frozenset(
+    {
+        *_INPUT_BASE64_FIELDS,
+        "expected_capture_digest",
+        "expected_design_digest",
+        "expected_family_digest",
+        "schema_version",
+    }
 )
 
 
@@ -285,6 +318,61 @@ class D1ReaderSourceManifestControl:
     complete_reader: str
     terminal_defect_reader: str
     analysis_code_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class D1ExternalAnalysisInputControl:
+    canonical_bytes: bytes = field(repr=False)
+    input_manifest_sha256: str
+    expected_family_digest: str
+    decision_contract: D1DecisionContract
+    design: D1RegisteredDesignDeclaration
+    aggregate: D1CaptureAggregateDeclaration
+    capture_receipt: D1CaptureReceiptControl
+    alias_application: D1AliasApplicationControl = field(repr=False)
+    preregistration: D1PreregistrationControl
+    reader_source: D1ReaderSourceManifestControl
+    _factory_token: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._factory_token is not _INPUT_TOKEN:
+            raise TypeError(
+                "D1ExternalAnalysisInputControl is factory-only; "
+                "use decode_d1_external_analysis_input_control"
+            )
+        if hashlib.sha256(self.canonical_bytes).hexdigest() != self.input_manifest_sha256:
+            raise ValueError("verified external input manifest digest differs")
+        manifest, nested = _extract_input_manifest(self.canonical_bytes)
+        expected_nested = {
+            "alias_commitment_base64": self.alias_application.commitment.canonical_bytes,
+            "alias_reveal_base64": self.alias_application.reveal.canonical_bytes,
+            "capture_aggregate_base64": self.aggregate.canonical_json.encode("utf-8"),
+            "capture_receipt_base64": self.capture_receipt.canonical_bytes,
+            "decision_contract_base64": serialize_decision_contract(self.decision_contract).encode(
+                "utf-8"
+            ),
+            "preregistration_control_base64": self.preregistration.canonical_bytes,
+            "reader_source_manifest_base64": self.reader_source.canonical_bytes,
+            "registered_design_base64": _canonical(self.design.manifest),
+        }
+        if nested != expected_nested:
+            raise ValueError("verified nested control differs from canonical input manifest")
+        if (
+            manifest["expected_family_digest"] != self.expected_family_digest
+            or manifest["expected_design_digest"] != self.design.design_digest
+            or manifest["expected_capture_digest"] != self.aggregate.manifest_digest
+        ):
+            raise ValueError("verified identity differs from canonical input manifest")
+        _validate_input_relationships(
+            expected_family_digest=self.expected_family_digest,
+            decision_contract=self.decision_contract,
+            design=self.design,
+            aggregate=self.aggregate,
+            capture_receipt=self.capture_receipt,
+            alias_application=self.alias_application,
+            preregistration=self.preregistration,
+            reader_source=self.reader_source,
+        )
 
 
 def parse_d1_alias_commitment_control(payload: bytes) -> D1AliasCommitmentControl:
@@ -547,4 +635,167 @@ def parse_d1_reader_source_manifest(payload: bytes) -> D1ReaderSourceManifestCon
         complete_reader,
         terminal_reader,
         analysis_code_digest,
+    )
+
+
+def _base64_payload(value: object, *, label: str) -> bytes:
+    if type(value) is not str or not value:
+        _fail(f"{label} must be nonempty canonical base64 text")
+    try:
+        payload = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as error:
+        _fail(f"{label} must be canonical base64", error)
+    if not payload or base64.b64encode(payload).decode("ascii") != value:
+        _fail(f"{label} must be nonempty canonical base64")
+    return payload
+
+
+def _extract_input_manifest(
+    payload: bytes,
+) -> tuple[dict[str, object], dict[str, bytes]]:
+    manifest = _decode(
+        payload,
+        fields=_INPUT_FIELDS,
+        schema=_INPUT_SCHEMA,
+        label="external analysis input",
+    )
+    nested = {
+        field: _base64_payload(manifest[field], label=f"external input {field}")
+        for field in _INPUT_BASE64_FIELDS
+    }
+    return manifest, nested
+
+
+def _utf8(payload: bytes, *, label: str) -> str:
+    try:
+        return payload.decode("utf-8")
+    except UnicodeError as error:
+        _fail(f"{label} must contain UTF-8 canonical bytes", error)
+
+
+def _validate_input_relationships(
+    *,
+    expected_family_digest: str,
+    decision_contract: D1DecisionContract,
+    design: D1RegisteredDesignDeclaration,
+    aggregate: D1CaptureAggregateDeclaration,
+    capture_receipt: D1CaptureReceiptControl,
+    alias_application: D1AliasApplicationControl,
+    preregistration: D1PreregistrationControl,
+    reader_source: D1ReaderSourceManifestControl,
+) -> None:
+    if (
+        type(decision_contract) is not D1DecisionContract
+        or type(design) is not D1RegisteredDesignDeclaration
+        or type(aggregate) is not D1CaptureAggregateDeclaration
+        or type(capture_receipt) is not D1CaptureReceiptControl
+        or type(alias_application) is not D1AliasApplicationControl
+        or type(preregistration) is not D1PreregistrationControl
+        or type(reader_source) is not D1ReaderSourceManifestControl
+    ):
+        raise TypeError("verified external input requires typed nested controls")
+    if design.family_identity.family_digest != expected_family_digest:
+        _fail("external input expected family digest differs from registered design")
+    if decision_contract.family_identity != design.family_identity:
+        _fail("external input decision contract family differs from registered design")
+    if decision_contract_digest(decision_contract) != design.decision_contract_digest:
+        _fail("external input decision contract digest differs from registered design")
+    if aggregate.roster.family_digest != expected_family_digest:
+        _fail("external input aggregate roster family differs from registered design")
+    if (
+        aggregate.roster.preregistration_path != design.preregistration.path
+        or aggregate.roster.preregistration_commit != design.preregistration.commit
+    ):
+        _fail("external input aggregate preregistration differs from registered design")
+    observed_seeds = {item.seed for item in aggregate.roster.expected_confirmatory}
+    if observed_seeds != set(design.registered_seeds):
+        _fail("external input aggregate seed roster differs from registered design")
+    for item in aggregate.roster.expected_confirmatory:
+        if (
+            item.construction_digest
+            != design.family_identity.arm_construction_digests[item.arm.value]
+        ):
+            _fail("external input aggregate arm construction differs from registered design")
+    if capture_receipt.aggregate_digest != aggregate.manifest_digest:
+        _fail("external input capture receipt differs from aggregate declaration")
+    if (
+        preregistration.path != design.preregistration.path
+        or preregistration.commit != design.preregistration.commit
+        or preregistration.sha256 != design.preregistration.blob_sha256
+    ):
+        _fail("external input preregistration control differs from registered design")
+    registered_seeds = decision_contract.registered_constants.get("seeds")
+    if registered_seeds != design.registered_seeds:
+        _fail("external input decision constants differ from registered seed roster")
+
+
+def decode_d1_external_analysis_input_control(
+    payload: bytes,
+    *,
+    preregistration_evidence: D1PreregistrationByteEvidence,
+) -> D1ExternalAnalysisInputControl:
+    if type(preregistration_evidence) is not D1PreregistrationByteEvidence:
+        raise TypeError("external analysis input requires preregistration byte evidence")
+    manifest, nested = _extract_input_manifest(payload)
+    expected_family_digest = _sha256(
+        manifest["expected_family_digest"], label="external input expected_family_digest"
+    )
+    expected_design_digest = _sha256(
+        manifest["expected_design_digest"], label="external input expected_design_digest"
+    )
+    expected_capture_digest = _sha256(
+        manifest["expected_capture_digest"], label="external input expected_capture_digest"
+    )
+    try:
+        decision_contract = parse_decision_contract(
+            _utf8(nested["decision_contract_base64"], label="decision contract")
+        )
+        design = parse_registered_design_declaration(
+            _utf8(nested["registered_design_base64"], label="registered design")
+        )
+        aggregate = parse_d1_capture_aggregate_declaration(
+            _utf8(nested["capture_aggregate_base64"], label="capture aggregate")
+        )
+        alias_application = decode_d1_alias_application_control(
+            nested["alias_commitment_base64"], nested["alias_reveal_base64"]
+        )
+        preregistration = parse_d1_preregistration_control(
+            nested["preregistration_control_base64"],
+            design=design,
+            evidence=preregistration_evidence,
+        )
+        reader_source = parse_d1_reader_source_manifest(nested["reader_source_manifest_base64"])
+        capture_receipt = parse_d1_capture_receipt_control(
+            nested["capture_receipt_base64"], aggregate=aggregate
+        )
+    except D1ExternalAnalysisControlError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"external analysis nested control is invalid: {error}", error)
+    if design.design_digest != expected_design_digest:
+        _fail("external input expected design digest differs from design declaration")
+    if aggregate.manifest_digest != expected_capture_digest:
+        _fail("external input expected capture digest differs from aggregate declaration")
+    _validate_input_relationships(
+        expected_family_digest=expected_family_digest,
+        decision_contract=decision_contract,
+        design=design,
+        aggregate=aggregate,
+        capture_receipt=capture_receipt,
+        alias_application=alias_application,
+        preregistration=preregistration,
+        reader_source=reader_source,
+    )
+    return D1ExternalAnalysisInputControl(
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+        expected_family_digest,
+        decision_contract,
+        design,
+        aggregate,
+        capture_receipt,
+        alias_application,
+        preregistration,
+        reader_source,
+        _INPUT_TOKEN,
     )
