@@ -140,6 +140,8 @@ def checkpoint_case() -> CheckpointCase:
                 ),
             ),
         ),
+        last_flop_model_identity=None,
+        last_energy_sample_count=None,
     )
     journal = JournalCheckpointState(
         logical_run_id=logical_run_id,

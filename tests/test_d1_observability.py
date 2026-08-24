@@ -71,9 +71,13 @@ def _resource(*, step: int = 1, eval_index: int = 3) -> ResourceWorkSnapshot:
         total_model_token_positions=1536,
         gpu_train_device_seconds=gap("gpu_train_device_seconds"),
         gpu_eval_device_seconds=gap("gpu_eval_device_seconds"),
+        peak_gpu_allocated_bytes=gap("peak_gpu_allocated_bytes"),
+        peak_gpu_reserved_bytes=gap("peak_gpu_reserved_bytes"),
         cumulative_train_flops=gap("cumulative_train_flops"),
         cumulative_eval_flops=gap("cumulative_eval_flops"),
+        flop_model_identity=gap("flop_model_identity"),
         energy_joules=gap("energy_joules"),
+        energy_sample_count=gap("energy_sample_count"),
         rate_estimated_cost=gap("rate_estimated_cost"),
     )
 

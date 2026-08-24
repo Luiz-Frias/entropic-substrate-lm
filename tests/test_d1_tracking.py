@@ -140,13 +140,21 @@ def _resource(logical_run_id: str, *, eval_index: int = 3) -> ResourceWorkSnapsh
             method=ReadingMethod.GPU_DEVICE_COUNTER,
         ),
         gpu_eval_device_seconds=gap("gpu_eval_device_seconds"),
+        peak_gpu_allocated_bytes=ScalarReading(
+            value=4_294_967_296.0,
+            evidence_class=EvidenceClass.MEASURED,
+            method=ReadingMethod.GPU_DEVICE_COUNTER,
+        ),
+        peak_gpu_reserved_bytes=gap("peak_gpu_reserved_bytes"),
         cumulative_train_flops=ScalarReading(
             value=1.25e15,
             evidence_class=EvidenceClass.MODEL_ESTIMATE,
             method=ReadingMethod.FLOP_MODEL,
         ),
         cumulative_eval_flops=gap("cumulative_eval_flops"),
+        flop_model_identity="f" * 64,
         energy_joules=gap("energy_joules"),
+        energy_sample_count=gap("energy_sample_count"),
         rate_estimated_cost=CostReading(
             amount=Money(amount=Decimal("0.042"), currency="USD"),
             evidence_class=EvidenceClass.RATE_ESTIMATE,

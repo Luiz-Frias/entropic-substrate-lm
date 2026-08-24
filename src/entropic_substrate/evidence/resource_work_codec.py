@@ -46,9 +46,13 @@ _KEYS = {
     "total_model_token_positions",
     "gpu_train_device_seconds",
     "gpu_eval_device_seconds",
+    "peak_gpu_allocated_bytes",
+    "peak_gpu_reserved_bytes",
     "cumulative_train_flops",
     "cumulative_eval_flops",
+    "flop_model_identity",
     "energy_joules",
+    "energy_sample_count",
     "rate_estimated_cost",
     "required_counter_evidence",
 }
@@ -152,6 +156,26 @@ def _optional(
     return _scalar(mapping, field=field)
 
 
+def _identity_or_gap(value: object, *, field: str) -> str | EvidenceGap:
+    mapping = _mapping(value, label=field)
+    if mapping.get("kind") == "gap":
+        return _gap(mapping, field=field)
+    _exact_keys(mapping, {"kind", "sha256"}, label=field)
+    if mapping["kind"] != "identity" or type(mapping["sha256"]) is not str:
+        _fail(f"{field} identity is noncanonical")
+    return mapping["sha256"]
+
+
+def _count_or_gap(value: object, *, field: str) -> int | EvidenceGap:
+    mapping = _mapping(value, label=field)
+    if mapping.get("kind") == "gap":
+        return _gap(mapping, field=field)
+    _exact_keys(mapping, {"kind", "value"}, label=field)
+    if mapping["kind"] != "count" or type(mapping["value"]) is not int:
+        _fail(f"{field} count is noncanonical")
+    return mapping["value"]
+
+
 def resource_snapshot_to_mapping(snapshot: ResourceWorkSnapshot) -> dict[str, object]:
     """Map one validated snapshot to the exact canonical wire object."""
     if type(snapshot) is not ResourceWorkSnapshot:
@@ -197,6 +221,22 @@ def resource_snapshot_from_mapping(value: object) -> ResourceWorkSnapshot:
                     mapping["gpu_eval_device_seconds"], field="gpu_eval_device_seconds", cost=False
                 ),
             ),
+            peak_gpu_allocated_bytes=cast(
+                ScalarReading | EvidenceGap,
+                _optional(
+                    mapping["peak_gpu_allocated_bytes"],
+                    field="peak_gpu_allocated_bytes",
+                    cost=False,
+                ),
+            ),
+            peak_gpu_reserved_bytes=cast(
+                ScalarReading | EvidenceGap,
+                _optional(
+                    mapping["peak_gpu_reserved_bytes"],
+                    field="peak_gpu_reserved_bytes",
+                    cost=False,
+                ),
+            ),
             cumulative_train_flops=cast(
                 ScalarReading | EvidenceGap,
                 _optional(
@@ -209,9 +249,15 @@ def resource_snapshot_from_mapping(value: object) -> ResourceWorkSnapshot:
                     mapping["cumulative_eval_flops"], field="cumulative_eval_flops", cost=False
                 ),
             ),
+            flop_model_identity=_identity_or_gap(
+                mapping["flop_model_identity"], field="flop_model_identity"
+            ),
             energy_joules=cast(
                 ScalarReading | EvidenceGap,
                 _optional(mapping["energy_joules"], field="energy_joules", cost=False),
+            ),
+            energy_sample_count=_count_or_gap(
+                mapping["energy_sample_count"], field="energy_sample_count"
             ),
             rate_estimated_cost=cast(
                 CostReading | EvidenceGap,

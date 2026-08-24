@@ -51,6 +51,14 @@ def _snapshot() -> ResourceWorkSnapshot:
         gpu_eval_device_seconds=EvidenceGap(
             field="gpu_eval_device_seconds", reason="device collector unavailable"
         ),
+        peak_gpu_allocated_bytes=ScalarReading(
+            value=8_589_934_592.0,
+            evidence_class=EvidenceClass.MEASURED,
+            method=ReadingMethod.GPU_DEVICE_COUNTER,
+        ),
+        peak_gpu_reserved_bytes=EvidenceGap(
+            field="peak_gpu_reserved_bytes", reason="device collector unavailable"
+        ),
         cumulative_train_flops=ScalarReading(
             value=1.2345678901234568e15,
             evidence_class=EvidenceClass.MODEL_ESTIMATE,
@@ -59,11 +67,13 @@ def _snapshot() -> ResourceWorkSnapshot:
         cumulative_eval_flops=EvidenceGap(
             field="cumulative_eval_flops", reason="profiler unavailable"
         ),
+        flop_model_identity="f" * 64,
         energy_joules=ScalarReading(
             value=1.2e6,
             evidence_class=EvidenceClass.DERIVED_FROM_MEASURED,
             method=ReadingMethod.ENERGY_INTEGRATED,
         ),
+        energy_sample_count=3,
         rate_estimated_cost=CostReading(
             amount=Money(amount=Decimal("0.42"), currency="USD"),
             evidence_class=EvidenceClass.RATE_ESTIMATE,

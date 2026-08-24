@@ -52,6 +52,8 @@ def _state() -> ResourceLedgerState:
                 ),
             ),
         ),
+        last_flop_model_identity="f" * 64,
+        last_energy_sample_count=3,
     )
 
 
