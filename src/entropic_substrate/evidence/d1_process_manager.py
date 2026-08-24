@@ -256,16 +256,51 @@ class D1ProcessManager:
             self._event(D1ProcessEventKind.ANALYSIS_FILED, actor, (artifact,), event_id)
         )
 
+    def file_alias_commitment(
+        self, *, actor: ActorIdentity, artifact: ArtifactIdentity, event_id: str
+    ) -> D1ProcessManager:
+        return self._commit(
+            self._event(
+                D1ProcessEventKind.ALIAS_COMMITMENT_FILED,
+                actor,
+                (artifact,),
+                event_id,
+            )
+        )
+
     def file_review(
         self,
         *,
         actor: ActorIdentity,
         packet: ArtifactIdentity,
         report: ArtifactIdentity,
+        receipt: ArtifactIdentity,
         event_id: str,
     ) -> D1ProcessManager:
         return self._commit(
-            self._event(D1ProcessEventKind.REVIEW_FILED, actor, (packet, report), event_id)
+            self._event(
+                D1ProcessEventKind.REVIEW_FILED,
+                actor,
+                (packet, report, receipt),
+                event_id,
+            )
+        )
+
+    def reveal_aliases(
+        self,
+        *,
+        actor: ActorIdentity,
+        reveal: ArtifactIdentity,
+        review_receipt: ArtifactIdentity,
+        event_id: str,
+    ) -> D1ProcessManager:
+        return self._commit(
+            self._event(
+                D1ProcessEventKind.ALIAS_REVEALED,
+                actor,
+                (reveal, review_receipt),
+                event_id,
+            )
         )
 
     def adjudicate(

@@ -97,15 +97,28 @@ def test_full_operational_spine_persists_repeated_segments_and_reload(tmp_path: 
     manager = manager.file_analysis(
         actor=_actor(ActorRole.ANALYSIS), artifact=_artifact(31, "analysis"), event_id="analysis"
     )
+    manager = manager.file_alias_commitment(
+        actor=_actor(ActorRole.ANALYSIS),
+        artifact=_artifact(32, "alias-commitment"),
+        event_id="alias-commitment",
+    )
+    receipt = _artifact(35, "review-receipt")
     manager = manager.file_review(
         actor=_actor(ActorRole.REVIEW),
-        packet=_artifact(32, "review-packet"),
-        report=_artifact(33, "review-report"),
+        packet=_artifact(33, "review-packet"),
+        report=_artifact(34, "review-report"),
+        receipt=receipt,
         event_id="review",
+    )
+    manager = manager.reveal_aliases(
+        actor=_actor(ActorRole.OPERATOR),
+        reveal=_artifact(36, "alias-reveal"),
+        review_receipt=receipt,
+        event_id="alias-reveal",
     )
     manager = manager.adjudicate(
         actor=_actor(ActorRole.OPERATOR),
-        artifact=_artifact(34, "adjudication"),
+        artifact=_artifact(37, "adjudication"),
         event_id="adjudication",
     )
 

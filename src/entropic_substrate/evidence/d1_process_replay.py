@@ -54,7 +54,9 @@ _ROLE: Final = {
     D1ProcessEventKind.OPERATOR_FINALIZED: ActorRole.OPERATOR,
     D1ProcessEventKind.CAPTURED: ActorRole.AUTOMATION,
     D1ProcessEventKind.ANALYSIS_FILED: ActorRole.ANALYSIS,
+    D1ProcessEventKind.ALIAS_COMMITMENT_FILED: ActorRole.ANALYSIS,
     D1ProcessEventKind.REVIEW_FILED: ActorRole.REVIEW,
+    D1ProcessEventKind.ALIAS_REVEALED: ActorRole.OPERATOR,
     D1ProcessEventKind.ADJUDICATED: ActorRole.OPERATOR,
     D1ProcessEventKind.VERDICT_FILED: ActorRole.OPERATOR,
     D1ProcessEventKind.GATE_AUTHORIZED: ActorRole.OPERATOR,
@@ -91,7 +93,8 @@ _PROBLEM_PURE_KIND: Final = {
 }
 _ARTIFACT_COUNT: Final = {
     D1ProcessEventKind.CONTRACT_VERIFIED: 2,
-    D1ProcessEventKind.REVIEW_FILED: 2,
+    D1ProcessEventKind.REVIEW_FILED: 3,
+    D1ProcessEventKind.ALIAS_REVEALED: 2,
     D1ProcessEventKind.VERDICT_FILED: 2,
     D1ProcessEventKind.GATE_AUTHORIZED: 3,
     D1ProcessEventKind.GATE_VALID_NEGATIVE: 3,
@@ -250,12 +253,20 @@ def _expected_state(replay: D1ProcessReplay, event: D1LifecycleEvent) -> D1Proce
             {D1ProcessState.CAPTURED},
             D1ProcessState.ANALYSIS_FILED,
         ),
-        D1ProcessEventKind.REVIEW_FILED: (
+        D1ProcessEventKind.ALIAS_COMMITMENT_FILED: (
             {D1ProcessState.ANALYSIS_FILED},
+            D1ProcessState.ALIAS_COMMITTED,
+        ),
+        D1ProcessEventKind.REVIEW_FILED: (
+            {D1ProcessState.ALIAS_COMMITTED},
             D1ProcessState.REVIEW_FILED,
         ),
-        D1ProcessEventKind.ADJUDICATED: (
+        D1ProcessEventKind.ALIAS_REVEALED: (
             {D1ProcessState.REVIEW_FILED},
+            D1ProcessState.ALIAS_REVEALED,
+        ),
+        D1ProcessEventKind.ADJUDICATED: (
+            {D1ProcessState.ALIAS_REVEALED},
             D1ProcessState.ADJUDICATED,
         ),
         D1ProcessEventKind.VERDICT_FILED: (
@@ -364,6 +375,14 @@ def advance_d1_process(replay: D1ProcessReplay | None, event: D1LifecycleEvent) 
     launched = replay.launched_subjects
     finalized = replay.finalized_subjects
     subject = event.subject_id
+    if event.event_kind is D1ProcessEventKind.ALIAS_REVEALED:
+        review = _prior(replay, D1ProcessEventKind.REVIEW_FILED)
+        if event.artifacts[1] != review.artifacts[2]:
+            raise reject_transition(
+                "review_receipt_mismatch",
+                replay.state,
+                "alias reveal must name the exact durable review receipt",
+            )
     if event.event_kind is D1ProcessEventKind.LAUNCH_ADMITTED:
         if subject in launched:
             raise reject_transition(
