@@ -7,6 +7,8 @@ from entropic_substrate.predictive_state.future_law import (
     MeanDisplacementBaseline,
 )
 from entropic_substrate.predictive_state.objective import PredictiveObjectiveTerms
+from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
+from entropic_substrate.predictive_state.runtime_components import D1PredictiveResult
 from entropic_substrate.predictive_state.stabilization import (
     CollapseDiagnostics,
     CollapseRegularizer,
@@ -46,6 +48,8 @@ __all__ = [
     "CollapseRegularizer",
     "CollapseResult",
     "CosineEmaDecaySchedule",
+    "D1PredictiveResult",
+    "D1PredictiveSystem",
     "DiagonalGaussianFutureLaw",
     "EmaDecaySchedule",
     "EncoderPair",
