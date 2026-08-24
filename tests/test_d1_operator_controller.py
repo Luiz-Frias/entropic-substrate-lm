@@ -14,6 +14,7 @@ from d1_billing_finalizer_fixtures import provider_bill
 from d1_trainer_fixtures import micro_plan
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
 from entropic_substrate.d1_operator_controller import (
+    D1OperatorQueueHalt,
     D1SequentialOperatorController,
 )
 from entropic_substrate.d1_operator_evidence import (
@@ -192,11 +193,17 @@ class _Custody:
         del finalization
         return _identity(self.events, "persist_finalization")
 
+    def persist_problem(self, subject_id: str, detail: str) -> ArtifactIdentity:
+        del subject_id, detail
+        return _identity(self.events, "persist_problem")
+
 
 @dataclass
 class _Provider:
     start: object
     events: list[str]
+    placement_drift: bool = False
+    cancel_count: int = 0
 
     def verify_authenticated(self) -> D1RunPodAuthReceipt:
         self.events.append("authenticate")
@@ -206,13 +213,14 @@ class _Provider:
         del intent
         self.events.append("create")
         start = self.start
+        sku = "wrong-sku" if self.placement_drift else start.provider_sku
         return D1PodPlacement(
             "pod-123",
             D1A100FormFactor.SXM,
             start.accelerator_model,
             start.accelerator_count,
             start.provider,
-            start.provider_sku,
+            sku,
             start.region,
             start.market,
             start.purchase_option,
@@ -250,6 +258,12 @@ class _Provider:
         self.events.append("billing")
         return provider_bill(start)
 
+    def cancel(self, pod_id: str) -> datetime:
+        del pod_id
+        self.events.append("cancel")
+        self.cancel_count += 1
+        return self.start.trainer_started_at + timedelta(seconds=1)
+
 
 @dataclass
 class _Trainer:
@@ -275,10 +289,11 @@ class _Clock:
         return self.value
 
 
-def _controller(tmp_path: Path, case: _Case, events: list[str]):
+def _controller(tmp_path: Path, case: _Case, events: list[str], *, drift: bool = False):
     provider = _Provider(
         case.start,
         events,
+        placement_drift=drift,
     )
     controller = D1SequentialOperatorController(
         design=case.design,
@@ -321,3 +336,30 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     assert result.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.COMPLETED
     assert read_journal(case.journal_path)[-1].event_kind is JournalEventKind.RUN_END
     assert result.queue_admissible is True
+
+
+def test_resource_drift_cancels_pod_halts_queue_and_never_starts_next_arm(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, provider = _controller(tmp_path, case, events, drift=True)
+
+    with pytest.raises(D1OperatorQueueHalt, match="resource placement"):
+        controller.execute_fresh(case.intent)
+
+    assert events == [
+        "authenticate",
+        "persist_precreate",
+        "create",
+        "runtime",
+        "cancel",
+        "persist_attempt_ledger",
+        "persist_problem",
+    ]
+    assert provider.cancel_count == 1
+    assert controller.process_manager.state is D1ProcessState.PROBLEM
+    assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
+    with pytest.raises(D1OperatorQueueHalt, match="halted"):
+        controller.execute_fresh(case.intent)
+    assert provider.cancel_count == 1

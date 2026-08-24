@@ -84,6 +84,8 @@ class D1RunPodPort(Protocol):
 
     def runtime(self, pod_id: str) -> D1RuntimeObservation: ...
 
+    def cancel(self, pod_id: str) -> datetime: ...
+
     def terminate(
         self,
         pod_id: str,

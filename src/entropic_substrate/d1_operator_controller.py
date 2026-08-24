@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
 from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
@@ -24,6 +24,7 @@ from entropic_substrate.d1_operator_values import (
     attest_d1_run_start,
 )
 from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
+from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
 from entropic_substrate.evidence.resource_billing import (
@@ -61,6 +62,23 @@ class D1OperatorCustodyPort(Protocol):
     def persist_run_start(self, start: RunStartProvenance) -> ArtifactIdentity: ...
 
     def persist_finalization(self, finalization: D1BillingFinalization) -> ArtifactIdentity: ...
+
+    def persist_problem(self, subject_id: str, detail: str) -> ArtifactIdentity: ...
+
+
+class D1OperatorQueueHalt(RuntimeError):
+    """Latched queue stop retaining primary and cleanup failures."""
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        primary: BaseException | None = None,
+        cleanup_failures: tuple[BaseException, ...] = (),
+    ) -> None:
+        self.primary = primary
+        self.cleanup_failures = cleanup_failures
+        super().__init__(detail)
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,16 +163,30 @@ class D1SequentialOperatorController:
         self._runpod, self._trainer, self._custody = runpod, trainer, custody
         self._operator, self._automation, self._clock = operator, automation, clock
         self._executing = False
+        self._halted_detail: str | None = None
+        self._active_attempt: D1LaunchAttemptIdentity | None = None
+        self._active_pod_id: str | None = None
 
     def execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult:
+        if self._halted_detail is not None:
+            raise D1OperatorQueueHalt(f"D1 operator queue is halted: {self._halted_detail}")
         if self._executing or self.process_manager.active_subject is not None:
             raise RuntimeError("D1 operator already has one active attempt")
         _validate_fresh(self.design, intent)
         self._executing = True
+        try:
+            return self._execute_fresh(intent)
+        except D1OperatorQueueHalt:
+            raise
+        except Exception as error:
+            self._halt(intent.plan.logical_run_id, error)
+
+    def _execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult:
         subject = intent.plan.logical_run_id
         attempt = _identity(intent)
         auth = self._runpod.verify_authenticated()
         ledger = self.attempt_ledger.record(attempt, observed_at=self._clock.now_utc())
+        self.attempt_ledger, self._active_attempt = ledger, attempt
         precreate = self._custody.persist_precreate(intent, ledger, auth)
         manager = self.process_manager.admit_launch(
             subject_id=subject,
@@ -162,7 +194,9 @@ class D1SequentialOperatorController:
             artifact=precreate,
             event_id=f"{subject}:admit",
         )
+        self.process_manager = manager
         placement = self._runpod.create(intent)
+        self._active_pod_id = placement.pod_id
         runtime = self._runpod.runtime(placement.pod_id)
         start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
         self._custody.persist_run_start(start)
@@ -175,12 +209,14 @@ class D1SequentialOperatorController:
             artifact=input_artifact,
             event_id=f"{subject}:running:0",
         )
+        self.process_manager = manager
         ledger = ledger.transition(
             attempt,
             status=D1LaunchAttemptStatus.TRAINER_STARTED,
             observed_at=start.trainer_started_at,
         )
         self._custody.persist_attempt_ledger(ledger)
+        self.attempt_ledger = ledger
         candidate = self._trainer.await_exported_handoff(placement.pod_id)
         export = verify_d1_trainer_export(candidate)
         handoff = export.handoff
@@ -196,11 +232,13 @@ class D1SequentialOperatorController:
             artifact=export.journal,
             event_id=f"{subject}:trainer-stop:0",
         )
+        self.process_manager = manager
         termination = self._runpod.terminate(
             placement.pod_id,
             start=start,
             trainer_ended_at=stopped.trainer_ended_at,
         )
+        self._active_pod_id = None
         billing = self._runpod.billing(placement.pod_id, start=start)
         finalization = finalize_d1_billing(
             plan=intent.plan,
@@ -228,6 +266,9 @@ class D1SequentialOperatorController:
         self._custody.persist_attempt_ledger(ledger)
         self.process_manager, self.attempt_ledger, self._executing = manager, ledger, False
         queue_admissible = not failed and not isinstance(billing, BillingGap)
+        self._active_attempt = None
+        if not queue_admissible:
+            self._halted_detail = "terminal trainer or provider-billing evidence gap"
         return D1OperatorRunResult(
             manager,
             ledger,
@@ -239,3 +280,44 @@ class D1SequentialOperatorController:
             finalization,
             queue_admissible,
         )
+
+    def _halt(self, subject: str, primary: BaseException) -> NoReturn:
+        cleanup: list[BaseException] = []
+        observed_at = self._clock.now_utc()
+        if self._active_pod_id is not None:
+            try:
+                observed_at = self._runpod.cancel(self._active_pod_id)
+            except BaseException as error:
+                cleanup.append(error)
+            self._active_pod_id = None
+        attempt = self._active_attempt
+        if attempt is not None:
+            try:
+                self.attempt_ledger = self.attempt_ledger.transition(
+                    attempt,
+                    status=D1LaunchAttemptStatus.FAILED,
+                    observed_at=observed_at,
+                    reason=str(primary) or repr(primary),
+                )
+                self._custody.persist_attempt_ledger(self.attempt_ledger)
+            except BaseException as error:
+                cleanup.append(error)
+        detail = str(primary) or repr(primary)
+        try:
+            artifact = self._custody.persist_problem(subject, detail)
+            self.process_manager = self.process_manager.record_problem(
+                actor=self._operator,
+                kind=D1ProblemKind.INVALIDATED,
+                artifact=artifact,
+                event_id=f"{subject}:operator-problem",
+            )
+        except BaseException as error:
+            cleanup.append(error)
+        if cleanup:
+            detail += "; cleanup failures: " + "; ".join(str(item) for item in cleanup)
+        self._halted_detail, self._executing, self._active_attempt = detail, False, None
+        raise D1OperatorQueueHalt(
+            detail,
+            primary=primary,
+            cleanup_failures=tuple(cleanup),
+        ) from primary

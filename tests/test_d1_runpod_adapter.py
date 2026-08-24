@@ -203,6 +203,18 @@ def test_unavailable_provider_billing_is_a_complete_typed_gap() -> None:
     assert result.billed_amount.reason == "provider billing export unavailable"
 
 
+def test_cancel_returns_provider_measured_termination_timestamp() -> None:
+    payload = {
+        "pod_id": "pod-123",
+        "pod_terminated_at": "2026-08-24T17:00:05Z",
+        "schema_version": "d1-runpod-termination-v1",
+    }
+
+    observed = RunpodctlD1Adapter(runner=_Runner([payload])).cancel("pod-123")
+
+    assert observed == datetime(2026, 8, 24, 17, 0, 5, tzinfo=UTC)
+
+
 def test_command_or_noncanonical_json_failure_never_falls_back() -> None:
     with pytest.raises(D1OperatorTransportError, match="simulated runpodctl failure"):
         RunpodctlD1Adapter(runner=_Runner([], error_at=0)).verify_authenticated()
