@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import NoReturn, cast
 
@@ -22,7 +23,7 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.experiments.d1_registered_design import D1PreregistrationArtifact
 from entropic_substrate.experiments.d1_registration_codec import (
     D1PreregistrationByteEvidence,
@@ -30,17 +31,24 @@ from entropic_substrate.experiments.d1_registration_codec import (
 )
 
 __all__ = [
+    "D1_COMPLETE_READER_IDENTITY",
+    "D1_READER_SOURCE_MODULES",
+    "D1_TERMINAL_DEFECT_READER_IDENTITY",
     "D1AliasApplicationControl",
     "D1AliasCommitmentControl",
     "D1AliasRevealControl",
     "D1CaptureReceiptControl",
     "D1ExternalAnalysisControlError",
     "D1PreregistrationControl",
+    "D1ReaderSourceEntry",
+    "D1ReaderSourceManifestControl",
     "decode_d1_alias_application_control",
+    "derive_d1_analysis_code_digest",
     "parse_d1_alias_commitment_control",
     "parse_d1_alias_reveal_control",
     "parse_d1_capture_receipt_control",
     "parse_d1_preregistration_control",
+    "parse_d1_reader_source_manifest",
 ]
 
 _COMMITMENT_SCHEMA = "d1-alias-commitment-v1"
@@ -56,6 +64,45 @@ _CAPTURE_RECEIPT_FIELDS = frozenset(
 _POINTER_FIELDS = frozenset({"object_id", "pointer_path", "pointer_sha256"})
 _PREREGISTRATION_SCHEMA = "d1-preregistration-control-v1"
 _PREREGISTRATION_FIELDS = frozenset({"commit", "path", "schema_version", "sha256", "size_bytes"})
+_READER_SCHEMA = "d1-reader-source-manifest-v1"
+_READER_CODE_SCHEMA = "d1-reader-analysis-code-v1"
+_READER_FIELDS = frozenset(
+    {
+        "analysis_code_digest",
+        "complete_reader",
+        "modules",
+        "schema_version",
+        "terminal_defect_reader",
+    }
+)
+_READER_MODULE_FIELDS = frozenset({"identity", "path", "sha256"})
+
+D1_COMPLETE_READER_IDENTITY = "entropic_substrate.telemetry.read_d1_run_evidence"
+D1_TERMINAL_DEFECT_READER_IDENTITY = "entropic_substrate.telemetry.read_d1_terminal_defect"
+D1_READER_SOURCE_MODULES = (
+    "entropic_substrate.telemetry",
+    "entropic_substrate.evidence.d1_telemetry",
+    "entropic_substrate.evidence.d1_telemetry_query",
+    "entropic_substrate.evidence.d1_terminal_defect_query",
+    "entropic_substrate.evidence.d1_journal",
+    "entropic_substrate.evidence.d1_journal_values",
+    "entropic_substrate.evidence.d1_telemetry_measurements",
+    "entropic_substrate.evidence.d1_telemetry_payloads",
+    "entropic_substrate.evidence.d1_telemetry_values",
+    "entropic_substrate.evidence.resource_work",
+    "entropic_substrate.evidence.resource_work_codec",
+    "entropic_substrate.evidence.resource_provenance",
+    "entropic_substrate.evidence.resource_provenance_codec",
+    "entropic_substrate.evidence.resource_ledger",
+    "entropic_substrate.evidence.resource_ledger_codec",
+    "entropic_substrate.d1_numerical_defect",
+    "entropic_substrate.data.batching",
+    "entropic_substrate.experiments.d1_primitives",
+    "entropic_substrate.experiments.d1_plan",
+    "entropic_substrate.experiments.d1_execution",
+    "entropic_substrate.d1_calibration",
+    "entropic_substrate.d1_training_step",
+)
 
 
 class D1ExternalAnalysisControlError(ValueError):
@@ -218,6 +265,26 @@ class D1PreregistrationControl:
     commit: str
     size_bytes: int
     sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class D1ReaderSourceEntry:
+    identity: str
+    path: str
+    sha256: str
+
+    @property
+    def manifest(self) -> dict[str, str]:
+        return {"identity": self.identity, "path": self.path, "sha256": self.sha256}
+
+
+@dataclass(frozen=True, slots=True)
+class D1ReaderSourceManifestControl:
+    canonical_bytes: bytes = field(repr=False)
+    modules: tuple[D1ReaderSourceEntry, ...]
+    complete_reader: str
+    terminal_defect_reader: str
+    analysis_code_digest: str
 
 
 def parse_d1_alias_commitment_control(payload: bytes) -> D1AliasCommitmentControl:
@@ -396,3 +463,88 @@ def parse_d1_preregistration_control(
     if size_bytes != evidence.size_bytes or sha256 != evidence.sha256:
         _fail("preregistration control size or SHA differs from measured raw bytes")
     return D1PreregistrationControl(payload, path, commit, size_bytes, sha256)
+
+
+def derive_d1_analysis_code_digest(modules: object) -> str:
+    if type(modules) is not list:
+        raise TypeError("analysis code digest requires an ordered JSON module list")
+    return canonical_digest(
+        {
+            "modules": modules,
+            "schema_version": _READER_CODE_SCHEMA,
+        }
+    )
+
+
+def _reader_path(identity: str, value: object) -> str:
+    path = _text(value, label=f"reader module {identity} path")
+    parsed = PurePosixPath(path)
+    expected = identity.replace(".", "/") + ".py"
+    if (
+        parsed.is_absolute()
+        or "\\" in path
+        or ".." in parsed.parts
+        or parsed.as_posix() != path
+        or path != expected
+    ):
+        _fail(f"reader module {identity} path must be normalized canonical source path")
+    return path
+
+
+def parse_d1_reader_source_manifest(payload: bytes) -> D1ReaderSourceManifestControl:
+    manifest = _decode(
+        payload,
+        fields=_READER_FIELDS,
+        schema=_READER_SCHEMA,
+        label="reader source manifest",
+    )
+    raw_modules = manifest["modules"]
+    if type(raw_modules) is not list:
+        _fail("reader source manifest modules must be an ordered JSON array")
+    entries: list[D1ReaderSourceEntry] = []
+    for index, raw in enumerate(cast(list[object], raw_modules)):
+        if type(raw) is not dict:
+            _fail(f"reader module[{index}] must be an object")
+        item = cast(dict[str, object], raw)
+        if frozenset(item) != _READER_MODULE_FIELDS:
+            _fail(f"reader module[{index}] fields must be exact")
+        identity = _text(item["identity"], label=f"reader module[{index}] identity")
+        entries.append(
+            D1ReaderSourceEntry(
+                identity=identity,
+                path=_reader_path(identity, item["path"]),
+                sha256=_sha256(item["sha256"], label=f"reader module[{index}] sha256"),
+            )
+        )
+    identities = tuple(entry.identity for entry in entries)
+    if identities != D1_READER_SOURCE_MODULES:
+        _fail("reader source module identities must equal the exact required ordered set")
+    paths = tuple(PurePosixPath(entry.path) for entry in entries)
+    if len(set(paths)) != len(paths) or any(
+        left in right.parents or right in left.parents
+        for index, left in enumerate(paths)
+        for right in paths[index + 1 :]
+    ):
+        _fail("reader source paths must be unique and non-overlapping")
+    complete_reader = _text(manifest["complete_reader"], label="reader source complete_reader")
+    if complete_reader != D1_COMPLETE_READER_IDENTITY:
+        _fail("reader source complete_reader identity is unsupported")
+    terminal_reader = _text(
+        manifest["terminal_defect_reader"],
+        label="reader source terminal_defect_reader",
+    )
+    if terminal_reader != D1_TERMINAL_DEFECT_READER_IDENTITY:
+        _fail("reader source terminal_defect_reader identity is unsupported")
+    analysis_code_digest = _sha256(
+        manifest["analysis_code_digest"], label="reader source analysis_code_digest"
+    )
+    derived = derive_d1_analysis_code_digest([entry.manifest for entry in entries])
+    if analysis_code_digest != derived:
+        _fail("reader source analysis_code_digest differs from ordered canonical module list")
+    return D1ReaderSourceManifestControl(
+        payload,
+        tuple(entries),
+        complete_reader,
+        terminal_reader,
+        analysis_code_digest,
+    )
