@@ -32,7 +32,7 @@ from entropic_substrate.analysis.d1_review_packet import (
 
 from .test_d1_analysis_api import _decision, _design
 from .test_d1_analysis_capture import _analysis_case
-from .test_d1_analysis_receipt import _implementation
+from .test_d1_analysis_receipt import _execution_evidence, _implementation
 
 pytestmark = pytest.mark.unit
 
@@ -70,7 +70,9 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
     composition = compose_d1_analysis(request)
     isolation = D1ExternalIsolationAttestation.enforced(
-        request=request.isolation, mechanism="read-only-network-none"
+        request=request.isolation,
+        mechanism="read-only-network-none",
+        execution_evidence=_execution_evidence(),
     )
     receipt = issue_d1_analysis_receipt(
         analysis=composition.analysis,

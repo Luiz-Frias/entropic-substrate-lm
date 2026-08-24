@@ -26,6 +26,7 @@ __all__ = [
     "D1ExecutorKind",
     "D1ExternalIsolationAttestation",
     "D1InProcessIsolationRunnerFake",
+    "D1IsolationExecutionEvidence",
     "D1IsolationRequest",
     "issue_d1_analysis_receipt",
 ]
@@ -87,6 +88,57 @@ class D1ExecutorKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class D1IsolationExecutionEvidence:
+    """Observed process and output identities behind one external attestation."""
+
+    command_sha256: str
+    exit_code: int
+    request_sha256: str
+    analysis_sha256: str
+    response_sha256: str
+    stdout_sha256: str
+    stderr_sha256: str
+    image_digest: str
+    platform: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "command_sha256",
+            "request_sha256",
+            "analysis_sha256",
+            "response_sha256",
+            "stdout_sha256",
+            "stderr_sha256",
+        ):
+            _sha256(getattr(self, name), label=f"D1 isolation {name}")
+        if type(self.exit_code) is not int or self.exit_code != 0:
+            raise ValueError("D1 enforced isolation requires observed exit_code 0")
+        if not self.image_digest.startswith("sha256:"):
+            raise ValueError("D1 isolation image_digest must be immutable")
+        _sha256(self.image_digest.removeprefix("sha256:"), label="D1 isolation image_digest")
+        if self.platform != "linux/amd64":
+            raise ValueError("D1 isolation platform must be linux/amd64")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "analysis_sha256": self.analysis_sha256,
+            "command_sha256": self.command_sha256,
+            "exit_code": self.exit_code,
+            "image_digest": self.image_digest,
+            "platform": self.platform,
+            "request_sha256": self.request_sha256,
+            "response_sha256": self.response_sha256,
+            "stderr_sha256": self.stderr_sha256,
+            "stdout_sha256": self.stdout_sha256,
+        }
+
+    @property
+    def evidence_digest(self) -> str:
+        return canonical_digest(self.manifest)
+
+
+@dataclass(frozen=True, slots=True)
 class D1ExternalIsolationAttestation:
     request_digest: str
     executor_kind: D1ExecutorKind
@@ -94,6 +146,7 @@ class D1ExternalIsolationAttestation:
     filesystem_read_only: bool
     live_tracking_blocked: bool
     mechanism: str
+    execution_evidence: D1IsolationExecutionEvidence | None
 
     def __post_init__(self) -> None:
         _sha256(self.request_digest, label="D1 isolation request_digest")
@@ -107,6 +160,11 @@ class D1ExternalIsolationAttestation:
             raise ValueError("D1 isolation attestation does not satisfy the requested boundary")
         if type(self.mechanism) is not str or not self.mechanism.strip():
             raise ValueError("D1 isolation attestation mechanism must be nonempty")
+        if self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED:
+            if type(self.execution_evidence) is not D1IsolationExecutionEvidence:
+                raise TypeError("D1 enforced isolation requires process execution evidence")
+        elif self.execution_evidence is not None:
+            raise ValueError("D1 test isolation cannot carry external execution evidence")
 
     @classmethod
     def enforced(
@@ -114,6 +172,7 @@ class D1ExternalIsolationAttestation:
         *,
         request: D1IsolationRequest,
         mechanism: str,
+        execution_evidence: D1IsolationExecutionEvidence,
     ) -> D1ExternalIsolationAttestation:
         if type(request) is not D1IsolationRequest:
             raise TypeError("D1 external isolation requires D1IsolationRequest")
@@ -124,6 +183,7 @@ class D1ExternalIsolationAttestation:
             True,
             True,
             mechanism,
+            execution_evidence,
         )
 
     @classmethod
@@ -135,7 +195,19 @@ class D1ExternalIsolationAttestation:
             True,
             True,
             "in-process-contract-fake",
+            None,
         )
+
+    @property
+    def filing_eligible(self) -> bool:
+        return (
+            self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED
+            and type(self.execution_evidence) is D1IsolationExecutionEvidence
+        )
+
+    @property
+    def execution_evidence_digest(self) -> str | None:
+        return None if self.execution_evidence is None else self.execution_evidence.evidence_digest
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -146,6 +218,9 @@ class D1ExternalIsolationAttestation:
             "mechanism": self.mechanism,
             "network_disabled": self.network_disabled,
             "request_digest": self.request_digest,
+            "execution_evidence": (
+                None if self.execution_evidence is None else self.execution_evidence.manifest
+            ),
         }
 
 
@@ -303,7 +378,7 @@ def issue_d1_analysis_receipt(
         "alias_commitment": aliases.sealed_commitment,
         "analysis_digest": analysis.analysis_digest,
         "bindings": expected,
-        "filing_eligible": isolation.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED,
+        "filing_eligible": isolation.filing_eligible,
         "implementation": implementation.manifest,
         "inputs": _inputs(admitted),
         "isolation": isolation.manifest,
