@@ -24,6 +24,9 @@ class PredictiveObjectiveTerms:
             if type(term) is not torch.Tensor or term.ndim != 0 or not term.is_floating_point():
                 msg = f"{name} objective term must be a floating scalar tensor"
                 raise ValueError(msg)
+            if not bool(torch.isfinite(term).item()):
+                msg = f"{name} objective term must be finite"
+                raise ValueError(msg)
             if term.device != self.language.device:
                 msg = "all predictive objective terms must share one device"
                 raise ValueError(msg)
