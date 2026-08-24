@@ -60,6 +60,7 @@ def test_event_kind_vocabulary_is_exact() -> None:
         "eval",
         "checkpoint",
         "run_resume",
+        "trainer_aborted",
         "run_end",
         "run_abort",
     )

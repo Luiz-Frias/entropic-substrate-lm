@@ -21,8 +21,16 @@ from entropic_substrate.evidence.d1_journal_values import (
 )
 
 _TERMINAL = frozenset({JournalEventKind.RUN_END, JournalEventKind.RUN_ABORT})
+_FINALIZABLE_TAIL = frozenset({JournalEventKind.CHECKPOINT, JournalEventKind.TRAINER_ABORTED})
 _RECOVERABLE_TAIL = frozenset(
     {JournalEventKind.RUN_RESUME, JournalEventKind.TRAIN, JournalEventKind.EVAL}
+)
+_STATE_FIELDS = (
+    "logical_run_id",
+    "execution_digest",
+    "last_event_sequence",
+    "prefix_sha256",
+    "successful_step",
 )
 
 
@@ -147,6 +155,15 @@ def _advance(
         raise _error("decreasing_step", "successful_step", "successful_step must be nondecreasing")
     if kind is JournalEventKind.RUN_START:
         raise _error("duplicate_start", "event_kind", "run_start must appear exactly once")
+    if (
+        prior.event_kind is JournalEventKind.TRAINER_ABORTED
+        and kind is not JournalEventKind.RUN_END
+    ):
+        raise _error(
+            "post_trainer_abort",
+            "event_kind",
+            "only run_end may follow trainer_aborted",
+        )
     if kind is JournalEventKind.RUN_RESUME:
         if not allow_resume:
             raise _error(
@@ -188,8 +205,15 @@ def _advance(
                 "successful_step",
                 "checkpoint and evaluation require the same successful_step",
             )
+    elif kind is JournalEventKind.TRAINER_ABORTED:
+        if event.successful_step != prior.successful_step:
+            raise _error(
+                "trainer_abort_step",
+                "successful_step",
+                "trainer_aborted records the last successful step",
+            )
     elif kind is JournalEventKind.RUN_END:
-        if prior.event_kind not in {JournalEventKind.EVAL, JournalEventKind.CHECKPOINT}:
+        if prior.event_kind not in _FINALIZABLE_TAIL | {JournalEventKind.EVAL}:
             raise _error("terminal_order", "event_kind", "run_end requires terminal evaluation")
         if event.successful_step != prior.successful_step:
             raise _error("terminal_step", "successful_step", "run_end cannot advance training")
@@ -305,12 +329,15 @@ class AuthoritativeRunJournal:
         history: _History,
         hasher: _PrefixHasher,
         tail_quarantine: JournalTailQuarantineReceipt | None = None,
+        *,
+        finalization_only: bool = False,
     ) -> None:
         self._path = path
         self._handle = handle
         self._history = history
         self._hasher = hasher
         self._tail_quarantine = tail_quarantine
+        self._finalization_only = finalization_only
         self._closed = False
 
     @classmethod
@@ -334,6 +361,53 @@ class AuthoritativeRunJournal:
         journal = cls(target, handle, history, hasher)
         journal._persist(start, history)
         return journal
+
+    @classmethod
+    def open_for_finalization(
+        cls,
+        path: str | Path,
+        expected_current_state: JournalCheckpointState,
+    ) -> AuthoritativeRunJournal:
+        """Open an exact full journal prefix for its sole terminal ``run_end``."""
+        if type(expected_current_state) is not JournalCheckpointState:
+            raise TypeError("expected_current_state must be a JournalCheckpointState")
+        target = Path(path)
+        handle: BinaryIO | None = None
+        try:
+            handle = target.open("r+b")
+            history, hasher = _replay(handle.read())
+            actual = _checkpoint_state(history, hasher.hexdigest())
+            for field in _STATE_FIELDS:
+                if getattr(expected_current_state, field) != getattr(actual, field):
+                    raise _error(
+                        "finalization_state_mismatch",
+                        field,
+                        f"current journal {field} differs from expected_current_state",
+                    )
+            if history.terminal:
+                raise _error(
+                    "terminal_finalization",
+                    "event_kind",
+                    "terminal journal cannot be finalized again",
+                )
+            if history.last.event_kind not in _FINALIZABLE_TAIL:
+                raise _error(
+                    "nonfinalizable_tail",
+                    "event_kind",
+                    "finalizable journal must end in checkpoint or trainer_aborted",
+                )
+            handle.seek(0, os.SEEK_END)
+            return cls(
+                target,
+                handle,
+                history,
+                hasher,
+                finalization_only=True,
+            )
+        except BaseException:
+            if handle is not None:
+                handle.close()
+            raise
 
     @classmethod
     def resume(
@@ -472,6 +546,12 @@ class AuthoritativeRunJournal:
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         if self._closed:
             raise _error("closed_journal", "path", "journal is closed")
+        if self._finalization_only and event.event_kind is not JournalEventKind.RUN_END:
+            raise _error(
+                "finalization_only",
+                "event_kind",
+                "finalization journal accepts only run_end",
+            )
         if event.event_kind is JournalEventKind.CHECKPOINT:
             raise _error(
                 "checkpoint_factory_only",
@@ -486,6 +566,12 @@ class AuthoritativeRunJournal:
         """Bind an evaluated prefix to an already-written checkpoint artifact."""
         if self._closed:
             raise _error("closed_journal", "path", "journal is closed")
+        if self._finalization_only:
+            raise _error(
+                "finalization_only",
+                "event_kind",
+                "finalization journal accepts only run_end",
+            )
         digest = _require_sha256(checkpoint_sha256, path="checkpoint_sha256")
         identity = self._history.identity
         event = D1JournalEvent(
