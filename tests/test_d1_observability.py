@@ -257,6 +257,7 @@ def test_checkpoint_and_resume_observe_the_exact_journal_created_tail(tmp_path: 
     receipt = resumed.tail_quarantine
     assert type(receipt) is JournalTailQuarantineReceipt
     assert receipt.quarantine_path == quarantine_path
+    assert resume_event.payload["tail_quarantine"] == receipt.manifest
     resumed.close()
 
 

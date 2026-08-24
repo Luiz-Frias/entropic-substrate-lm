@@ -253,6 +253,10 @@ def test_resume_matches_checkpoint_prefix_then_appends_resume_automatically(
     assert events[-1].event_seq == checkpoint.last_event_sequence + 2
     assert events[-1].successful_step == checkpoint.successful_step
     assert events[-1].payload["checkpoint_sha256"] == "a" * 64
+    assert events[-1].payload["tail_quarantine"] == {
+        "kind": "no_tail",
+        "schema_version": "d1-tail-quarantine/v1",
+    }
     assert (
         events[-1].payload["run_start_provenance"] == _segment_provenance()["run_start_provenance"]
     )
@@ -365,9 +369,11 @@ def test_resume_rejects_wrong_hash_post_event_state_and_intervening_event(
     assert type(receipt) is JournalTailQuarantineReceipt
     assert quarantine.read_bytes() == before
     assert receipt.quarantined_journal_sha256 == hashlib.sha256(before).hexdigest()
+    assert receipt.quarantined_journal_byte_count == len(before)
     assert receipt.tail_event_count == 1
     assert receipt.first_tail_event_sequence == 4
     assert receipt.last_tail_event_sequence == 4
+    assert read_journal(intervening)[-1].payload["tail_quarantine"] == receipt.manifest
     assert [event.event_kind for event in read_journal(intervening)[-2:]] == [
         JournalEventKind.CHECKPOINT,
         JournalEventKind.RUN_RESUME,

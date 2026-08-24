@@ -32,6 +32,8 @@ _STATE_FIELDS = (
     "prefix_sha256",
     "successful_step",
 )
+_TAIL_QUARANTINE_SCHEMA = "d1-tail-quarantine/v1"
+_QUARANTINE_ARTIFACT_ROLE = "pre_resume_authoritative_journal"
 
 
 def _error(code: str, path: str, detail: str) -> D1JournalError:
@@ -48,6 +50,150 @@ def _require_sha256(value: object, *, path: str) -> str:
     return value
 
 
+def _exact_mapping(
+    value: object,
+    *,
+    fields: frozenset[str],
+    path: str,
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise _error("invalid_type", path, "must be a JSON object")
+    actual = set(value)
+    missing = sorted(fields - actual)
+    unknown = sorted(actual - fields)
+    if missing:
+        raise _error("missing_field", path, f"missing required field(s): {', '.join(missing)}")
+    if unknown:
+        raise _error("unknown_field", path, f"unknown field(s): {', '.join(unknown)}")
+    return cast(Mapping[str, object], value)
+
+
+def _nonnegative_int(value: object, *, path: str) -> int:
+    if type(value) is not int or value < 0:
+        raise _error("invalid_integer", path, "must be a nonnegative integer")
+    return value
+
+
+def _positive_int(value: object, *, path: str) -> int:
+    result = _nonnegative_int(value, path=path)
+    if result == 0:
+        raise _error("invalid_integer", path, "must be a positive integer")
+    return result
+
+
+def _artifact_file_name(value: object) -> str:
+    if (
+        type(value) is not str
+        or not value
+        or value.strip() != value
+        or value in {".", ".."}
+        or Path(value).name != value
+        or "/" in value
+        or "\\" in value
+    ):
+        raise _error(
+            "artifact_identity",
+            "tail_quarantine.artifact.file_name",
+            "must be one safe sibling artifact file name",
+        )
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class _TailQuarantineEvidence:
+    artifact_file_name: str
+    artifact_sha256: str
+    artifact_byte_count: int
+    retained_prefix_sha256: str
+    retained_prefix_byte_count: int
+    tail_event_count: int
+    first_tail_event_sequence: int
+    last_tail_event_sequence: int
+
+
+def _tail_quarantine_evidence(value: object) -> _TailQuarantineEvidence | None:
+    root = _exact_mapping(
+        value,
+        fields=frozenset({"schema_version", "kind"})
+        if isinstance(value, Mapping) and value.get("kind") == "no_tail"
+        else frozenset({"schema_version", "kind", "artifact", "retained_prefix", "tail"}),
+        path="tail_quarantine",
+    )
+    if root["schema_version"] != _TAIL_QUARANTINE_SCHEMA:
+        raise _error(
+            "unsupported_schema",
+            "tail_quarantine.schema_version",
+            "unsupported tail-quarantine schema",
+        )
+    if root["kind"] == "no_tail":
+        return None
+    if root["kind"] != "quarantined_tail":
+        raise _error("invalid_enum", "tail_quarantine.kind", "unsupported quarantine kind")
+    artifact = _exact_mapping(
+        root["artifact"],
+        fields=frozenset({"role", "file_name", "sha256", "byte_count"}),
+        path="tail_quarantine.artifact",
+    )
+    if artifact["role"] != _QUARANTINE_ARTIFACT_ROLE:
+        raise _error(
+            "artifact_identity",
+            "tail_quarantine.artifact.role",
+            "unsupported quarantine artifact role",
+        )
+    retained = _exact_mapping(
+        root["retained_prefix"],
+        fields=frozenset({"sha256", "byte_count"}),
+        path="tail_quarantine.retained_prefix",
+    )
+    tail = _exact_mapping(
+        root["tail"],
+        fields=frozenset({"event_count", "first_event_sequence", "last_event_sequence"}),
+        path="tail_quarantine.tail",
+    )
+    evidence = _TailQuarantineEvidence(
+        artifact_file_name=_artifact_file_name(artifact["file_name"]),
+        artifact_sha256=_require_sha256(artifact["sha256"], path="tail_quarantine.artifact.sha256"),
+        artifact_byte_count=_positive_int(
+            artifact["byte_count"], path="tail_quarantine.artifact.byte_count"
+        ),
+        retained_prefix_sha256=_require_sha256(
+            retained["sha256"], path="tail_quarantine.retained_prefix.sha256"
+        ),
+        retained_prefix_byte_count=_positive_int(
+            retained["byte_count"], path="tail_quarantine.retained_prefix.byte_count"
+        ),
+        tail_event_count=_positive_int(
+            tail["event_count"], path="tail_quarantine.tail.event_count"
+        ),
+        first_tail_event_sequence=_nonnegative_int(
+            tail["first_event_sequence"],
+            path="tail_quarantine.tail.first_event_sequence",
+        ),
+        last_tail_event_sequence=_nonnegative_int(
+            tail["last_event_sequence"],
+            path="tail_quarantine.tail.last_event_sequence",
+        ),
+    )
+    if evidence.artifact_byte_count <= evidence.retained_prefix_byte_count:
+        raise _error(
+            "quarantine_size",
+            "tail_quarantine.artifact.byte_count",
+            "quarantined journal must contain bytes beyond the retained prefix",
+        )
+    expected_count = evidence.last_tail_event_sequence - evidence.first_tail_event_sequence + 1
+    if evidence.tail_event_count != expected_count:
+        raise _error(
+            "tail_range",
+            "tail_quarantine.tail",
+            "tail event count and sequence range differ",
+        )
+    return evidence
+
+
+def _no_tail_evidence() -> dict[str, str]:
+    return {"kind": "no_tail", "schema_version": _TAIL_QUARANTINE_SCHEMA}
+
+
 def _checkpoint_payload(event: D1JournalEvent) -> str:
     if set(event.payload) != {"checkpoint_sha256"}:
         raise _error(
@@ -59,7 +205,12 @@ def _checkpoint_payload(event: D1JournalEvent) -> str:
 
 
 def _resume_checkpoint_payload(event: D1JournalEvent) -> str:
-    expected = {"checkpoint_sha256", "run_start_provenance", "trainer_wall_origin"}
+    expected = {
+        "checkpoint_sha256",
+        "run_start_provenance",
+        "tail_quarantine",
+        "trainer_wall_origin",
+    }
     if set(event.payload) != expected:
         raise _error(
             "resume_payload",
@@ -70,6 +221,7 @@ def _resume_checkpoint_payload(event: D1JournalEvent) -> str:
         value = event.payload[field]
         if not isinstance(value, Mapping) or not value:
             raise _error("resume_payload", field, "must be a nonempty JSON object")
+    _tail_quarantine_evidence(event.payload["tail_quarantine"])
     return _require_sha256(event.payload["checkpoint_sha256"], path="checkpoint_sha256")
 
 
@@ -79,7 +231,9 @@ class JournalTailQuarantineReceipt:
 
     quarantine_path: Path
     quarantined_journal_sha256: str
+    quarantined_journal_byte_count: int
     recovered_prefix_sha256: str
+    recovered_prefix_byte_count: int
     tail_event_count: int
     first_tail_event_sequence: int
     last_tail_event_sequence: int
@@ -88,11 +242,19 @@ class JournalTailQuarantineReceipt:
     def __post_init__(self) -> None:
         if not isinstance(cast(object, self.quarantine_path), Path):
             raise TypeError("journal quarantine_path must be a Path")
+        _artifact_file_name(self.quarantine_path.name)
         _require_sha256(
             self.quarantined_journal_sha256,
             path="quarantined_journal_sha256",
         )
         _require_sha256(self.recovered_prefix_sha256, path="recovered_prefix_sha256")
+        if (
+            type(self.quarantined_journal_byte_count) is not int
+            or type(self.recovered_prefix_byte_count) is not int
+            or self.recovered_prefix_byte_count < 1
+            or self.quarantined_journal_byte_count <= self.recovered_prefix_byte_count
+        ):
+            raise ValueError("journal quarantine byte counts are invalid")
         if type(self.tail_event_count) is not int or self.tail_event_count < 1:
             raise ValueError("journal quarantine must contain at least one tail event")
         if (
@@ -109,6 +271,32 @@ class JournalTailQuarantineReceipt:
             or self.tail_events[-1].event_seq != self.last_tail_event_sequence
         ):
             raise ValueError("journal quarantine tail events differ from its receipt")
+        if self.tail_event_count != (
+            self.last_tail_event_sequence - self.first_tail_event_sequence + 1
+        ):
+            raise ValueError("journal quarantine tail sequence range is not consecutive")
+
+    @property
+    def manifest(self) -> dict[str, FrozenJson]:
+        return {
+            "artifact": {
+                "byte_count": self.quarantined_journal_byte_count,
+                "file_name": self.quarantine_path.name,
+                "role": _QUARANTINE_ARTIFACT_ROLE,
+                "sha256": self.quarantined_journal_sha256,
+            },
+            "kind": "quarantined_tail",
+            "retained_prefix": {
+                "byte_count": self.recovered_prefix_byte_count,
+                "sha256": self.recovered_prefix_sha256,
+            },
+            "schema_version": _TAIL_QUARANTINE_SCHEMA,
+            "tail": {
+                "event_count": self.tail_event_count,
+                "first_event_sequence": self.first_tail_event_sequence,
+                "last_event_sequence": self.last_tail_event_sequence,
+            },
+        }
 
 
 class _PrefixHasher(Protocol):
@@ -227,15 +415,115 @@ def _advance(
     )
 
 
-def _replay(data: bytes) -> tuple[_History, _PrefixHasher]:
+def _validate_quarantine_artifact(
+    evidence: _TailQuarantineEvidence,
+    *,
+    retained_prefix: bytes,
+    retained_history: _History,
+    journal_path: Path,
+) -> None:
+    if len(retained_prefix) != evidence.retained_prefix_byte_count:
+        raise _error(
+            "retained_prefix_size",
+            "tail_quarantine.retained_prefix.byte_count",
+            "retained prefix byte count differs from the authoritative journal",
+        )
+    if hashlib.sha256(retained_prefix).hexdigest() != evidence.retained_prefix_sha256:
+        raise _error(
+            "retained_prefix_hash",
+            "tail_quarantine.retained_prefix.sha256",
+            "retained prefix sha256 differs from the authoritative journal",
+        )
+    artifact_path = journal_path.parent / evidence.artifact_file_name
+    if artifact_path == journal_path or artifact_path.is_symlink() or not artifact_path.is_file():
+        raise _error(
+            "quarantine_artifact_missing",
+            "tail_quarantine.artifact.file_name",
+            "quarantine artifact must be a distinct regular sibling file",
+        )
+    try:
+        artifact = artifact_path.read_bytes()
+    except OSError as exc:
+        raise _error(
+            "quarantine_artifact_io",
+            "tail_quarantine.artifact.file_name",
+            f"cannot read quarantine artifact: {exc}",
+        ) from exc
+    if len(artifact) != evidence.artifact_byte_count:
+        raise _error(
+            "quarantine_artifact_size",
+            "tail_quarantine.artifact.byte_count",
+            "quarantine artifact byte count differs",
+        )
+    if hashlib.sha256(artifact).hexdigest() != evidence.artifact_sha256:
+        raise _error(
+            "quarantine_artifact_hash",
+            "tail_quarantine.artifact.sha256",
+            "quarantine artifact sha256 differs",
+        )
+    if not artifact.startswith(retained_prefix):
+        raise _error(
+            "quarantine_prefix",
+            "tail_quarantine.retained_prefix",
+            "quarantine artifact does not begin with the retained prefix",
+        )
+    tail_bytes = artifact[len(retained_prefix) :]
+    if not tail_bytes.endswith(b"\n"):
+        raise _error(
+            "quarantine_tail",
+            "tail_quarantine.tail",
+            "quarantined tail must end in a complete event line",
+        )
+    tail_events = tuple(parse_event_line(line) for line in tail_bytes.splitlines(keepends=True))
+    if len(tail_events) != evidence.tail_event_count:
+        raise _error(
+            "tail_event_count",
+            "tail_quarantine.tail.event_count",
+            "quarantined artifact tail event count differs",
+        )
+    expected_sequences = tuple(
+        range(evidence.first_tail_event_sequence, evidence.last_tail_event_sequence + 1)
+    )
+    if tuple(event.event_seq for event in tail_events) != expected_sequences:
+        raise _error(
+            "tail_event_range",
+            "tail_quarantine.tail",
+            "quarantined artifact tail sequence range differs",
+        )
+    replayed = retained_history
+    for event in tail_events:
+        if event.event_kind not in _RECOVERABLE_TAIL:
+            raise _error(
+                "unsafe_tail",
+                "tail_quarantine.tail",
+                "quarantined artifact contains a nonrecoverable event",
+            )
+        replayed = _advance(replayed, event, allow_resume=True)
+
+
+def _replay(data: bytes, *, journal_path: Path) -> tuple[_History, _PrefixHasher]:
     if not data:
         raise _error("empty_journal", "path", "journal must contain exactly one run_start")
     if not data.endswith(b"\n"):
         raise _error("partial_line", "path", "journal has a partial final line")
     history: _History | None = None
+    prefix_bytes = 0
     for line in data.splitlines(keepends=True):
         event = parse_event_line(line)
+        retained_history = history
         history = _begin(event) if history is None else _advance(history, event, allow_resume=True)
+        if event.event_kind is JournalEventKind.RUN_RESUME:
+            if retained_history is None:  # pragma: no cover - run_resume cannot begin a journal
+                raise _error("missing_start", "event_kind", "run_resume cannot begin a journal")
+            evidence = _tail_quarantine_evidence(event.payload["tail_quarantine"])
+            if evidence is not None:
+                _validate_quarantine_artifact(
+                    evidence,
+                    retained_prefix=data[:prefix_bytes],
+                    retained_history=retained_history,
+                    journal_path=journal_path,
+                )
+        prefix_bytes += len(line)
     if history is None:  # pragma: no cover - guarded by nonempty data
         raise _error("empty_journal", "path", "journal must contain a run_start")
     hasher: _PrefixHasher = hashlib.sha256()
@@ -259,7 +547,7 @@ def read_journal(path: str | Path) -> tuple[D1JournalEvent, ...]:
         data = Path(path).read_bytes()
     except OSError as exc:
         raise _error("journal_io", "path", f"cannot read journal: {exc}") from exc
-    history, _ = _replay(data)
+    history, _ = _replay(data, journal_path=Path(path))
     return history.events
 
 
@@ -274,13 +562,27 @@ def _fsync_parent(path: Path) -> None:
 
 def _quarantine_tail(
     *,
-    handle: BinaryIO,
     original: bytes,
     recovered_prefix: bytes,
     tail: tuple[D1JournalEvent, ...],
     quarantine_path: Path,
+    journal_path: Path,
 ) -> JournalTailQuarantineReceipt:
     parent = quarantine_path.parent
+    _artifact_file_name(quarantine_path.name)
+    try:
+        if parent.resolve(strict=True) != journal_path.parent.resolve(strict=True):
+            raise _error(
+                "quarantine_artifact_location",
+                "quarantine_path",
+                "quarantine artifact must be a sibling of its authoritative journal",
+            )
+    except OSError as exc:
+        raise _error(
+            "tail_quarantine_path",
+            "quarantine_path",
+            f"cannot resolve quarantine artifact parent: {exc}",
+        ) from exc
     if not parent.is_dir() or parent.is_symlink() or quarantine_path.exists():
         raise _error(
             "tail_quarantine_path",
@@ -297,10 +599,6 @@ def _quarantine_tail(
             os.fsync(quarantine.fileno())
         _fsync_parent(parent)
         durable = True
-        handle.seek(len(recovered_prefix))
-        handle.truncate()
-        handle.flush()
-        os.fsync(handle.fileno())
     except OSError as exc:
         if not durable:
             quarantine_path.unlink(missing_ok=True)
@@ -311,7 +609,9 @@ def _quarantine_tail(
     return JournalTailQuarantineReceipt(
         quarantine_path=quarantine_path,
         quarantined_journal_sha256=hashlib.sha256(original).hexdigest(),
+        quarantined_journal_byte_count=len(original),
         recovered_prefix_sha256=hashlib.sha256(recovered_prefix).hexdigest(),
+        recovered_prefix_byte_count=len(recovered_prefix),
         tail_event_count=len(tail),
         first_tail_event_sequence=tail[0].event_seq,
         last_tail_event_sequence=tail[-1].event_seq,
@@ -375,7 +675,7 @@ class AuthoritativeRunJournal:
         handle: BinaryIO | None = None
         try:
             handle = target.open("r+b")
-            history, hasher = _replay(handle.read())
+            history, hasher = _replay(handle.read(), journal_path=target)
             actual = _checkpoint_state(history, hasher.hexdigest())
             for field in _STATE_FIELDS:
                 if getattr(expected_current_state, field) != getattr(actual, field):
@@ -433,7 +733,7 @@ class AuthoritativeRunJournal:
         try:
             handle = target.open("r+b")
             data = handle.read()
-            history, hasher = _replay(data)
+            history, hasher = _replay(data, journal_path=target)
             if history.terminal:
                 raise _error("terminal_resume", "event_kind", "terminal journal cannot resume")
             lines = data.splitlines(keepends=True)
@@ -450,7 +750,9 @@ class AuthoritativeRunJournal:
                     "journal must contain exactly one matching checkpoint event",
                 )
             checkpoint_index = matching[0]
-            pre_history, pre_hasher = _replay(b"".join(lines[:checkpoint_index]))
+            pre_history, pre_hasher = _replay(
+                b"".join(lines[:checkpoint_index]), journal_path=target
+            )
             if pre_history.last.event_kind is not JournalEventKind.EVAL:
                 raise _error(
                     "checkpoint_prestate",
@@ -503,13 +805,21 @@ class AuthoritativeRunJournal:
                         "post-checkpoint journal tail requires an explicit quarantine path",
                     )
                 quarantine = _quarantine_tail(
-                    handle=handle,
                     original=data,
                     recovered_prefix=recovered_prefix,
                     tail=tail,
                     quarantine_path=quarantine_path,
+                    journal_path=target,
                 )
-                history, hasher = _replay(recovered_prefix)
+                history, hasher = _replay(recovered_prefix, journal_path=target)
+            quarantine_evidence: FrozenJson = (
+                quarantine.manifest if quarantine is not None else _no_tail_evidence()
+            )
+            resume_payload: dict[str, FrozenJson] = {
+                "checkpoint_sha256": actual_checkpoint_sha256,
+                "tail_quarantine": quarantine_evidence,
+                **segment_provenance,
+            }
             resume = D1JournalEvent(
                 event_kind=JournalEventKind.RUN_RESUME,
                 event_seq=checkpoint_event.event_seq + 1,
@@ -520,15 +830,15 @@ class AuthoritativeRunJournal:
                 family_digest=history.identity.family_digest,
                 run_class=history.identity.run_class,
                 successful_step=checkpoint_event.successful_step,
-                payload={
-                    "checkpoint_sha256": actual_checkpoint_sha256,
-                    **segment_provenance,
-                },
+                payload=resume_payload,
             )
             advanced = _advance(history, resume, allow_resume=True)
-            handle.seek(0, os.SEEK_END)
+            if quarantine is None:
+                handle.seek(0, os.SEEK_END)
+            else:
+                handle.seek(len(recovered_prefix))
             journal = cls(target, handle, history, hasher, quarantine)
-            journal._persist(resume, advanced)
+            journal._persist(resume, advanced, replace_tail=quarantine is not None)
             return journal
         except BaseException:
             if handle is not None:
@@ -590,12 +900,20 @@ class AuthoritativeRunJournal:
         self._persist(event, advanced)
         return self.state
 
-    def _persist(self, event: D1JournalEvent, advanced: _History) -> None:
+    def _persist(
+        self,
+        event: D1JournalEvent,
+        advanced: _History,
+        *,
+        replace_tail: bool = False,
+    ) -> None:
         line = canonical_event_line(event)
         try:
             written = self._handle.write(line)
             if written != len(line):
                 raise OSError(f"short journal write: {written}/{len(line)} bytes")
+            if replace_tail:
+                self._handle.truncate()
             self._handle.flush()
             os.fsync(self._handle.fileno())
         except OSError as exc:
