@@ -16,6 +16,7 @@ from entropic_substrate.evidence.d1_types import (
     D1Successor,
     JsonValue,
 )
+from entropic_substrate.evidence.lifecycle import ContentHash
 
 
 def parse_review(value: object) -> D1Review:
@@ -85,6 +86,73 @@ def parse_review(value: object) -> D1Review:
     )
 
 
+def _validate_registered_contrast(contract: D1DecisionContract, contrast: D1Contrast) -> None:
+    rule = contract.contrast_rules[contrast.contrast_id]
+    if contrast.contrast_kind != rule.contrast_kind or contrast.terms != rule.terms:
+        raise error(
+            "registered_contrast_terms_mismatch",
+            f"contrasts.{contrast.contrast_id}.terms",
+            "contrast kind, term order, coefficients, and signs must match registration",
+        )
+    if (
+        contrast.endpoint.metric != rule.endpoint.metric
+        or contrast.endpoint.estimator != rule.endpoint.estimator
+    ):
+        raise error(
+            "registered_endpoint_mismatch",
+            f"contrasts.{contrast.contrast_id}.endpoint",
+            "endpoint metric and estimator must match registration",
+        )
+    if contrast.endpoint.smoothing_window != rule.endpoint.smoothing_window:
+        raise error(
+            "registered_smoothing_mismatch",
+            f"contrasts.{contrast.contrast_id}.endpoint.smoothing_window",
+            "smoothing window must match registration",
+        )
+    if rule.n_rule == "EXACT" and contrast.n != rule.registered_n:
+        raise error(
+            "registered_sample_size_mismatch",
+            f"contrasts.{contrast.contrast_id}.n",
+            "sample size must match the exact registered sample size",
+        )
+    if rule.df_rule == "N_MINUS_ONE" and contrast.df != contrast.n - 1:
+        raise error(
+            "registered_df_mismatch",
+            f"contrasts.{contrast.contrast_id}.df",
+            "degrees of freedom must equal n - 1",
+        )
+    if rule.df_rule == "NOT_APPLICABLE" and contrast.df is not None:
+        raise error(
+            "registered_df_mismatch",
+            f"contrasts.{contrast.contrast_id}.df",
+            "degrees of freedom must be null under the registered rule",
+        )
+    if contrast.confidence_level != rule.confidence_level:
+        raise error(
+            "registered_confidence_mismatch",
+            f"contrasts.{contrast.contrast_id}.confidence_level",
+            "confidence level must match registration",
+        )
+    if contrast.multiplicity != rule.multiplicity:
+        raise error(
+            "registered_multiplicity_mismatch",
+            f"contrasts.{contrast.contrast_id}.multiplicity",
+            "multiplicity method must match registration",
+        )
+    if contrast.margins != rule.margins:
+        raise error(
+            "registered_margins_mismatch",
+            f"contrasts.{contrast.contrast_id}.margins",
+            "all practical margins must match registration",
+        )
+    if contrast.decision_vocabulary != rule.decision_vocabulary:
+        raise error(
+            "registered_contrast_vocabulary_mismatch",
+            f"contrasts.{contrast.contrast_id}.decision_vocabulary",
+            "contrast decision vocabulary must match registration",
+        )
+
+
 def validate_decision_contract(
     *,
     contract: D1DecisionContract,
@@ -93,7 +161,10 @@ def validate_decision_contract(
     contrasts: tuple[D1Contrast, ...],
     clauses: Mapping[str, D1Clause],
     integrity: D1Integrity,
+    exclusions: tuple[tuple[str, str, ContentHash], ...],
     review: D1Review,
+    clause_precedence: tuple[str, ...],
+    verdict_vocabulary: str,
     verdict: str,
     successor: D1Successor,
 ) -> None:
@@ -111,10 +182,45 @@ def validate_decision_contract(
             "contrasts",
             "must exactly match the registered contrast set",
         )
+    for contrast in contrasts:
+        _validate_registered_contrast(contract, contrast)
     if set(clauses) != set(contract.clause_ids):
         raise error(
             "clause_set_mismatch", "clauses", "must exactly match the registered clause set"
         )
+    for clause_id, clause in clauses.items():
+        registered = contract.clause_rules[clause_id]
+        if (
+            clause.registered_rule != registered.registered_rule
+            or clause.decision_vocabulary != registered.decision_vocabulary
+            or clause.threshold != registered.threshold
+            or clause.margin != registered.margin
+        ):
+            raise error(
+                "registered_clause_mismatch",
+                f"clauses.{clause_id}",
+                "clause rule, vocabulary, threshold, and margin must match registration",
+            )
+    if clause_precedence != contract.clause_precedence:
+        raise error(
+            "registered_clause_precedence_mismatch",
+            "clause_precedence",
+            "clause precedence must match registration exactly",
+        )
+    if verdict_vocabulary != contract.verdict_vocabulary:
+        raise error(
+            "registered_verdict_vocabulary_mismatch",
+            "verdict_vocabulary",
+            "verdict vocabulary must match registration exactly",
+        )
+    allowed_exclusions = {registered.reason_id for registered in contract.exclusion_rules}
+    for index, (_, reason, _) in enumerate(exclusions):
+        if reason not in allowed_exclusions:
+            raise error(
+                "unregistered_exclusion",
+                f"exclusions[{index}].reason",
+                "exclusion reason is not present in the registered exclusion policy",
+            )
     try:
         rule = contract.rule_for(verdict)
     except ValueError as exc:
@@ -145,9 +251,9 @@ def validate_decision_contract(
             "review.open_major_findings",
             "registered decision rule requires review clearance",
         )
-    if rule.require_eligible_strategies != bool(successor.eligible_strategies):
+    if successor.eligible_strategies != rule.eligible_strategies:
         raise error(
             "decision_strategy_mismatch",
             "successor.eligible_strategies",
-            "does not match the registered decision-table rule",
+            "strategy list does not match the registered successor mapping",
         )
