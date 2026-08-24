@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol
@@ -12,7 +11,6 @@ from typing import BinaryIO, Protocol
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
-    FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
     JournalIdentity,
@@ -25,6 +23,26 @@ _TERMINAL = frozenset({JournalEventKind.RUN_END, JournalEventKind.RUN_ABORT})
 
 def _error(code: str, path: str, detail: str) -> D1JournalError:
     return D1JournalError(code=code, path=path, detail=detail)
+
+
+def _require_sha256(value: object, *, path: str) -> str:
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise _error("invalid_sha256", path, "must be 64 lowercase hexadecimal characters")
+    return value
+
+
+def _checkpoint_payload(event: D1JournalEvent) -> str:
+    if set(event.payload) != {"checkpoint_sha256"}:
+        raise _error(
+            "checkpoint_payload",
+            "payload",
+            "checkpoint event requires exact checkpoint_sha256 payload",
+        )
+    return _require_sha256(event.payload["checkpoint_sha256"], path="checkpoint_sha256")
 
 
 class _PrefixHasher(Protocol):
@@ -76,6 +94,7 @@ def _advance(
             raise _error(
                 "resume_factory_only", "event_kind", "run_resume requires resume admission"
             )
+        _checkpoint_payload(event)
         if prior.event_kind is not JournalEventKind.CHECKPOINT:
             raise _error("resume_without_checkpoint", "event_kind", "resume requires a checkpoint")
         if event.successful_step != prior.successful_step:
@@ -102,6 +121,7 @@ def _advance(
                 "missing_baseline", "event_kind", "evaluation requires baseline calibration"
             )
     elif kind is JournalEventKind.CHECKPOINT:
+        _checkpoint_payload(event)
         if prior.event_kind is not JournalEventKind.EVAL:
             raise _error("checkpoint_order", "event_kind", "checkpoint requires a prior evaluation")
         if event.successful_step != prior.successful_step:
@@ -205,17 +225,34 @@ class AuthoritativeRunJournal:
         path: str | Path,
         checkpoint: JournalCheckpointState,
         *,
-        payload: Mapping[str, FrozenJson],
+        checkpoint_sha256: str,
     ) -> AuthoritativeRunJournal:
         if type(checkpoint) is not JournalCheckpointState:
             raise TypeError("checkpoint must be a JournalCheckpointState")
+        actual_checkpoint_sha256 = _require_sha256(checkpoint_sha256, path="checkpoint_sha256")
         target = Path(path)
         handle: BinaryIO | None = None
         try:
             handle = target.open("r+b")
             data = handle.read()
             history, hasher = _replay(data)
-            expected = _checkpoint_state(history, hasher.hexdigest())
+            if history.terminal:
+                raise _error("terminal_resume", "event_kind", "terminal journal cannot resume")
+            if history.last.event_kind is not JournalEventKind.CHECKPOINT:
+                raise _error(
+                    "resume_without_checkpoint",
+                    "event_kind",
+                    "latest event must be checkpoint",
+                )
+            lines = data.splitlines(keepends=True)
+            pre_history, pre_hasher = _replay(b"".join(lines[:-1]))
+            if pre_history.last.event_kind is not JournalEventKind.EVAL:
+                raise _error(
+                    "checkpoint_prestate",
+                    "event_kind",
+                    "checkpoint prestate must end in evaluation",
+                )
+            expected = _checkpoint_state(pre_history, pre_hasher.hexdigest())
             for field in (
                 "logical_run_id",
                 "execution_digest",
@@ -225,11 +262,11 @@ class AuthoritativeRunJournal:
             ):
                 if getattr(checkpoint, field) != getattr(expected, field):
                     raise _error("checkpoint_mismatch", field, f"checkpoint {field} differs")
-            if history.terminal:
-                raise _error("terminal_resume", "event_kind", "terminal journal cannot resume")
-            if history.last.event_kind is not JournalEventKind.CHECKPOINT:
+            if _checkpoint_payload(history.last) != actual_checkpoint_sha256:
                 raise _error(
-                    "resume_without_checkpoint", "event_kind", "resume requires checkpoint"
+                    "checkpoint_hash_mismatch",
+                    "checkpoint_sha256",
+                    "journal checkpoint_sha256 differs from the checkpoint file",
                 )
             resume = D1JournalEvent(
                 event_kind=JournalEventKind.RUN_RESUME,
@@ -241,7 +278,7 @@ class AuthoritativeRunJournal:
                 family_digest=history.identity.family_digest,
                 run_class=history.identity.run_class,
                 successful_step=history.last.successful_step,
-                payload=payload,
+                payload={"checkpoint_sha256": actual_checkpoint_sha256},
             )
             advanced = _advance(history, resume, allow_resume=True)
             handle.seek(0, os.SEEK_END)
@@ -260,6 +297,34 @@ class AuthoritativeRunJournal:
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         if self._closed:
             raise _error("closed_journal", "path", "journal is closed")
+        if event.event_kind is JournalEventKind.CHECKPOINT:
+            raise _error(
+                "checkpoint_factory_only",
+                "event_kind",
+                "use append_checkpoint after the checkpoint file is hashed",
+            )
+        advanced = _advance(self._history, event, allow_resume=False)
+        self._persist(event, advanced)
+        return self.state
+
+    def append_checkpoint(self, checkpoint_sha256: str) -> JournalCheckpointState:
+        """Bind an evaluated prefix to an already-written checkpoint artifact."""
+        if self._closed:
+            raise _error("closed_journal", "path", "journal is closed")
+        digest = _require_sha256(checkpoint_sha256, path="checkpoint_sha256")
+        identity = self._history.identity
+        event = D1JournalEvent(
+            event_kind=JournalEventKind.CHECKPOINT,
+            event_seq=self._history.last.event_seq + 1,
+            logical_run_id=identity.logical_run_id,
+            execution_digest=identity.execution_digest,
+            aggregation_digest=identity.aggregation_digest,
+            construction_digest=identity.construction_digest,
+            family_digest=identity.family_digest,
+            run_class=identity.run_class,
+            successful_step=self._history.last.successful_step,
+            payload={"checkpoint_sha256": digest},
+        )
         advanced = _advance(self._history, event, allow_resume=False)
         self._persist(event, advanced)
         return self.state
