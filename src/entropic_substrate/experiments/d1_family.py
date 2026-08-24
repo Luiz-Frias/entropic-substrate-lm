@@ -14,7 +14,6 @@ from entropic_substrate.experiments.d1_primitives import (
     CollapseStrategy,
     D1Arm,
     D1BoundaryStateSpec,
-    EncoderInitializationIdentity,
     GeometryConsumer,
     MatchedEncoderPairSpec,
     PredictiveMetric,
@@ -22,6 +21,7 @@ from entropic_substrate.experiments.d1_primitives import (
     StateConstructionSpec,
     TargetUpdateStrategy,
     canonical_digest,
+    default_d1_encoder_initialization_identity,
 )
 from entropic_substrate.experiments.d1_provenance import (
     DataIdentity,
@@ -40,8 +40,6 @@ from entropic_substrate.observation import CodecIdentity
 
 if TYPE_CHECKING:
     from entropic_substrate.experiments.d1_runs import D1RunSpec
-
-_DEFAULT_INIT_DIGEST: Final[str] = "0" * 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -373,10 +371,7 @@ def build_d1_experiment_family(
 
 def build_four_arm_drafts(*, codec: CodecIdentity, latent_width: int) -> dict[D1Arm, D1DraftSpec]:
     """Compatibility factory yielding a default complete D1 family as four drafts."""
-    initialization = EncoderInitializationIdentity(
-        name="d1-default-causal-init-v1",
-        construction_digest=_DEFAULT_INIT_DIGEST,
-    )
+    initialization = default_d1_encoder_initialization_identity()
     encoder = CausalEncoderSpec(
         latent_width=latent_width,
         n_layers=2,
