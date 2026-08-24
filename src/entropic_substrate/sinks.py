@@ -35,12 +35,18 @@ import json
 import os
 import subprocess  # nosec B404 -- git_sha() only, fixed argv, see its own nosec
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from entropic_substrate.config import Config
 from entropic_substrate.logging import logger
+from entropic_substrate.tracking_contracts import (
+    ExtractedMetrics,
+    LegacyMetricExtractor,
+    MetricExtractor,
+    TrackingRunDescriptor,
+)
 
 # How long a PRESENT-but-cold tracking server may take to answer its first write
 # before we give up. Deliberately generous: it is only reachable when something
@@ -80,11 +86,16 @@ __all__ = [
     "MLFLOW_TINY_ENV",
     "MLFLOW_TRACKING_ENV",
     "CompositeSink",
+    "ExtractedMetrics",
     "JsonlSink",
+    "LegacyMetricExtractor",
+    "MetricExtractor",
     "MetricSink",
     "MlflowSink",
     "MlflowStartupError",
+    "TrackingRunDescriptor",
     "build_sink",
+    "build_sink_for_run",
     "config_hash",
     "git_sha",
     "mlflow_enabled",
@@ -233,33 +244,6 @@ class JsonlSink:
         return None
 
 
-def _kappa_metrics(kappa: Sequence[Sequence[float]]) -> dict[str, float]:
-    """``kappa/L{i}/h{j}`` for every value, plus the derived spread/mean series.
-
-    Shape-agnostic: the E3 per-head readout is ``n_layers`` rows of
-    ``n_heads`` values at full scale (9x12 = 108), but this makes no
-    assumption about either dimension — it reports whatever shape the
-    eval record actually carries.
-    """
-    metrics: dict[str, float] = {}
-    all_values: list[float] = []
-    spreads: list[float] = []
-    for i, row in enumerate(kappa):
-        values = [float(v) for v in row]
-        for j, value in enumerate(values):
-            metrics[f"kappa/L{i}/h{j}"] = value
-        if values:
-            spread = max(values) - min(values)
-            spreads.append(spread)
-            metrics[f"kappa/L{i}/spread"] = spread
-        all_values.extend(values)
-    if spreads:
-        metrics["kappa/spread_max"] = max(spreads)
-    if all_values:
-        metrics["kappa/mean_abs"] = sum(abs(v) for v in all_values) / len(all_values)
-    return metrics
-
-
 @runtime_checkable
 class _SystemMetricsMonitorLike(Protocol):
     """Structural shape this module needs from mlflow's own
@@ -385,11 +369,13 @@ class MlflowSink:
         dataset_pointer_path: str | Path | None = None,
         dataset_split_spec: Mapping[str, Any] | None = None,
         client: Any | None = None,
+        metric_extractor: MetricExtractor | None = None,
         system_metrics_monitor_factory: Callable[[str, str], _SystemMetricsMonitorLike]
         | None = None,
     ) -> None:
         self._failed_writes = 0
         self._finished = False
+        self._metric_extractor = metric_extractor or LegacyMetricExtractor()
         # The authoritative results JSONL this run writes locally; finish()
         # uploads it as a derived, best-effort run artifact (operator ruling
         # 2026-08-17 — previously pod-side glue any launch script could
@@ -495,45 +481,13 @@ class MlflowSink:
 
         logger.info(f"mlflow: tracking run {run_name!r} at {tracking_uri} (run_id={self._run_id})")
 
-    def log(self, record: Mapping[str, Any]) -> None:
-        if record.get("event") != "eval":
-            # Scope: metrics land per eval, not per train step — every-20-step
-            # REST calls would be both noisy and unnecessary (JSONL already
-            # carries the dense train-step trace, authoritatively).
-            return
+    def log(self, record: object) -> None:
         try:
-            step = int(record.get("step", 0))
-            metrics: dict[str, float] = {}
-            for key in (
-                "loss",
-                "nats_per_byte",
-                "bits_per_byte",
-                "perplexity",
-                # E1.5b: absent from the record entirely on every arm except
-                # e1-5b-gram (train.py's EvalResult carries None there), so
-                # this `if key in record` guard is what keeps every other
-                # run's MLflow metrics untouched.
-                "gram_frob_sq",
-                "gram_penalty",
-                # E1.5c Repair 1: same "absent channel is absent" convention,
-                # present only when field_loss_lambda != 0.0.
-                "field_ce",
-                # P8 (FOR-925): calibration diagnostics for p_phi, present
-                # whenever a field encoder exists at all (decoupled from
-                # field_loss_lambda — see train.py's EvalResult docstring).
-                "field_nats_per_byte",
-                "field_brier",
-                "field_ece",
-                "field_entropy",
-                "field_top1",
-            ):
-                if key in record:
-                    metrics[key] = float(record[key])
-            kappa = record.get("kappa")
-            if kappa:
-                metrics.update(_kappa_metrics(kappa))
-            for key, value in metrics.items():
-                self._client.log_metric(self._run_id, key, value, step=step)
+            extracted = self._metric_extractor.extract(record)
+            if extracted is None:
+                return
+            for key, value in extracted.metrics.items():
+                self._client.log_metric(self._run_id, key, value, step=extracted.step)
         except Exception as exc:
             self._failed_writes += 1
             logger.warning(f"mlflow: metric write failed (#{self._failed_writes}): {exc}")
@@ -772,6 +726,44 @@ def mlflow_enabled(*, tiny: bool) -> bool:
     return True
 
 
+def build_sink_for_run(
+    descriptor: TrackingRunDescriptor,
+    *,
+    results_path: str | Path,
+    client: Any | None = None,
+    metric_extractor: MetricExtractor | None = None,
+) -> MetricSink:
+    """Compose one authoritative JSONL sink plus an optional tracking mirror.
+
+    Raises :class:`MlflowStartupError` when MLflow is enabled but the
+    tracking server is unreachable/misconfigured — callers must let this
+    abort BEFORE constructing a ``Trainer`` (see the CLI's ``cmd_train``),
+    so a bad ``MLFLOW_TRACKING_URI`` never burns GPU hours.
+    """
+    if type(descriptor) is not TrackingRunDescriptor:
+        raise TypeError("descriptor must be a TrackingRunDescriptor")
+    jsonl = JsonlSink(results_path)
+    if not mlflow_enabled(tiny=descriptor.tiny) and client is None:
+        return jsonl
+
+    tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV, "")
+    experiment_name = os.environ.get(MLFLOW_EXPERIMENT_ENV, _DEFAULT_EXPERIMENT)
+    mlflow_sink = MlflowSink(
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name,
+        run_name=descriptor.run_name,
+        params=descriptor.params,
+        tags=descriptor.tags,
+        results_path=Path(results_path),
+        config_hash=descriptor.config_hash,
+        dataset_pointer_path=descriptor.dataset_pointer_path,
+        dataset_split_spec=descriptor.dataset_split_spec,
+        client=client,
+        metric_extractor=metric_extractor,
+    )
+    return CompositeSink(jsonl, mlflow_sink)
+
+
 def build_sink(
     cfg: Config,
     *,
@@ -779,29 +771,12 @@ def build_sink(
     results_path: str | Path,
     client: Any | None = None,
 ) -> MetricSink:
-    """Build the sink ``Trainer`` writes through.
-
-    Raises :class:`MlflowStartupError` when MLflow is enabled but the
-    tracking server is unreachable/misconfigured — callers must let this
-    abort BEFORE constructing a ``Trainer`` (see the CLI's ``cmd_train``),
-    so a bad ``MLFLOW_TRACKING_URI`` never burns GPU hours.
-    """
-    jsonl = JsonlSink(results_path)
-    if not mlflow_enabled(tiny=tiny) and client is None:
-        return jsonl
-
-    tracking_uri = os.environ.get(MLFLOW_TRACKING_ENV, "")
-    experiment_name = os.environ.get(MLFLOW_EXPERIMENT_ENV, _DEFAULT_EXPERIMENT)
+    """Legacy ``Config`` adapter over :func:`build_sink_for_run`."""
     chash = config_hash(cfg)
-    # Dataset lineage: only enwik8 configs have a local DVC pointer to read
-    # (FineWeb-Edu is streamed, never local — see the module docstring's data
-    # flow section). Split spec carries the one field DataConfig uses to
-    # define the split: val_fraction.
     is_enwik8 = cfg.data.source == "enwik8"
-    mlflow_sink = MlflowSink(
-        tracking_uri=tracking_uri,
-        experiment_name=experiment_name,
+    descriptor = TrackingRunDescriptor(
         run_name=cfg.name,
+        tiny=tiny,
         params={
             EXP_TAG: cfg.name,
             "seed": cfg.train.seed,
@@ -809,7 +784,6 @@ def build_sink(
             "git_sha": git_sha(),
         },
         tags={EXP_TAG: cfg.name, CONFIG_HASH_TAG: chash},
-        results_path=Path(results_path),
         config_hash=chash,
         dataset_pointer_path=_ENWIK8_DVC_POINTER if is_enwik8 else None,
         dataset_split_spec=(
@@ -817,6 +791,5 @@ def build_sink(
             if is_enwik8
             else None
         ),
-        client=client,
     )
-    return CompositeSink(jsonl, mlflow_sink)
+    return build_sink_for_run(descriptor, results_path=results_path, client=client)
