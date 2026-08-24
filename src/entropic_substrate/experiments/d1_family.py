@@ -21,7 +21,6 @@ from entropic_substrate.experiments.d1_primitives import (
     GeometryConsumer,
     MatchedEncoderPairSpec,
     PredictiveMetric,
-    RunClass,
     StateConstructionSpec,
     TargetUpdateStrategy,
     canonical_digest,
@@ -167,16 +166,15 @@ class D1DraftSpec:
         data: DataIdentity | None = None,
     ) -> D1RunSpec:
         """Construct a validated smoke run; it cannot be confirmatory evidence."""
-        from entropic_substrate.experiments.d1_runs import D1RunSpec
+        from entropic_substrate.experiments.d1_runs import SmokeD1RunSpec
 
-        return D1RunSpec(
+        return SmokeD1RunSpec(
             draft=self,
             execution=execution,
             data=data,
             evidence=evidence,
             preregistration=None,
             family=None,
-            expected_run_class=RunClass.SMOKE,
         )
 
     def validate_pilot(
@@ -187,16 +185,15 @@ class D1DraftSpec:
         data: DataIdentity | None = None,
     ) -> D1RunSpec:
         """Construct a validated, explicitly excluded pilot run."""
-        from entropic_substrate.experiments.d1_runs import D1RunSpec
+        from entropic_substrate.experiments.d1_runs import PilotD1RunSpec
 
-        return D1RunSpec(
+        return PilotD1RunSpec(
             draft=self,
             execution=execution,
             data=data,
             evidence=evidence,
             preregistration=None,
             family=None,
-            expected_run_class=RunClass.PILOT,
         )
 
     def validate_confirmatory(
@@ -330,16 +327,15 @@ class D1ExperimentFamily:
         preregistration: PreregistrationIdentity,
     ) -> D1RunSpec:
         """Construct one confirmatory run bound to this preregistered family."""
-        from entropic_substrate.experiments.d1_runs import D1RunSpec
+        from entropic_substrate.experiments.d1_runs import ConfirmatoryD1RunSpec
 
-        return D1RunSpec(
+        return ConfirmatoryD1RunSpec(
             draft=self.draft_for(arm),
             execution=execution,
             data=data,
             evidence=evidence,
             preregistration=preregistration,
             family=self,
-            expected_run_class=RunClass.CONFIRMATORY,
         )
 
 
