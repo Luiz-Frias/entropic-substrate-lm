@@ -153,6 +153,8 @@ class D1FactorialEffect:
 
 @dataclass(frozen=True, slots=True)
 class D1FactorialAnalysis:
+    included_seeds: tuple[int, ...]
+    excluded_seeds: tuple[int, ...]
     endpoint: D1EndpointSummary
     registered_contrasts: Mapping[str, D1ContrastEstimate]
     factorial_effects: Mapping[str, D1FactorialEffect]
@@ -295,7 +297,7 @@ def _estimate(rule: D1RegisteredContrast, values: tuple[float, ...]) -> D1Contra
 
 def _admit_cells(
     design: D1RegisteredDesign, cells: tuple[D1AnalysisCell, ...]
-) -> Mapping[tuple[D1Arm, int], D1AnalysisCell]:
+) -> tuple[Mapping[tuple[D1Arm, int], D1AnalysisCell], tuple[int, ...], tuple[int, ...]]:
     if type(cells) is not tuple:
         raise TypeError("D1 analysis cells must be an immutable tuple")
     by_cell: dict[tuple[D1Arm, int], D1AnalysisCell] = {}
@@ -306,18 +308,35 @@ def _admit_cells(
         if key in by_cell:
             raise ValueError(f"D1 analysis contains duplicate cell {key}")
         by_cell[key] = cell
-    expected = {(arm, seed) for seed in design.registered_seeds for arm in _ALL_ARMS}
+    registered = set(design.registered_seeds)
+    observed_seeds = {seed for _, seed in by_cell}
+    unregistered_seeds = observed_seeds - registered
+    if unregistered_seeds:
+        raise ValueError(f"D1 analysis contains unregistered seeds: {sorted(unregistered_seeds)}")
+    included = tuple(seed for seed in design.registered_seeds if seed in observed_seeds)
+    if not included:
+        raise ValueError("D1 factorial analysis has no finite seed block")
+    expected = {(arm, seed) for seed in included for arm in _ALL_ARMS}
     missing = expected - set(by_cell)
     if missing:
         raise ValueError(f"D1 analysis is missing registered cells: {sorted(missing)}")
     extras = set(by_cell) - expected
     if extras:
         raise ValueError(f"D1 analysis contains unregistered cells: {sorted(extras)}")
-    for seed in design.registered_seeds:
+    for seed in included:
         pairing_ids = {by_cell[(arm, seed)].pairing_id for arm in _ALL_ARMS}
         if len(pairing_ids) != 1:
             raise ValueError(f"D1 seed {seed} arms do not share one pairing_id")
-    return MappingProxyType(by_cell)
+    excluded = tuple(seed for seed in design.registered_seeds if seed not in observed_seeds)
+    return MappingProxyType(by_cell), included, excluded
+
+
+def _validate_sample_rules(contract: D1DecisionContract, n: int) -> None:
+    for rule in contract.contrast_rules.values():
+        if rule.n_rule == "EXACT" and rule.registered_n != n:
+            raise ValueError(f"D1 contrast {rule.contrast_id!r} registered n differs from {n}")
+        if rule.df_rule == "N_MINUS_ONE" and n < 2:
+            raise ValueError("D1 N_MINUS_ONE interval requires at least two seed blocks")
 
 
 def compute_d1_factorial(
@@ -331,19 +350,20 @@ def compute_d1_factorial(
         raise TypeError("D1 factorial analysis requires registered design and decision contract")
     if decision_contract_digest(decision_contract) != design.decision_contract_digest:
         raise ValueError("D1 decision contract differs from the registered design")
-    admitted = _admit_cells(design, cells)
+    admitted, included_seeds, excluded_seeds = _admit_cells(design, cells)
+    _validate_sample_rules(decision_contract, len(included_seeds))
     endpoints = tuple(rule.endpoint for rule in decision_contract.contrast_rules.values())
     if any(endpoint != endpoints[0] for endpoint in endpoints[1:]):
         raise ValueError("D1 factorial effects require one shared registered endpoint")
     endpoint = endpoints[0]
     values = {key: _endpoint_value(cell, endpoint) for key, cell in admitted.items()}
     by_arm = MappingProxyType(
-        {arm: tuple(values[(arm, seed)] for seed in design.registered_seeds) for arm in _ALL_ARMS}
+        {arm: tuple(values[(arm, seed)] for seed in included_seeds) for arm in _ALL_ARMS}
     )
     contrast_results = {
         contrast_id: _estimate(
             rule,
-            _contrast_values(rule.terms, values, design.registered_seeds),
+            _contrast_values(rule.terms, values, included_seeds),
         )
         for contrast_id, rule in decision_contract.contrast_rules.items()
     }
@@ -351,13 +371,15 @@ def compute_d1_factorial(
         effect_id: D1FactorialEffect(
             effect_id=effect_id,
             terms=terms,
-            paired_estimates=(paired := _contrast_values(terms, values, design.registered_seeds)),
+            paired_estimates=(paired := _contrast_values(terms, values, included_seeds)),
             estimate=math.fsum(paired) / len(paired),
             n=len(paired),
         )
         for effect_id, terms in _FACTORIAL_TERMS.items()
     }
     return D1FactorialAnalysis(
+        included_seeds=included_seeds,
+        excluded_seeds=excluded_seeds,
         endpoint=D1EndpointSummary(
             metric=endpoint.metric,
             estimator=endpoint.estimator,
