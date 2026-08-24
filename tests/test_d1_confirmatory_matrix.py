@@ -25,8 +25,12 @@ from entropic_substrate.experiments.d1_confirmatory_matrix import (
     D1ConfirmatoryMatrix,
     D1GitProvenancePort,
     admit_d1_confirmatory_matrix,
+    attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.experiments.d1_launch_attempts import (
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
 from entropic_substrate.experiments.d1_primitives import D1Arm
 from entropic_substrate.experiments.d1_registered_design import (
     D1PreregistrationArtifact,
@@ -217,3 +221,39 @@ def test_second_matrix_with_same_optional_stopping_identities_is_not_a_rerun() -
     first = admit()
     with pytest.raises(ValueError, match="optional-stopping"):
         admit(ledger=first.ledger)
+
+
+def test_post_wave_attestation_consumes_completed_controller_ledger_without_new_events() -> None:
+    launched = launches()
+    started = admit(launched)
+    completed = started.ledger
+    for cell in launched:
+        identity = next(
+            event.identity
+            for event in completed.events
+            if event.identity.logical_run_id == cell.plan.logical_run_id
+        )
+        completed = completed.transition(
+            identity,
+            status=D1LaunchAttemptStatus.COMPLETED,
+            observed_at=cell.start.trainer_started_at + timedelta(seconds=1),
+        )
+
+    matrix = attest_d1_confirmatory_matrix(
+        design=design(),
+        launches=launched,
+        git=FakeGit(),
+        ledger=completed,
+    )
+
+    assert matrix.manifest == started.matrix.manifest
+    assert len(completed.events) == 3 * len(launched)
+
+
+def test_post_wave_attestation_refuses_incomplete_or_extra_attempt_history() -> None:
+    launched = launches()
+    started = admit(launched)
+    with pytest.raises(ValueError, match="completed"):
+        attest_d1_confirmatory_matrix(
+            design=design(), launches=launched, git=FakeGit(), ledger=started.ledger
+        )
