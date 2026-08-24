@@ -331,7 +331,7 @@ class D1ExecutionProtocol:
         return canonical_digest(self.manifest)
 
 
-def default_d1_execution_protocol() -> D1ExecutionProtocol:
+def default_d1_execution_protocol(*, sequence_length: int = 1024) -> D1ExecutionProtocol:
     """Full-scale D1 protocol used when a caller accepts the registered defaults."""
     return D1ExecutionProtocol(
         optimization=D1OptimizationSpec(
@@ -346,7 +346,7 @@ def default_d1_execution_protocol() -> D1ExecutionProtocol:
             amp=D1AmpPolicy.BF16,
             compile=False,
         ),
-        batching=D1BatchingSpec(batch_size=16, sequence_length=1024),
+        batching=D1BatchingSpec(batch_size=16, sequence_length=sequence_length),
         baseline=D1BaselineCalibrationSpec(),
         evaluation=D1EvaluationSpec(
             num_batches=20,

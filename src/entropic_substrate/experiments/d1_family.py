@@ -118,6 +118,9 @@ class D1DraftSpec:
         if self.execution_protocol.batching.horizon != self.target.horizon:
             msg = "D1 execution batching horizon must match the target horizon"
             raise ValueError(msg)
+        if self.execution_protocol.batching.sequence_length > self.encoder_pair.online.block_size:
+            msg = "D1 execution sequence length cannot exceed the encoder block size"
+            raise ValueError(msg)
         if (
             self.execution_protocol.baseline.num_batches
             != self.future_law.mean_baseline_calibration_batches
@@ -364,7 +367,9 @@ def build_d1_experiment_family(
     )
     shared_geometry = geometry if geometry is not None else D1GeometrySpec()
     shared_execution = (
-        execution_protocol if execution_protocol is not None else default_d1_execution_protocol()
+        execution_protocol
+        if execution_protocol is not None
+        else default_d1_execution_protocol(sequence_length=encoder_pair.online.block_size)
     )
     shared_ema = ema if ema is not None else EMAParameters()
     shared_collapse = collapse if collapse is not None else CollapseParameters()

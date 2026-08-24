@@ -86,7 +86,9 @@ def test_four_arm_drafts_are_capacity_matched_and_factorial() -> None:
     assert {draft.geometry for draft in shared} == {D1GeometrySpec()}
     assert {draft.state_construction for draft in shared} == {StateConstructionSpec()}
     assert {draft.boundary_state for draft in shared} == {D1BoundaryStateSpec()}
-    assert {draft.execution_protocol for draft in shared} == {default_d1_execution_protocol()}
+    assert {draft.execution_protocol for draft in shared} == {
+        default_d1_execution_protocol(sequence_length=256)
+    }
 
     assert arms[D1Arm.NONE].ema is None
     assert arms[D1Arm.AC].ema is None
@@ -154,3 +156,13 @@ def test_execution_protocol_is_bound_into_cell_and_family_identity() -> None:
     assert changed.family_manifest["shared_construction"]["execution_protocol"] == (
         changed_protocol.manifest
     )
+
+
+def test_family_refuses_execution_sequences_wider_than_the_encoder_block() -> None:
+    encoder = _encoder()
+    with pytest.raises(ValueError, match=r"sequence length.*block size"):
+        build_d1_experiment_family(
+            codec=_codec(),
+            encoder_pair=MatchedEncoderPairSpec(online=encoder, target=encoder),
+            execution_protocol=default_d1_execution_protocol(sequence_length=257),
+        )
