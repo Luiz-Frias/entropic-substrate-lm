@@ -102,6 +102,30 @@ def test_one_transaction_path_optimizes_every_arm(arm: D1Arm) -> None:
     result = _apply(system, bundle)
 
     assert result.successful_step == 1
+    assert result.manifest["successful_step"] == 1
+    assert result.manifest["objective"] == result.objective
+    assert set(result.manifest) == {
+        "covariance_penalty",
+        "coverage_50",
+        "coverage_80",
+        "coverage_95",
+        "effective_rank",
+        "future_nll",
+        "gradient_norm",
+        "language_loss",
+        "learning_rate",
+        "mean_displacement_nll",
+        "numerical_rank",
+        "objective",
+        "raw_covariance_penalty",
+        "raw_variance_penalty",
+        "residual_mean",
+        "residual_rms",
+        "residual_variance",
+        "successful_step",
+        "variance_penalty",
+        "zero_displacement_nll",
+    }
     assert math.isfinite(result.objective)
     assert math.isfinite(result.gradient_norm)
     assert any(
