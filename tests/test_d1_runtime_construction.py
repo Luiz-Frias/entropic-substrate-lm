@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from entropic_substrate.experiments.d1_family import (
@@ -82,6 +84,14 @@ def test_cosine_ema_translation_preserves_every_registered_constant() -> None:
     family = build_d1_experiment_family(
         codec=baseline.codec,
         encoder_pair=baseline.encoder_pair,
+        execution_protocol=replace(
+            baseline.execution_protocol,
+            optimization=replace(
+                baseline.execution_protocol.optimization,
+                max_steps=3,
+                warmup_steps=1,
+            ),
+        ),
         ema=EMAParameters(
             kind=EMAKind.COSINE_SCHEDULE,
             decay=0.5,

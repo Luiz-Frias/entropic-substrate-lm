@@ -16,6 +16,7 @@ from entropic_substrate.experiments.d1_primitives import (
     CollapseStrategy,
     D1Arm,
     D1BoundaryStateSpec,
+    EMAKind,
     EncoderInitializationIdentity,
     MatchedEncoderPairSpec,
     StateConstructionSpec,
@@ -25,6 +26,7 @@ from entropic_substrate.experiments.d1_stabilization import (
     CollapseParameters,
     D1GeometrySpec,
     D1TargetSpec,
+    EMAParameters,
     FutureLawSpec,
 )
 from entropic_substrate.observation import CodecIdentity
@@ -165,4 +167,19 @@ def test_family_refuses_execution_sequences_wider_than_the_encoder_block() -> No
             codec=_codec(),
             encoder_pair=MatchedEncoderPairSpec(online=encoder, target=encoder),
             execution_protocol=default_d1_execution_protocol(sequence_length=257),
+        )
+
+
+def test_cosine_ema_schedule_must_cover_the_registered_optimizer_budget() -> None:
+    encoder = _encoder()
+    with pytest.raises(ValueError, match=r"EMA schedule_steps.*max_steps"):
+        build_d1_experiment_family(
+            codec=_codec(),
+            encoder_pair=MatchedEncoderPairSpec(online=encoder, target=encoder),
+            ema=EMAParameters(
+                kind=EMAKind.COSINE_SCHEDULE,
+                decay=0.9,
+                final_decay=0.99,
+                schedule_steps=3,
+            ),
         )
