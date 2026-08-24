@@ -9,6 +9,7 @@ from enum import StrEnum
 from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
 
 __all__ = [
+    "PAIRWISE_COSINE_SEMANTIC",
     "BaselineSampling",
     "CalibrationSplit",
     "D1AmpPolicy",
@@ -23,6 +24,8 @@ __all__ = [
     "WeightDecayPolicy",
     "default_d1_execution_protocol",
 ]
+
+PAIRWISE_COSINE_SEMANTIC = "all_distinct_online_state_positions_v1"
 
 
 class OptimizerKind(StrEnum):
@@ -224,6 +227,7 @@ class D1EvaluationSpec:
     save_interval: int
     evaluate_at_step_zero: bool = True
     terminal_eval_required: bool = True
+    pairwise_cosine_semantic: str = PAIRWISE_COSINE_SEMANTIC
 
     def __post_init__(self) -> None:
         _positive_int(self.num_batches, label="num_batches")
@@ -238,6 +242,9 @@ class D1EvaluationSpec:
         if self.terminal_eval_required is not True:
             msg = "D1 requires a terminal evaluation"
             raise ValueError(msg)
+        if self.pairwise_cosine_semantic != PAIRWISE_COSINE_SEMANTIC:
+            msg = "D1 pairwise cosine diagnostic semantics changed"
+            raise ValueError(msg)
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -246,6 +253,7 @@ class D1EvaluationSpec:
             "evaluate_at_step_zero": self.evaluate_at_step_zero,
             "log_interval": self.log_interval,
             "num_batches": self.num_batches,
+            "pairwise_cosine_semantic": self.pairwise_cosine_semantic,
             "save_interval": self.save_interval,
             "terminal_eval_required": self.terminal_eval_required,
         }

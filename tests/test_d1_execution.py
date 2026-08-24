@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from entropic_substrate.experiments.d1_execution import (
+    PAIRWISE_COSINE_SEMANTIC,
     BaselineSampling,
     CalibrationSplit,
     D1AmpPolicy,
@@ -65,6 +66,7 @@ def test_complete_execution_protocol_has_a_canonical_registered_digest() -> None
     )
     assert protocol.evaluation.evaluate_at_step_zero is True
     assert protocol.evaluation.terminal_eval_required is True
+    assert protocol.evaluation.pairwise_cosine_semantic == PAIRWISE_COSINE_SEMANTIC
     assert protocol.resources.trainer_wall_origin is TrainerWallOrigin.AFTER_PREFLIGHT
     assert protocol.resources.required_evidence == frozenset({EvidenceClass.MEASURED})
     assert protocol.protocol_digest == canonical_digest(protocol.manifest)
@@ -132,6 +134,13 @@ def test_fp16_and_unregistered_optimizer_policies_are_not_representable() -> Non
             log_interval=1,
             save_interval=0,
             terminal_eval_required=False,
+        ),
+        lambda: D1EvaluationSpec(
+            num_batches=1,
+            eval_interval=5,
+            log_interval=1,
+            save_interval=0,
+            pairwise_cosine_semantic="batch_mean_cosine",
         ),
     ],
 )
