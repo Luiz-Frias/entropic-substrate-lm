@@ -21,11 +21,23 @@ Fail-loud gates, all of which abort assembly:
 2. **Completeness** — the captures must yield exactly one file per (arm,
    seed) named by the spec. A missing or duplicated pair is never silently
    dropped.
-3. **Parity** — post-scrub, the *blinded* arms' ``run_start`` configs must be
+3. **Parity** — post-scrub, the *blinded* arms' ``run_start`` records must be
    identical outside the declared exemptions. This is the gate that catches a
    NEW arm-identifying field appearing in the schema: E1's arms were
    parameter-identical, but E1.5a's differ in ``params`` (85.33M untied vs
    85.13M tied), which alone would unblind the packet.
+4. **Attestation presence** — for a rung declaring ``attestation_required``,
+   every ``run_start`` must carry all three freeze-attestation keys. NOT a
+   uniformity rule: the E1.5a A/C extension mixes pre- and post-attestation
+   captures inside one arm, which is legitimate.
+
+The freeze attestation (review finding MAJOR-1) is the one channel that is
+DELIBERATELY not equalized: the scrub removes every freeze-axis config field,
+so without it a reviewer cannot verify that the arms froze different parameter
+subsets at all. ``trainable_param_count``/``frozen_param_count`` pass through
+raw; ``frozen_mask_digest`` is rekeyed under a per-assembly HMAC salt written
+only to ``--sealed-out``, because a raw sha256 over parameter names is
+dictionary-attackable.
 """
 
 from __future__ import annotations
@@ -33,14 +45,17 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import hmac
 import json
+import re
+import secrets
 import shutil
 import subprocess  # nosec B404 -- ruff-normalize the packet only, fixed argv below
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 # Substrings that must not survive into any packet file (case-insensitive).
 # Shared across rungs; a spec adds its own axis vocabulary via banned_extra.
@@ -71,6 +86,17 @@ class ArmSpec:
 class RungSpec:
     """Everything that varies between rungs. The engine reads only this."""
 
+    # Unblinded freeze attestation (review finding MAJOR-1): the run_start
+    # RECORD keys that are EXPECTED to differ between arms, because
+    # distinguishing the arms is exactly what they are for. Structural, not
+    # per-rung — a rung cannot opt out of the finding's resolution, so this is
+    # a class constant rather than an entry in ``parity_exempt``.
+    ATTESTATION_KEYS: ClassVar[tuple[str, ...]] = (
+        "trainable_param_count",
+        "frozen_param_count",
+        "frozen_mask_digest",
+    )
+
     name: str
     arms: tuple[ArmSpec, ...]
     seeds: tuple[str, ...]
@@ -89,6 +115,11 @@ class RungSpec:
     banned_extra: tuple[str, ...] = ()
     # config keys (top level) exempt from the blinded-arm parity assertion.
     parity_exempt: tuple[str, ...] = ("name",)
+    # True only for a rung whose runs were ALL captured after the freeze
+    # attestation landed. Not a uniformity rule: the E1.5a A/C extension
+    # legitimately mixes pre- and post-attestation captures inside ONE arm,
+    # so presence can be required per-rung but never inferred per-packet.
+    attestation_required: bool = False
     extension_registration: str | None = None
 
     @property
@@ -509,6 +540,69 @@ def scrub_record(record: dict[str, Any], arm: str, spec: RungSpec) -> dict[str, 
     return out
 
 
+def rekey_attestation(record: Mapping[str, Any], salt: str) -> dict[str, Any]:
+    """Replace the raw frozen-parameter digest with an HMAC under ``salt``.
+
+    The train-time digest is a sha256 over frozen parameter names and shapes
+    (backbone.py ``parameter_attestation``). Passed through raw it is
+    dictionary-attackable: a reviewer who guesses the architecture enumerates
+    candidate frozen masks, hashes them, and reads the arm off the packet.
+    HMAC under a per-assembly salt kills preimage enumeration while keeping
+    the only structure the reviewer needs — equality: same arm and axis maps
+    to the same value, different masks to different values.
+
+    The salt lives ONLY in the sealed mapping file, outside the packet, so it
+    is disclosed on the same schedule as the arm mapping itself.
+
+    The counts pass through unmodified: the reviewer asked for counts, and
+    coarse parameter integers identify no project. Absence of the digest is a
+    no-op — pre-attestation captures (E1, E1.5a) carry none, and a rung whose
+    arms MUST carry one says so via ``attestation_required``
+    (:func:`assert_attestation_present`).
+    """
+    out = dict(record)
+    if "frozen_mask_digest" not in out:
+        return out
+    raw = out["frozen_mask_digest"]
+    if not isinstance(raw, str):
+        # Present-but-malformed is the one shape that would reach the packet
+        # unrekeyed: assert_uniform_attestation counts it as attested and the
+        # parity gate exempts it, so nothing downstream would catch it.
+        msg = f"non-string frozen_mask_digest {raw!r} — corrupt attestation, refusing to assemble"
+        raise AssertionError(msg)
+    out["frozen_mask_digest"] = hmac.new(
+        salt.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return out
+
+
+def assert_attestation_present(records: Mapping[str, Mapping[str, Any]], spec: RungSpec) -> None:
+    """Under ``attestation_required``, every ``run_start`` must carry all three keys.
+
+    Deliberately NOT a whole-packet uniformity rule. The E1.5a A/C extension
+    mixes pre-attestation captures (seeds 1-4) with post-attestation reruns
+    INSIDE one arm, so neither whole-packet nor per-arm uniformity is
+    satisfiable there — requiring it would refuse a legitimate packet.
+
+    A rung whose runs were ALL captured after the attestation landed declares
+    ``attestation_required=True``, and a missing key is then an assembly
+    error naming the offending run, never a silent omission.
+    """
+    if not spec.attestation_required:
+        return
+    incomplete = {
+        name: sorted(set(RungSpec.ATTESTATION_KEYS) - set(record))
+        for name, record in records.items()
+        if not set(RungSpec.ATTESTATION_KEYS) <= set(record)
+    }
+    if incomplete:
+        msg = (
+            f"{spec.name}: attestation_required, but these runs are missing "
+            f"attestation keys: {dict(sorted(incomplete.items()))}"
+        )
+        raise AssertionError(msg)
+
+
 _StripNode = TypeVar("_StripNode", ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -565,8 +659,19 @@ def build_reader(telemetry_source: str) -> str:
     return _READER_HEADER + code + "\n"
 
 
+# Long pure-hex runs are masked before the substring scan. Every token in
+# the banned vocabulary except "e3" carries a non-hex character and cannot
+# occur inside one; "e3" inside a digest is two coincidental nibbles, not a
+# lexical reference — and at 64 hex chars it appears with p ≈ 22% (63
+# positions × 1/256), so digest-bearing packets (data_order_digest, the
+# rekeyed frozen_mask_digest) would spuriously abort more often than not.
+_HEX_RUN = re.compile(r"[0-9a-f]{32,}")
+
+
 def banned_scan(path: Path, banned: Sequence[str]) -> list[str]:
-    text = path.read_text(encoding="utf-8").lower()
+    # The "#" placeholder keeps masked runs from splicing their neighbours
+    # into a banned word ("e" + masked-run + "3" stays "e#3", never "e3").
+    text = _HEX_RUN.sub("#", path.read_text(encoding="utf-8").lower())
     return [word for word in banned if word in text]
 
 
@@ -605,13 +710,15 @@ def select_captures(captured: Path, spec: RungSpec) -> list[tuple[Path, ArmSpec,
     return [chosen[(arm.label, seed)] for arm in spec.arms for seed in spec.seeds]
 
 
-def assert_blinded_parity(configs: Mapping[str, dict[str, Any]], spec: RungSpec) -> None:
-    """Post-scrub, blinded arms must carry identical run_start configs.
+def assert_blinded_parity(records: Mapping[str, dict[str, Any]], spec: RungSpec) -> None:
+    """Post-scrub, blinded arms must carry identical run_start RECORDS.
 
     This is the gate that catches a NEW arm-identifying field entering the
-    schema between rungs. Comparing whole configs (minus declared exemptions)
+    schema between rungs. Comparing whole records (minus declared exemptions)
     rather than an allow-list means a field nobody thought about is a FAILURE,
-    not an omission.
+    not an omission. The comparison covers the RECORD, not only its ``config``
+    — the freeze attestation (MAJOR-1) enters at record top level, and so did
+    ``params``, the one field E1's packet never had to scrub.
 
     A key whose ``value_scrub`` token interpolates ``{arm}`` is a DECLARED
     difference — that token IS the blind label (E1's ``embedding_init`` ->
@@ -619,24 +726,34 @@ def assert_blinded_parity(configs: Mapping[str, dict[str, Any]], spec: RungSpec)
     or not mapped at all, must match. That asymmetry is the whole rule: the
     per-arm tokens are the only differences anyone declared, and every other
     difference is a leak by definition.
+
+    Two record-level exemptions are structural, applying to every rung:
+    ``run`` (scrubbed to ``arm-<label>``, the record-level analogue of
+    ``config.name``) and :attr:`RungSpec.ATTESTATION_KEYS`, whose whole
+    purpose is to differ between arms.
     """
     blinded = [arm.label for arm in spec.arms if arm.blinded]
     if len(blinded) < 2:
         return
 
     per_arm = {key for key, token in spec.value_scrub.items() if "{arm}" in token}
+    record_exempt = ("run", *RungSpec.ATTESTATION_KEYS)
 
-    def strip(cfg: dict[str, Any]) -> dict[str, Any]:
-        out = {k: v for k, v in cfg.items() if k not in spec.parity_exempt}
-        model = out.get("model")
-        if isinstance(model, dict) and per_arm:
-            out["model"] = {k: v for k, v in model.items() if k not in per_arm}
+    def strip(record: dict[str, Any]) -> dict[str, Any]:
+        out = {k: v for k, v in record.items() if k not in record_exempt}
+        cfg = out.get("config")
+        if isinstance(cfg, dict):
+            cfg = {k: v for k, v in cfg.items() if k not in spec.parity_exempt}
+            model = cfg.get("model")
+            if isinstance(model, dict) and per_arm:
+                cfg["model"] = {k: v for k, v in model.items() if k not in per_arm}
+            out["config"] = cfg
         return out
 
     reference_label = blinded[0]
-    reference = strip(configs[reference_label])
+    reference = strip(records[reference_label])
     for label in blinded[1:]:
-        other = strip(configs[label])
+        other = strip(records[label])
         if other != reference:
             diff = sorted(
                 k
@@ -699,9 +816,15 @@ def main() -> int:
         build_reader(args.telemetry.read_text(encoding="utf-8")), encoding="utf-8"
     )
 
+    # One fresh salt per assembly: two packets over the same runs must not
+    # share rekeyed digests, or disclosing one sealed mapping de-blinds the
+    # other. Written only to --sealed-out, never into the packet.
+    packet_salt = secrets.token_hex(32)
+
     sealed_rows: list[str] = []
     time_rows: list[str] = []
-    start_configs: dict[str, dict[str, Any]] = {}
+    start_records: dict[str, dict[str, Any]] = {}
+    attested_starts: dict[str, dict[str, Any]] = {}
     for src, arm, seed in select_captures(args.captured, spec):
         dst = packet / "data" / f"{arm.label}-seed{seed}.jsonl"
         with src.open(encoding="utf-8") as fin, dst.open("w", encoding="utf-8") as fout:
@@ -709,7 +832,9 @@ def main() -> int:
                 record = json.loads(line)
                 scrubbed = scrub_record(record, arm.label, spec)
                 if record.get("event") == "run_start":
-                    start_configs.setdefault(arm.label, scrubbed.get("config", {}))
+                    scrubbed = rekey_attestation(scrubbed, packet_salt)
+                    attested_starts[f"{arm.label}-seed{seed}"] = scrubbed
+                    start_records.setdefault(arm.label, scrubbed)
                 fout.write(json.dumps(scrubbed) + "\n")
         run_id8 = src.name[len(arm.run_name) + 1 :][:8]
         full = next((k for k in run_times if k.startswith(run_id8)), None)
@@ -722,7 +847,8 @@ def main() -> int:
             time_rows.append(f"# {dst.name}  {stamp_key}={iso}")
         sealed_rows.append(f"| {src.name} | {md5(src)} | {dst.name} | {md5(dst)} | run_id {full} |")
 
-    assert_blinded_parity(start_configs, spec)
+    assert_attestation_present(attested_starts, spec)
+    assert_blinded_parity(start_records, spec)
 
     # Hook-stability: the repo's lint hooks rewrite any committed .py — if
     # that happened AFTER hashing, the manifest would invalidate the packet
@@ -783,6 +909,12 @@ def main() -> int:
         "metadata:\n  type: project\n---\n\n"
         f"# SEALED — {spec.name} review packet arm mapping\n\n"
         f"{spec.sealed_mapping_note}\n"
+        "## Freeze-attestation salt\n\n"
+        "HMAC-SHA256 key the packet's `frozen_mask_digest` values were rekeyed\n"
+        "under; recomputing a digest from a candidate frozen-parameter mask "
+        "needs it.\nFresh per assembly, so it de-blinds THIS packet and no "
+        "other.\n\n"
+        f"    {packet_salt}\n\n"
         "| capture file | capture md5 | packet file | packet md5 | run |\n"
         "|---|---|---|---|---|\n" + "\n".join(sealed_rows) + "\n",
         encoding="utf-8",

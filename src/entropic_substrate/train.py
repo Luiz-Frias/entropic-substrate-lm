@@ -732,6 +732,14 @@ class Trainer:
         field_encoder_params = self.raw_model.field_encoder_parameter_count()
         if field_encoder_params is not None:
             run_start_record["field_encoder_params"] = field_encoder_params
+        # Unblinded freeze attestation (review finding MAJOR-1). Merged
+        # UNCONDITIONALLY, unlike field_encoder_params above: a key present
+        # only on frozen arms would itself be the arm signal the packet
+        # exists to remove, so the control arm logs the empty mask's digest
+        # rather than nothing. The packet rekeys the digest under a
+        # per-assembly HMAC salt (scripts/assemble_review_packet.py) — a raw
+        # sha256 over parameter names is dictionary-attackable.
+        run_start_record.update(self.raw_model.parameter_attestation())
         self.log(run_start_record)
 
         while self.step < total:
