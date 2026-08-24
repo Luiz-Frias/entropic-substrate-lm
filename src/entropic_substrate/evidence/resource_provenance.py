@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,17 +17,22 @@ __all__ = [
     "BillingUnit",
     "EvidenceGap",
     "Money",
+    "PowerIntegrationMethod",
+    "PowerSamplingRegistration",
     "PurchaseOption",
     "QuotedRate",
     "RateScope",
+    "ResourceActivationMode",
+    "ResourceActivationRegistration",
     "RoundingMode",
     "RunStartProvenance",
     "SegmentStartMode",
     "execution_segment_id",
+    "unavailable_resource_activation_registration",
     "validate_execution_segments",
 ]
 
-RESOURCE_TELEMETRY_SCHEMA_VERSION = "resource-telemetry/v2"
+RESOURCE_TELEMETRY_SCHEMA_VERSION = "resource-telemetry/v3"
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -59,6 +65,15 @@ class RoundingMode(StrEnum):
     NEAREST = "nearest"
 
 
+class ResourceActivationMode(StrEnum):
+    GAPS_ONLY = "gaps-only"
+    PRODUCTION = "production"
+
+
+class PowerIntegrationMethod(StrEnum):
+    TRAPEZOIDAL_MONOTONIC_NS = "trapezoidal-monotonic-ns-v1"
+
+
 def _nonempty(value: str, *, label: str) -> None:
     if type(value) is not str or not value.strip():
         msg = f"{label} must be a non-empty string"
@@ -84,6 +99,118 @@ def _canonical_decimal(value: Decimal) -> str:
         msg = f"money amount must use canonical decimal spelling {canonical!r}"
         raise ValueError(msg)
     return canonical
+
+
+@dataclass(frozen=True, slots=True)
+class PowerSamplingRegistration:
+    cadence_seconds: float
+    max_gap_seconds: float
+    integration_method: PowerIntegrationMethod
+    provider: str
+    device_scope: str
+    schema_version: str = "resource-power-sampling/v1"
+
+    def __post_init__(self) -> None:
+        for field in ("cadence_seconds", "max_gap_seconds"):
+            value = getattr(self, field)
+            if type(value) is not float or not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{field} must be a finite positive float")
+        if self.max_gap_seconds < self.cadence_seconds:
+            raise ValueError("max_gap_seconds must be at least cadence_seconds")
+        if type(self.integration_method) is not PowerIntegrationMethod:
+            raise TypeError("integration_method must be PowerIntegrationMethod")
+        _nonempty(self.provider, label="power sampling provider")
+        _nonempty(self.device_scope, label="power sampling device_scope")
+        if self.schema_version != "resource-power-sampling/v1":
+            raise ValueError("unsupported resource power-sampling schema")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "cadence_seconds": self.cadence_seconds,
+            "device_scope": self.device_scope,
+            "integration_method": self.integration_method.value,
+            "max_gap_seconds": self.max_gap_seconds,
+            "provider": self.provider,
+            "schema_version": self.schema_version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceActivationRegistration:
+    factory_registration_digest: str
+    mode: ResourceActivationMode
+    meter_provider: str
+    device_scope: str
+    flop_model_identity: str | None
+    power_sampling: PowerSamplingRegistration | None
+    schema_version: str = "resource-activation-registration/v1"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.factory_registration_digest) is not str
+            or _SHA256.fullmatch(self.factory_registration_digest) is None
+        ):
+            raise ValueError("factory_registration_digest must be a lowercase SHA-256")
+        if type(self.mode) is not ResourceActivationMode:
+            raise TypeError("resource activation mode must be ResourceActivationMode")
+        _nonempty(self.meter_provider, label="resource meter_provider")
+        _nonempty(self.device_scope, label="resource device_scope")
+        if self.flop_model_identity is not None and (
+            type(self.flop_model_identity) is not str
+            or _SHA256.fullmatch(self.flop_model_identity) is None
+        ):
+            raise ValueError("flop_model_identity must be a lowercase SHA-256 or None")
+        if (
+            self.power_sampling is not None
+            and type(self.power_sampling) is not PowerSamplingRegistration
+        ):
+            raise TypeError("power_sampling must be PowerSamplingRegistration or None")
+        if self.schema_version != "resource-activation-registration/v1":
+            raise ValueError("unsupported resource activation registration schema")
+        unavailable = self.meter_provider == "unavailable" or self.device_scope == "unavailable"
+        if self.mode is ResourceActivationMode.GAPS_ONLY:
+            if (
+                self.meter_provider != "unavailable"
+                or self.device_scope != "unavailable"
+                or self.flop_model_identity is not None
+                or self.power_sampling is not None
+            ):
+                raise ValueError(
+                    "gaps-only registration must explicitly mark every meter unavailable"
+                )
+        elif unavailable:
+            raise ValueError("production registration cannot use an unavailable provider or scope")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "device_scope": self.device_scope,
+            "factory_registration_digest": self.factory_registration_digest,
+            "flop_model_identity": self.flop_model_identity,
+            "meter_provider": self.meter_provider,
+            "mode": self.mode.value,
+            "power_sampling": (
+                None if self.power_sampling is None else self.power_sampling.manifest
+            ),
+            "schema_version": self.schema_version,
+        }
+
+    @property
+    def identity_digest(self) -> str:
+        return canonical_digest(self.manifest)
+
+
+def unavailable_resource_activation_registration() -> ResourceActivationRegistration:
+    digest = canonical_digest({"name": "unavailable-resource-activation", "schema_version": "v1"})
+    return ResourceActivationRegistration(
+        factory_registration_digest=digest,
+        mode=ResourceActivationMode.GAPS_ONLY,
+        meter_provider="unavailable",
+        device_scope="unavailable",
+        flop_model_identity=None,
+        power_sampling=None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +353,7 @@ class RunStartProvenance:
     pytorch_version: str
     compiler_enabled: bool
     compiler_version: str
+    resource_activation: ResourceActivationRegistration
     quoted_rate: QuotedRate
     pod_created_at: datetime
     trainer_started_at: datetime
@@ -289,6 +417,8 @@ class RunStartProvenance:
         if not self.compiler_enabled and self.compiler_version != "disabled":
             msg = "compiler_version must be 'disabled' when compiler_enabled is false"
             raise ValueError(msg)
+        if type(self.resource_activation) is not ResourceActivationRegistration:
+            raise TypeError("resource_activation must be ResourceActivationRegistration")
         if type(self.quoted_rate) is not QuotedRate:
             msg = "quoted_rate must be QuotedRate"
             raise TypeError(msg)
@@ -322,6 +452,7 @@ class RunStartProvenance:
             "pytorch_version": self.pytorch_version,
             "quoted_rate": self.quoted_rate.manifest,
             "region": self.region,
+            "resource_activation": self.resource_activation.manifest,
             "resume_checkpoint_sha256": self.resume_checkpoint_sha256,
             "schema_version": self.schema_version,
             "segment_start_mode": self.segment_start_mode.value,
@@ -339,15 +470,19 @@ def validate_execution_segments(segments: tuple[RunStartProvenance, ...]) -> Non
         msg = "execution segments must be a non-empty tuple"
         raise ValueError(msg)
     logical_run_id: str | None = None
+    resource_activation: ResourceActivationRegistration | None = None
     for expected_index, segment in enumerate(segments):
         if type(segment) is not RunStartProvenance:
             msg = "execution segments must contain RunStartProvenance values"
             raise TypeError(msg)
         if logical_run_id is None:
             logical_run_id = segment.logical_run_id
+            resource_activation = segment.resource_activation
         elif segment.logical_run_id != logical_run_id:
             msg = "execution segments must share one logical_run_id"
             raise ValueError(msg)
+        if segment.resource_activation != resource_activation:
+            raise ValueError("execution segment resource activation registration changed")
         if segment.execution_segment_index != expected_index:
             msg = "execution segment indices must be consecutive from zero"
             raise ValueError(msg)

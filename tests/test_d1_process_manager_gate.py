@@ -116,15 +116,28 @@ def _adjudicated(tmp_path: Path, filing: ValidatedD1Filing) -> D1ProcessManager:
         artifact=artifacts["blinded_analysis"].artifact_identity(),
         event_id="analysis",
     )
+    manager = manager.file_alias_commitment(
+        actor=_actor(ActorRole.ANALYSIS),
+        artifact=artifacts["alias_commitment"].artifact_identity(),
+        event_id="alias-commitment",
+    )
+    review_receipt = artifacts["reviewer_execution_receipt"].artifact_identity()
     manager = manager.file_review(
         actor=_actor(ActorRole.REVIEW),
         packet=artifacts["review_packet"].artifact_identity(),
         report=artifacts["reviewer_report"].artifact_identity(),
+        receipt=review_receipt,
         event_id="review",
+    )
+    manager = manager.reveal_aliases(
+        actor=_actor(ActorRole.OPERATOR),
+        reveal=artifacts["alias_reveal"].artifact_identity(),
+        review_receipt=review_receipt,
+        event_id="alias-reveal",
     )
     return manager.adjudicate(
         actor=_actor(ActorRole.OPERATOR),
-        artifact=artifacts["alias_reveal"].artifact_identity(),
+        artifact=_artifact(108, "adjudication"),
         event_id="adjudication",
     )
 

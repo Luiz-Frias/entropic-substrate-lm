@@ -11,7 +11,17 @@ from entropic_substrate.d1_calibration import (
     D1BaselineCalibrationAttestation,
     D1BaselineCalibrator,
 )
+from entropic_substrate.d1_dual_failure import (
+    D1PrimarySecondaryFailure,
+    D1SecondaryFailureEvidence,
+    D1SecondaryFailureStage,
+)
 from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
+from entropic_substrate.d1_resource_activation import (
+    D1ActiveResourceMeter,
+    D1ResourceActivationFactory,
+    UnavailableResourceActivationFactory,
+)
 from entropic_substrate.d1_terminal_failure import terminal_numerical_defect_for_failure
 from entropic_substrate.d1_trainer_handoff import (
     D1FreshRunCompletion,
@@ -35,7 +45,7 @@ from entropic_substrate.evidence.d1_journal_values import (
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.evidence.resource_ledger import ResourceMeterStrategy
+from entropic_substrate.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
@@ -127,13 +137,20 @@ def _record_evaluation(
     evaluator: D1Evaluator,
     journal: D1FreshJournal,
     clock: D1TrainerClock,
+    meter: D1ActiveResourceMeter,
     successful_step: int,
 ) -> tuple[D1EvalResult, ResourceWorkSnapshot]:
-    result = evaluator.evaluate(system=components.system, sampler=components.eval_sampler)
+    with meter.measure(ResourcePhase.EVAL):
+        result = evaluator.evaluate(system=components.system, sampler=components.eval_sampler)
     protocol = components.plan.profile.draft.execution_protocol
     batching = protocol.batching
     target_positions = (
         result.batch_count * batching.batch_size * (batching.sequence_length + batching.horizon)
+    )
+    meter.record_positions(
+        ResourcePhase.EVAL,
+        online_positions=result.online_positions,
+        target_positions=target_positions,
     )
     snapshot = components.resource_ledger.record_eval(
         online_positions=result.online_positions,
@@ -204,7 +221,7 @@ def run_d1_fresh(
     origin: D1TrainerWallOrigin,
     locations: D1FreshRunLocations,
     clock: D1TrainerClock | None = None,
-    meter_strategy: ResourceMeterStrategy | None = None,
+    resource_activation_factory: D1ResourceActivationFactory | None = None,
     journal_factory: D1FreshJournalFactory = AuthoritativeRunJournal.fresh,
 ) -> D1FreshRunCompletion:
     """Execute one fresh D1 run and stop at the operator-finalization boundary."""
@@ -215,11 +232,17 @@ def run_d1_fresh(
         raise TypeError("D1 fresh trainer clock must implement D1TrainerClock")
     if not callable(journal_factory):
         raise TypeError("D1 fresh trainer journal_factory must be callable")
+    activation_factory = resource_activation_factory or UnavailableResourceActivationFactory()
+    if not isinstance(cast(object, activation_factory), D1ResourceActivationFactory):
+        raise TypeError("D1 resource activation factory is invalid")
+    if activation_factory.registration != start.resource_activation:
+        raise ValueError("D1 resource activation differs from run-start provenance")
+    activation = activation_factory.fresh(start)
     ledger = create_d1_resource_ledger(
         plan=plan,
         start=start,
         origin=origin,
-        meter_strategy=meter_strategy,
+        meter_strategy=activation.meter,
     )
     start_event = _event(
         plan,
@@ -233,7 +256,7 @@ def run_d1_fresh(
             "trainer_wall_origin": origin.manifest,
         },
     )
-    with journal_factory(locations.journal_path, start_event) as journal:
+    with journal_factory(locations.journal_path, start_event) as journal, activation:
         successful_step = 0
         latest_checkpoint_sha256: str | None = None
         try:
@@ -267,6 +290,7 @@ def run_d1_fresh(
                 evaluator=evaluator,
                 journal=journal,
                 clock=active_clock,
+                meter=activation.meter,
                 successful_step=0,
             )
             best_nats = final_eval.nats_per_byte
@@ -277,13 +301,14 @@ def run_d1_fresh(
                 online_positions = batch.online_observations.numel()
                 target_positions = batch.target_encoder_context.numel()
                 try:
-                    train_result = apply_d1_training_step(
-                        system=components.system,
-                        optimizer_bundle=components.optimizer,
-                        batch=batch,
-                        spec=protocol.optimization,
-                        successful_step=successful_step,
-                    )
+                    with activation.meter.measure(ResourcePhase.TRAIN):
+                        train_result = apply_d1_training_step(
+                            system=components.system,
+                            optimizer_bundle=components.optimizer,
+                            batch=batch,
+                            spec=protocol.optimization,
+                            successful_step=successful_step,
+                        )
                 except BaseException:
                     ledger.record_train_attempt(
                         online_positions=online_positions,
@@ -292,6 +317,11 @@ def run_d1_fresh(
                         committed=False,
                     )
                     raise
+                activation.meter.record_positions(
+                    ResourcePhase.TRAIN,
+                    online_positions=online_positions,
+                    target_positions=target_positions,
+                )
                 successful_step = train_result.successful_step
                 ledger.record_train_attempt(
                     online_positions=online_positions,
@@ -325,6 +355,7 @@ def run_d1_fresh(
                         evaluator=evaluator,
                         journal=journal,
                         clock=active_clock,
+                        meter=activation.meter,
                         successful_step=successful_step,
                     )
                     best_nats = min(best_nats, final_eval.nats_per_byte)
@@ -362,6 +393,16 @@ def run_d1_fresh(
             )
         except Exception as error:
             trainer_ended_at = active_clock.utc_now()
+            secondary_failure: D1SecondaryFailureEvidence | None = None
+            failure_cause: BaseException = error
+            try:
+                ledger.record_meter_observation(monotonic_ns=active_clock.monotonic_ns())
+            except Exception as meter_error:
+                secondary_failure = D1SecondaryFailureEvidence.from_error(
+                    D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+                    meter_error,
+                )
+                failure_cause = D1PrimarySecondaryFailure(error, meter_error)
             journal_cursor = journal.state
             resource_ledger_state = ledger.current_state()
             error_message = str(error) or repr(error)
@@ -375,6 +416,9 @@ def run_d1_fresh(
                 "operator_finalization_required": True,
                 "resource_ledger_state": resource_ledger_state.manifest,
                 "rollback_claimed": False,
+                "secondary_failure": (
+                    None if secondary_failure is None else secondary_failure.manifest
+                ),
                 "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
             }
             numerical_defect = terminal_numerical_defect_for_failure(
@@ -403,5 +447,9 @@ def run_d1_fresh(
                 journal_state=journal.state,
                 resource_ledger_state=resource_ledger_state,
             )
-            handoff = D1TrainerFailureHandoff.from_error(termination, error)
-            raise D1FreshRunFailure(handoff) from error
+            handoff = D1TrainerFailureHandoff.from_error(
+                termination,
+                error,
+                secondary_failure=secondary_failure,
+            )
+            raise D1FreshRunFailure(handoff) from failure_cause

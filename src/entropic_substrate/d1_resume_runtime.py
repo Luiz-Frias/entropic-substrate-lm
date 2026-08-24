@@ -18,6 +18,11 @@ from entropic_substrate.d1_observability import (
     ObservedD1Journal,
 )
 from entropic_substrate.d1_optimizer import D1OptimizerBundle, build_d1_optimizer
+from entropic_substrate.d1_resource_activation import (
+    D1ResourceActivation,
+    D1ResourceActivationFactory,
+    UnavailableResourceActivationFactory,
+)
 from entropic_substrate.d1_trainer_runtime import (
     D1FreshComponents,
     D1TrainerWallOrigin,
@@ -33,7 +38,6 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_ledger import (
     ResourceLedger,
     ResourceLedgerState,
-    ResourceMeterStrategy,
 )
 from entropic_substrate.evidence.resource_ledger_codec import (
     resource_ledger_state_from_mapping,
@@ -98,6 +102,7 @@ class D1ResumeAdmission:
     successful_step: int
     journal: ObservedD1Journal
     resource_ledger: ResourceLedger
+    resource_activation: D1ResourceActivation
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +194,7 @@ def open_d1_resume(
     origin: D1TrainerWallOrigin,
     locations: D1ResumeRunLocations,
     observer: D1JournalObserver,
-    meter_strategy: ResourceMeterStrategy | None = None,
+    resource_activation_factory: D1ResourceActivationFactory | None = None,
 ) -> D1ResumeAdmission:
     """Verify the artifact and durably record this segment before model construction."""
     if type(locations) is not D1ResumeRunLocations:
@@ -204,11 +209,17 @@ def open_d1_resume(
         plan=plan,
         start=start,
     )
+    activation_factory = resource_activation_factory or UnavailableResourceActivationFactory()
+    if not isinstance(cast(object, activation_factory), D1ResourceActivationFactory):
+        raise TypeError("D1 resource activation factory is invalid")
+    if activation_factory.registration != start.resource_activation:
+        raise ValueError("D1 resource activation differs from resume provenance")
+    activation = activation_factory.resume(start, checkpoint_ledger)
     ledger = ResourceLedger.restore(
         start,
         checkpoint_ledger,
         monotonic_origin_ns=origin.monotonic_ns,
-        meter_strategy=meter_strategy,
+        meter_strategy=activation.meter,
     )
     provenance = cast(
         Mapping[str, FrozenJson],
@@ -237,6 +248,7 @@ def open_d1_resume(
         step,
         journal,
         ledger,
+        activation,
     )
     _record_quarantined_work(admission, ledger)
     return admission

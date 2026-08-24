@@ -90,6 +90,7 @@ class D1ResourceEnvelopeIdentity:
                 "pytorch_version": start.pytorch_version,
                 "quoted_rate": start.quoted_rate.manifest,
                 "region": start.region,
+                "resource_activation": start.resource_activation.manifest,
                 "schema_version": start.schema_version,
             }
         )
@@ -259,6 +260,68 @@ def _validate_git(
             raise ValueError("D1 code commit does not precede trainer_start")
 
 
+def _attempt_identity(
+    design: D1RegisteredDesign, launch: D1ConfirmatoryLaunch
+) -> D1LaunchAttemptIdentity:
+    return D1LaunchAttemptIdentity(
+        run_class=RunClass.CONFIRMATORY,
+        family_digest=design.family_digest,
+        arm=launch.plan.profile.arm,
+        seed=launch.plan.seed,
+        logical_run_id=launch.plan.logical_run_id,
+        registered_design_digest=design.design_digest,
+    )
+
+
+def _matrix(
+    design: D1RegisteredDesign,
+    ordered: tuple[D1ConfirmatoryLaunch, ...],
+) -> D1ConfirmatoryMatrix:
+    return D1ConfirmatoryMatrix(
+        registered_design_digest=design.design_digest,
+        decision_contract_digest=design.decision_contract_digest,
+        registered_seeds=design.registered_seeds,
+        launches=ordered,
+        _attestation=_MATRIX_ATTESTATION,
+    )
+
+
+def attest_d1_confirmatory_matrix(
+    *,
+    design: D1RegisteredDesign,
+    launches: tuple[D1ConfirmatoryLaunch, ...],
+    git: D1GitProvenancePort,
+    ledger: D1LaunchAttemptLedger,
+) -> D1ConfirmatoryMatrix:
+    """Attest a post-wave matrix without creating another optional look."""
+    if type(design) is not D1RegisteredDesign or type(ledger) is not D1LaunchAttemptLedger:
+        raise TypeError("D1 matrix attestation requires registered design and attempt ledger")
+    if type(launches) is not tuple:
+        raise TypeError("D1 matrix launches must be an immutable tuple")
+    ordered = _validate_roster_and_pairing(design, launches)
+    _validate_git(design, ordered, git)
+    expected = {_attempt_identity(design, launch).optional_stopping_digest for launch in ordered}
+    observed = {event.identity.optional_stopping_digest for event in ledger.events}
+    if observed != expected:
+        raise ValueError("D1 completed attempt ledger identity set differs from the matrix")
+    for launch in ordered:
+        identity = _attempt_identity(design, launch)
+        history = tuple(
+            event
+            for event in ledger.events
+            if event.identity.optional_stopping_digest == identity.optional_stopping_digest
+        )
+        if tuple(event.status for event in history) != (
+            D1LaunchAttemptStatus.RECORDED,
+            D1LaunchAttemptStatus.TRAINER_STARTED,
+            D1LaunchAttemptStatus.COMPLETED,
+        ):
+            raise ValueError("D1 matrix requires one completed controller attempt per cell")
+        if history[1].observed_at != launch.start.trainer_started_at:
+            raise ValueError("D1 matrix trainer-start differs from the attempt ledger")
+    return _matrix(design, ordered)
+
+
 def admit_d1_confirmatory_matrix(
     *,
     design: D1RegisteredDesign,
@@ -278,25 +341,11 @@ def admit_d1_confirmatory_matrix(
 
     extended = ledger
     for launch in ordered:
-        identity = D1LaunchAttemptIdentity(
-            run_class=RunClass.CONFIRMATORY,
-            family_digest=design.family_digest,
-            arm=launch.plan.profile.arm,
-            seed=launch.plan.seed,
-            logical_run_id=launch.plan.logical_run_id,
-            registered_design_digest=design.design_digest,
-        )
+        identity = _attempt_identity(design, launch)
         extended = extended.record(identity, observed_at=launch.start.trainer_started_at)
         extended = extended.transition(
             identity,
             status=D1LaunchAttemptStatus.TRAINER_STARTED,
             observed_at=launch.start.trainer_started_at,
         )
-    matrix = D1ConfirmatoryMatrix(
-        registered_design_digest=design.design_digest,
-        decision_contract_digest=design.decision_contract_digest,
-        registered_seeds=design.registered_seeds,
-        launches=ordered,
-        _attestation=_MATRIX_ATTESTATION,
-    )
-    return D1ConfirmatoryMatrixAdmission(matrix=matrix, ledger=extended)
+    return D1ConfirmatoryMatrixAdmission(matrix=_matrix(design, ordered), ledger=extended)

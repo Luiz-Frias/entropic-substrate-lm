@@ -13,6 +13,7 @@ from entropic_substrate.evidence.resource_ledger import (
     UnavailableMeterStrategy,
 )
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -23,6 +24,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.evidence.resource_work import CostReading, ReadingMethod, ScalarReading
 from entropic_substrate.experiments.d1_primitives import EvidenceClass
@@ -34,7 +36,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
     logical = "d1-both-seed-9"
     created = datetime(2026, 8, 23, 20, segment * 10, tzinfo=UTC)
     return RunStartProvenance(
-        schema_version="resource-telemetry/v2",
+        schema_version=RESOURCE_TELEMETRY_SCHEMA_VERSION,
         logical_run_id=logical,
         execution_segment_index=segment,
         execution_segment_id=execution_segment_id(logical, segment),
@@ -53,6 +55,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
         pytorch_version="2.13.0",
         compiler_enabled=True,
         compiler_version="triton-3.4.0",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             amount=Money(amount=Decimal("3.19"), currency="USD"),
             billing_unit=BillingUnit.HOUR,

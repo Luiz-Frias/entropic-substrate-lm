@@ -8,8 +8,17 @@ from pathlib import Path
 from typing import cast
 
 from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
+from entropic_substrate.d1_dual_failure import (
+    D1PrimarySecondaryFailure,
+    D1SecondaryFailureEvidence,
+    D1SecondaryFailureStage,
+)
 from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
 from entropic_substrate.d1_observability import D1JournalObserver, ObservedD1Journal
+from entropic_substrate.d1_resource_activation import (
+    D1ActiveResourceMeter,
+    D1ResourceActivationFactory,
+)
 from entropic_substrate.d1_resume_runtime import (
     D1ResumeRunLocations,
     open_d1_resume,
@@ -37,8 +46,8 @@ from entropic_substrate.evidence.d1_journal_values import (
 )
 from entropic_substrate.evidence.resource_ledger import (
     ResourceLedger,
-    ResourceMeterStrategy,
 )
+from entropic_substrate.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
@@ -118,12 +127,19 @@ def _evaluate(
     components: D1FreshComponents,
     journal: ObservedD1Journal,
     clock: D1TrainerClock,
+    meter: D1ActiveResourceMeter,
     step: int,
 ) -> tuple[D1EvalResult, ResourceWorkSnapshot]:
-    result = D1Evaluator().evaluate(system=components.system, sampler=components.eval_sampler)
+    with meter.measure(ResourcePhase.EVAL):
+        result = D1Evaluator().evaluate(system=components.system, sampler=components.eval_sampler)
     batching = components.plan.profile.draft.execution_protocol.batching
     target_positions = (
         result.batch_count * batching.batch_size * (batching.sequence_length + batching.horizon)
+    )
+    meter.record_positions(
+        ResourcePhase.EVAL,
+        online_positions=result.online_positions,
+        target_positions=target_positions,
     )
     work = components.resource_ledger.record_eval(
         online_positions=result.online_positions,
@@ -188,8 +204,18 @@ def _trainer_failure(
     step: int,
     error: Exception,
     checkpoint_sha256: str | None,
-) -> D1TrainerFailureHandoff:
+) -> tuple[D1TrainerFailureHandoff, BaseException]:
     trainer_ended_at = clock.utc_now()
+    secondary_failure: D1SecondaryFailureEvidence | None = None
+    failure_cause: BaseException = error
+    try:
+        ledger.record_meter_observation(monotonic_ns=clock.monotonic_ns())
+    except Exception as meter_error:
+        secondary_failure = D1SecondaryFailureEvidence.from_error(
+            D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+            meter_error,
+        )
+        failure_cause = D1PrimarySecondaryFailure(error, meter_error)
     journal_cursor = journal.state
     resource_state = ledger.current_state()
     error_message = str(error) or repr(error)
@@ -203,6 +229,7 @@ def _trainer_failure(
         "operator_finalization_required": True,
         "resource_ledger_state": resource_state.manifest,
         "rollback_claimed": False,
+        "secondary_failure": (None if secondary_failure is None else secondary_failure.manifest),
         "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
     }
     numerical_defect = terminal_numerical_defect_for_failure(
@@ -231,7 +258,14 @@ def _trainer_failure(
         journal_state=journal.state,
         resource_ledger_state=resource_state,
     )
-    return D1TrainerFailureHandoff.from_error(termination, error)
+    return (
+        D1TrainerFailureHandoff.from_error(
+            termination,
+            error,
+            secondary_failure=secondary_failure,
+        ),
+        failure_cause,
+    )
 
 
 def run_d1_resume(
@@ -242,7 +276,7 @@ def run_d1_resume(
     locations: D1ResumeRunLocations,
     observer: D1JournalObserver,
     clock: D1TrainerClock | None = None,
-    meter_strategy: ResourceMeterStrategy | None = None,
+    resource_activation_factory: D1ResourceActivationFactory | None = None,
 ) -> D1ResumeRunCompletion:
     """Record the segment, restore exact state, and stop before billing finalization."""
     active_clock = clock or SystemD1TrainerClock()
@@ -254,12 +288,12 @@ def run_d1_resume(
         origin=origin,
         locations=locations,
         observer=observer,
-        meter_strategy=meter_strategy,
+        resource_activation_factory=resource_activation_factory,
     )
     step = admission.successful_step
     ledger = admission.resource_ledger
     latest_checkpoint_sha256 = admission.checkpoint_receipt.sha256
-    with admission.journal as journal:
+    with admission.journal as journal, admission.resource_activation:
         try:
             restored = restore_d1_resume_runtime(admission)
             components = restored.components
@@ -275,13 +309,14 @@ def run_d1_resume(
                     batch.target_encoder_context.numel(),
                 )
                 try:
-                    result = apply_d1_training_step(
-                        system=components.system,
-                        optimizer_bundle=components.optimizer,
-                        batch=batch,
-                        spec=protocol.optimization,
-                        successful_step=step,
-                    )
+                    with admission.resource_activation.meter.measure(ResourcePhase.TRAIN):
+                        result = apply_d1_training_step(
+                            system=components.system,
+                            optimizer_bundle=components.optimizer,
+                            batch=batch,
+                            spec=protocol.optimization,
+                            successful_step=step,
+                        )
                 except BaseException:
                     ledger.record_train_attempt(
                         online_positions=online,
@@ -290,6 +325,11 @@ def run_d1_resume(
                         committed=False,
                     )
                     raise
+                admission.resource_activation.meter.record_positions(
+                    ResourcePhase.TRAIN,
+                    online_positions=online,
+                    target_positions=target,
+                )
                 step = result.successful_step
                 ledger.record_train_attempt(
                     online_positions=online,
@@ -316,7 +356,13 @@ def run_d1_resume(
                 )
                 terminal = step == protocol.optimization.max_steps
                 if step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = _evaluate(components, journal, active_clock, step)
+                    final_eval, final_work = _evaluate(
+                        components,
+                        journal,
+                        active_clock,
+                        admission.resource_activation.meter,
+                        step,
+                    )
                     best_nats = min(best_nats, final_eval.nats_per_byte)
                     scheduled = protocol.evaluation.save_interval > 0 and (
                         step % protocol.evaluation.save_interval == 0
@@ -355,7 +401,7 @@ def run_d1_resume(
                 tail_quarantine=journal.tail_quarantine,
             )
         except Exception as error:
-            handoff = _trainer_failure(
+            handoff, failure_cause = _trainer_failure(
                 plan,
                 journal,
                 ledger,
@@ -365,4 +411,4 @@ def run_d1_resume(
                 error,
                 latest_checkpoint_sha256,
             )
-            raise D1ResumeRunFailure(handoff) from error
+            raise D1ResumeRunFailure(handoff) from failure_cause

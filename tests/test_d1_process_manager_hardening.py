@@ -161,16 +161,24 @@ def test_capture_analysis_and_review_are_single_campaign_facts(tmp_path: Path) -
             artifact=_artifact(23, "analysis"),
             event_id="analysis-again",
         )
-    reviewed = analyzed.file_review(
+    committed = analyzed.file_alias_commitment(
+        actor=_actor(ActorRole.ANALYSIS),
+        artifact=_artifact(24, "commitment"),
+        event_id="commitment",
+    )
+    receipt = _artifact(27, "receipt")
+    reviewed = committed.file_review(
         actor=_actor(ActorRole.REVIEW),
-        packet=_artifact(24, "packet"),
-        report=_artifact(25, "report"),
+        packet=_artifact(25, "packet"),
+        report=_artifact(26, "report"),
+        receipt=receipt,
         event_id="review",
     )
     with pytest.raises(D1ProcessTransitionError, match="wrong_order"):
         reviewed.file_review(
             actor=_actor(ActorRole.REVIEW),
-            packet=_artifact(26, "packet"),
-            report=_artifact(27, "report"),
+            packet=_artifact(28, "packet"),
+            report=_artifact(29, "report"),
+            receipt=_artifact(30, "receipt"),
             event_id="review-again",
         )
