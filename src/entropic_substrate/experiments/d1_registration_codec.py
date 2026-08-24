@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
 from entropic_substrate.evidence.d1_contract import (
@@ -18,14 +20,35 @@ from entropic_substrate.evidence.d1_contract import (
 )
 from entropic_substrate.evidence.d1_types import D1ContrastTerm, D1FamilyIdentity
 from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
-from entropic_substrate.experiments.d1_registered_design import decision_contract_manifest
+from entropic_substrate.experiments.d1_family import D1ExperimentFamily
+from entropic_substrate.experiments.d1_primitives import (
+    D1Arm,
+    canonical_digest,
+    require_sha256,
+)
+from entropic_substrate.experiments.d1_registered_design import (
+    D1AdmissionBlocked,
+    D1PreregistrationArtifact,
+    D1RegisteredDesign,
+    D1RegisteredDesignCandidate,
+    admit_d1_registered_design,
+    decision_contract_digest,
+    decision_contract_manifest,
+)
 
 __all__ = [
+    "D1PreregistrationByteEvidence",
+    "D1RegisteredDesignDeclaration",
     "D1RegistrationCodecError",
     "decision_contract_from_mapping",
     "decision_contract_to_mapping",
+    "hydrate_registered_design",
     "parse_decision_contract",
+    "parse_registered_design_declaration",
+    "registered_design_declaration_from_mapping",
+    "registered_design_to_mapping",
     "serialize_decision_contract",
+    "serialize_registered_design",
 ]
 
 _SCHEMA = "d1-decision-contract-v1"
@@ -378,3 +401,243 @@ def parse_decision_contract(payload: str) -> D1DecisionContract:
     if serialize_decision_contract(contract) != payload:
         _fail("decision contract JSON is not canonical")
     return contract
+
+
+_DESIGN_KEYS = frozenset(
+    {
+        "arm_construction_digests",
+        "decision_contract_digest",
+        "family_digest",
+        "preregistration",
+        "registered_seeds",
+        "schema_version",
+    }
+)
+_PREREGISTRATION_KEYS = frozenset({"blob_sha256", "commit", "path"})
+_DESIGN_SCHEMA = "d1-registered-design-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class D1PreregistrationByteEvidence:
+    """Stable raw preregistration bytes with self-verifying size and SHA-256."""
+
+    payload: bytes = field(repr=False)
+    size_bytes: int
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if type(self.payload) is not bytes or not self.payload:
+            raise ValueError("preregistration payload must be nonempty bytes")
+        if type(self.size_bytes) is not int or self.size_bytes != len(self.payload):
+            raise ValueError("preregistration size_bytes differs from raw bytes")
+        try:
+            require_sha256(self.sha256, label="preregistration sha256")
+        except (TypeError, ValueError) as error:
+            raise ValueError("preregistration sha256 must be lowercase SHA-256") from error
+        if self.sha256 != self.sha256.lower():
+            raise ValueError("preregistration sha256 must be lowercase SHA-256")
+        if hashlib.sha256(self.payload).hexdigest() != self.sha256:
+            raise ValueError("preregistration sha256 differs from raw bytes")
+
+    @classmethod
+    def from_bytes(cls, payload: bytes) -> D1PreregistrationByteEvidence:
+        if type(payload) is not bytes:
+            raise TypeError("preregistration evidence requires bytes")
+        return cls(payload, len(payload), hashlib.sha256(payload).hexdigest())
+
+
+@dataclass(frozen=True, slots=True)
+class D1RegisteredDesignDeclaration:
+    """Decoded design claim without factory attestation or gate authority."""
+
+    family_identity: D1FamilyIdentity
+    decision_contract_digest: str
+    registered_seeds: tuple[int, ...]
+    preregistration: D1PreregistrationArtifact
+
+    def __post_init__(self) -> None:
+        if type(self.family_identity) is not D1FamilyIdentity:
+            raise TypeError("design declaration requires D1FamilyIdentity")
+        require_sha256(
+            self.decision_contract_digest,
+            label="design declaration decision_contract_digest",
+        )
+        if (
+            type(self.registered_seeds) is not tuple
+            or not self.registered_seeds
+            or any(type(seed) is not int or seed < 0 for seed in self.registered_seeds)
+            or len(set(self.registered_seeds)) != len(self.registered_seeds)
+        ):
+            raise ValueError("design declaration seeds must be unique nonnegative integers")
+        if type(self.preregistration) is not D1PreregistrationArtifact:
+            raise TypeError("design declaration requires preregistration identity")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "arm_construction_digests": dict(self.family_identity.arm_construction_digests),
+            "decision_contract_digest": self.decision_contract_digest,
+            "family_digest": self.family_identity.family_digest,
+            "preregistration": self.preregistration.manifest,
+            "registered_seeds": list(self.registered_seeds),
+            "schema_version": _DESIGN_SCHEMA,
+        }
+
+    @property
+    def design_digest(self) -> str:
+        return canonical_digest(self.manifest)
+
+
+def _sha256_text(value: object, *, label: str) -> str:
+    text = _text(value, label=label)
+    try:
+        require_sha256(text, label=label)
+    except ValueError as error:
+        _fail(f"{label} must be lowercase SHA-256", error)
+    if text != text.lower():
+        _fail(f"{label} must be lowercase SHA-256")
+    return text
+
+
+def _design_preregistration(value: object) -> D1PreregistrationArtifact:
+    item = _mapping(value, label="registered design preregistration")
+    _exact(item, _PREREGISTRATION_KEYS, label="registered design preregistration")
+    try:
+        return D1PreregistrationArtifact(
+            path=_text(item["path"], label="preregistration.path"),
+            blob_sha256=_sha256_text(item["blob_sha256"], label="preregistration.blob_sha256"),
+            commit=_text(item["commit"], label="preregistration.commit"),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"registered design preregistration is invalid: {error}", error)
+
+
+def registered_design_declaration_from_mapping(
+    value: object,
+) -> D1RegisteredDesignDeclaration:
+    root = _mapping(value, label="registered design")
+    _exact(root, _DESIGN_KEYS, label="registered design")
+    if root["schema_version"] != _DESIGN_SCHEMA:
+        _fail("registered design schema_version is unsupported")
+    raw_seeds = _array(root["registered_seeds"], label="registered_seeds")
+    if any(type(seed) is not int or seed < 0 for seed in raw_seeds):
+        _fail("registered_seeds must contain nonnegative integers")
+    try:
+        declaration = D1RegisteredDesignDeclaration(
+            family_identity=D1FamilyIdentity(
+                family_digest=_sha256_text(
+                    root["family_digest"], label="registered design family_digest"
+                ),
+                arm_construction_digests=_string_mapping(
+                    root["arm_construction_digests"],
+                    label="registered design arm_construction_digests",
+                ),
+            ),
+            decision_contract_digest=_sha256_text(
+                root["decision_contract_digest"],
+                label="registered design decision_contract_digest",
+            ),
+            registered_seeds=tuple(cast(list[int], raw_seeds)),
+            preregistration=_design_preregistration(root["preregistration"]),
+        )
+    except D1RegistrationCodecError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"registered design is invalid: {error}", error)
+    if _canonical(root) != _canonical(declaration.manifest):
+        _fail("registered design mapping is not canonical")
+    return declaration
+
+
+def registered_design_to_mapping(design: D1RegisteredDesign) -> dict[str, object]:
+    if type(design) is not D1RegisteredDesign:
+        raise TypeError("design registration codec requires D1RegisteredDesign")
+    return copy.deepcopy(design.manifest)
+
+
+def serialize_registered_design(design: D1RegisteredDesign) -> str:
+    return _canonical(registered_design_to_mapping(design))
+
+
+def _design_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            _fail(f"duplicate registered-design JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def parse_registered_design_declaration(payload: str) -> D1RegisteredDesignDeclaration:
+    if type(payload) is not str or not payload:
+        _fail("registered design payload must be nonempty text")
+    try:
+        value: object = json.loads(
+            payload,
+            object_pairs_hook=_design_pairs,
+            parse_constant=_nonfinite,
+        )
+    except D1RegistrationCodecError:
+        raise
+    except (json.JSONDecodeError, UnicodeError) as error:
+        _fail("registered design payload is invalid JSON", error)
+    declaration = registered_design_declaration_from_mapping(value)
+    if _canonical(declaration.manifest) != payload:
+        _fail("registered design JSON is not canonical")
+    return declaration
+
+
+def _family_identity(family: D1ExperimentFamily) -> D1FamilyIdentity:
+    return D1FamilyIdentity(
+        family_digest=family.family_digest,
+        arm_construction_digests={
+            arm.value: family.draft_for(arm).construction_digest for arm in D1Arm
+        },
+    )
+
+
+def hydrate_registered_design(
+    payload: str,
+    *,
+    expected_design_digest: str,
+    family: D1ExperimentFamily,
+    decision_contract: D1DecisionContract,
+    preregistration_evidence: D1PreregistrationByteEvidence,
+) -> D1RegisteredDesign:
+    """Re-earn design attestation from decoded evidence through admission."""
+    if type(family) is not D1ExperimentFamily:
+        raise TypeError("design hydration requires D1ExperimentFamily")
+    if type(decision_contract) is not D1DecisionContract:
+        raise TypeError("design hydration requires D1DecisionContract")
+    if type(preregistration_evidence) is not D1PreregistrationByteEvidence:
+        raise TypeError("design hydration requires preregistration byte evidence")
+    expected = _sha256_text(expected_design_digest, label="expected design digest")
+    declaration = parse_registered_design_declaration(payload)
+    if declaration.design_digest != expected:
+        _fail("registered design digest differs from expected design digest")
+    if declaration.preregistration.blob_sha256 != preregistration_evidence.sha256:
+        _fail("raw preregistration SHA-256 differs from registered blob")
+    if declaration.family_identity != _family_identity(family):
+        _fail("registered design family or arm identities differ from supplied family")
+    if declaration.decision_contract_digest != decision_contract_digest(decision_contract):
+        _fail("registered design differs from decoded decision contract")
+    try:
+        admitted = admit_d1_registered_design(
+            D1RegisteredDesignCandidate(
+                family=family,
+                decision_contract=decision_contract,
+                registered_seeds=declaration.registered_seeds,
+                preregistration=declaration.preregistration,
+            )
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"registered design admission failed: {error}", error)
+    if type(admitted) is D1AdmissionBlocked:
+        _fail("registered design admission remained blocked")
+    if type(admitted) is not D1RegisteredDesign:
+        _fail("registered design admission returned an unsupported result")
+    if admitted.manifest != declaration.manifest:
+        _fail("rehydrated design manifest differs from persisted declaration")
+    if admitted.design_digest != expected:
+        _fail("rehydrated design digest differs from expected design digest")
+    return admitted
