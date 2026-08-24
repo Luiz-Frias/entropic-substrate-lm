@@ -130,7 +130,7 @@ def test_terminal_defect_input_requires_journal_billing_and_unique_artifact_path
 def test_validated_defect_binds_expected_run_and_canonical_record(tmp_path: Path) -> None:
     expected = _expected()
     capture = _defect_input(tmp_path / "defect-input", expected.logical_run_id)
-    value = D1ValidatedTerminalDefect(expected, capture, _record(expected))
+    value = D1ValidatedTerminalDefect(expected, capture, _record(expected), ((0, "e" * 64, 2),))
 
     assert value.expected is expected
     with pytest.raises(ValueError, match="identity"):

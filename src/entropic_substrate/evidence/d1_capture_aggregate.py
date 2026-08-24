@@ -84,6 +84,7 @@ class D1ValidatedTerminalDefect:
     expected: D1ExpectedRun
     capture_input: D1TerminalDefectInput
     record: D1TerminalNumericalDefectRecord
+    data_order_segments: tuple[tuple[int, str, int], ...]
 
     def __post_init__(self) -> None:
         if type(self.expected) is not D1ExpectedRun:
@@ -92,6 +93,8 @@ class D1ValidatedTerminalDefect:
             raise TypeError("validated terminal defect requires D1TerminalDefectInput")
         if type(self.record) is not D1TerminalNumericalDefectRecord:
             raise TypeError("validated terminal defect requires canonical defect record")
+        if type(self.data_order_segments) is not tuple or not self.data_order_segments:
+            raise ValueError("validated terminal defect requires measured data-order evidence")
         expected_identity = (
             self.expected.logical_run_id,
             self.expected.arm,
@@ -126,6 +129,7 @@ class D1ValidatedTerminalDefect:
         return {
             "artifacts": self.capture_input.manifest,
             "defect": self.record.manifest,
+            "data_order_segments": [list(item) for item in self.data_order_segments],
             "identity": self.expected.manifest,
         }
 

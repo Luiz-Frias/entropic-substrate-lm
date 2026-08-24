@@ -34,7 +34,14 @@ from entropic_substrate.evidence.d1_telemetry_values import (
 )
 from entropic_substrate.experiments.d1_primitives import RunClass
 
-__all__ = ["D1CaptureBundleError", "build_d1_capture_bundle"]
+__all__ = [
+    "D1CaptureBundleError",
+    "build_d1_capture_bundle",
+    "validate_d1_attempt_evidence",
+    "validate_d1_capture_artifacts",
+    "validate_d1_complete_pairing",
+    "validate_d1_complete_run_capture",
+]
 
 
 class D1CaptureBundleError(ValueError):
@@ -245,6 +252,39 @@ def _validate_attempts(
         if run.status not in allowed:
             _fail("attempt_status", declared.logical_run_id, "journal contradicts its lane")
     return tuple(artifacts)
+
+
+def validate_d1_capture_artifacts(
+    root: str | Path, artifacts: tuple[D1ArtifactIdentity, ...]
+) -> None:
+    """Public strict artifact-identity guard for sibling capture lanes."""
+    _verify_artifacts(Path(root), artifacts)
+
+
+def validate_d1_complete_run_capture(
+    root: str | Path,
+    *,
+    capture: D1CaptureInput,
+    expected: D1ExpectedRun,
+    roster: D1LaunchRoster,
+) -> D1ValidatedRunCapture:
+    """Admit one complete roster cell without weakening whole-bundle rules."""
+    return _read_confirmatory(Path(root), capture, expected, roster)
+
+
+def validate_d1_complete_pairing(captures: tuple[D1ValidatedRunCapture, ...]) -> None:
+    """Apply the existing source-order pairing guard to a complete-run subset."""
+    _validate_pairing(captures)
+
+
+def validate_d1_attempt_evidence(
+    root: str | Path,
+    *,
+    roster: D1LaunchRoster,
+    evidence: tuple[D1AttemptEvidence, ...],
+) -> tuple[D1ArtifactIdentity, ...]:
+    """Admit every declared non-result attempt and return its artifact set."""
+    return _validate_attempts(Path(root), roster, evidence)
 
 
 def build_d1_capture_bundle(
