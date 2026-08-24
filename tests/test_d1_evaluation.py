@@ -99,6 +99,11 @@ def test_evaluation_is_repeatable_count_weighted_and_restores_training_mode() ->
     assert first.mean_baseline_improvement == pytest.approx(
         first.mean_displacement_nll - first.future_nll
     )
+    assert "state_sample_covariance" not in first.telemetry_manifest
+    assert first.telemetry_manifest["state_variance"] == list(first.state_variance)
+    assert first.telemetry_manifest["pairwise_cosine_semantic"] == (
+        "all_distinct_online_state_positions_v1"
+    )
 
 
 def test_global_covariance_rank_and_pairwise_cosine_match_materialized_oracle() -> None:
