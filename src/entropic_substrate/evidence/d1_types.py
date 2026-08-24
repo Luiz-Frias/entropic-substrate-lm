@@ -29,6 +29,8 @@ ROOT_FIELDS: Final[frozenset[str]] = frozenset(
         "exclusions",
         "inputs",
         "review",
+        "clause_precedence",
+        "verdict_vocabulary",
         "verdict",
         "successor",
     }
@@ -120,15 +122,25 @@ class D1ContrastTerm:
 
 
 @dataclass(frozen=True)
+class D1Endpoint:
+    metric: str
+    estimator: str
+    smoothing_window: int
+
+
+@dataclass(frozen=True)
 class D1Contrast:
     contrast_id: str
     contrast_kind: str
     terms: tuple[D1ContrastTerm, ...]
+    endpoint: D1Endpoint
     estimate: float
     sample_sd: float | None
     interval_lower: float
     interval_upper: float
     confidence_level: float
+    multiplicity: str
+    margins: Mapping[str, float]
     n: int
     df: int | None
     evidence_class: str

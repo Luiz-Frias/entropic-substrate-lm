@@ -40,6 +40,7 @@ from entropic_substrate.evidence.d1_types import (
     D1Clause,
     D1Contrast,
     D1ContrastTerm,
+    D1Endpoint,
     D1FamilyIdentity,
     D1InputIdentity,
     D1Integrity,
@@ -69,6 +70,8 @@ class ValidatedD1Verdict:
     exclusions: tuple[tuple[str, str, ContentHash], ...]
     inputs: tuple[D1InputIdentity, ...]
     review: D1Review
+    clause_precedence: tuple[str, ...]
+    verdict_vocabulary: str
     verdict: str
     successor: D1Successor
 
@@ -100,6 +103,17 @@ class ValidatedD1Verdict:
         exclusions = _parse_exclusions(root["exclusions"])
         inputs = _parse_inputs(root["inputs"])
         review = parse_review(root["review"])
+        raw_precedence = root["clause_precedence"]
+        if not isinstance(raw_precedence, list) or any(
+            not isinstance(name, str) or not name for name in raw_precedence
+        ):
+            raise error(
+                "invalid_clause_precedence",
+                "clause_precedence",
+                "must be a list of nonempty clause identifiers",
+            )
+        clause_precedence = tuple(raw_precedence)
+        verdict_vocabulary = string(root["verdict_vocabulary"], path="verdict_vocabulary")
         verdict = string(root["verdict"], path="verdict")
         if verdict not in VERDICTS:
             raise error("invalid_verdict", "verdict", f"must be one of {sorted(VERDICTS)}")
@@ -111,7 +125,10 @@ class ValidatedD1Verdict:
             contrasts=contrasts,
             clauses=clauses,
             integrity=integrity,
+            exclusions=exclusions,
             review=review,
+            clause_precedence=clause_precedence,
+            verdict_vocabulary=verdict_vocabulary,
             verdict=verdict,
             successor=successor,
         )
@@ -127,6 +144,8 @@ class ValidatedD1Verdict:
             exclusions=exclusions,
             inputs=inputs,
             review=review,
+            clause_precedence=clause_precedence,
+            verdict_vocabulary=verdict_vocabulary,
             verdict=verdict,
             successor=successor,
         )
@@ -211,11 +230,14 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
             "contrast_id",
             "contrast_kind",
             "terms",
+            "endpoint",
             "estimate",
             "sample_sd",
             "interval_lower",
             "interval_upper",
             "confidence_level",
+            "multiplicity",
+            "margins",
             "n",
             "df",
             "evidence_class",
@@ -237,6 +259,18 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         if contrast_kind not in CONTRAST_KINDS:
             raise error("invalid_contrast_kind", f"{path}.contrast_kind", "unknown contrast kind")
         terms = _parse_terms(contrast["terms"], path=f"{path}.terms", contrast_kind=contrast_kind)
+        endpoint_data = object_exact(
+            contrast["endpoint"],
+            path=f"{path}.endpoint",
+            fields=frozenset({"metric", "estimator", "smoothing_window"}),
+        )
+        endpoint = D1Endpoint(
+            metric=string(endpoint_data["metric"], path=f"{path}.endpoint.metric"),
+            estimator=string(endpoint_data["estimator"], path=f"{path}.endpoint.estimator"),
+            smoothing_window=positive_int(
+                endpoint_data["smoothing_window"], path=f"{path}.endpoint.smoothing_window"
+            ),
+        )
         estimate = finite_number(contrast["estimate"], path=f"{path}.estimate")
         sample_sd = number_or_none(contrast["sample_sd"], path=f"{path}.sample_sd")
         if sample_sd is not None and sample_sd < 0:
@@ -248,6 +282,18 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         confidence = finite_number(contrast["confidence_level"], path=f"{path}.confidence_level")
         if not 0.0 < confidence < 1.0:
             raise error("invalid_confidence_level", f"{path}.confidence_level", "must be in (0, 1)")
+        multiplicity = string(contrast["multiplicity"], path=f"{path}.multiplicity")
+        raw_margins = contrast["margins"]
+        if not isinstance(raw_margins, Mapping):
+            raise error("invalid_margins", f"{path}.margins", "must be an object")
+        margins: dict[str, float] = {}
+        for name, raw_margin in raw_margins.items():
+            if not isinstance(name, str) or not name:
+                raise error("invalid_margins", f"{path}.margins", "keys must be nonempty")
+            margin = finite_number(raw_margin, path=f"{path}.margins.{name}")
+            if margin < 0.0:
+                raise error("invalid_margins", f"{path}.margins.{name}", "must be nonnegative")
+            margins[name] = margin
         n = positive_int(contrast["n"], path=f"{path}.n")
         raw_df = contrast["df"]
         if n == 1:
@@ -282,11 +328,14 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 contrast_id=contrast_id,
                 contrast_kind=contrast_kind,
                 terms=terms,
+                endpoint=endpoint,
                 estimate=estimate,
                 sample_sd=sample_sd,
                 interval_lower=lower,
                 interval_upper=upper,
                 confidence_level=confidence,
+                multiplicity=multiplicity,
+                margins=MappingProxyType(margins),
                 n=n,
                 df=df,
                 evidence_class=evidence_class,
