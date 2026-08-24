@@ -10,20 +10,37 @@ from types import MappingProxyType
 from typing import NoReturn, cast
 
 from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
+from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+    D1CaptureAggregateDeclaration,
+)
+from entropic_substrate.evidence.d1_capture_artifacts import (
+    D1ArtifactIdentity,
+    D1DvcBindingState,
+)
+from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
 from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,
 )
 from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.experiments.d1_registered_design import D1PreregistrationArtifact
+from entropic_substrate.experiments.d1_registration_codec import (
+    D1PreregistrationByteEvidence,
+    D1RegisteredDesignDeclaration,
+)
 
 __all__ = [
     "D1AliasApplicationControl",
     "D1AliasCommitmentControl",
     "D1AliasRevealControl",
+    "D1CaptureReceiptControl",
     "D1ExternalAnalysisControlError",
+    "D1PreregistrationControl",
     "decode_d1_alias_application_control",
     "parse_d1_alias_commitment_control",
     "parse_d1_alias_reveal_control",
+    "parse_d1_capture_receipt_control",
+    "parse_d1_preregistration_control",
 ]
 
 _COMMITMENT_SCHEMA = "d1-alias-commitment-v1"
@@ -32,6 +49,13 @@ _COMMITMENT_FIELDS = frozenset({"reveal_sha256", "schema_version"})
 _REVEAL_FIELDS = frozenset({"mapping", "nonce", "schema_version"})
 _ALIASES = frozenset({"A", "B", "C", "D"})
 _APPLICATION_TOKEN = object()
+_CAPTURE_RECEIPT_SCHEMA = "d1-heterogeneous-capture-receipt-v1"
+_CAPTURE_RECEIPT_FIELDS = frozenset(
+    {"aggregate_digest", "analysis_ready", "pointer_commit", "pointer_identity", "schema_version"}
+)
+_POINTER_FIELDS = frozenset({"object_id", "pointer_path", "pointer_sha256"})
+_PREREGISTRATION_SCHEMA = "d1-preregistration-control-v1"
+_PREREGISTRATION_FIELDS = frozenset({"commit", "path", "schema_version", "sha256", "size_bytes"})
 
 
 class D1ExternalAnalysisControlError(ValueError):
@@ -109,6 +133,29 @@ def _sha256(value: object, *, label: str) -> str:
     return value
 
 
+def _text(value: object, *, label: str) -> str:
+    if type(value) is not str or not value or value.strip() != value:
+        _fail(f"{label} must be a nonempty trimmed string")
+    return value
+
+
+def _positive_integer(value: object, *, label: str) -> int:
+    if type(value) is not int or value < 1:
+        _fail(f"{label} must be a positive integer")
+    return value
+
+
+def _commit(value: object, *, label: str) -> str:
+    text = _text(value, label=label)
+    if (
+        not 7 <= len(text) <= 64
+        or text != text.lower()
+        or any(character not in "0123456789abcdef" for character in text)
+    ):
+        _fail(f"{label} must be lowercase hexadecimal")
+    return text
+
+
 @dataclass(frozen=True, slots=True)
 class D1AliasCommitmentControl:
     canonical_bytes: bytes = field(repr=False)
@@ -153,6 +200,24 @@ class D1AliasApplicationControl:
             raise ValueError("verified alias application mapping differs from reveal")
         if self.aliases.sealed_commitment != self.commitment_sha256:
             raise ValueError("verified alias application sealed commitment differs")
+
+
+@dataclass(frozen=True, slots=True)
+class D1CaptureReceiptControl:
+    canonical_bytes: bytes = field(repr=False)
+    aggregate_digest: str
+    analysis_ready: bool
+    pointer_commit: str
+    pointer: D1DvcPointerIdentity
+
+
+@dataclass(frozen=True, slots=True)
+class D1PreregistrationControl:
+    canonical_bytes: bytes = field(repr=False)
+    path: str
+    commit: str
+    size_bytes: int
+    sha256: str
 
 
 def parse_d1_alias_commitment_control(payload: bytes) -> D1AliasCommitmentControl:
@@ -228,3 +293,106 @@ def decode_d1_alias_application_control(
         reveal_sha256,
         _APPLICATION_TOKEN,
     )
+
+
+def _aggregate_artifacts(
+    aggregate: D1CaptureAggregateDeclaration,
+) -> tuple[D1ArtifactIdentity, ...]:
+    return (
+        tuple(artifact for item in aggregate.complete_inputs for artifact in item.artifacts)
+        + tuple(
+            artifact for item in aggregate.terminal_defect_inputs for artifact in item.artifacts
+        )
+        + tuple(artifact for item in aggregate.attempt_evidence for artifact in item.artifacts)
+    )
+
+
+def parse_d1_capture_receipt_control(
+    payload: bytes,
+    *,
+    aggregate: D1CaptureAggregateDeclaration,
+) -> D1CaptureReceiptControl:
+    if type(aggregate) is not D1CaptureAggregateDeclaration:
+        raise TypeError("capture receipt control requires D1CaptureAggregateDeclaration")
+    manifest = _decode(
+        payload,
+        fields=_CAPTURE_RECEIPT_FIELDS,
+        schema=_CAPTURE_RECEIPT_SCHEMA,
+        label="capture receipt",
+    )
+    if manifest["analysis_ready"] is not True:
+        _fail("capture receipt analysis_ready must be exact true")
+    aggregate_digest = _sha256(
+        manifest["aggregate_digest"], label="capture receipt aggregate_digest"
+    )
+    if aggregate_digest != aggregate.manifest_digest:
+        _fail("capture receipt aggregate_digest differs from aggregate declaration")
+    pointer_manifest = manifest["pointer_identity"]
+    if type(pointer_manifest) is not dict:
+        _fail("capture receipt pointer_identity must be an object")
+    pointer_values = cast(dict[str, object], pointer_manifest)
+    if frozenset(pointer_values) != _POINTER_FIELDS:
+        _fail("capture receipt pointer_identity fields must be exact")
+    try:
+        pointer = D1DvcPointerIdentity(
+            pointer_path=_text(
+                pointer_values["pointer_path"], label="capture receipt pointer_path"
+            ),
+            pointer_sha256=_sha256(
+                pointer_values["pointer_sha256"], label="capture receipt pointer_sha256"
+            ),
+            object_id=_text(pointer_values["object_id"], label="capture receipt object_id"),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"capture receipt pointer identity is invalid: {error}", error)
+    artifacts = _aggregate_artifacts(aggregate)
+    if not artifacts:
+        _fail("capture receipt aggregate has no declared artifacts")
+    if any(
+        artifact.dvc.state is not D1DvcBindingState.BOUND
+        or artifact.dvc.pointer_path != pointer.pointer_path
+        or artifact.dvc.pointer_sha256 != pointer.pointer_sha256
+        or artifact.dvc.object_id != pointer.object_id
+        for artifact in artifacts
+    ):
+        _fail("capture receipt pointer identity does not bind every aggregate artifact")
+    return D1CaptureReceiptControl(
+        payload,
+        aggregate_digest,
+        True,
+        _commit(manifest["pointer_commit"], label="capture receipt pointer_commit"),
+        pointer,
+    )
+
+
+def parse_d1_preregistration_control(
+    payload: bytes,
+    *,
+    design: D1RegisteredDesignDeclaration,
+    evidence: D1PreregistrationByteEvidence,
+) -> D1PreregistrationControl:
+    if type(design) is not D1RegisteredDesignDeclaration:
+        raise TypeError("preregistration control requires D1RegisteredDesignDeclaration")
+    if type(evidence) is not D1PreregistrationByteEvidence:
+        raise TypeError("preregistration control requires D1PreregistrationByteEvidence")
+    manifest = _decode(
+        payload,
+        fields=_PREREGISTRATION_FIELDS,
+        schema=_PREREGISTRATION_SCHEMA,
+        label="preregistration control",
+    )
+    path = _text(manifest["path"], label="preregistration control path")
+    commit = _commit(manifest["commit"], label="preregistration control commit")
+    size_bytes = _positive_integer(
+        manifest["size_bytes"], label="preregistration control size_bytes"
+    )
+    sha256 = _sha256(manifest["sha256"], label="preregistration control sha256")
+    try:
+        identity = D1PreregistrationArtifact(path=path, blob_sha256=sha256, commit=commit)
+    except (TypeError, ValueError) as error:
+        _fail(f"preregistration control identity is invalid: {error}", error)
+    if identity != design.preregistration:
+        _fail("preregistration control identity differs from registered design")
+    if size_bytes != evidence.size_bytes or sha256 != evidence.sha256:
+        _fail("preregistration control size or SHA differs from measured raw bytes")
+    return D1PreregistrationControl(payload, path, commit, size_bytes, sha256)
