@@ -32,7 +32,7 @@ __all__ = [
     "validate_execution_segments",
 ]
 
-RESOURCE_TELEMETRY_SCHEMA_VERSION = "resource-telemetry/v2"
+RESOURCE_TELEMETRY_SCHEMA_VERSION = "resource-telemetry/v3"
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -353,6 +353,7 @@ class RunStartProvenance:
     pytorch_version: str
     compiler_enabled: bool
     compiler_version: str
+    resource_activation: ResourceActivationRegistration
     quoted_rate: QuotedRate
     pod_created_at: datetime
     trainer_started_at: datetime
@@ -416,6 +417,8 @@ class RunStartProvenance:
         if not self.compiler_enabled and self.compiler_version != "disabled":
             msg = "compiler_version must be 'disabled' when compiler_enabled is false"
             raise ValueError(msg)
+        if type(self.resource_activation) is not ResourceActivationRegistration:
+            raise TypeError("resource_activation must be ResourceActivationRegistration")
         if type(self.quoted_rate) is not QuotedRate:
             msg = "quoted_rate must be QuotedRate"
             raise TypeError(msg)
@@ -449,6 +452,7 @@ class RunStartProvenance:
             "pytorch_version": self.pytorch_version,
             "quoted_rate": self.quoted_rate.manifest,
             "region": self.region,
+            "resource_activation": self.resource_activation.manifest,
             "resume_checkpoint_sha256": self.resume_checkpoint_sha256,
             "schema_version": self.schema_version,
             "segment_start_mode": self.segment_start_mode.value,
@@ -466,15 +470,19 @@ def validate_execution_segments(segments: tuple[RunStartProvenance, ...]) -> Non
         msg = "execution segments must be a non-empty tuple"
         raise ValueError(msg)
     logical_run_id: str | None = None
+    resource_activation: ResourceActivationRegistration | None = None
     for expected_index, segment in enumerate(segments):
         if type(segment) is not RunStartProvenance:
             msg = "execution segments must contain RunStartProvenance values"
             raise TypeError(msg)
         if logical_run_id is None:
             logical_run_id = segment.logical_run_id
+            resource_activation = segment.resource_activation
         elif segment.logical_run_id != logical_run_id:
             msg = "execution segments must share one logical_run_id"
             raise ValueError(msg)
+        if segment.resource_activation != resource_activation:
+            raise ValueError("execution segment resource activation registration changed")
         if segment.execution_segment_index != expected_index:
             msg = "execution segment indices must be consecutive from zero"
             raise ValueError(msg)

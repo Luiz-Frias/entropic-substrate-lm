@@ -105,6 +105,8 @@ def d1_tracking_descriptor(
     code = cast(CodeIdentity, execution.code)
     container = cast(ContainerIdentity, execution.container)
     config_key = run.aggregation_digest[:12]
+    activation = start.resource_activation
+    power = activation.power_sampling
     identities = {
         "d1/construction_digest": profile.draft.construction_digest,
         "d1/family_digest": profile.family.family_digest,
@@ -115,6 +117,7 @@ def d1_tracking_descriptor(
         "d1/code_commit": code.commit,
         "d1/container_image_digest": container.image_digest,
         "resource/start_identity_digest": start.identity_digest,
+        "resource/activation_identity_digest": activation.identity_digest,
     }
     params = {
         "exp": profile.name,
@@ -139,6 +142,22 @@ def d1_tracking_descriptor(
         "resource/purchase_option": start.purchase_option.value,
         "resource/quoted_rate_amount": start.quoted_rate.amount.canonical_amount,
         "resource/quoted_rate_currency": start.quoted_rate.amount.currency,
+        "resource/activation_mode": activation.mode.value,
+        "resource/activation_factory_digest": activation.factory_registration_digest,
+        "resource/meter_provider": activation.meter_provider,
+        "resource/meter_device_scope": activation.device_scope,
+        "resource/flop_model_identity": activation.flop_model_identity or "unavailable",
+        "resource/power_cadence_seconds": (
+            power.cadence_seconds if power is not None else "unavailable"
+        ),
+        "resource/power_max_gap_seconds": (
+            power.max_gap_seconds if power is not None else "unavailable"
+        ),
+        "resource/power_integration_method": (
+            power.integration_method.value if power is not None else "unavailable"
+        ),
+        "resource/power_provider": power.provider if power is not None else "unavailable",
+        "resource/power_device_scope": (power.device_scope if power is not None else "unavailable"),
         **identities,
     }
     tags = {

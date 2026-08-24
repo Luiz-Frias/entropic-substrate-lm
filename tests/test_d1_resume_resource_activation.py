@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -74,7 +75,10 @@ def test_resume_restores_meter_state_and_emits_exact_snapshot_and_mlflow_values(
     case = captured_step_one_case(tmp_path, monkeypatch, resource_activation_factory=factory)
     completion = run_d1_resume(
         plan=case.plan,
-        start=resume_start(case.plan, case.checkpoint_sha256),
+        start=replace(
+            resume_start(case.plan, case.checkpoint_sha256),
+            resource_activation=factory.registration,
+        ),
         origin=origin(),
         locations=D1ResumeRunLocations(case.journal_path, case.checkpoint_path),
         observer=RecordingObserver(),
@@ -123,7 +127,10 @@ def test_failed_resumed_train_is_timed_without_modeling_a_complete_step(
     with pytest.raises(D1ResumeRunFailure) as captured:
         run_d1_resume(
             plan=case.plan,
-            start=resume_start(case.plan, case.checkpoint_sha256),
+            start=replace(
+                resume_start(case.plan, case.checkpoint_sha256),
+                resource_activation=factory.registration,
+            ),
             origin=origin(),
             locations=D1ResumeRunLocations(case.journal_path, case.checkpoint_path),
             observer=RecordingObserver(),

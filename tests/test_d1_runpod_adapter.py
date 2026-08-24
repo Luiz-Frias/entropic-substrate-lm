@@ -72,6 +72,7 @@ def _intent() -> D1OperatorLaunchIntent:
             purchase_option=observed.purchase_option,
         ),
         quoted_rate=observed.quoted_rate,
+        resource_activation=observed.resource_activation,
         execution_segment_index=0,
         resume_checkpoint_sha256=None,
         terminate_after_seconds=7200,

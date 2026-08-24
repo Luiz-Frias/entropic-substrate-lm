@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -107,14 +108,15 @@ def test_fresh_run_records_exact_phase_work_snapshot_and_mlflow_projection(
             "cuda:0",
         )
     )
+    factory = _factory(timer, lifecycle)
     locations, journal = _locations(tmp_path)
     completion = run_d1_fresh(
         plan=plan,
-        start=run_start(plan),
+        start=replace(run_start(plan), resource_activation=factory.registration),
         origin=D1TrainerWallOrigin(STARTED_AT, ORIGIN_NS),
         locations=locations,
         clock=DeterministicTrainerClock(),
-        resource_activation_factory=_factory(timer, lifecycle),
+        resource_activation_factory=factory,
     )
 
     assert (
@@ -176,6 +178,7 @@ def test_failed_train_is_timed_once_and_reaches_terminal_ledger_state(
             "cuda:0",
         )
     )
+    factory = _factory(timer, lifecycle)
     locations, _journal = _locations(tmp_path)
 
     def fail_step(**_kwargs: object) -> object:
@@ -185,11 +188,11 @@ def test_failed_train_is_timed_once_and_reaches_terminal_ledger_state(
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,
-            start=run_start(plan),
+            start=replace(run_start(plan), resource_activation=factory.registration),
             origin=D1TrainerWallOrigin(STARTED_AT, ORIGIN_NS),
             locations=locations,
             clock=DeterministicTrainerClock(),
-            resource_activation_factory=_factory(timer, lifecycle),
+            resource_activation_factory=factory,
         )
 
     assert timer.starts == timer.stops == [ResourcePhase.EVAL, ResourcePhase.TRAIN]

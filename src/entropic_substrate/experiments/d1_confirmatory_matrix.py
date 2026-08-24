@@ -90,6 +90,7 @@ class D1ResourceEnvelopeIdentity:
                 "pytorch_version": start.pytorch_version,
                 "quoted_rate": start.quoted_rate.manifest,
                 "region": start.region,
+                "resource_activation": start.resource_activation.manifest,
                 "schema_version": start.schema_version,
             }
         )

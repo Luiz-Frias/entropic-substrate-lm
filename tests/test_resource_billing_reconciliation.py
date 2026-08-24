@@ -23,6 +23,7 @@ from entropic_substrate.evidence.resource_billing_reconciliation import (
     reconcile_segment_billing,
 )
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     EvidenceGap,
@@ -34,6 +35,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
@@ -44,7 +46,7 @@ def _start(segment: int = 0, *, currency: str = "USD") -> RunStartProvenance:
     logical = "d1-both-seed-7"
     created = datetime(2026, 8, 23, 12 + 2 * segment, tzinfo=UTC)
     return RunStartProvenance(
-        "resource-telemetry/v2",
+        RESOURCE_TELEMETRY_SCHEMA_VERSION,
         logical,
         segment,
         execution_segment_id(logical, segment),
@@ -63,6 +65,7 @@ def _start(segment: int = 0, *, currency: str = "USD") -> RunStartProvenance:
         "2.13.0",
         True,
         "triton-3.4.0",
+        unavailable_resource_activation_registration(),
         QuotedRate(
             Money(Decimal("3"), currency),
             BillingUnit.HOUR,

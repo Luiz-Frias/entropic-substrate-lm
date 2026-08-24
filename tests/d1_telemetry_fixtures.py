@@ -29,6 +29,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
@@ -87,6 +88,7 @@ def start_provenance(segment: int = 0, checkpoint_sha256: str | None = None) -> 
         pytorch_version="2.13.0",
         compiler_enabled=False,
         compiler_version="disabled",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             amount=Money(Decimal("1.59"), "USD"),
             billing_unit=BillingUnit.HOUR,

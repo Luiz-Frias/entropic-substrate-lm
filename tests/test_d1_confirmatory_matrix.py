@@ -166,6 +166,16 @@ def test_paired_seed_refuses_data_code_image_pairing_or_resource_drift() -> None
     variants = (
         replace(victim, plan=changed_data, start=start(changed_data)),
         replace(victim, start=replace(victim.start, provider_sku="different-sku")),
+        replace(
+            victim,
+            start=replace(
+                victim.start,
+                resource_activation=replace(
+                    victim.start.resource_activation,
+                    factory_registration_digest="8" * 64,
+                ),
+            ),
+        ),
     )
     for changed in variants:
         mutated = list(cells)

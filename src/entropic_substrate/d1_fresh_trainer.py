@@ -230,6 +230,8 @@ def run_d1_fresh(
     activation_factory = resource_activation_factory or UnavailableResourceActivationFactory()
     if not isinstance(cast(object, activation_factory), D1ResourceActivationFactory):
         raise TypeError("D1 resource activation factory is invalid")
+    if activation_factory.registration != start.resource_activation:
+        raise ValueError("D1 resource activation differs from run-start provenance")
     activation = activation_factory.fresh(start)
     ledger = create_d1_resource_ledger(
         plan=plan,

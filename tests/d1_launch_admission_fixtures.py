@@ -10,6 +10,7 @@ from d1_verdict_v2_fixtures import decision_contract
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_types import D1FamilyIdentity
 from entropic_substrate.evidence.resource_provenance import (
+    RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -20,6 +21,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.experiments.d1_config import (
     D1LaunchProfile,
@@ -125,7 +127,7 @@ def start(run: ConfirmatoryD1RunPlan, **overrides: object) -> RunStartProvenance
         evidence_class=EvidenceClass.MEASURED,
     )
     payload: dict[str, object] = {
-        "schema_version": "resource-telemetry/v2",
+        "schema_version": RESOURCE_TELEMETRY_SCHEMA_VERSION,
         "logical_run_id": run.logical_run_id,
         "execution_segment_index": 0,
         "execution_segment_id": execution_segment_id(run.logical_run_id, 0),
@@ -144,6 +146,7 @@ def start(run: ConfirmatoryD1RunPlan, **overrides: object) -> RunStartProvenance
         "pytorch_version": "2.13.0",
         "compiler_enabled": False,
         "compiler_version": "disabled",
+        "resource_activation": unavailable_resource_activation_registration(),
         "quoted_rate": rate,
         "pod_created_at": STARTED_AT - timedelta(minutes=2),
         "trainer_started_at": STARTED_AT,

@@ -28,6 +28,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
+    unavailable_resource_activation_registration,
 )
 from entropic_substrate.evidence.resource_work import (
     CostReading,
@@ -62,6 +63,7 @@ def _start(segment: int = 0) -> RunStartProvenance:
         pytorch_version="2.13.0",
         compiler_enabled=False,
         compiler_version="disabled",
+        resource_activation=unavailable_resource_activation_registration(),
         quoted_rate=QuotedRate(
             Money(Decimal("1.19"), "USD"),
             BillingUnit.HOUR,
