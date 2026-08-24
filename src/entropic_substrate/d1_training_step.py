@@ -87,6 +87,31 @@ class D1TrainStepResult:
     def coverages(self) -> tuple[float, float, float]:
         return self.coverage_50, self.coverage_80, self.coverage_95
 
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "covariance_penalty": self.covariance_penalty,
+            "coverage_50": self.coverage_50,
+            "coverage_80": self.coverage_80,
+            "coverage_95": self.coverage_95,
+            "effective_rank": self.effective_rank,
+            "future_nll": self.future_nll,
+            "gradient_norm": self.gradient_norm,
+            "language_loss": self.language_loss,
+            "learning_rate": self.learning_rate,
+            "mean_displacement_nll": self.mean_displacement_nll,
+            "numerical_rank": self.numerical_rank,
+            "objective": self.objective,
+            "raw_covariance_penalty": self.raw_covariance_penalty,
+            "raw_variance_penalty": self.raw_variance_penalty,
+            "residual_mean": self.residual_mean,
+            "residual_rms": self.residual_rms,
+            "residual_variance": self.residual_variance,
+            "successful_step": self.successful_step,
+            "variance_penalty": self.variance_penalty,
+            "zero_displacement_nll": self.zero_displacement_nll,
+        }
+
 
 def d1_learning_rate(spec: D1OptimizationSpec, *, successful_step: int) -> float:
     """Registered 1-based warmup/cosine schedule with an exact terminal floor."""

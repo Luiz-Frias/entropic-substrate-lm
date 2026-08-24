@@ -84,6 +84,7 @@ def test_complete_execution_protocol_has_a_canonical_registered_digest() -> None
         ("betas", (0.9, 1.0), "betas"),
         ("epsilon", float("nan"), "epsilon"),
         ("grad_clip_norm", float("inf"), "grad_clip_norm"),
+        ("compile", True, "compile"),
     ],
 )
 def test_optimization_spec_refuses_invalid_numerics(

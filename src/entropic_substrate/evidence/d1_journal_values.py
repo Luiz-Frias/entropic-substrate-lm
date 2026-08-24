@@ -134,6 +134,7 @@ class JournalEventKind(StrEnum):
     EVAL = "eval"
     CHECKPOINT = "checkpoint"
     RUN_RESUME = "run_resume"
+    TRAINER_ABORTED = "trainer_aborted"
     RUN_END = "run_end"
     RUN_ABORT = "run_abort"
 

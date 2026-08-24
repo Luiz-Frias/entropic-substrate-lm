@@ -119,6 +119,40 @@ class D1EvalResult:
     def coverages(self) -> tuple[float, float, float]:
         return self.coverage_50, self.coverage_80, self.coverage_95
 
+    @property
+    def telemetry_manifest(self) -> dict[str, object]:
+        """Authoritative eval payload without the redundant dense covariance matrix."""
+        return {
+            "batch_count": self.batch_count,
+            "bits_per_byte": self.bits_per_byte,
+            "coverage_50": self.coverage_50,
+            "coverage_80": self.coverage_80,
+            "coverage_95": self.coverage_95,
+            "effective_rank": self.effective_rank,
+            "future_nll": self.future_nll,
+            "language_loss": self.language_loss,
+            "mean_baseline_improvement": self.mean_baseline_improvement,
+            "mean_displacement_nll": self.mean_displacement_nll,
+            "mean_pairwise_cosine_distance": self.mean_pairwise_cosine_distance,
+            "nats_per_byte": self.nats_per_byte,
+            "numerical_rank": self.numerical_rank,
+            "online_positions": self.online_positions,
+            "pairwise_cosine_semantic": PAIRWISE_COSINE_SEMANTIC,
+            "perplexity": self.perplexity,
+            "raw_covariance_penalty": self.raw_covariance_penalty,
+            "raw_variance_penalty": self.raw_variance_penalty,
+            "residual_elements": self.residual_elements,
+            "residual_mean": self.residual_mean,
+            "residual_rms": self.residual_rms,
+            "residual_variance": self.residual_variance,
+            "state_covariance_eigenvalues": list(self.state_covariance_eigenvalues),
+            "state_variance": list(self.state_variance),
+            "weighted_covariance_penalty": self.weighted_covariance_penalty,
+            "weighted_variance_penalty": self.weighted_variance_penalty,
+            "zero_baseline_improvement": self.zero_baseline_improvement,
+            "zero_displacement_nll": self.zero_displacement_nll,
+        }
+
 
 @dataclass(slots=True)
 class _StateMoments:
