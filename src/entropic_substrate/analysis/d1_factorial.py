@@ -36,6 +36,7 @@ __all__ = [
     "D1FactorialEffect",
     "D1MetricPoint",
     "compute_d1_factorial",
+    "d1_factorial_effect_terms",
 ]
 
 _EVIDENCE_CLASS: Final = "DERIVED_FROM_MEASURED"
@@ -64,6 +65,11 @@ _FACTORIAL_TERMS: Final[dict[str, tuple[tuple[D1Arm, float], ...]]] = {
         (D1Arm.BOTH, 1.0),
     ),
 }
+
+
+def d1_factorial_effect_terms() -> Mapping[str, tuple[tuple[D1Arm, float], ...]]:
+    """Return the canonical ordered report-only 2x2 factorial effects."""
+    return MappingProxyType(_FACTORIAL_TERMS)
 
 
 @dataclass(frozen=True, slots=True)
