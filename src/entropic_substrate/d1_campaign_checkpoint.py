@@ -202,11 +202,13 @@ class D1CampaignCheckpoint:
             prior_count = cell.lifecycle_event_count_after
         if self.completed_cells:
             last = self.completed_cells[-1]
+            if self.lifecycle_event_count < last.lifecycle_event_count_after:
+                raise ValueError("campaign lifecycle head precedes the completed prefix")
             if (
-                last.lifecycle_prefix_after != self.lifecycle_prefix
-                or last.lifecycle_event_count_after != self.lifecycle_event_count
+                self.lifecycle_event_count == last.lifecycle_event_count_after
+                and last.lifecycle_prefix_after != self.lifecycle_prefix
             ):
-                raise ValueError("campaign lifecycle head differs from completed prefix")
+                raise ValueError("campaign lifecycle head forks from the completed prefix")
 
     def _validate_disposition(self) -> None:
         completed_ids = {cell.logical_run_id for cell in self.completed_cells}
@@ -224,6 +226,13 @@ class D1CampaignCheckpoint:
                 or self.halt_reason is not None
             ):
                 raise ValueError("READY checkpoint requires an exact terminal completed prefix")
+            if self.completed_cells:
+                last = self.completed_cells[-1]
+                if (
+                    last.lifecycle_prefix_after != self.lifecycle_prefix
+                    or last.lifecycle_event_count_after != self.lifecycle_event_count
+                ):
+                    raise ValueError("READY checkpoint lifecycle differs from completed prefix")
             return
         if self.halt_reason is None:
             raise ValueError("HARD_HALT checkpoint requires a halt reason")
