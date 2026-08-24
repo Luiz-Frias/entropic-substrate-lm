@@ -442,6 +442,20 @@ class ResourceLedger:
         self._last_energy_count = next_energy_count
         return snapshot
 
+    def record_meter_observation(self, *, monotonic_ns: int) -> ResourceMeterSnapshot:
+        """Persist current optional meters without manufacturing an evaluation cursor."""
+        wall = self._wall_seconds(monotonic_ns)
+        meters = self._meter.snapshot(trainer_wall_seconds=wall)
+        if type(meters) is not ResourceMeterSnapshot:
+            raise TypeError("meter strategy must return ResourceMeterSnapshot")
+        next_optional = self._check_optional_continuity(meters)
+        next_identity, next_energy_count = self._check_meter_metadata(meters)
+        self._last_monotonic_ns = monotonic_ns
+        self._last_optional = next_optional
+        self._last_flop_identity = next_identity
+        self._last_energy_count = next_energy_count
+        return meters
+
     def current_state(self) -> ResourceLedgerState:
         """Return an immutable checkpoint payload with all cumulative counters and meter continuity."""
         wall = self._base_wall_seconds + (self._last_monotonic_ns - self._origin_ns) / 1_000_000_000
