@@ -41,6 +41,15 @@ class CollapseDiagnostics:
         if self.covariance_eigenvalues.dtype != torch.float32:
             msg = "collapse covariance eigenvalue diagnostics must be FP32"
             raise ValueError(msg)
+        for name, value in (
+            ("variance", self.variance),
+            ("std", self.std),
+            ("covariance", self.covariance),
+            ("covariance_eigenvalues", self.covariance_eigenvalues),
+        ):
+            if not bool(torch.isfinite(value).all().item()):
+                msg = f"collapse {name} diagnostics must be finite"
+                raise ValueError(msg)
         if self.variance.ndim != 1 or self.std.ndim != 1 or self.covariance.ndim != 2:
             msg = "collapse diagnostics require vector variance/std and matrix covariance"
             raise ValueError(msg)
@@ -80,6 +89,9 @@ class CollapseResult:
             value = getattr(self, name)
             if type(value) is not torch.Tensor or value.ndim != 0 or value.dtype != torch.float32:
                 msg = f"{name} must be an FP32 scalar tensor"
+                raise ValueError(msg)
+            if not bool(torch.isfinite(value).item()):
+                msg = f"{name} must be finite"
                 raise ValueError(msg)
 
 

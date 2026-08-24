@@ -38,6 +38,9 @@ def _validate_scalar(name: str, value: torch.Tensor) -> None:
     if type(value) is not torch.Tensor or value.ndim != 0 or not value.is_floating_point():
         msg = f"{name} must be a floating scalar tensor"
         raise ValueError(msg)
+    if not bool(torch.isfinite(value).item()):
+        msg = f"{name} must be finite"
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +56,9 @@ class FutureLaw:
             raise ValueError(msg)
         if self.mean.dtype != torch.float32:
             msg = f"future-law mean must be FP32, got {self.mean.dtype}"
+            raise ValueError(msg)
+        if not bool(torch.isfinite(self.mean).all().item()):
+            msg = "future-law mean must be finite"
             raise ValueError(msg)
         if type(self.codec_identity) is not CodecIdentity:
             msg = "future law requires a CodecIdentity"
@@ -89,6 +95,9 @@ class FutureLawLoss:
             _validate_scalar(name, getattr(self, name))
         if type(self.mean) is not torch.Tensor or self.mean.ndim != 3:
             msg = "future-law loss mean must be rank-3"
+            raise ValueError(msg)
+        if not bool(torch.isfinite(self.mean).all().item()):
+            msg = "future-law loss mean must be finite"
             raise ValueError(msg)
 
 
