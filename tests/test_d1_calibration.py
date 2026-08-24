@@ -43,6 +43,20 @@ def test_calibration_fits_once_from_a_dedicated_deterministic_training_grid() ->
     assert attestation.source_span_positions == 32 * 16 * 9
     assert len(attestation.source_order_digest) == 64
     assert len(attestation.mean_parameter_digest) == 64
+    assert attestation.manifest == {
+        "codec_digest": attestation.codec_digest,
+        "initialization_seed": 7,
+        "mean_parameter_digest": attestation.mean_parameter_digest,
+        "num_batches": 32,
+        "online_positions": 32 * 16 * 8,
+        "protocol_digest": attestation.protocol_digest,
+        "schema_version": "d1-baseline-calibration-v1",
+        "source_order_digest": attestation.source_order_digest,
+        "source_span_positions": 32 * 16 * 9,
+        "spec_digest": attestation.spec_digest,
+        "split_digest": attestation.split_digest,
+        "successful_step_at_fit": 0,
+    }
     sampler_after = training_sampler.state_dict()
     assert torch.equal(sampler_before["generator"], sampler_after["generator"])
     assert sampler_before["eval_cursor"] == sampler_after["eval_cursor"]

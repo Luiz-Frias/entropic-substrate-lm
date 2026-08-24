@@ -74,6 +74,23 @@ class D1BaselineCalibrationAttestation:
             msg = "unsupported D1 baseline calibration schema"
             raise ValueError(msg)
 
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "codec_digest": self.codec_digest,
+            "initialization_seed": self.initialization_seed,
+            "mean_parameter_digest": self.mean_parameter_digest,
+            "num_batches": self.num_batches,
+            "online_positions": self.online_positions,
+            "protocol_digest": self.protocol_digest,
+            "schema_version": self.schema_version,
+            "source_order_digest": self.source_order_digest,
+            "source_span_positions": self.source_span_positions,
+            "spec_digest": self.spec_digest,
+            "split_digest": self.split_digest,
+            "successful_step_at_fit": self.successful_step_at_fit,
+        }
+
 
 class D1BaselineCalibrator:
     """Fit from a private deterministic train-grid sampler without consuming train RNG."""
