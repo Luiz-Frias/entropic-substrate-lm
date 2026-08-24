@@ -17,6 +17,7 @@ from entropic_substrate.evidence.resource_billing_reconciliation import (
     LogicalBillingMissingCost,
     LogicalBillingReconciliation,
     SegmentBillingMissingCost,
+    SegmentBillingReconciliation,
     estimate_terminal_rate,
     reconcile_logical_billing,
     reconcile_segment_billing,
@@ -96,6 +97,7 @@ def _bill(segment: int = 0, amount: str = "11.7", record: str | None = None) -> 
         start.execution_segment_id,
         Decimal("7200"),
         Money(Decimal(amount), "USD"),
+        BillingUnit.SECOND,
         record or f"provider-bill-{segment}",
         EvidenceClass.PROVIDER_BILLED,
     )
@@ -110,6 +112,7 @@ def _gap(segment: int) -> BillingGap:
         start.execution_segment_id,
         EvidenceGap("provider_billed_duration_seconds", reason),
         EvidenceGap("provider_billed_amount", reason),
+        EvidenceGap("provider_billing_unit", reason),
         EvidenceGap("provider_billing_record_id", reason),
     )
 
@@ -133,6 +136,27 @@ def test_segment_reconciliation_is_exact_and_missing_billing_is_not_zero() -> No
     assert missing.provider_billed_amount is None
     with pytest.raises(ValueError, match="canonical"):
         replace(reconciled, amount_delta=Decimal("-0.30"))
+
+
+def test_reconciliation_preserves_provider_unit_evidence_independently_of_quote() -> None:
+    measured = reconcile_segment_billing(_start(), _termination(), _bill())
+    assert type(measured) is SegmentBillingReconciliation
+    assert measured.rate_estimate.quoted_rate.billing_unit is BillingUnit.HOUR
+    assert measured.provider_billing.billing_unit is BillingUnit.SECOND
+
+    unit_gap = EvidenceGap("provider_billing_unit", "provider export omits billing unit")
+    billed = replace(_bill(), billing_unit=unit_gap)
+
+    reconciled = reconcile_segment_billing(_start(), _termination(), billed)
+
+    assert type(reconciled) is SegmentBillingReconciliation
+    assert reconciled.rate_estimate.quoted_rate.billing_unit is BillingUnit.HOUR
+    assert reconciled.provider_billing.billing_unit == unit_gap
+    assert reconciled.manifest["provider_billing"]["billing_unit"] == {
+        "field": "provider_billing_unit",
+        "kind": "gap",
+        "reason": "provider export omits billing unit",
+    }
 
 
 def test_reconciliation_refuses_identity_and_currency_substitution() -> None:

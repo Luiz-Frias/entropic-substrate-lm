@@ -6,13 +6,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, Money, execution_segment_id
+from entropic_substrate.evidence.resource_provenance import (
+    BillingUnit,
+    EvidenceGap,
+    Money,
+    execution_segment_id,
+)
 from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
-RESOURCE_BILLING_SCHEMA_VERSION = "resource-billing/v1"
+RESOURCE_BILLING_SCHEMA_VERSION = "resource-billing/v2"
 PROVIDER_BILLING_GAP_FIELDS = (
     "provider_billed_duration_seconds",
     "provider_billed_amount",
+    "provider_billing_unit",
     "provider_billing_record_id",
 )
 
@@ -50,6 +56,21 @@ def _utc(value: datetime, *, label: str) -> None:
 
 def _gap_manifest(gap: EvidenceGap) -> dict[str, str]:
     return {"field": gap.field, "kind": "gap", "reason": gap.reason}
+
+
+def _provider_billing_unit_manifest(
+    value: BillingUnit | EvidenceGap,
+) -> str | dict[str, str]:
+    return value.value if isinstance(value, BillingUnit) else _gap_manifest(value)
+
+
+def _validate_provider_billing_unit(value: BillingUnit | EvidenceGap) -> None:
+    if type(value) is BillingUnit:
+        return
+    if type(value) is not EvidenceGap:
+        raise TypeError("billing_unit must be BillingUnit or EvidenceGap")
+    if value.field != "provider_billing_unit":
+        raise ValueError("provider billing unit gap must name exactly 'provider_billing_unit'")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +112,7 @@ class ProviderBilling:
     execution_segment_id: str
     billed_duration_seconds: Decimal
     billed_amount: Money
+    billing_unit: BillingUnit | EvidenceGap
     billing_record_id: str
     evidence_class: EvidenceClass
     schema_version: str = RESOURCE_BILLING_SCHEMA_VERSION
@@ -104,6 +126,7 @@ class ProviderBilling:
         require_canonical_decimal(self.billed_duration_seconds, label="billed_duration_seconds")
         if type(self.billed_amount) is not Money:
             raise TypeError("billed_amount must be Money")
+        _validate_provider_billing_unit(self.billing_unit)
         if type(self.billing_record_id) is not str or not self.billing_record_id.strip():
             raise ValueError("billing_record_id must be a non-empty string")
         if self.evidence_class is not EvidenceClass.PROVIDER_BILLED:
@@ -114,6 +137,7 @@ class ProviderBilling:
         return {
             "billed_amount": self.billed_amount.manifest,
             "billed_duration_seconds": str(self.billed_duration_seconds),
+            "billing_unit": _provider_billing_unit_manifest(self.billing_unit),
             "billing_record_id": self.billing_record_id,
             "evidence_class": self.evidence_class.value,
             "execution_segment_id": self.execution_segment_id,
@@ -131,6 +155,7 @@ class BillingGap:
     execution_segment_id: str
     billed_duration: EvidenceGap
     billed_amount: EvidenceGap
+    billing_unit: EvidenceGap
     billing_record_id: EvidenceGap
     schema_version: str = RESOURCE_BILLING_SCHEMA_VERSION
 
@@ -140,7 +165,12 @@ class BillingGap:
         validate_segment_identity(
             self.logical_run_id, self.execution_segment_index, self.execution_segment_id
         )
-        values = (self.billed_duration, self.billed_amount, self.billing_record_id)
+        values = (
+            self.billed_duration,
+            self.billed_amount,
+            self.billing_unit,
+            self.billing_record_id,
+        )
         for value, field in zip(values, PROVIDER_BILLING_GAP_FIELDS, strict=True):
             if type(value) is not EvidenceGap:
                 raise TypeError(f"{field} must be EvidenceGap")
@@ -160,6 +190,7 @@ class BillingGap:
             "logical_run_id": self.logical_run_id,
             "provider_billed_amount": _gap_manifest(self.billed_amount),
             "provider_billed_duration_seconds": _gap_manifest(self.billed_duration),
+            "provider_billing_unit": _gap_manifest(self.billing_unit),
             "provider_billing_record_id": _gap_manifest(self.billing_record_id),
             "quality_evidence_admissible": True,
             "schema_version": self.schema_version,
