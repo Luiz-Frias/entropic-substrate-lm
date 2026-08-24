@@ -24,6 +24,7 @@ __all__ = [
     "D1CheckpointArtifactReceipt",
     "D1CheckpointRepositoryError",
     "load_and_validate",
+    "load_checkpoint_candidate",
     "save_atomic",
 ]
 
@@ -199,6 +200,30 @@ def save_atomic(
         temporary.unlink(missing_ok=True)
 
 
+def load_checkpoint_candidate(
+    path: str | os.PathLike[str],
+    *,
+    expected_sha256: str | None = None,
+) -> tuple[dict[str, object], D1CheckpointArtifactReceipt]:
+    """Verify and decode one artifact without requiring a materialized runtime."""
+    expected = _require_expected_digest(expected_sha256)
+    target = Path(path)
+    fd = _open_regular(target)
+    with os.fdopen(fd, "rb") as handle:
+        receipt = _receipt_from_handle(target, handle)
+        if expected is not None and receipt.sha256 != expected:
+            raise D1CheckpointRepositoryError(
+                f"checkpoint SHA-256 mismatch: expected {expected}, got {receipt.sha256}"
+            )
+        try:
+            raw = torch.load(handle, map_location="cpu", weights_only=True)
+        except Exception as exc:
+            raise D1CheckpointRepositoryError(f"cannot load checkpoint {target}: {exc}") from exc
+    if type(raw) is not dict or any(type(key) is not str for key in raw):
+        raise D1CheckpointRepositoryError("checkpoint candidate must be a string-keyed mapping")
+    return cast(dict[str, object], raw), receipt
+
+
 def load_and_validate(
     path: str | os.PathLike[str],
     *,
@@ -213,19 +238,7 @@ def load_and_validate(
     """Load one regular file, verify its receipt, and apply D1 admission."""
     if type(for_resume) is not bool:
         raise D1CheckpointRepositoryError("for_resume must be a bool")
-    expected = _require_expected_digest(expected_sha256)
-    target = Path(path)
-    fd = _open_regular(target)
-    with os.fdopen(fd, "rb") as handle:
-        receipt = _receipt_from_handle(target, handle)
-        if expected is not None and receipt.sha256 != expected:
-            raise D1CheckpointRepositoryError(
-                f"checkpoint SHA-256 mismatch: expected {expected}, got {receipt.sha256}"
-            )
-        try:
-            raw = torch.load(handle, map_location="cpu", weights_only=True)
-        except Exception as exc:
-            raise D1CheckpointRepositoryError(f"cannot load checkpoint {target}: {exc}") from exc
+    raw, receipt = load_checkpoint_candidate(path, expected_sha256=expected_sha256)
     validated = validate_d1_checkpoint(
         raw,
         system=system,
