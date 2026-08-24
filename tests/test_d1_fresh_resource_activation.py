@@ -30,7 +30,7 @@ from entropic_substrate.evidence.resource_meter_models import (
     PowerSample,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap
+from entropic_substrate.evidence.resource_provenance import EvidenceGap, PowerIntegrationMethod
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
@@ -78,6 +78,8 @@ class _Lifecycle:
 def _factory(timer: _Timer, lifecycle: _Lifecycle) -> D1ProductionResourceActivationFactory:
     return D1ProductionResourceActivationFactory(
         registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
         phase_timer_factory=lambda _start: timer,
         peak_memory_factory=lambda _start: _Memory(),
         flop_model=PositionFlopModel("fresh-d1-flops", 2, 3, 5, 7),
@@ -96,7 +98,15 @@ def test_fresh_run_records_exact_phase_work_snapshot_and_mlflow_projection(
 ) -> None:
     plan = micro_plan(D1Arm.NONE)
     timer = _Timer()
-    lifecycle = _Lifecycle(PowerSamplingRegistration(1.0, 2.0))
+    lifecycle = _Lifecycle(
+        PowerSamplingRegistration(
+            1.0,
+            2.0,
+            PowerIntegrationMethod.TRAPEZOIDAL_MONOTONIC_NS,
+            "nvml",
+            "cuda:0",
+        )
+    )
     locations, journal = _locations(tmp_path)
     completion = run_d1_fresh(
         plan=plan,
@@ -157,7 +167,15 @@ def test_failed_train_is_timed_once_and_reaches_terminal_ledger_state(
 ) -> None:
     plan = micro_plan(D1Arm.NONE)
     timer = _Timer()
-    lifecycle = _Lifecycle(PowerSamplingRegistration(1.0, 2.0))
+    lifecycle = _Lifecycle(
+        PowerSamplingRegistration(
+            1.0,
+            2.0,
+            PowerIntegrationMethod.TRAPEZOIDAL_MONOTONIC_NS,
+            "nvml",
+            "cuda:0",
+        )
+    )
     locations, _journal = _locations(tmp_path)
 
     def fail_step(**_kwargs: object) -> object:

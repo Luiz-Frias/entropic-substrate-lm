@@ -18,7 +18,11 @@ from entropic_substrate.evidence.resource_meter_models import (
     PowerSample,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap
+from entropic_substrate.evidence.resource_provenance import (
+    EvidenceGap,
+    PowerIntegrationMethod,
+    ResourceActivationMode,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -47,11 +51,18 @@ def _flops() -> PositionFlopModel:
 
 
 def _registration(*, cadence: float = 1.0) -> PowerSamplingRegistration:
-    return PowerSamplingRegistration(cadence_seconds=cadence, max_gap_seconds=2.0)
+    return PowerSamplingRegistration(
+        cadence_seconds=cadence,
+        max_gap_seconds=2.0,
+        integration_method=PowerIntegrationMethod.TRAPEZOIDAL_MONOTONIC_NS,
+        provider="nvml",
+        device_scope="cuda:0",
+    )
 
 
 def test_absent_factory_builds_active_noop_meter_with_only_typed_gaps() -> None:
-    activation = UnavailableResourceActivationFactory().fresh(start_provenance())
+    factory = UnavailableResourceActivationFactory()
+    activation = factory.fresh(start_provenance())
     with activation:
         with activation.meter.measure(ResourcePhase.TRAIN):
             pass
@@ -72,6 +83,7 @@ def test_absent_factory_builds_active_noop_meter_with_only_typed_gaps() -> None:
             "rate_estimated_cost",
         )
     )
+    assert factory.registration.mode is ResourceActivationMode.GAPS_ONLY
 
 
 def test_registered_factory_uses_explicit_flop_and_power_methodologies() -> None:
@@ -79,6 +91,8 @@ def test_registered_factory_uses_explicit_flop_and_power_methodologies() -> None
     lifecycle = _Lifecycle(registration)
     factory = D1ProductionResourceActivationFactory(
         registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
         flop_model=_flops(),
         power_registration=registration,
         power_lifecycle_factory=lambda _start, _registration: lifecycle,
@@ -95,12 +109,16 @@ def test_registered_factory_uses_explicit_flop_and_power_methodologies() -> None
     assert snapshot.flop_model_identity == _flops().identity_digest
     assert snapshot.energy_joules.value == 100.0  # type: ignore[union-attr]
     assert snapshot.energy_sample_count == 2
+    assert factory.registration.flop_model_identity == _flops().identity_digest
+    assert factory.registration.power_sampling == registration
 
 
 def test_factory_resume_seeds_production_meter_from_v2_ledger_state() -> None:
     registration = _registration()
     factory = D1ProductionResourceActivationFactory(
         registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
         flop_model=_flops(),
         power_registration=registration,
         power_lifecycle_factory=lambda _start, _registration: _Lifecycle(registration),
@@ -129,15 +147,19 @@ def test_power_registration_and_lifecycle_must_be_explicit_and_identical() -> No
     with pytest.raises(ValueError, match="together"):
         D1ProductionResourceActivationFactory(
             registration_digest="a" * 64,
+            meter_provider="torch-cuda",
+            device_scope="cuda:0",
             power_registration=_registration(),
         )
     with pytest.raises(ValueError, match="max_gap_seconds"):
-        PowerSamplingRegistration(cadence_seconds=2.0, max_gap_seconds=1.0)
+        replace(_registration(), cadence_seconds=2.0, max_gap_seconds=1.0)
 
     registration = _registration()
     changed = replace(registration, cadence_seconds=0.5)
     factory = D1ProductionResourceActivationFactory(
         registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
         power_registration=registration,
         power_lifecycle_factory=lambda _start, _registration: _Lifecycle(changed),
     )
