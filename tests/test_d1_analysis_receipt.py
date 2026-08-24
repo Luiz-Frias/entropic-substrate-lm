@@ -13,6 +13,7 @@ from entropic_substrate.analysis.d1_execution_receipt import (
     D1ExecutorKind,
     D1ExternalIsolationAttestation,
     D1InProcessIsolationRunnerFake,
+    D1IsolationExecutionEvidence,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
 )
@@ -67,6 +68,20 @@ def _implementation() -> D1AnalysisImplementationIdentity:
     )
 
 
+def _execution_evidence() -> D1IsolationExecutionEvidence:
+    return D1IsolationExecutionEvidence(
+        command_sha256="1" * 64,
+        exit_code=0,
+        request_sha256="2" * 64,
+        analysis_sha256="3" * 64,
+        response_sha256="4" * 64,
+        stdout_sha256="5" * 64,
+        stderr_sha256="6" * 64,
+        image_digest="sha256:" + "7" * 64,
+        platform="linux/amd64",
+    )
+
+
 def test_in_process_fake_satisfies_port_but_cannot_issue_filing_eligible_receipt() -> None:
     packet, admitted = _admitted()
     request = D1AnalysisRunnerRequest("7" * 64, D1IsolationRequest())
@@ -98,11 +113,12 @@ def test_in_process_fake_satisfies_port_but_cannot_issue_filing_eligible_receipt
     ]
 
 
-def test_external_enforcement_is_filing_eligible_and_receipt_is_deterministic() -> None:
+def test_external_execution_evidence_is_filing_eligible_and_deterministic() -> None:
     packet, admitted = _admitted()
     isolation = D1ExternalIsolationAttestation.enforced(
         request=D1IsolationRequest(),
         mechanism="rootless-container-read-only-network-none",
+        execution_evidence=_execution_evidence(),
     )
     first = issue_d1_analysis_receipt(
         analysis=packet,
@@ -132,6 +148,19 @@ def test_external_enforcement_is_filing_eligible_and_receipt_is_deterministic() 
     assert changed.receipt_digest != first.receipt_digest
 
 
+def test_enforced_attestation_requires_observed_execution_evidence() -> None:
+    with pytest.raises(TypeError, match="execution evidence"):
+        D1ExternalIsolationAttestation(
+            D1IsolationRequest().request_digest,
+            D1ExecutorKind.EXTERNAL_ENFORCED,
+            True,
+            True,
+            True,
+            "missing-evidence",
+            None,
+        )
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -147,9 +176,7 @@ def test_isolation_request_refuses_any_weaker_environment(overrides: dict[str, b
 
 def test_receipt_rejects_alias_or_analysis_binding_drift() -> None:
     packet, admitted = _admitted()
-    isolation = D1ExternalIsolationAttestation.enforced(
-        request=D1IsolationRequest(), mechanism="enforced-test-boundary"
-    )
+    isolation = D1ExternalIsolationAttestation.test_fake(D1IsolationRequest())
     with pytest.raises(ValueError, match="alias commitment"):
         issue_d1_analysis_receipt(
             analysis=packet,
