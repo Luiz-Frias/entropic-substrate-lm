@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -152,10 +153,17 @@ def test_roster_decoder_rejects_nested_unknown_missing_and_cross_record_drift() 
     with pytest.raises(D1CaptureDeclarationCodecError, match="paired"):
         launch_roster_from_mapping(mapping)
 
-    mapping = launch_roster_to_mapping(_roster())
-    mapping["attempts"][0]["seed"] = 99  # type: ignore[index]
-    with pytest.raises(D1CaptureDeclarationCodecError, match="attempt"):
-        launch_roster_from_mapping(mapping)
+
+def test_confirmatory_attempt_may_remain_off_roster_nondecision_evidence() -> None:
+    roster = _roster()
+    off_roster = replace(
+        roster.attempts[0],
+        seed=41,
+        pairing_id="attempt-41",
+    )
+    roster = replace(roster, attempts=(off_roster,))
+
+    assert launch_roster_from_mapping(launch_roster_to_mapping(roster)) == roster
 
 
 @pytest.mark.parametrize(

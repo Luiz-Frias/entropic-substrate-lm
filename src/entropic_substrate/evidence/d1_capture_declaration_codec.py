@@ -267,12 +267,6 @@ def _validate_cross_records(roster: D1LaunchRoster) -> None:
         for field in _PAIRED_FIELDS:
             if len({getattr(run, field) for run in block}) != 1:
                 _fail(f"paired block {pairing_id!r} has {field} drift")
-    expected = {(run.arm, run.seed, run.pairing_id) for run in roster.expected_confirmatory}
-    for attempt in roster.attempts:
-        if attempt.lane is D1AttemptLane.EXCLUDED_PILOT:
-            continue
-        if (attempt.arm, attempt.seed, attempt.pairing_id) not in expected:
-            _fail("confirmatory attempt identity does not match an expected roster cell")
 
 
 def launch_roster_from_mapping(value: object) -> D1LaunchRoster:
