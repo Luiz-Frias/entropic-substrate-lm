@@ -7,12 +7,14 @@ import json
 from collections.abc import Mapping
 from typing import NoReturn, cast
 
+from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1ArtifactRole,
     D1DvcBinding,
     D1DvcBindingState,
 )
+from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence, D1CaptureInput
 from entropic_substrate.evidence.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
@@ -25,12 +27,25 @@ __all__ = [
     "D1CaptureDeclarationCodecError",
     "artifact_identity_from_mapping",
     "artifact_identity_to_mapping",
+    "attempt_evidence_from_mapping",
+    "attempt_evidence_to_mapping",
+    "capture_input_from_mapping",
+    "capture_input_to_mapping",
     "launch_roster_from_mapping",
     "launch_roster_to_mapping",
     "parse_artifact_identity",
+    "parse_attempt_evidence",
+    "parse_capture_input",
     "parse_launch_roster",
+    "parse_terminal_defect_input",
     "serialize_artifact_identity",
+    "serialize_attempt_evidence",
+    "serialize_capture_input",
     "serialize_launch_roster",
+    "serialize_terminal_defect_input",
+    "terminal_defect_input_from_mapping",
+    "terminal_defect_input_to_mapping",
+    "validate_capture_lane_path_partition",
 ]
 
 _ARTIFACT_KEYS = frozenset({"dvc", "md5", "path", "role", "sha256", "size_bytes"})
@@ -68,6 +83,18 @@ _ROSTER_KEYS = frozenset(
     }
 )
 _ROSTER_SCHEMA = "d1-launch-roster-v1"
+_CAPTURE_INPUT_KEYS = frozenset(
+    {"billing_sidecars", "checkpoint", "journal", "logical_run_id", "quarantined_siblings"}
+)
+_TERMINAL_INPUT_KEYS = frozenset({"journal", "logical_run_id", "supporting_artifacts"})
+_ATTEMPT_EVIDENCE_KEYS = frozenset({"artifacts", "attempt", "evidence_gap"})
+_TERMINAL_SUPPORT_ROLES = frozenset(
+    {
+        D1ArtifactRole.BILLING_SIDECAR,
+        D1ArtifactRole.NUMERICAL_DEFECT_CHECKPOINT,
+        D1ArtifactRole.QUARANTINED_SIBLING,
+    }
+)
 _PAIRED_FIELDS = (
     "code_commit",
     "repository_digest",
@@ -329,3 +356,175 @@ def parse_launch_roster(payload: str) -> D1LaunchRoster:
     if serialize_launch_roster(roster) != payload:
         _fail("launch roster JSON is not canonical")
     return roster
+
+
+def _artifacts(value: object, *, label: str) -> tuple[D1ArtifactIdentity, ...]:
+    return tuple(artifact_identity_from_mapping(item) for item in _array(value, label=label))
+
+
+def capture_input_from_mapping(
+    value: object,
+    *,
+    expected: D1ExpectedRun,
+) -> D1CaptureInput:
+    if type(expected) is not D1ExpectedRun:
+        raise TypeError("complete capture declaration requires D1ExpectedRun")
+    root = _mapping(value, label="complete capture input")
+    _exact(root, _CAPTURE_INPUT_KEYS, label="complete capture input")
+    try:
+        capture = D1CaptureInput(
+            logical_run_id=_text(root["logical_run_id"], label="complete.logical_run_id"),
+            journal=artifact_identity_from_mapping(root["journal"]),
+            checkpoint=artifact_identity_from_mapping(root["checkpoint"]),
+            billing_sidecars=_artifacts(root["billing_sidecars"], label="billing_sidecars"),
+            quarantined_siblings=_artifacts(
+                root["quarantined_siblings"], label="quarantined_siblings"
+            ),
+        )
+    except D1CaptureDeclarationCodecError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"complete capture input is invalid: {error}", error)
+    if capture.logical_run_id != expected.logical_run_id:
+        _fail("complete capture logical_run_id differs from supplied expected run")
+    if _canonical(root) != _canonical(capture.manifest):
+        _fail("complete capture input mapping is not canonical")
+    return capture
+
+
+def capture_input_to_mapping(capture: D1CaptureInput) -> dict[str, object]:
+    if type(capture) is not D1CaptureInput:
+        raise TypeError("complete capture codec requires D1CaptureInput")
+    return copy.deepcopy(capture.manifest)
+
+
+def serialize_capture_input(capture: D1CaptureInput) -> str:
+    return _canonical(capture_input_to_mapping(capture))
+
+
+def terminal_defect_input_from_mapping(
+    value: object,
+    *,
+    expected: D1ExpectedRun,
+) -> D1TerminalDefectInput:
+    if type(expected) is not D1ExpectedRun:
+        raise TypeError("terminal defect declaration requires D1ExpectedRun")
+    root = _mapping(value, label="terminal defect input")
+    _exact(root, _TERMINAL_INPUT_KEYS, label="terminal defect input")
+    supporting = _artifacts(root["supporting_artifacts"], label="supporting_artifacts")
+    if any(artifact.role not in _TERMINAL_SUPPORT_ROLES for artifact in supporting):
+        _fail("terminal defect supporting artifact has an unsupported role")
+    try:
+        capture = D1TerminalDefectInput(
+            logical_run_id=_text(root["logical_run_id"], label="terminal.logical_run_id"),
+            journal=artifact_identity_from_mapping(root["journal"]),
+            supporting_artifacts=supporting,
+        )
+    except D1CaptureDeclarationCodecError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"terminal defect input is invalid: {error}", error)
+    if capture.logical_run_id != expected.logical_run_id:
+        _fail("terminal defect logical_run_id differs from supplied expected run")
+    if _canonical(root) != _canonical(capture.manifest):
+        _fail("terminal defect input mapping is not canonical")
+    return capture
+
+
+def terminal_defect_input_to_mapping(capture: D1TerminalDefectInput) -> dict[str, object]:
+    if type(capture) is not D1TerminalDefectInput:
+        raise TypeError("terminal defect codec requires D1TerminalDefectInput")
+    return copy.deepcopy(capture.manifest)
+
+
+def serialize_terminal_defect_input(capture: D1TerminalDefectInput) -> str:
+    return _canonical(terminal_defect_input_to_mapping(capture))
+
+
+def attempt_evidence_from_mapping(
+    value: object,
+    *,
+    declared: D1DeclaredAttempt,
+) -> D1AttemptEvidence:
+    if type(declared) is not D1DeclaredAttempt:
+        raise TypeError("attempt evidence declaration requires D1DeclaredAttempt")
+    root = _mapping(value, label="attempt evidence")
+    _exact(root, _ATTEMPT_EVIDENCE_KEYS, label="attempt evidence")
+    parsed_attempt = _attempt(root["attempt"], path="attempt evidence.attempt")
+    if parsed_attempt != declared:
+        _fail("attempt evidence embedded declaration differs from supplied declaration")
+    gap = root["evidence_gap"]
+    if gap is not None:
+        gap = _text(gap, label="attempt evidence.evidence_gap")
+    try:
+        evidence = D1AttemptEvidence(
+            attempt=parsed_attempt,
+            artifacts=_artifacts(root["artifacts"], label="attempt evidence.artifacts"),
+            evidence_gap=gap,
+        )
+    except D1CaptureDeclarationCodecError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"attempt evidence is invalid: {error}", error)
+    if _canonical(root) != _canonical(evidence.manifest):
+        _fail("attempt evidence mapping is not canonical")
+    return evidence
+
+
+def attempt_evidence_to_mapping(evidence: D1AttemptEvidence) -> dict[str, object]:
+    if type(evidence) is not D1AttemptEvidence:
+        raise TypeError("attempt evidence codec requires D1AttemptEvidence")
+    return copy.deepcopy(evidence.manifest)
+
+
+def serialize_attempt_evidence(evidence: D1AttemptEvidence) -> str:
+    return _canonical(attempt_evidence_to_mapping(evidence))
+
+
+def parse_capture_input(payload: str, *, expected: D1ExpectedRun) -> D1CaptureInput:
+    capture = capture_input_from_mapping(
+        _decode(payload, label="complete capture input"), expected=expected
+    )
+    if serialize_capture_input(capture) != payload:
+        _fail("complete capture input JSON is not canonical")
+    return capture
+
+
+def parse_terminal_defect_input(payload: str, *, expected: D1ExpectedRun) -> D1TerminalDefectInput:
+    capture = terminal_defect_input_from_mapping(
+        _decode(payload, label="terminal defect input"), expected=expected
+    )
+    if serialize_terminal_defect_input(capture) != payload:
+        _fail("terminal defect input JSON is not canonical")
+    return capture
+
+
+def parse_attempt_evidence(payload: str, *, declared: D1DeclaredAttempt) -> D1AttemptEvidence:
+    evidence = attempt_evidence_from_mapping(
+        _decode(payload, label="attempt evidence"), declared=declared
+    )
+    if serialize_attempt_evidence(evidence) != payload:
+        _fail("attempt evidence JSON is not canonical")
+    return evidence
+
+
+def validate_capture_lane_path_partition(
+    complete: tuple[D1CaptureInput, ...],
+    terminal_defects: tuple[D1TerminalDefectInput, ...],
+    attempts: tuple[D1AttemptEvidence, ...],
+) -> None:
+    if type(complete) is not tuple or any(type(item) is not D1CaptureInput for item in complete):
+        raise TypeError("complete lane partition requires D1CaptureInput tuple")
+    if type(terminal_defects) is not tuple or any(
+        type(item) is not D1TerminalDefectInput for item in terminal_defects
+    ):
+        raise TypeError("terminal lane partition requires D1TerminalDefectInput tuple")
+    if type(attempts) is not tuple or any(type(item) is not D1AttemptEvidence for item in attempts):
+        raise TypeError("attempt lane partition requires D1AttemptEvidence tuple")
+    paths = [artifact.normalized_path for item in complete for artifact in item.artifacts]
+    paths.extend(
+        artifact.normalized_path for item in terminal_defects for artifact in item.artifacts
+    )
+    paths.extend(artifact.normalized_path for item in attempts for artifact in item.artifacts)
+    if len(paths) != len(set(paths)):
+        _fail("capture lane artifact path is reused across declarations")
