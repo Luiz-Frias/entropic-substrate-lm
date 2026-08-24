@@ -32,7 +32,10 @@ from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBilling,
 )
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
+from entropic_substrate.evidence.resource_provenance import (
+    RunStartProvenance,
+    validate_execution_segments,
+)
 from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
@@ -82,6 +85,28 @@ class D1OperatorQueueHalt(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class D1ResumeOperatorHistory:
+    """Complete physical-segment evidence preceding one explicit resume."""
+
+    starts: tuple[RunStartProvenance, ...]
+    terminations: tuple[ExecutionSegmentTermination, ...]
+    billings: tuple[ProviderBilling | BillingGap, ...]
+
+    def __post_init__(self) -> None:
+        validate_execution_segments(self.starts)
+        if not (len(self.starts) == len(self.terminations) == len(self.billings)):
+            raise ValueError("D1 resume history segment evidence counts differ")
+        for start, termination, billing in zip(
+            self.starts, self.terminations, self.billings, strict=True
+        ):
+            identity = (start.logical_run_id, start.execution_segment_id)
+            if identity != (termination.logical_run_id, termination.execution_segment_id):
+                raise ValueError("D1 resume history start and termination identities differ")
+            if identity != (billing.logical_run_id, billing.execution_segment_id):
+                raise ValueError("D1 resume history start and billing identities differ")
+
+
+@dataclass(frozen=True, slots=True)
 class D1OperatorRunResult:
     process_manager: D1ProcessManager
     attempt_ledger: D1LaunchAttemptLedger
@@ -94,10 +119,10 @@ class D1OperatorRunResult:
     queue_admissible: bool
 
 
-def _validate_fresh(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) -> None:
+def _validate_registered(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) -> None:
     plan = intent.plan
-    if type(plan) is not ConfirmatoryD1RunPlan or intent.execution_segment_index != 0:
-        raise ValueError("D1 fresh operator requires a segment-zero confirmatory plan")
+    if type(plan) is not ConfirmatoryD1RunPlan:
+        raise ValueError("D1 operator requires a confirmatory plan")
     if intent.registered_design_digest != design.design_digest:
         raise ValueError("D1 launch intent differs from the registered design")
     if (
@@ -117,6 +142,12 @@ def _validate_fresh(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) 
         design.family_digest,
     ):
         raise ValueError("D1 plan preregistration differs from the registered design")
+
+
+def _validate_fresh(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) -> None:
+    _validate_registered(design, intent)
+    if intent.execution_segment_index != 0:
+        raise ValueError("D1 fresh operator requires segment zero")
 
 
 def _identity(intent: D1OperatorLaunchIntent) -> D1LaunchAttemptIdentity:
@@ -267,6 +298,134 @@ class D1SequentialOperatorController:
         self.process_manager, self.attempt_ledger, self._executing = manager, ledger, False
         queue_admissible = not failed and not isinstance(billing, BillingGap)
         self._active_attempt = None
+        if not queue_admissible:
+            self._halted_detail = "terminal trainer or provider-billing evidence gap"
+        return D1OperatorRunResult(
+            manager,
+            ledger,
+            start,
+            placement,
+            export,
+            termination,
+            billing,
+            finalization,
+            queue_admissible,
+        )
+
+    def execute_resume(
+        self,
+        intent: D1OperatorLaunchIntent,
+        *,
+        history: D1ResumeOperatorHistory,
+    ) -> D1OperatorRunResult:
+        if self._halted_detail is not None:
+            raise D1OperatorQueueHalt(f"D1 operator queue is halted: {self._halted_detail}")
+        if self._executing:
+            raise RuntimeError("D1 operator already has one active attempt")
+        _validate_registered(self.design, intent)
+        subject = intent.plan.logical_run_id
+        if (
+            intent.execution_segment_index != len(history.starts)
+            or intent.execution_segment_index < 1
+        ):
+            raise ValueError("D1 resume intent is not the exact next execution segment")
+        if history.starts[0].logical_run_id != subject:
+            raise ValueError("D1 resume history logical identity differs from the plan")
+        if any(isinstance(item, BillingGap) for item in history.billings):
+            raise ValueError("D1 resume history contains a provider billing evidence gap")
+        if self.process_manager.active_subject != subject:
+            raise ValueError("D1 resume requires the matching active lifecycle subject")
+        attempt = _identity(intent)
+        attempt_events = tuple(
+            event
+            for event in self.attempt_ledger.events
+            if event.identity.optional_stopping_digest == attempt.optional_stopping_digest
+        )
+        if (
+            not attempt_events
+            or attempt_events[-1].status is not D1LaunchAttemptStatus.TRAINER_STARTED
+        ):
+            raise ValueError("D1 resume requires one nonterminal trainer-started attempt")
+        self._executing, self._active_attempt = True, attempt
+        try:
+            return self._execute_resume(intent, history, attempt)
+        except D1OperatorQueueHalt:
+            raise
+        except Exception as error:
+            self._halt(subject, error)
+
+    def _execute_resume(
+        self,
+        intent: D1OperatorLaunchIntent,
+        history: D1ResumeOperatorHistory,
+        attempt: D1LaunchAttemptIdentity,
+    ) -> D1OperatorRunResult:
+        subject, segment = intent.plan.logical_run_id, intent.execution_segment_index
+        auth = self._runpod.verify_authenticated()
+        precreate = self._custody.persist_precreate(intent, self.attempt_ledger, auth)
+        del precreate
+        placement = self._runpod.create(intent)
+        self._active_pod_id = placement.pod_id
+        runtime = self._runpod.runtime(placement.pod_id)
+        start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
+        validate_execution_segments((*history.starts, start))
+        self._custody.persist_run_start(start)
+        input_artifact = self._trainer.stage_inputs(
+            placement.pod_id, D1TrainerInputEnvelope(intent.plan, start)
+        )
+        manager = self.process_manager.resume(
+            subject_id=subject,
+            actor=self._automation,
+            artifact=input_artifact,
+            event_id=f"{subject}:resume:{segment}",
+        )
+        self.process_manager = manager
+        candidate = self._trainer.await_exported_handoff(placement.pod_id)
+        export = verify_d1_trainer_export(candidate)
+        handoff, stopped = export.handoff, export.handoff.termination
+        if (stopped.logical_run_id, stopped.execution_segment_index) != (subject, segment):
+            raise ValueError("resumed trainer handoff differs from the active segment")
+        manager = manager.record_trainer_stop(
+            subject_id=subject,
+            actor=self._automation,
+            artifact=export.journal,
+            event_id=f"{subject}:trainer-stop:{segment}",
+        )
+        self.process_manager = manager
+        termination = self._runpod.terminate(
+            placement.pod_id,
+            start=start,
+            trainer_ended_at=stopped.trainer_ended_at,
+        )
+        self._active_pod_id = None
+        billing = self._runpod.billing(placement.pod_id, start=start)
+        finalization = finalize_d1_billing(
+            plan=intent.plan,
+            segment_starts=(*history.starts, start),
+            segment_terminations=(*history.terminations, termination),
+            provider_billings=(*history.billings, billing),
+            handoff=handoff,
+            journal_path=candidate.journal_path,
+            expected_journal_state=stopped.journal_state,
+        )
+        artifact = self._custody.persist_finalization(finalization)
+        manager = manager.finalize_operator(
+            subject_id=subject,
+            actor=self._operator,
+            artifact=artifact,
+            event_id=f"{subject}:operator-finalized",
+        )
+        failed = isinstance(handoff, D1TrainerFailureHandoff)
+        ledger = self.attempt_ledger.transition(
+            attempt,
+            status=(D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED),
+            observed_at=termination.pod_terminated_at,
+            reason=(handoff.error_message if failed else None),
+        )
+        self._custody.persist_attempt_ledger(ledger)
+        self.process_manager, self.attempt_ledger, self._executing = manager, ledger, False
+        self._active_attempt = None
+        queue_admissible = not failed and not isinstance(billing, BillingGap)
         if not queue_admissible:
             self._halted_detail = "terminal trainer or provider-billing evidence gap"
         return D1OperatorRunResult(
