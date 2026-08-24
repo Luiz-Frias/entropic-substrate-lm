@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import NoReturn, cast
+from typing import Final, NoReturn, cast
 
 from entropic_substrate.d1_campaign_checkpoint import (
     D1CampaignCheckpoint,
@@ -29,6 +29,8 @@ from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
 from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 
+_RECOVERY_TOKEN: Final = object()
+
 
 class D1CampaignRecoveryError(ValueError):
     """Checkpoint, registration, intent, or lifecycle authorities disagree."""
@@ -51,6 +53,11 @@ class D1HydratedCampaignRecovery:
     process_manager: D1ProcessManager
     completed_launches: tuple[D1ConfirmatoryLaunch, ...]
     remaining_intents: tuple[D1OperatorLaunchIntent, ...]
+    _token: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._token is not _RECOVERY_TOKEN:
+            raise TypeError("D1HydratedCampaignRecovery is factory-only")
 
     @property
     def next_index(self) -> int:
@@ -67,6 +74,11 @@ class D1CampaignRecoveryHalt:
     checkpoint: D1CampaignCheckpoint
     process_manager: D1ProcessManager
     active_subject: str | None
+    _token: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._token is not _RECOVERY_TOKEN:
+            raise TypeError("D1CampaignRecoveryHalt is factory-only")
 
     @property
     def attempt_ledger(self) -> D1LaunchAttemptLedger:
@@ -95,7 +107,7 @@ def _validate_roster(
         _fail("intent_roster", "intents differ from the exact registered campaign roster")
 
 
-def _validate_start(intent: D1OperatorLaunchIntent, start: RunStartProvenance) -> None:
+def validate_d1_campaign_start(intent: D1OperatorLaunchIntent, start: RunStartProvenance) -> None:
     resource = intent.resource
     expected_resource = (
         resource.provider_gpu_type_id,
@@ -146,7 +158,7 @@ def _completed_launches(
             or cell.intent_digest != canonical_digest(intent.manifest)
         ):
             _fail("completed_prefix", "completed cell differs from registered intent prefix")
-        _validate_start(intent, cell.start)
+        validate_d1_campaign_start(intent, cell.start)
         launches.append(
             D1ConfirmatoryLaunch(
                 cast(ConfirmatoryD1RunPlan, intent.plan),
@@ -245,6 +257,7 @@ def hydrate_d1_campaign_recovery(
             checkpoint,
             process_manager,
             process_manager.active_subject,
+            _token=_RECOVERY_TOKEN,
         )
     if not _lifecycle_matches(checkpoint, process_manager):
         _fail("lifecycle", "checkpoint lifecycle head differs from hydrated process manager")
@@ -254,6 +267,7 @@ def hydrate_d1_campaign_recovery(
             checkpoint,
             process_manager,
             checkpoint.active_subject,
+            _token=_RECOVERY_TOKEN,
         )
     status = (
         D1CampaignRecoveryStatus.COMPLETE
@@ -266,4 +280,5 @@ def hydrate_d1_campaign_recovery(
         process_manager,
         launches,
         intents[checkpoint.next_index :],
+        _token=_RECOVERY_TOKEN,
     )

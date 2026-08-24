@@ -179,7 +179,7 @@ class D1CampaignCaptureService:
             raise ValueError("campaign capture receipt roster differs from the matrix")
         if receipt.manifest.get("analysis_ready") is not True:
             raise ValueError("campaign capture receipt is not analysis-ready")
-        manager = campaign.results[-1].process_manager
+        manager = campaign.process_manager
         if type(manager) is not D1ProcessManager:
             raise TypeError("campaign final result lacks D1ProcessManager")
         artifact = ArtifactIdentity(

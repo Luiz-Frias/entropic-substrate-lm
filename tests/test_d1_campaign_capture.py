@@ -42,7 +42,7 @@ def _completed(tmp_path: Path):
     for index, intent in enumerate(intents):
         manager = _execute(manager, intent.plan.logical_run_id, 100 + index * 10)
     results = (*campaign.results[:-1], replace(campaign.results[-1], process_manager=manager))
-    return replace(campaign, results=results), manager
+    return replace(campaign, results=results, process_manager=manager), manager
 
 
 @dataclass

@@ -10,6 +10,7 @@ from entropic_substrate.d1_operator_controller import (
     D1OperatorRunResult,
 )
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.experiments.d1_confirmatory_matrix import (
     D1ConfirmatoryLaunch,
     D1ConfirmatoryMatrix,
@@ -50,15 +51,46 @@ class D1CompletedCampaign:
     results: tuple[D1OperatorRunResult, ...]
     matrix: D1ConfirmatoryMatrix
     attempt_ledger: D1LaunchAttemptLedger
+    process_manager: D1ProcessManager
+    recovered_prefix_count: int
     _token: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self._token is not _CAMPAIGN_TOKEN:
             raise TypeError("D1CompletedCampaign is factory-only")
-        if not self.results or any(not item.queue_admissible for item in self.results):
+        if any(not item.queue_admissible for item in self.results):
             raise ValueError("completed D1 campaign requires only queue-admissible results")
-        if self.attempt_ledger != self.results[-1].attempt_ledger:
+        if self.results and self.attempt_ledger != self.results[-1].attempt_ledger:
             raise ValueError("completed D1 campaign ledger differs from its final result")
+        if self.results and self.process_manager != self.results[-1].process_manager:
+            raise ValueError("completed D1 campaign process differs from its final result")
+        if (
+            type(self.recovered_prefix_count) is not int
+            or self.recovered_prefix_count < 0
+            or self.recovered_prefix_count + len(self.results) != len(self.matrix.launches)
+        ):
+            raise ValueError("completed D1 campaign recovered/executed partition is inconsistent")
+
+    @classmethod
+    def from_attested(
+        cls,
+        *,
+        design_digest: str,
+        results: tuple[D1OperatorRunResult, ...],
+        matrix: D1ConfirmatoryMatrix,
+        attempt_ledger: D1LaunchAttemptLedger,
+        process_manager: D1ProcessManager,
+        recovered_prefix_count: int,
+    ) -> D1CompletedCampaign:
+        return cls(
+            design_digest,
+            results,
+            matrix,
+            attempt_ledger,
+            process_manager,
+            recovered_prefix_count,
+            _token=_CAMPAIGN_TOKEN,
+        )
 
 
 def _validate_roster(
@@ -135,10 +167,11 @@ class D1CampaignQueue:
             git=self._git,
             ledger=prior,
         )
-        return D1CompletedCampaign(
-            self._design.design_digest,
-            tuple(results),
-            matrix,
-            prior,
-            _token=_CAMPAIGN_TOKEN,
+        return D1CompletedCampaign.from_attested(
+            design_digest=self._design.design_digest,
+            results=tuple(results),
+            matrix=matrix,
+            attempt_ledger=prior,
+            process_manager=results[-1].process_manager,
+            recovered_prefix_count=0,
         )

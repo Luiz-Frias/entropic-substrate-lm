@@ -309,3 +309,11 @@ def test_ready_checkpoint_observing_inflight_manager_returns_halt_not_guess(tmp_
     assert type(halted) is D1CampaignRecoveryHalt
     assert halted.active_subject == intents[1].plan.logical_run_id
     assert "in-flight" in halted.reason
+
+
+def test_recovery_values_are_factory_attested(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    _design, intents, _starts, manager, _ledger, checkpoint = _prefix(tmp_path, 0)
+    with pytest.raises(TypeError, match="factory-only"):
+        D1HydratedCampaignRecovery(D1CampaignRecoveryStatus.READY, checkpoint, manager, (), intents)
+    with pytest.raises(TypeError, match="factory-only"):
+        D1CampaignRecoveryHalt("forged", checkpoint, manager, None)
