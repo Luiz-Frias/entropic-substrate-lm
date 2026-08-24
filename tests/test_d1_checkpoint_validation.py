@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from typing import cast
 
+import numpy as np
 import pytest
+import torch
 
 from d1_checkpoint_fixtures import CheckpointCase, checkpoint_state, set_path
+from entropic_substrate.data.batching import SequenceSampler, TokenSplit
 from entropic_substrate.predictive_state.checkpoint_envelope import (
     D1CheckpointError,
     validate_d1_checkpoint,
 )
+from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
+from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
 
 pytestmark = pytest.mark.unit
 
@@ -30,6 +35,38 @@ def _validate(state: object, case: CheckpointCase, *, resume: bool = False) -> o
 def test_valid_typed_checkpoint_is_admitted_for_resume() -> None:
     state, case = checkpoint_state()
     assert _validate(state, case, resume=True) is state
+
+
+def test_cold_unfitted_runtime_admits_serialized_baseline_before_state_load() -> None:
+    state, case = checkpoint_state()
+    family = case.run.family
+    assert family is not None
+    system = D1PredictiveSystem.from_family(
+        family,
+        case.run.draft.arm,
+        initializer=SeededD1BranchInitializer(seed=case.run.execution.seed),
+    )
+    optimizer = torch.optim.AdamW(system.optimizer_parameters(), lr=6e-4)
+    sampler = SequenceSampler(
+        TokenSplit(np.arange(4096, dtype=np.int64) % 11),
+        case.protocol.batching.batch_size,
+        case.protocol.batching.sequence_length,
+        seed=case.run.execution.seed,
+    )
+
+    assert system.mean_displacement_baseline.is_fitted is False
+    assert (
+        validate_d1_checkpoint(
+            state,
+            system=system,
+            optimizer=optimizer,
+            sampler=sampler,
+            run=case.run,
+            protocol=case.protocol,
+            for_resume=True,
+        )
+        is state
+    )
 
 
 @pytest.mark.parametrize(

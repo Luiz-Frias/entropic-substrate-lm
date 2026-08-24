@@ -154,6 +154,7 @@ def require_checkpoint_alignment(
     baseline: object,
     ledger: object,
     journal: object,
+    serialized_mean: torch.Tensor | None = None,
 ) -> None:
     """Require all typed evidence cursors to name one eval-boundary history."""
     if not isinstance(system, D1PredictiveSystem) or not isinstance(run, D1RunSpec):
@@ -188,7 +189,10 @@ def require_checkpoint_alignment(
             raise D1CheckpointError(f"baseline_calibration {field} does not match the D1 run")
     if run.data is not None and baseline.split_digest != run.data.split_digest:
         raise D1CheckpointError("baseline_calibration split_digest does not match the D1 run")
-    if baseline.mean_parameter_digest != _tensor_digest(system.mean_displacement_baseline.mean):
+    mean = system.mean_displacement_baseline.mean if serialized_mean is None else serialized_mean
+    if type(mean) is not torch.Tensor:
+        raise D1CheckpointError("checkpoint baseline mean must be a tensor")
+    if baseline.mean_parameter_digest != _tensor_digest(mean):
         raise D1CheckpointError("baseline_calibration mean_parameter_digest does not match model")
     if ledger.last_training_step != successful_step:
         raise D1CheckpointError("resource_ledger last_training_step must equal successful_step")
