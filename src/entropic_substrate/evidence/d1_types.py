@@ -8,13 +8,12 @@ from types import MappingProxyType
 from typing import Final
 
 from entropic_substrate.evidence.lifecycle import (
-    ArtifactIdentity,
     ContentHash,
     LifecycleContractError,
     SuccessorAuthorization,
 )
 
-D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v1"
+D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v2"
 D1_ARM_IDS: Final[tuple[str, ...]] = ("none", "sg", "ac", "both")
 
 ROOT_FIELDS: Final[frozenset[str]] = frozenset(
@@ -30,7 +29,6 @@ ROOT_FIELDS: Final[frozenset[str]] = frozenset(
         "exclusions",
         "inputs",
         "review",
-        "filed_artifacts",
         "verdict",
         "successor",
     }
@@ -113,8 +111,6 @@ class D1FamilyIdentity:
 class D1ArmEvidence:
     arm_id: str
     construction_digest: str
-    implementation: ArtifactIdentity
-    capture_manifest: ArtifactIdentity
 
 
 @dataclass(frozen=True)
@@ -171,10 +167,15 @@ class D1InputIdentity:
 
 
 @dataclass(frozen=True)
+class D1ReviewAdjudication:
+    status: str
+    major_findings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class D1Review:
-    packet: ArtifactIdentity
-    sealed: bool
     open_major_findings: tuple[str, ...]
+    adjudication: D1ReviewAdjudication
 
 
 @dataclass(frozen=True)
