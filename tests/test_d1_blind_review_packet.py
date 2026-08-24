@@ -17,9 +17,12 @@ from entropic_substrate.analysis.d1_blind_aliases import (
     prepare_d1_blind_aliases,
 )
 from entropic_substrate.analysis.d1_execution_receipt import (
-    D1ExternalIsolationAttestation,
+    D1AnalysisRunnerRequest,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
+)
+from entropic_substrate.analysis.d1_external_analysis_adapter import (
+    DockerD1ExternalAnalysisAdapter,
 )
 from entropic_substrate.analysis.d1_review_packet import (
     D1BlindnessLabel,
@@ -32,7 +35,8 @@ from entropic_substrate.analysis.d1_review_packet import (
 
 from .test_d1_analysis_api import _decision, _design
 from .test_d1_analysis_capture import _analysis_case
-from .test_d1_analysis_receipt import _execution_evidence, _implementation
+from .test_d1_analysis_receipt import _implementation
+from .test_d1_external_analysis_adapter import _launch, _Runner
 
 pytestmark = pytest.mark.unit
 
@@ -69,17 +73,17 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         isolation=D1IsolationRequest(),
     )
     composition = compose_d1_analysis(request)
-    isolation = D1ExternalIsolationAttestation.enforced(
-        request=request.isolation,
-        mechanism="read-only-network-none",
-        execution_evidence=_execution_evidence(),
-    )
+    launch = _launch(tmp_path / "external-analysis")
+    isolation = DockerD1ExternalAnalysisAdapter(
+        launch=launch,
+        runner=_Runner(launch, analysis_bytes=composition.analysis.canonical_json.encode()),
+    ).run(D1AnalysisRunnerRequest(request.request_digest, request.isolation))
     receipt = issue_d1_analysis_receipt(
         analysis=composition.analysis,
         admitted=composition.admitted,
         aliases=aliases.aliases,
         implementation=_implementation(),
-        isolation=isolation,
+        isolation=isolation.isolation,
     )
     evidence = tuple(runs[item.logical_run_id] for item in aggregate.roster.expected_confirmatory)
     return decision, aggregate, aliases, composition.analysis, receipt, evidence
