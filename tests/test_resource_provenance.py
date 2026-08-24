@@ -145,6 +145,8 @@ def test_quote_is_measured_observation_with_exact_decimal_and_structured_roundin
         Money(amount=3.19, currency="USD")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="canonical"):
         Money(amount=Decimal("3.190"), currency="USD")
+    tiny = Money(amount=Decimal("4.4E-13"), currency="USD")
+    assert tiny.canonical_amount == "0.00000000000044"
     with pytest.raises(ValueError, match="evidence_class"):
         _rate(evidence_class=EvidenceClass.RATE_ESTIMATE)
     with pytest.raises(ValueError, match="increment"):
