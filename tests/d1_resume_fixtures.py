@@ -18,6 +18,7 @@ from d1_trainer_fixtures import (
     run_start,
 )
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
 from entropic_substrate.evidence.d1_journal_values import D1JournalEvent
@@ -71,6 +72,7 @@ def resume_start(
 def captured_step_one_case(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    resource_activation_factory: D1ResourceActivationFactory | None = None,
 ) -> InterruptedD1Case:
     plan = micro_plan(D1Arm.BOTH)
     reference_journal = tmp_path / "reference.jsonl"
@@ -102,6 +104,7 @@ def captured_step_one_case(
         origin=origin(),
         locations=D1FreshRunLocations(reference_journal, reference_checkpoint),
         clock=DeterministicTrainerClock(),
+        resource_activation_factory=resource_activation_factory,
     )
     terminal = torch.load(
         completion.final_checkpoint.path,
