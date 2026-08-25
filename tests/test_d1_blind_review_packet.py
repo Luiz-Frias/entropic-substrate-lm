@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import pickle
 from dataclasses import replace
 from pathlib import Path
 from typing import NamedTuple, cast
@@ -23,6 +25,7 @@ from entropic_substrate.analysis.d1_review_packet import (
     D1BlindnessLabel,
     D1BlindReviewPacket,
     D1PacketBlindnessError,
+    D1ValidatedBlindReviewPacket,
     build_d1_blind_review_packet,
     build_d1_factorial_reviewer_prompt,
     d1_review_roster_alias_order,
@@ -305,6 +308,8 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
     )
     manifest = packet.manifest
 
+    assert type(packet) is D1ValidatedBlindReviewPacket
+    packet.require_factory_attested()
     assert manifest["blindness_label"] == D1BlindnessLabel.ROLE_MASKED.value
     assert len(manifest["capture_roster"]["confirmatory"]) == 4  # type: ignore[index]
     assert len(manifest["capture_roster"]["attempts"]) == len(aggregate.attempts)  # type: ignore[index]
@@ -341,6 +346,35 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
     assert repeated.manifest["capture_roster"] == manifest["capture_roster"]
     assert repeated.manifest["roster_randomization"] == randomized
     validate_d1_packet_blindness(packet, decision, aggregate, aliases)
+
+
+def test_validated_packet_is_factory_attested_and_noncopyable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+    packet = build_d1_blind_review_packet(
+        decision_contract=decision,
+        aggregate=aggregate,
+        analysis=analysis,
+        analysis_receipt=receipt,
+        aliases=aliases,
+        run_evidence=evidence,
+    )
+
+    with pytest.raises(TypeError, match="factory-attested"):
+        D1ValidatedBlindReviewPacket.from_manifest(packet.manifest)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(packet)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(packet)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        pickle.dumps(packet)
+    with pytest.raises(TypeError, match="factory-attested"):
+        replace(packet, canonical_json="{}")
+    object.__setattr__(packet, "canonical_json", "{}")
+    with pytest.raises(TypeError, match="evidence changed"):
+        packet.require_factory_attested()
 
 
 def test_packet_binds_the_supplied_decision_contract_to_analysis_receipt(

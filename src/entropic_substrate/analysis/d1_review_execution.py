@@ -15,6 +15,7 @@ from entropic_substrate.analysis.d1_blind_aliases import (
 from entropic_substrate.analysis.d1_review_packet import (
     D1BlindReviewPacket,
     D1FactorialReviewerPrompt,
+    D1ValidatedBlindReviewPacket,
 )
 from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
@@ -83,7 +84,7 @@ class D1CloudReviewRequest:
     prior_executions: tuple[D1ExecutedBlindReview, ...] = ()
 
     def __post_init__(self) -> None:
-        if type(self.packet) is not D1BlindReviewPacket:
+        if type(self.packet) not in {D1BlindReviewPacket, D1ValidatedBlindReviewPacket}:
             raise TypeError("D1 cloud review requires a blind packet")
         if type(self.prompt) is not D1FactorialReviewerPrompt:
             raise TypeError("D1 cloud review requires a factorial reviewer prompt")

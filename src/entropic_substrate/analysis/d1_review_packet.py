@@ -8,7 +8,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import cast
+from typing import NoReturn, SupportsIndex, cast
 
 from entropic_substrate.analysis.d1_blind_aliases import D1PreparedBlindAliases
 from entropic_substrate.analysis.d1_execution_receipt import D1AnalysisExecutionReceipt
@@ -36,12 +36,14 @@ from entropic_substrate.experiments.d1_primitives import (
     canonical_json,
 )
 from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
+from entropic_substrate.factory_attestation import FactoryAttestation
 
 __all__ = [
     "D1BlindReviewPacket",
     "D1BlindnessLabel",
     "D1FactorialReviewerPrompt",
     "D1PacketBlindnessError",
+    "D1ValidatedBlindReviewPacket",
     "build_d1_blind_review_packet",
     "build_d1_factorial_reviewer_prompt",
     "d1_review_roster_alias_order",
@@ -127,6 +129,83 @@ class D1BlindReviewPacket:
     @property
     def packet_digest(self) -> str:
         return hashlib.sha256(self.canonical_json.encode()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
+class D1ValidatedBlindReviewPacket(D1BlindReviewPacket):
+    """Complete closed-world packet authority minted by the packet builder."""
+
+    decision_contract: D1DecisionContract
+    aggregate: D1HeterogeneousCaptureAggregate
+    aliases: D1PreparedBlindAliases
+
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1ValidatedBlindReviewPacket is factory-attested")
+
+    def require_factory_attested(self) -> None:
+        if not _VALIDATED_PACKET_ATTESTATION.registered(self):
+            raise TypeError("D1 validated blind review packet is not factory-attested")
+        if not _VALIDATED_PACKET_ATTESTATION.contains(self):
+            raise TypeError("D1 validated blind review packet evidence changed after minting")
+        _validate_packet_authority(self)
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1ValidatedBlindReviewPacket cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1ValidatedBlindReviewPacket cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1ValidatedBlindReviewPacket cannot be copied")
+
+
+def _validated_packet_fingerprint(packet: D1ValidatedBlindReviewPacket) -> str:
+    return canonical_digest(
+        {
+            "aggregate_digest": packet.aggregate.manifest_digest,
+            "alias_commitment": packet.aliases.aliases.sealed_commitment,
+            "decision_contract_digest": decision_contract_digest(packet.decision_contract),
+            "packet_digest": packet.packet_digest,
+        }
+    )
+
+
+_VALIDATED_PACKET_ATTESTATION = FactoryAttestation[
+    D1ValidatedBlindReviewPacket,
+    str,
+](_validated_packet_fingerprint)
+
+
+def _validate_packet_authority(packet: D1ValidatedBlindReviewPacket) -> None:
+    if (
+        type(packet.decision_contract) is not D1DecisionContract
+        or type(packet.aggregate) is not D1HeterogeneousCaptureAggregate
+        or type(packet.aliases) is not D1PreparedBlindAliases
+    ):
+        raise TypeError("D1 validated packet requires exact authority values")
+    validate_d1_packet_blindness(
+        packet,
+        packet.decision_contract,
+        packet.aggregate,
+        packet.aliases,
+    )
+
+
+def _mint_validated_packet(
+    packet: D1BlindReviewPacket,
+    *,
+    decision_contract: D1DecisionContract,
+    aggregate: D1HeterogeneousCaptureAggregate,
+    aliases: D1PreparedBlindAliases,
+) -> D1ValidatedBlindReviewPacket:
+    validated = object.__new__(D1ValidatedBlindReviewPacket)
+    object.__setattr__(validated, "canonical_json", packet.canonical_json)
+    object.__setattr__(validated, "decision_contract", decision_contract)
+    object.__setattr__(validated, "aggregate", aggregate)
+    object.__setattr__(validated, "aliases", aliases)
+    _validate_packet_authority(validated)
+    _VALIDATED_PACKET_ATTESTATION.register(validated)
+    return validated
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,7 +475,7 @@ def build_d1_blind_review_packet(
     analysis_receipt: D1AnalysisExecutionReceipt,
     aliases: D1PreparedBlindAliases,
     run_evidence: tuple[D1RunEvidence, ...],
-) -> D1BlindReviewPacket:
+) -> D1ValidatedBlindReviewPacket:
     """Assemble exact evidence without serializing canonical mechanism identities."""
     bindings, readers = _receipt_bindings(
         analysis_receipt,
@@ -436,7 +515,12 @@ def build_d1_blind_review_packet(
     }
     packet = D1BlindReviewPacket.from_manifest(manifest)
     validate_d1_packet_blindness(packet, decision_contract, aggregate, aliases)
-    return packet
+    return _mint_validated_packet(
+        packet,
+        decision_contract=decision_contract,
+        aggregate=aggregate,
+        aliases=aliases,
+    )
 
 
 def _walk(value: object) -> tuple[set[str], set[str]]:
