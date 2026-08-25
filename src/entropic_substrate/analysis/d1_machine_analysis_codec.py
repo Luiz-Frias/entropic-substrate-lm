@@ -15,7 +15,7 @@ __all__ = [
     "decode_d1_machine_analysis_declaration",
 ]
 
-_SCHEMA = "d1-aliased-machine-analysis-v1"
+_SCHEMA = "d1-aliased-machine-analysis-v2"
 _ALIASES = frozenset({"A", "B", "C", "D"})
 _EVIDENCE = "DERIVED_FROM_MEASURED"
 _STATUS = frozenset({"PASS", "FAIL", "INCONCLUSIVE"})
@@ -44,9 +44,16 @@ _CONDITION = frozenset(
     "operator smoothing_window source status threshold".split()
 )
 _QUALITY_TARGET: frozenset[str] = frozenset(
-    "eval_index evidence_class metric_value model_tokens reached source_bytes step "
-    "trainer_wall_seconds".split()
+    "eval_index evidence_class metric metric_value model_tokens operator reached source_bytes "
+    "step threshold trainer_wall_seconds".split()
 )
+_QUALITY_TARGET_RESULT = _QUALITY_TARGET - {
+    "evidence_class",
+    "metric",
+    "operator",
+    "reached",
+    "threshold",
+}
 
 
 class D1MachineAnalysisCodecError(ValueError):
@@ -323,10 +330,16 @@ def _diagnostic(raw: object, index: int, included: set[int]) -> tuple[str, int]:
         f"diagnostic[{index}].quality target",
     )
     _evidence(target["evidence_class"], "quality target")
+    _text(target["metric"], "quality target metric")
+    operator = _text(target["operator"], "quality target operator")
+    if operator not in {"AT_LEAST", "AT_MOST"}:
+        _fail("quality target operator is unsupported")
+    _number(target["threshold"], "quality target threshold")
     if type(target["reached"]) is not bool:
         _fail("quality target reached must be boolean")
-    fields = _QUALITY_TARGET - {"evidence_class", "reached"}
-    if target["reached"] is False and any(target[field] is not None for field in fields):
+    if target["reached"] is False and any(
+        target[field] is not None for field in _QUALITY_TARGET_RESULT
+    ):
         _fail("quality target unreached fields must be null")
     if target["reached"] is True:
         for field in ("eval_index", "model_tokens", "source_bytes", "step"):

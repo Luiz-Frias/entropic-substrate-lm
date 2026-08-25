@@ -10,7 +10,11 @@ from types import MappingProxyType
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_clause_policy import D1ClauseAnalysis
-from entropic_substrate.analysis.d1_diagnostics import D1ReportRunDiagnostic
+from entropic_substrate.analysis.d1_diagnostics import (
+    D1DiagnosticPolicy,
+    D1ReportRunDiagnostic,
+    parse_d1_diagnostic_policy,
+)
 from entropic_substrate.analysis.d1_factorial import D1FactorialAnalysis
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.experiments.d1_primitives import D1Arm, require_sha256
@@ -26,7 +30,7 @@ __all__ = [
     "build_d1_aliased_machine_analysis",
 ]
 
-_SCHEMA = "d1-aliased-machine-analysis-v1"
+_SCHEMA = "d1-aliased-machine-analysis-v2"
 
 
 class D1AliasError(ValueError):
@@ -198,6 +202,7 @@ def _clauses_manifest(
 def _diagnostic_manifest(
     value: D1ReportRunDiagnostic,
     aliases: D1ArmAliasMap,
+    policy: D1DiagnosticPolicy,
 ) -> dict[str, object]:
     target = value.quality_target
     return {
@@ -210,11 +215,14 @@ def _diagnostic_manifest(
         "quality_target": {
             "eval_index": target.eval_index,
             "evidence_class": target.evidence_class,
+            "metric": policy.target_metric,
             "metric_value": target.metric_value,
             "model_tokens": target.model_tokens,
+            "operator": policy.target_operator.value,
             "reached": target.reached,
             "source_bytes": target.source_bytes,
             "step": target.step,
+            "threshold": policy.target_threshold,
             "trainer_wall_seconds": target.trainer_wall_seconds,
         },
         "seed": value.seed,
@@ -276,6 +284,7 @@ def build_d1_aliased_machine_analysis(
         contrast_id: f"C{index:02d}"
         for index, contrast_id in enumerate(decision_contract.contrast_ids, start=1)
     }
+    diagnostic_policy = parse_d1_diagnostic_policy(decision_contract)
     endpoint = None
     contrasts: list[dict[str, object]] = []
     effects: list[dict[str, object]] = []
@@ -306,7 +315,9 @@ def build_d1_aliased_machine_analysis(
         "clauses_by_alias": _clauses_manifest(clauses, aliases, contrast_aliases),
         "clause_precedence": list(clauses.clause_precedence),
         "contrasts": contrasts,
-        "diagnostics": [_diagnostic_manifest(item, aliases) for item in diagnostics],
+        "diagnostics": [
+            _diagnostic_manifest(item, aliases, diagnostic_policy) for item in diagnostics
+        ],
         "endpoint": endpoint,
         "excluded_seeds": excluded,
         "exclusions": [

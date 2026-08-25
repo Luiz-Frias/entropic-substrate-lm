@@ -65,9 +65,13 @@ def _policy(*, future_threshold: float = 15.0) -> dict[str, object]:
     }
 
 
-def _contract_with_policy(policy: dict[str, object]) -> D1DecisionContract:
+def _contract_with_policy(
+    policy: dict[str, object], *, diagnostic_policy: dict[str, object] | None = None
+) -> D1DecisionContract:
     base = contract()
     constants = {"analysis_policy": policy, "primary": {"alpha": 0.025}, "seeds": list(SEEDS)}
+    if diagnostic_policy is not None:
+        constants["diagnostic_policy"] = diagnostic_policy
     return D1DecisionContract(
         family_identity=base.family_identity,
         registered_constants=constants,

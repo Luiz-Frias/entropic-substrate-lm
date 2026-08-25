@@ -26,6 +26,7 @@ from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from .test_d1_clause_policy import _contract_with_policy, _policy
 from .test_d1_factorial_analysis import _cells, _design
+from .test_d1_report_diagnostics import _policy as diagnostic_policy
 
 pytestmark = pytest.mark.unit
 
@@ -59,7 +60,10 @@ def _diagnostics() -> tuple[D1ReportRunDiagnostic, ...]:
 
 
 def _packet(*, future_threshold: float = 15.0):
-    decision = _contract_with_policy(_policy(future_threshold=future_threshold))
+    decision = _contract_with_policy(
+        _policy(future_threshold=future_threshold),
+        diagnostic_policy=diagnostic_policy(),
+    )
     design = _design(decision)
     cells = _cells()
     factorial = compute_d1_factorial(

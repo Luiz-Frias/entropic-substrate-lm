@@ -40,6 +40,7 @@ __all__ = [
     "D1AnalysisAdmissionError",
     "D1AppliedExclusion",
     "admit_d1_analysis_capture",
+    "derive_d1_analysis_exclusions",
 ]
 
 
@@ -113,10 +114,17 @@ def _validate_design(
             _fail("design", item.logical_run_id, "construction digest differs")
 
 
-def _derive_exclusions(
+def derive_d1_analysis_exclusions(
+    *,
     aggregate: D1HeterogeneousCaptureAggregate,
-    contract: D1DecisionContract,
+    decision_contract: D1DecisionContract,
 ) -> tuple[D1AppliedExclusion, ...]:
+    """Purely derive registered whole-block exclusions from validated defects."""
+    if (
+        type(aggregate) is not D1HeterogeneousCaptureAggregate
+        or type(decision_contract) is not D1DecisionContract
+    ):
+        raise TypeError("D1 exclusion derivation requires validated aggregate and contract")
     defects_by_pair: dict[str, list[D1ValidatedTerminalDefect]] = {}
     for defect in aggregate.terminal_defects:
         defects_by_pair.setdefault(defect.expected.pairing_id, []).append(defect)
@@ -143,7 +151,7 @@ def _derive_exclusions(
         matches = {
             rule.reason_id
             for defect in defects
-            for rule in contract.exclusion_rules
+            for rule in decision_contract.exclusion_rules
             if rule.measurement == defect.record.metric_name
             and rule.predicate == "NONFINITE"
             and rule.scope == "WHOLE_SEED_BLOCK"
@@ -258,7 +266,10 @@ def admit_d1_analysis_capture(
     capture_root = Path(root)
     _validate_design(design, decision_contract, aggregate)
     _verify_inputs(capture_root, aggregate)
-    exclusions = _derive_exclusions(aggregate, decision_contract)
+    exclusions = derive_d1_analysis_exclusions(
+        aggregate=aggregate,
+        decision_contract=decision_contract,
+    )
     excluded = {item.pairing_id for item in exclusions}
     complete = {
         (item.expected.arm, item.expected.seed): item
