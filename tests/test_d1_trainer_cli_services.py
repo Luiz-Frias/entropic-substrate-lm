@@ -7,8 +7,16 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import torch
 
-from d1_trainer_fixtures import ORIGIN_NS, micro_plan, run_start
+from d1_resume_assertions import assert_nested_equal
+from d1_resume_fixtures import captured_step_one_case, origin, resume_start
+from d1_trainer_fixtures import (
+    ORIGIN_NS,
+    DeterministicTrainerClock,
+    micro_plan,
+    run_start,
+)
 from entropic_substrate.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliApplication,
@@ -22,6 +30,7 @@ from entropic_substrate.d1_trainer_cli_services import (
 )
 from entropic_substrate.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
+    D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
     trainer_request_to_mapping,
 )
@@ -124,3 +133,61 @@ def test_resume_service_rejects_a_fresh_request_before_trainer_execution(tmp_pat
 
     assert outcome.exit_code is D1CliExitCode.INVALID_EVIDENCE
     assert "command does not match" in str(outcome.detail)
+
+
+def test_d1_run_resume_cli_restores_and_completes_real_training(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interrupted = tmp_path / "interrupted"
+    interrupted.mkdir()
+    case = captured_step_one_case(interrupted, monkeypatch)
+    start = resume_start(case.plan, case.checkpoint_sha256)
+    request = D1ResumeTrainerRequest(
+        case.plan,
+        start,
+        origin(),
+        D1TrainerLocationSpec(
+            str(case.journal_path.relative_to(tmp_path)),
+            str(case.checkpoint_path.relative_to(tmp_path)),
+            "interrupted/quarantined-tail.jsonl",
+        ),
+    )
+    manifest = tmp_path / "resume.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "command": D1CliCommand.RUN_RESUME.value,
+                "payload": trainer_request_to_mapping(request),
+                "schema_version": D1_CLI_MANIFEST_SCHEMA,
+            }
+        ),
+        encoding="utf-8",
+    )
+    resume = D1ResumeTrainerCliService(
+        catalog=(case.plan.profile,),
+        artifact_root=tmp_path,
+        observer=_Observer(),
+        clock=DeterministicTrainerClock(),
+    )
+    services = {
+        command: (
+            resume
+            if command is D1CliCommand.RUN_RESUME
+            else D1CliServiceUnavailable("not under test")
+        )
+        for command in D1CliCommand
+    }
+
+    outcome = D1CliApplication(services).execute(D1CliCommand.RUN_RESUME, manifest)
+
+    assert outcome.exit_code is D1CliExitCode.SUCCESS
+    assert outcome.payload is not None
+    assert outcome.payload["handoff_kind"] == "resume_completion"
+    assert outcome.payload["successful_step"] == 2
+    assert case.journal_path.is_file()
+    assert case.checkpoint_path.is_file()
+    resumed = torch.load(case.checkpoint_path, map_location="cpu", weights_only=True)
+    assert case.uninterrupted_terminal is not None
+    for field in ("model", "optimizer", "sampler", "rng"):
+        assert_nested_equal(resumed[field], case.uninterrupted_terminal[field])
