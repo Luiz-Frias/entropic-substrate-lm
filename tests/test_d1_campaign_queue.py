@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import cast
 
@@ -204,6 +204,25 @@ def test_first_inadmissible_result_stops_before_any_later_arm() -> None:
     assert controller.calls == [intent.plan.logical_run_id for intent in intents[:2]]
 
 
+@pytest.mark.parametrize("mutation", ["missing_completion", "wrong_identity"])
+def test_malformed_cell_ledger_stops_before_launching_the_next_arm(mutation: str) -> None:
+    design, intents, starts = _campaign()
+    results = list(_results(intents, starts))
+    events = results[0].attempt_ledger.events
+    if mutation == "missing_completion":
+        ledger = D1LaunchAttemptLedger(events[:-1])
+    else:
+        drifted = replace(events[0].identity, seed=events[0].identity.seed + 1)
+        ledger = D1LaunchAttemptLedger(tuple(replace(item, identity=drifted) for item in events))
+    results[0] = replace(results[0], attempt_ledger=ledger)
+    controller = _Controller(tuple(results), [])
+
+    with pytest.raises(D1CampaignQueueHalt, match="attempt ledger"):
+        D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(intents)
+
+    assert controller.calls == [intents[0].plan.logical_run_id]
+
+
 def test_missing_reordered_or_duplicate_roster_is_refused_before_first_launch() -> None:
     design, intents, starts = _campaign()
     controller = _Controller(_results(intents, starts), [])
@@ -212,3 +231,38 @@ def test_missing_reordered_or_duplicate_roster_is_refused_before_first_launch() 
         with pytest.raises(ValueError, match="registered campaign roster"):
             D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(invalid)
         assert controller.calls == []
+
+
+def _drift_provenance(intent: D1OperatorLaunchIntent, field: str) -> D1OperatorLaunchIntent:
+    plan = intent.plan
+    execution = plan.run.execution
+    image = intent.image
+    if field == "pairing":
+        execution = replace(execution, pairing_id="different-pair")
+    elif field == "code":
+        execution = replace(
+            execution,
+            code=replace(execution.code, repository_digest="1" * 64),
+        )
+    elif field == "image":
+        digest = "sha256:" + "2" * 64
+        execution = replace(execution, container=replace(execution.container, image_digest=digest))
+        image = replace(image, digest=digest)
+    else:
+        data = replace(plan.run.data, dataset_digest="3" * 64)
+        plan = replace(plan, run=replace(plan.run, data=data))
+    if field != "data":
+        plan = replace(plan, run=replace(plan.run, execution=execution))
+    return replace(intent, plan=plan, image=image)
+
+
+@pytest.mark.parametrize("field", ["pairing", "code", "image", "data"])
+def test_provenance_drift_is_refused_before_first_provider_launch(field: str) -> None:
+    design, intents, starts = _campaign()
+    drifted = (_drift_provenance(intents[0], field), *intents[1:])
+    controller = _Controller(_results(intents, starts), [])
+
+    with pytest.raises(ValueError, match="provenance"):
+        D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(drifted)
+
+    assert controller.calls == []

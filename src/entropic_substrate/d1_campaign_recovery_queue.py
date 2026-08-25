@@ -12,7 +12,11 @@ from entropic_substrate.d1_campaign_checkpoint import (
 from entropic_substrate.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointReceipt,
 )
-from entropic_substrate.d1_campaign_queue import D1CampaignQueueHalt, D1CompletedCampaign
+from entropic_substrate.d1_campaign_queue import (
+    D1CampaignQueueHalt,
+    D1CompletedCampaign,
+    validate_d1_campaign_ledger_extension,
+)
 from entropic_substrate.d1_campaign_recovery import (
     D1CampaignRecoveryHalt,
     D1HydratedCampaignRecovery,
@@ -27,13 +31,9 @@ from entropic_substrate.experiments.d1_confirmatory_matrix import (
     D1GitProvenancePort,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
+from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
 from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest
+from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 
 
@@ -188,28 +188,7 @@ class D1RecoverableCampaignQueue:
         ):
             raise ValueError("controller result differs from recovered intent")
         validate_d1_campaign_start(intent, result.start)
-        prior_events = ledger.events
-        extension = result.attempt_ledger.events[len(prior_events) :]
-        expected_identity = D1LaunchAttemptIdentity(
-            RunClass.CONFIRMATORY,
-            intent.plan.profile.family.family_digest,
-            intent.plan.profile.arm,
-            intent.plan.seed,
-            intent.plan.logical_run_id,
-            intent.registered_design_digest,
-        )
-        if (
-            result.attempt_ledger.events[: len(prior_events)] != prior_events
-            or len(extension) != 3
-            or tuple(event.status for event in extension)
-            != (
-                D1LaunchAttemptStatus.RECORDED,
-                D1LaunchAttemptStatus.TRAINER_STARTED,
-                D1LaunchAttemptStatus.COMPLETED,
-            )
-            or any(event.identity != expected_identity for event in extension)
-        ):
-            raise ValueError("controller attempt ledger does not extend hydrated authority")
+        validate_d1_campaign_ledger_extension(result, intent, ledger)
         observed = result.process_manager
         if (
             type(observed) is not D1ProcessManager

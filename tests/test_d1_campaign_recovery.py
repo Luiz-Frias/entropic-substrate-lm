@@ -21,6 +21,7 @@ from entropic_substrate.d1_campaign_recovery import (
     hydrate_d1_campaign_recovery,
 )
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.lifecycle import ActorRole
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.experiments.d1_launch_attempts import (
@@ -309,6 +310,64 @@ def test_ready_checkpoint_observing_inflight_manager_returns_halt_not_guess(tmp_
     assert type(halted) is D1CampaignRecoveryHalt
     assert halted.active_subject == intents[1].plan.logical_run_id
     assert "in-flight" in halted.reason
+
+
+def test_terminal_failed_subject_hydrates_as_typed_hard_halt(tmp_path) -> None:
+    design, intents, starts, manager, ledger, checkpoint = _prefix(tmp_path, 1)
+    intent, start = intents[1], starts[1]
+    failed = _attempt(intent)
+    ledger = ledger.record(failed, observed_at=start.trainer_started_at)
+    ledger = ledger.transition(
+        failed,
+        status=D1LaunchAttemptStatus.TRAINER_STARTED,
+        observed_at=start.trainer_started_at + timedelta(seconds=1),
+    )
+    ledger = ledger.transition(
+        failed,
+        status=D1LaunchAttemptStatus.FAILED,
+        observed_at=start.trainer_started_at + timedelta(seconds=2),
+        reason="terminal trainer failure",
+    )
+    manager = manager.admit_launch(
+        subject_id=intent.plan.logical_run_id,
+        actor=_actor(ActorRole.OPERATOR),
+        artifact=_artifact(700, "failed-admission"),
+        event_id="failed-admission",
+    )
+    manager = manager.start_running(
+        subject_id=intent.plan.logical_run_id,
+        actor=_actor(ActorRole.AUTOMATION),
+        artifact=_artifact(701, "failed-running"),
+        event_id="failed-running",
+    )
+    manager = manager.record_problem(
+        actor=_actor(ActorRole.OPERATOR),
+        kind=D1ProblemKind.INVALIDATED,
+        artifact=_artifact(702, "failed-problem"),
+        event_id="failed-problem",
+    )
+    halted_checkpoint = replace(
+        checkpoint,
+        attempt_ledger=ledger,
+        process_state=manager.state,
+        lifecycle_prefix=manager.history.prefix.prefix_sha256,
+        lifecycle_event_count=len(manager.events),
+        active_subject=manager.active_subject,
+        disposition=D1CampaignDisposition.HARD_HALT,
+        halt_reason="terminal failed subject requires filed evidence",
+    )
+
+    halted = hydrate_d1_campaign_recovery(
+        design=design,
+        intents=intents,
+        checkpoint=halted_checkpoint,
+        process_manager=manager,
+    )
+
+    assert type(halted) is D1CampaignRecoveryHalt
+    assert halted.active_subject == intent.plan.logical_run_id
+    assert halted.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
+    assert "terminal failed" in halted.reason
 
 
 def test_recovery_values_are_factory_attested(tmp_path) -> None:  # type: ignore[no-untyped-def]

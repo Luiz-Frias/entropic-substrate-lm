@@ -17,9 +17,13 @@ from entropic_substrate.experiments.d1_confirmatory_matrix import (
     D1GitProvenancePort,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.experiments.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
 from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 
 _CAMPAIGN_TOKEN: Final = object()
@@ -109,6 +113,91 @@ def _validate_roster(
         for intent in intents
     ):
         raise ValueError("D1 intents differ from the exact registered campaign roster/order")
+    pairing_ids: set[str] = set()
+    for seed in design.registered_seeds:
+        block = tuple(intent for intent in intents if intent.plan.seed == seed)
+        pairings = {intent.plan.run.execution.pairing_id for intent in block}
+        provenance = {
+            canonical_digest(
+                {
+                    "code": (
+                        None
+                        if intent.plan.run.execution.code is None
+                        else intent.plan.run.execution.code.manifest
+                    ),
+                    "container": (
+                        None
+                        if intent.plan.run.execution.container is None
+                        else intent.plan.run.execution.container.manifest
+                    ),
+                    "data": None if intent.plan.run.data is None else intent.plan.run.data.manifest,
+                    "image": {
+                        "digest": intent.image.digest,
+                        "platform": intent.image.platform,
+                        "repository": intent.image.repository,
+                        "source_commit": intent.image.source_commit,
+                    },
+                }
+            )
+            for intent in block
+        }
+        if len(pairings) != 1 or pairing_ids & pairings or len(provenance) != 1:
+            raise ValueError("D1 campaign paired provenance differs before provider launch")
+        pairing_ids.update(pairings)
+        for intent in block:
+            plan = intent.plan
+            preregistration = plan.run.preregistration
+            if (
+                plan.profile.family.family_digest != design.family_digest
+                or plan.run.construction_digest
+                != design.arm_construction_digests[plan.profile.arm.value]
+                or preregistration is None
+                or (
+                    preregistration.path,
+                    preregistration.commit,
+                    preregistration.family_digest,
+                )
+                != (
+                    design.preregistration.path,
+                    design.preregistration.commit,
+                    design.family_digest,
+                )
+            ):
+                raise ValueError("D1 campaign registered provenance differs before provider launch")
+
+
+def validate_d1_campaign_ledger_extension(
+    result: D1OperatorRunResult,
+    intent: D1OperatorLaunchIntent,
+    prior: D1LaunchAttemptLedger,
+) -> None:
+    if (
+        type(result) is not D1OperatorRunResult
+        or type(intent) is not D1OperatorLaunchIntent
+        or type(prior) is not D1LaunchAttemptLedger
+    ):
+        raise TypeError("D1 campaign ledger validation requires nominal values")
+    prior_events = prior.events
+    extension = result.attempt_ledger.events[len(prior_events) :]
+    expected_identity = D1LaunchAttemptIdentity(
+        RunClass.CONFIRMATORY,
+        intent.plan.profile.family.family_digest,
+        intent.plan.profile.arm,
+        intent.plan.seed,
+        intent.plan.logical_run_id,
+        intent.registered_design_digest,
+    )
+    if (
+        result.attempt_ledger.events[: len(prior_events)] != prior_events
+        or tuple(event.status for event in extension)
+        != (
+            D1LaunchAttemptStatus.RECORDED,
+            D1LaunchAttemptStatus.TRAINER_STARTED,
+            D1LaunchAttemptStatus.COMPLETED,
+        )
+        or any(event.identity != expected_identity for event in extension)
+    ):
+        raise ValueError("controller attempt ledger does not extend campaign authority")
 
 
 class D1CampaignQueue:
@@ -142,11 +231,10 @@ class D1CampaignQueue:
                 raise D1CampaignQueueHalt(
                     subject, tuple(results), "controller result differs from the queued cell"
                 )
-            prefix = result.attempt_ledger.events[: len(prior.events)]
-            if prefix != prior.events:
-                raise D1CampaignQueueHalt(
-                    subject, tuple(results), "attempt ledger is not an append-only prefix"
-                )
+            try:
+                validate_d1_campaign_ledger_extension(result, intent, prior)
+            except (TypeError, ValueError) as error:
+                raise D1CampaignQueueHalt(subject, tuple(results), str(error)) from error
             results.append(result)
             prior = result.attempt_ledger
             if not result.queue_admissible:
