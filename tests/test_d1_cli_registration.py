@@ -19,6 +19,26 @@ from entropic_substrate.d1_cli import (
 
 pytestmark = pytest.mark.unit
 
+_PUBLIC_D1_COMMANDS: tuple[str, ...] = (
+    "d1-run-fresh",
+    "d1-run-resume",
+    "d1-campaign-run",
+    "d1-capture-prepare",
+    "d1-capture-finalize",
+    "d1-inspect",
+)
+
+
+def test_public_d1_command_surface_is_the_hard_cutover_contract() -> None:
+    assert tuple(command.value for command in D1CliCommand) == _PUBLIC_D1_COMMANDS
+
+
+@pytest.mark.parametrize("legacy", ["d1-finalize", "d1-capture", "d1-file-gate"])
+def test_removed_monolithic_commands_have_no_parser_alias(legacy: str) -> None:
+    with pytest.raises(SystemExit) as captured:
+        build_parser().parse_args([legacy, "--manifest", "request.json"])
+    assert captured.value.code == 2
+
 
 @dataclass
 class _Service:
@@ -119,7 +139,7 @@ def test_invalid_manifest_exit_survives_cli_rendering(
     path.write_text(
         json.dumps(
             {
-                "command": D1CliCommand.CAPTURE.value,
+                "command": D1CliCommand.CAPTURE_PREPARE.value,
                 "payload": {},
                 "schema_version": D1_CLI_MANIFEST_SCHEMA,
             }
