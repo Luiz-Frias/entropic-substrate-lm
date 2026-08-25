@@ -24,7 +24,9 @@ from entropic_substrate.analysis.d1_external_review_adapter import (
     D1ReviewSandboxIdentity,
 )
 from entropic_substrate.analysis.d1_review_execution import (
+    D1CloudReviewerFake,
     D1CloudReviewRequest,
+    D1ExecutedBlindReview,
     D1InMemoryReviewReceiptStoreFake,
     execute_d1_blind_review,
 )
@@ -42,7 +44,11 @@ _RESPONSE = b'{"provider_response":"opaque"}'
 _REPORT = b"Review outcome: NO_MAJOR_FINDINGS\n"
 
 
-def _request(*, round_number: int = 1, lineage: tuple[str, ...] = ()) -> D1CloudReviewRequest:
+def _request(
+    *,
+    round_number: int = 1,
+    prior_executions: tuple[D1ExecutedBlindReview, ...] = (),
+) -> D1CloudReviewRequest:
     packet = D1BlindReviewPacket.from_manifest(
         {"schema_version": "d1-blind-review-packet-v1", "evidence": "secret-sentinel"}
     )
@@ -53,7 +59,15 @@ def _request(*, round_number: int = 1, lineage: tuple[str, ...] = ()) -> D1Cloud
         provider="provider-secret-sentinel",
         model_id="model-v1",
         round=round_number,
-        retry_lineage=lineage,
+        prior_executions=prior_executions,
+    )
+
+
+def _prior_execution() -> D1ExecutedBlindReview:
+    return execute_d1_blind_review(
+        request=_request(),
+        reviewer=D1CloudReviewerFake(response=b"prior-response", report=b"prior-report"),
+        receipt_store=D1InMemoryReviewReceiptStoreFake(),
     )
 
 
@@ -139,8 +153,9 @@ def test_adapter_uses_fixed_no_shell_argv_and_stdin_without_inherited_secrets(
     tmp_path: Path,
 ) -> None:
     runner = _Runner()
-    lineage = ("d" * 64,)
-    request = _request(round_number=2, lineage=lineage)
+    prior = _prior_execution()
+    lineage = (prior.receipt.receipt_digest,)
+    request = _request(round_number=2, prior_executions=(prior,))
 
     _adapter(tmp_path, runner).review(request)
 

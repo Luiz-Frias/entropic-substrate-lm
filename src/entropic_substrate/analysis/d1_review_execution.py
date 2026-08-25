@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Protocol
+from weakref import ReferenceType, ref
 
 from entropic_substrate.analysis.d1_blind_aliases import (
     D1AliasCustodyPort,
@@ -19,6 +20,9 @@ from entropic_substrate.analysis.d1_review_packet import (
 from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,
+)
+from entropic_substrate.evidence.d1_review_adjudication import (
+    parse_d1_review_execution_receipt,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 
@@ -38,6 +42,7 @@ __all__ = [
 ]
 
 _SCHEMA = "d1-review-execution-receipt-v2"
+_EXECUTION_REFS: dict[int, ReferenceType[D1ExecutedBlindReview]] = {}
 
 
 def _sha(payload: bytes) -> str:
@@ -76,7 +81,7 @@ class D1CloudReviewRequest:
     provider: str
     model_id: str
     round: int
-    retry_lineage: tuple[str, ...] = ()
+    prior_executions: tuple[D1ExecutedBlindReview, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.packet) is not D1BlindReviewPacket:
@@ -87,28 +92,25 @@ class D1CloudReviewRequest:
         _text(self.model_id, "D1 reviewer model_id")
         if type(self.round) is not int or self.round < 1:
             raise ValueError("D1 reviewer round must be positive")
-        if type(self.retry_lineage) is not tuple:
-            raise TypeError("D1 retry lineage must be a tuple")
-        if len(self.retry_lineage) != self.round - 1:
+        if type(self.prior_executions) is not tuple:
+            raise TypeError("D1 prior review executions must be a tuple")
+        if len(self.prior_executions) != self.round - 1:
             raise ValueError("D1 retry lineage length must equal round minus one")
-        if len(set(self.retry_lineage)) != len(self.retry_lineage):
-            raise ValueError("D1 retry lineage must not repeat a receipt")
-        for digest in self.retry_lineage:
-            _digest(digest, "D1 retry receipt")
+        _validated_retry_lineage(self)
         if self.packet.packet_digest not in self.prompt.text:
             raise ValueError("D1 reviewer prompt does not bind the packet digest")
 
     @property
+    def retry_lineage(self) -> tuple[str, ...]:
+        return _validated_retry_lineage(self)
+
+    @property
     def manifest(self) -> dict[str, object]:
-        return {
-            "model_id": self.model_id,
-            "packet_sha256": self.packet.packet_digest,
-            "prompt_sha256": self.prompt.prompt_digest,
-            "provider": self.provider,
-            "retry_lineage": list(self.retry_lineage),
-            "round": self.round,
-            "schema_version": "d1-cloud-review-request-v1",
-        }
+        return _request_manifest(
+            self,
+            round_number=self.round,
+            retry_lineage=self.retry_lineage,
+        )
 
     @property
     def request_digest(self) -> str:
@@ -214,18 +216,103 @@ class D1InMemoryReviewReceiptStoreFake:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class D1ExecutedBlindReview:
     response: bytes
     report: bytes
     receipt: D1ReviewExecutionReceipt
     storage: D1ReviewReceiptStorageReceipt
 
-    def __post_init__(self) -> None:
-        if self.storage.sha256 != self.receipt.receipt_digest:
-            raise ValueError("D1 stored review receipt differs from issued receipt")
-        if not self.storage.durable:
-            raise ValueError("D1 review execution requires durable receipt storage")
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1ExecutedBlindReview is factory-attested by review execution")
+
+
+def _is_attested_execution(execution: D1ExecutedBlindReview) -> bool:
+    reference = _EXECUTION_REFS.get(id(execution))
+    return reference is not None and reference() is execution
+
+
+def _validate_storage_binding(
+    receipt: D1ReviewExecutionReceipt,
+    storage: D1ReviewReceiptStorageReceipt,
+) -> None:
+    if storage.sha256 != receipt.receipt_digest:
+        raise ValueError("D1 stored review receipt differs from issued receipt")
+    if not storage.durable:
+        raise ValueError("D1 review execution requires durable receipt storage")
+
+
+def _mint_executed_review(
+    response: bytes,
+    report: bytes,
+    receipt: D1ReviewExecutionReceipt,
+    storage: D1ReviewReceiptStorageReceipt,
+) -> D1ExecutedBlindReview:
+    _validate_storage_binding(receipt, storage)
+    execution = object.__new__(D1ExecutedBlindReview)
+    object.__setattr__(execution, "response", response)
+    object.__setattr__(execution, "report", report)
+    object.__setattr__(execution, "receipt", receipt)
+    object.__setattr__(execution, "storage", storage)
+    identity = id(execution)
+
+    def remove(reference: ReferenceType[D1ExecutedBlindReview]) -> None:
+        if _EXECUTION_REFS.get(identity) is reference:
+            del _EXECUTION_REFS[identity]
+
+    _EXECUTION_REFS[identity] = ref(execution, remove)
+    return execution
+
+
+def _request_manifest(
+    request: D1CloudReviewRequest,
+    *,
+    round_number: int,
+    retry_lineage: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "model_id": request.model_id,
+        "packet_sha256": request.packet.packet_digest,
+        "prompt_sha256": request.prompt.prompt_digest,
+        "provider": request.provider,
+        "retry_lineage": list(retry_lineage),
+        "round": round_number,
+        "schema_version": "d1-cloud-review-request-v1",
+    }
+
+
+def _validated_retry_lineage(request: D1CloudReviewRequest) -> tuple[str, ...]:
+    lineage: list[str] = []
+    for ordinal, execution in enumerate(request.prior_executions, start=1):
+        if type(execution) is not D1ExecutedBlindReview or not _is_attested_execution(execution):
+            raise TypeError("D1 retry requires a factory-attested prior execution")
+        parsed = parse_d1_review_execution_receipt(execution.receipt.canonical_json.encode())
+        expected_lineage = tuple(lineage)
+        if parsed.round != ordinal or parsed.retry_lineage != expected_lineage:
+            raise ValueError("D1 retry predecessor lineage is not contiguous")
+        expected_request = _request_manifest(
+            request,
+            round_number=ordinal,
+            retry_lineage=expected_lineage,
+        )
+        if (
+            parsed.packet_sha256 != request.packet.packet_digest
+            or parsed.prompt_sha256 != request.prompt.prompt_digest
+            or parsed.provider != request.provider
+            or parsed.model_id != request.model_id
+            or parsed.request_digest != canonical_digest(expected_request)
+        ):
+            raise ValueError("D1 retry predecessor identity differs")
+        try:
+            _validate_storage_binding(execution.receipt, execution.storage)
+        except ValueError as error:
+            raise ValueError("D1 retry predecessor output commitment differs") from error
+        if parsed.response_sha256 != _sha(execution.response) or parsed.report_sha256 != _sha(
+            execution.report
+        ):
+            raise ValueError("D1 retry predecessor output commitment differs")
+        lineage.append(execution.receipt.receipt_digest)
+    return tuple(lineage)
 
 
 def execute_d1_blind_review(
@@ -255,7 +342,7 @@ def execute_d1_blind_review(
     }
     receipt = D1ReviewExecutionReceipt(_canonical(manifest))
     storage = receipt_store.store(receipt.canonical_json.encode())
-    return D1ExecutedBlindReview(response.response, response.report, receipt, storage)
+    return _mint_executed_review(response.response, response.report, receipt, storage)
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,11 +364,12 @@ def release_d1_alias_reveal(
     public_commitment: bytes,
 ) -> D1ReleasedAliasReveal:
     """Open private custody only after the review receipt is durably bound."""
-    if (
-        not execution.storage.durable
-        or execution.storage.sha256 != execution.receipt.receipt_digest
-    ):
-        raise ValueError("D1 alias reveal requires a durable review receipt")
+    if type(execution) is not D1ExecutedBlindReview or not _is_attested_execution(execution):
+        raise TypeError("D1 alias reveal requires a factory-attested review execution")
+    try:
+        _validate_storage_binding(execution.receipt, execution.storage)
+    except ValueError as error:
+        raise ValueError("D1 alias reveal requires a durable review receipt") from error
     if (
         _sha(public_commitment) != aliases.commitment.sha256
         or _sha(public_commitment) != aliases.aliases.sealed_commitment
