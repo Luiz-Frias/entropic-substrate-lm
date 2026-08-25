@@ -10,6 +10,7 @@ from pathlib import Path
 from stat import S_ISDIR, S_ISREG
 from typing import Final, NoReturn, Protocol, cast
 
+import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
 from entropic_substrate.analysis.d1_execution_receipt import (
     D1AnalysisRunnerPort,
     D1AnalysisRunnerRequest,
@@ -326,6 +327,20 @@ def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _mint_isolation(
+    *,
+    request: D1IsolationRequest,
+    mechanism: str,
+    execution_evidence: D1IsolationExecutionEvidence,
+) -> D1ExternalIsolationAttestation:
+    """Conventionally adapter-only; the returned value proves runtime eligibility."""
+    return execution_receipt_module._mint_external_isolation(  # pyright: ignore[reportPrivateUsage]
+        request=request,
+        mechanism=mechanism,
+        execution_evidence=execution_evidence,
+    )
+
+
 class DockerD1ExternalAnalysisAdapter(D1AnalysisRunnerPort):
     """Run one immutable analysis image and verify all observable controls."""
 
@@ -395,7 +410,7 @@ class DockerD1ExternalAnalysisAdapter(D1AnalysisRunnerPort):
             # Friend boundary: ordinary callers cannot mint enforced posture;
             # this adapter reaches the protected issuer only after every
             # observable process and filesystem control above has passed.
-            isolation = D1ExternalIsolationAttestation._verified_external(  # pyright: ignore[reportPrivateUsage]
+            isolation = _mint_isolation(
                 request=request.isolation,
                 mechanism=_MECHANISM,
                 execution_evidence=evidence,
@@ -519,7 +534,7 @@ class DockerD1ExternalAnalysisAdapterV2:
                 image_digest=self._launch.image_digest,
                 platform=_PLATFORM,
             )
-            isolation = D1ExternalIsolationAttestation._verified_external(  # pyright: ignore[reportPrivateUsage]
+            isolation = _mint_isolation(
                 request=request.isolation,
                 mechanism=_MECHANISM_V2,
                 execution_evidence=evidence,

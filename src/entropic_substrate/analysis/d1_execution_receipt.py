@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import weakref
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from enum import StrEnum
-from typing import Protocol
+from typing import NoReturn, Protocol, SupportsIndex
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_machine_analysis import (
@@ -35,7 +37,6 @@ __all__ = [
 _SCHEMA = "d1-analysis-execution-receipt-v1"
 _COMPLETE_READER = "entropic_substrate.telemetry.read_d1_run_evidence"
 _DEFECT_READER = "entropic_substrate.telemetry.read_d1_terminal_defect"
-_EXTERNAL_ATTESTATION_TOKEN = object()
 
 
 def _sha256(value: str, *, label: str) -> None:
@@ -140,7 +141,33 @@ class D1IsolationExecutionEvidence:
         return canonical_digest(self.manifest)
 
 
-@dataclass(frozen=True, slots=True)
+def _validate_isolation_values(
+    *,
+    request_digest: str,
+    executor_kind: D1ExecutorKind,
+    network_disabled: bool,
+    filesystem_read_only: bool,
+    live_tracking_blocked: bool,
+    mechanism: str,
+    execution_evidence: D1IsolationExecutionEvidence | None,
+) -> None:
+    _sha256(request_digest, label="D1 isolation request_digest")
+    if type(executor_kind) is not D1ExecutorKind:
+        raise TypeError("D1 isolation executor_kind must be nominal")
+    if not (
+        network_disabled is True and filesystem_read_only is True and live_tracking_blocked is True
+    ):
+        raise ValueError("D1 isolation attestation does not satisfy the requested boundary")
+    if type(mechanism) is not str or not mechanism.strip():
+        raise ValueError("D1 isolation attestation mechanism must be nonempty")
+    if executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED:
+        if type(execution_evidence) is not D1IsolationExecutionEvidence:
+            raise TypeError("D1 enforced isolation requires process execution evidence")
+    elif execution_evidence is not None:
+        raise ValueError("D1 test isolation cannot carry external execution evidence")
+
+
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class D1ExternalIsolationAttestation:
     request_digest: str
     executor_kind: D1ExecutorKind
@@ -149,50 +176,56 @@ class D1ExternalIsolationAttestation:
     live_tracking_blocked: bool
     mechanism: str
     execution_evidence: D1IsolationExecutionEvidence | None
-    _factory_token: object | None = dataclass_field(default=None, repr=False, compare=False)
+    _attestation: _ExternalIsolationAttestation | None = dataclass_field(
+        default=None,
+        repr=False,
+        compare=False,
+        init=False,
+    )
 
     def __post_init__(self) -> None:
-        _sha256(self.request_digest, label="D1 isolation request_digest")
-        if type(self.executor_kind) is not D1ExecutorKind:
-            raise TypeError("D1 isolation executor_kind must be nominal")
-        if not (
-            self.network_disabled is True
-            and self.filesystem_read_only is True
-            and self.live_tracking_blocked is True
-        ):
-            raise ValueError("D1 isolation attestation does not satisfy the requested boundary")
-        if type(self.mechanism) is not str or not self.mechanism.strip():
-            raise ValueError("D1 isolation attestation mechanism must be nonempty")
-        if self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED:
-            if self._factory_token is not _EXTERNAL_ATTESTATION_TOKEN:
-                raise TypeError(
-                    "D1 enforced isolation is factory-only; use the verified external adapter"
-                )
-            if type(self.execution_evidence) is not D1IsolationExecutionEvidence:
-                raise TypeError("D1 enforced isolation requires process execution evidence")
-        elif self.execution_evidence is not None:
-            raise ValueError("D1 test isolation cannot carry external execution evidence")
-
-    @classmethod
-    def _verified_external(
-        cls,
-        *,
-        request: D1IsolationRequest,
-        mechanism: str,
-        execution_evidence: D1IsolationExecutionEvidence,
-    ) -> D1ExternalIsolationAttestation:
-        if type(request) is not D1IsolationRequest:
-            raise TypeError("D1 external isolation requires D1IsolationRequest")
-        return cls(
-            request.request_digest,
-            D1ExecutorKind.EXTERNAL_ENFORCED,
-            True,
-            True,
-            True,
-            mechanism,
-            execution_evidence,
-            _EXTERNAL_ATTESTATION_TOKEN,
+        _validate_isolation_values(
+            request_digest=self.request_digest,
+            executor_kind=self.executor_kind,
+            network_disabled=self.network_disabled,
+            filesystem_read_only=self.filesystem_read_only,
+            live_tracking_blocked=self.live_tracking_blocked,
+            mechanism=self.mechanism,
+            execution_evidence=self.execution_evidence,
         )
+        if self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED:
+            raise TypeError(
+                "D1 enforced isolation is factory-only; use the verified external adapter"
+            )
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1 external isolation attestation cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1 external isolation attestation cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1 external isolation attestation cannot be copied")
+
+    def require_factory_attested(self) -> None:
+        if not _is_minted_external_isolation(self):
+            raise TypeError("factory-attested external isolation was not adapter-minted")
+        attestation = getattr(self, "_attestation", None)
+        if type(attestation) is not _ExternalIsolationAttestation:
+            raise TypeError("factory-attested external isolation marker is absent")
+        if attestation.owner_ref() is not self:
+            raise TypeError("external isolation marker belongs to another instance")
+        _validate_isolation_values(
+            request_digest=self.request_digest,
+            executor_kind=self.executor_kind,
+            network_disabled=self.network_disabled,
+            filesystem_read_only=self.filesystem_read_only,
+            live_tracking_blocked=self.live_tracking_blocked,
+            mechanism=self.mechanism,
+            execution_evidence=self.execution_evidence,
+        )
+        if canonical_digest(self.manifest) != attestation.manifest_digest:
+            raise TypeError("external isolation changed after minting")
 
     @classmethod
     def test_fake(cls, request: D1IsolationRequest) -> D1ExternalIsolationAttestation:
@@ -208,11 +241,13 @@ class D1ExternalIsolationAttestation:
 
     @property
     def filing_eligible(self) -> bool:
-        return (
-            self.executor_kind is D1ExecutorKind.EXTERNAL_ENFORCED
-            and self._factory_token is _EXTERNAL_ATTESTATION_TOKEN
-            and type(self.execution_evidence) is D1IsolationExecutionEvidence
-        )
+        if self.executor_kind is not D1ExecutorKind.EXTERNAL_ENFORCED:
+            return False
+        try:
+            self.require_factory_attested()
+        except (TypeError, ValueError):
+            return False
+        return type(self.execution_evidence) is D1IsolationExecutionEvidence
 
     @property
     def execution_evidence_digest(self) -> str | None:
@@ -231,6 +266,77 @@ class D1ExternalIsolationAttestation:
                 None if self.execution_evidence is None else self.execution_evidence.manifest
             ),
         }
+
+
+class _ExternalIsolationAttestation:
+    __slots__ = ("manifest_digest", "owner_ref")
+
+    manifest_digest: str
+    owner_ref: weakref.ReferenceType[D1ExternalIsolationAttestation]
+
+    def __init__(self, owner: D1ExternalIsolationAttestation, manifest_digest: str) -> None:
+        self.owner_ref = weakref.ref(owner)
+        self.manifest_digest = manifest_digest
+
+
+_EXTERNAL_ISOLATION_LOCK = threading.Lock()
+_MINTED_EXTERNAL_ISOLATIONS: dict[
+    int,
+    weakref.ReferenceType[D1ExternalIsolationAttestation],
+] = {}
+
+
+def _record_minted_external_isolation(value: D1ExternalIsolationAttestation) -> None:
+    identifier = id(value)
+
+    def discard(reference: weakref.ReferenceType[D1ExternalIsolationAttestation]) -> None:
+        with _EXTERNAL_ISOLATION_LOCK:
+            if _MINTED_EXTERNAL_ISOLATIONS.get(identifier) is reference:
+                _MINTED_EXTERNAL_ISOLATIONS.pop(identifier, None)
+
+    reference = weakref.ref(value, discard)
+    with _EXTERNAL_ISOLATION_LOCK:
+        _MINTED_EXTERNAL_ISOLATIONS[identifier] = reference
+
+
+def _is_minted_external_isolation(value: D1ExternalIsolationAttestation) -> bool:
+    with _EXTERNAL_ISOLATION_LOCK:
+        reference = _MINTED_EXTERNAL_ISOLATIONS.get(id(value))
+        return reference is not None and reference() is value
+
+
+def _mint_external_isolation(  # pyright: ignore[reportUnusedFunction]
+    *,
+    request: D1IsolationRequest,
+    mechanism: str,
+    execution_evidence: D1IsolationExecutionEvidence,
+) -> D1ExternalIsolationAttestation:
+    if type(request) is not D1IsolationRequest:
+        raise TypeError("D1 external isolation requires D1IsolationRequest")
+    _validate_isolation_values(
+        request_digest=request.request_digest,
+        executor_kind=D1ExecutorKind.EXTERNAL_ENFORCED,
+        network_disabled=True,
+        filesystem_read_only=True,
+        live_tracking_blocked=True,
+        mechanism=mechanism,
+        execution_evidence=execution_evidence,
+    )
+    value = object.__new__(D1ExternalIsolationAttestation)
+    object.__setattr__(value, "request_digest", request.request_digest)
+    object.__setattr__(value, "executor_kind", D1ExecutorKind.EXTERNAL_ENFORCED)
+    object.__setattr__(value, "network_disabled", True)
+    object.__setattr__(value, "filesystem_read_only", True)
+    object.__setattr__(value, "live_tracking_blocked", True)
+    object.__setattr__(value, "mechanism", mechanism)
+    object.__setattr__(value, "execution_evidence", execution_evidence)
+    object.__setattr__(
+        value,
+        "_attestation",
+        _ExternalIsolationAttestation(value, canonical_digest(value.manifest)),
+    )
+    _record_minted_external_isolation(value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)

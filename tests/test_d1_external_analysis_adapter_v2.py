@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pickle
 from collections.abc import Callable
+from copy import copy, deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
@@ -13,6 +15,7 @@ import pytest
 
 from entropic_substrate.analysis.d1_execution_receipt import (
     D1ExecutorKind,
+    D1ExternalIsolationAttestation,
     D1IsolationRequest,
 )
 from entropic_substrate.analysis.d1_external_analysis_adapter import (
@@ -182,6 +185,77 @@ def test_v2_adapter_runs_exact_fixed_command_and_returns_final_typestate(
     assert ("--user", "65532:65532") == argv[argv.index("--user") : argv.index("--user") + 2]
     assert "execution-receipt.json" not in argv
     assert argv[-1] == "/d1/output/worker-response.json"
+
+
+def test_enforced_isolation_capability_cannot_be_replayed_or_publicly_minted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    isolation = _adapter(launch, runner).run(request).isolation
+    assert isolation.filing_eligible is True
+
+    assert "_verified_external" not in D1ExternalIsolationAttestation.__dict__
+    with pytest.raises(TypeError, match="factory-only"):
+        replace(isolation, mechanism="forged")
+    for copier in (copy, deepcopy, pickle.dumps):
+        with pytest.raises(TypeError, match="cannot be copied"):
+            copier(isolation)
+
+    fields = (
+        "request_digest",
+        "executor_kind",
+        "network_disabled",
+        "filesystem_read_only",
+        "live_tracking_blocked",
+        "mechanism",
+        "execution_evidence",
+    )
+    forged = object.__new__(D1ExternalIsolationAttestation)
+    for name in fields:
+        object.__setattr__(forged, name, getattr(isolation, name))
+    marker = object.__getattribute__(isolation, "_attestation")
+    object.__setattr__(forged, "_attestation", marker)
+    assert forged.filing_eligible is False
+    with pytest.raises(TypeError, match="adapter-minted"):
+        forged.require_factory_attested()
+
+    self_owned = object.__new__(D1ExternalIsolationAttestation)
+    for name in fields:
+        object.__setattr__(self_owned, name, getattr(isolation, name))
+    object.__setattr__(
+        self_owned,
+        "_attestation",
+        type(marker)(self_owned, marker.manifest_digest),
+    )
+    assert self_owned.filing_eligible is False
+
+    with pytest.raises(TypeError, match="factory-only"):
+        D1ExternalIsolationAttestation(
+            isolation.request_digest,
+            D1ExecutorKind.EXTERNAL_ENFORCED,
+            True,
+            True,
+            True,
+            "forged",
+            isolation.execution_evidence,
+        )
+    isolation.require_factory_attested()
+    assert isolation.filing_eligible is True
+
+    object.__setattr__(isolation, "mechanism", "forged")
+    assert isolation.filing_eligible is False
+    with pytest.raises(TypeError, match="changed after minting"):
+        isolation.require_factory_attested()
+
+    monkeypatch.undo()
+    _, fresh_launch, fresh_runner, fresh_request = _adapter_case(
+        tmp_path / "fresh",
+        monkeypatch,
+    )
+    fresh = _adapter(fresh_launch, fresh_runner).run(fresh_request).isolation
+    fresh.require_factory_attested()
+    assert fresh.filing_eligible is True
 
 
 @pytest.mark.parametrize(
