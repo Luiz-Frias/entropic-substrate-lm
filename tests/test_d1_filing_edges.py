@@ -51,7 +51,6 @@ class FakeGit:
 
 def _case(mutation: str | None = None):
     machine = machine_verdict()
-    machine_bytes = canonical_machine_verdict_bytes(machine)
     reveal = _json(
         {
             "mapping": {"A": "none", "B": "sg", "C": "ac", "D": "both"},
@@ -75,10 +74,8 @@ def _case(mutation: str | None = None):
     payloads: dict[str, bytes] = {role: role.encode() for role in REQUIRED_D1_FILING_ARTIFACTS}
     payloads.update(
         {
-            "machine_verdict": machine_bytes,
-            "narrative": (
-                f"# D1 verdict\n<!-- d1-machine-verdict-sha256:{_sha(machine_bytes)} -->\n"
-            ).encode(),
+            "machine_verdict": b"pending",
+            "narrative": b"pending",
             "preregistration": b"registered design bytes\n",
             "raw_capture_manifest": b'{"capture":"bound"}',
             "blinded_analysis": b'{"decision":"aliased"}',
@@ -176,6 +173,22 @@ def _case(mutation: str | None = None):
         payloads["reviewer_execution_receipt"] = _json(receipt)
     elif mutation == "narrative":
         payloads["narrative"] = b"# unbound narrative\n"
+    adjudication = machine["review"]["adjudication"]  # type: ignore[index]
+    receipt = json.loads(payloads["reviewer_execution_receipt"])
+    adjudication.update(  # type: ignore[union-attr]
+        {
+            "execution_receipt_sha256": _sha(payloads["reviewer_execution_receipt"]),
+            "report_sha256": _sha(payloads["reviewer_report"]),
+            "review_packet_sha256": receipt["packet_sha256"],
+            "review_request_sha256": receipt["request_digest"],
+        }
+    )
+    machine_bytes = canonical_machine_verdict_bytes(machine)
+    payloads["machine_verdict"] = machine_bytes
+    if mutation != "narrative":
+        payloads["narrative"] = (
+            f"# D1 verdict\n<!-- d1-machine-verdict-sha256:{_sha(machine_bytes)} -->\n"
+        ).encode()
     artifacts = {
         role: {
             "md5": hashlib.md5(payload, usedforsecurity=False).hexdigest(),

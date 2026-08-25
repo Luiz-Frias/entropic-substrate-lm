@@ -410,10 +410,7 @@ def assemble_d1_real_arm_verdict(
         },
         "registered_constants": constants,
         "review": {
-            "adjudication": {
-                "major_findings": list(adjudication.major_finding_ids),
-                "status": adjudication.status,
-            },
+            "adjudication": adjudication.manifest,
             "open_major_findings": list(adjudication.open_major_finding_ids),
         },
         "rung": "d1",

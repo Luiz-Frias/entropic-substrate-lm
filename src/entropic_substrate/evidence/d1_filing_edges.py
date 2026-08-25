@@ -201,7 +201,16 @@ def _verify_review(
         )
     except ValueError as error:
         _fail("review_report", "reviewer_report", str(error))
-    if report.major_finding_ids != verdict.review.adjudication.major_findings:
+    adjudication = verdict.review.adjudication
+    identities = {
+        "execution_receipt_sha256": _sha(payloads["reviewer_execution_receipt"]),
+        "report_sha256": report.report_sha256,
+        "review_packet_sha256": receipt.packet_sha256,
+        "review_request_sha256": receipt.request_digest,
+    }
+    if any(getattr(adjudication, field) != value for field, value in identities.items()):
+        _fail("review_adjudication", "machine_verdict.review", "execution identity differs")
+    if report.major_finding_ids != adjudication.major_findings:
         _fail("review_adjudication", "reviewer_report", "MAJOR ids differ")
     return receipt.model_id, receipt.provider, receipt.round
 

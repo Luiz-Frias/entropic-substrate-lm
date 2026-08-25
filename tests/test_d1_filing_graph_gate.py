@@ -319,6 +319,23 @@ def _case(
             "schema_version": "d1-review-execution-receipt-v2",
         }
     )
+    adjudication = machine["review"]["adjudication"]  # type: ignore[index]
+    adjudication.update(  # type: ignore[union-attr]
+        {
+            "execution_receipt_sha256": _sha(payloads["reviewer_execution_receipt"]),
+            "report_sha256": _sha(payloads["reviewer_report"]),
+            "review_packet_sha256": _sha(payloads["review_packet"]),
+            "review_request_sha256": "a" * 64,
+        }
+    )
+    adjudication_mutations = {
+        "adjudication_receipt": "execution_receipt_sha256",
+        "adjudication_report": "report_sha256",
+        "adjudication_packet": "review_packet_sha256",
+        "adjudication_request": "review_request_sha256",
+    }
+    if mutation in adjudication_mutations:
+        adjudication[adjudication_mutations[mutation]] = "0" * 64  # type: ignore[index]
     machine_bytes = canonical_machine_verdict_bytes(machine)
     payloads["machine_verdict"] = machine_bytes
     payloads["narrative"] = (
@@ -395,6 +412,23 @@ def test_mixed_filing_binds_registered_exclusion_and_effective_sample_size(
     assert detached.verdict.exclusions[0][0] == claim.pairing_id
     assert reason_id == "nonfinite-final-loss"
     assert detached.verdict.exclusions[0][2].digest == evidence_digest
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "adjudication_receipt",
+        "adjudication_report",
+        "adjudication_packet",
+        "adjudication_request",
+    ],
+)
+def test_filing_rejects_adjudication_execution_identity_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    with pytest.raises(D1FilingGraphError, match="review_adjudication"):
+        verify_d1_filing(*_case(tmp_path, mutation))
 
 
 @pytest.mark.parametrize(

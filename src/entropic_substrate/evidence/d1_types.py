@@ -181,9 +181,23 @@ class D1InputIdentity:
 
 
 @dataclass(frozen=True)
+class D1ReviewFindingDisposition:
+    finding_id: str
+    status: str
+    rationale: str
+    evidence_sha256: str | None
+
+
+@dataclass(frozen=True)
 class D1ReviewAdjudication:
     status: str
     major_findings: tuple[str, ...]
+    dispositions: Mapping[str, D1ReviewFindingDisposition]
+    execution_receipt_sha256: str
+    operator_record_sha256: str
+    report_sha256: str
+    review_packet_sha256: str
+    review_request_sha256: str
 
 
 @dataclass(frozen=True)

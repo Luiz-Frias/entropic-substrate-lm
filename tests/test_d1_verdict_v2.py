@@ -52,6 +52,7 @@ def test_v2_preserves_full_precision_scientific_content_without_filing_hashes() 
     assert verdict.feasible_arms == ("sg", "ac", "both")
     assert verdict.successor.eligible_arms == verdict.feasible_arms
     assert verdict.review.adjudication.status == "NOT_REQUIRED"
+    assert verdict.review.adjudication.execution_receipt_sha256 == f"{230:064x}"
 
 
 def test_v2_represents_n1_interval_statistics_as_explicit_nulls() -> None:
@@ -202,9 +203,19 @@ def test_contract_binds_sets_constants_integrity_and_decision_table() -> None:
 
 def test_review_major_requires_adjudication_consistent_with_registered_clearance() -> None:
     payload = machine_verdict()
-    payload["review"] = {
-        "open_major_findings": ["MAJOR-1"],
-        "adjudication": {"status": "NOT_REQUIRED", "major_findings": []},
-    }
-    with pytest.raises(D1VerdictValidationError, match="adjudication"):
+    review = payload["review"]
+    review["open_major_findings"] = ["MAJOR-1"]  # type: ignore[index]
+    adjudication = review["adjudication"]  # type: ignore[index]
+    adjudication["major_finding_ids"] = ["MAJOR-1"]  # type: ignore[index]
+    adjudication["open_major_finding_ids"] = ["MAJOR-1"]  # type: ignore[index]
+    adjudication["status"] = "OPEN"  # type: ignore[index]
+    adjudication["dispositions"] = [  # type: ignore[index]
+        {
+            "evidence_sha256": None,
+            "finding_id": "MAJOR-1",
+            "rationale": "Independent recomputation remains open.",
+            "status": "OPEN",
+        }
+    ]
+    with pytest.raises(D1VerdictValidationError, match="review"):
         _validated(payload)
