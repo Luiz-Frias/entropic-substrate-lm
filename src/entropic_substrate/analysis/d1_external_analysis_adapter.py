@@ -3,32 +3,24 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from stat import S_ISDIR, S_ISREG
-from typing import Final, NoReturn, Protocol, cast
+from typing import Final, NoReturn, Protocol
 
 import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
 from entropic_substrate.analysis.d1_execution_receipt import (
-    D1AnalysisRunnerPort,
-    D1AnalysisRunnerRequest,
-    D1AnalysisRunnerResult,
     D1ExternalIsolationAttestation,
     D1IsolationExecutionEvidence,
     D1IsolationRequest,
 )
 from entropic_substrate.analysis.d1_external_analysis_codec import (
-    D1ExternalAnalysisRequestEnvelope,
     D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,
-    decode_d1_external_analysis_response,
     decode_d1_external_analysis_worker_response_v2,
-    encode_d1_external_analysis_request,
     encode_d1_external_analysis_request_v2,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
 from entropic_substrate.analysis.d1_machine_analysis_binding import (
     bind_d1_machine_analysis_contract,
 )
@@ -41,9 +33,7 @@ from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 _PLATFORM: Final = "linux/amd64"
 _ANALYSIS_NAME: Final = "blinded-analysis.json"
-_RESPONSE_NAME: Final = "execution-receipt.json"
 _WORKER_RESPONSE_NAME: Final = "worker-response.json"
-_MECHANISM: Final = "docker-fixed-argv-read-only-network-none-v1"
 _MECHANISM_V2: Final = "docker-fixed-argv-read-only-network-none-v2"
 
 
@@ -141,10 +131,6 @@ class D1ExternalAnalysisLaunch:
         return self.output_path / _ANALYSIS_NAME
 
     @property
-    def response_path(self) -> Path:
-        return self.output_path / _RESPONSE_NAME
-
-    @property
     def worker_response_path(self) -> Path:
         return self.output_path / _WORKER_RESPONSE_NAME
 
@@ -192,7 +178,7 @@ def _mount(source: Path, destination: str, *, read_only: bool) -> str:
     return f"type=bind,src={source},dst={destination}{suffix}"
 
 
-def _argv(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
+def _docker_prefix(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
     return (
         "docker",
         "run",
@@ -227,23 +213,12 @@ def _argv(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
         "--mount",
         _mount(launch.output_path, "/d1/output", read_only=False),
         launch.image_reference,
-        "python",
-        "-m",
-        "entropic_substrate.analysis.d1_external_worker",
-        "--request",
-        "/d1/input/request.json",
-        "--analysis",
-        "/d1/output/blinded-analysis.json",
-        "--response",
-        "/d1/output/execution-receipt.json",
     )
 
 
 def _argv_v2(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
-    legacy = _argv(launch)
-    image_index = legacy.index(launch.image_reference)
     return (
-        *legacy[: image_index + 1],
+        *_docker_prefix(launch),
         "python",
         "-m",
         "entropic_substrate.analysis.d1_external_worker",
@@ -304,25 +279,6 @@ def _read_stable(path: Path, *, label: str) -> bytes:
     return first
 
 
-def _analysis(payload: bytes) -> D1AliasedMachineAnalysis:
-    try:
-        value: object = json.loads(payload.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"D1 external analysis output is invalid UTF-8 JSON: {error}") from error
-    if type(value) is not dict:
-        raise ValueError("D1 external analysis output must be a JSON object")
-    canonical = json.dumps(
-        cast(dict[str, object], value),
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    if canonical != payload:
-        raise ValueError("D1 external analysis output must use canonical JSON bytes")
-    return D1AliasedMachineAnalysis(payload.decode("utf-8"))
-
-
 def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -339,85 +295,6 @@ def _mint_isolation(
         mechanism=mechanism,
         execution_evidence=execution_evidence,
     )
-
-
-class DockerD1ExternalAnalysisAdapter(D1AnalysisRunnerPort):
-    """Run one immutable analysis image and verify all observable controls."""
-
-    def __init__(self, *, launch: D1ExternalAnalysisLaunch, runner: _AttestedCommandRunner) -> None:
-        if type(launch) is not D1ExternalAnalysisLaunch:
-            raise TypeError("D1 external analysis adapter requires a launch value")
-        if not hasattr(runner, "run"):
-            raise TypeError("D1 external analysis adapter requires an attested command runner")
-        self._launch = launch
-        self._runner = runner
-
-    def run(self, request: D1AnalysisRunnerRequest) -> D1AnalysisRunnerResult:
-        if type(request) is not D1AnalysisRunnerRequest:
-            raise TypeError("D1 external analysis adapter requires D1AnalysisRunnerRequest")
-        if any(self._launch.output_path.iterdir()):
-            raise ValueError("D1 external analysis output_path must be empty before execution")
-        envelope = D1ExternalAnalysisRequestEnvelope(
-            request.analysis_request_digest,
-            request.isolation.request_digest,
-        )
-        request_bytes = encode_d1_external_analysis_request(envelope)
-        argv = _argv(self._launch)
-        try:
-            _write_request(self._launch.request_path, request_bytes)
-            try:
-                observed = self._runner.run(argv, cwd=None, stdin=None)
-            except Exception as error:
-                _fail(str(error) or repr(error), error)
-            if type(observed) is not D1ExternalAnalysisCommandResult:
-                _fail("runner returned an unsupported command observation")
-            if observed.invoked_argv != argv:
-                _fail("observed argv differs from the fixed isolation command")
-            if observed.returncode != 0:
-                _fail(f"worker returned nonzero exit code {observed.returncode}")
-            expected_entries = {_ANALYSIS_NAME, _RESPONSE_NAME}
-            if {entry.name for entry in self._launch.output_path.iterdir()} != expected_entries:
-                _fail("writable output mount contains unexpected or missing files")
-            analysis_bytes = _read_stable(self._launch.analysis_path, label="analysis output")
-            response_bytes = _read_stable(self._launch.response_path, label="execution receipt")
-            response = decode_d1_external_analysis_response(response_bytes)
-            if response.analysis_request_digest != request.analysis_request_digest:
-                raise ValueError("D1 external analysis response request digest differs")
-            if response.isolation_request_digest != request.isolation.request_digest:
-                raise ValueError("D1 external analysis response isolation digest differs")
-            analysis_digest = _sha256(analysis_bytes)
-            if response.analysis_sha256 != analysis_digest:
-                raise ValueError("D1 external analysis response analysis digest differs")
-            machine = _analysis(analysis_bytes)
-            if _read_stable(self._launch.analysis_path, label="analysis output") != analysis_bytes:
-                raise ValueError("D1 external analysis output drifted after validation")
-            if (
-                _read_stable(self._launch.response_path, label="execution receipt")
-                != response_bytes
-            ):
-                raise ValueError("D1 external analysis receipt drifted after validation")
-            evidence = D1IsolationExecutionEvidence(
-                command_sha256=canonical_digest({"argv": list(observed.invoked_argv)}),
-                exit_code=observed.returncode,
-                request_sha256=_sha256(request_bytes),
-                analysis_sha256=analysis_digest,
-                response_sha256=_sha256(response_bytes),
-                stdout_sha256=_sha256(observed.stdout.encode()),
-                stderr_sha256=_sha256(observed.stderr.encode()),
-                image_digest=self._launch.image_digest,
-                platform=_PLATFORM,
-            )
-            # Friend boundary: ordinary callers cannot mint enforced posture;
-            # this adapter reaches the protected issuer only after every
-            # observable process and filesystem control above has passed.
-            isolation = _mint_isolation(
-                request=request.isolation,
-                mechanism=_MECHANISM,
-                execution_evidence=evidence,
-            )
-            return D1AnalysisRunnerResult(machine, isolation)
-        finally:
-            self._launch.request_path.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True, slots=True)
