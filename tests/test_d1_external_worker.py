@@ -108,6 +108,7 @@ def _mounted_reader_root(tmp_path: Path) -> Path:
 
 
 def _request_case(tmp_path: Path) -> _WorkerCase:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     capture_root, old_design, base, aggregate, runs = _analysis_case(tmp_path)
     normalized_runs: dict[str, D1RunEvidence] = {}
     for logical_run_id, run in runs.items():

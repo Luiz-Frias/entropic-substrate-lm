@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
+import sys
+import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from stat import S_ISREG
 from typing import NoReturn, cast
 
 from entropic_substrate.analysis.d1_analysis_api import (
@@ -37,10 +41,20 @@ from entropic_substrate.experiments.d1_registration_codec import (
 __all__ = [
     "D1ExternalWorkerArtifacts",
     "D1ExternalWorkerError",
+    "main",
+    "publish_d1_external_worker_artifacts",
     "run_d1_external_worker",
 ]
 
 _FORBIDDEN_ENV_PREFIX = "MLFLOW_"
+_ANALYSIS_NAME = "blinded-analysis.json"
+_RESPONSE_NAME = "worker-response.json"
+_REQUEST_PATH = Path("/d1/input/request.json")
+_CAPTURE_ROOT = Path("/d1/input/capture")
+_PREREGISTRATION_PATH = Path("/d1/input/preregistration")
+_READER_ROOT = Path("/d1/input/reader")
+_ANALYSIS_PATH = Path("/d1/output") / _ANALYSIS_NAME
+_RESPONSE_PATH = Path("/d1/output") / _RESPONSE_NAME
 
 
 class D1ExternalWorkerError(RuntimeError):
@@ -232,3 +246,143 @@ def run_d1_external_worker(
         analysis_sha256=analysis_sha256,
         response=response,
     )
+
+
+def _read_once(path: Path, *, code: str) -> bytes:
+    if path.is_symlink():
+        _fail(code)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise D1ExternalWorkerError(code) from error
+    try:
+        if not S_ISREG(os.fstat(descriptor).st_mode):
+            _fail(code)
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            return stream.read()
+    finally:
+        os.close(descriptor)
+
+
+def _read_stable(path: Path, *, code: str) -> bytes:
+    if not isinstance(cast(object, path), Path):
+        raise TypeError("worker input path must be Path")
+    first = _read_once(path, code=code)
+    second = _read_once(path, code=code)
+    if first != second:
+        _fail(code)
+    return first
+
+
+def _publication_paths(analysis_path: Path, response_path: Path) -> tuple[Path, Path]:
+    if not isinstance(cast(object, analysis_path), Path) or not isinstance(
+        cast(object, response_path), Path
+    ):
+        raise TypeError("worker publication paths must be Path")
+    analysis = Path(os.path.abspath(analysis_path))
+    response = Path(os.path.abspath(response_path))
+    if analysis.name != _ANALYSIS_NAME or response.name != _RESPONSE_NAME:
+        _fail("publication")
+    if analysis.parent != response.parent:
+        _fail("publication")
+    parent = analysis.parent
+    if parent.is_symlink() or not parent.is_dir() or parent.resolve() != parent:
+        _fail("publication")
+    if analysis.exists() or analysis.is_symlink() or response.exists() or response.is_symlink():
+        _fail("publication")
+    return analysis, response
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _atomic_publish(path: Path, payload: bytes) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.close(descriptor)
+        descriptor = -1
+        os.link(temporary, path, follow_symlinks=False)
+        temporary.unlink()
+        _fsync_directory(path.parent)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def publish_d1_external_worker_artifacts(
+    *,
+    artifacts: D1ExternalWorkerArtifacts,
+    analysis_path: Path,
+    response_path: Path,
+) -> None:
+    """Publish analysis first and the response commit marker second."""
+    try:
+        analysis, response = _publication_paths(analysis_path, response_path)
+        if type(artifacts) is not D1ExternalWorkerArtifacts:
+            raise TypeError("worker publication requires typed artifacts")
+        _atomic_publish(analysis, artifacts.analysis_bytes)
+        _atomic_publish(response, artifacts.response_bytes)
+    except D1ExternalWorkerError:
+        raise
+    except Exception as error:
+        raise D1ExternalWorkerError("publication") from error
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="d1-external-worker")
+    parser.add_argument("--request", type=Path, default=_REQUEST_PATH)
+    parser.add_argument("--capture-root", type=Path, default=_CAPTURE_ROOT)
+    parser.add_argument("--preregistration", type=Path, default=_PREREGISTRATION_PATH)
+    parser.add_argument("--reader-root", type=Path, default=_READER_ROOT)
+    parser.add_argument("--analysis", type=Path, default=_ANALYSIS_PATH)
+    parser.add_argument("--response", type=Path, default=_RESPONSE_PATH)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        artifacts = run_d1_external_worker(
+            request_payload=_read_stable(args.request, code="request"),
+            preregistration_payload=_read_stable(
+                args.preregistration,
+                code="preregistration",
+            ),
+            capture_root=args.capture_root,
+            reader_root=args.reader_root,
+            environ=os.environ,
+        )
+        publish_d1_external_worker_artifacts(
+            artifacts=artifacts,
+            analysis_path=args.analysis,
+            response_path=args.response,
+        )
+        return 0
+    except D1ExternalWorkerError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    except (OSError, TypeError, ValueError):
+        print("D1 external worker refused [worker_boundary]", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
