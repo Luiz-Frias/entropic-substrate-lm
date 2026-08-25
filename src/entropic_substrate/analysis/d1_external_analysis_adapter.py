@@ -444,6 +444,7 @@ class D1ExternalAnalysisRunnerResultV2:
     analysis: D1VerifiedMachineAnalysis
     isolation: D1ExternalIsolationAttestation
     worker_response: D1ExternalAnalysisWorkerResponseV2
+    request: D1ExternalAnalysisRequestEnvelopeV2
 
 
 class DockerD1ExternalAnalysisAdapterV2:
@@ -539,7 +540,12 @@ class DockerD1ExternalAnalysisAdapterV2:
                 mechanism=_MECHANISM_V2,
                 execution_evidence=evidence,
             )
-            return D1ExternalAnalysisRunnerResultV2(verified, isolation, response)
+            return D1ExternalAnalysisRunnerResultV2(
+                verified,
+                isolation,
+                response,
+                request.envelope,
+            )
         finally:
             self._launch.request_path.unlink(missing_ok=True)
             if access_granted:

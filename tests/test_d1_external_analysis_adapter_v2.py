@@ -13,10 +13,12 @@ from typing import cast
 
 import pytest
 
+import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
 from entropic_substrate.analysis.d1_execution_receipt import (
     D1ExecutorKind,
     D1ExternalIsolationAttestation,
     D1IsolationRequest,
+    issue_d1_verified_analysis_receipt,
 )
 from entropic_substrate.analysis.d1_external_analysis_adapter import (
     D1ExternalAnalysisCommandResult,
@@ -29,6 +31,7 @@ from entropic_substrate.analysis.d1_external_analysis_codec import (
 )
 from entropic_substrate.analysis.d1_external_worker import run_d1_external_worker
 
+from .test_d1_analysis_receipt import _implementation
 from .test_d1_external_worker import _install_reader_fake, _request_case, _WorkerCase
 from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 
@@ -351,6 +354,138 @@ def test_v2_adapter_rejects_regular_file_reader_path(
 
     with pytest.raises(ValueError, match="reader_path"):
         _adapter(file_launch, runner).run(request)
+
+
+def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    result = _adapter(launch, runner).run(request)
+
+    receipt = issue_d1_verified_analysis_receipt(
+        analysis=result.analysis,
+        request=result.request,
+        worker_response=result.worker_response,
+        implementation=_implementation(),
+        isolation=result.isolation,
+    )
+
+    assert receipt.manifest["filing_eligible"] is True
+    assert receipt.manifest["analysis_digest"] == result.analysis.analysis_digest
+    for field_name, value, message in (
+        ("analysis_request_digest", "1" * 64, "worker response differs from request"),
+        ("isolation_request_digest", "2" * 64, "worker response differs from isolation"),
+        ("input_manifest_sha256", "3" * 64, "worker response differs from input manifest"),
+        ("analysis_sha256", "4" * 64, "worker response differs from analysis"),
+    ):
+        drifted = replace(result.worker_response, **{field_name: value})
+        with pytest.raises(ValueError, match=message):
+            issue_d1_verified_analysis_receipt(
+                analysis=result.analysis,
+                request=result.request,
+                worker_response=drifted,
+                implementation=_implementation(),
+                isolation=result.isolation,
+            )
+
+    aggregate = result.analysis.aggregate
+    object.__setattr__(
+        result.analysis,
+        "aggregate",
+        replace(aggregate, complete_runs=tuple(reversed(aggregate.complete_runs))),
+    )
+    with pytest.raises(ValueError, match="aggregate differs from request input"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=_implementation(),
+            isolation=result.isolation,
+        )
+    object.__setattr__(result.analysis, "aggregate", aggregate)
+
+    monkeypatch.undo()
+    _, other_launch, other_runner, other_request = _adapter_case(
+        tmp_path / "other",
+        monkeypatch,
+    )
+    other = _adapter(other_launch, other_runner).run(other_request)
+    with pytest.raises(ValueError, match="request input"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=other.request,
+            worker_response=result.worker_response,
+            implementation=_implementation(),
+            isolation=result.isolation,
+        )
+
+    object.__setattr__(result.isolation, "request_digest", "0" * 64)
+    with pytest.raises(ValueError, match="receipt isolation differs from request"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=_implementation(),
+            isolation=result.isolation,
+        )
+    object.__setattr__(
+        result.isolation,
+        "request_digest",
+        result.request.isolation_request_digest,
+    )
+    execution_evidence = result.isolation.execution_evidence
+    assert execution_evidence is not None
+    object.__setattr__(
+        result.isolation,
+        "execution_evidence",
+        replace(execution_evidence, request_sha256="5" * 64),
+    )
+    with pytest.raises(TypeError, match="changed after minting"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=_implementation(),
+            isolation=result.isolation,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "message"),
+    [
+        ("request_sha256", "execution request hash differs"),
+        ("response_sha256", "execution response hash differs"),
+        ("analysis_sha256", "execution analysis hash differs"),
+    ],
+)
+def test_v2_receipt_rejects_each_inconsistent_execution_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
+    message: str,
+) -> None:
+    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    result = _adapter(launch, runner).run(request)
+    evidence = result.isolation.execution_evidence
+    assert evidence is not None
+    issuer = cast(
+        Callable[..., D1ExternalIsolationAttestation],
+        execution_receipt_module.__dict__["_mint_external_isolation"],
+    )
+    isolation = issuer(
+        request=request.isolation,
+        mechanism="execution-hash-test",
+        execution_evidence=replace(evidence, **{field_name: "5" * 64}),
+    )
+    with pytest.raises(ValueError, match=message):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=_implementation(),
+            isolation=isolation,
+        )
 
 
 @pytest.mark.parametrize(

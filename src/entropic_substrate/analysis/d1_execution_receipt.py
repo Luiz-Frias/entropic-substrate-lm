@@ -13,9 +13,18 @@ from enum import StrEnum
 from typing import NoReturn, Protocol, SupportsIndex
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.analysis.d1_external_analysis_codec import (
+    D1ExternalAnalysisRequestEnvelopeV2,
+    D1ExternalAnalysisWorkerResponseV2,
+    encode_d1_external_analysis_request_v2,
+    encode_d1_external_analysis_worker_response_v2,
+)
 from entropic_substrate.analysis.d1_machine_analysis import (
     D1AliasedMachineAnalysis,
     D1ArmAliasMap,
+)
+from entropic_substrate.analysis.d1_machine_analysis_verification import (
+    D1VerifiedMachineAnalysis,
 )
 from entropic_substrate.evidence.d1_capture_artifacts import D1DvcBindingState
 from entropic_substrate.experiments.d1_primitives import canonical_digest, require_sha256
@@ -32,6 +41,7 @@ __all__ = [
     "D1IsolationExecutionEvidence",
     "D1IsolationRequest",
     "issue_d1_analysis_receipt",
+    "issue_d1_verified_analysis_receipt",
 ]
 
 _SCHEMA = "d1-analysis-execution-receipt-v1"
@@ -507,3 +517,70 @@ def issue_d1_analysis_receipt(
         sort_keys=True,
     )
     return D1AnalysisExecutionReceipt(canonical)
+
+
+def issue_d1_verified_analysis_receipt(
+    *,
+    analysis: D1VerifiedMachineAnalysis,
+    request: D1ExternalAnalysisRequestEnvelopeV2,
+    worker_response: D1ExternalAnalysisWorkerResponseV2,
+    implementation: D1AnalysisImplementationIdentity,
+    isolation: D1ExternalIsolationAttestation,
+) -> D1AnalysisExecutionReceipt:
+    """Bind the complete v2 request/execution/analysis chain before filing."""
+    if (
+        type(analysis) is not D1VerifiedMachineAnalysis
+        or type(request) is not D1ExternalAnalysisRequestEnvelopeV2
+        or type(worker_response) is not D1ExternalAnalysisWorkerResponseV2
+        or type(implementation) is not D1AnalysisImplementationIdentity
+        or type(isolation) is not D1ExternalIsolationAttestation
+    ):
+        raise TypeError("D1 v2 analysis receipt requires nominal verified values")
+    if analysis.expected is not request.input_control:
+        raise ValueError("D1 v2 receipt request input differs from verified analysis")
+    if analysis.aggregate.manifest_digest != request.input_control.aggregate.manifest_digest:
+        raise ValueError("D1 v2 receipt aggregate differs from request input")
+    if worker_response.analysis_request_digest != request.analysis_request_digest:
+        raise ValueError("D1 v2 receipt worker response differs from request")
+    if worker_response.isolation_request_digest != request.isolation_request_digest:
+        raise ValueError("D1 v2 receipt worker response differs from isolation")
+    if worker_response.input_manifest_sha256 != request.input_manifest_sha256:
+        raise ValueError("D1 v2 receipt worker response differs from input manifest")
+    if worker_response.analysis_sha256 != analysis.analysis_digest:
+        raise ValueError("D1 v2 receipt worker response differs from analysis")
+    if isolation.request_digest != request.isolation_request_digest:
+        raise ValueError("D1 v2 receipt isolation differs from request")
+    isolation.require_factory_attested()
+    evidence = isolation.execution_evidence
+    if type(evidence) is not D1IsolationExecutionEvidence:
+        raise TypeError("D1 v2 receipt isolation lacks execution evidence")
+    if (
+        evidence.request_sha256
+        != hashlib.sha256(encode_d1_external_analysis_request_v2(request)).hexdigest()
+    ):
+        raise ValueError("D1 v2 receipt execution request hash differs")
+    if (
+        evidence.response_sha256
+        != hashlib.sha256(
+            encode_d1_external_analysis_worker_response_v2(worker_response)
+        ).hexdigest()
+    ):
+        raise ValueError("D1 v2 receipt execution response hash differs")
+    if evidence.analysis_sha256 != analysis.analysis_digest:
+        raise ValueError("D1 v2 receipt execution analysis hash differs")
+    admitted = D1AdmittedAnalysisCapture(
+        design_digest=request.input_control.design.design_digest,
+        decision_contract_digest=request.input_control.design.decision_contract_digest,
+        capture_digest=analysis.aggregate.manifest_digest,
+        cells=(),
+        exclusions=(),
+        runs=(),
+        input_artifacts=analysis.aggregate.dvc_handoff.artifacts,
+    )
+    return issue_d1_analysis_receipt(
+        analysis=analysis.analysis,
+        admitted=admitted,
+        aliases=request.input_control.alias_application.aliases,
+        implementation=implementation,
+        isolation=isolation,
+    )

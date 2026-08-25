@@ -4,26 +4,20 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
-from entropic_substrate.analysis.d1_analysis_api import (
-    D1AnalysisCompositionRequest,
-    compose_d1_analysis,
-)
 from entropic_substrate.analysis.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
+    D1PreparedBlindAliases,
     prepare_d1_blind_aliases,
 )
 from entropic_substrate.analysis.d1_execution_receipt import (
-    D1AnalysisRunnerRequest,
-    D1IsolationRequest,
-    issue_d1_analysis_receipt,
+    D1AnalysisExecutionReceipt,
+    issue_d1_verified_analysis_receipt,
 )
-from entropic_substrate.analysis.d1_external_analysis_adapter import (
-    DockerD1ExternalAnalysisAdapter,
-)
+from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
 from entropic_substrate.analysis.d1_review_packet import (
     D1BlindnessLabel,
     D1BlindReviewPacket,
@@ -32,61 +26,50 @@ from entropic_substrate.analysis.d1_review_packet import (
     build_d1_factorial_reviewer_prompt,
     validate_d1_packet_blindness,
 )
+from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
+from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
 
-from .test_d1_analysis_api import _decision, _design
-from .test_d1_analysis_capture import _analysis_case
 from .test_d1_analysis_receipt import _implementation
-from .test_d1_external_analysis_adapter import _launch, _Runner
+from .test_d1_blind_alias_custody import _DeterministicCrypto
+from .test_d1_external_analysis_adapter_v2 import _adapter, _adapter_case
 
 pytestmark = pytest.mark.unit
 
 
-class _IdentityCrypto:
-    def __init__(self) -> None:
-        self._draws = iter((3, 2, 1))
-
-    def randbelow(self, upper: int) -> int:
-        return next(self._draws)
-
-    def token_bytes(self, length: int) -> bytes:
-        return b"z" * length
+class _BlindCase(NamedTuple):
+    decision: D1DecisionContract
+    aggregate: D1HeterogeneousCaptureAggregate
+    aliases: D1PreparedBlindAliases
+    analysis: D1AliasedMachineAnalysis
+    receipt: D1AnalysisExecutionReceipt
+    evidence: tuple[D1RunEvidence, ...]
 
 
-def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    root, _, base, aggregate, runs = _analysis_case(tmp_path)
-    decision = _decision(base)
-    design = _design(decision)
+def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _BlindCase:
+    case, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    result = _adapter(launch, runner).run(request)
     aliases = prepare_d1_blind_aliases(
-        randomness=_IdentityCrypto(), custody=D1InMemoryAliasCustodyFake()
+        randomness=_DeterministicCrypto(), custody=D1InMemoryAliasCustodyFake()
     )
-
-    def read(_path: Path, **expected: object):
-        return runs[str(expected["expected_logical_run_id"])]
-
-    monkeypatch.setattr(telemetry_api, "read_d1_run_evidence", read)
-    request = D1AnalysisCompositionRequest(
-        root=root,
-        design=design,
-        decision_contract=decision,
-        aggregate=aggregate,
-        aliases=aliases.aliases,
-        isolation=D1IsolationRequest(),
-    )
-    composition = compose_d1_analysis(request)
-    launch = _launch(tmp_path / "external-analysis")
-    isolation = DockerD1ExternalAnalysisAdapter(
-        launch=launch,
-        runner=_Runner(launch, analysis_bytes=composition.analysis.canonical_json.encode()),
-    ).run(D1AnalysisRunnerRequest(request.request_digest, request.isolation))
-    receipt = issue_d1_analysis_receipt(
-        analysis=composition.analysis,
-        admitted=composition.admitted,
-        aliases=aliases.aliases,
+    receipt = issue_d1_verified_analysis_receipt(
+        analysis=result.analysis,
+        request=result.request,
+        worker_response=result.worker_response,
         implementation=_implementation(),
-        isolation=isolation.isolation,
+        isolation=result.isolation,
     )
-    evidence = tuple(runs[item.logical_run_id] for item in aggregate.roster.expected_confirmatory)
-    return decision, aggregate, aliases, composition.analysis, receipt, evidence
+    evidence = tuple(
+        case.runs[item.logical_run_id] for item in case.aggregate.roster.expected_confirmatory
+    )
+    return _BlindCase(
+        case.request.input_control.decision_contract,
+        case.aggregate,
+        aliases,
+        result.analysis.analysis,
+        receipt,
+        evidence,
+    )
 
 
 def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
