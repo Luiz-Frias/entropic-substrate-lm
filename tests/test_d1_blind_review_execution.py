@@ -46,10 +46,12 @@ def _request(
     *,
     round_number: int = 1,
     prior_executions: tuple[D1ExecutedBlindReview, ...] = (),
+    alias_commitment: str | None = None,
 ) -> D1CloudReviewRequest:
-    packet = D1BlindReviewPacket.from_manifest(
-        {"schema_version": "d1-blind-review-packet-v1", "evidence": "opaque"}
-    )
+    packet_manifest = {"schema_version": "d1-blind-review-packet-v1", "evidence": "opaque"}
+    if alias_commitment is not None:
+        packet_manifest["alias_commitment"] = alias_commitment
+    packet = D1BlindReviewPacket.from_manifest(packet_manifest)
     prompt = D1FactorialReviewerPrompt(
         f"Packet SHA-256: {packet.packet_digest}\nRecompute only from packet.\n"
     )
@@ -185,7 +187,7 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
     custody = D1InMemoryAliasCustodyFake()
     aliases = prepare_d1_blind_aliases(randomness=_Crypto(), custody=custody)
     execution = execute_d1_blind_review(
-        request=_request(),
+        request=_request(alias_commitment=aliases.aliases.sealed_commitment),
         reviewer=D1CloudReviewerFake(response=b"raw", report=b"report"),
         receipt_store=D1InMemoryReviewReceiptStoreFake(),
     )
@@ -199,6 +201,8 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
 
     assert released.payload == custody.private_bytes
     assert released.review_receipt_sha256 == execution.receipt.receipt_digest
+    assert released.review_packet_sha256 == execution.request.packet.packet_digest
+    assert released.alias_commitment_sha256 == aliases.aliases.sealed_commitment
     with pytest.raises(ValueError, match="commitment"):
         release_d1_alias_reveal(
             execution=execution,
@@ -215,8 +219,56 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
             custody=custody,
             public_commitment=custody.public_bytes,
         )
+    wrong_packet_execution = execute_d1_blind_review(
+        request=_request(alias_commitment="0" * 64),
+        reviewer=D1CloudReviewerFake(response=b"raw", report=b"report"),
+        receipt_store=D1InMemoryReviewReceiptStoreFake(),
+    )
+    with pytest.raises(ValueError, match="reviewed packet"):
+        release_d1_alias_reveal(
+            execution=wrong_packet_execution,
+            aliases=aliases,
+            custody=custody,
+            public_commitment=custody.public_bytes,
+        )
     object.__setattr__(execution, "storage", replace(execution.storage, durable=False))
     with pytest.raises(ValueError, match="durable review receipt"):
+        release_d1_alias_reveal(
+            execution=execution,
+            aliases=aliases,
+            custody=custody,
+            public_commitment=custody.public_bytes,
+        )
+
+
+def test_alias_reveal_rejects_receipt_to_request_packet_substitution() -> None:
+    custody = D1InMemoryAliasCustodyFake()
+    aliases = prepare_d1_blind_aliases(randomness=_Crypto(), custody=custody)
+    execution = execute_d1_blind_review(
+        request=_request(alias_commitment=aliases.aliases.sealed_commitment),
+        reviewer=D1CloudReviewerFake(response=b"raw", report=b"report"),
+        receipt_store=D1InMemoryReviewReceiptStoreFake(),
+    )
+    substituted_packet = D1BlindReviewPacket.from_manifest(
+        {
+            "alias_commitment": aliases.aliases.sealed_commitment,
+            "evidence": "different-packet-bytes",
+            "schema_version": "d1-blind-review-packet-v1",
+        }
+    )
+    substituted_prompt = D1FactorialReviewerPrompt(
+        f"Packet SHA-256: {substituted_packet.packet_digest}\nRecompute only from packet.\n"
+    )
+    substituted_request = D1CloudReviewRequest(
+        packet=substituted_packet,
+        prompt=substituted_prompt,
+        provider=execution.request.provider,
+        model_id=execution.request.model_id,
+        round=1,
+    )
+    object.__setattr__(execution, "request", substituted_request)
+
+    with pytest.raises(ValueError, match="reviewed packet"):
         release_d1_alias_reveal(
             execution=execution,
             aliases=aliases,

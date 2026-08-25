@@ -218,6 +218,7 @@ class D1InMemoryReviewReceiptStoreFake:
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class D1ExecutedBlindReview:
+    request: D1CloudReviewRequest
     response: bytes
     report: bytes
     receipt: D1ReviewExecutionReceipt
@@ -243,6 +244,7 @@ def _validate_storage_binding(
 
 
 def _mint_executed_review(
+    request: D1CloudReviewRequest,
     response: bytes,
     report: bytes,
     receipt: D1ReviewExecutionReceipt,
@@ -250,6 +252,7 @@ def _mint_executed_review(
 ) -> D1ExecutedBlindReview:
     _validate_storage_binding(receipt, storage)
     execution = object.__new__(D1ExecutedBlindReview)
+    object.__setattr__(execution, "request", request)
     object.__setattr__(execution, "response", response)
     object.__setattr__(execution, "report", report)
     object.__setattr__(execution, "receipt", receipt)
@@ -296,7 +299,14 @@ def _validated_retry_lineage(request: D1CloudReviewRequest) -> tuple[str, ...]:
             retry_lineage=expected_lineage,
         )
         if (
-            parsed.packet_sha256 != request.packet.packet_digest
+            execution.request.request_digest != parsed.request_digest
+            or execution.request.round != ordinal
+            or execution.request.retry_lineage != expected_lineage
+            or execution.request.packet.packet_digest != parsed.packet_sha256
+            or execution.request.prompt.prompt_digest != parsed.prompt_sha256
+            or execution.request.provider != parsed.provider
+            or execution.request.model_id != parsed.model_id
+            or parsed.packet_sha256 != request.packet.packet_digest
             or parsed.prompt_sha256 != request.prompt.prompt_digest
             or parsed.provider != request.provider
             or parsed.model_id != request.model_id
@@ -342,18 +352,22 @@ def execute_d1_blind_review(
     }
     receipt = D1ReviewExecutionReceipt(_canonical(manifest))
     storage = receipt_store.store(receipt.canonical_json.encode())
-    return _mint_executed_review(response.response, response.report, receipt, storage)
+    return _mint_executed_review(request, response.response, response.report, receipt, storage)
 
 
 @dataclass(frozen=True, slots=True)
 class D1ReleasedAliasReveal:
     payload: bytes
     review_receipt_sha256: str
+    review_packet_sha256: str
+    alias_commitment_sha256: str
 
     def __post_init__(self) -> None:
         if type(self.payload) is not bytes or not self.payload:
             raise ValueError("D1 released alias reveal must be nonempty bytes")
         _digest(self.review_receipt_sha256, "D1 reveal review receipt")
+        _digest(self.review_packet_sha256, "D1 reveal review packet")
+        _digest(self.alias_commitment_sha256, "D1 reveal alias commitment")
 
 
 def release_d1_alias_reveal(
@@ -370,6 +384,14 @@ def release_d1_alias_reveal(
         _validate_storage_binding(execution.receipt, execution.storage)
     except ValueError as error:
         raise ValueError("D1 alias reveal requires a durable review receipt") from error
+    parsed_receipt = parse_d1_review_execution_receipt(execution.receipt.canonical_json.encode())
+    packet = execution.request.packet
+    packet_commitment = packet.manifest.get("alias_commitment")
+    if (
+        parsed_receipt.packet_sha256 != packet.packet_digest
+        or packet_commitment != aliases.aliases.sealed_commitment
+    ):
+        raise ValueError("D1 reviewed packet does not bind the alias commitment")
     if (
         _sha(public_commitment) != aliases.commitment.sha256
         or _sha(public_commitment) != aliases.aliases.sealed_commitment
@@ -383,4 +405,9 @@ def release_d1_alias_reveal(
     expected = {alias: arm.value for arm, alias in aliases.aliases.aliases.items()}
     if dict(reveal.mapping) != expected:
         raise ValueError("D1 alias reveal mapping differs from the analysis aliases")
-    return D1ReleasedAliasReveal(payload, execution.receipt.receipt_digest)
+    return D1ReleasedAliasReveal(
+        payload,
+        execution.receipt.receipt_digest,
+        packet.packet_digest,
+        aliases.aliases.sealed_commitment,
+    )

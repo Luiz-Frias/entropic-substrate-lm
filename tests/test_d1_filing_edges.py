@@ -56,6 +56,7 @@ def _case(mutation: str | None = None):
             "schema_version": "d1-alias-reveal-v1",
         }
     )
+    commitment = _json({"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"})
     review_fields: dict[str, object] = {
         "model_id": "review-model",
         "packet_sha256": "",
@@ -80,15 +81,48 @@ def _case(mutation: str | None = None):
             "blinded_analysis": b'{"decision":"aliased"}',
             "analysis_reader": b"def read_capture(): ...\n",
             "analysis_isolation_attestation": b'{"session":"fresh","network":"disabled"}',
-            "review_packet": b"sealed packet",
+            "review_packet": _json(
+                {
+                    "alias_commitment": _sha(commitment),
+                    "schema_version": "d1-blind-review-packet-v1",
+                }
+            ),
             "reviewer_prompt": b"registered prompt",
             "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
             "alias_reveal": reveal,
         }
     )
-    payloads["alias_commitment"] = _json(
-        {"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"}
-    )
+    payloads["alias_commitment"] = commitment
+    if mutation == "packet_alias_lineage":
+        payloads["review_packet"] = _json(
+            {
+                "alias_commitment": "0" * 64,
+                "schema_version": "d1-blind-review-packet-v1",
+            }
+        )
+    elif mutation == "packet_invalid_json":
+        payloads["review_packet"] = b"\xff"
+    elif mutation == "packet_schema":
+        payloads["review_packet"] = _json(
+            {
+                "alias_commitment": _sha(commitment),
+                "schema_version": "d1-blind-review-packet-v9",
+            }
+        )
+    elif mutation == "packet_noncanonical":
+        payloads["review_packet"] = json.dumps(
+            {
+                "alias_commitment": _sha(commitment),
+                "schema_version": "d1-blind-review-packet-v1",
+            },
+            indent=2,
+        ).encode()
+    elif mutation == "packet_nonfinite":
+        payloads["review_packet"] = (
+            b'{"alias_commitment":"'
+            + _sha(commitment).encode()
+            + b'","schema_version":"d1-blind-review-packet-v1","x":NaN}'
+        )
     review_fields.update(
         {
             "packet_sha256": _sha(payloads["review_packet"]),
@@ -125,6 +159,12 @@ def _case(mutation: str | None = None):
                 "schema_version": "d1-alias-commitment-v1",
             }
         )
+        packet = json.loads(payloads["review_packet"])
+        packet["alias_commitment"] = _sha(payloads["alias_commitment"])
+        payloads["review_packet"] = _json(packet)
+        receipt = json.loads(payloads["reviewer_execution_receipt"])
+        receipt["packet_sha256"] = _sha(payloads["review_packet"])
+        payloads["reviewer_execution_receipt"] = _json(receipt)
     elif mutation == "narrative":
         payloads["narrative"] = b"# unbound narrative\n"
     artifacts = {
@@ -185,6 +225,11 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("missing_model", D1EvidenceGapError, "model_id"),
         ("major_ids", D1FilingGraphError, "MAJOR"),
         ("mixed_review_schema", D1FilingGraphError, "schema_fields"),
+        ("packet_alias_lineage", D1FilingGraphError, "packet"),
+        ("packet_invalid_json", D1FilingGraphError, "review_packet"),
+        ("packet_schema", D1FilingGraphError, "review_packet"),
+        ("packet_noncanonical", D1FilingGraphError, "review_packet"),
+        ("packet_nonfinite", D1FilingGraphError, "review_packet"),
         ("narrative", D1FilingGraphError, "narrative"),
     ],
 )

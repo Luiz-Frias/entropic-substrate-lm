@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import pairwise
@@ -146,6 +147,30 @@ def _verify_analysis(payloads: Mapping[str, bytes]) -> None:
 def _verify_aliases(payloads: Mapping[str, bytes]) -> Mapping[str, str]:
     commitment = parse_alias_commitment(payloads["alias_commitment"])
     reveal = parse_alias_reveal(payloads["alias_reveal"])
+    try:
+        packet = json.loads(payloads["review_packet"])
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        _fail("review_packet", "review_packet", f"must be UTF-8 JSON: {error}")
+    if type(packet) is not dict or packet.get("schema_version") != ("d1-blind-review-packet-v1"):
+        _fail("review_packet", "review_packet", "schema is unsupported")
+    try:
+        canonical_packet = json.dumps(
+            packet,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError, RecursionError) as error:
+        _fail("review_packet", "review_packet", f"must be finite canonical JSON: {error}")
+    if canonical_packet != payloads["review_packet"]:
+        _fail("review_packet", "review_packet", "bytes must use canonical JSON")
+    if packet.get("alias_commitment") != _sha(payloads["alias_commitment"]):
+        _fail(
+            "review_packet_alias",
+            "review_packet.alias_commitment",
+            "reviewed packet differs from the filed alias commitment",
+        )
     if commitment.reveal_sha256 != _sha(payloads["alias_reveal"]):
         _fail("alias_commitment", "alias_reveal", "does not open the pre-review commitment")
     if (

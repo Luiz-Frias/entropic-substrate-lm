@@ -151,6 +151,7 @@ def _case(tmp_path: Path, mutation: str | None = None):
             "schema_version": "d1-alias-reveal-v1",
         }
     )
+    commitment = _json({"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"})
     payloads = {role: role.encode() for role in REQUIRED_D1_FILING_ARTIFACTS}
     payloads.update(
         {
@@ -160,10 +161,13 @@ def _case(tmp_path: Path, mutation: str | None = None):
             "analysis_reader": reader,
             "analysis_isolation_attestation": isolation,
             "alias_reveal": reveal,
-            "alias_commitment": _json(
-                {"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"}
+            "alias_commitment": commitment,
+            "review_packet": _json(
+                {
+                    "alias_commitment": _sha(commitment),
+                    "schema_version": "d1-blind-review-packet-v1",
+                }
             ),
-            "review_packet": b"packet",
             "reviewer_prompt": b"prompt",
             "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
         }
