@@ -93,6 +93,27 @@ def test_cloud_fake_execution_binds_raw_response_report_and_storage_receipt() ->
     assert store.payload == execution.receipt.canonical_json.encode()
 
 
+def test_execution_attestation_is_publicly_revalidated_and_noncopyable() -> None:
+    execution = execute_d1_blind_review(
+        request=_request(),
+        reviewer=D1CloudReviewerFake(response=b"raw", report=b"report"),
+        receipt_store=D1InMemoryReviewReceiptStoreFake(),
+    )
+
+    execution.require_factory_attested()
+    with pytest.raises(TypeError, match="not factory-attested"):
+        object.__new__(D1ExecutedBlindReview).require_factory_attested()
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(execution)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(execution)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        pickle.dumps(execution)
+    object.__setattr__(execution, "response", b"substituted")
+    with pytest.raises(TypeError, match="evidence changed"):
+        execution.require_factory_attested()
+
+
 def test_retry_requires_complete_ordered_lineage_and_changes_receipt_identity() -> None:
     first = execute_d1_blind_review(
         request=_request(),
@@ -129,7 +150,7 @@ def test_retry_rejects_forged_skipped_and_wrong_predecessor_executions() -> None
         receipt_store=D1InMemoryReviewReceiptStoreFake(),
     )
 
-    with pytest.raises(TypeError, match="factory-attested"):
+    with pytest.raises(TypeError, match="cannot be copied"):
         _request(round_number=2, prior_executions=(copy.copy(first_a),))
     with pytest.raises(TypeError, match="factory-attested"):
         D1ExecutedBlindReview(
@@ -138,7 +159,7 @@ def test_retry_rejects_forged_skipped_and_wrong_predecessor_executions() -> None
             first_a.receipt,
             first_a.storage,
         )
-    with pytest.raises(TypeError, match="factory-attested"):
+    with pytest.raises(TypeError, match="cannot be copied"):
         _request(round_number=2, prior_executions=(copy.deepcopy(first_a),))
     with pytest.raises(TypeError, match="factory-attested"):
         _request(
@@ -239,7 +260,7 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
         )
     with pytest.raises(TypeError, match="factory-attested"):
         replace(execution, storage=replace(execution.storage, durable=False))
-    with pytest.raises(TypeError, match="factory-attested"):
+    with pytest.raises(TypeError, match="cannot be copied"):
         release_d1_alias_reveal(
             execution=copy.copy(execution),
             aliases=aliases,

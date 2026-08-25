@@ -226,6 +226,22 @@ class D1ExecutedBlindReview:
     def __init__(self, *_: object, **__: object) -> None:
         raise TypeError("D1ExecutedBlindReview is factory-attested by review execution")
 
+    def require_factory_attested(self) -> None:
+        if not _EXECUTION_ATTESTATION.registered(self):
+            raise TypeError("D1 executed blind review is not factory-attested")
+        _validate_storage_binding(self.receipt, self.storage)
+        if not _EXECUTION_ATTESTATION.contains(self):
+            raise TypeError("D1 executed blind review evidence changed after minting")
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1ExecutedBlindReview cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1ExecutedBlindReview cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1ExecutedBlindReview cannot be copied")
+
 
 def _execution_fingerprint(execution: D1ExecutedBlindReview) -> str:
     return canonical_digest(
