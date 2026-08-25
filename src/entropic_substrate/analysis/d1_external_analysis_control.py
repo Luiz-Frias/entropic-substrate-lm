@@ -13,6 +13,9 @@ from types import MappingProxyType
 from typing import NoReturn, cast
 
 from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
+from entropic_substrate.analysis.d1_reader_source_closure import (
+    installed_d1_reader_source_files,
+)
 from entropic_substrate.evidence.d1_capture_aggregate_codec import (
     D1CaptureAggregateDeclaration,
     parse_d1_capture_aggregate_declaration,
@@ -92,30 +95,7 @@ _READER_MODULE_FIELDS = frozenset({"identity", "path", "sha256"})
 
 D1_COMPLETE_READER_IDENTITY = "entropic_substrate.telemetry.read_d1_run_evidence"
 D1_TERMINAL_DEFECT_READER_IDENTITY = "entropic_substrate.telemetry.read_d1_terminal_defect"
-D1_READER_SOURCE_MODULES = (
-    "entropic_substrate.telemetry",
-    "entropic_substrate.evidence.d1_telemetry",
-    "entropic_substrate.evidence.d1_telemetry_query",
-    "entropic_substrate.evidence.d1_terminal_defect_query",
-    "entropic_substrate.evidence.d1_journal",
-    "entropic_substrate.evidence.d1_journal_values",
-    "entropic_substrate.evidence.d1_telemetry_measurements",
-    "entropic_substrate.evidence.d1_telemetry_payloads",
-    "entropic_substrate.evidence.d1_telemetry_values",
-    "entropic_substrate.evidence.resource_work",
-    "entropic_substrate.evidence.resource_work_codec",
-    "entropic_substrate.evidence.resource_provenance",
-    "entropic_substrate.evidence.resource_provenance_codec",
-    "entropic_substrate.evidence.resource_ledger",
-    "entropic_substrate.evidence.resource_ledger_codec",
-    "entropic_substrate.d1_numerical_defect",
-    "entropic_substrate.data.batching",
-    "entropic_substrate.experiments.d1_primitives",
-    "entropic_substrate.experiments.d1_plan",
-    "entropic_substrate.experiments.d1_execution",
-    "entropic_substrate.d1_calibration",
-    "entropic_substrate.d1_training_step",
-)
+D1_READER_SOURCE_MODULES = tuple(item.identity for item in installed_d1_reader_source_files())
 _INPUT_SCHEMA = "d1-external-analysis-input-v1"
 _INPUT_BASE64_FIELDS = (
     "alias_commitment_base64",
