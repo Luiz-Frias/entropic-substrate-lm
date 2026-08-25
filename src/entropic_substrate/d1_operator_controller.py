@@ -432,13 +432,6 @@ class D1SequentialOperatorController:
             journal_path=candidate.journal_path,
             expected_journal_state=stopped.journal_state,
         )
-        artifact = self._custody.persist_finalization(finalization)
-        manager = manager.finalize_operator(
-            subject_id=subject,
-            actor=self._operator,
-            artifact=artifact,
-            event_id=f"{subject}:operator-finalized",
-        )
         failed = isinstance(handoff, D1TrainerFailureHandoff)
         ledger = self.attempt_ledger.transition(
             attempt,
@@ -447,9 +440,29 @@ class D1SequentialOperatorController:
             reason=(handoff.error_message if failed else None),
         )
         self._custody.persist_attempt_ledger(ledger)
-        self.process_manager, self.attempt_ledger, self._executing = manager, ledger, False
-        self._active_attempt = None
+        self.attempt_ledger = ledger
         queue_admissible = not failed and not isinstance(billing, BillingGap)
+        finalized_cell: D1FinalizedCellCustodyRecord | None = None
+        if queue_admissible:
+            journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
+            finalized_cell = attest_d1_finalized_cell_custody(
+                intent=intent,
+                segment_starts=(*history.starts, start),
+                attempt_ledger=ledger,
+                finalization=finalization,
+                journal=journal,
+            )
+            artifact = self._custody.persist_finalized_cell(finalized_cell)
+        else:
+            artifact = self._custody.persist_finalization(finalization)
+        manager = manager.finalize_operator(
+            subject_id=subject,
+            actor=self._operator,
+            artifact=artifact,
+            event_id=f"{subject}:operator-finalized",
+        )
+        self.process_manager, self._executing = manager, False
+        self._active_attempt = None
         if not queue_admissible:
             self._halted_detail = "terminal trainer or provider-billing evidence gap"
         return D1OperatorRunResult(
@@ -461,7 +474,7 @@ class D1SequentialOperatorController:
             termination,
             billing,
             finalization,
-            None,
+            finalized_cell,
             artifact,
             queue_admissible,
         )
