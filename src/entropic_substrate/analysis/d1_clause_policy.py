@@ -14,6 +14,7 @@ from entropic_substrate.analysis.d1_factorial import (
     D1FactorialAnalysis,
 )
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
@@ -203,6 +204,13 @@ def parse_d1_clause_policy(contract: D1DecisionContract) -> D1ClausePolicy:
         _fail("candidate_arms", "analysis_policy.candidate_arms", str(error))
     if len(set(arms)) != len(arms):
         _fail("candidate_arms", "analysis_policy.candidate_arms", "must be unique")
+    expected_arms = tuple(D1Arm(value) for value in D1_STABILIZATION_ARM_IDS)
+    if arms != expected_arms:
+        _fail(
+            "candidate_arms",
+            "analysis_policy.candidate_arms",
+            f"must equal canonical stabilization sequence {D1_STABILIZATION_ARM_IDS}",
+        )
     raw_clauses = root["clauses"]
     if not isinstance(raw_clauses, Mapping) or set(raw_clauses) != set(contract.clause_ids):
         _fail("clauses", "analysis_policy.clauses", "must bind every registered clause")

@@ -274,6 +274,24 @@ def test_missing_or_drifted_registered_policy_fails_without_defaults() -> None:
         parse_d1_clause_policy(_contract_with_policy(policy))
 
 
+@pytest.mark.parametrize(
+    "candidate_arms",
+    [
+        ["ac", "sg", "both"],
+        ["sg", "both"],
+        ["none", "sg", "ac", "both"],
+    ],
+)
+def test_candidate_arms_are_the_canonical_stabilization_sequence(
+    candidate_arms: list[str],
+) -> None:
+    policy = _policy()
+    policy["candidate_arms"] = candidate_arms
+
+    with pytest.raises(D1ClausePolicyError, match="canonical stabilization"):
+        parse_d1_clause_policy(_contract_with_policy(policy))
+
+
 def test_unregistered_contrast_reference_is_refused_at_parse_time() -> None:
     policy = _policy()
     clauses = policy["clauses"]
