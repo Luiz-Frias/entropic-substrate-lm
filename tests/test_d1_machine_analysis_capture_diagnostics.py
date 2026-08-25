@@ -239,6 +239,7 @@ def test_pure_exclusion_derivation_is_shared_with_analysis_admission(tmp_path: P
     assert exclusion.evidence_digest == canonical_digest(
         {"defects": [aggregate.terminal_defects[0].manifest]}
     )
+    assert exclusion.seed == aggregate.terminal_defects[0].expected.seed
     assert exclusion.pairing_id == aggregate.pair_exclusions[0].pairing_id
     assert len(exclusion.member_run_ids) == 4
 

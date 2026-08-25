@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from d1_launch_admission_fixtures import SEEDS, contract
@@ -11,11 +13,19 @@ from entropic_substrate.analysis.d1_clause_policy import (
     evaluate_d1_clauses,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_factorial import compute_d1_factorial
+from entropic_substrate.analysis.d1_factorial import (
+    D1FactorialAnalysis,
+    compute_d1_factorial,
+)
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
-from .test_d1_factorial_analysis import _cells, _design
+from .test_d1_factorial_analysis import (
+    _authority,
+    _cells,
+    _design,
+    _whole_pair_exclusion,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -66,7 +76,10 @@ def _policy(*, future_threshold: float = 15.0) -> dict[str, object]:
 
 
 def _contract_with_policy(
-    policy: dict[str, object], *, diagnostic_policy: dict[str, object] | None = None
+    policy: dict[str, object],
+    *,
+    diagnostic_policy: dict[str, object] | None = None,
+    nonexcluded_seed_count: bool = False,
 ) -> D1DecisionContract:
     base = contract()
     constants = {"analysis_policy": policy, "primary": {"alpha": 0.025}, "seeds": list(SEEDS)}
@@ -78,7 +91,14 @@ def _contract_with_policy(
         arm_ids=base.arm_ids,
         contrast_ids=base.contrast_ids,
         clause_ids=base.clause_ids,
-        contrast_rules=base.contrast_rules,
+        contrast_rules=(
+            {
+                name: replace(rule, n_rule="NONEXCLUDED_SEED_COUNT", registered_n=None)
+                for name, rule in base.contrast_rules.items()
+            }
+            if nonexcluded_seed_count
+            else base.contrast_rules
+        ),
         clause_rules=base.clause_rules,
         exclusion_rules=base.exclusion_rules,
         clause_precedence=base.clause_precedence,
@@ -87,11 +107,13 @@ def _contract_with_policy(
     )
 
 
-def _analysis(decision: D1DecisionContract):
+def _analysis(decision: D1DecisionContract) -> D1FactorialAnalysis:
+    design = _design(decision)
     return compute_d1_factorial(
-        design=_design(decision),
+        design=design,
         decision_contract=decision,
         cells=_cells(),
+        exclusion_authority=_authority(design),
     )
 
 
@@ -163,6 +185,79 @@ def test_registered_contrast_interval_can_return_inconclusive() -> None:
     assert clause.status is D1ConditionStatus.INCONCLUSIVE
     assert clause.conditions[0].observed_lower == pytest.approx(-0.195941650636283)
     assert clause.conditions[0].observed_upper == pytest.approx(5.195941650636283)
+
+
+def test_clause_cells_must_equal_the_factorial_survivor_grid() -> None:
+    decision = _contract_with_policy(_policy(), nonexcluded_seed_count=True)
+    surviving = _cells()[:-4]
+    design = _design(decision)
+    factorial = compute_d1_factorial(
+        design=design,
+        decision_contract=decision,
+        cells=surviving,
+        exclusion_authority=_authority(design, (_whole_pair_exclusion(SEEDS[-1]),)),
+    )
+
+    with pytest.raises(D1ClausePolicyError, match="factorial survivor grid"):
+        evaluate_d1_clauses(
+            policy=parse_d1_clause_policy(decision),
+            decision_contract=decision,
+            factorial=factorial,
+            cells=_cells(),
+        )
+
+    drifted = list(surviving)
+    drifted[0] = replace(
+        drifted[0],
+        metrics={
+            **drifted[0].metrics,
+            "nats_per_byte": tuple(
+                replace(point, value=point.value + 0.5)
+                for point in drifted[0].metrics["nats_per_byte"]
+            ),
+        },
+    )
+    with pytest.raises(D1ClausePolicyError, match="factorial cell commitment"):
+        evaluate_d1_clauses(
+            policy=parse_d1_clause_policy(decision),
+            decision_contract=decision,
+            factorial=factorial,
+            cells=tuple(drifted),
+        )
+
+
+def test_clause_population_typestate_covers_duplicate_finite_and_empty_lanes() -> None:
+    decision = _contract_with_policy(_policy())
+    policy = parse_d1_clause_policy(decision)
+    factorial = _analysis(decision)
+    cells = _cells()
+    with pytest.raises(D1ClausePolicyError, match="duplicate arm-by-seed"):
+        evaluate_d1_clauses(
+            policy=policy,
+            decision_contract=decision,
+            factorial=factorial,
+            cells=(*cells, cells[0]),
+        )
+    with pytest.raises(D1ClausePolicyError, match="finite cells require factorial"):
+        evaluate_d1_clauses(
+            policy=policy,
+            decision_contract=decision,
+            factorial=None,
+            cells=cells,
+        )
+
+    empty = evaluate_d1_clauses(
+        policy=policy,
+        decision_contract=decision,
+        factorial=None,
+        cells=(),
+    )
+    assert empty.feasible_arms == ()
+    assert all(
+        clause.status is D1ConditionStatus.INCONCLUSIVE
+        for clauses in empty.by_arm.values()
+        for clause in clauses.values()
+    )
 
 
 def test_missing_or_drifted_registered_policy_fails_without_defaults() -> None:

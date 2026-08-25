@@ -9,7 +9,13 @@ from types import MappingProxyType
 from typing import NoReturn, cast
 
 import entropic_substrate.telemetry as telemetry_api
-from entropic_substrate.analysis.d1_factorial import D1AnalysisCell, D1MetricPoint
+from entropic_substrate.analysis.d1_factorial import (
+    D1AnalysisCell,
+    D1AppliedExclusion,
+    D1FactorialExclusionAuthority,
+    D1MetricPoint,
+    seal_d1_factorial_exclusion_authority,
+)
 from entropic_substrate.evidence.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
     D1ValidatedTerminalDefect,
@@ -39,8 +45,10 @@ __all__ = [
     "D1AdmittedAnalysisCapture",
     "D1AnalysisAdmissionError",
     "D1AppliedExclusion",
+    "D1FactorialExclusionAuthority",
     "admit_d1_analysis_capture",
     "derive_d1_analysis_exclusions",
+    "issue_d1_factorial_exclusion_authority",
 ]
 
 
@@ -59,25 +67,6 @@ def _fail(code: str, path: str, detail: str, cause: Exception | None = None) -> 
     if cause is None:
         raise error
     raise error from cause
-
-
-@dataclass(frozen=True, slots=True)
-class D1AppliedExclusion:
-    pairing_id: str
-    member_run_ids: tuple[str, ...]
-    reason_id: str
-    evidence_paths: tuple[str, ...]
-    evidence_digest: str
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "evidence_digest": self.evidence_digest,
-            "evidence_paths": list(self.evidence_paths),
-            "member_run_ids": list(self.member_run_ids),
-            "pairing_id": self.pairing_id,
-            "reason_id": self.reason_id,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +153,7 @@ def derive_d1_analysis_exclusions(
             )
         applied.append(
             D1AppliedExclusion(
+                seed=defects[0].expected.seed,
                 pairing_id=claim.pairing_id,
                 member_run_ids=claim.member_run_ids,
                 reason_id=matches.pop(),
@@ -181,6 +171,36 @@ def derive_d1_analysis_exclusions(
             )
         )
     return tuple(applied)
+
+
+def issue_d1_factorial_exclusion_authority(
+    *,
+    design: D1RegisteredDesign,
+    decision_contract: D1DecisionContract,
+    aggregate: D1HeterogeneousCaptureAggregate,
+    admitted: D1AdmittedAnalysisCapture,
+) -> D1FactorialExclusionAuthority:
+    """Seal the exact exclusions rederived from one admitted capture."""
+    if type(admitted) is not D1AdmittedAnalysisCapture:
+        raise TypeError("D1 factorial authority requires admitted analysis capture")
+    _validate_design(design, decision_contract, aggregate)
+    exclusions = derive_d1_analysis_exclusions(
+        aggregate=aggregate,
+        decision_contract=decision_contract,
+    )
+    if (
+        admitted.design_digest != design.design_digest
+        or admitted.decision_contract_digest != design.decision_contract_digest
+        or admitted.capture_digest != aggregate.manifest_digest
+        or admitted.exclusions != exclusions
+    ):
+        _fail("factorial_authority", "admitted", "differs from authoritative capture")
+    return seal_d1_factorial_exclusion_authority(
+        design_digest=design.design_digest,
+        decision_contract_digest=design.decision_contract_digest,
+        capture_digest=aggregate.manifest_digest,
+        exclusions=exclusions,
+    )
 
 
 def _verify_inputs(root: Path, aggregate: D1HeterogeneousCaptureAggregate) -> None:

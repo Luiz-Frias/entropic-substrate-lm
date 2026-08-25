@@ -51,6 +51,7 @@ from entropic_substrate.experiments.d1_registration_codec import (
 from .test_d1_analysis_api import _decision
 from .test_d1_external_analysis_input import _b64, _canonical
 from .test_d1_external_analysis_input import _case as input_case
+from .test_d1_factorial_analysis import _authority
 
 pytestmark = pytest.mark.unit
 
@@ -88,6 +89,7 @@ def _binding_case(tmp_path: Path):
         design=design,
         decision_contract=decision,
         cells=cells,
+        exclusion_authority=_authority(design),
     )
     clauses = evaluate_d1_clauses(
         policy=parse_d1_clause_policy(decision),

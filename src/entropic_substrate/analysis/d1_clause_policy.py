@@ -331,6 +331,19 @@ def evaluate_d1_clauses(
     """Evaluate every condition and retain all co-equal clause riders."""
     if type(policy) is not D1ClausePolicy or type(decision_contract) is not D1DecisionContract:
         raise TypeError("D1 clause evaluation requires typed policy and decision contract")
+    observed = {(cell.arm, cell.seed) for cell in cells}
+    if len(observed) != len(cells):
+        _fail("cell_population", "cells", "contains duplicate arm-by-seed identities")
+    if factorial is None:
+        if cells:
+            _fail("cell_population", "cells", "finite cells require factorial analysis")
+    else:
+        expected = {(arm, seed) for seed in factorial.included_seeds for arm in D1Arm}
+        if observed != expected:
+            _fail("cell_population", "cells", "does not equal the factorial survivor grid")
+        supplied = {(cell.arm, cell.seed): cell for cell in cells}
+        if supplied != dict(factorial.cell_commitment):
+            _fail("cell_population", "cells", "does not equal the factorial cell commitment")
     by_arm: dict[D1Arm, Mapping[str, D1ArmClauseResult]] = {}
     for arm in policy.candidate_arms:
         clauses: dict[str, D1ArmClauseResult] = {}

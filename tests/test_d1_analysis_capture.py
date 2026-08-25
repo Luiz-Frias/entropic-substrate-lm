@@ -19,6 +19,7 @@ from d1_launch_admission_fixtures import (
 from entropic_substrate.analysis.d1_capture import (
     D1AnalysisAdmissionError,
     admit_d1_analysis_capture,
+    issue_d1_factorial_exclusion_authority,
 )
 from entropic_substrate.evidence.d1_capture_aggregate import (
     D1CapturePartitionProof,
@@ -51,6 +52,7 @@ from entropic_substrate.experiments.d1_registered_design import (
 )
 
 from .d1_capture_fixtures import capture_family
+from .test_d1_factorial_analysis import _whole_pair_exclusion
 
 pytestmark = pytest.mark.unit
 
@@ -199,6 +201,43 @@ def test_analysis_reopens_every_finite_cell_through_public_reader(
     assert admitted.exclusions == ()
     assert admitted.capture_digest == aggregate.manifest_digest
     assert len(admitted.input_artifacts) == 12
+
+
+def test_factorial_authority_is_sealed_to_the_exact_admitted_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, design, decision, aggregate, runs = _analysis_case(tmp_path)
+    monkeypatch.setattr(
+        telemetry_api,
+        "read_d1_run_evidence",
+        lambda _path, **expected: runs[str(expected["expected_logical_run_id"])],
+    )
+    admitted = admit_d1_analysis_capture(
+        root=root,
+        design=design,
+        decision_contract=decision,
+        aggregate=aggregate,
+    )
+    authority = issue_d1_factorial_exclusion_authority(
+        design=design,
+        decision_contract=decision,
+        aggregate=aggregate,
+        admitted=admitted,
+    )
+    assert authority.capture_digest == aggregate.manifest_digest
+    assert authority.exclusions == ()
+
+    for forged in (
+        replace(admitted, capture_digest="0" * 64),
+        replace(admitted, exclusions=(_whole_pair_exclusion(7),)),
+    ):
+        with pytest.raises(D1AnalysisAdmissionError, match="factorial_authority"):
+            issue_d1_factorial_exclusion_authority(
+                design=design,
+                decision_contract=decision,
+                aggregate=aggregate,
+                admitted=forged,
+            )
 
 
 def test_analysis_rejects_inherited_exclusion_without_terminal_defect_partition(

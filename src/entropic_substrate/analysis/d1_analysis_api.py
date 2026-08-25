@@ -9,6 +9,7 @@ from typing import Protocol, cast
 from entropic_substrate.analysis.d1_capture import (
     D1AdmittedAnalysisCapture,
     admit_d1_analysis_capture,
+    issue_d1_factorial_exclusion_authority,
 )
 from entropic_substrate.analysis.d1_clause_policy import (
     D1ClauseAnalysis,
@@ -128,6 +129,12 @@ def compose_d1_analysis(request: D1AnalysisCompositionRequest) -> D1AnalysisComp
             design=request.design,
             decision_contract=request.decision_contract,
             cells=admitted.cells,
+            exclusion_authority=issue_d1_factorial_exclusion_authority(
+                design=request.design,
+                decision_contract=request.decision_contract,
+                aggregate=request.aggregate,
+                admitted=admitted,
+            ),
         )
         if admitted.cells
         else None

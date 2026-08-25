@@ -11,8 +11,9 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from itertools import pairwise
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, cast
 
@@ -30,10 +31,12 @@ from entropic_substrate.experiments.d1_registered_design import (
 
 __all__ = [
     "D1AnalysisCell",
+    "D1AppliedExclusion",
     "D1ContrastEstimate",
     "D1EndpointSummary",
     "D1FactorialAnalysis",
     "D1FactorialEffect",
+    "D1FactorialExclusionAuthority",
     "D1MetricPoint",
     "compute_d1_factorial",
     "d1_factorial_effect_terms",
@@ -65,6 +68,7 @@ _FACTORIAL_TERMS: Final[dict[str, tuple[tuple[D1Arm, float], ...]]] = {
         (D1Arm.BOTH, 1.0),
     ),
 }
+_EXCLUSION_AUTHORITY_TOKEN: Final = object()
 
 
 def d1_factorial_effect_terms() -> Mapping[str, tuple[tuple[D1Arm, float], ...]]:
@@ -121,6 +125,127 @@ class D1AnalysisCell:
 
 
 @dataclass(frozen=True, slots=True)
+class D1AppliedExclusion:
+    """One evidence-backed whole-seed-block exclusion applied before arithmetic."""
+
+    seed: int
+    pairing_id: str
+    member_run_ids: tuple[str, ...]
+    reason_id: str
+    evidence_paths: tuple[str, ...]
+    evidence_digest: str
+
+    def __post_init__(self) -> None:
+        if type(self.seed) is not int or self.seed < 0:
+            raise ValueError("D1 applied exclusion seed must be a nonnegative integer")
+        if (
+            type(self.pairing_id) is not str
+            or not self.pairing_id
+            or self.pairing_id.strip() != self.pairing_id
+        ):
+            raise ValueError("D1 applied exclusion pairing_id must be nonempty and trimmed")
+        if (
+            type(self.member_run_ids) is not tuple
+            or len(self.member_run_ids) != len(D1Arm)
+            or len(set(self.member_run_ids)) != len(D1Arm)
+            or any(
+                type(value) is not str or not value or value.strip() != value
+                for value in self.member_run_ids
+            )
+        ):
+            raise ValueError("D1 applied exclusion requires four unique member run IDs")
+        if (
+            type(self.reason_id) is not str
+            or not self.reason_id
+            or self.reason_id.strip() != self.reason_id
+        ):
+            raise ValueError("D1 applied exclusion reason_id must be nonempty and trimmed")
+        if type(self.evidence_paths) is not tuple or not self.evidence_paths:
+            raise ValueError("D1 applied exclusion requires at least one evidence path")
+        if len(set(self.evidence_paths)) != len(self.evidence_paths):
+            raise ValueError("D1 applied exclusion evidence paths must be unique")
+        for value in self.evidence_paths:
+            if type(value) is not str or not value or value.strip() != value:
+                raise ValueError("D1 applied exclusion evidence path must be nonempty and trimmed")
+            path = PurePosixPath(value)
+            if (
+                path.is_absolute()
+                or "\\" in value
+                or path.as_posix() != value
+                or ".." in path.parts
+            ):
+                raise ValueError("D1 applied exclusion evidence path must be repository-relative")
+        if (
+            type(self.evidence_digest) is not str
+            or len(self.evidence_digest) != 64
+            or self.evidence_digest != self.evidence_digest.lower()
+            or any(value not in "0123456789abcdef" for value in self.evidence_digest)
+        ):
+            raise ValueError(
+                "D1 applied exclusion evidence_digest must be 64 lowercase hexadecimal"
+            )
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "evidence_digest": self.evidence_digest,
+            "evidence_paths": list(self.evidence_paths),
+            "member_run_ids": list(self.member_run_ids),
+            "pairing_id": self.pairing_id,
+            "reason_id": self.reason_id,
+            "seed": self.seed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class D1FactorialExclusionAuthority:
+    """Admission-owned capability binding exclusions to one capture and design."""
+
+    design_digest: str
+    decision_contract_digest: str
+    capture_digest: str
+    exclusions: tuple[D1AppliedExclusion, ...]
+    _attestation: InitVar[object | None] = None
+
+    def __post_init__(self, _attestation: object | None) -> None:
+        if _attestation is not _EXCLUSION_AUTHORITY_TOKEN:
+            raise TypeError("D1 factorial exclusion authority is factory-only")
+        for label, digest in (
+            ("design_digest", self.design_digest),
+            ("decision_contract_digest", self.decision_contract_digest),
+            ("capture_digest", self.capture_digest),
+        ):
+            if (
+                type(digest) is not str
+                or len(digest) != 64
+                or digest != digest.lower()
+                or any(value not in "0123456789abcdef" for value in digest)
+            ):
+                raise ValueError(f"D1 factorial authority {label} must be 64 lowercase hexadecimal")
+        if type(self.exclusions) is not tuple or any(
+            type(value) is not D1AppliedExclusion for value in self.exclusions
+        ):
+            raise TypeError("D1 factorial authority exclusions must be an immutable typed tuple")
+
+
+def seal_d1_factorial_exclusion_authority(
+    *,
+    design_digest: str,
+    decision_contract_digest: str,
+    capture_digest: str,
+    exclusions: tuple[D1AppliedExclusion, ...],
+) -> D1FactorialExclusionAuthority:
+    """Seal exclusions only after an admission boundary has validated them."""
+    return D1FactorialExclusionAuthority(
+        design_digest=design_digest,
+        decision_contract_digest=decision_contract_digest,
+        capture_digest=capture_digest,
+        exclusions=exclusions,
+        _attestation=_EXCLUSION_AUTHORITY_TOKEN,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class D1EndpointSummary:
     metric: str
     estimator: str
@@ -161,6 +286,7 @@ class D1FactorialEffect:
 class D1FactorialAnalysis:
     included_seeds: tuple[int, ...]
     excluded_seeds: tuple[int, ...]
+    cell_commitment: Mapping[tuple[D1Arm, int], D1AnalysisCell] = field(repr=False)
     endpoint: D1EndpointSummary
     registered_contrasts: Mapping[str, D1ContrastEstimate]
     factorial_effects: Mapping[str, D1FactorialEffect]
@@ -302,10 +428,20 @@ def _estimate(rule: D1RegisteredContrast, values: tuple[float, ...]) -> D1Contra
 
 
 def _admit_cells(
-    design: D1RegisteredDesign, cells: tuple[D1AnalysisCell, ...]
+    design: D1RegisteredDesign,
+    cells: tuple[D1AnalysisCell, ...],
+    exclusions: tuple[D1AppliedExclusion, ...],
 ) -> tuple[Mapping[tuple[D1Arm, int], D1AnalysisCell], tuple[int, ...], tuple[int, ...]]:
     if type(cells) is not tuple:
         raise TypeError("D1 analysis cells must be an immutable tuple")
+    if type(exclusions) is not tuple:
+        raise TypeError("D1 applied exclusions must be an immutable tuple")
+    if any(type(item) is not D1AppliedExclusion for item in exclusions):
+        raise TypeError("D1 applied exclusions must contain D1AppliedExclusion values")
+    if len({item.seed for item in exclusions}) != len(exclusions) or len(
+        {item.pairing_id for item in exclusions}
+    ) != len(exclusions):
+        raise ValueError("D1 seed or pairing block may be excluded at most once")
     by_cell: dict[tuple[D1Arm, int], D1AnalysisCell] = {}
     for cell in cells:
         if type(cell) is not D1AnalysisCell:
@@ -316,10 +452,25 @@ def _admit_cells(
         by_cell[key] = cell
     registered = set(design.registered_seeds)
     observed_seeds = {seed for _, seed in by_cell}
+    excluded_seeds = {item.seed for item in exclusions}
+    unregistered_exclusions = excluded_seeds - registered
+    if unregistered_exclusions:
+        raise ValueError(
+            f"D1 applied exclusion contains unregistered seed: {sorted(unregistered_exclusions)}"
+        )
     unregistered_seeds = observed_seeds - registered
     if unregistered_seeds:
         raise ValueError(f"D1 analysis contains unregistered seeds: {sorted(unregistered_seeds)}")
-    included = tuple(seed for seed in design.registered_seeds if seed in observed_seeds)
+    overlap = observed_seeds & excluded_seeds
+    if overlap:
+        raise ValueError(f"D1 excluded seed also has observed cells: {sorted(overlap)}")
+    unexplained_missing = registered - observed_seeds - excluded_seeds
+    if unexplained_missing:
+        raise ValueError(
+            "D1 missing registered seed block lacks an applied exclusion: "
+            f"{sorted(unexplained_missing)}"
+        )
+    included = tuple(seed for seed in design.registered_seeds if seed not in excluded_seeds)
     if not included:
         raise ValueError("D1 factorial analysis has no finite seed block")
     expected = {(arm, seed) for seed in included for arm in _ALL_ARMS}
@@ -333,7 +484,7 @@ def _admit_cells(
         pairing_ids = {by_cell[(arm, seed)].pairing_id for arm in _ALL_ARMS}
         if len(pairing_ids) != 1:
             raise ValueError(f"D1 seed {seed} arms do not share one pairing_id")
-    excluded = tuple(seed for seed in design.registered_seeds if seed not in observed_seeds)
+    excluded = tuple(seed for seed in design.registered_seeds if seed in excluded_seeds)
     return MappingProxyType(by_cell), included, excluded
 
 
@@ -350,13 +501,23 @@ def compute_d1_factorial(
     design: D1RegisteredDesign,
     decision_contract: D1DecisionContract,
     cells: tuple[D1AnalysisCell, ...],
+    exclusion_authority: D1FactorialExclusionAuthority,
 ) -> D1FactorialAnalysis:
     """Compute registered contrasts and report-only 2x2 factorial effects."""
     if type(design) is not D1RegisteredDesign or type(decision_contract) is not D1DecisionContract:
         raise TypeError("D1 factorial analysis requires registered design and decision contract")
     if decision_contract_digest(decision_contract) != design.decision_contract_digest:
         raise ValueError("D1 decision contract differs from the registered design")
-    admitted, included_seeds, excluded_seeds = _admit_cells(design, cells)
+    if type(exclusion_authority) is not D1FactorialExclusionAuthority:
+        raise TypeError("D1 factorial analysis requires an exclusion authority")
+    if (
+        exclusion_authority.design_digest != design.design_digest
+        or exclusion_authority.decision_contract_digest != design.decision_contract_digest
+    ):
+        raise ValueError("D1 factorial exclusion authority differs from the registered design")
+    admitted, included_seeds, excluded_seeds = _admit_cells(
+        design, cells, exclusion_authority.exclusions
+    )
     _validate_sample_rules(decision_contract, len(included_seeds))
     endpoints = tuple(rule.endpoint for rule in decision_contract.contrast_rules.values())
     if any(endpoint != endpoints[0] for endpoint in endpoints[1:]):
@@ -386,6 +547,7 @@ def compute_d1_factorial(
     return D1FactorialAnalysis(
         included_seeds=included_seeds,
         excluded_seeds=excluded_seeds,
+        cell_commitment=admitted,
         endpoint=D1EndpointSummary(
             metric=endpoint.metric,
             estimator=endpoint.estimator,
