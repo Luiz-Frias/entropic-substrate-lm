@@ -120,13 +120,23 @@ def test_cloud_adapter_refuses_malformed_status_output(tmp_path: Path) -> None:
 def test_git_adapter_requires_exact_clean_tracked_pointer_and_returns_head(tmp_path: Path) -> None:
     repo, _, pointer = _repo(tmp_path)
     digest = hashlib.sha256(pointer.read_bytes()).hexdigest()
-    runner = _Runner(outputs=["", "results/captured.dvc\n", "abcdef123456\n"])
-
-    commit = SubprocessD1GitPointerStatusVerifier(repo_root=repo, runner=runner).committed_revision(
-        pointer_path=pointer, pointer_sha256=digest
+    pointer_bytes = pointer.read_bytes()
+    runner = _Runner(
+        outputs=["", "results/captured.dvc\n", "abcdef123456\n", pointer_bytes.decode()]
     )
 
-    assert commit == "abcdef123456"  # pragma: allowlist secret
+    evidence = SubprocessD1GitPointerStatusVerifier(
+        repo_root=repo, runner=runner
+    ).committed_pointer(
+        pointer_path=pointer,
+        pointer_bytes=pointer_bytes,
+        pointer_sha256=digest,
+        object_id=_OBJECT_ID,
+    )
+
+    assert evidence is not None
+    assert evidence.commit == "abcdef123456"  # pragma: allowlist secret
+    assert evidence.pointer_sha256 == digest
     assert [call[0] for call in runner.calls] == [
         [
             "git",
@@ -138,6 +148,7 @@ def test_git_adapter_requires_exact_clean_tracked_pointer_and_returns_head(tmp_p
         ],
         ["git", "ls-files", "--error-unmatch", "--", "results/captured.dvc"],
         ["git", "rev-parse", "HEAD"],
+        ["git", "show", "abcdef123456:results/captured.dvc"],
     ]
 
 
@@ -152,8 +163,13 @@ def test_git_adapter_returns_no_revision_for_any_uncommitted_pointer_state(
     if condition == "hash_drift":
         digest = "0" * 64
 
-    commit = SubprocessD1GitPointerStatusVerifier(repo_root=repo, runner=runner).committed_revision(
-        pointer_path=pointer, pointer_sha256=digest
+    evidence = SubprocessD1GitPointerStatusVerifier(
+        repo_root=repo, runner=runner
+    ).committed_pointer(
+        pointer_path=pointer,
+        pointer_bytes=pointer.read_bytes(),
+        pointer_sha256=digest,
+        object_id=_OBJECT_ID,
     )
 
-    assert commit is None
+    assert evidence is None

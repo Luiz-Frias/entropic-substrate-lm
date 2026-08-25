@@ -9,7 +9,10 @@ import subprocess  # nosec B404 -- fixed argv adapters; shell execution is never
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.evidence.d1_capture_ports import (
+    D1CaptureTransportError,
+    D1GitPointerCommitEvidence,
+)
 
 __all__ = [
     "SubprocessD1CloudObjectVerifier",
@@ -184,10 +187,22 @@ class SubprocessD1GitPointerStatusVerifier:
         self._root = _root(repo_root)
         self._runner = _runner(runner)
 
-    def committed_revision(self, *, pointer_path: Path, pointer_sha256: str) -> str | None:
+    def committed_pointer(
+        self,
+        *,
+        pointer_path: Path,
+        pointer_bytes: bytes,
+        pointer_sha256: str,
+        object_id: str,
+    ) -> D1GitPointerCommitEvidence | None:
         pointer = _relative(self._root, pointer_path)
-        if _pointer_hash(pointer_path) != pointer_sha256:
+        if (
+            type(pointer_bytes) is not bytes
+            or hashlib.sha256(pointer_bytes).hexdigest() != pointer_sha256
+            or _pointer_hash(pointer_path) != pointer_sha256
+        ):
             return None
+        _object_id(object_id)
         status = _invoke(
             self._runner,
             [
@@ -229,4 +244,13 @@ class SubprocessD1GitPointerStatusVerifier:
             character not in "0123456789abcdef" for character in head
         ):
             raise _error("git_status", pointer, "HEAD was not a lowercase hexadecimal commit")
-        return head
+        committed = _invoke(
+            self._runner,
+            ["git", "show", f"{head}:{pointer}"],
+            root=self._root,
+            code="git_status",
+            path=pointer,
+        ).stdout.encode("utf-8")
+        if committed != pointer_bytes:
+            return None
+        return D1GitPointerCommitEvidence(head, pointer, pointer_sha256, object_id)

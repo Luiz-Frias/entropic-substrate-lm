@@ -19,6 +19,7 @@ __all__ = [
     "D1DvcCommandPort",
     "D1DvcPointerIdentity",
     "D1EvidenceExportSourcePort",
+    "D1GitPointerCommitEvidence",
     "D1GitPointerStatusVerifierPort",
 ]
 
@@ -59,6 +60,35 @@ class D1DvcPointerIdentity:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class D1GitPointerCommitEvidence:
+    """Git-read proof that one commit contains the exact pointer and object identity."""
+
+    commit: str
+    pointer_path: str
+    pointer_sha256: str
+    object_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.commit) is not str
+            or not 7 <= len(self.commit) <= 64
+            or self.commit != self.commit.lower()
+            or any(character not in "0123456789abcdef" for character in self.commit)
+        ):
+            raise ValueError("pointer commit must be lowercase hexadecimal")
+        D1DvcPointerIdentity(self.pointer_path, self.pointer_sha256, self.object_id)
+
+    @property
+    def binding(self) -> D1DvcBinding:
+        return D1DvcBinding(
+            state=D1DvcBindingState.BOUND,
+            pointer_path=self.pointer_path,
+            pointer_sha256=self.pointer_sha256,
+            object_id=self.object_id,
+        )
+
+
 class D1EvidenceExportSourcePort(Protocol):
     """Materialize exact run-custody bytes without consulting MLflow."""
 
@@ -87,4 +117,11 @@ class D1CloudObjectVerifierPort(Protocol):
 class D1GitPointerStatusVerifierPort(Protocol):
     """Resolve the commit that contains these exact pointer bytes."""
 
-    def committed_revision(self, *, pointer_path: Path, pointer_sha256: str) -> str | None: ...
+    def committed_pointer(
+        self,
+        *,
+        pointer_path: Path,
+        pointer_bytes: bytes,
+        pointer_sha256: str,
+        object_id: str,
+    ) -> D1GitPointerCommitEvidence | None: ...
