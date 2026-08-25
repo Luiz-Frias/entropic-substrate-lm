@@ -129,27 +129,13 @@ def _derive_registered_exclusions(
     return tuple(applied)
 
 
-def recompute_capture_integrity(
+def _contract_matches_capture(
     capture: D1HeterogeneousCaptureAggregate,
     decision_contract: D1DecisionContract,
-    /,
-) -> D1RecomputedIntegrity:
-    """Derive integrity from typed capture evidence, never verdict booleans."""
-
-    if (
-        type(capture) is not D1HeterogeneousCaptureAggregate
-        or type(decision_contract) is not D1DecisionContract
-    ):
-        raise TypeError(
-            "D1 integrity recomputation requires a heterogeneous capture aggregate and contract"
-        )
-    expected = capture.roster.expected_run_ids
-    complete_ids = frozenset(item.expected.logical_run_id for item in capture.complete_runs)
-    defect_ids = frozenset(item.expected.logical_run_id for item in capture.terminal_defects)
-    proof = capture.partition_proof
+) -> bool:
     raw_seeds = decision_contract.registered_constants.get("seeds")
     roster_seeds = {item.seed for item in capture.roster.expected_confirmatory}
-    contract_bound = (
+    return (
         decision_contract.family_identity.family_digest == capture.roster.family_digest
         and type(raw_seeds) is tuple
         and all(type(seed) is int for seed in raw_seeds)
@@ -161,13 +147,11 @@ def recompute_capture_integrity(
             for item in capture.roster.expected_confirmatory
         )
     )
-    roster_complete = contract_bound and (
-        proof.expected_logical_run_ids == expected
-        and proof.complete_run_ids == complete_ids
-        and proof.terminal_defect_run_ids == defect_ids
-        and not complete_ids & defect_ids
-        and complete_ids | defect_ids == expected
-    )
+
+
+def _pairing_facts(
+    capture: D1HeterogeneousCaptureAggregate,
+) -> tuple[dict[str, set[str]], bool, bool]:
     expected_by_pair = {
         pairing_id: {
             item.logical_run_id
@@ -189,6 +173,35 @@ def recompute_capture_integrity(
         len({item.data_order_segments for item in block}) == 1
         for block in observed_by_pair.values()
     )
+    return expected_by_pair, pairing_verified, data_order_verified
+
+
+def recompute_capture_integrity(
+    capture: D1HeterogeneousCaptureAggregate,
+    decision_contract: D1DecisionContract,
+    /,
+) -> D1RecomputedIntegrity:
+    """Derive integrity from typed capture evidence, never verdict booleans."""
+
+    if (
+        type(capture) is not D1HeterogeneousCaptureAggregate
+        or type(decision_contract) is not D1DecisionContract
+    ):
+        raise TypeError(
+            "D1 integrity recomputation requires a heterogeneous capture aggregate and contract"
+        )
+    expected = capture.roster.expected_run_ids
+    complete_ids = frozenset(item.expected.logical_run_id for item in capture.complete_runs)
+    defect_ids = frozenset(item.expected.logical_run_id for item in capture.terminal_defects)
+    proof = capture.partition_proof
+    roster_complete = _contract_matches_capture(capture, decision_contract) and (
+        proof.expected_logical_run_ids == expected
+        and proof.complete_run_ids == complete_ids
+        and proof.terminal_defect_run_ids == defect_ids
+        and not complete_ids & defect_ids
+        and complete_ids | defect_ids == expected
+    )
+    expected_by_pair, pairing_verified, data_order_verified = _pairing_facts(capture)
     completion_verified = all(
         item.terminal_step > 0 and bool(item.checkpoint_receipts) for item in capture.complete_runs
     )
