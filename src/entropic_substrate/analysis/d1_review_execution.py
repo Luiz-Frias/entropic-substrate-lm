@@ -6,8 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Protocol
-from weakref import ReferenceType, ref
+from typing import NoReturn, Protocol, SupportsIndex
 
 from entropic_substrate.analysis.d1_blind_aliases import (
     D1AliasCustodyPort,
@@ -25,6 +24,7 @@ from entropic_substrate.evidence.d1_review_adjudication import (
     parse_d1_review_execution_receipt,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.factory_attestation import FactoryAttestation
 
 __all__ = [
     "D1CloudReviewRequest",
@@ -42,7 +42,6 @@ __all__ = [
 ]
 
 _SCHEMA = "d1-review-execution-receipt-v2"
-_EXECUTION_REFS: dict[int, ReferenceType[D1ExecutedBlindReview]] = {}
 
 
 def _sha(payload: bytes) -> str:
@@ -228,9 +227,30 @@ class D1ExecutedBlindReview:
         raise TypeError("D1ExecutedBlindReview is factory-attested by review execution")
 
 
+def _execution_fingerprint(execution: D1ExecutedBlindReview) -> str:
+    return canonical_digest(
+        {
+            "receipt_digest": execution.receipt.receipt_digest,
+            "report_sha256": _sha(execution.report),
+            "request_digest": execution.request.request_digest,
+            "response_sha256": _sha(execution.response),
+            "storage": {
+                "durable": execution.storage.durable,
+                "path": execution.storage.path,
+                "sha256": execution.storage.sha256,
+            },
+        }
+    )
+
+
+_EXECUTION_ATTESTATION = FactoryAttestation[
+    D1ExecutedBlindReview,
+    str,
+](_execution_fingerprint)
+
+
 def _is_attested_execution(execution: D1ExecutedBlindReview) -> bool:
-    reference = _EXECUTION_REFS.get(id(execution))
-    return reference is not None and reference() is execution
+    return _EXECUTION_ATTESTATION.contains(execution)
 
 
 def _validate_storage_binding(
@@ -257,13 +277,7 @@ def _mint_executed_review(
     object.__setattr__(execution, "report", report)
     object.__setattr__(execution, "receipt", receipt)
     object.__setattr__(execution, "storage", storage)
-    identity = id(execution)
-
-    def remove(reference: ReferenceType[D1ExecutedBlindReview]) -> None:
-        if _EXECUTION_REFS.get(identity) is reference:
-            del _EXECUTION_REFS[identity]
-
-    _EXECUTION_REFS[identity] = ref(execution, remove)
+    _EXECUTION_ATTESTATION.register(execution)
     return execution
 
 
@@ -355,19 +369,73 @@ def execute_d1_blind_review(
     return _mint_executed_review(request, response.response, response.report, receipt, storage)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True, init=False)
 class D1ReleasedAliasReveal:
     payload: bytes
     review_receipt_sha256: str
     review_packet_sha256: str
     alias_commitment_sha256: str
 
-    def __post_init__(self) -> None:
-        if type(self.payload) is not bytes or not self.payload:
-            raise ValueError("D1 released alias reveal must be nonempty bytes")
-        _digest(self.review_receipt_sha256, "D1 reveal review receipt")
-        _digest(self.review_packet_sha256, "D1 reveal review packet")
-        _digest(self.alias_commitment_sha256, "D1 reveal alias commitment")
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1ReleasedAliasReveal is factory-attested")
+
+    def require_factory_attested(self) -> None:
+        if not _REVEAL_ATTESTATION.registered(self):
+            raise TypeError("D1 released alias reveal is not factory-attested")
+        _validate_released_alias_reveal(self)
+        if not _REVEAL_ATTESTATION.contains(self):
+            raise TypeError("D1 released alias reveal evidence changed after minting")
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1ReleasedAliasReveal cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1ReleasedAliasReveal cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1ReleasedAliasReveal cannot be copied")
+
+
+def _reveal_fingerprint(reveal: D1ReleasedAliasReveal) -> str:
+    return canonical_digest(
+        {
+            "alias_commitment_sha256": reveal.alias_commitment_sha256,
+            "payload_sha256": _sha(reveal.payload),
+            "review_packet_sha256": reveal.review_packet_sha256,
+            "review_receipt_sha256": reveal.review_receipt_sha256,
+        }
+    )
+
+
+_REVEAL_ATTESTATION = FactoryAttestation[
+    D1ReleasedAliasReveal,
+    str,
+](_reveal_fingerprint)
+
+
+def _validate_released_alias_reveal(reveal: D1ReleasedAliasReveal) -> None:
+    if type(reveal.payload) is not bytes or not reveal.payload:
+        raise ValueError("D1 released alias reveal must be nonempty bytes")
+    _digest(reveal.review_receipt_sha256, "D1 reveal review receipt")
+    _digest(reveal.review_packet_sha256, "D1 reveal review packet")
+    _digest(reveal.alias_commitment_sha256, "D1 reveal alias commitment")
+
+
+def _mint_released_alias_reveal(
+    *,
+    payload: bytes,
+    review_receipt_sha256: str,
+    review_packet_sha256: str,
+    alias_commitment_sha256: str,
+) -> D1ReleasedAliasReveal:
+    reveal = object.__new__(D1ReleasedAliasReveal)
+    object.__setattr__(reveal, "payload", payload)
+    object.__setattr__(reveal, "review_receipt_sha256", review_receipt_sha256)
+    object.__setattr__(reveal, "review_packet_sha256", review_packet_sha256)
+    object.__setattr__(reveal, "alias_commitment_sha256", alias_commitment_sha256)
+    _validate_released_alias_reveal(reveal)
+    _REVEAL_ATTESTATION.register(reveal)
+    return reveal
 
 
 def release_d1_alias_reveal(
@@ -405,9 +473,9 @@ def release_d1_alias_reveal(
     expected = {alias: arm.value for arm, alias in aliases.aliases.aliases.items()}
     if dict(reveal.mapping) != expected:
         raise ValueError("D1 alias reveal mapping differs from the analysis aliases")
-    return D1ReleasedAliasReveal(
-        payload,
-        execution.receipt.receipt_digest,
-        packet.packet_digest,
-        aliases.aliases.sealed_commitment,
+    return _mint_released_alias_reveal(
+        payload=payload,
+        review_receipt_sha256=execution.receipt.receipt_digest,
+        review_packet_sha256=packet.packet_digest,
+        alias_commitment_sha256=aliases.aliases.sealed_commitment,
     )

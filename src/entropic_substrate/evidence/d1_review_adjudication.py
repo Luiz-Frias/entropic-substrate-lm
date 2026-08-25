@@ -9,7 +9,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import cast
+from typing import NoReturn, SupportsIndex, cast
+
+from entropic_substrate.factory_attestation import FactoryAttestation
 
 __all__ = [
     "D1_NO_MAJOR_OUTCOME",
@@ -232,7 +234,7 @@ class D1MajorFindingDisposition:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True, init=False)
 class D1ReviewAdjudicationSurface:
     report_sha256: str
     major_finding_ids: tuple[str, ...]
@@ -240,6 +242,25 @@ class D1ReviewAdjudicationSurface:
     open_major_finding_ids: tuple[str, ...]
     status: str
     operator_record_sha256: str
+
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1ReviewAdjudicationSurface is factory-attested")
+
+    def require_factory_attested(self) -> None:
+        if not _ADJUDICATION_ATTESTATION.registered(self):
+            raise TypeError("D1 review adjudication is not factory-attested")
+        _validate_adjudication_surface(self)
+        if not _ADJUDICATION_ATTESTATION.contains(self):
+            raise TypeError("D1 review adjudication evidence changed after minting")
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -252,6 +273,89 @@ class D1ReviewAdjudicationSurface:
             "schema_version": "d1-review-adjudication-v1",
             "status": self.status,
         }
+
+
+def _adjudication_fingerprint(surface: D1ReviewAdjudicationSurface) -> str:
+    payload = json.dumps(
+        surface.manifest,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+_ADJUDICATION_ATTESTATION = FactoryAttestation[
+    D1ReviewAdjudicationSurface,
+    str,
+](_adjudication_fingerprint)
+
+
+def _derive_status(
+    major_finding_ids: tuple[str, ...],
+    dispositions: Mapping[str, D1MajorFindingDisposition],
+) -> tuple[tuple[str, ...], str]:
+    open_ids = tuple(
+        finding_id
+        for finding_id in major_finding_ids
+        if dispositions[finding_id].status is D1MajorFindingStatus.OPEN
+    )
+    status = "NOT_REQUIRED" if not major_finding_ids else "OPEN" if open_ids else "RESOLVED"
+    return open_ids, status
+
+
+def _validate_adjudication_surface(surface: D1ReviewAdjudicationSurface) -> None:
+    _sha(surface.report_sha256, "D1 adjudication report")
+    _sha(surface.operator_record_sha256, "D1 adjudication operator record")
+    if (
+        type(surface.major_finding_ids) is not tuple
+        or len(set(surface.major_finding_ids)) != len(surface.major_finding_ids)
+        or any(_MAJOR_ID.fullmatch(item) is None for item in surface.major_finding_ids)
+    ):
+        raise ValueError("D1 adjudication MAJOR IDs must be canonical and unique")
+    if type(cast(object, surface.dispositions)) is not MappingProxyType:
+        raise TypeError("D1 adjudication dispositions must be a read-only mapping")
+    by_id = dict(surface.dispositions)
+    if set(by_id) != set(surface.major_finding_ids) or any(
+        type(item) is not D1MajorFindingDisposition or item.finding_id != finding_id
+        for finding_id, item in by_id.items()
+    ):
+        raise ValueError("D1 adjudication dispositions differ from MAJOR IDs")
+    for disposition in by_id.values():
+        D1MajorFindingDisposition(
+            disposition.finding_id,
+            disposition.status,
+            disposition.rationale,
+            disposition.evidence_sha256,
+        )
+    expected_open, expected_status = _derive_status(
+        surface.major_finding_ids,
+        surface.dispositions,
+    )
+    if surface.open_major_finding_ids != expected_open or surface.status != expected_status:
+        raise ValueError("D1 adjudication status differs from dispositions")
+
+
+def _mint_adjudication_surface(
+    *,
+    report_sha256: str,
+    major_finding_ids: tuple[str, ...],
+    dispositions: Mapping[str, D1MajorFindingDisposition],
+    open_major_finding_ids: tuple[str, ...],
+    status: str,
+    operator_record_sha256: str,
+) -> D1ReviewAdjudicationSurface:
+    surface = object.__new__(D1ReviewAdjudicationSurface)
+    object.__setattr__(surface, "report_sha256", report_sha256)
+    object.__setattr__(surface, "major_finding_ids", major_finding_ids)
+    object.__setattr__(surface, "dispositions", MappingProxyType(dict(dispositions)))
+    object.__setattr__(surface, "open_major_finding_ids", open_major_finding_ids)
+    object.__setattr__(surface, "status", status)
+    object.__setattr__(surface, "operator_record_sha256", operator_record_sha256)
+    _validate_adjudication_surface(surface)
+    _ADJUDICATION_ATTESTATION.register(surface)
+    return surface
 
 
 def adjudicate_d1_review(
@@ -267,17 +371,12 @@ def adjudicate_d1_review(
     if len(by_id) != len(dispositions) or set(by_id) != set(report.major_finding_ids):
         raise ValueError("D1 adjudication dispositions must exactly cover parsed MAJOR IDs")
     _sha(operator_record_sha256, "D1 adjudication operator record")
-    open_ids = tuple(
-        finding_id
-        for finding_id in report.major_finding_ids
-        if by_id[finding_id].status is D1MajorFindingStatus.OPEN
-    )
-    status = "NOT_REQUIRED" if not report.major_finding_ids else "OPEN" if open_ids else "RESOLVED"
-    return D1ReviewAdjudicationSurface(
-        report.report_sha256,
-        report.major_finding_ids,
-        MappingProxyType(by_id),
-        open_ids,
-        status,
-        operator_record_sha256,
+    open_ids, status = _derive_status(report.major_finding_ids, by_id)
+    return _mint_adjudication_surface(
+        report_sha256=report.report_sha256,
+        major_finding_ids=report.major_finding_ids,
+        dispositions=by_id,
+        open_major_finding_ids=open_ids,
+        status=status,
+        operator_record_sha256=operator_record_sha256,
     )

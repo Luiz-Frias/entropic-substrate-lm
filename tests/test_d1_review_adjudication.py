@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import pickle
+from dataclasses import replace
 
 import pytest
 
@@ -12,6 +15,7 @@ from entropic_substrate.evidence.d1_review_adjudication import (
     D1MajorFindingDisposition,
     D1MajorFindingStatus,
     D1ParsedReviewReport,
+    D1ReviewAdjudicationSurface,
     adjudicate_d1_review,
     parse_d1_major_findings,
     parse_d1_review_execution_receipt,
@@ -134,6 +138,10 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
     manifest = surface.manifest
     assert "successor_authorization" not in manifest
     assert "eligible_strategies" not in manifest
+    resolved = surface.dispositions["MAJOR-1"]
+    object.__setattr__(resolved, "evidence_sha256", None)
+    with pytest.raises(ValueError, match="resolved D1 MAJOR"):
+        surface.require_factory_attested()
     with pytest.raises(ValueError, match="exactly cover"):
         adjudicate_d1_review(
             report=parsed,
@@ -153,6 +161,29 @@ def test_empty_report_adjudication_is_not_required() -> None:
         dispositions=(),
         operator_record_sha256="c" * 64,
     )
+    surface.require_factory_attested()
+    with pytest.raises(TypeError, match="not factory-attested"):
+        object.__new__(D1ReviewAdjudicationSurface).require_factory_attested()
+    with pytest.raises(TypeError, match="factory-attested"):
+        type(surface)(
+            surface.report_sha256,
+            surface.major_finding_ids,
+            surface.dispositions,
+            surface.open_major_finding_ids,
+            surface.status,
+            surface.operator_record_sha256,
+        )
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(surface)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(surface)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        pickle.dumps(surface)
+    with pytest.raises(TypeError, match="factory-attested"):
+        replace(surface, status="RESOLVED")
+    object.__setattr__(surface, "operator_record_sha256", "d" * 64)
+    with pytest.raises(TypeError, match="evidence changed"):
+        surface.require_factory_attested()
 
     assert surface.status == "NOT_REQUIRED"
     assert surface.open_major_finding_ids == ()

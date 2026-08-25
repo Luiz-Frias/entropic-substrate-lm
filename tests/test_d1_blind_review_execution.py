@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import pickle
 from dataclasses import replace
 from typing import cast
 
@@ -19,6 +20,7 @@ from entropic_substrate.analysis.d1_review_execution import (
     D1CloudReviewResponse,
     D1ExecutedBlindReview,
     D1InMemoryReviewReceiptStoreFake,
+    D1ReleasedAliasReveal,
     D1ReviewReceiptStorageReceipt,
     execute_d1_blind_review,
     release_d1_alias_reveal,
@@ -157,12 +159,12 @@ def test_retry_revalidates_prior_output_commitments() -> None:
     )
     object.__setattr__(first, "response", b"substituted")
 
-    with pytest.raises(ValueError, match="output commitment"):
+    with pytest.raises(TypeError, match="factory-attested"):
         _request(round_number=2, prior_executions=(first,))
 
     object.__setattr__(first, "response", b"raw-1")
     object.__setattr__(first, "report", b"substituted-report")
-    with pytest.raises(ValueError, match="output commitment"):
+    with pytest.raises(TypeError, match="factory-attested"):
         _request(round_number=2, prior_executions=(first,))
 
 
@@ -207,6 +209,27 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
     assert released.review_receipt_sha256 == execution.receipt.receipt_digest
     assert released.review_packet_sha256 == execution.request.packet.packet_digest
     assert released.alias_commitment_sha256 == aliases.aliases.sealed_commitment
+    released.require_factory_attested()
+    with pytest.raises(TypeError, match="not factory-attested"):
+        object.__new__(D1ReleasedAliasReveal).require_factory_attested()
+    with pytest.raises(TypeError, match="factory-attested"):
+        D1ReleasedAliasReveal(
+            released.payload,
+            released.review_receipt_sha256,
+            released.review_packet_sha256,
+            released.alias_commitment_sha256,
+        )
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(released)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(released)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        pickle.dumps(released)
+    with pytest.raises(TypeError, match="factory-attested"):
+        replace(released, review_receipt_sha256="0" * 64)
+    object.__setattr__(released, "payload", b"substituted reveal")
+    with pytest.raises(TypeError, match="evidence changed"):
+        released.require_factory_attested()
     with pytest.raises(ValueError, match="commitment"):
         release_d1_alias_reveal(
             execution=execution,
@@ -236,7 +259,7 @@ def test_alias_reveal_requires_durable_review_receipt_and_opens_commitment() -> 
             public_commitment=custody.public_bytes,
         )
     object.__setattr__(execution, "storage", replace(execution.storage, durable=False))
-    with pytest.raises(ValueError, match="durable review receipt"):
+    with pytest.raises(TypeError, match="factory-attested"):
         release_d1_alias_reveal(
             execution=execution,
             aliases=aliases,
@@ -272,7 +295,7 @@ def test_alias_reveal_rejects_receipt_to_request_packet_substitution() -> None:
     )
     object.__setattr__(execution, "request", substituted_request)
 
-    with pytest.raises(ValueError, match="reviewed packet"):
+    with pytest.raises(TypeError, match="factory-attested"):
         release_d1_alias_reveal(
             execution=execution,
             aliases=aliases,
