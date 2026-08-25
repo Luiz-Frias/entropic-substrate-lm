@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 from typing import cast
 
@@ -40,6 +41,8 @@ def _events_for(
     execution_digest: str,
     aggregation_digest: str,
     checkpoint_sha256: str,
+    seed: int = 7,
+    pairing_id: str = PAIRING_ID,
 ) -> tuple[list[D1JournalEvent], str]:
     events = valid_events()
     start_payload = cast(dict[str, object], events[0].manifest["payload"])
@@ -65,7 +68,7 @@ def _events_for(
             },
             "family_digest": FAMILY_DIGEST,
             "logical_run_id": logical_run_id,
-            "pairing_id": PAIRING_ID,
+            "pairing_id": pairing_id,
             "preregistration": {
                 "commit": "abcdef0",
                 "family_digest": FAMILY_DIGEST,
@@ -73,7 +76,7 @@ def _events_for(
             },
             "profile_name": f"d1-{arm.value}",
             "run_class": RunClass.CONFIRMATORY.value,
-            "seed": 7,
+            "seed": seed,
         }
     )
     start_payload["plan_digest"] = canonical_digest(plan)
@@ -109,18 +112,23 @@ def _events_for(
     return rewritten, canonical_digest(plan)
 
 
-def capture_family(tmp_path: Path) -> tuple[D1LaunchRoster, tuple[D1CaptureInput, ...], Path]:
+def capture_family(
+    tmp_path: Path, *, seeds: tuple[int, ...] = (7,)
+) -> tuple[D1LaunchRoster, tuple[D1CaptureInput, ...], Path]:
     root = tmp_path / "capture"
     root.mkdir()
     expected: list[D1ExpectedRun] = []
     inputs: list[D1CaptureInput] = []
-    for index, arm in enumerate(D1Arm, start=1):
-        logical_run_id = f"d1-{arm.value}-s7"
+    arms = tuple(D1Arm)
+    for seed, arm in product(seeds, arms):
+        index = arms.index(arm) + 1
+        logical_run_id = f"d1-{arm.value}-s{seed}"
+        pairing_id = f"pair-{seed}"
         construction = str(index) * 64
         execution = str(index + 4) * 64
         aggregation = str(index + 5) * 64
         checkpoint_path = root / f"{logical_run_id}.pt"
-        checkpoint_path.write_bytes(f"checkpoint:{arm.value}\n".encode())
+        checkpoint_path.write_bytes(f"checkpoint:{arm.value}:{seed}\n".encode())
         checkpoint_sha256 = hashlib.sha256(checkpoint_path.read_bytes()).hexdigest()
         events, plan_digest = _events_for(
             arm,
@@ -129,6 +137,8 @@ def capture_family(tmp_path: Path) -> tuple[D1LaunchRoster, tuple[D1CaptureInput
             execution_digest=execution,
             aggregation_digest=aggregation,
             checkpoint_sha256=checkpoint_sha256,
+            seed=seed,
+            pairing_id=pairing_id,
         )
         journal_path = root / f"{logical_run_id}.jsonl"
         write_events(journal_path, events)
@@ -138,8 +148,8 @@ def capture_family(tmp_path: Path) -> tuple[D1LaunchRoster, tuple[D1CaptureInput
             D1ExpectedRun(
                 logical_run_id=logical_run_id,
                 arm=arm,
-                seed=7,
-                pairing_id=PAIRING_ID,
+                seed=seed,
+                pairing_id=pairing_id,
                 family_digest=FAMILY_DIGEST,
                 construction_digest=construction,
                 execution_digest=execution,

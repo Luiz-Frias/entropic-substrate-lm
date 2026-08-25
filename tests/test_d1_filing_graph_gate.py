@@ -11,6 +11,12 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
+from entropic_substrate.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+    build_d1_capture_aggregate,
+)
 from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
 from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
@@ -86,12 +92,12 @@ def _bind_capture(item: D1CaptureInput, *, bound: bool) -> D1CaptureInput:
     )
 
 
-def _one_seed_contract(bundle) -> D1DecisionContract:
+def _one_seed_contract(aggregate: D1HeterogeneousCaptureAggregate) -> D1DecisionContract:
     identity = D1FamilyIdentity(
-        family_digest=bundle.roster.family_digest,
+        family_digest=aggregate.roster.family_digest,
         arm_construction_digests={
-            item.expected.arm.value: item.expected.construction_digest
-            for item in bundle.confirmatory
+            item.arm.value: item.construction_digest
+            for item in aggregate.roster.expected_confirmatory
         },
     )
     base = decision_contract()
@@ -111,8 +117,13 @@ def _case(tmp_path: Path, mutation: str | None = None):
     roster, inputs, capture_root = capture_family(tmp_path)
     bound = mutation != "dvc_gap"
     inputs = tuple(_bind_capture(item, bound=bound) for item in inputs)
-    bundle = build_d1_capture_bundle(capture_root, roster=roster, capture_inputs=inputs)
-    contract = _one_seed_contract(bundle)
+    aggregate = build_d1_capture_aggregate(
+        capture_root,
+        roster=roster,
+        complete_inputs=inputs,
+        terminal_defect_inputs=(),
+    )
+    contract = _one_seed_contract(aggregate)
     machine = machine_verdict()
     machine["registered_constants"] = {"seeds": [7], "primary": {"alpha": 0.025}}
     machine["preregistration"] = {
@@ -125,7 +136,7 @@ def _case(tmp_path: Path, mutation: str | None = None):
             "arm_id": item.expected.arm.value,
             "construction_digest": item.expected.construction_digest,
         }
-        for item in bundle.confirmatory
+        for item in aggregate.complete_runs
     ]
     for contrast in machine["contrasts"]:  # type: ignore[union-attr]
         contrast["n"] = 1
@@ -133,17 +144,17 @@ def _case(tmp_path: Path, mutation: str | None = None):
         contrast["sample_sd"] = None
     machine["inputs"] = [
         {"md5": item.md5, "path": item.normalized_path, "sha256": item.sha256}
-        for item in bundle.dvc_handoff.artifacts
+        for item in aggregate.dvc_handoff.artifacts
     ]
     if mutation == "input_gap":
         del machine["inputs"][0]["sha256"]  # type: ignore[index]
-    integrity = recompute_capture_integrity(bundle)
+    integrity = recompute_capture_integrity(aggregate, contract)
     machine["integrity"]["evidence_hash"] = {  # type: ignore[index]
         "algorithm": "sha256",
         "digest": "0" * 64 if mutation == "integrity" else integrity.evidence_digest,
     }
     prereg = b"registered design bytes\n"
-    capture = _json(bundle.manifest)
+    capture = _json(aggregate.manifest)
     analysis = b'{"decision":"aliased"}'
     reader = b"def read_capture(): ...\n"
     isolation = b'{"session":"fresh","network":"disabled"}'
@@ -248,16 +259,30 @@ def _case(tmp_path: Path, mutation: str | None = None):
     for revision, roles in stage_roles.items():
         for role in roles:
             git.files[(revision, detached.manifest.artifacts[role].path)] = payloads[role]
-    return detached, bundle, revisions, RootPort(filing_root), git
+    return detached, aggregate, revisions, RootPort(filing_root), git
 
 
 def test_only_semantically_verified_graph_authorizes_pure_gate(tmp_path: Path) -> None:
-    detached, bundle, revisions, artifacts, git = _case(tmp_path)
-    filing = verify_d1_filing(detached, bundle, revisions, artifacts, git)
+    detached, aggregate, revisions, artifacts, git = _case(tmp_path)
+    filing = verify_d1_filing(detached, aggregate, revisions, artifacts, git)
 
     assert isinstance(decide_filed_verdict(filing), FiledGateAuthorization)
     with pytest.raises(TypeError, match="semantic evidence graph"):
         decide_filed_verdict(detached)  # type: ignore[arg-type]
+
+
+def test_filing_verification_refuses_legacy_complete_bundle(tmp_path: Path) -> None:
+    filing_root = tmp_path / "filing"
+    filing_root.mkdir()
+    detached, _, revisions, artifacts, git = _case(filing_root)
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    roster, inputs, root = capture_family(legacy_root)
+    bundle = build_d1_capture_bundle(root, roster=roster, capture_inputs=inputs)
+    with pytest.raises(TypeError, match="heterogeneous capture"):
+        verify_d1_filing(  # type: ignore[arg-type]
+            detached, bundle, revisions, artifacts, git
+        )
 
 
 @pytest.mark.parametrize(
