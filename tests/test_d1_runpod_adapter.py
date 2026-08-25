@@ -36,6 +36,9 @@ class _Runner:
     error_at: int | None = None
     calls: list[tuple[tuple[str, ...], Path | None, str | None]] = field(default_factory=list)
 
+    def __bool__(self) -> bool:
+        return False
+
     def run(
         self,
         argv: tuple[str, ...],

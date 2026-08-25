@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
 
+from entropic_substrate.d1_command_runner import SubprocessD1CommandRunner
 from entropic_substrate.d1_operator_ports import (
     D1CommandRunner,
     D1OperatorTransportError,
@@ -93,10 +94,11 @@ def _integer(value: object, *, label: str) -> int:
 class RunpodctlD1Adapter:
     """Use configured runpodctl auth; no credential value crosses this API."""
 
-    def __init__(self, *, runner: D1CommandRunner) -> None:
-        if not hasattr(runner, "run"):
+    def __init__(self, *, runner: D1CommandRunner | None = None) -> None:
+        selected = SubprocessD1CommandRunner() if runner is None else runner
+        if not hasattr(selected, "run"):
             raise TypeError("RunPod adapter requires a command runner")
-        self._runner = runner
+        self._runner = selected
 
     def _run(
         self,

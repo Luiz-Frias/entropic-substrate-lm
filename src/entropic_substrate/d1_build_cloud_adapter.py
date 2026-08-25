@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn, cast
 
+from entropic_substrate.d1_command_runner import SubprocessD1CommandRunner
 from entropic_substrate.d1_operator_ports import (
     D1CommandRunner,
     D1OperatorTransportError,
@@ -58,10 +59,11 @@ def _metadata(path: Path, *, subject: str) -> str:
 class DockerBuildCloudD1Adapter:
     """Push one commit-tagged image and resolve its immutable OCI digest."""
 
-    def __init__(self, *, runner: D1CommandRunner) -> None:
-        if not hasattr(runner, "run"):
+    def __init__(self, *, runner: D1CommandRunner | None = None) -> None:
+        selected = SubprocessD1CommandRunner() if runner is None else runner
+        if not hasattr(selected, "run"):
             raise TypeError("Docker Build Cloud adapter requires a command runner")
-        self._runner = runner
+        self._runner = selected
 
     def build_and_push(self, request: D1ImageBuildRequest) -> D1ImmutableImage:
         if type(request) is not D1ImageBuildRequest:
