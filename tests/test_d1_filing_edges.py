@@ -57,14 +57,16 @@ def _case(mutation: str | None = None):
         }
     )
     review_fields: dict[str, object] = {
-        "major_finding_ids": [],
         "model_id": "review-model",
         "packet_sha256": "",
         "prompt_sha256": "",
         "provider": "review-provider",
         "report_sha256": "",
+        "request_digest": "a" * 64,
+        "response_sha256": "b" * 64,
+        "retry_lineage": [],
         "round": 1,
-        "schema_version": "d1-review-receipt-v1",
+        "schema_version": "d1-review-execution-receipt-v2",
     }
     payloads: dict[str, bytes] = {role: role.encode() for role in REQUIRED_D1_FILING_ARTIFACTS}
     payloads.update(
@@ -80,7 +82,7 @@ def _case(mutation: str | None = None):
             "analysis_isolation_attestation": b'{"session":"fresh","network":"disabled"}',
             "review_packet": b"sealed packet",
             "reviewer_prompt": b"registered prompt",
-            "reviewer_report": b"independent report",
+            "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
             "alias_reveal": reveal,
         }
     )
@@ -94,10 +96,13 @@ def _case(mutation: str | None = None):
             "report_sha256": _sha(payloads["reviewer_report"]),
         }
     )
-    if mutation == "missing_model":
+    if mutation == "major_ids":
+        payloads["reviewer_report"] = b"## MAJOR-1 - Unresolved evidence defect\n"
+        review_fields["report_sha256"] = _sha(payloads["reviewer_report"])
+    elif mutation == "missing_model":
         del review_fields["model_id"]
-    elif mutation == "major_ids":
-        review_fields["major_finding_ids"] = ["MAJOR-1"]
+    elif mutation == "mixed_review_schema":
+        review_fields["major_finding_ids"] = []
     payloads["reviewer_execution_receipt"] = _json(review_fields)
     analysis_fields = {
         "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
@@ -179,6 +184,7 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("alias_bijection", D1FilingGraphError, "bijection"),
         ("missing_model", D1EvidenceGapError, "model_id"),
         ("major_ids", D1FilingGraphError, "MAJOR"),
+        ("mixed_review_schema", D1FilingGraphError, "schema_fields"),
         ("narrative", D1FilingGraphError, "narrative"),
     ],
 )

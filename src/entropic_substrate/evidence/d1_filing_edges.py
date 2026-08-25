@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import pairwise
 from types import MappingProxyType
+from typing import NoReturn
 
 from entropic_substrate.evidence.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
@@ -23,6 +24,7 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     parse_analysis_receipt,
     parse_review_receipt,
 )
+from entropic_substrate.evidence.d1_review_adjudication import parse_d1_major_findings
 from entropic_substrate.evidence.d1_types import D1_ARM_IDS
 from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 from entropic_substrate.experiments.d1_primitives import canonical_digest
@@ -41,7 +43,7 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _fail(code: str, path: str, detail: str) -> None:
+def _fail(code: str, path: str, detail: str) -> NoReturn:
     raise D1FilingGraphError(code=code, path=path, detail=detail)
 
 
@@ -167,8 +169,12 @@ def _verify_review(
     for field, value in expected.items():
         if getattr(receipt, field) != value:
             _fail("review_binding", f"review_receipt.{field}", "digest differs")
-    if receipt.major_finding_ids != verdict.review.adjudication.major_findings:
-        _fail("review_adjudication", "review_receipt.major_finding_ids", "MAJOR ids differ")
+    try:
+        report = parse_d1_major_findings(payloads["reviewer_report"])
+    except ValueError as error:
+        _fail("review_report", "reviewer_report", str(error))
+    if report.major_finding_ids != verdict.review.adjudication.major_findings:
+        _fail("review_adjudication", "reviewer_report", "MAJOR ids differ")
     return receipt.model_id, receipt.provider, receipt.round
 
 

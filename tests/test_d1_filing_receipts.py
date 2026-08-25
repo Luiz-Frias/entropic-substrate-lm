@@ -8,6 +8,7 @@ import pytest
 
 from entropic_substrate.evidence.d1_filing_receipts import (
     D1EvidenceGapError,
+    D1FilingGraphError,
     D1FilingRevisions,
     parse_alias_commitment,
     parse_alias_reveal,
@@ -73,6 +74,31 @@ def test_alias_and_review_receipts_preserve_exact_binding_values() -> None:
     review = parse_review_receipt(
         _json(
             {
+                "model_id": "review-model",
+                "packet_sha256": "7" * 64,
+                "prompt_sha256": "8" * 64,
+                "provider": "review-provider",
+                "report_sha256": "9" * 64,
+                "request_digest": "a" * 64,
+                "response_sha256": "b" * 64,
+                "retry_lineage": ["c" * 64],
+                "round": 2,
+                "schema_version": "d1-review-execution-receipt-v2",
+            }
+        )
+    )
+
+    assert commitment.reveal_sha256 == "6" * 64
+    assert reveal.mapping["D"] == "both"
+    assert review.response_sha256 == "b" * 64
+    assert review.retry_lineage == ("c" * 64,)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {
                 "schema_version": "d1-review-receipt-v1",
                 "packet_sha256": "7" * 64,
                 "prompt_sha256": "8" * 64,
@@ -80,14 +106,33 @@ def test_alias_and_review_receipts_preserve_exact_binding_values() -> None:
                 "model_id": "review-model",
                 "provider": "review-provider",
                 "round": 1,
-                "major_finding_ids": ["MAJOR-1"],
-            }
-        )
-    )
-
-    assert commitment.reveal_sha256 == "6" * 64
-    assert reveal.mapping["D"] == "both"
-    assert review.major_finding_ids == ("MAJOR-1",)
+                "major_finding_ids": [],
+            },
+            "schema",
+        ),
+        (
+            {
+                "schema_version": "d1-review-execution-receipt-v2",
+                "packet_sha256": "7" * 64,
+                "prompt_sha256": "8" * 64,
+                "report_sha256": "9" * 64,
+                "model_id": "review-model",
+                "provider": "review-provider",
+                "round": 1,
+                "request_digest": "a" * 64,
+                "response_sha256": "b" * 64,
+                "retry_lineage": [],
+                "major_finding_ids": [],
+            },
+            "schema_fields",
+        ),
+    ],
+)
+def test_review_receipt_hard_cuts_v1_and_mixed_wire_schemas(
+    payload: dict[str, object], message: str
+) -> None:
+    with pytest.raises(D1FilingGraphError, match=message):
+        parse_review_receipt(_json(payload))
 
 
 def test_filing_revisions_require_six_distinct_commit_identities() -> None:

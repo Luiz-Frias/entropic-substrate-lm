@@ -165,7 +165,7 @@ def _case(tmp_path: Path, mutation: str | None = None):
             ),
             "review_packet": b"packet",
             "reviewer_prompt": b"prompt",
-            "reviewer_report": b"report",
+            "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
         }
     )
     payloads["analysis_receipt"] = _json(
@@ -180,14 +180,16 @@ def _case(tmp_path: Path, mutation: str | None = None):
     )
     payloads["reviewer_execution_receipt"] = _json(
         {
-            "major_finding_ids": [],
             "model_id": "review-model",
             "packet_sha256": _sha(payloads["review_packet"]),
             "prompt_sha256": _sha(payloads["reviewer_prompt"]),
             "provider": "review-provider",
             "report_sha256": _sha(payloads["reviewer_report"]),
+            "request_digest": "a" * 64,
+            "response_sha256": "b" * 64,
+            "retry_lineage": [],
             "round": 1,
-            "schema_version": "d1-review-receipt-v1",
+            "schema_version": "d1-review-execution-receipt-v2",
         }
     )
     machine_bytes = canonical_machine_verdict_bytes(machine)
