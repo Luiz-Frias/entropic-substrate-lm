@@ -25,6 +25,7 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
 )
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBilling,
@@ -153,6 +154,8 @@ def _results(
                 termination,
                 cast(ProviderBilling, object()),
                 cast(D1BillingFinalization, object()),
+                None,
+                cast(ArtifactIdentity, object()),
                 halt_at != index,
             )
         )

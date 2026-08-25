@@ -12,6 +12,7 @@ import pytest
 import d1_launch_admission_fixtures as launch_fixtures
 from d1_billing_finalizer_fixtures import provider_bill
 from d1_trainer_fixtures import micro_plan
+from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
 from entropic_substrate.d1_operator_controller import (
     D1OperatorQueueHalt,
@@ -176,6 +177,7 @@ def _identity(events: list[str], label: str) -> ArtifactIdentity:
 @dataclass
 class _Custody:
     events: list[str]
+    fail_finalized_cell: bool = False
 
     def persist_precreate(self, intent: object, ledger: object, auth: object) -> ArtifactIdentity:
         del intent, ledger, auth
@@ -192,6 +194,16 @@ class _Custody:
     def persist_finalization(self, finalization: object) -> ArtifactIdentity:
         del finalization
         return _identity(self.events, "persist_finalization")
+
+    def persist_finalized_cell(self, record: D1FinalizedCellCustodyRecord) -> ArtifactIdentity:
+        record.require_factory_attested()
+        self.events.append("persist_finalized_cell")
+        if self.fail_finalized_cell:
+            raise RuntimeError("simulated finalized-cell custody failure")
+        return ArtifactIdentity(
+            "operator/finalized-cell.json",
+            ContentHash("sha256", record.record_digest),
+        )
 
     def persist_problem(self, subject_id: str, detail: str) -> ArtifactIdentity:
         del subject_id, detail
@@ -289,7 +301,14 @@ class _Clock:
         return self.value
 
 
-def _controller(tmp_path: Path, case: _Case, events: list[str], *, drift: bool = False):
+def _controller(
+    tmp_path: Path,
+    case: _Case,
+    events: list[str],
+    *,
+    drift: bool = False,
+    custody_failure: bool = False,
+) -> tuple[D1SequentialOperatorController, _Provider]:
     provider = _Provider(
         case.start,
         events,
@@ -301,7 +320,7 @@ def _controller(tmp_path: Path, case: _Case, events: list[str], *, drift: bool =
         attempt_ledger=D1LaunchAttemptLedger(),
         runpod=provider,
         trainer=_Trainer(D1ExportedTrainerHandoff(case.handoff, case.journal_path), events),
-        custody=_Custody(events),
+        custody=_Custody(events, fail_finalized_cell=custody_failure),
         operator=ActorIdentity("operator", "operator-session", ActorRole.OPERATOR),
         automation=ActorIdentity("automation", "automation-session", ActorRole.AUTOMATION),
         clock=_Clock(launch_fixtures.STARTED_AT - timedelta(hours=1)),
@@ -329,13 +348,37 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
         "await_handoff",
         "terminate",
         "billing",
-        "persist_finalization",
         "persist_attempt_ledger",
+        "persist_finalized_cell",
     ]
     assert result.process_manager.state is D1ProcessState.OPERATOR_FINALIZED
     assert result.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.COMPLETED
+    assert result.finalized_cell is not None
+    result.finalized_cell.require_factory_attested()
+    assert result.finalized_cell.attempt_ledger == result.attempt_ledger
+    assert result.finalized_cell_artifact.content_hash.digest == result.finalized_cell.record_digest
+    assert result.process_manager.events[-1].artifacts == (result.finalized_cell_artifact,)
     assert read_journal(case.journal_path)[-1].event_kind is JournalEventKind.RUN_END
     assert result.queue_admissible is True
+
+
+def test_fresh_finalized_cell_custody_failure_never_records_operator_finalized(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, _ = _controller(tmp_path, case, events, custody_failure=True)
+
+    with pytest.raises(D1OperatorQueueHalt, match="custody failure"):
+        controller.execute_fresh(case.intent)
+
+    assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.COMPLETED
+    assert controller.process_manager.state is D1ProcessState.PROBLEM
+    assert "persist_finalized_cell" in events
+    assert all(
+        event.event_kind.value != "operator_finalized"
+        for event in controller.process_manager.events
+    )
 
 
 def test_resource_drift_cancels_pod_halts_queue_and_never_starts_next_arm(

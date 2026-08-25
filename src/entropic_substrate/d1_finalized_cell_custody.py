@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import weakref
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NoReturn, SupportsIndex, cast
 
 from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
@@ -322,6 +325,42 @@ def attest_d1_finalized_cell_custody(
         finalization_json=canonical_json(_finalization_manifest(finalization)),
         journal=journal,
     )
+
+
+def identify_d1_finalized_journal(
+    path: Path, finalization: D1BillingFinalization
+) -> ArtifactIdentity:
+    if not isinstance(cast(object, path), Path) or type(finalization) is not D1BillingFinalization:
+        raise TypeError("finalized journal identity requires Path and D1BillingFinalization")
+    try:
+        info = path.lstat()
+    except FileNotFoundError as error:
+        raise ValueError("finalized journal is missing") from error
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise ValueError("finalized journal must be a regular non-symlink file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError as error:
+        raise ValueError("finalized journal disappeared before open") from error
+    except OSError as error:
+        raise ValueError(f"finalized journal cannot be opened: {error}") from error
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            info.st_dev,
+            info.st_ino,
+        ):
+            raise ValueError("finalized journal changed between lstat and open")
+        data = bytearray()
+        while chunk := os.read(descriptor, 1024 * 1024):
+            data.extend(chunk)
+    finally:
+        os.close(descriptor)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != finalization.journal_state.prefix_sha256:
+        raise ValueError("finalized journal bytes differ from finalization state")
+    return ArtifactIdentity(str(path), ContentHash("sha256", digest))
 
 
 def serialize_d1_finalized_cell_custody(record: D1FinalizedCellCustodyRecord) -> str:
