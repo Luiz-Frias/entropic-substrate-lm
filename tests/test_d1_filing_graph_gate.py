@@ -220,6 +220,8 @@ def _case(
         )
         if integrity.effective_sample_size == 1:
             contrast["sample_sd"] = None
+            contrast["interval_lower"] = None
+            contrast["interval_upper"] = None
         if mutation == "sample_size":
             contrast["n"] = integrity.effective_sample_size + 1
             contrast["df"] = integrity.effective_sample_size

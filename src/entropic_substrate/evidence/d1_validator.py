@@ -275,9 +275,15 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         sample_sd = number_or_none(contrast["sample_sd"], path=f"{path}.sample_sd")
         if sample_sd is not None and sample_sd < 0:
             raise error("invalid_sample_sd", f"{path}.sample_sd", "must be nonnegative")
-        lower = finite_number(contrast["interval_lower"], path=f"{path}.interval_lower")
-        upper = finite_number(contrast["interval_upper"], path=f"{path}.interval_upper")
-        if lower > upper:
+        lower = number_or_none(contrast["interval_lower"], path=f"{path}.interval_lower")
+        upper = number_or_none(contrast["interval_upper"], path=f"{path}.interval_upper")
+        if (lower is None) != (upper is None):
+            raise error(
+                "incomplete_interval",
+                path,
+                "interval bounds must both be finite or both be null",
+            )
+        if lower is not None and upper is not None and lower > upper:
             raise error("reversed_interval", path, "interval_lower must not exceed interval_upper")
         confidence = finite_number(contrast["confidence_level"], path=f"{path}.confidence_level")
         if not 0.0 < confidence < 1.0:
@@ -297,16 +303,25 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         n = positive_int(contrast["n"], path=f"{path}.n")
         raw_df = contrast["df"]
         if n == 1:
-            if sample_sd is not None or raw_df is not None:
+            if (
+                sample_sd is not None
+                or raw_df is not None
+                or lower is not None
+                or upper is not None
+            ):
                 raise error(
                     "inapplicable_sample_statistics",
                     path,
-                    "n=1 requires sample_sd and df to be explicit null",
+                    "n=1 requires sample_sd, df, and interval bounds to be explicit null",
                 )
             df: int | None = None
         else:
-            if sample_sd is None:
-                raise error("missing_sample_sd", f"{path}.sample_sd", "n>1 requires sample SD")
+            if sample_sd is None or lower is None or upper is None:
+                raise error(
+                    "missing_sample_statistics",
+                    path,
+                    "n>1 requires sample SD and finite interval bounds",
+                )
             df = positive_int(raw_df, path=f"{path}.df")
         evidence_class = string(contrast["evidence_class"], path=f"{path}.evidence_class")
         if evidence_class not in EVIDENCE_CLASSES:
@@ -323,6 +338,18 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         decision = string(contrast["decision"], path=f"{path}.decision")
         if decision not in CONTRAST_DECISIONS:
             raise error("invalid_contrast_decision", f"{path}.decision", "unknown decision")
+        if lower is None:
+            expected_decision = (
+                "INTERACTION_INCONCLUSIVE"
+                if contrast_kind == "FACTORIAL_INTERACTION"
+                else "INCONCLUSIVE"
+            )
+            if decision != expected_decision:
+                raise error(
+                    "inapplicable_contrast_decision",
+                    f"{path}.decision",
+                    "null interval requires the registered inconclusive decision",
+                )
         parsed.append(
             D1Contrast(
                 contrast_id=contrast_id,

@@ -136,8 +136,8 @@ class D1Contrast:
     endpoint: D1Endpoint
     estimate: float
     sample_sd: float | None
-    interval_lower: float
-    interval_upper: float
+    interval_lower: float | None
+    interval_upper: float | None
     confidence_level: float
     multiplicity: str
     margins: Mapping[str, float]
