@@ -15,16 +15,18 @@ from entropic_substrate.evidence.lifecycle import (
 
 D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v2"
 D1_ARM_IDS: Final[tuple[str, ...]] = ("none", "sg", "ac", "both")
+D1_STABILIZATION_ARM_IDS: Final[tuple[str, ...]] = ("sg", "ac", "both")
 
 ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "schema_version",
         "rung",
+        "feasible_arms",
         "preregistration",
         "registered_constants",
         "arms",
         "contrasts",
-        "clauses",
+        "clauses_by_arm",
         "integrity",
         "exclusions",
         "inputs",
@@ -193,12 +195,14 @@ class D1Review:
 @dataclass(frozen=True)
 class D1Successor:
     authorization: SuccessorAuthorization
+    eligible_arms: tuple[str, ...]
     eligible_strategies: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class FiledGateAuthorization:
     rung: str
+    eligible_arms: tuple[str, ...]
     eligible_strategies: tuple[str, ...]
 
 

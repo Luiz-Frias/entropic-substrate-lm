@@ -32,6 +32,7 @@ from entropic_substrate.evidence.d1_types import (
     CONTRAST_KINDS,
     CONTRAST_VOCABULARY,
     D1_ARM_IDS,
+    D1_STABILIZATION_ARM_IDS,
     D1_VERDICT_SCHEMA_VERSION,
     EVIDENCE_CLASSES,
     ROOT_FIELDS,
@@ -64,8 +65,9 @@ class ValidatedD1Verdict:
     preregistration: PreregistrationIdentity
     registered_constants: Mapping[str, JsonValue]
     arms: tuple[D1ArmEvidence, ...]
+    feasible_arms: tuple[str, ...]
     contrasts: tuple[D1Contrast, ...]
-    clauses: Mapping[str, D1Clause]
+    clauses_by_arm: Mapping[str, Mapping[str, D1Clause]]
     integrity: D1Integrity
     exclusions: tuple[tuple[str, str, ContentHash], ...]
     inputs: tuple[D1InputIdentity, ...]
@@ -97,8 +99,30 @@ class ValidatedD1Verdict:
         )
         constants = registered_constants(root["registered_constants"])
         arms = _parse_arms(root["arms"], decision_contract.family_identity)
+        raw_feasible = root["feasible_arms"]
+        if not isinstance(raw_feasible, list) or any(
+            not isinstance(item, str) or item not in D1_STABILIZATION_ARM_IDS
+            for item in raw_feasible
+        ):
+            raise error(
+                "invalid_feasible_arms",
+                "feasible_arms",
+                "must be a list of canonical D1 arms",
+            )
+        feasible_arms = tuple(raw_feasible)
+        if len(set(feasible_arms)) != len(feasible_arms):
+            raise error("invalid_feasible_arms", "feasible_arms", "must be unique")
+        canonical_feasible_arms = tuple(
+            arm_id for arm_id in D1_STABILIZATION_ARM_IDS if arm_id in feasible_arms
+        )
+        if feasible_arms != canonical_feasible_arms:
+            raise error(
+                "invalid_feasible_arms",
+                "feasible_arms",
+                f"must preserve canonical order {D1_STABILIZATION_ARM_IDS}",
+            )
         contrasts = _parse_contrasts(root["contrasts"])
-        clauses = _parse_clauses(root["clauses"])
+        clauses_by_arm = _parse_clauses_by_arm(root["clauses_by_arm"])
         integrity = _parse_integrity(root["integrity"])
         exclusions = _parse_exclusions(root["exclusions"])
         inputs = _parse_inputs(root["inputs"])
@@ -122,8 +146,9 @@ class ValidatedD1Verdict:
             contract=decision_contract,
             constants=constants,
             arms=arms,
+            feasible_arms=feasible_arms,
             contrasts=contrasts,
-            clauses=clauses,
+            clauses_by_arm=clauses_by_arm,
             integrity=integrity,
             exclusions=exclusions,
             review=review,
@@ -138,8 +163,9 @@ class ValidatedD1Verdict:
             preregistration=preregistration,
             registered_constants=constants,
             arms=arms,
+            feasible_arms=feasible_arms,
             contrasts=contrasts,
-            clauses=clauses,
+            clauses_by_arm=clauses_by_arm,
             integrity=integrity,
             exclusions=exclusions,
             inputs=inputs,
@@ -412,27 +438,45 @@ def _parse_terms(value: object, *, path: str, contrast_kind: str) -> tuple[D1Con
     return tuple(terms)
 
 
-def _parse_clauses(value: object) -> Mapping[str, D1Clause]:
-    clauses = object_exact(value, path="clauses", fields=CLAUSE_NAMES)
+def _parse_clauses(value: object, *, path: str) -> Mapping[str, D1Clause]:
+    clauses = object_exact(value, path=path, fields=CLAUSE_NAMES)
     fields = frozenset(
         {"registered_rule", "decision_vocabulary", "threshold", "margin", "status", "evidence_hash"}
     )
     parsed: dict[str, D1Clause] = {}
     for name in sorted(CLAUSE_NAMES):
-        clause = object_exact(clauses[name], path=f"clauses.{name}", fields=fields)
+        clause_path = f"{path}.{name}"
+        clause = object_exact(clauses[name], path=clause_path, fields=fields)
         parsed[name] = D1Clause(
             registered_rule=string(
-                clause["registered_rule"], path=f"clauses.{name}.registered_rule"
+                clause["registered_rule"], path=f"{clause_path}.registered_rule"
             ),
             decision_vocabulary=string(
-                clause["decision_vocabulary"], path=f"clauses.{name}.decision_vocabulary"
+                clause["decision_vocabulary"], path=f"{clause_path}.decision_vocabulary"
             ),
-            threshold=number_or_none(clause["threshold"], path=f"clauses.{name}.threshold"),
-            margin=number_or_none(clause["margin"], path=f"clauses.{name}.margin"),
-            status=status(clause["status"], path=f"clauses.{name}.status"),
-            evidence_hash=hash_value(clause["evidence_hash"], path=f"clauses.{name}.evidence_hash"),
+            threshold=number_or_none(clause["threshold"], path=f"{clause_path}.threshold"),
+            margin=number_or_none(clause["margin"], path=f"{clause_path}.margin"),
+            status=status(clause["status"], path=f"{clause_path}.status"),
+            evidence_hash=hash_value(clause["evidence_hash"], path=f"{clause_path}.evidence_hash"),
         )
     return MappingProxyType(parsed)
+
+
+def _parse_clauses_by_arm(value: object) -> Mapping[str, Mapping[str, D1Clause]]:
+    by_arm = object_exact(
+        value,
+        path="clauses_by_arm",
+        fields=frozenset(D1_STABILIZATION_ARM_IDS),
+    )
+    return MappingProxyType(
+        {
+            arm_id: _parse_clauses(
+                by_arm[arm_id],
+                path=f"clauses_by_arm.{arm_id}",
+            )
+            for arm_id in D1_STABILIZATION_ARM_IDS
+        }
+    )
 
 
 def _parse_integrity(value: object) -> D1Integrity:
@@ -542,7 +586,7 @@ def _parse_successor(value: object) -> D1Successor:
     successor = object_exact(
         value,
         path="successor",
-        fields=frozenset({"authorization", "eligible_strategies"}),
+        fields=frozenset({"authorization", "eligible_arms", "eligible_strategies"}),
     )
     raw_authorization = string(successor["authorization"], path="successor.authorization")
     try:
@@ -562,4 +606,17 @@ def _parse_successor(value: object) -> D1Successor:
             "successor.eligible_strategies",
             "must be a list of nonempty strategy identifiers",
         )
-    return D1Successor(authorization=authorization, eligible_strategies=tuple(strategies))
+    arms = successor["eligible_arms"]
+    if not isinstance(arms, list) or any(
+        not isinstance(arm, str) or arm not in D1_STABILIZATION_ARM_IDS for arm in arms
+    ):
+        raise error(
+            "invalid_eligible_arms",
+            "successor.eligible_arms",
+            "must be a list of canonical stabilization-arm identifiers",
+        )
+    return D1Successor(
+        authorization=authorization,
+        eligible_arms=tuple(arms),
+        eligible_strategies=tuple(strategies),
+    )

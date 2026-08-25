@@ -52,7 +52,12 @@ def _retired_contract():
 def _retired_machine() -> dict[str, object]:
     payload = machine_verdict(verdict="VALID_NEGATIVE")
     payload["verdict"] = "RETIRED"
-    payload["successor"] = {"authorization": "RETIRED", "eligible_strategies": []}
+    payload["feasible_arms"] = []
+    payload["successor"] = {
+        "authorization": "RETIRED",
+        "eligible_arms": [],
+        "eligible_strategies": [],
+    }
     return payload
 
 

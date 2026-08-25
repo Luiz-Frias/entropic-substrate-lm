@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from entropic_substrate.evidence.d1_contract import D1DecisionContract, constants_match
 from entropic_substrate.evidence.d1_parsing import error, object_exact, string
 from entropic_substrate.evidence.d1_types import (
+    D1_STABILIZATION_ARM_IDS,
     D1ArmEvidence,
     D1Clause,
     D1Contrast,
@@ -16,7 +17,7 @@ from entropic_substrate.evidence.d1_types import (
     D1Successor,
     JsonValue,
 )
-from entropic_substrate.evidence.lifecycle import ContentHash
+from entropic_substrate.evidence.lifecycle import ContentHash, SuccessorAuthorization
 
 
 def parse_review(value: object) -> D1Review:
@@ -158,8 +159,9 @@ def validate_decision_contract(
     contract: D1DecisionContract,
     constants: Mapping[str, JsonValue],
     arms: tuple[D1ArmEvidence, ...],
+    feasible_arms: tuple[str, ...],
     contrasts: tuple[D1Contrast, ...],
-    clauses: Mapping[str, D1Clause],
+    clauses_by_arm: Mapping[str, Mapping[str, D1Clause]],
     integrity: D1Integrity,
     exclusions: tuple[tuple[str, str, ContentHash], ...],
     review: D1Review,
@@ -176,6 +178,12 @@ def validate_decision_contract(
         )
     if {arm.arm_id for arm in arms} != set(contract.arm_ids):
         raise error("arm_set_mismatch", "arms", "must exactly match the registered arm set")
+    if set(clauses_by_arm) != set(D1_STABILIZATION_ARM_IDS):
+        raise error(
+            "clause_arm_set_mismatch",
+            "clauses_by_arm",
+            "must exactly match the D1 stabilization arms",
+        )
     if {contrast.contrast_id for contrast in contrasts} != set(contract.contrast_ids):
         raise error(
             "contrast_set_mismatch",
@@ -184,23 +192,37 @@ def validate_decision_contract(
         )
     for contrast in contrasts:
         _validate_registered_contrast(contract, contrast)
-    if set(clauses) != set(contract.clause_ids):
-        raise error(
-            "clause_set_mismatch", "clauses", "must exactly match the registered clause set"
-        )
-    for clause_id, clause in clauses.items():
-        registered = contract.clause_rules[clause_id]
-        if (
-            clause.registered_rule != registered.registered_rule
-            or clause.decision_vocabulary != registered.decision_vocabulary
-            or clause.threshold != registered.threshold
-            or clause.margin != registered.margin
-        ):
+    for arm_id, clauses in clauses_by_arm.items():
+        if set(clauses) != set(contract.clause_ids):
             raise error(
-                "registered_clause_mismatch",
-                f"clauses.{clause_id}",
-                "clause rule, vocabulary, threshold, and margin must match registration",
+                "clause_set_mismatch",
+                f"clauses_by_arm.{arm_id}",
+                "must exactly match the registered clause set",
             )
+        for clause_id, clause in clauses.items():
+            registered = contract.clause_rules[clause_id]
+            if (
+                clause.registered_rule != registered.registered_rule
+                or clause.decision_vocabulary != registered.decision_vocabulary
+                or clause.threshold != registered.threshold
+                or clause.margin != registered.margin
+            ):
+                raise error(
+                    "registered_clause_mismatch",
+                    f"clauses_by_arm.{arm_id}.{clause_id}",
+                    "clause rule, vocabulary, threshold, and margin must match registration",
+                )
+    expected_feasible = tuple(
+        arm_id
+        for arm_id in D1_STABILIZATION_ARM_IDS
+        if all(clause.status == "PASS" for clause in clauses_by_arm[arm_id].values())
+    )
+    if feasible_arms != expected_feasible:
+        raise error(
+            "feasible_arm_mismatch",
+            "feasible_arms",
+            "must equal every stabilization arm whose registered clauses all pass",
+        )
     if clause_precedence != contract.clause_precedence:
         raise error(
             "registered_clause_precedence_mismatch",
@@ -231,14 +253,38 @@ def validate_decision_contract(
             "successor.authorization",
             "does not match the registered decision-table rule",
         )
-    if {name: clause.status for name, clause in clauses.items()} != dict(
-        rule.required_clause_statuses
-    ):
+    matching_arms = tuple(
+        arm_id
+        for arm_id in D1_STABILIZATION_ARM_IDS
+        if {name: clause.status for name, clause in clauses_by_arm[arm_id].items()}
+        == dict(rule.required_clause_statuses)
+    )
+    if not matching_arms:
         raise error(
             "decision_clause_mismatch",
-            "clauses",
-            "do not satisfy the registered decision-table clause statuses",
+            "clauses_by_arm",
+            "no stabilization arm satisfies the registered decision-table clause statuses",
         )
+    if successor.authorization is not SuccessorAuthorization.AUTHORIZED:
+        for candidate in contract.decision_rules.values():
+            candidate_matches = any(
+                {name: clause.status for name, clause in clauses_by_arm[arm_id].items()}
+                == dict(candidate.required_clause_statuses)
+                for arm_id in D1_STABILIZATION_ARM_IDS
+            )
+            integrity_ready = not candidate.require_integrity_pass or integrity.status == "PASS"
+            review_ready = not candidate.require_review_clearance or not review.open_major_findings
+            if (
+                candidate.successor_authorization is SuccessorAuthorization.AUTHORIZED
+                and candidate_matches
+                and integrity_ready
+                and review_ready
+            ):
+                raise error(
+                    "decision_authorization_downgrade",
+                    "verdict",
+                    "cannot downgrade while a registered authorized arm is ready",
+                )
     if rule.require_integrity_pass and integrity.status != "PASS":
         raise error(
             "decision_integrity_mismatch",
@@ -256,4 +302,21 @@ def validate_decision_contract(
             "decision_strategy_mismatch",
             "successor.eligible_strategies",
             "strategy list does not match the registered successor mapping",
+        )
+    expected_eligible_arms = (
+        feasible_arms if successor.authorization is SuccessorAuthorization.AUTHORIZED else ()
+    )
+    if successor.eligible_arms != expected_eligible_arms:
+        raise error(
+            "decision_eligible_arm_mismatch",
+            "successor.eligible_arms",
+            "must carry the complete feasible frontier only when authorization is granted",
+        )
+    if successor.authorization is SuccessorAuthorization.AUTHORIZED and (
+        not feasible_arms or set(matching_arms) != set(feasible_arms)
+    ):
+        raise error(
+            "decision_feasible_arm_mismatch",
+            "feasible_arms",
+            "authorized decision statuses must identify the complete feasible frontier",
         )

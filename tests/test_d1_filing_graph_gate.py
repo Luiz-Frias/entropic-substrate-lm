@@ -375,7 +375,9 @@ def test_only_semantically_verified_graph_authorizes_pure_gate(tmp_path: Path) -
     detached, aggregate, revisions, artifacts, git = _case(tmp_path)
     filing = verify_d1_filing(detached, aggregate, revisions, artifacts, git)
 
-    assert isinstance(decide_filed_verdict(filing), FiledGateAuthorization)
+    outcome = decide_filed_verdict(filing)
+    assert isinstance(outcome, FiledGateAuthorization)
+    assert outcome.eligible_arms == ("sg", "ac", "both")
     with pytest.raises(TypeError, match="semantic evidence graph"):
         decide_filed_verdict(detached)  # type: ignore[arg-type]
 

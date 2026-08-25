@@ -23,6 +23,7 @@ def decide_filed_verdict(filing: ValidatedD1Filing, /) -> FiledGateOutcome:
         case SuccessorAuthorization.AUTHORIZED:
             return FiledGateAuthorization(
                 rung=verdict.rung,
+                eligible_arms=verdict.successor.eligible_arms,
                 eligible_strategies=verdict.successor.eligible_strategies,
             )
         case SuccessorAuthorization.VALID_NEGATIVE:

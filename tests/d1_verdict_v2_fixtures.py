@@ -136,6 +136,7 @@ def decision_contract() -> D1DecisionContract:
 
 def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
     contract = decision_contract()
+    candidate_arms = ("sg", "ac", "both")
     statuses = (
         {"noncollapse": "PASS", "future_grounding": "PASS", "language": "PASS"}
         if verdict == "SUPPORTED"
@@ -144,6 +145,7 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
     return {
         "schema_version": "d1-verdict/v2",
         "rung": "d1",
+        "feasible_arms": list(candidate_arms) if verdict == "SUPPORTED" else [],
         "preregistration": {
             "path": "docs/d1-preregistration.md",
             "commit": "a" * 40,
@@ -239,16 +241,19 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
                 "evidence_hash": evidence_hash(202),
             },
         ],
-        "clauses": {
-            name: {
-                "registered_rule": f"d1.{name}.v1",
-                "decision_vocabulary": "d1-clause/v1",
-                "threshold": None,
-                "margin": None,
-                "status": statuses[name],
-                "evidence_hash": evidence_hash(210 + index),
+        "clauses_by_arm": {
+            arm: {
+                name: {
+                    "registered_rule": f"d1.{name}.v1",
+                    "decision_vocabulary": "d1-clause/v1",
+                    "threshold": None,
+                    "margin": None,
+                    "status": statuses[name],
+                    "evidence_hash": evidence_hash(210 + arm_index * 10 + clause_index),
+                }
+                for clause_index, name in enumerate(("noncollapse", "future_grounding", "language"))
             }
-            for index, name in enumerate(("noncollapse", "future_grounding", "language"))
+            for arm_index, arm in enumerate(candidate_arms)
         },
         "integrity": {
             "status": "PASS",
@@ -269,6 +274,7 @@ def machine_verdict(*, verdict: str = "SUPPORTED") -> dict[str, object]:
         "verdict": verdict,
         "successor": {
             "authorization": "AUTHORIZED" if verdict == "SUPPORTED" else "VALID_NEGATIVE",
+            "eligible_arms": list(candidate_arms) if verdict == "SUPPORTED" else [],
             "eligible_strategies": ["d2-pullback"] if verdict == "SUPPORTED" else [],
         },
     }

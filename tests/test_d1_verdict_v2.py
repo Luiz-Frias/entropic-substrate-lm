@@ -48,6 +48,9 @@ def test_v2_preserves_full_precision_scientific_content_without_filing_hashes() 
     assert verdict.schema_version == "d1-verdict/v2"
     assert verdict.contrasts[0].estimate == 0.0123456789012345
     assert verdict.contrasts[0].interval_lower == -0.02
+    assert tuple(verdict.clauses_by_arm) == ("sg", "ac", "both")
+    assert verdict.feasible_arms == ("sg", "ac", "both")
+    assert verdict.successor.eligible_arms == verdict.feasible_arms
     assert verdict.review.adjudication.status == "NOT_REQUIRED"
 
 
@@ -113,6 +116,54 @@ def test_v2_rejects_v1_schema_before_decision_interpretation() -> None:
         _validated(payload)
 
 
+@pytest.mark.parametrize("feasible_arms", [["sg", "both"], ["none", "sg", "ac", "both"]])
+def test_feasible_arms_must_equal_every_all_pass_clause_arm(
+    feasible_arms: list[str],
+) -> None:
+    payload = machine_verdict()
+    payload["feasible_arms"] = feasible_arms
+    with pytest.raises(D1VerdictValidationError, match="feasible"):
+        _validated(payload)
+
+
+def test_non_authorized_successor_cannot_carry_an_eligible_arm() -> None:
+    payload = machine_verdict(verdict="VALID_NEGATIVE")
+    payload["successor"]["eligible_arms"] = ["sg"]  # type: ignore[index]
+    with pytest.raises(D1VerdictValidationError, match="eligible_arms"):
+        _validated(payload)
+
+
+def test_feasible_arms_preserve_canonical_stabilization_order() -> None:
+    payload = machine_verdict()
+    payload["feasible_arms"] = ["both", "sg", "ac"]
+    with pytest.raises(D1VerdictValidationError, match="canonical order"):
+        _validated(payload)
+
+
+def test_single_decision_arm_cannot_replace_the_full_frontier() -> None:
+    payload = machine_verdict()
+    payload["decision_arm"] = "both"
+    with pytest.raises(D1VerdictValidationError, match="unknown"):
+        _validated(payload)
+
+
+def test_negative_arm_cannot_downgrade_other_feasible_arms() -> None:
+    payload = machine_verdict()
+    payload["clauses_by_arm"]["sg"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+    payload["clauses_by_arm"]["sg"]["future_grounding"]["status"] = (  # type: ignore[index]
+        "INCONCLUSIVE"
+    )
+    payload["feasible_arms"] = ["ac", "both"]
+    payload["verdict"] = "VALID_NEGATIVE"
+    payload["successor"] = {
+        "authorization": "VALID_NEGATIVE",
+        "eligible_arms": [],
+        "eligible_strategies": [],
+    }
+    with pytest.raises(D1VerdictValidationError, match="downgrade"):
+        _validated(payload)
+
+
 def test_contract_binds_sets_constants_integrity_and_decision_table() -> None:
     changed: dict[str, object] = json.loads(json.dumps(machine_verdict()))
     changed["registered_constants"]["seeds"] = [1, 2]
@@ -125,7 +176,11 @@ def test_contract_binds_sets_constants_integrity_and_decision_table() -> None:
         _validated(changed)
 
     changed = json.loads(json.dumps(machine_verdict()))
-    changed["clauses"]["language"]["status"] = "FAIL"
+    for arm in ("sg", "ac", "both"):
+        changed["clauses_by_arm"][arm]["noncollapse"]["status"] = "FAIL"
+        changed["clauses_by_arm"][arm]["future_grounding"]["status"] = "INCONCLUSIVE"
+    changed["feasible_arms"] = []
+    changed["successor"]["eligible_arms"] = []
     with pytest.raises(D1VerdictValidationError, match="decision"):
         _validated(changed)
 
@@ -140,7 +195,7 @@ def test_contract_binds_sets_constants_integrity_and_decision_table() -> None:
         _validated(changed)
 
     changed = json.loads(json.dumps(machine_verdict()))
-    del changed["clauses"]["language"]
+    del changed["clauses_by_arm"]["both"]["language"]
     with pytest.raises(D1VerdictValidationError, match="clause"):
         _validated(changed)
 
