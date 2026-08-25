@@ -70,9 +70,9 @@ class D1AssembledRealArmVerdict:
     def require_factory_attested(self) -> None:
         if not _ASSEMBLY_ATTESTATION.registered(self):
             raise TypeError("D1 assembled real-arm verdict is not factory-attested")
-        _validate_assembled(self)
         if not _ASSEMBLY_ATTESTATION.contains(self):
             raise TypeError("D1 assembled real-arm verdict evidence changed after minting")
+        _validate_assembled(self)
 
     def __copy__(self) -> NoReturn:
         raise TypeError("D1AssembledRealArmVerdict cannot be copied")
