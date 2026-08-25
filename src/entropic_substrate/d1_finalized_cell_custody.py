@@ -91,6 +91,23 @@ def _text(value: object, label: str) -> str:
     return value
 
 
+def _digest_envelope(text: str) -> dict[str, object]:
+    return {
+        "manifest": json.loads(text),
+        "sha256": hashlib.sha256(text.encode()).hexdigest(),
+    }
+
+
+def _decode_envelope(value: object, label: str) -> tuple[dict[str, object], str]:
+    envelope = _mapping(value, label)
+    _exact(envelope, _DIGESTED_KEYS, label)
+    manifest = _mapping(envelope["manifest"], f"{label} manifest")
+    text = canonical_json(manifest)
+    if _sha(envelope["sha256"], f"{label}.sha256") != hashlib.sha256(text.encode()).hexdigest():
+        _fail(f"{label} digest differs from its manifest")
+    return manifest, text
+
+
 def _finalization_manifest(finalization: D1BillingFinalization) -> dict[str, object]:
     return {
         "billing": finalization.billing.manifest,
@@ -137,19 +154,12 @@ class D1FinalizedCellCustodyRecord:
     def manifest(self) -> dict[str, object]:
         return {
             "arm": self.arm.value,
-            "attempt_ledger": {
-                "manifest": launch_attempt_ledger_to_mapping(self.attempt_ledger),
-                "sha256": self.attempt_ledger.ledger_digest,
-            },
+            "attempt_ledger": _digest_envelope(
+                canonical_json(launch_attempt_ledger_to_mapping(self.attempt_ledger))
+            ),
             "billing_posture": self.billing_posture,
-            "finalization": {
-                "manifest": json.loads(self.finalization_json),
-                "sha256": hashlib.sha256(self.finalization_json.encode()).hexdigest(),
-            },
-            "intent": {
-                "manifest": json.loads(self.intent_json),
-                "sha256": hashlib.sha256(self.intent_json.encode()).hexdigest(),
-            },
+            "finalization": _digest_envelope(self.finalization_json),
+            "intent": _digest_envelope(self.intent_json),
             "journal": {
                 "path": self.journal.path,
                 "sha256": self.journal.content_hash.digest,
@@ -342,35 +352,17 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
     _exact(root, _ROOT_KEYS, "finalized cell")
     if root["schema_version"] != _SCHEMA:
         _fail("finalized-cell schema is unsupported")
-    intent = _mapping(root["intent"], "intent")
-    ledger = _mapping(root["attempt_ledger"], "attempt_ledger")
-    finalization = _mapping(root["finalization"], "finalization")
+    _, intent_text = _decode_envelope(root["intent"], "intent")
+    ledger_manifest, _ = _decode_envelope(root["attempt_ledger"], "attempt_ledger")
+    _, finalization_text = _decode_envelope(root["finalization"], "finalization")
     journal = _mapping(root["journal"], "journal")
-    for value, label in (
-        (intent, "intent"),
-        (ledger, "attempt_ledger"),
-        (finalization, "finalization"),
-    ):
-        _exact(value, _DIGESTED_KEYS, label)
     _exact(journal, _JOURNAL_KEYS, "journal")
-    intent_manifest = _mapping(intent["manifest"], "intent manifest")
-    finalization_manifest = _mapping(finalization["manifest"], "finalization manifest")
-    if (
-        _sha(intent["sha256"], "intent.sha256")
-        != hashlib.sha256(canonical_json(intent_manifest).encode()).hexdigest()
-    ):
-        _fail("intent digest differs from its manifest")
-    if (
-        _sha(finalization["sha256"], "finalization.sha256")
-        != hashlib.sha256(canonical_json(finalization_manifest).encode()).hexdigest()
-    ):
-        _fail("finalization digest differs from its manifest")
     starts_raw = root["segment_starts"]
     if type(starts_raw) is not list or not starts_raw:
         _fail("segment_starts must be a nonempty array")
     try:
-        attempt_ledger = launch_attempt_ledger_from_mapping(ledger["manifest"])
-        if _sha(ledger["sha256"], "attempt_ledger.sha256") != attempt_ledger.ledger_digest:
+        attempt_ledger = launch_attempt_ledger_from_mapping(ledger_manifest)
+        if canonical_digest(ledger_manifest) != attempt_ledger.ledger_digest:
             _fail("attempt ledger digest differs from its manifest")
         starts = tuple(run_start_from_mapping(item) for item in starts_raw)
         record = _mint(
@@ -381,10 +373,10 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
                 root["registered_design_digest"], "registered_design_digest"
             ),
             plan_digest=_sha(root["plan_digest"], "plan_digest"),
-            intent_json=canonical_json(intent_manifest),
+            intent_json=intent_text,
             segment_starts=starts,
             attempt_ledger=attempt_ledger,
-            finalization_json=canonical_json(finalization_manifest),
+            finalization_json=finalization_text,
             journal=ArtifactIdentity(
                 _text(journal["path"], "journal.path"),
                 ContentHash("sha256", _sha(journal["sha256"], "journal.sha256")),

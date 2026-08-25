@@ -12,8 +12,10 @@ from typing import NamedTuple, cast
 import pytest
 
 from d1_billing_finalizer_fixtures import billing_gap, provider_bill
+from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
 from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.d1_finalized_cell_custody import (
+    D1FinalizedCellCustodyError,
     D1FinalizedCellCustodyRecord,
     attest_d1_finalized_cell_custody,
     parse_d1_finalized_cell_custody,
@@ -29,7 +31,7 @@ from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_primitives import RunClass, canonical_json
 
 from .test_d1_operator_controller import _case
 
@@ -40,7 +42,7 @@ class _FinalizedCase(NamedTuple):
     intent: D1OperatorLaunchIntent
     starts: tuple[RunStartProvenance, ...]
     ledger: D1LaunchAttemptLedger
-    finalization: object
+    finalization: D1BillingFinalization
     journal: ArtifactIdentity
 
 
@@ -146,18 +148,31 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
 
 
 @pytest.mark.parametrize(
-    "mutation",
-    (
-        "intent_digest plan_digest start_identity ledger_digest ledger_terminal "
-        "finalization_digest journal_digest billing_posture quality_ready unknown_field"
-    ).split(),
+    ("mutation", "message"),
+    [
+        ("control", ""),
+        ("intent_digest", "intent digest"),
+        ("plan_digest", "intent and finalized-cell identity"),
+        ("start_identity", "finalized-cell evidence is invalid"),
+        ("ledger_digest", "attempt_ledger digest"),
+        ("ledger_terminal", "finalized-cell evidence is invalid"),
+        ("finalization_digest", "finalization digest"),
+        ("journal_digest", "final journal identity"),
+        ("billing_posture", "billing and quality posture"),
+        ("quality_ready", "billing and quality posture"),
+        ("unknown_field", "fields must be exact"),
+    ],
 )
 def test_codec_rejects_each_substituted_evidence_edge(
     tmp_path: Path,
     mutation: str,
+    message: str,
 ) -> None:
     payload = serialize_d1_finalized_cell_custody(_attest(_finalized_case(tmp_path)))
     value = json.loads(payload)
+    if mutation == "control":
+        assert parse_d1_finalized_cell_custody(payload).manifest == value
+        return
     if mutation == "intent_digest":
         value["intent"]["sha256"] = "0" * 64
     elif mutation == "plan_digest":
@@ -167,7 +182,11 @@ def test_codec_rejects_each_substituted_evidence_edge(
     elif mutation == "ledger_digest":
         value["attempt_ledger"]["sha256"] = "0" * 64
     elif mutation == "ledger_terminal":
-        value["attempt_ledger"]["manifest"]["events"].pop()
+        manifest = value["attempt_ledger"]["manifest"]
+        manifest["events"][-1]["status"] = "recorded"
+        value["attempt_ledger"]["sha256"] = hashlib.sha256(
+            canonical_json(manifest).encode()
+        ).hexdigest()
     elif mutation == "finalization_digest":
         value["finalization"]["sha256"] = "0" * 64
     elif mutation == "journal_digest":
@@ -178,9 +197,9 @@ def test_codec_rejects_each_substituted_evidence_edge(
         value["quality_export_ready"] = False
     else:
         value["unexpected"] = True
-    changed = json.dumps(value, separators=(",", ":"), sort_keys=True)
+    changed = canonical_json(value)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(D1FinalizedCellCustodyError, match=message):
         parse_d1_finalized_cell_custody(changed)
 
 
@@ -193,3 +212,14 @@ def test_finalized_cell_capability_cannot_be_constructed_copied_or_replayed(
     for copier in (copy.copy, copy.deepcopy, pickle.dumps):
         with pytest.raises(TypeError, match="cannot be copied"):
             copier(record)
+
+
+def test_attestation_rejects_unminted_and_mutated_records(tmp_path: Path) -> None:
+    forged = object.__new__(D1FinalizedCellCustodyRecord)
+    with pytest.raises(TypeError, match="not factory-minted"):
+        forged.require_factory_attested()
+
+    record = _attest(_finalized_case(tmp_path))
+    object.__setattr__(record, "logical_run_id", "substituted")
+    with pytest.raises(TypeError, match="changed after minting"):
+        record.require_factory_attested()
