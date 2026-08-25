@@ -19,13 +19,22 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1DeclaredAttempt,
     D1ExpectedRun,
 )
+from entropic_substrate.evidence.d1_capture_validation import (
+    D1CaptureBundleError,
+    validate_d1_run_identity,
+)
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_review_adjudication import (
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
     validate_d1_review_outcome_prompt,
 )
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.experiments.d1_primitives import (
+    D1Arm,
+    canonical_digest,
+    canonical_json,
+)
+from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 __all__ = [
     "D1BlindReviewPacket",
@@ -71,6 +80,26 @@ _NONBLINDABLE = (
 )
 _BLIND_ALIASES = ("A", "B", "C", "D")
 _ROSTER_ALGORITHM = "sha256-registered-seed-alias-sort-v1"
+_RUN_IDENTITY_ATTESTATIONS = (
+    ("I01", "aggregation_digest"),
+    ("I02", "arm"),
+    ("I03", "code_commit"),
+    ("I04", "construction_digest"),
+    ("I05", "dataset_digest"),
+    ("I06", "execution_digest"),
+    ("I07", "family_digest"),
+    ("I08", "image_digest"),
+    ("I09", "logical_run_id"),
+    ("I10", "pairing_id"),
+    ("I11", "plan_digest"),
+    ("I12", "preregistration"),
+    ("I13", "repository_digest"),
+    ("I14", "run_class"),
+    ("I15", "sampler_construction_digest"),
+    ("I16", "seed"),
+    ("I17", "segment_logical_run_id"),
+    ("I18", "split_digest"),
+)
 
 
 class D1BlindnessLabel(StrEnum):
@@ -82,9 +111,7 @@ class D1PacketBlindnessError(ValueError):
 
 
 def _canonical(value: object) -> str:
-    return json.dumps(
-        value, allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    )
+    return canonical_json(value)
 
 
 def d1_review_roster_alias_order(seed: int) -> tuple[str, ...]:
@@ -300,18 +327,22 @@ def _run_attestations(
     if len(evidence) != len(run_evidence) or set(evidence) != {
         item.logical_run_id for item in expected
     }:
-        raise ValueError("D1 packet requires validated run evidence for every expected cell")
+        raise ValueError("D1 packet run identity roster differs from every expected cell")
     rows: list[dict[str, object]] = []
     for item in expected:
         run = evidence[item.logical_run_id]
-        match = run.identity.construction_digest == item.construction_digest
-        if not match or run.plan_digest != item.plan_digest:
-            raise ValueError("D1 packet run evidence differs from registered construction")
+        try:
+            validate_d1_run_identity(run, item, aggregate.roster)
+        except D1CaptureBundleError as error:
+            raise ValueError("D1 packet run identity differs from the launch roster") from error
         rows.append(
             {
                 "arm_alias": aliases.aliases.for_arm(item.arm),
                 "pair_alias": pair_aliases[item.pairing_id],
-                "registered_construction_match": match,
+                "registered_construction_match": True,
+                "registered_identity_match": {
+                    attestation_id: True for attestation_id, _ in _RUN_IDENTITY_ATTESTATIONS
+                },
                 "run_alias": run_aliases[item.logical_run_id],
                 "seed": item.seed,
                 "segments": _segments(run),
@@ -349,6 +380,7 @@ def _receipt_bindings(
     analysis: D1AliasedMachineAnalysis,
     aggregate: D1HeterogeneousCaptureAggregate,
     aliases: D1PreparedBlindAliases,
+    decision_contract: D1DecisionContract,
 ) -> tuple[dict[str, object], dict[str, object]]:
     data = receipt.manifest
     if data.get("filing_eligible") is not True:
@@ -357,9 +389,16 @@ def _receipt_bindings(
         raise ValueError("D1 review packet analysis receipt differs from analysis")
     if data.get("alias_commitment") != aliases.aliases.sealed_commitment:
         raise ValueError("D1 review packet alias commitment differs")
-    bindings = cast(dict[str, object], data.get("bindings"))
+    bindings = data.get("bindings")
+    if not isinstance(bindings, dict):
+        raise ValueError("D1 review packet analysis bindings are absent")
     if bindings.get("capture_digest") != aggregate.manifest_digest:
         raise ValueError("D1 review packet capture binding differs")
+    analysis_bindings = analysis.manifest.get("bindings")
+    if not isinstance(analysis_bindings, dict) or analysis_bindings != bindings:
+        raise ValueError("D1 review packet analysis and receipt bindings differ")
+    if bindings.get("decision_contract_digest") != decision_contract_digest(decision_contract):
+        raise ValueError("D1 review packet decision contract binding differs")
     implementation = cast(dict[str, object], data.get("implementation"))
     readers = cast(dict[str, object], implementation.get("readers"))
     if set(readers) != {"complete", "terminal_defect"}:
@@ -377,7 +416,13 @@ def build_d1_blind_review_packet(
     run_evidence: tuple[D1RunEvidence, ...],
 ) -> D1BlindReviewPacket:
     """Assemble exact evidence without serializing canonical mechanism identities."""
-    bindings, readers = _receipt_bindings(analysis_receipt, analysis, aggregate, aliases)
+    bindings, readers = _receipt_bindings(
+        analysis_receipt,
+        analysis,
+        aggregate,
+        aliases,
+        decision_contract,
+    )
     registered_seeds = _registered_seeds(decision_contract)
     roster, run_aliases, pair_aliases, expected = _roster(
         aggregate,
@@ -443,8 +488,9 @@ def validate_d1_packet_blindness(
     if (
         manifest.get("schema_version") != _SCHEMA
         or bindings.get("capture_digest") != aggregate.manifest_digest
+        or bindings.get("decision_contract_digest") != decision_contract_digest(contract)
     ):
-        raise D1PacketBlindnessError("packet schema or capture binding differs")
+        raise D1PacketBlindnessError("packet schema, capture, or decision contract differs")
     keys, strings = _walk(manifest)
     if leaked := sorted(keys & _PROHIBITED_KEYS):
         raise D1PacketBlindnessError(f"construction-bearing field leaked: {leaked[0]}")
@@ -482,6 +528,12 @@ def validate_d1_packet_blindness(
         _roster_randomization(expected_roster)
     ):
         raise D1PacketBlindnessError("randomized roster order or record differs")
+    runs = cast(list[dict[str, object]], manifest.get("run_attestations", []))
+    expected_identity = {attestation_id: True for attestation_id, _ in _RUN_IDENTITY_ATTESTATIONS}
+    if len(runs) != len(aggregate.roster.expected_confirmatory) or any(
+        row.get("registered_identity_match") != expected_identity for row in runs
+    ):
+        raise D1PacketBlindnessError("complete registered run identity attestation differs")
 
 
 def build_d1_factorial_reviewer_prompt(

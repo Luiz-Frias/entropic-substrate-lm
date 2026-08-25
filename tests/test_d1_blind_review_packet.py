@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import NamedTuple, cast
@@ -36,6 +35,7 @@ from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence
 from entropic_substrate.evidence.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
+    D1ExpectedRun,
     D1LaunchRoster,
 )
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
@@ -43,8 +43,16 @@ from entropic_substrate.evidence.d1_review_adjudication import (
     D1_NO_MAJOR_OUTCOME,
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
 )
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
+from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence, D1RunStatus
+from entropic_substrate.evidence.resource_provenance import execution_segment_id
+from entropic_substrate.experiments.d1_primitives import (
+    D1Arm,
+    RunClass,
+    canonical_digest,
+    canonical_json,
+    thaw_for_digest,
+)
+from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_blind_alias_custody import _DeterministicCrypto
@@ -62,12 +70,25 @@ def _randomization(manifest: dict[str, object]) -> dict[str, object]:
     return cast(dict[str, object], manifest["roster_randomization"])
 
 
-def _thaw(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {key: _thaw(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw(item) for item in value]
-    return value
+def _rebind_analysis(
+    analysis: D1AliasedMachineAnalysis,
+    receipt: D1AnalysisExecutionReceipt,
+    *,
+    capture_digest: str,
+    contract_digest: str,
+) -> tuple[D1AliasedMachineAnalysis, D1AnalysisExecutionReceipt]:
+    analysis_manifest = analysis.manifest
+    analysis_bindings = cast(dict[str, object], analysis_manifest["bindings"])
+    analysis_bindings["capture_digest"] = capture_digest
+    analysis_bindings["decision_contract_digest"] = contract_digest
+    rebound_analysis = D1AliasedMachineAnalysis(canonical_json(analysis_manifest))
+    receipt_manifest = receipt.manifest
+    receipt_bindings = cast(dict[str, object], receipt_manifest["bindings"])
+    receipt_bindings["capture_digest"] = capture_digest
+    receipt_bindings["decision_contract_digest"] = contract_digest
+    receipt_manifest["analysis_digest"] = rebound_analysis.analysis_digest
+    rebound_receipt = D1AnalysisExecutionReceipt(canonical_json(receipt_manifest))
+    return rebound_analysis, rebound_receipt
 
 
 def test_registered_seed_alias_order_is_reproducible_and_seed_sensitive() -> None:
@@ -148,47 +169,89 @@ def _case_with_attempts(case: _BlindCase) -> _BlindCase:
         pair_exclusions=aggregate.pair_exclusions,
         dvc_handoff=aggregate.dvc_handoff,
     )
-    bound_receipt = replace(
+    bound_analysis, bound_receipt = _rebind_analysis(
+        analysis,
         receipt,
-        canonical_json=receipt.canonical_json.replace(
-            aggregate.manifest_digest,
-            with_attempts.manifest_digest,
-        ),
+        capture_digest=with_attempts.manifest_digest,
+        contract_digest=decision_contract_digest(decision),
     )
-    return _BlindCase(decision, with_attempts, aliases, analysis, bound_receipt, evidence)
+    return _BlindCase(
+        decision,
+        with_attempts,
+        aliases,
+        bound_analysis,
+        bound_receipt,
+        evidence,
+    )
 
 
 def _case_with_seed_blocks(case: _BlindCase) -> _BlindCase:
     decision, aggregate, aliases, analysis, receipt, evidence = case
     originals = aggregate.roster.expected_confirmatory
-    seed_eight = tuple(
-        replace(
-            item,
-            logical_run_id=f"{item.logical_run_id}-seed-8",
+    evidence_by_construction = {item.identity.construction_digest: item for item in evidence}
+    captures_by_arm = {item.expected.arm: item for item in aggregate.complete_runs}
+    seed_eight: list[D1ExpectedRun] = []
+    seed_eight_captures = []
+    seed_eight_evidence = []
+    for original in originals:
+        source_run = evidence_by_construction[original.construction_digest]
+        logical_run_id = f"{original.logical_run_id}-seed-8"
+        plan = cast(dict[str, object], thaw_for_digest(source_run.plan_manifest))
+        plan.update(
+            {
+                "logical_run_id": logical_run_id,
+                "pairing_id": "pair-8",
+                "seed": 8,
+            }
+        )
+        plan_digest = canonical_digest(plan)
+        expected = replace(
+            original,
+            logical_run_id=logical_run_id,
             seed=8,
             pairing_id="pair-8",
+            plan_digest=plan_digest,
         )
-        for item in originals
-    )
-    shuffled_expected = (*reversed(originals), *reversed(seed_eight))
+        seed_eight.append(expected)
+        source_capture = captures_by_arm[expected.arm]
+        seed_eight_captures.append(
+            replace(
+                source_capture,
+                expected=expected,
+                capture_input=replace(
+                    source_capture.capture_input,
+                    logical_run_id=logical_run_id,
+                ),
+            )
+        )
+        segments = tuple(
+            replace(
+                segment,
+                logical_run_id=logical_run_id,
+                execution_segment_id=execution_segment_id(
+                    logical_run_id,
+                    segment.execution_segment_index,
+                ),
+            )
+            for segment in source_run.segments
+        )
+        seed_eight_evidence.append(
+            replace(
+                source_run,
+                identity=replace(source_run.identity, logical_run_id=logical_run_id),
+                plan_digest=plan_digest,
+                plan_manifest=plan,
+                segments=segments,
+            )
+        )
+    seed_eight_tuple = tuple(seed_eight)
+    shuffled_expected = (*reversed(originals), *reversed(seed_eight_tuple))
     roster = D1LaunchRoster(
         preregistration_path=aggregate.roster.preregistration_path,
         preregistration_commit=aggregate.roster.preregistration_commit,
         family_digest=aggregate.roster.family_digest,
         expected_confirmatory=shuffled_expected,
         attempts=(),
-    )
-    captures_by_arm = {item.expected.arm: item for item in aggregate.complete_runs}
-    seed_eight_captures = tuple(
-        replace(
-            captures_by_arm[item.arm],
-            expected=item,
-            capture_input=replace(
-                captures_by_arm[item.arm].capture_input,
-                logical_run_id=item.logical_run_id,
-            ),
-        )
-        for item in seed_eight
     )
     all_ids = frozenset(item.logical_run_id for item in shuffled_expected)
     with_seed_blocks = D1HeterogeneousCaptureAggregate.from_validated_evidence(
@@ -200,32 +263,23 @@ def _case_with_seed_blocks(case: _BlindCase) -> _BlindCase:
         pair_exclusions=(),
         dvc_handoff=aggregate.dvc_handoff,
     )
-    evidence_by_construction = {item.identity.construction_digest: item for item in evidence}
-    seed_eight_evidence = tuple(
-        replace(
-            evidence_by_construction[item.construction_digest],
-            identity=replace(
-                evidence_by_construction[item.construction_digest].identity,
-                logical_run_id=item.logical_run_id,
-            ),
-        )
-        for item in seed_eight
-    )
-    registered = cast(dict[str, object], _thaw(decision.registered_constants))
+    registered = cast(dict[str, object], thaw_for_digest(decision.registered_constants))
     registered["seeds"] = [8, 7]
     seeded_decision = replace(decision, registered_constants=registered)
-    bound_receipt = replace(
+    analysis_manifest = analysis.manifest
+    analysis_manifest["included_seeds"] = [8, 7]
+    analysis = D1AliasedMachineAnalysis(canonical_json(analysis_manifest))
+    seeded_analysis, bound_receipt = _rebind_analysis(
+        analysis,
         receipt,
-        canonical_json=receipt.canonical_json.replace(
-            aggregate.manifest_digest,
-            with_seed_blocks.manifest_digest,
-        ),
+        capture_digest=with_seed_blocks.manifest_digest,
+        contract_digest=decision_contract_digest(seeded_decision),
     )
     return _BlindCase(
         seeded_decision,
         with_seed_blocks,
         aliases,
-        analysis,
+        seeded_analysis,
         bound_receipt,
         (*reversed(evidence), *reversed(seed_eight_evidence)),
     )
@@ -256,6 +310,10 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
         "D",
     }
     assert all(row["registered_construction_match"] for row in manifest["run_attestations"])  # type: ignore[index]
+    for row in cast(list[dict[str, object]], manifest["run_attestations"]):
+        identity = cast(dict[str, bool], row["registered_identity_match"])
+        assert set(identity) == {f"I{index:02d}" for index in range(1, 19)}
+        assert all(identity.values())
     readers = manifest["validated_readers"]
     assert readers["complete"]["sha256"] == "5" * 64  # type: ignore[index]
     assert readers["terminal_defect"]["sha256"] == "6" * 64  # type: ignore[index]
@@ -278,6 +336,166 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
     assert repeated.manifest["capture_roster"] == manifest["capture_roster"]
     assert repeated.manifest["roster_randomization"] == randomized
     validate_d1_packet_blindness(packet, decision, aggregate, aliases)
+
+
+def test_packet_binds_the_supplied_decision_contract_to_analysis_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+    drifted_contract = replace(
+        decision,
+        registered_constants=cast(
+            dict[str, object], thaw_for_digest(decision.registered_constants)
+        ),
+        verdict_vocabulary="d1-drifted-vocabulary/v1",
+    )
+    with pytest.raises(ValueError, match="decision contract"):
+        build_d1_blind_review_packet(
+            decision_contract=drifted_contract,
+            aggregate=aggregate,
+            analysis=analysis,
+            analysis_receipt=receipt,
+            aliases=aliases,
+            run_evidence=evidence,
+        )
+    bindings = cast(dict[str, str], receipt.manifest["bindings"])
+    drifted_receipt = replace(
+        receipt,
+        canonical_json=receipt.canonical_json.replace(
+            bindings["decision_contract_digest"],
+            "0" * 64,
+        ),
+    )
+    with pytest.raises(ValueError, match="bindings"):
+        build_d1_blind_review_packet(
+            decision_contract=decision,
+            aggregate=aggregate,
+            analysis=analysis,
+            analysis_receipt=drifted_receipt,
+            aliases=aliases,
+            run_evidence=evidence,
+        )
+
+
+def _mutate_run_identity(run: D1RunEvidence, mutation: str) -> D1RunEvidence:
+    if mutation == "status":
+        return replace(run, status=D1RunStatus.PARTIAL)
+    if mutation == "terminal":
+        return replace(run, terminal=None)
+    if mutation.startswith("journal_"):
+        field = mutation.removeprefix("journal_")
+        value: object = {
+            "logical_run_id": "substituted-run",
+            "execution_digest": "a" * 64,
+            "aggregation_digest": "b" * 64,
+            "construction_digest": "c" * 64,
+            "family_digest": "d" * 64,
+            "run_class": RunClass.PILOT,
+        }[field]
+        return replace(run, identity=replace(run.identity, **{field: value}))
+    if mutation == "plan_digest":
+        return replace(run, plan_digest="e" * 64)
+    if mutation == "plan_unvalidated_key":
+        plan = cast(dict[str, object], thaw_for_digest(run.plan_manifest))
+        plan["unvalidated_identity"] = "drift"
+        return replace(
+            run,
+            plan_digest=canonical_digest(plan),
+            plan_manifest=plan,
+        )
+    if mutation.startswith("segment_"):
+        field = mutation.removeprefix("segment_")
+        segment = run.segments[0]
+        if field == "image_digest":
+            changed = replace(segment, image_digest="sha256:" + "f" * 64)
+        else:
+            changed = replace(
+                segment,
+                logical_run_id="substituted-run",
+                execution_segment_id=execution_segment_id("substituted-run", 0),
+            )
+        return replace(run, segments=(changed, *run.segments[1:]))
+    plan = cast(dict[str, object], thaw_for_digest(run.plan_manifest))
+    path = mutation.removeprefix("plan_").split("__")
+    target = plan
+    for key in path[:-1]:
+        target = cast(dict[str, object], target[key])
+    field = path[-1]
+    changed_arm = D1Arm.SG.value if target.get(field) != D1Arm.SG.value else D1Arm.NONE.value
+    target[field] = {
+        "arm": changed_arm,
+        "seed": 999,
+        "pairing_id": "substituted-pair",
+        "logical_run_id": "substituted-run",
+        "construction_digest": "c" * 64,
+        "family_digest": "d" * 64,
+        "run_class": RunClass.PILOT.value,
+        "commit": "1234567",
+        "repository_digest": "e" * 64,
+        "image_digest": "sha256:" + "f" * 64,
+        "dataset_digest": "1" * 64,
+        "split_digest": "2" * 64,
+        "sampler_construction_digest": "3" * 64,
+        "path": "docs/substituted.md",
+        "dvc_capture_required": False,
+    }[field]
+    return replace(
+        run,
+        plan_digest=canonical_digest(plan),
+        plan_manifest=plan,
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "journal_logical_run_id",
+        "journal_execution_digest",
+        "journal_aggregation_digest",
+        "journal_construction_digest",
+        "journal_family_digest",
+        "journal_run_class",
+        "status",
+        "terminal",
+        "plan_digest",
+        "plan_unvalidated_key",
+        "plan_arm",
+        "plan_seed",
+        "plan_pairing_id",
+        "plan_logical_run_id",
+        "plan_construction_digest",
+        "plan_family_digest",
+        "plan_run_class",
+        "plan_code__commit",
+        "plan_code__repository_digest",
+        "plan_container__image_digest",
+        "plan_data__dataset_digest",
+        "plan_data__split_digest",
+        "plan_data__sampler_construction_digest",
+        "plan_preregistration__commit",
+        "plan_preregistration__family_digest",
+        "plan_preregistration__path",
+        "plan_evidence__dvc_capture_required",
+        "segment_image_digest",
+        "segment_logical_run_id",
+    ],
+)
+def test_packet_rejects_each_substituted_run_identity_component(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+    changed = (_mutate_run_identity(evidence[0], mutation), *evidence[1:])
+    with pytest.raises(ValueError, match="run identity"):
+        build_d1_blind_review_packet(
+            decision_contract=decision,
+            aggregate=aggregate,
+            analysis=analysis,
+            analysis_receipt=receipt,
+            aliases=aliases,
+            run_evidence=changed,
+        )
 
 
 def test_prompt_quotes_registered_rules_riders_and_aliased_coefficients(
@@ -412,6 +630,18 @@ def test_structural_scan_rejects_hidden_identity_and_construction_fields(
     with pytest.raises(D1PacketBlindnessError, match="randomized roster order or record differs"):
         validate_d1_packet_blindness(
             D1BlindReviewPacket.from_manifest(record_drift),
+            decision,
+            aggregate,
+            aliases,
+        )
+
+    identity_drift = packet.manifest
+    runs = cast(list[dict[str, object]], identity_drift["run_attestations"])
+    identity = cast(dict[str, bool], runs[0]["registered_identity_match"])
+    identity["I01"] = False
+    with pytest.raises(D1PacketBlindnessError, match="complete registered run identity"):
+        validate_d1_packet_blindness(
+            D1BlindReviewPacket.from_manifest(identity_drift),
             decision,
             aggregate,
             aliases,

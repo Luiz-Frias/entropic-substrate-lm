@@ -32,7 +32,11 @@ from entropic_substrate.evidence.d1_telemetry_values import (
     D1RunStatus,
     D1TailQuarantineKind,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_primitives import (
+    RunClass,
+    canonical_digest,
+    thaw_for_digest,
+)
 
 __all__ = [
     "D1CaptureBundleError",
@@ -41,6 +45,7 @@ __all__ = [
     "validate_d1_capture_artifacts",
     "validate_d1_complete_pairing",
     "validate_d1_complete_run_capture",
+    "validate_d1_run_identity",
 ]
 
 
@@ -123,6 +128,53 @@ def _validate_plan(run: D1RunEvidence, expected: D1ExpectedRun, roster: D1Launch
         _fail("identity", "segments.image_digest", "differs from the launch roster")
 
 
+def validate_d1_run_identity(
+    run: D1RunEvidence,
+    expected: D1ExpectedRun,
+    roster: D1LaunchRoster,
+) -> None:
+    """Re-admit the complete measured run identity against one roster cell."""
+    if (
+        type(run) is not D1RunEvidence
+        or type(expected) is not D1ExpectedRun
+        or type(roster) is not D1LaunchRoster
+    ):
+        raise TypeError("D1 run identity validation requires nominal evidence values")
+    if run.status is not D1RunStatus.COMPLETE or run.terminal is None:
+        _fail("identity", "status", "run is not terminally complete")
+    identity = run.identity
+    _exact(
+        cast(
+            Mapping[str, object],
+            {
+                "aggregation_digest": identity.aggregation_digest,
+                "construction_digest": identity.construction_digest,
+                "execution_digest": identity.execution_digest,
+                "family_digest": identity.family_digest,
+                "logical_run_id": identity.logical_run_id,
+                "run_class": identity.run_class.value,
+            },
+        ),
+        {
+            "aggregation_digest": expected.aggregation_digest,
+            "construction_digest": expected.construction_digest,
+            "execution_digest": expected.execution_digest,
+            "family_digest": expected.family_digest,
+            "logical_run_id": expected.logical_run_id,
+            "run_class": RunClass.CONFIRMATORY.value,
+        },
+        "journal",
+    )
+    plan_manifest = cast(Mapping[str, object], thaw_for_digest(run.plan_manifest))
+    if canonical_digest(plan_manifest) != run.plan_digest:
+        _fail("identity", "plan_manifest", "does not match its measured plan digest")
+    _validate_plan(run, expected, roster)
+    if run.plan_digest != expected.plan_digest:
+        _fail("identity", "plan_digest", "differs from the launch roster")
+    if any(segment.logical_run_id != expected.logical_run_id for segment in run.segments):
+        _fail("identity", "segments.logical_run_id", "differs from the launch roster")
+
+
 def _verify_artifacts(root: Path, artifacts: tuple[D1ArtifactIdentity, ...]) -> None:
     for artifact in artifacts:
         try:
@@ -148,26 +200,7 @@ def _read_confirmatory(
         _fail("authoritative_reader", capture.journal.normalized_path, str(error), error)
     if run.status is not D1RunStatus.COMPLETE or run.terminal is None:
         _fail("terminal_journal", capture.journal.normalized_path, "run is not complete")
-    identity = run.identity
-    _exact(
-        cast(
-            Mapping[str, object],
-            {
-                "aggregation_digest": identity.aggregation_digest,
-                "construction_digest": identity.construction_digest,
-                "execution_digest": identity.execution_digest,
-                "family_digest": identity.family_digest,
-            },
-        ),
-        {
-            "aggregation_digest": expected.aggregation_digest,
-            "construction_digest": expected.construction_digest,
-            "execution_digest": expected.execution_digest,
-            "family_digest": expected.family_digest,
-        },
-        "journal",
-    )
-    _validate_plan(run, expected, roster)
+    validate_d1_run_identity(run, expected, roster)
     if capture.checkpoint.sha256 != run.final_checkpoint_sha256:
         _fail(
             "checkpoint_receipt",
