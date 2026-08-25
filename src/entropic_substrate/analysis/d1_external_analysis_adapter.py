@@ -16,19 +16,34 @@ from entropic_substrate.analysis.d1_execution_receipt import (
     D1AnalysisRunnerResult,
     D1ExternalIsolationAttestation,
     D1IsolationExecutionEvidence,
+    D1IsolationRequest,
 )
 from entropic_substrate.analysis.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelope,
+    D1ExternalAnalysisRequestEnvelopeV2,
+    D1ExternalAnalysisWorkerResponseV2,
     decode_d1_external_analysis_response,
+    decode_d1_external_analysis_worker_response_v2,
     encode_d1_external_analysis_request,
+    encode_d1_external_analysis_request_v2,
 )
 from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.analysis.d1_machine_analysis_binding import (
+    bind_d1_machine_analysis_contract,
+)
+from entropic_substrate.analysis.d1_machine_analysis_verification import (
+    D1VerifiedMachineAnalysis,
+    verify_d1_machine_analysis,
+)
+from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 _PLATFORM: Final = "linux/amd64"
 _ANALYSIS_NAME: Final = "blinded-analysis.json"
 _RESPONSE_NAME: Final = "execution-receipt.json"
+_WORKER_RESPONSE_NAME: Final = "worker-response.json"
 _MECHANISM: Final = "docker-fixed-argv-read-only-network-none-v1"
+_MECHANISM_V2: Final = "docker-fixed-argv-read-only-network-none-v2"
 
 
 def _fail(detail: str, cause: Exception | None = None) -> NoReturn:
@@ -128,6 +143,10 @@ class D1ExternalAnalysisLaunch:
     def response_path(self) -> Path:
         return self.output_path / _RESPONSE_NAME
 
+    @property
+    def worker_response_path(self) -> Path:
+        return self.output_path / _WORKER_RESPONSE_NAME
+
 
 @dataclass(frozen=True, slots=True)
 class D1ExternalAnalysisCommandResult:
@@ -159,6 +178,12 @@ class _AttestedCommandRunner(Protocol):
         cwd: Path | None,
         stdin: str | None,
     ) -> D1ExternalAnalysisCommandResult: ...
+
+
+class D1OutputAccessPort(Protocol):
+    def grant(self, path: Path, *, uid: int, gid: int) -> None: ...
+
+    def revoke(self, path: Path, *, uid: int, gid: int) -> None: ...
 
 
 def _mount(source: Path, destination: str, *, read_only: bool) -> str:
@@ -210,6 +235,29 @@ def _argv(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
         "/d1/output/blinded-analysis.json",
         "--response",
         "/d1/output/execution-receipt.json",
+    )
+
+
+def _argv_v2(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
+    legacy = _argv(launch)
+    image_index = legacy.index(launch.image_reference)
+    return (
+        *legacy[: image_index + 1],
+        "python",
+        "-m",
+        "entropic_substrate.analysis.d1_external_worker",
+        "--request",
+        "/d1/input/request.json",
+        "--capture-root",
+        "/d1/input/capture",
+        "--preregistration",
+        "/d1/input/preregistration",
+        "--reader-root",
+        "/d1/input/reader",
+        "--analysis",
+        "/d1/output/blinded-analysis.json",
+        "--response",
+        "/d1/output/worker-response.json",
     )
 
 
@@ -355,3 +403,133 @@ class DockerD1ExternalAnalysisAdapter(D1AnalysisRunnerPort):
             return D1AnalysisRunnerResult(machine, isolation)
         finally:
             self._launch.request_path.unlink(missing_ok=True)
+
+
+@dataclass(frozen=True, slots=True)
+class D1ExternalAnalysisRunnerRequestV2:
+    envelope: D1ExternalAnalysisRequestEnvelopeV2
+    aggregate: D1HeterogeneousCaptureAggregate
+    isolation: D1IsolationRequest
+
+    def __post_init__(self) -> None:
+        if type(self.envelope) is not D1ExternalAnalysisRequestEnvelopeV2:
+            raise TypeError("D1 v2 runner request requires the v2 transport envelope")
+        if type(self.aggregate) is not D1HeterogeneousCaptureAggregate:
+            raise TypeError("D1 v2 runner request requires authoritative aggregate")
+        if type(self.isolation) is not D1IsolationRequest:
+            raise TypeError("D1 v2 runner request requires isolation policy")
+        if self.envelope.isolation_request_digest != self.isolation.request_digest:
+            raise ValueError("D1 v2 runner request isolation differs from transport")
+        if self.envelope.input_control.aggregate.manifest_digest != self.aggregate.manifest_digest:
+            raise ValueError("D1 v2 runner aggregate differs from verified input")
+
+
+@dataclass(frozen=True, slots=True)
+class D1ExternalAnalysisRunnerResultV2:
+    analysis: D1VerifiedMachineAnalysis
+    isolation: D1ExternalIsolationAttestation
+    worker_response: D1ExternalAnalysisWorkerResponseV2
+
+
+class DockerD1ExternalAnalysisAdapterV2:
+    """Run the v2 worker and require final machine-analysis verification."""
+
+    def __init__(
+        self,
+        *,
+        launch: D1ExternalAnalysisLaunch,
+        runner: _AttestedCommandRunner,
+        output_access: D1OutputAccessPort,
+    ) -> None:
+        if type(launch) is not D1ExternalAnalysisLaunch:
+            raise TypeError("D1 v2 external adapter requires a launch value")
+        if not hasattr(runner, "run"):
+            raise TypeError("D1 v2 external adapter requires an attested command runner")
+        if not hasattr(output_access, "grant") or not hasattr(output_access, "revoke"):
+            raise TypeError("D1 v2 external adapter requires output access capability")
+        self._launch = launch
+        self._runner = runner
+        self._output_access = output_access
+
+    def run(self, request: D1ExternalAnalysisRunnerRequestV2) -> D1ExternalAnalysisRunnerResultV2:
+        if type(request) is not D1ExternalAnalysisRunnerRequestV2:
+            raise TypeError("D1 v2 adapter requires its nominal request")
+        if any(self._launch.output_path.iterdir()):
+            raise ValueError("D1 v2 output_path must be empty before execution")
+        if not self._launch.reader_path.is_dir():
+            raise ValueError("D1 v2 reader_path must be a directory")
+        request_bytes = encode_d1_external_analysis_request_v2(request.envelope)
+        argv = _argv_v2(self._launch)
+        access_granted = False
+        try:
+            self._output_access.grant(self._launch.output_path, uid=65532, gid=65532)
+            access_granted = True
+            _write_request(self._launch.request_path, request_bytes)
+            try:
+                observed = self._runner.run(argv, cwd=None, stdin=None)
+            except Exception as error:
+                _fail(str(error) or repr(error), error)
+            if type(observed) is not D1ExternalAnalysisCommandResult:
+                _fail("v2 runner returned an unsupported command observation")
+            if observed.invoked_argv != argv:
+                _fail("v2 observed argv differs from the fixed isolation command")
+            if observed.returncode != 0:
+                _fail(f"v2 worker returned nonzero exit code {observed.returncode}")
+            expected_entries = {_ANALYSIS_NAME, _WORKER_RESPONSE_NAME}
+            if {entry.name for entry in self._launch.output_path.iterdir()} != expected_entries:
+                _fail("v2 writable output contains unexpected or missing files")
+            analysis_bytes = _read_stable(self._launch.analysis_path, label="analysis output")
+            response_bytes = _read_stable(
+                self._launch.worker_response_path,
+                label="worker response",
+            )
+            response = decode_d1_external_analysis_worker_response_v2(response_bytes)
+            if response.analysis_request_digest != request.envelope.analysis_request_digest:
+                raise ValueError("D1 v2 worker response request digest differs")
+            if response.isolation_request_digest != request.isolation.request_digest:
+                raise ValueError("D1 v2 worker response isolation digest differs")
+            if response.input_manifest_sha256 != request.envelope.input_manifest_sha256:
+                raise ValueError("D1 v2 worker response input digest differs")
+            analysis_digest = _sha256(analysis_bytes)
+            if response.analysis_sha256 != analysis_digest:
+                raise ValueError("D1 v2 worker response analysis digest differs")
+            binding = bind_d1_machine_analysis_contract(
+                analysis_bytes,
+                expected=request.envelope.input_control,
+            )
+            verified = verify_d1_machine_analysis(
+                binding=binding,
+                aggregate=request.aggregate,
+            )
+            if _read_stable(self._launch.analysis_path, label="analysis output") != analysis_bytes:
+                raise ValueError("D1 v2 analysis output drifted after validation")
+            if (
+                _read_stable(self._launch.worker_response_path, label="worker response")
+                != response_bytes
+            ):
+                raise ValueError("D1 v2 worker response drifted after validation")
+            evidence = D1IsolationExecutionEvidence(
+                command_sha256=canonical_digest({"argv": list(observed.invoked_argv)}),
+                exit_code=observed.returncode,
+                request_sha256=_sha256(request_bytes),
+                analysis_sha256=analysis_digest,
+                response_sha256=_sha256(response_bytes),
+                stdout_sha256=_sha256(observed.stdout.encode()),
+                stderr_sha256=_sha256(observed.stderr.encode()),
+                image_digest=self._launch.image_digest,
+                platform=_PLATFORM,
+            )
+            isolation = D1ExternalIsolationAttestation._verified_external(  # pyright: ignore[reportPrivateUsage]
+                request=request.isolation,
+                mechanism=_MECHANISM_V2,
+                execution_evidence=evidence,
+            )
+            return D1ExternalAnalysisRunnerResultV2(verified, isolation, response)
+        finally:
+            self._launch.request_path.unlink(missing_ok=True)
+            if access_granted:
+                self._output_access.revoke(
+                    self._launch.output_path,
+                    uid=65532,
+                    gid=65532,
+                )
