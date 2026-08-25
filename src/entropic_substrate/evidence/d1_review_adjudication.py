@@ -12,6 +12,8 @@ from types import MappingProxyType
 from typing import cast
 
 __all__ = [
+    "D1_NO_MAJOR_OUTCOME",
+    "D1_NO_MAJOR_PROMPT_DIRECTIVE",
     "D1MajorFindingDisposition",
     "D1MajorFindingStatus",
     "D1ParsedReviewReport",
@@ -20,6 +22,7 @@ __all__ = [
     "adjudicate_d1_review",
     "parse_d1_major_findings",
     "parse_d1_review_execution_receipt",
+    "validate_d1_review_outcome_prompt",
 ]
 
 _RECEIPT_FIELDS = frozenset(
@@ -38,7 +41,12 @@ _RECEIPT_FIELDS = frozenset(
 )
 _MAJOR_HEADING = re.compile(r"(?m)^#{1,6}\s+(MAJOR-[1-9][0-9]*)(?:\s|[-:\u2014])")
 _MAJOR_TOKEN = re.compile(r"\bMAJOR-[0-9]+\b")
-_NO_MAJOR = "NO_MAJOR_FINDINGS"
+_MAJOR_ID = re.compile(r"MAJOR-[1-9][0-9]*")
+D1_NO_MAJOR_OUTCOME = "Review outcome: NO_MAJOR_FINDINGS"
+D1_NO_MAJOR_PROMPT_DIRECTIVE = (
+    "If and only if there are no MAJOR findings, emit exactly this standalone line: "
+    f"{D1_NO_MAJOR_OUTCOME}"
+)
 
 
 def _sha(value: str, label: str) -> None:
@@ -141,26 +149,52 @@ class D1ParsedReviewReport:
 
     def __post_init__(self) -> None:
         _sha(self.report_sha256, "D1 parsed review report")
+        if type(self.major_finding_ids) is not tuple or any(
+            type(item) is not str or _MAJOR_ID.fullmatch(item) is None
+            for item in self.major_finding_ids
+        ):
+            raise ValueError("D1 parsed review finding IDs must be canonical MAJOR-N values")
+        if len(set(self.major_finding_ids)) != len(self.major_finding_ids):
+            raise ValueError("D1 parsed review finding IDs must be unique")
 
 
-def parse_d1_major_findings(payload: bytes) -> D1ParsedReviewReport:
+def validate_d1_review_outcome_prompt(text: str) -> None:
+    """Require one exact prompt instruction for the empty-finding outcome."""
+    if type(text) is not str or text.splitlines().count(D1_NO_MAJOR_PROMPT_DIRECTIVE) != 1:
+        raise ValueError("D1 reviewer prompt must register the no-MAJOR outcome exactly once")
+
+
+def parse_d1_major_findings(
+    payload: bytes,
+    *,
+    reviewer_prompt: bytes,
+) -> D1ParsedReviewReport:
     """Extract stable heading IDs and reject silent or contradictory absence."""
     if type(payload) is not bytes or not payload:
         raise ValueError("D1 reviewer report must be nonempty bytes")
+    if type(reviewer_prompt) is not bytes or not reviewer_prompt:
+        raise ValueError("D1 reviewer prompt must be nonempty bytes")
     try:
         text = payload.decode("utf-8")
+        prompt_text = reviewer_prompt.decode("utf-8")
     except UnicodeDecodeError as error:
-        raise ValueError("D1 reviewer report must be UTF-8") from error
+        raise ValueError("D1 reviewer report and prompt must be UTF-8") from error
+    validate_d1_review_outcome_prompt(prompt_text)
     headings = tuple(_MAJOR_HEADING.findall(text))
     if len(set(headings)) != len(headings):
         raise ValueError("D1 reviewer report has a duplicate MAJOR heading")
     references = set(_MAJOR_TOKEN.findall(text))
     if references != set(headings):
         raise ValueError("every D1 MAJOR reference requires one canonical heading")
-    no_major = _NO_MAJOR in text
-    if headings and no_major:
+    outcome_count = text.splitlines().count(D1_NO_MAJOR_OUTCOME)
+    marker_present = "NO_MAJOR_FINDINGS" in text
+    if marker_present and outcome_count == 0:
+        raise ValueError("NO_MAJOR_FINDINGS must appear in the standalone outcome declaration")
+    if outcome_count > 1:
+        raise ValueError("D1 no-MAJOR outcome must appear exactly once")
+    if headings and outcome_count:
         raise ValueError("NO_MAJOR_FINDINGS contradicts a MAJOR heading")
-    if not headings and not no_major:
+    if not headings and outcome_count != 1:
         raise ValueError("D1 report without findings requires explicit NO_MAJOR_FINDINGS")
     return D1ParsedReviewReport(hashlib.sha256(payload).hexdigest(), headings)
 

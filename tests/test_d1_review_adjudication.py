@@ -7,14 +7,21 @@ import json
 import pytest
 
 from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
     D1MajorFindingDisposition,
     D1MajorFindingStatus,
+    D1ParsedReviewReport,
     adjudicate_d1_review,
     parse_d1_major_findings,
     parse_d1_review_execution_receipt,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def _prompt() -> bytes:
+    return f"Registered review instructions\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode()
 
 
 def _receipt(**overrides: object) -> bytes:
@@ -46,28 +53,63 @@ def test_v2_execution_receipt_preserves_raw_response_report_and_retry_lineage() 
 def test_major_parser_requires_heading_ids_and_accounts_for_every_reference() -> None:
     report = b"""# D1 review\n\n## MAJOR-1 - Capture mismatch\nDetails.\n\n## MAJOR-3 - Reader drift\nMAJOR-1 remains relevant.\n"""
 
-    parsed = parse_d1_major_findings(report)
+    parsed = parse_d1_major_findings(report, reviewer_prompt=_prompt())
 
     assert parsed.major_finding_ids == ("MAJOR-1", "MAJOR-3")
     assert parsed.report_sha256
     with pytest.raises(ValueError, match="heading"):
-        parse_d1_major_findings(b"# Review\nMAJOR-2 appears only in prose.\n")
+        parse_d1_major_findings(
+            b"# Review\nMAJOR-2 appears only in prose.\n", reviewer_prompt=_prompt()
+        )
     with pytest.raises(ValueError, match="duplicate"):
-        parse_d1_major_findings(b"## MAJOR-1 A\n## MAJOR-1 B\n")
+        parse_d1_major_findings(b"## MAJOR-1 A\n## MAJOR-1 B\n", reviewer_prompt=_prompt())
 
 
 def test_no_major_marker_is_explicit_and_cannot_contradict_a_finding() -> None:
-    parsed = parse_d1_major_findings(b"# Review\n\nReview outcome: NO_MAJOR_FINDINGS\n")
+    parsed = parse_d1_major_findings(
+        f"# Review\n\n{D1_NO_MAJOR_OUTCOME}\n".encode(), reviewer_prompt=_prompt()
+    )
     assert parsed.major_finding_ids == ()
 
     with pytest.raises(ValueError, match="NO_MAJOR_FINDINGS"):
-        parse_d1_major_findings(b"# Review without a finding marker\n")
+        parse_d1_major_findings(b"# Review without a finding marker\n", reviewer_prompt=_prompt())
     with pytest.raises(ValueError, match="contradicts"):
-        parse_d1_major_findings(b"Review outcome: NO_MAJOR_FINDINGS\n## MAJOR-1 Contradiction\n")
+        parse_d1_major_findings(
+            f"{D1_NO_MAJOR_OUTCOME}\n## MAJOR-1 Contradiction\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+
+
+def test_no_major_outcome_requires_registered_prompt_and_standalone_line() -> None:
+    report = f"{D1_NO_MAJOR_OUTCOME}\n".encode()
+    with pytest.raises(ValueError, match="reviewer prompt"):
+        parse_d1_major_findings(report, reviewer_prompt=b"Unregistered prompt\n")
+    with pytest.raises(ValueError, match="standalone"):
+        parse_d1_major_findings(
+            f"Narrative mentions {D1_NO_MAJOR_OUTCOME} but declares nothing.\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+    with pytest.raises(ValueError, match="exactly once"):
+        parse_d1_major_findings(
+            f"{D1_NO_MAJOR_OUTCOME}\n{D1_NO_MAJOR_OUTCOME}\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+
+
+def test_parsed_report_constructor_rejects_unknown_and_duplicate_finding_ids() -> None:
+    with pytest.raises(ValueError, match="canonical"):
+        D1ParsedReviewReport("a" * 64, ("MAJOR-0",))
+    with pytest.raises(ValueError, match="canonical"):
+        D1ParsedReviewReport("a" * 64, ("UNKNOWN-1",))
+    with pytest.raises(ValueError, match="unique"):
+        D1ParsedReviewReport("a" * 64, ("MAJOR-1", "MAJOR-1"))
 
 
 def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> None:
-    parsed = parse_d1_major_findings(b"## MAJOR-1 Capture mismatch\n## MAJOR-2 Reader drift\n")
+    parsed = parse_d1_major_findings(
+        b"## MAJOR-1 Capture mismatch\n## MAJOR-2 Reader drift\n",
+        reviewer_prompt=_prompt(),
+    )
     surface = adjudicate_d1_review(
         report=parsed,
         dispositions=(
@@ -105,7 +147,7 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
 
 
 def test_empty_report_adjudication_is_not_required() -> None:
-    report = parse_d1_major_findings(b"Review outcome: NO_MAJOR_FINDINGS\n")
+    report = parse_d1_major_findings(f"{D1_NO_MAJOR_OUTCOME}\n".encode(), reviewer_prompt=_prompt())
     surface = adjudicate_d1_review(
         report=report,
         dispositions=(),

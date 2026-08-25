@@ -21,6 +21,9 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     D1FilingGraphError,
     D1FilingRevisions,
 )
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
 from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 
 pytestmark = pytest.mark.unit
@@ -87,7 +90,7 @@ def _case(mutation: str | None = None):
                     "schema_version": "d1-blind-review-packet-v1",
                 }
             ),
-            "reviewer_prompt": b"registered prompt",
+            "reviewer_prompt": (f"Registered prompt\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode()),
             "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
             "alias_reveal": reveal,
         }
@@ -122,6 +125,12 @@ def _case(mutation: str | None = None):
             b'{"alias_commitment":"'
             + _sha(commitment).encode()
             + b'","schema_version":"d1-blind-review-packet-v1","x":NaN}'
+        )
+    if mutation == "prompt_outcome_missing":
+        payloads["reviewer_prompt"] = b"Registered prompt without outcome contract\n"
+    elif mutation == "prompt_outcome_duplicate":
+        payloads["reviewer_prompt"] = (
+            f"{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode()
         )
     review_fields.update(
         {
@@ -230,6 +239,8 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("packet_schema", D1FilingGraphError, "review_packet"),
         ("packet_noncanonical", D1FilingGraphError, "review_packet"),
         ("packet_nonfinite", D1FilingGraphError, "review_packet"),
+        ("prompt_outcome_missing", D1FilingGraphError, "reviewer prompt"),
+        ("prompt_outcome_duplicate", D1FilingGraphError, "reviewer prompt"),
         ("narrative", D1FilingGraphError, "narrative"),
     ],
 )

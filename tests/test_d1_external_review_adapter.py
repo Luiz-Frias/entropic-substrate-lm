@@ -34,6 +34,9 @@ from entropic_substrate.analysis.d1_review_packet import (
     D1BlindReviewPacket,
     D1FactorialReviewerPrompt,
 )
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -52,7 +55,9 @@ def _request(
     packet = D1BlindReviewPacket.from_manifest(
         {"schema_version": "d1-blind-review-packet-v1", "evidence": "secret-sentinel"}
     )
-    prompt = D1FactorialReviewerPrompt(f"Packet SHA-256: {packet.packet_digest}\nsecret-sentinel\n")
+    prompt = D1FactorialReviewerPrompt(
+        f"Packet SHA-256: {packet.packet_digest}\nsecret-sentinel\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n"
+    )
     return D1CloudReviewRequest(
         packet=packet,
         prompt=prompt,

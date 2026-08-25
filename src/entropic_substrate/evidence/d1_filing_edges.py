@@ -195,7 +195,10 @@ def _verify_review(
         if getattr(receipt, field) != value:
             _fail("review_binding", f"review_receipt.{field}", "digest differs")
     try:
-        report = parse_d1_major_findings(payloads["reviewer_report"])
+        report = parse_d1_major_findings(
+            payloads["reviewer_report"],
+            reviewer_prompt=payloads["reviewer_prompt"],
+        )
     except ValueError as error:
         _fail("review_report", "reviewer_report", str(error))
     if report.major_finding_ids != verdict.review.adjudication.major_findings:

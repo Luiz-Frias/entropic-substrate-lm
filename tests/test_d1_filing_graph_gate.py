@@ -29,6 +29,9 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     D1FilingRevisions,
 )
 from entropic_substrate.evidence.d1_gate import decide_filed_verdict
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
 from entropic_substrate.evidence.d1_types import D1FamilyIdentity, FiledGateAuthorization
 
 from .d1_capture_fixtures import capture_family
@@ -168,7 +171,7 @@ def _case(tmp_path: Path, mutation: str | None = None):
                     "schema_version": "d1-blind-review-packet-v1",
                 }
             ),
-            "reviewer_prompt": b"prompt",
+            "reviewer_prompt": f"Prompt\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode(),
             "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
         }
     )

@@ -16,6 +16,10 @@ from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnal
 from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
 from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+    validate_d1_review_outcome_prompt,
+)
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
@@ -99,6 +103,9 @@ class D1BlindReviewPacket:
 @dataclass(frozen=True, slots=True)
 class D1FactorialReviewerPrompt:
     text: str
+
+    def __post_init__(self) -> None:
+        validate_d1_review_outcome_prompt(self.text)
 
     @property
     def prompt_digest(self) -> str:
@@ -394,6 +401,7 @@ def build_d1_factorial_reviewer_prompt(
             *contrast_lines,
             "Registered clauses/riders in exact precedence:",
             *clause_lines,
+            D1_NO_MAJOR_PROMPT_DIRECTIVE,
             "Report integrity findings as stable MAJOR-N identifiers and list every open MAJOR explicitly.",
             "Do not authorize a successor gate; review ends with the report and finding IDs.",
         ]

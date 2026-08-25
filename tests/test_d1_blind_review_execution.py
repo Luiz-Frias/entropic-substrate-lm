@@ -27,6 +27,9 @@ from entropic_substrate.analysis.d1_review_packet import (
     D1BlindReviewPacket,
     D1FactorialReviewerPrompt,
 )
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -54,6 +57,7 @@ def _request(
     packet = D1BlindReviewPacket.from_manifest(packet_manifest)
     prompt = D1FactorialReviewerPrompt(
         f"Packet SHA-256: {packet.packet_digest}\nRecompute only from packet.\n"
+        f"{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n"
     )
     return D1CloudReviewRequest(
         packet=packet,
@@ -257,7 +261,7 @@ def test_alias_reveal_rejects_receipt_to_request_packet_substitution() -> None:
         }
     )
     substituted_prompt = D1FactorialReviewerPrompt(
-        f"Packet SHA-256: {substituted_packet.packet_digest}\nRecompute only from packet.\n"
+        f"Packet SHA-256: {substituted_packet.packet_digest}\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n"
     )
     substituted_request = D1CloudReviewRequest(
         packet=substituted_packet,

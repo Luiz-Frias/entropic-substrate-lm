@@ -28,6 +28,10 @@ from entropic_substrate.analysis.d1_review_packet import (
 )
 from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
 
 from .test_d1_analysis_receipt import _implementation
@@ -121,6 +125,8 @@ def test_prompt_quotes_registered_rules_riders_and_aliased_coefficients(
 
     assert "recompute only from the sealed packet" in prompt.text
     assert "do not authorize a successor gate" in prompt.text.lower()
+    assert prompt.text.splitlines().count(D1_NO_MAJOR_PROMPT_DIRECTIVE) == 1
+    assert D1_NO_MAJOR_OUTCOME in prompt.text
     assert decision.verdict_vocabulary in prompt.text
     for clause in decision.clause_rules.values():
         assert clause.registered_rule in prompt.text
