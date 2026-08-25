@@ -15,6 +15,10 @@ from entropic_substrate.analysis.d1_real_arm_verdict import (
     D1VerdictDecision,
     assemble_d1_real_arm_verdict,
 )
+from entropic_substrate.evidence.d1_review_adjudication import (
+    adjudicate_d1_review,
+    parse_d1_major_findings,
+)
 
 from .test_d1_real_arm_verdict_assembly import _inputs
 
@@ -94,5 +98,33 @@ def test_pre_mint_attestation_proxies_are_rejected(
             execution=mutable[1],  # type: ignore[arg-type]
             reveal=mutable[2],  # type: ignore[arg-type]
             adjudication=mutable[3],  # type: ignore[arg-type]
+            decision=D1VerdictDecision(assembled.verdict.verdict),
+        )
+
+
+def test_genuine_adjudication_from_another_execution_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assembled, (verified, execution, reveal, _) = _assembled(tmp_path, monkeypatch)
+    report = parse_d1_major_findings(
+        execution.report,
+        reviewer_prompt=execution.request.prompt.text.encode(),
+    )
+    unrelated = adjudicate_d1_review(
+        report=report,
+        dispositions=(),
+        operator_record_sha256="d" * 64,
+        execution_receipt_sha256="d" * 64,
+        review_request_sha256="e" * 64,
+        review_packet_sha256="f" * 64,
+    )
+
+    with pytest.raises(ValueError, match="adjudication execution identity"):
+        assemble_d1_real_arm_verdict(
+            verified=verified,
+            execution=execution,
+            reveal=reveal,
+            adjudication=unrelated,
             decision=D1VerdictDecision(assembled.verdict.verdict),
         )

@@ -274,6 +274,12 @@ def _review_lineage(
         reviewer_prompt=execution.request.prompt.text.encode(),
     )
     if (
+        adjudication.execution_receipt_sha256 != execution.receipt.receipt_digest
+        or adjudication.review_request_sha256 != execution.request.request_digest
+        or adjudication.review_packet_sha256 != packet.packet_digest
+    ):
+        raise ValueError("D1 adjudication execution identity differs from reviewed execution")
+    if (
         adjudication.report_sha256 != report.report_sha256
         or adjudication.major_finding_ids != report.major_finding_ids
     ):

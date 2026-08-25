@@ -131,6 +131,9 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
             ),
         ),
         operator_record_sha256="b" * 64,
+        execution_receipt_sha256="d" * 64,
+        review_request_sha256="e" * 64,
+        review_packet_sha256="f" * 64,
     )
 
     assert surface.status == "OPEN"
@@ -151,6 +154,9 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
                 ),
             ),
             operator_record_sha256="b" * 64,
+            execution_receipt_sha256="d" * 64,
+            review_request_sha256="e" * 64,
+            review_packet_sha256="f" * 64,
         )
 
 
@@ -160,6 +166,9 @@ def test_empty_report_adjudication_is_not_required() -> None:
         report=report,
         dispositions=(),
         operator_record_sha256="c" * 64,
+        execution_receipt_sha256="d" * 64,
+        review_request_sha256="e" * 64,
+        review_packet_sha256="f" * 64,
     )
     surface.require_factory_attested()
     with pytest.raises(TypeError, match="not factory-attested"):

@@ -237,6 +237,9 @@ class D1MajorFindingDisposition:
 @dataclass(frozen=True, slots=True, weakref_slot=True, init=False)
 class D1ReviewAdjudicationSurface:
     report_sha256: str
+    execution_receipt_sha256: str
+    review_request_sha256: str
+    review_packet_sha256: str
     major_finding_ids: tuple[str, ...]
     dispositions: Mapping[str, D1MajorFindingDisposition]
     open_major_finding_ids: tuple[str, ...]
@@ -266,10 +269,13 @@ class D1ReviewAdjudicationSurface:
     def manifest(self) -> dict[str, object]:
         return {
             "dispositions": [self.dispositions[item].manifest for item in self.major_finding_ids],
+            "execution_receipt_sha256": self.execution_receipt_sha256,
             "major_finding_ids": list(self.major_finding_ids),
             "open_major_finding_ids": list(self.open_major_finding_ids),
             "operator_record_sha256": self.operator_record_sha256,
             "report_sha256": self.report_sha256,
+            "review_packet_sha256": self.review_packet_sha256,
+            "review_request_sha256": self.review_request_sha256,
             "schema_version": "d1-review-adjudication-v1",
             "status": self.status,
         }
@@ -307,6 +313,9 @@ def _derive_status(
 
 def _validate_adjudication_surface(surface: D1ReviewAdjudicationSurface) -> None:
     _sha(surface.report_sha256, "D1 adjudication report")
+    _sha(surface.execution_receipt_sha256, "D1 adjudication execution receipt")
+    _sha(surface.review_request_sha256, "D1 adjudication review request")
+    _sha(surface.review_packet_sha256, "D1 adjudication review packet")
     _sha(surface.operator_record_sha256, "D1 adjudication operator record")
     if (
         type(surface.major_finding_ids) is not tuple
@@ -340,6 +349,9 @@ def _validate_adjudication_surface(surface: D1ReviewAdjudicationSurface) -> None
 def _mint_adjudication_surface(
     *,
     report_sha256: str,
+    execution_receipt_sha256: str,
+    review_request_sha256: str,
+    review_packet_sha256: str,
     major_finding_ids: tuple[str, ...],
     dispositions: Mapping[str, D1MajorFindingDisposition],
     open_major_finding_ids: tuple[str, ...],
@@ -348,6 +360,9 @@ def _mint_adjudication_surface(
 ) -> D1ReviewAdjudicationSurface:
     surface = object.__new__(D1ReviewAdjudicationSurface)
     object.__setattr__(surface, "report_sha256", report_sha256)
+    object.__setattr__(surface, "execution_receipt_sha256", execution_receipt_sha256)
+    object.__setattr__(surface, "review_request_sha256", review_request_sha256)
+    object.__setattr__(surface, "review_packet_sha256", review_packet_sha256)
     object.__setattr__(surface, "major_finding_ids", major_finding_ids)
     object.__setattr__(surface, "dispositions", MappingProxyType(dict(dispositions)))
     object.__setattr__(surface, "open_major_finding_ids", open_major_finding_ids)
@@ -363,6 +378,9 @@ def adjudicate_d1_review(
     report: D1ParsedReviewReport,
     dispositions: tuple[D1MajorFindingDisposition, ...],
     operator_record_sha256: str,
+    execution_receipt_sha256: str,
+    review_request_sha256: str,
+    review_packet_sha256: str,
 ) -> D1ReviewAdjudicationSurface:
     """Account for every parsed finding without conferring successor authority."""
     if type(report) is not D1ParsedReviewReport or type(dispositions) is not tuple:
@@ -371,9 +389,15 @@ def adjudicate_d1_review(
     if len(by_id) != len(dispositions) or set(by_id) != set(report.major_finding_ids):
         raise ValueError("D1 adjudication dispositions must exactly cover parsed MAJOR IDs")
     _sha(operator_record_sha256, "D1 adjudication operator record")
+    _sha(execution_receipt_sha256, "D1 adjudication execution receipt")
+    _sha(review_request_sha256, "D1 adjudication review request")
+    _sha(review_packet_sha256, "D1 adjudication review packet")
     open_ids, status = _derive_status(report.major_finding_ids, by_id)
     return _mint_adjudication_surface(
         report_sha256=report.report_sha256,
+        execution_receipt_sha256=execution_receipt_sha256,
+        review_request_sha256=review_request_sha256,
+        review_packet_sha256=review_packet_sha256,
         major_finding_ids=report.major_finding_ids,
         dispositions=by_id,
         open_major_finding_ids=open_ids,

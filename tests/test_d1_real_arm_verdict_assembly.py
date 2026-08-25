@@ -101,6 +101,9 @@ def _inputs(
         report=report,
         dispositions=(),
         operator_record_sha256="c" * 64,
+        execution_receipt_sha256=execution.receipt.receipt_digest,
+        review_request_sha256=execution.request.request_digest,
+        review_packet_sha256=execution.request.packet.packet_digest,
     )
     return verified, execution, reveal, adjudication
 
