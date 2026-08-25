@@ -15,13 +15,17 @@ from entropic_substrate.analysis.d1_execution_receipt import D1AnalysisExecution
 from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
 from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
 from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.evidence.d1_capture_roster import (
+    D1DeclaredAttempt,
+    D1ExpectedRun,
+)
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_review_adjudication import (
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
     validate_d1_review_outcome_prompt,
 )
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
 
 __all__ = [
     "D1BlindReviewPacket",
@@ -30,6 +34,7 @@ __all__ = [
     "D1PacketBlindnessError",
     "build_d1_blind_review_packet",
     "build_d1_factorial_reviewer_prompt",
+    "d1_review_roster_alias_order",
     "validate_d1_packet_blindness",
 ]
 
@@ -64,6 +69,8 @@ _NONBLINDABLE = (
         "reason": "failure/completion role is reviewable integrity evidence",
     },
 )
+_BLIND_ALIASES = ("A", "B", "C", "D")
+_ROSTER_ALGORITHM = "sha256-registered-seed-alias-sort-v1"
 
 
 class D1BlindnessLabel(StrEnum):
@@ -77,6 +84,20 @@ class D1PacketBlindnessError(ValueError):
 def _canonical(value: object) -> str:
     return json.dumps(
         value, allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    )
+
+
+def d1_review_roster_alias_order(seed: int) -> tuple[str, ...]:
+    """Derive one deterministic blind-alias order from a registered seed."""
+    if type(seed) is not int or seed < 0:
+        raise ValueError("D1 review roster requires a nonnegative registered seed")
+    return tuple(
+        sorted(
+            _BLIND_ALIASES,
+            key=lambda alias: hashlib.sha256(
+                f"d1-review-roster-v1:{seed}:{alias}".encode()
+            ).digest(),
+        )
     )
 
 
@@ -159,10 +180,68 @@ def _source_artifacts(aggregate: D1HeterogeneousCaptureAggregate) -> list[dict[s
     ]
 
 
+def _registered_seeds(contract: D1DecisionContract) -> tuple[int, ...]:
+    seeds = contract.registered_constants.get("seeds")
+    if (
+        type(seeds) is not tuple
+        or not seeds
+        or any(type(seed) is not int or seed < 0 for seed in seeds)
+        or len(set(seeds)) != len(seeds)
+    ):
+        raise ValueError("D1 review roster requires the exact registered seed tuple")
+    return cast(tuple[int, ...], seeds)
+
+
+def _expected_order(
+    expected: tuple[D1ExpectedRun, ...],
+    aliases: D1PreparedBlindAliases,
+    registered_seeds: tuple[int, ...],
+) -> tuple[D1ExpectedRun, ...]:
+    if {item.seed for item in expected} != set(registered_seeds):
+        raise ValueError("D1 review roster seed set differs from the registered seeds")
+    seed_rank = {seed: index for index, seed in enumerate(registered_seeds)}
+    alias_rank = {
+        seed: {alias: index for index, alias in enumerate(d1_review_roster_alias_order(seed))}
+        for seed in registered_seeds
+    }
+    return tuple(
+        sorted(
+            expected,
+            key=lambda item: (
+                seed_rank[item.seed],
+                alias_rank[item.seed][aliases.aliases.for_arm(item.arm)],
+            ),
+        )
+    )
+
+
+def _attempt_order(
+    attempts: tuple[D1DeclaredAttempt, ...], aliases: D1PreparedBlindAliases
+) -> tuple[D1DeclaredAttempt, ...]:
+    return tuple(
+        sorted(
+            attempts,
+            key=lambda item: (
+                item.seed,
+                d1_review_roster_alias_order(item.seed).index(aliases.aliases.for_arm(item.arm)),
+                item.lane.value,
+                item.run_class.value,
+                item.disposition,
+            ),
+        )
+    )
+
+
 def _roster(
-    aggregate: D1HeterogeneousCaptureAggregate, aliases: D1PreparedBlindAliases
-) -> tuple[dict[str, object], dict[str, str], dict[str, str]]:
-    expected = aggregate.roster.expected_confirmatory
+    aggregate: D1HeterogeneousCaptureAggregate,
+    aliases: D1PreparedBlindAliases,
+    registered_seeds: tuple[int, ...],
+) -> tuple[dict[str, object], dict[str, str], dict[str, str], tuple[D1ExpectedRun, ...]]:
+    expected = _expected_order(
+        aggregate.roster.expected_confirmatory,
+        aliases,
+        registered_seeds,
+    )
     run_aliases = {item.logical_run_id: f"R{index:03d}" for index, item in enumerate(expected, 1)}
     pair_aliases = {
         value: f"P{index:03d}" for index, value in enumerate(aggregate.roster.pairing_ids, 1)
@@ -181,6 +260,7 @@ def _roster(
     attempts_by_id = {item.attempt.logical_run_id: item for item in aggregate.attempts}
     if set(attempts_by_id) != {item.logical_run_id for item in aggregate.roster.attempts}:
         raise ValueError("D1 packet requires the complete attempt evidence roster")
+    ordered_attempts = _attempt_order(aggregate.roster.attempts, aliases)
     attempts = [
         {
             "arm_alias": aliases.aliases.for_arm(item.arm),
@@ -190,9 +270,22 @@ def _roster(
             "run_class": item.run_class.value,
             "seed": item.seed,
         }
-        for index, item in enumerate(aggregate.roster.attempts, 1)
+        for index, item in enumerate(ordered_attempts, 1)
     ]
-    return {"attempts": attempts, "confirmatory": confirmatory}, run_aliases, pair_aliases
+    return (
+        {"attempts": attempts, "confirmatory": confirmatory},
+        run_aliases,
+        pair_aliases,
+        expected,
+    )
+
+
+def _roster_randomization(roster: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "algorithm": _ROSTER_ALGORITHM,
+        "attempt_order_sha256": canonical_digest({"order": roster["attempts"]}),
+        "confirmatory_order_sha256": canonical_digest({"order": roster["confirmatory"]}),
+    }
 
 
 def _run_attestations(
@@ -201,9 +294,9 @@ def _run_attestations(
     run_evidence: tuple[D1RunEvidence, ...],
     run_aliases: Mapping[str, str],
     pair_aliases: Mapping[str, str],
+    expected: tuple[D1ExpectedRun, ...],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     evidence = {item.identity.logical_run_id: item for item in run_evidence}
-    expected = aggregate.roster.expected_confirmatory
     if len(evidence) != len(run_evidence) or set(evidence) != {
         item.logical_run_id for item in expected
     }:
@@ -285,8 +378,20 @@ def build_d1_blind_review_packet(
 ) -> D1BlindReviewPacket:
     """Assemble exact evidence without serializing canonical mechanism identities."""
     bindings, readers = _receipt_bindings(analysis_receipt, analysis, aggregate, aliases)
-    roster, run_aliases, pair_aliases = _roster(aggregate, aliases)
-    runs, parity = _run_attestations(aggregate, aliases, run_evidence, run_aliases, pair_aliases)
+    registered_seeds = _registered_seeds(decision_contract)
+    roster, run_aliases, pair_aliases, expected = _roster(
+        aggregate,
+        aliases,
+        registered_seeds,
+    )
+    runs, parity = _run_attestations(
+        aggregate,
+        aliases,
+        run_evidence,
+        run_aliases,
+        pair_aliases,
+        expected,
+    )
     manifest: dict[str, object] = {
         "alias_commitment": aliases.aliases.sealed_commitment,
         "analysis": analysis.manifest,
@@ -297,6 +402,7 @@ def build_d1_blind_review_packet(
         "nonblindable_fields": list(_NONBLINDABLE),
         "parity_attestations": parity,
         "run_attestations": runs,
+        "roster_randomization": _roster_randomization(roster),
         "schema_version": _SCHEMA,
         "source_artifacts": _source_artifacts(aggregate),
         "validated_readers": readers,
@@ -367,10 +473,15 @@ def validate_d1_packet_blindness(
                 "registered contrast coefficients were not exactly aliased"
             )
     roster = cast(dict[str, list[object]], manifest["capture_roster"])
-    if len(roster["confirmatory"]) != len(aggregate.roster.expected_confirmatory) or len(
-        roster["attempts"]
-    ) != len(aggregate.roster.attempts):
-        raise D1PacketBlindnessError("complete capture or attempt roster is absent")
+    expected_roster, _, _, _ = _roster(
+        aggregate,
+        aliases,
+        _registered_seeds(contract),
+    )
+    if roster != expected_roster or manifest.get("roster_randomization") != (
+        _roster_randomization(expected_roster)
+    ):
+        raise D1PacketBlindnessError("randomized roster order or record differs")
 
 
 def build_d1_factorial_reviewer_prompt(
