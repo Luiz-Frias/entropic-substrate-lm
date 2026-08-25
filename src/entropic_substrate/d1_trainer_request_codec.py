@@ -27,7 +27,9 @@ from entropic_substrate.experiments.d1_config import D1LaunchProfile
 from entropic_substrate.experiments.d1_plan import (
     ConfirmatoryD1RunPlan,
     D1PlanManifestError,
+    SmokeD1RunPlan,
     parse_d1_confirmatory_plan,
+    parse_d1_smoke_plan,
 )
 
 __all__ = [
@@ -134,12 +136,12 @@ class D1TrainerLocationSpec:
 
 
 def _validate_common(
-    plan: ConfirmatoryD1RunPlan,
+    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan,
     start: RunStartProvenance,
     origin: D1TrainerWallOrigin,
 ) -> None:
     if (
-        type(plan) is not ConfirmatoryD1RunPlan
+        type(plan) not in (ConfirmatoryD1RunPlan, SmokeD1RunPlan)
         or type(start) is not RunStartProvenance
         or type(origin) is not D1TrainerWallOrigin
     ):
@@ -151,7 +153,7 @@ def _validate_common(
 
 @dataclass(frozen=True, slots=True)
 class D1FreshTrainerRequest:
-    plan: ConfirmatoryD1RunPlan
+    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan
     start: RunStartProvenance
     origin: D1TrainerWallOrigin
     locations: D1TrainerLocationSpec
@@ -169,7 +171,7 @@ class D1FreshTrainerRequest:
 
 @dataclass(frozen=True, slots=True)
 class D1ResumeTrainerRequest:
-    plan: ConfirmatoryD1RunPlan
+    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan
     start: RunStartProvenance
     origin: D1TrainerWallOrigin
     locations: D1TrainerLocationSpec
@@ -290,7 +292,19 @@ def parse_d1_trainer_request(
     if len(by_name) != len(profiles) or profile_name not in by_name:
         _fail("trainer request profile is absent from the installed catalog")
     try:
-        plan = parse_d1_confirmatory_plan(by_name[cast(str, profile_name)], plan_mapping)
+        run_class = plan_mapping.get("run_class")
+        if run_class == "confirmatory":
+            plan = parse_d1_confirmatory_plan(
+                by_name[cast(str, profile_name)],
+                plan_mapping,
+            )
+        elif run_class == "smoke":
+            plan = parse_d1_smoke_plan(
+                by_name[cast(str, profile_name)],
+                plan_mapping,
+            )
+        else:
+            _fail("trainer request plan run_class is unsupported")
         start = run_start_from_mapping(root["run_start"])
         origin = _origin(root["wall_origin"])
         locations = _locations(root["locations"])

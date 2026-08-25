@@ -380,3 +380,44 @@ def parse_d1_confirmatory_plan(profile: D1LaunchProfile, value: object) -> Confi
         )
     except (TypeError, ValueError) as error:
         _fail(f"confirmatory D1 plan is invalid: {error}", error)
+
+
+def parse_d1_smoke_plan(profile: D1LaunchProfile, value: object) -> SmokeD1RunPlan:
+    if type(profile) is not D1LaunchProfile:
+        _fail("smoke D1 plan requires a D1LaunchProfile")
+    item = _mapping(value, label="D1 smoke plan")
+    _exact_keys(item, _PLAN_KEYS, label="D1 smoke plan")
+    if item["schema_version"] != D1_RUN_PLAN_SCHEMA:
+        _fail(f"schema_version must be {D1_RUN_PLAN_SCHEMA!r}")
+    if item["run_class"] != RunClass.SMOKE.value:
+        _fail("run_class must be the fixed 'smoke' literal")
+    if _string(item["profile_name"], label="profile_name") != profile.name:
+        _fail("profile_name does not match the supplied launch profile")
+    try:
+        arm = D1Arm(_string(item["arm"], label="arm"))
+    except ValueError as error:
+        _fail("arm is not a registered D1 arm", error)
+    if arm is not profile.arm:
+        _fail("arm does not match the supplied launch profile")
+    if _sha256(item["family_digest"], label="family_digest") != profile.family.family_digest:
+        _fail("family_digest does not match the supplied profile family")
+    if (
+        _sha256(item["construction_digest"], label="construction_digest")
+        != profile.draft.construction_digest
+    ):
+        _fail("construction_digest does not match the supplied profile cell")
+    if item["preregistration"] is not None:
+        _fail("smoke D1 plan forbids preregistration identity")
+    try:
+        return create_d1_smoke_plan(
+            profile,
+            logical_run_id=_string(item["logical_run_id"], label="logical_run_id"),
+            seed=_nonnegative_int(item["seed"], label="seed"),
+            pairing_id=_string(item["pairing_id"], label="pairing_id"),
+            evidence=_evidence(item["evidence"]),
+            data=None if item["data"] is None else _data(item["data"]),
+            code=None if item["code"] is None else _code(item["code"]),
+            container=(None if item["container"] is None else _container(item["container"])),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"smoke D1 plan is invalid: {error}", error)

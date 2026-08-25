@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as launch
+from d1_trainer_fixtures import micro_plan, run_start
 from entropic_substrate.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
@@ -21,6 +22,8 @@ from entropic_substrate.evidence.resource_provenance import (
     SegmentStartMode,
     execution_segment_id,
 )
+from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan
+from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 
@@ -52,6 +55,25 @@ def test_fresh_request_round_trips_and_resolves_safe_output_locations(tmp_path: 
     assert parsed == request
     assert locations.journal_path == tmp_path / "runs/journal.jsonl"
     assert locations.checkpoint_path == tmp_path / "runs/checkpoint.pt"
+
+
+def test_tiny_smoke_request_round_trips_without_confirmatory_reinterpretation() -> None:
+    plan = micro_plan(D1Arm.BOTH)
+    start = run_start(plan)
+    request = D1FreshTrainerRequest(
+        plan,
+        start,
+        D1TrainerWallOrigin(start.trainer_started_at, 123),
+        D1TrainerLocationSpec("runs/journal.jsonl", "runs/checkpoint.pt"),
+    )
+
+    parsed = parse_d1_trainer_request(
+        serialize_d1_trainer_request(request),
+        catalog=(plan.profile,),
+    )
+
+    assert type(parsed.plan) is SmokeD1RunPlan
+    assert parsed == request
 
 
 def test_resume_request_round_trips_with_checkpoint_source_and_quarantine(

@@ -27,6 +27,7 @@ from entropic_substrate.evidence.resource_provenance import (
 )
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
+from entropic_substrate.experiments.d1_primitives import RunClass
 from entropic_substrate.predictive_state.checkpoint_repository import (
     load_checkpoint_candidate,
 )
@@ -49,7 +50,9 @@ class D1TrainerInputEnvelope:
         if self.start.logical_run_id != self.plan.logical_run_id:
             raise ValueError("trainer input plan and start logical identities differ")
         container = self.plan.run.execution.container
-        if container is None or self.start.image_digest != container.image_digest:
+        if container is None and self.plan.run.run_class is not RunClass.SMOKE:
+            raise ValueError("trainer input run plan is missing its container identity")
+        if container is not None and self.start.image_digest != container.image_digest:
             raise ValueError("trainer input start image differs from the run plan")
         compile_expected = self.plan.profile.draft.execution_protocol.optimization.compile
         if self.start.compiler_enabled is not compile_expected:
