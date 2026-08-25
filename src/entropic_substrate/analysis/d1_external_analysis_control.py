@@ -6,11 +6,13 @@ import base64
 import binascii
 import hashlib
 import json
+import threading
+import weakref
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import NoReturn, cast
+from typing import NoReturn, SupportsIndex, cast
 
 from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
 from entropic_substrate.analysis.d1_reader_source_closure import (
@@ -71,7 +73,6 @@ _REVEAL_SCHEMA = "d1-alias-reveal-v1"
 _COMMITMENT_FIELDS = frozenset({"reveal_sha256", "schema_version"})
 _REVEAL_FIELDS = frozenset({"mapping", "nonce", "schema_version"})
 _ALIASES = frozenset({"A", "B", "C", "D"})
-_APPLICATION_TOKEN = object()
 _INPUT_TOKEN = object()
 _CAPTURE_RECEIPT_SCHEMA = "d1-heterogeneous-capture-receipt-v1"
 _CAPTURE_RECEIPT_FIELDS = frozenset(
@@ -229,37 +230,143 @@ class D1AliasRevealControl:
     nonce: bytes = field(repr=False)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class D1AliasApplicationControl:
     commitment: D1AliasCommitmentControl
     reveal: D1AliasRevealControl = field(repr=False)
     aliases: D1ArmAliasMap
     commitment_sha256: str
     reveal_sha256: str
-    _factory_token: object | None = field(default=None, repr=False, compare=False)
+    _attestation: _AliasApplicationAttestation | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        init=False,
+    )
 
     def __post_init__(self) -> None:
-        if self._factory_token is not _APPLICATION_TOKEN:
-            raise TypeError(
-                "D1AliasApplicationControl is factory-only; use decode_d1_alias_application_control"
-            )
-        if (
-            type(self.commitment) is not D1AliasCommitmentControl
-            or type(self.reveal) is not D1AliasRevealControl
-            or type(self.aliases) is not D1ArmAliasMap
-        ):
-            raise TypeError("verified alias application requires typed control values")
-        if hashlib.sha256(self.commitment.canonical_bytes).hexdigest() != self.commitment_sha256:
-            raise ValueError("verified alias application commitment digest differs")
-        if hashlib.sha256(self.reveal.canonical_bytes).hexdigest() != self.reveal_sha256:
-            raise ValueError("verified alias application reveal digest differs")
-        if self.commitment.reveal_sha256 != self.reveal_sha256:
-            raise ValueError("verified alias application commitment does not bind reveal")
-        expected = {D1Arm(arm): alias for alias, arm in self.reveal.mapping.items()}
-        if dict(self.aliases.aliases) != expected:
-            raise ValueError("verified alias application mapping differs from reveal")
-        if self.aliases.sealed_commitment != self.commitment_sha256:
-            raise ValueError("verified alias application sealed commitment differs")
+        raise TypeError(
+            "D1AliasApplicationControl is factory-only; use decode_d1_alias_application_control"
+        )
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1AliasApplicationControl cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1AliasApplicationControl cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1AliasApplicationControl cannot be copied")
+
+    def require_factory_attested(self) -> None:
+        if not _is_minted_alias_application(self):
+            raise TypeError("factory-attested alias control was not minted")
+        attestation = getattr(self, "_attestation", None)
+        if type(attestation) is not _AliasApplicationAttestation:
+            raise TypeError("factory-attested alias control marker is absent")
+        if attestation.owner_ref() is not self:
+            raise TypeError("factory-attested alias control marker belongs to another instance")
+        _validate_alias_application_values(
+            commitment=self.commitment,
+            reveal=self.reveal,
+            aliases=self.aliases,
+            commitment_sha256=self.commitment_sha256,
+            reveal_sha256=self.reveal_sha256,
+        )
+
+
+class _AliasApplicationAttestation:
+    __slots__ = ("owner_ref",)
+
+    owner_ref: weakref.ReferenceType[D1AliasApplicationControl]
+
+    def __init__(self, owner: D1AliasApplicationControl) -> None:
+        self.owner_ref = weakref.ref(owner)
+
+
+_ALIAS_APPLICATION_LOCK = threading.Lock()
+_MINTED_ALIAS_APPLICATIONS: dict[
+    int,
+    weakref.ReferenceType[D1AliasApplicationControl],
+] = {}
+
+
+def _record_minted_alias_application(control: D1AliasApplicationControl) -> None:
+    identifier = id(control)
+
+    def discard(reference: weakref.ReferenceType[D1AliasApplicationControl]) -> None:
+        with _ALIAS_APPLICATION_LOCK:
+            if _MINTED_ALIAS_APPLICATIONS.get(identifier) is reference:
+                _MINTED_ALIAS_APPLICATIONS.pop(identifier, None)
+
+    reference = weakref.ref(control, discard)
+    with _ALIAS_APPLICATION_LOCK:
+        _MINTED_ALIAS_APPLICATIONS[identifier] = reference
+
+
+def _is_minted_alias_application(control: D1AliasApplicationControl) -> bool:
+    with _ALIAS_APPLICATION_LOCK:
+        reference = _MINTED_ALIAS_APPLICATIONS.get(id(control))
+        return reference is not None and reference() is control
+
+
+def _validate_alias_application_values(
+    *,
+    commitment: D1AliasCommitmentControl,
+    reveal: D1AliasRevealControl,
+    aliases: D1ArmAliasMap,
+    commitment_sha256: str,
+    reveal_sha256: str,
+) -> None:
+    if (
+        type(commitment) is not D1AliasCommitmentControl
+        or type(reveal) is not D1AliasRevealControl
+        or type(aliases) is not D1ArmAliasMap
+    ):
+        raise TypeError("verified alias application requires typed control values")
+    if hashlib.sha256(commitment.canonical_bytes).hexdigest() != commitment_sha256:
+        raise ValueError("verified alias application commitment digest differs")
+    if hashlib.sha256(reveal.canonical_bytes).hexdigest() != reveal_sha256:
+        raise ValueError("verified alias application reveal digest differs")
+    if commitment.reveal_sha256 != reveal_sha256:
+        raise ValueError("verified alias application commitment does not bind reveal")
+    expected = {D1Arm(arm): alias for alias, arm in reveal.mapping.items()}
+    if dict(aliases.aliases) != expected:
+        raise ValueError("verified alias application mapping differs from reveal")
+    if aliases.sealed_commitment != commitment_sha256:
+        raise ValueError("verified alias application sealed commitment differs")
+
+
+def _mint_alias_application(
+    *,
+    commitment: D1AliasCommitmentControl,
+    reveal: D1AliasRevealControl,
+    aliases: D1ArmAliasMap,
+    commitment_sha256: str,
+    reveal_sha256: str,
+) -> D1AliasApplicationControl:
+    _validate_alias_application_values(
+        commitment=commitment,
+        reveal=reveal,
+        aliases=aliases,
+        commitment_sha256=commitment_sha256,
+        reveal_sha256=reveal_sha256,
+    )
+    control = object.__new__(D1AliasApplicationControl)
+    object.__setattr__(control, "commitment", commitment)
+    object.__setattr__(control, "reveal", reveal)
+    object.__setattr__(control, "aliases", aliases)
+    object.__setattr__(control, "commitment_sha256", commitment_sha256)
+    object.__setattr__(control, "reveal_sha256", reveal_sha256)
+    object.__setattr__(control, "_attestation", _AliasApplicationAttestation(control))
+    _record_minted_alias_application(control)
+    return control
+
+
+def _require_alias_application(value: object) -> None:
+    if type(value) is not D1AliasApplicationControl:
+        raise TypeError("verified external input requires factory-attested alias control")
+    value.require_factory_attested()
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,6 +427,7 @@ class D1ExternalAnalysisInputControl:
                 "D1ExternalAnalysisInputControl is factory-only; "
                 "use decode_d1_external_analysis_input_control"
             )
+        _require_alias_application(self.alias_application)
         if hashlib.sha256(self.canonical_bytes).hexdigest() != self.input_manifest_sha256:
             raise ValueError("verified external input manifest digest differs")
         manifest, nested = _extract_input_manifest(self.canonical_bytes)
@@ -349,7 +457,6 @@ class D1ExternalAnalysisInputControl:
             design=self.design,
             aggregate=self.aggregate,
             capture_receipt=self.capture_receipt,
-            alias_application=self.alias_application,
             preregistration=self.preregistration,
             reader_source=self.reader_source,
         )
@@ -420,13 +527,12 @@ def decode_d1_alias_application_control(
         aliases={D1Arm(arm): alias for alias, arm in reveal.mapping.items()},
         sealed_commitment=commitment_sha256,
     )
-    return D1AliasApplicationControl(
-        commitment,
-        reveal,
-        aliases,
-        commitment_sha256,
-        reveal_sha256,
-        _APPLICATION_TOKEN,
+    return _mint_alias_application(
+        commitment=commitment,
+        reveal=reveal,
+        aliases=aliases,
+        commitment_sha256=commitment_sha256,
+        reveal_sha256=reveal_sha256,
     )
 
 
@@ -660,7 +766,6 @@ def _validate_input_relationships(
     design: D1RegisteredDesignDeclaration,
     aggregate: D1CaptureAggregateDeclaration,
     capture_receipt: D1CaptureReceiptControl,
-    alias_application: D1AliasApplicationControl,
     preregistration: D1PreregistrationControl,
     reader_source: D1ReaderSourceManifestControl,
 ) -> None:
@@ -669,7 +774,6 @@ def _validate_input_relationships(
         or type(design) is not D1RegisteredDesignDeclaration
         or type(aggregate) is not D1CaptureAggregateDeclaration
         or type(capture_receipt) is not D1CaptureReceiptControl
-        or type(alias_application) is not D1AliasApplicationControl
         or type(preregistration) is not D1PreregistrationControl
         or type(reader_source) is not D1ReaderSourceManifestControl
     ):
@@ -720,12 +824,8 @@ def decode_d1_external_analysis_input_control(
     expected_family_digest = _sha256(
         manifest["expected_family_digest"], label="external input expected_family_digest"
     )
-    expected_design_digest = _sha256(
-        manifest["expected_design_digest"], label="external input expected_design_digest"
-    )
-    expected_capture_digest = _sha256(
-        manifest["expected_capture_digest"], label="external input expected_capture_digest"
-    )
+    _sha256(manifest["expected_design_digest"], label="external input expected_design_digest")
+    _sha256(manifest["expected_capture_digest"], label="external input expected_capture_digest")
     try:
         decision_contract = parse_decision_contract(
             _utf8(nested["decision_contract_base64"], label="decision contract")
@@ -752,30 +852,21 @@ def decode_d1_external_analysis_input_control(
         raise
     except (TypeError, ValueError) as error:
         _fail(f"external analysis nested control is invalid: {error}", error)
-    if design.design_digest != expected_design_digest:
-        _fail("external input expected design digest differs from design declaration")
-    if aggregate.manifest_digest != expected_capture_digest:
-        _fail("external input expected capture digest differs from aggregate declaration")
-    _validate_input_relationships(
-        expected_family_digest=expected_family_digest,
-        decision_contract=decision_contract,
-        design=design,
-        aggregate=aggregate,
-        capture_receipt=capture_receipt,
-        alias_application=alias_application,
-        preregistration=preregistration,
-        reader_source=reader_source,
-    )
-    return D1ExternalAnalysisInputControl(
-        payload,
-        hashlib.sha256(payload).hexdigest(),
-        expected_family_digest,
-        decision_contract,
-        design,
-        aggregate,
-        capture_receipt,
-        alias_application,
-        preregistration,
-        reader_source,
-        _INPUT_TOKEN,
-    )
+    try:
+        return D1ExternalAnalysisInputControl(
+            payload,
+            hashlib.sha256(payload).hexdigest(),
+            expected_family_digest,
+            decision_contract,
+            design,
+            aggregate,
+            capture_receipt,
+            alias_application,
+            preregistration,
+            reader_source,
+            _INPUT_TOKEN,
+        )
+    except D1ExternalAnalysisControlError:
+        raise
+    except (TypeError, ValueError) as error:
+        _fail(f"external analysis input validation failed: {error}", error)
