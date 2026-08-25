@@ -26,6 +26,7 @@ __all__ = [
     "D1ConditionStatus",
     "D1RegisteredCondition",
     "D1ThresholdOperator",
+    "classify_d1_condition_status",
     "evaluate_d1_clauses",
     "parse_d1_clause_policy",
 ]
@@ -259,7 +260,7 @@ def _endpoint(
     return None if not values else math.fsum(values) / len(values)
 
 
-def _status(
+def classify_d1_condition_status(
     operator: D1ThresholdOperator,
     threshold: float,
     lower: float | None,
@@ -314,7 +315,12 @@ def _evaluate_condition(
         upper = None if contrast is None else contrast.interval_upper
     return D1ConditionResult(
         condition=condition,
-        status=_status(condition.operator, condition.threshold, lower, upper),
+        status=classify_d1_condition_status(
+            condition.operator,
+            condition.threshold,
+            lower,
+            upper,
+        ),
         observed_point=point,
         observed_lower=lower,
         observed_upper=upper,

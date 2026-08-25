@@ -56,7 +56,7 @@ from .test_d1_factorial_analysis import _authority
 pytestmark = pytest.mark.unit
 
 
-def _binding_case(tmp_path: Path):
+def _binding_case(tmp_path: Path, *, nonpassing_arm: D1Arm | None = None):
     manifest, evidence, old_design, base, aggregate = input_case(tmp_path)
     decision = _decision(base)
     design = admit_d1_registered_design(
@@ -76,15 +76,22 @@ def _binding_case(tmp_path: Path):
     control = decode_d1_external_analysis_input_control(
         _canonical(manifest), preregistration_evidence=evidence
     )
-    points = {
-        metric: tuple(D1MetricPoint(index, index, value) for index in range(3))
-        for metric, value in (
-            ("effective_rank", 2.0),
-            ("mean_baseline_improvement", 0.1),
-            ("nats_per_byte", 0.8),
+    cells = tuple(
+        D1AnalysisCell(
+            arm,
+            7,
+            "d1-pair-s7",
+            {
+                metric: tuple(D1MetricPoint(index, index, value) for index in range(3))
+                for metric, value in (
+                    ("effective_rank", 0.5 if arm is nonpassing_arm else 2.0),
+                    ("mean_baseline_improvement", 0.1),
+                    ("nats_per_byte", 0.8),
+                )
+            },
         )
-    }
-    cells = tuple(D1AnalysisCell(arm, 7, "d1-pair-s7", points) for arm in D1Arm)
+        for arm in D1Arm
+    )
     factorial = compute_d1_factorial(
         design=design,
         decision_contract=decision,
@@ -229,6 +236,63 @@ def test_factorial_effects_and_clause_construction_are_exact(tmp_path: Path) -> 
     with pytest.raises(D1MachineAnalysisBindingError, match="effect"):
         bind_d1_machine_analysis_contract(
             _changed(packet, lambda root: root["factorial_effects"].pop()),  # type: ignore[union-attr]
+            expected=control,
+        )
+
+
+def test_feasible_aliases_equal_every_all_pass_clause_alias(tmp_path: Path) -> None:
+    control, packet = _binding_case(tmp_path)
+    assert len(packet.manifest["feasible_aliases"]) == 3  # type: ignore[arg-type]
+
+    with pytest.raises(D1MachineAnalysisBindingError, match="feasible"):
+        bind_d1_machine_analysis_contract(
+            _changed(packet, lambda root: root["feasible_aliases"].pop(0)),  # type: ignore[union-attr]
+            expected=control,
+        )
+
+
+def test_nonpassing_clause_alias_cannot_be_added_to_feasible_set(tmp_path: Path) -> None:
+    control, packet = _binding_case(tmp_path, nonpassing_arm=D1Arm.BOTH)
+    both_alias = control.alias_application.aliases.for_arm(D1Arm.BOTH)
+    assert both_alias not in packet.manifest["feasible_aliases"]  # type: ignore[operator]
+
+    with pytest.raises(D1MachineAnalysisBindingError, match="feasible"):
+        bind_d1_machine_analysis_contract(
+            _changed(
+                packet,
+                lambda root: root["feasible_aliases"].append(both_alias),  # type: ignore[union-attr]
+            ),
+            expected=control,
+        )
+
+
+def test_clause_status_and_observation_are_bound_to_their_source(tmp_path: Path) -> None:
+    control, packet = _binding_case(tmp_path)
+
+    def drift_status(root: dict[str, object]) -> None:
+        alias = root["feasible_aliases"][0]  # type: ignore[index]
+        root["clauses_by_alias"][alias]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+        root["clauses_by_alias"][alias]["noncollapse"]["conditions"][0][  # type: ignore[index]
+            "status"
+        ] = "FAIL"
+        root["feasible_aliases"].pop(0)  # type: ignore[union-attr]
+
+    with pytest.raises(D1MachineAnalysisBindingError, match="status"):
+        bind_d1_machine_analysis_contract(
+            _changed(packet, drift_status),
+            expected=control,
+        )
+
+    def drift_observation(root: dict[str, object]) -> None:
+        alias = root["feasible_aliases"][0]  # type: ignore[index]
+        condition = root["clauses_by_alias"][alias]["noncollapse"]["conditions"][0]  # type: ignore[index]
+        condition.update(  # type: ignore[union-attr]
+            {"observed_lower": 8.0, "observed_point": 9.0, "observed_upper": 9.0}
+        )
+
+    with pytest.raises(D1MachineAnalysisBindingError, match="observed"):
+        bind_d1_machine_analysis_contract(
+            _changed(packet, drift_observation),
             expected=control,
         )
     with pytest.raises(D1MachineAnalysisBindingError, match="clause"):
