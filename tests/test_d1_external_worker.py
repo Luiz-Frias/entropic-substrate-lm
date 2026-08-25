@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import NamedTuple
+from types import SimpleNamespace
+from typing import NamedTuple, cast
 
 import pytest
 
@@ -53,6 +55,7 @@ from entropic_substrate.evidence.d1_capture_aggregate_codec import (
 from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
 from entropic_substrate.evidence.d1_capture_service import D1HeterogeneousCaptureReceipt
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
 from entropic_substrate.experiments.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
@@ -350,3 +353,57 @@ def test_worker_rejects_symlinked_reader_root_and_source_file(
     with pytest.raises(D1ExternalWorkerError) as file_error:
         _run_case(case)
     assert file_error.value.code == "reader_identity"
+
+
+def test_reader_join_rejects_lexical_parent_components(tmp_path: Path) -> None:
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
+    regular_file = cast(
+        Callable[[Path, str], Path],
+        worker_module.__dict__["_regular_mounted_file"],
+    )
+    with pytest.raises(D1ExternalWorkerError) as raised:
+        regular_file(tmp_path, "nested/../source.py")
+    assert raised.value.code == "reader_identity"
+
+
+@pytest.mark.parametrize("invalid", ([], {1: "value"}, {"KEY": 1}))
+def test_worker_environment_type_errors_remain_type_errors(
+    tmp_path: Path,
+    invalid: object,
+) -> None:
+    with pytest.raises(TypeError, match="environment"):
+        run_d1_external_worker(
+            request_payload=b"request",
+            preregistration_payload=b"preregistration",
+            capture_root=tmp_path,
+            reader_root=tmp_path,
+            environ=cast(dict[str, str], invalid),
+        )
+
+
+def test_worker_rejects_ambiguous_family_and_intermediate_reader_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _request_case(tmp_path)
+    _install_reader_fake(monkeypatch, case.runs)
+    digest = case.request.input_control.expected_family_digest
+    profiles = (
+        SimpleNamespace(family=SimpleNamespace(family_digest=digest, marker=1)),
+        SimpleNamespace(family=SimpleNamespace(family_digest=digest, marker=2)),
+    )
+    monkeypatch.setattr(worker_module, "load_d1_profile_catalog", lambda: profiles)
+    with pytest.raises(D1ExternalWorkerError) as family_error:
+        _run_case(case)
+    assert family_error.value.code == "family"
+
+    monkeypatch.setattr(worker_module, "load_d1_profile_catalog", load_d1_profile_catalog)
+    intermediate = case.reader_root / "entropic_substrate/analysis"
+    outside = tmp_path / "outside-analysis"
+    shutil.copytree(intermediate, outside)
+    shutil.rmtree(intermediate)
+    intermediate.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(D1ExternalWorkerError) as reader_error:
+        _run_case(case)
+    assert reader_error.value.code == "reader_identity"

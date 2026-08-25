@@ -84,6 +84,9 @@ def _real_directory(value: object, *, code: str) -> Path:
 
 
 def _regular_mounted_file(root: Path, relative: str) -> Path:
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        _fail("reader_identity")
     target = root / relative
     if target.is_symlink() or not target.is_file() or not target.resolve().is_relative_to(root):
         _fail("reader_identity")
