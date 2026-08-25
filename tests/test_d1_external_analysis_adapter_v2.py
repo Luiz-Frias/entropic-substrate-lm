@@ -72,6 +72,8 @@ class _RunnerV2:
     argv_mutation: tuple[str, ...] = ()
     response_mutation: dict[str, str] = field(default_factory=dict)
     analysis_mutation: Callable[[dict[str, object]], None] | None = None
+    symlink_analysis: bool = False
+    extra_output: bool = False
     calls: list[tuple[str, ...]] = field(default_factory=list)
 
     def run(
@@ -108,6 +110,13 @@ class _RunnerV2:
         self.launch.worker_response_path.write_bytes(
             encode_d1_external_analysis_worker_response_v2(response)
         )
+        if self.symlink_analysis:
+            target = self.launch.output_path.parent / "elsewhere-analysis.json"
+            target.write_bytes(analysis)
+            self.launch.analysis_path.unlink()
+            self.launch.analysis_path.symlink_to(target)
+        if self.extra_output:
+            (self.launch.output_path / "unexpected.json").write_bytes(b"{}")
         return D1ExternalAnalysisCommandResult(
             invoked_argv=argv + self.argv_mutation,
             returncode=self.returncode,
@@ -183,6 +192,20 @@ def test_v2_adapter_runs_exact_fixed_command_and_returns_final_typestate(
     argv = runner.calls[0]
     assert ("--network", "none") == argv[argv.index("--network") : argv.index("--network") + 2]
     assert ("--user", "65532:65532") == argv[argv.index("--user") : argv.index("--user") + 2]
+    for flag, value in (
+        ("--platform", "linux/amd64"),
+        ("--cpus", "2"),
+        ("--memory", "4g"),
+        ("--pids-limit", "128"),
+        ("--cap-drop", "ALL"),
+        ("--security-opt", "no-new-privileges"),
+    ):
+        assert (flag, value) == argv[argv.index(flag) : argv.index(flag) + 2]
+    assert "--read-only" in argv
+    mounts = [argv[index + 1] for index, value in enumerate(argv) if value == "--mount"]
+    assert len(mounts) == 5
+    assert sum("readonly" not in mount for mount in mounts) == 1
+    assert "--env" not in argv and "-e" not in argv and "--env-file" not in argv
     assert "execution-receipt.json" not in argv
     assert argv[-1] == "/d1/output/worker-response.json"
 
@@ -328,3 +351,68 @@ def test_v2_adapter_rejects_regular_file_reader_path(
 
     with pytest.raises(ValueError, match="reader_path"):
         _adapter(file_launch, runner).run(request)
+
+
+@pytest.mark.parametrize(
+    ("image", "message"),
+    [
+        ("registry.example/model:latest", "immutable"),
+        ("registry.example/model:tag@sha256:" + "a" * 64, "tag"),
+        ("registry.example/model@sha256:not-a-digest", "digest"),
+    ],
+)
+def test_v2_launch_rejects_mutable_or_malformed_image(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    image: str,
+    message: str,
+) -> None:
+    _, launch, _, _ = _adapter_case(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match=message):
+        replace(launch, image_reference=image)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        ("--network", "bridge"),
+        ("--mount", "type=bind,src=/host,dst=/extra"),
+        ("--env", "MLFLOW_TRACKING_URI=https://tracking.invalid"),
+        ("--read-write",),
+    ],
+)
+def test_v2_adapter_rejects_observed_argv_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: tuple[str, ...],
+) -> None:
+    _, launch, runner, request = _adapter_case(
+        tmp_path,
+        monkeypatch,
+        argv_mutation=mutation,
+    )
+    with pytest.raises(RuntimeError, match="argv"):
+        _adapter(launch, runner).run(request)
+
+
+@pytest.mark.parametrize(
+    ("option", "error_type", "message"),
+    [
+        ("symlink_analysis", ValueError, "symlink"),
+        ("extra_output", RuntimeError, "unexpected"),
+    ],
+)
+def test_v2_adapter_rejects_symlinked_or_unexpected_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    option: str,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    _, launch, runner, request = _adapter_case(
+        tmp_path,
+        monkeypatch,
+        **{option: True},
+    )
+    with pytest.raises(error_type, match=message):
+        _adapter(launch, runner).run(request)

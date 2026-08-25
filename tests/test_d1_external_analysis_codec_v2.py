@@ -175,6 +175,9 @@ def test_v2_decoder_explicitly_rejects_legacy_v1_response() -> None:
         b'{"analysis_request_digest":NaN}',
         b" {}",
         b"[]",
+        b"{}",
+        b'{"schema_version":"d1-external-analysis-request-v2","unexpected":true}',
+        b"\xff",
     ],
 )
 def test_v2_transport_rejects_duplicate_nonfinite_noncanonical_or_nonobject_bytes(
@@ -183,3 +186,20 @@ def test_v2_transport_rejects_duplicate_nonfinite_noncanonical_or_nonobject_byte
     _, evidence = _request_v2(tmp_path)
     with pytest.raises(ValueError):
         decode_d1_external_analysis_request_v2(payload, preregistration_evidence=evidence)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"{}",
+        b'{"schema_version":"d1-external-analysis-response-v2","schema_version":"x"}',
+        b'{"schema_version":"d1-external-analysis-response-v2","unexpected":true}',
+        b" {}",
+        b"\xff",
+    ],
+)
+def test_v2_worker_response_rejects_missing_duplicate_unknown_or_noncanonical_bytes(
+    payload: bytes,
+) -> None:
+    with pytest.raises(ValueError):
+        decode_d1_external_analysis_worker_response_v2(payload)
