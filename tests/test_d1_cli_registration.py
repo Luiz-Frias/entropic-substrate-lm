@@ -16,6 +16,7 @@ from entropic_substrate.d1_cli import (
     D1CliExitCode,
     D1CliInvocation,
 )
+from test_d1_trainer_cli_services import _manifest as _trainer_manifest
 
 pytestmark = pytest.mark.unit
 
@@ -113,13 +114,56 @@ def test_main_dispatches_to_injected_application_and_prints_one_json_outcome(
     assert all(not service.calls for key, service in services.items() if key is not command)
 
 
-def test_unconfigured_shell_command_returns_operator_gap_not_live_fallback(
+def test_default_shell_fresh_command_reaches_real_trainer(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest, request = _trainer_manifest(tmp_path)
+    monkeypatch.setattr(
+        "entropic_substrate.d1_cli_composition.load_d1_profile_catalog",
+        lambda *, tiny=False: (request.plan.profile,) if tiny else (),
+    )
+
+    code = main([D1CliCommand.RUN_FRESH.value, "--manifest", str(manifest)])
+
+    assert code is D1CliExitCode.SUCCESS
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "success"
+    assert output["payload"]["handoff_kind"] == "fresh_completion"
+    assert output["payload"]["successful_step"] == 2
+
+
+def test_default_shell_resume_command_reaches_real_service_validation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest, request = _trainer_manifest(tmp_path)
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["command"] = D1CliCommand.RUN_RESUME.value
+    value["payload"]["command"] = D1CliCommand.RUN_RESUME.value
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    monkeypatch.setattr(
+        "entropic_substrate.d1_cli_composition.load_d1_profile_catalog",
+        lambda *, tiny=False: (request.plan.profile,) if tiny else (),
+    )
+
+    code = main([D1CliCommand.RUN_RESUME.value, "--manifest", str(manifest)])
+
+    assert code is D1CliExitCode.INVALID_EVIDENCE
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "invalid_evidence"
+    assert "segment mode" in output["detail"]
+
+
+def test_unconfigured_campaign_command_returns_operator_gap_not_live_fallback(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
-    command = D1CliCommand.RUN_FRESH
+    command = D1CliCommand.CAMPAIGN_RUN
 
     code = main([command.value, "--manifest", str(_manifest(tmp_path, command))])
 

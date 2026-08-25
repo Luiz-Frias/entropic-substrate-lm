@@ -285,26 +285,33 @@ def parse_d1_trainer_request(
         _fail("trainer request command is unsupported")
     plan_mapping = _mapping(root["plan"], label="plan")
     profile_name = plan_mapping.get("profile_name")
+    if type(profile_name) is not str or not profile_name:
+        _fail("trainer request profile_name must be a nonempty string")
+    run_class = plan_mapping.get("run_class")
+    if run_class not in {"confirmatory", "smoke"}:
+        _fail("trainer request plan run_class is unsupported")
     profiles = tuple(catalog)
     if any(type(profile) is not D1LaunchProfile for profile in profiles):
         _fail("trainer request catalog contains an invalid profile")
-    by_name = {profile.name: profile for profile in profiles}
-    if len(by_name) != len(profiles) or profile_name not in by_name:
-        _fail("trainer request profile is absent from the installed catalog")
+    by_identity = {(profile.name, profile.scale): profile for profile in profiles}
+    if len(by_identity) != len(profiles):
+        _fail("trainer request catalog repeats a profile name and scale")
+    matching_profiles = tuple(
+        profile
+        for profile in profiles
+        if profile.name == profile_name
+        and profile.arm.value == plan_mapping.get("arm")
+        and profile.family.family_digest == plan_mapping.get("family_digest")
+        and profile.draft.construction_digest == plan_mapping.get("construction_digest")
+    )
+    if len(matching_profiles) != 1:
+        _fail("trainer request profile does not match exactly one installed construction")
+    profile = matching_profiles[0]
     try:
-        run_class = plan_mapping.get("run_class")
         if run_class == "confirmatory":
-            plan = parse_d1_confirmatory_plan(
-                by_name[cast(str, profile_name)],
-                plan_mapping,
-            )
-        elif run_class == "smoke":
-            plan = parse_d1_smoke_plan(
-                by_name[cast(str, profile_name)],
-                plan_mapping,
-            )
+            plan = parse_d1_confirmatory_plan(profile, plan_mapping)
         else:
-            _fail("trainer request plan run_class is unsupported")
+            plan = parse_d1_smoke_plan(profile, plan_mapping)
         start = run_start_from_mapping(root["run_start"])
         origin = _origin(root["wall_origin"])
         locations = _locations(root["locations"])

@@ -1024,24 +1024,6 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     return 0
 
 
-def _unavailable_d1_application() -> D1CliApplication:
-    from entropic_substrate.d1_cli import (
-        D1CliApplication,
-        D1CliCommand,
-        D1CliServiceUnavailable,
-    )
-
-    return D1CliApplication(
-        {
-            command: D1CliServiceUnavailable(
-                f"{command.value} composition service is unavailable; "
-                "inject a fully admitted D1 application service"
-            )
-            for command in D1CliCommand
-        }
-    )
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -1054,7 +1036,14 @@ def main(
 
     if args.command in {command.value for command in D1CliCommand}:
         command = D1CliCommand(args.command)
-        application = d1_application or _unavailable_d1_application()
+        if d1_application is None:
+            from entropic_substrate.d1_cli_composition import (
+                build_default_d1_cli_application,
+            )
+
+            application = build_default_d1_cli_application()
+        else:
+            application = d1_application
         outcome = application.execute(command, args.manifest)
         print(
             json.dumps(

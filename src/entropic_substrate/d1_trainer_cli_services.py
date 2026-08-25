@@ -52,8 +52,8 @@ def _catalog(values: Iterable[D1LaunchProfile]) -> tuple[D1LaunchProfile, ...]:
     result = tuple(values)
     if not result or any(type(value) is not D1LaunchProfile for value in result):
         raise ValueError("D1 trainer service requires an installed profile catalog")
-    if len({value.name for value in result}) != len(result):
-        raise ValueError("D1 trainer service profile names must be unique")
+    if len({(value.name, value.scale) for value in result}) != len(result):
+        raise ValueError("D1 trainer service profile name/scale identities must be unique")
     return result
 
 
@@ -89,12 +89,12 @@ class D1FreshTrainerCliService:
         self,
         *,
         catalog: Iterable[D1LaunchProfile],
-        artifact_root: Path,
+        artifact_root: Path | None = None,
         clock: D1TrainerClock | None = None,
         resource_activation_factory: D1ResourceActivationFactory | None = None,
     ) -> None:
         self._catalog = _catalog(catalog)
-        self._artifact_root = _root(artifact_root)
+        self._artifact_root = None if artifact_root is None else _root(artifact_root)
         self._clock = clock or SystemD1TrainerClock()
         self._resource_activation_factory = resource_activation_factory
 
@@ -110,7 +110,8 @@ class D1FreshTrainerCliService:
             )
             if type(decoded) is not D1FreshTrainerRequest:
                 raise D1CliInvalidEvidence("D1 fresh command requires a fresh trainer request")
-            locations = decoded.resolve_locations(self._artifact_root)
+            root = self._artifact_root or _root(invocation.manifest_path.parent)
+            locations = decoded.resolve_locations(root)
         except (D1TrainerRequestError, ValueError) as error:
             raise D1CliInvalidEvidence(str(error)) from error
         try:
@@ -135,13 +136,13 @@ class D1ResumeTrainerCliService:
         self,
         *,
         catalog: Iterable[D1LaunchProfile],
-        artifact_root: Path,
+        artifact_root: Path | None = None,
         observer: D1JournalObserver,
         clock: D1TrainerClock | None = None,
         resource_activation_factory: D1ResourceActivationFactory | None = None,
     ) -> None:
         self._catalog = _catalog(catalog)
-        self._artifact_root = _root(artifact_root)
+        self._artifact_root = None if artifact_root is None else _root(artifact_root)
         self._observer = observer
         self._clock = clock or SystemD1TrainerClock()
         self._resource_activation_factory = resource_activation_factory
@@ -158,7 +159,8 @@ class D1ResumeTrainerCliService:
             )
             if type(decoded) is not D1ResumeTrainerRequest:
                 raise D1CliInvalidEvidence("D1 resume command requires a resume trainer request")
-            locations = decoded.resolve_locations(self._artifact_root)
+            root = self._artifact_root or _root(invocation.manifest_path.parent)
+            locations = decoded.resolve_locations(root)
         except (D1TrainerRequestError, ValueError) as error:
             raise D1CliInvalidEvidence(str(error)) from error
         try:

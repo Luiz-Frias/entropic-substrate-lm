@@ -22,8 +22,16 @@ from entropic_substrate.evidence.resource_provenance import (
     SegmentStartMode,
     execution_segment_id,
 )
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.experiments.d1_config import (
+    D1LaunchScale,
+    load_d1_profile_catalog,
+)
+from entropic_substrate.experiments.d1_plan import (
+    SmokeD1RunPlan,
+    create_d1_smoke_plan,
+)
+from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
 
 pytestmark = pytest.mark.unit
 
@@ -74,6 +82,71 @@ def test_tiny_smoke_request_round_trips_without_confirmatory_reinterpretation() 
 
     assert type(parsed.plan) is SmokeD1RunPlan
     assert parsed == request
+
+
+def test_catalog_resolves_reused_profile_name_by_confirmatory_scale() -> None:
+    request, full_catalog = _fresh()
+    tiny_catalog = load_d1_profile_catalog(tiny=True)
+
+    parsed = parse_d1_trainer_request(
+        serialize_d1_trainer_request(request),
+        catalog=(*full_catalog, *tiny_catalog),
+    )
+
+    assert parsed.plan.profile.scale is D1LaunchScale.FULL
+
+
+@pytest.mark.parametrize("tiny", [False, True])
+def test_catalog_resolves_full_and_tiny_smoke_by_construction_identity(tiny: bool) -> None:
+    full_catalog = load_d1_profile_catalog()
+    tiny_catalog = load_d1_profile_catalog(tiny=True)
+    profile = (tiny_catalog if tiny else full_catalog)[-1]
+    plan = create_d1_smoke_plan(
+        profile,
+        logical_run_id=f"d1-smoke-catalog-{profile.scale.value}",
+        seed=41,
+        pairing_id="d1-smoke-catalog-pair-41",
+        evidence=EvidenceEnvelope(
+            schema_version="d1-evidence-v1",
+            required_classes=frozenset({EvidenceClass.MEASURED}),
+        ),
+    )
+    start = run_start(plan)
+    request = D1FreshTrainerRequest(
+        plan,
+        start,
+        D1TrainerWallOrigin(start.trainer_started_at, 123),
+        D1TrainerLocationSpec("runs/journal.jsonl", "runs/checkpoint.pt"),
+    )
+
+    parsed = parse_d1_trainer_request(
+        serialize_d1_trainer_request(request),
+        catalog=(*full_catalog, *tiny_catalog),
+    )
+
+    expected = D1LaunchScale.TINY if tiny else D1LaunchScale.FULL
+    assert parsed.plan.profile.scale is expected
+
+
+def test_catalog_refuses_two_profiles_with_the_same_serialized_construction() -> None:
+    plan = micro_plan(D1Arm.BOTH)
+    start = run_start(plan)
+    request = D1FreshTrainerRequest(
+        plan,
+        start,
+        D1TrainerWallOrigin(start.trainer_started_at, 123),
+        D1TrainerLocationSpec("runs/journal.jsonl", "runs/checkpoint.pt"),
+    )
+    same_construction_at_another_scale = replace(
+        plan.profile,
+        scale=D1LaunchScale.FULL,
+    )
+
+    with pytest.raises(ValueError, match="exactly one installed construction"):
+        parse_d1_trainer_request(
+            serialize_d1_trainer_request(request),
+            catalog=(plan.profile, same_construction_at_another_scale),
+        )
 
 
 def test_resume_request_round_trips_with_checkpoint_source_and_quarantine(
