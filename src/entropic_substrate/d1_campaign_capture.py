@@ -15,7 +15,11 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1ExpectedRun,
     D1LaunchRoster,
 )
-from entropic_substrate.evidence.d1_capture_service import D1HeterogeneousCaptureReceipt
+from entropic_substrate.evidence.d1_capture_service import (
+    D1HeterogeneousCapturePreparation,
+    D1HeterogeneousCaptureReceipt,
+)
+from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.evidence.lifecycle import (
     ActorIdentity,
@@ -58,17 +62,23 @@ class D1CampaignEvidenceAssemblerPort(Protocol):
 
 
 class D1CampaignCapturePort(Protocol):
-    def capture(self, material: D1CampaignCaptureMaterial) -> D1HeterogeneousCaptureReceipt: ...
+    def prepare(self, material: D1CampaignCaptureMaterial) -> object: ...
+
+    def finalize(self, preparation: object) -> D1HeterogeneousCaptureReceipt: ...
 
 
 class D1HeterogeneousCaptureServicePort(Protocol):
-    def capture_heterogeneous(
+    def prepare_heterogeneous(
         self,
         *,
         roster: D1LaunchRoster,
         complete_inputs: tuple[D1CaptureInput, ...],
         terminal_defect_inputs: tuple[D1TerminalDefectInput, ...],
         attempt_evidence: tuple[D1AttemptEvidence, ...] = (),
+    ) -> D1HeterogeneousCapturePreparation: ...
+
+    def finalize_heterogeneous(
+        self, preparation: D1HeterogeneousCapturePreparation
     ) -> D1HeterogeneousCaptureReceipt: ...
 
 
@@ -78,15 +88,67 @@ class D1HeterogeneousCaptureAdapter:
     def __init__(self, service: D1HeterogeneousCaptureServicePort) -> None:
         self._service = service
 
-    def capture(self, material: D1CampaignCaptureMaterial) -> D1HeterogeneousCaptureReceipt:
+    def prepare(self, material: D1CampaignCaptureMaterial) -> D1HeterogeneousCapturePreparation:
         if type(material) is not D1CampaignCaptureMaterial:
             raise TypeError("heterogeneous capture adapter requires campaign material")
-        return self._service.capture_heterogeneous(
+        return self._service.prepare_heterogeneous(
             roster=material.roster,
             complete_inputs=material.complete_inputs,
             terminal_defect_inputs=material.terminal_defect_inputs,
             attempt_evidence=material.attempt_evidence,
         )
+
+    def finalize(
+        self, preparation: D1HeterogeneousCapturePreparation
+    ) -> D1HeterogeneousCaptureReceipt:
+        return self._service.finalize_heterogeneous(preparation)
+
+
+def _campaign_identity(campaign: D1CompletedCampaign) -> str:
+    manager = campaign.process_manager
+    if type(manager) is not D1ProcessManager:
+        raise TypeError("completed campaign lacks nominal lifecycle authority")
+    subjects = tuple(launch.plan.logical_run_id for launch in campaign.matrix.launches)
+    if (
+        campaign.design_digest != campaign.matrix.registered_design_digest
+        or (
+            bool(campaign.results)
+            and campaign.attempt_ledger != campaign.results[-1].attempt_ledger
+        )
+        or manager.state is not D1ProcessState.OPERATOR_FINALIZED
+        or manager.active_subject is not None
+        or manager.finalized_subjects != subjects
+    ):
+        raise ValueError("completed campaign lifecycle identity differs from its matrix")
+    prefix = manager.history.prefix
+    return canonical_digest(
+        {
+            "attempt_ledger_digest": campaign.attempt_ledger.ledger_digest,
+            "design_digest": campaign.design_digest,
+            "finalized_subjects": list(subjects),
+            "lifecycle_event_count": prefix.event_count,
+            "lifecycle_prefix": prefix.prefix_sha256,
+            "lifecycle_state": manager.state.value,
+            "matrix_digest": campaign.matrix.matrix_digest,
+            "schema_version": "d1-campaign-capture-identity-v1",
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class D1PreparedCampaignCapture:
+    campaign: D1CompletedCampaign
+    material: D1CampaignCaptureMaterial
+    preparation: object
+    process_manager: D1ProcessManager
+    campaign_digest: str
+    lifecycle_prefix: str
+    lifecycle_event_count: int
+    _token: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._token is not _CAPTURE_TOKEN:
+            raise TypeError("D1PreparedCampaignCapture is factory-only")
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,21 +229,50 @@ class D1CampaignCaptureService:
     def expected_roster(self, campaign: D1CompletedCampaign) -> D1LaunchRoster:
         return _expected_roster(campaign)
 
-    def capture(self, campaign: D1CompletedCampaign) -> D1CapturedCampaign:
+    def prepare(self, campaign: D1CompletedCampaign) -> D1PreparedCampaignCapture:
         if type(campaign) is not D1CompletedCampaign:
             raise TypeError("campaign capture requires D1CompletedCampaign")
+        identity = _campaign_identity(campaign)
         roster = _expected_roster(campaign)
         material = self._assembler.prepare(campaign, roster)
         if type(material) is not D1CampaignCaptureMaterial or material.roster != roster:
             raise ValueError("campaign evidence assembler roster differs from the matrix")
-        receipt = self._capture.capture(material)
+        preparation = self._capture.prepare(material)
+        aggregate = getattr(preparation, "aggregate", None)
+        if getattr(aggregate, "roster", None) != roster:
+            raise ValueError("campaign capture preparation roster differs from the matrix")
+        manager = campaign.process_manager
+        prefix = manager.history.prefix
+        return D1PreparedCampaignCapture(
+            campaign,
+            material,
+            preparation,
+            manager,
+            identity,
+            prefix.prefix_sha256,
+            prefix.event_count,
+            _token=_CAPTURE_TOKEN,
+        )
+
+    def finalize(self, prepared: D1PreparedCampaignCapture) -> D1CapturedCampaign:
+        if type(prepared) is not D1PreparedCampaignCapture:
+            raise TypeError("campaign capture finalize requires its prepared typestate")
+        campaign = prepared.campaign
+        manager = campaign.process_manager
+        prefix = manager.history.prefix
+        if (
+            _campaign_identity(campaign) != prepared.campaign_digest
+            or manager != prepared.process_manager
+            or prefix.prefix_sha256 != prepared.lifecycle_prefix
+            or prefix.event_count != prepared.lifecycle_event_count
+        ):
+            raise ValueError("prepared campaign or lifecycle identity differs at finalize")
+        receipt = self._capture.finalize(prepared.preparation)
+        roster = prepared.material.roster
         if receipt.aggregate.roster != roster:
             raise ValueError("campaign capture receipt roster differs from the matrix")
         if receipt.manifest.get("analysis_ready") is not True:
             raise ValueError("campaign capture receipt is not analysis-ready")
-        manager = campaign.process_manager
-        if type(manager) is not D1ProcessManager:
-            raise TypeError("campaign final result lacks D1ProcessManager")
         artifact = ArtifactIdentity(
             f"results/captured.dvc@{receipt.manifest['pointer_commit']}",
             ContentHash("sha256", canonical_digest(receipt.manifest)),
@@ -192,3 +283,6 @@ class D1CampaignCaptureService:
             event_id=f"d1-campaign:{campaign.matrix.matrix_digest}:captured",
         )
         return D1CapturedCampaign(campaign, receipt, captured, _token=_CAPTURE_TOKEN)
+
+    def capture(self, campaign: D1CompletedCampaign) -> D1CapturedCampaign:
+        return self.finalize(self.prepare(campaign))
