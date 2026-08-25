@@ -20,6 +20,7 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1ExpectedRun,
 )
 from entropic_substrate.evidence.d1_capture_validation import (
+    D1_RUN_IDENTITY_ATTESTATION_PATHS,
     D1CaptureBundleError,
     validate_d1_run_identity,
 )
@@ -80,26 +81,6 @@ _NONBLINDABLE = (
 )
 _BLIND_ALIASES = ("A", "B", "C", "D")
 _ROSTER_ALGORITHM = "sha256-registered-seed-alias-sort-v1"
-_RUN_IDENTITY_ATTESTATIONS = (
-    ("I01", "aggregation_digest"),
-    ("I02", "arm"),
-    ("I03", "code_commit"),
-    ("I04", "construction_digest"),
-    ("I05", "dataset_digest"),
-    ("I06", "execution_digest"),
-    ("I07", "family_digest"),
-    ("I08", "image_digest"),
-    ("I09", "logical_run_id"),
-    ("I10", "pairing_id"),
-    ("I11", "plan_digest"),
-    ("I12", "preregistration"),
-    ("I13", "repository_digest"),
-    ("I14", "run_class"),
-    ("I15", "sampler_construction_digest"),
-    ("I16", "seed"),
-    ("I17", "segment_logical_run_id"),
-    ("I18", "split_digest"),
-)
 
 
 class D1BlindnessLabel(StrEnum):
@@ -332,17 +313,18 @@ def _run_attestations(
     for item in expected:
         run = evidence[item.logical_run_id]
         try:
-            validate_d1_run_identity(run, item, aggregate.roster)
+            attestation = validate_d1_run_identity(run, item, aggregate.roster)
         except D1CaptureBundleError as error:
             raise ValueError("D1 packet run identity differs from the launch roster") from error
+        identity_manifest = dict(attestation.blind_manifest)
+        if not attestation.complete:
+            raise ValueError("D1 packet run identity attestation is incomplete")
         rows.append(
             {
                 "arm_alias": aliases.aliases.for_arm(item.arm),
                 "pair_alias": pair_aliases[item.pairing_id],
                 "registered_construction_match": True,
-                "registered_identity_match": {
-                    attestation_id: True for attestation_id, _ in _RUN_IDENTITY_ATTESTATIONS
-                },
+                "registered_identity_match": identity_manifest,
                 "run_alias": run_aliases[item.logical_run_id],
                 "seed": item.seed,
                 "segments": _segments(run),
@@ -529,7 +511,7 @@ def validate_d1_packet_blindness(
     ):
         raise D1PacketBlindnessError("randomized roster order or record differs")
     runs = cast(list[dict[str, object]], manifest.get("run_attestations", []))
-    expected_identity = {attestation_id: True for attestation_id, _ in _RUN_IDENTITY_ATTESTATIONS}
+    expected_identity = dict.fromkeys(D1_RUN_IDENTITY_ATTESTATION_PATHS, True)
     if len(runs) != len(aggregate.roster.expected_confirmatory) or any(
         row.get("registered_identity_match") != expected_identity for row in runs
     ):

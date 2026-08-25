@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import NoReturn, cast
@@ -39,7 +40,9 @@ from entropic_substrate.experiments.d1_primitives import (
 )
 
 __all__ = [
+    "D1_RUN_IDENTITY_ATTESTATION_PATHS",
     "D1CaptureBundleError",
+    "D1RunIdentityAttestation",
     "build_d1_capture_bundle",
     "validate_d1_attempt_evidence",
     "validate_d1_capture_artifacts",
@@ -47,6 +50,62 @@ __all__ = [
     "validate_d1_complete_run_capture",
     "validate_d1_run_identity",
 ]
+
+D1_RUN_IDENTITY_ATTESTATION_PATHS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "I01": frozenset({"journal.aggregation_digest"}),
+        "I02": frozenset({"plan.arm"}),
+        "I03": frozenset({"plan.code.commit"}),
+        "I04": frozenset({"journal.construction_digest", "plan.construction_digest"}),
+        "I05": frozenset({"plan.data.dataset_digest"}),
+        "I06": frozenset({"journal.execution_digest"}),
+        "I07": frozenset({"journal.family_digest", "plan.family_digest"}),
+        "I08": frozenset({"plan.container.image_digest", "segments.image_digest"}),
+        "I09": frozenset({"journal.logical_run_id", "plan.logical_run_id"}),
+        "I10": frozenset({"plan.pairing_id"}),
+        "I11": frozenset({"plan_digest", "plan_manifest", "plan.evidence.dvc_capture_required"}),
+        "I12": frozenset(
+            {
+                "plan.preregistration.commit",
+                "plan.preregistration.family_digest",
+                "plan.preregistration.path",
+            }
+        ),
+        "I13": frozenset({"plan.code.repository_digest"}),
+        "I14": frozenset({"journal.run_class", "plan.run_class", "status"}),
+        "I15": frozenset({"plan.data.sampler_construction_digest"}),
+        "I16": frozenset({"plan.seed"}),
+        "I17": frozenset({"segments.logical_run_id"}),
+        "I18": frozenset({"plan.data.split_digest"}),
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class D1RunIdentityAttestation:
+    checked_paths: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if type(self.checked_paths) is not frozenset or any(
+            type(path) is not str or not path for path in self.checked_paths
+        ):
+            raise TypeError("D1 run identity attestation paths must be a string frozenset")
+        allowed = frozenset().union(*D1_RUN_IDENTITY_ATTESTATION_PATHS.values())
+        if not self.checked_paths <= allowed:
+            raise ValueError("D1 run identity attestation contains an unregistered check")
+
+    @property
+    def blind_manifest(self) -> Mapping[str, bool]:
+        return MappingProxyType(
+            {
+                attestation_id: paths <= self.checked_paths
+                for attestation_id, paths in D1_RUN_IDENTITY_ATTESTATION_PATHS.items()
+            }
+        )
+
+    @property
+    def complete(self) -> bool:
+        return all(self.blind_manifest.values())
 
 
 class D1CaptureBundleError(ValueError):
@@ -72,67 +131,85 @@ def _mapping(value: object, path: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
-def _exact(value: Mapping[str, object], expected: Mapping[str, object], path: str) -> None:
+def _exact(
+    value: Mapping[str, object], expected: Mapping[str, object], path: str
+) -> frozenset[str]:
     for field, wanted in expected.items():
         if value.get(field) != wanted:
             _fail("identity", f"{path}.{field}", "differs from the launch roster")
+    return frozenset(f"{path}.{field}" for field in expected)
 
 
-def _validate_plan(run: D1RunEvidence, expected: D1ExpectedRun, roster: D1LaunchRoster) -> None:
+def _validate_plan(
+    run: D1RunEvidence, expected: D1ExpectedRun, roster: D1LaunchRoster
+) -> frozenset[str]:
     plan = cast(Mapping[str, object], run.plan_manifest)
-    _exact(
-        plan,
-        {
-            "arm": expected.arm.value,
-            "construction_digest": expected.construction_digest,
-            "family_digest": expected.family_digest,
-            "logical_run_id": expected.logical_run_id,
-            "pairing_id": expected.pairing_id,
-            "run_class": RunClass.CONFIRMATORY.value,
-            "seed": expected.seed,
-        },
-        "plan",
+    checked = set(
+        _exact(
+            plan,
+            {
+                "arm": expected.arm.value,
+                "construction_digest": expected.construction_digest,
+                "family_digest": expected.family_digest,
+                "logical_run_id": expected.logical_run_id,
+                "pairing_id": expected.pairing_id,
+                "run_class": RunClass.CONFIRMATORY.value,
+                "seed": expected.seed,
+            },
+            "plan",
+        )
     )
-    _exact(
-        _mapping(plan.get("code"), "plan.code"),
-        {"commit": expected.code_commit, "repository_digest": expected.repository_digest},
-        "plan.code",
+    checked.update(
+        _exact(
+            _mapping(plan.get("code"), "plan.code"),
+            {"commit": expected.code_commit, "repository_digest": expected.repository_digest},
+            "plan.code",
+        )
     )
-    _exact(
-        _mapping(plan.get("container"), "plan.container"),
-        {"image_digest": expected.image_digest},
-        "plan.container",
+    checked.update(
+        _exact(
+            _mapping(plan.get("container"), "plan.container"),
+            {"image_digest": expected.image_digest},
+            "plan.container",
+        )
     )
-    _exact(
-        _mapping(plan.get("data"), "plan.data"),
-        {
-            "dataset_digest": expected.dataset_digest,
-            "sampler_construction_digest": expected.sampler_construction_digest,
-            "split_digest": expected.split_digest,
-        },
-        "plan.data",
+    checked.update(
+        _exact(
+            _mapping(plan.get("data"), "plan.data"),
+            {
+                "dataset_digest": expected.dataset_digest,
+                "sampler_construction_digest": expected.sampler_construction_digest,
+                "split_digest": expected.split_digest,
+            },
+            "plan.data",
+        )
     )
-    _exact(
-        _mapping(plan.get("preregistration"), "plan.preregistration"),
-        {
-            "commit": roster.preregistration_commit,
-            "family_digest": roster.family_digest,
-            "path": roster.preregistration_path,
-        },
-        "plan.preregistration",
+    checked.update(
+        _exact(
+            _mapping(plan.get("preregistration"), "plan.preregistration"),
+            {
+                "commit": roster.preregistration_commit,
+                "family_digest": roster.family_digest,
+                "path": roster.preregistration_path,
+            },
+            "plan.preregistration",
+        )
     )
     evidence = _mapping(plan.get("evidence"), "plan.evidence")
     if evidence.get("dvc_capture_required") is not True:
         _fail("identity", "plan.evidence.dvc_capture_required", "must be true")
+    checked.add("plan.evidence.dvc_capture_required")
     if any(segment.image_digest != expected.image_digest for segment in run.segments):
         _fail("identity", "segments.image_digest", "differs from the launch roster")
+    checked.add("segments.image_digest")
+    return frozenset(checked)
 
 
 def validate_d1_run_identity(
     run: D1RunEvidence,
     expected: D1ExpectedRun,
     roster: D1LaunchRoster,
-) -> None:
+) -> D1RunIdentityAttestation:
     """Re-admit the complete measured run identity against one roster cell."""
     if (
         type(run) is not D1RunEvidence
@@ -142,37 +219,44 @@ def validate_d1_run_identity(
         raise TypeError("D1 run identity validation requires nominal evidence values")
     if run.status is not D1RunStatus.COMPLETE or run.terminal is None:
         _fail("identity", "status", "run is not terminally complete")
+    checked = {"status"}
     identity = run.identity
-    _exact(
-        cast(
-            Mapping[str, object],
+    checked.update(
+        _exact(
+            cast(
+                Mapping[str, object],
+                {
+                    "aggregation_digest": identity.aggregation_digest,
+                    "construction_digest": identity.construction_digest,
+                    "execution_digest": identity.execution_digest,
+                    "family_digest": identity.family_digest,
+                    "logical_run_id": identity.logical_run_id,
+                    "run_class": identity.run_class.value,
+                },
+            ),
             {
-                "aggregation_digest": identity.aggregation_digest,
-                "construction_digest": identity.construction_digest,
-                "execution_digest": identity.execution_digest,
-                "family_digest": identity.family_digest,
-                "logical_run_id": identity.logical_run_id,
-                "run_class": identity.run_class.value,
+                "aggregation_digest": expected.aggregation_digest,
+                "construction_digest": expected.construction_digest,
+                "execution_digest": expected.execution_digest,
+                "family_digest": expected.family_digest,
+                "logical_run_id": expected.logical_run_id,
+                "run_class": RunClass.CONFIRMATORY.value,
             },
-        ),
-        {
-            "aggregation_digest": expected.aggregation_digest,
-            "construction_digest": expected.construction_digest,
-            "execution_digest": expected.execution_digest,
-            "family_digest": expected.family_digest,
-            "logical_run_id": expected.logical_run_id,
-            "run_class": RunClass.CONFIRMATORY.value,
-        },
-        "journal",
+            "journal",
+        )
     )
     plan_manifest = cast(Mapping[str, object], thaw_for_digest(run.plan_manifest))
     if canonical_digest(plan_manifest) != run.plan_digest:
         _fail("identity", "plan_manifest", "does not match its measured plan digest")
-    _validate_plan(run, expected, roster)
+    checked.add("plan_manifest")
+    checked.update(_validate_plan(run, expected, roster))
     if run.plan_digest != expected.plan_digest:
         _fail("identity", "plan_digest", "differs from the launch roster")
+    checked.add("plan_digest")
     if any(segment.logical_run_id != expected.logical_run_id for segment in run.segments):
         _fail("identity", "segments.logical_run_id", "differs from the launch roster")
+    checked.add("segments.logical_run_id")
+    return D1RunIdentityAttestation(frozenset(checked))
 
 
 def _verify_artifacts(root: Path, artifacts: tuple[D1ArtifactIdentity, ...]) -> None:

@@ -8,6 +8,7 @@ from typing import NamedTuple, cast
 
 import pytest
 
+import entropic_substrate.analysis.d1_review_packet as review_packet_module
 from entropic_substrate.analysis.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
     D1PreparedBlindAliases,
@@ -37,6 +38,10 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1DeclaredAttempt,
     D1ExpectedRun,
     D1LaunchRoster,
+)
+from entropic_substrate.evidence.d1_capture_validation import (
+    D1_RUN_IDENTITY_ATTESTATION_PATHS,
+    D1RunIdentityAttestation,
 )
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_review_adjudication import (
@@ -375,6 +380,35 @@ def test_packet_binds_the_supplied_decision_contract_to_analysis_receipt(
             aliases=aliases,
             run_evidence=evidence,
         )
+
+
+def test_packet_rejects_incomplete_validator_issued_identity_attestation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+    required = frozenset(
+        path for paths in D1_RUN_IDENTITY_ATTESTATION_PATHS.values() for path in paths
+    )
+    incomplete = D1RunIdentityAttestation(required - {next(iter(required))})
+    monkeypatch.setattr(
+        review_packet_module,
+        "validate_d1_run_identity",
+        lambda *_args: incomplete,
+    )
+
+    with pytest.raises(ValueError, match="attestation is incomplete"):
+        build_d1_blind_review_packet(
+            decision_contract=decision,
+            aggregate=aggregate,
+            analysis=analysis,
+            analysis_receipt=receipt,
+            aliases=aliases,
+            run_evidence=evidence,
+        )
+    with pytest.raises(ValueError, match="unregistered check"):
+        D1RunIdentityAttestation(frozenset({"unknown.identity.path"}))
+    with pytest.raises(TypeError, match="frozenset"):
+        D1RunIdentityAttestation(cast(frozenset[str], []))
 
 
 def _mutate_run_identity(run: D1RunEvidence, mutation: str) -> D1RunEvidence:
