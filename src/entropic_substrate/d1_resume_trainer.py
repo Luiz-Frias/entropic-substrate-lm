@@ -4,19 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
+import entropic_substrate.d1_segment_engine as segment_engine
 from entropic_substrate.d1_dual_failure import (
     D1PrimarySecondaryFailure,
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
-from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
+from entropic_substrate.d1_evaluation import D1EvalResult
 from entropic_substrate.d1_observability import D1JournalObserver, ObservedD1Journal
 from entropic_substrate.d1_resource_activation import (
-    D1ActiveResourceMeter,
     D1ResourceActivationFactory,
 )
 from entropic_substrate.d1_resume_runtime import (
@@ -31,7 +29,6 @@ from entropic_substrate.d1_trainer_handoff import (
     capture_d1_trainer_termination,
 )
 from entropic_substrate.d1_trainer_runtime import (
-    D1FreshComponents,
     D1TrainerClock,
     D1TrainerWallOrigin,
     SystemD1TrainerClock,
@@ -53,12 +50,9 @@ from entropic_substrate.evidence.resource_provenance import (
     SegmentStartMode,
 )
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.predictive_state.checkpoint_envelope import build_d1_checkpoint
 from entropic_substrate.predictive_state.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
-    save_atomic,
 )
 
 __all__ = [
@@ -206,78 +200,6 @@ def _event(
         successful_step=step,
         payload=cast(Mapping[str, FrozenJson], payload),
     )
-
-
-def _evaluate(
-    components: D1FreshComponents,
-    journal: ObservedD1Journal,
-    clock: D1TrainerClock,
-    meter: D1ActiveResourceMeter,
-    step: int,
-) -> tuple[D1EvalResult, ResourceWorkSnapshot]:
-    with meter.measure(ResourcePhase.EVAL):
-        result = D1Evaluator().evaluate(system=components.system, sampler=components.eval_sampler)
-    batching = components.plan.profile.draft.execution_protocol.batching
-    target_positions = (
-        result.batch_count * batching.batch_size * (batching.sequence_length + batching.horizon)
-    )
-    meter.record_positions(
-        ResourcePhase.EVAL,
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-    )
-    work = components.resource_ledger.record_eval(
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-        training_step=step,
-        observed_at=clock.utc_now(),
-        monotonic_ns=clock.monotonic_ns(),
-    )
-    journal.append(
-        _event(
-            components.plan,
-            journal,
-            JournalEventKind.EVAL,
-            step,
-            {
-                "eval_index": work.eval_index,
-                "quality": result.telemetry_manifest,
-                "resource_work": resource_snapshot_to_mapping(work),
-            },
-        )
-    )
-    return result, work
-
-
-def _save_checkpoint(
-    components: D1FreshComponents,
-    journal: ObservedD1Journal,
-    path: Path,
-    baseline: D1BaselineCalibrationAttestation,
-    step: int,
-    best_nats: float,
-) -> D1CheckpointArtifactReceipt:
-    state = build_d1_checkpoint(
-        system=components.system,
-        optimizer=components.optimizer.optimizer,
-        sampler=components.train_sampler,
-        run=components.plan.run,
-        protocol=components.plan.profile.draft.execution_protocol,
-        successful_step=step,
-        baseline_calibration=baseline,
-        resource_ledger=components.resource_ledger.current_state(),
-        journal_state=journal.state,
-        lifecycle={
-            "schema_version": "d1-trainer-lifecycle-v1",
-            "state": "running",
-            "completion_reason": None,
-            "abort_reason": None,
-        },
-        best_nats_per_byte=best_nats,
-    )
-    receipt = save_atomic(path, state)
-    journal.append_checkpoint(receipt.sha256)
-    return receipt
 
 
 def _trainer_failure(
@@ -440,25 +362,25 @@ def run_d1_resume(
                 )
                 terminal = step == protocol.optimization.max_steps
                 if step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = _evaluate(
-                        components,
-                        journal,
-                        active_clock,
-                        admission.resource_activation.meter,
-                        step,
+                    final_eval, final_work = segment_engine.record_d1_segment_evaluation(
+                        components=components,
+                        journal=journal,
+                        clock=active_clock,
+                        meter=admission.resource_activation.meter,
+                        successful_step=step,
                     )
                     best_nats = min(best_nats, final_eval.nats_per_byte)
                     scheduled = protocol.evaluation.save_interval > 0 and (
                         step % protocol.evaluation.save_interval == 0
                     )
                     if scheduled or terminal:
-                        final_receipt = _save_checkpoint(
-                            components,
-                            journal,
-                            locations.checkpoint_path,
-                            restored.baseline,
-                            step,
-                            best_nats,
+                        final_receipt = segment_engine.save_d1_segment_checkpoint(
+                            components=components,
+                            journal=journal,
+                            checkpoint_path=locations.checkpoint_path,
+                            baseline=restored.baseline,
+                            successful_step=step,
+                            best_nats_per_byte=best_nats,
                         )
                         latest_checkpoint_sha256 = final_receipt.sha256
             if final_eval is None or final_work is None or final_receipt is None:

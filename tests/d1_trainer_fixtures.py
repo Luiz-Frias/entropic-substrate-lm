@@ -51,7 +51,12 @@ class DeterministicTrainerClock:
         return ORIGIN_NS + self._monotonic_ticks * 1_000_000_000
 
 
-def micro_plan(arm: D1Arm, *, seed: int = 17) -> SmokeD1RunPlan:
+def micro_plan(
+    arm: D1Arm,
+    *,
+    seed: int = 17,
+    save_interval: int = 1,
+) -> SmokeD1RunPlan:
     path = d1_configs_dir() / f"d1-{arm.value}.yaml"
     payload = read_d1_profile_mapping(path)
     profile = parse_d1_profile_payload(
@@ -78,7 +83,7 @@ def micro_plan(arm: D1Arm, *, seed: int = 17) -> SmokeD1RunPlan:
                     "warmup_steps": 0,
                     "eval_interval": 1,
                     "log_interval": 1,
-                    "save_interval": 1,
+                    "save_interval": save_interval,
                     "amp_dtype": "off",
                     "device": "cpu",
                 },

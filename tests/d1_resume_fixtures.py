@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import torch
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -96,7 +96,7 @@ def captured_step_one_case(
             resume_journal.write_bytes(reference_journal.read_bytes())
         return state
 
-    monkeypatch.setattr(fresh_module, "save_atomic", capture_checkpoint)
+    monkeypatch.setattr(segment_engine, "save_atomic", capture_checkpoint)
     monkeypatch.setattr(AuthoritativeRunJournal, "append_checkpoint", capture_journal)
     start = run_start(plan)
     if resource_activation_factory is not None:

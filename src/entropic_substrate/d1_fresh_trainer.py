@@ -7,18 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.d1_calibration import (
-    D1BaselineCalibrationAttestation,
-    D1BaselineCalibrator,
-)
+import entropic_substrate.d1_segment_engine as segment_engine
+from entropic_substrate.d1_calibration import D1BaselineCalibrator
 from entropic_substrate.d1_dual_failure import (
     D1PrimarySecondaryFailure,
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
-from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
 from entropic_substrate.d1_resource_activation import (
-    D1ActiveResourceMeter,
     D1ResourceActivationFactory,
     UnavailableResourceActivationFactory,
 )
@@ -48,13 +44,9 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.predictive_state.checkpoint_envelope import build_d1_checkpoint
 from entropic_substrate.predictive_state.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
-    save_atomic,
 )
 
 
@@ -129,82 +121,6 @@ def _next_event(
         successful_step=successful_step,
         payload=payload,
     )
-
-
-def _record_evaluation(
-    *,
-    components: D1FreshComponents,
-    evaluator: D1Evaluator,
-    journal: D1FreshJournal,
-    clock: D1TrainerClock,
-    meter: D1ActiveResourceMeter,
-    successful_step: int,
-) -> tuple[D1EvalResult, ResourceWorkSnapshot]:
-    with meter.measure(ResourcePhase.EVAL):
-        result = evaluator.evaluate(system=components.system, sampler=components.eval_sampler)
-    protocol = components.plan.profile.draft.execution_protocol
-    batching = protocol.batching
-    target_positions = (
-        result.batch_count * batching.batch_size * (batching.sequence_length + batching.horizon)
-    )
-    meter.record_positions(
-        ResourcePhase.EVAL,
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-    )
-    snapshot = components.resource_ledger.record_eval(
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-        training_step=successful_step,
-        observed_at=clock.utc_now(),
-        monotonic_ns=clock.monotonic_ns(),
-    )
-    journal.append(
-        _next_event(
-            journal,
-            components.plan,
-            JournalEventKind.EVAL,
-            successful_step=successful_step,
-            payload={
-                "eval_index": snapshot.eval_index,
-                "quality": result.telemetry_manifest,
-                "resource_work": resource_snapshot_to_mapping(snapshot),
-            },
-        )
-    )
-    return result, snapshot
-
-
-def _checkpoint(
-    *,
-    components: D1FreshComponents,
-    journal: D1FreshJournal,
-    locations: D1FreshRunLocations,
-    baseline: D1BaselineCalibrationAttestation,
-    successful_step: int,
-    best_nats_per_byte: float,
-) -> D1CheckpointArtifactReceipt:
-    checkpoint = build_d1_checkpoint(
-        system=components.system,
-        optimizer=components.optimizer.optimizer,
-        sampler=components.train_sampler,
-        run=components.plan.run,
-        protocol=components.plan.profile.draft.execution_protocol,
-        successful_step=successful_step,
-        baseline_calibration=baseline,
-        resource_ledger=components.resource_ledger.current_state(),
-        journal_state=journal.state,
-        lifecycle={
-            "schema_version": "d1-trainer-lifecycle-v1",
-            "state": "running",
-            "completion_reason": None,
-            "abort_reason": None,
-        },
-        best_nats_per_byte=best_nats_per_byte,
-    )
-    receipt = save_atomic(locations.checkpoint_path, checkpoint)
-    journal.append_checkpoint(receipt.sha256)
-    return receipt
 
 
 def _data_order(components: D1FreshComponents) -> tuple[str, int]:
@@ -284,10 +200,8 @@ def run_d1_fresh(
                     },
                 )
             )
-            evaluator = D1Evaluator()
-            final_eval, final_work = _record_evaluation(
+            final_eval, final_work = segment_engine.record_d1_segment_evaluation(
                 components=components,
-                evaluator=evaluator,
                 journal=journal,
                 clock=active_clock,
                 meter=activation.meter,
@@ -350,9 +264,8 @@ def run_d1_fresh(
                 )
                 terminal = successful_step == protocol.optimization.max_steps
                 if successful_step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = _record_evaluation(
+                    final_eval, final_work = segment_engine.record_d1_segment_evaluation(
                         components=components,
-                        evaluator=evaluator,
                         journal=journal,
                         clock=active_clock,
                         meter=activation.meter,
@@ -364,10 +277,10 @@ def run_d1_fresh(
                         and successful_step % protocol.evaluation.save_interval == 0
                     )
                     if scheduled_save or terminal:
-                        final_receipt = _checkpoint(
+                        final_receipt = segment_engine.save_d1_segment_checkpoint(
                             components=components,
                             journal=journal,
-                            locations=locations,
+                            checkpoint_path=locations.checkpoint_path,
                             baseline=baseline,
                             successful_step=successful_step,
                             best_nats_per_byte=best_nats,
