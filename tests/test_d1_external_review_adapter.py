@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -128,6 +129,40 @@ class _DeepJsonRunner(_Runner):
         result = super().__call__(argv, **kwargs)
         nested = b"[" * 10_000 + b"0" + b"]" * 10_000
         return _Result(result.returncode, nested, result.stderr)
+
+
+class _DuplicateKeyRunner(_Runner):
+    def __call__(self, argv: list[str], **kwargs: object) -> _Result:
+        del argv, kwargs
+        payload = b'{"secret-sentinel":1,"secret-sentinel":2}'
+        return _Result(0, payload, b"")
+
+
+class _MalformedJsonRunner(_Runner):
+    def __call__(self, argv: list[str], **kwargs: object) -> _Result:
+        del argv, kwargs
+        return _Result(0, b'{"secret-sentinel":', b"")
+
+
+class _SecretExceptionRunner(_Runner):
+    def __call__(self, argv: list[str], **kwargs: object) -> _Result:
+        del kwargs
+        raise subprocess.CalledProcessError(
+            9,
+            argv,
+            output=b"raw-stdout-secret",
+            stderr=b"raw-stderr-secret",
+        )
+
+
+class _ForgedDomainErrorRunner(_Runner):
+    def __call__(self, argv: list[str], **kwargs: object) -> _Result:
+        del argv, kwargs
+        raise D1ExternalReviewError(
+            "subprocess_failure",
+            "raw-runner-secret",
+            leaked="raw-runner-secret",
+        )
 
 
 def _adapter(tmp_path: Path, runner: _Runner) -> D1ExternalReviewSubprocessAdapter:
@@ -393,6 +428,50 @@ def test_json_recursion_failure_is_normalized_to_protocol_error(
     with pytest.raises(D1ExternalReviewError) as real_payload:
         _adapter(tmp_path, _DeepJsonRunner()).review(_request())
     assert real_payload.value.code == "protocol_encoding"
+
+
+def test_protocol_error_traceback_never_contains_worker_stdout(tmp_path: Path) -> None:
+    with pytest.raises(D1ExternalReviewError) as caught:
+        _adapter(tmp_path, _DuplicateKeyRunner()).review(_request())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert caught.value.code == "protocol_encoding"
+    assert "secret-sentinel" not in rendered
+
+
+def test_malformed_json_never_survives_in_error_object_graph(tmp_path: Path) -> None:
+    with pytest.raises(D1ExternalReviewError) as caught:
+        _adapter(tmp_path, _MalformedJsonRunner()).review(_request())
+
+    assert caught.value.code == "protocol_encoding"
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert "secret-sentinel" not in repr(vars(caught.value))
+
+
+def test_subprocess_failure_traceback_never_retains_raw_streams(tmp_path: Path) -> None:
+    with pytest.raises(D1ExternalReviewError) as caught:
+        _adapter(tmp_path, _SecretExceptionRunner()).review(_request())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert caught.value.code == "subprocess_failure"
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert "raw-stdout-secret" not in rendered
+    assert "raw-stderr-secret" not in rendered
+    assert caught.value.context["stdout_sha256"] == hashlib.sha256(b"raw-stdout-secret").hexdigest()
+
+
+def test_injected_runner_cannot_forge_a_trusted_domain_error(tmp_path: Path) -> None:
+    with pytest.raises(D1ExternalReviewError) as caught:
+        _adapter(tmp_path, _ForgedDomainErrorRunner()).review(_request())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert caught.value.code == "subprocess_failure"
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert "raw-runner-secret" not in rendered
+    assert "leaked" not in caught.value.context
 
 
 @pytest.mark.parametrize(

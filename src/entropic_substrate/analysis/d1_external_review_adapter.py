@@ -7,27 +7,27 @@ import hashlib
 import json
 import os
 import re
-import selectors
-import signal
-import subprocess  # nosec B404 -- fixed sandbox argv; shell is explicitly disabled
 import threading
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import IO, NoReturn, Protocol, cast
+from typing import Protocol, cast
 
 from entropic_substrate.analysis.d1_review_execution import (
     D1CloudReviewRequest,
     D1CloudReviewResponse,
+)
+from entropic_substrate.d1_command_runner import (
+    D1BoundedProcessError,
+    D1BoundedProcessResult,
+    D1BoundedProcessRunner,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 _RUNTIME = "/usr/local/bin/d1-review-sandbox"
 _TIMEOUT_SECONDS = 600
 _MAX_OUTPUT_BYTES = 16 * 1024 * 1024
-_REAP_TIMEOUT_SECONDS = 1.0
 _SAFE_ATTEMPT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _RESULT_FIELDS = frozenset(
     (
@@ -105,17 +105,10 @@ class D1ExternalReviewError(RuntimeError):
         super().__init__(f"D1 external review {code}: {detail}; context={dict(context)}")
 
 
-def _exception_hash(value: object, label: str, attempt_id: str) -> str:
+def _exception_hash(value: object) -> str | None:
     if value is None:
         return _sha(b"")
-    if type(value) is not bytes:
-        raise D1ExternalReviewError(
-            "subprocess_failure",
-            f"exception {label} must be bytes",
-            attempt_id=attempt_id,
-            output_type=type(value).__name__,
-        )
-    return _sha(value)
+    return _sha(value) if type(value) is bytes else None
 
 
 class _ProcessResult(Protocol):
@@ -127,15 +120,8 @@ class _ProcessResult(Protocol):
 type _Runner = Callable[..., _ProcessResult]
 
 
-@dataclass(frozen=True, slots=True)
-class _CompletedProcessResult:
-    returncode: int
-    stdout: bytes
-    stderr: bytes
-
-
 class D1BoundedSubprocessRunner:
-    """Drain one process group with an in-flight output and time bound."""
+    """Review-specific error translation over the shared bounded runner."""
 
     def __init__(
         self,
@@ -146,60 +132,12 @@ class D1BoundedSubprocessRunner:
     ) -> None:
         if type(attempt_id) is not str or _SAFE_ATTEMPT_ID.fullmatch(attempt_id) is None:
             raise ValueError("D1 bounded review runner requires a safe attempt_id")
-        if type(timeout_seconds) not in (int, float) or timeout_seconds <= 0:
-            raise ValueError("D1 bounded review timeout must be positive")
-        if type(max_output_bytes) is not int or max_output_bytes < 1:
-            raise ValueError("D1 bounded review output limit must be positive")
         self._attempt_id = attempt_id
         self._timeout_seconds = float(timeout_seconds)
-        self._max_output_bytes = max_output_bytes
-
-    @staticmethod
-    def _close(stream: IO[bytes] | None) -> None:
-        if stream is not None:
-            try:
-                stream.close()
-            except OSError:
-                pass
-
-    def _kill_group(
-        self,
-        process: subprocess.Popen[bytes],
-        *,
-        code: str,
-        stdout: bytearray,
-        stderr: bytearray,
-    ) -> NoReturn:
-        swept = self._sweep_group(process)
-        reaped = self._reap(process)
-        raise D1ExternalReviewError(
-            code,
-            "bounded subprocess terminated",
-            attempt_id=self._attempt_id,
-            stdout_sha256=_sha(bytes(stdout)),
-            stderr_sha256=_sha(bytes(stderr)),
-            output_bytes=len(stdout) + len(stderr),
-            process_group_swept=int(swept),
-            process_reaped=int(reaped),
+        self._runner = D1BoundedProcessRunner(
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
         )
-
-    @staticmethod
-    def _sweep_group(process: subprocess.Popen[bytes]) -> bool:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return True
-        except OSError:
-            return False
-        return True
-
-    @staticmethod
-    def _reap(process: subprocess.Popen[bytes]) -> bool:
-        try:
-            process.wait(timeout=_REAP_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            return False
-        return True
 
     def run(
         self,
@@ -208,100 +146,27 @@ class D1BoundedSubprocessRunner:
         cwd: object,
         input: object,
         env: object,
-    ) -> _CompletedProcessResult:
-        if (
-            type(argv) is not tuple
-            or not argv
-            or any(type(item) is not str or not item for item in argv)
-        ):
-            raise TypeError("D1 bounded review argv must be a nonempty string tuple")
-        if not isinstance(cwd, Path) or type(input) is not bytes or not isinstance(env, Mapping):
-            raise TypeError("D1 bounded review requires Path, bytes, and environment mapping")
-        work_dir = cwd
-        payload = input
-        environment = cast(Mapping[str, str], env)
-        process = subprocess.Popen(  # nosec B603 -- caller is the fixed adapter argv
-            argv,
-            cwd=work_dir,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
-            env=dict(environment),
-            close_fds=True,
-            start_new_session=True,
-        )
-        if process.stdin is None or process.stdout is None or process.stderr is None:
-            self._kill_group(
-                process, code="subprocess_failure", stdout=bytearray(), stderr=bytearray()
-            )
-        selector = selectors.DefaultSelector()
-        stdout = bytearray()
-        stderr = bytearray()
-        pending = memoryview(payload)
+    ) -> D1BoundedProcessResult:
         try:
-            for stream in (process.stdin, process.stdout, process.stderr):
-                os.set_blocking(stream.fileno(), False)
-            if pending:
-                selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
-            else:
-                self._close(process.stdin)
-            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
-            deadline = time.monotonic() + self._timeout_seconds
-            while selector.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    self._kill_group(process, code="timeout", stdout=stdout, stderr=stderr)
-                for key, _ in selector.select(remaining):
-                    stream = cast(IO[bytes], key.fileobj)
-                    if key.data == "stdin":
-                        try:
-                            written = os.write(stream.fileno(), pending)
-                            pending = pending[written:]
-                        except BrokenPipeError:
-                            pending = pending[len(pending) :]
-                        if not pending:
-                            selector.unregister(stream)
-                            self._close(stream)
-                        continue
-                    try:
-                        chunk = os.read(stream.fileno(), 64 * 1024)
-                    except BlockingIOError:
-                        continue
-                    if not chunk:
-                        selector.unregister(stream)
-                        self._close(stream)
-                        continue
-                    target = stdout if key.data == "stdout" else stderr
-                    available = self._max_output_bytes + 1 - len(stdout) - len(stderr)
-                    target.extend(chunk[: max(0, available)])
-                    if len(stdout) + len(stderr) > self._max_output_bytes:
-                        self._kill_group(
-                            process,
-                            code="output_limit",
-                            stdout=stdout,
-                            stderr=stderr,
-                        )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                self._kill_group(process, code="timeout", stdout=stdout, stderr=stderr)
-            try:
-                returncode = process.wait(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                self._kill_group(process, code="timeout", stdout=stdout, stderr=stderr)
-            self._sweep_group(process)
-            return _CompletedProcessResult(returncode, bytes(stdout), bytes(stderr))
-        finally:
-            selector.close()
-            if process.poll() is None:
-                self._sweep_group(process)
-                self._reap(process)
-            self._close(process.stdin)
-            self._close(process.stdout)
-            self._close(process.stderr)
+            return self._runner.run(
+                argv,
+                cwd=cast(Path, cwd),
+                input=cast(bytes, input),
+                env=cast(Mapping[str, str], env),
+            )
+        except D1BoundedProcessError as error:
+            raise D1ExternalReviewError(
+                error.code,
+                "bounded subprocess terminated",
+                attempt_id=self._attempt_id,
+                stdout_sha256=error.stdout_sha256,
+                stderr_sha256=error.stderr_sha256,
+                output_bytes=error.output_bytes,
+                process_group_swept=int(error.process_group_swept),
+                process_reaped=int(error.process_reaped),
+            ) from error
 
-    def __call__(self, argv: list[str], **kwargs: object) -> _CompletedProcessResult:
+    def __call__(self, argv: list[str], **kwargs: object) -> D1BoundedProcessResult:
         required = {
             "capture_output": True,
             "check": False,
@@ -318,9 +183,9 @@ class D1BoundedSubprocessRunner:
             raise TypeError("D1 bounded review runner timeout differs")
         return self.run(
             tuple(argv),
-            cwd=cast(Path, kwargs.get("cwd")),
-            input=cast(bytes, kwargs.get("input")),
-            env=cast(Mapping[str, str], kwargs.get("env")),
+            cwd=kwargs.get("cwd"),
+            input=kwargs.get("input"),
+            env=kwargs.get("env"),
         )
 
 
@@ -335,26 +200,31 @@ def _strict_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate field {key!r}")
+            raise ValueError("duplicate field")
         result[key] = value
     return result
 
 
 def _reject_constant(value: str) -> object:
-    raise ValueError(f"nonfinite JSON constant {value}")
+    del value
+    raise ValueError("nonfinite JSON constant")
 
 
 def _parse_result(payload: bytes) -> Mapping[str, object]:
     if not payload or len(payload) > _MAX_OUTPUT_BYTES:
         raise ValueError("worker stdout must be nonempty and within the output limit")
+    value: object | None = None
+    parse_failed = False
     try:
         value = json.loads(
             payload,
             object_pairs_hook=_strict_pairs,
             parse_constant=_reject_constant,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
-        raise ValueError("worker stdout must be strict UTF-8 JSON") from error
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
+        parse_failed = True
+    if parse_failed:
+        raise ValueError("worker stdout must be strict UTF-8 JSON")
     if type(value) is not dict:
         raise ValueError("worker result must have an object root")
     result = cast(dict[str, object], value)
@@ -401,6 +271,7 @@ class D1ExternalReviewSubprocessAdapter:
         self._attempt_id = attempt_id
         self._consume_lock = threading.Lock()
         self._consumed = False
+        self._runner_is_internal = runner is None
         self._runner = (
             runner
             if runner is not None
@@ -439,6 +310,7 @@ class D1ExternalReviewSubprocessAdapter:
         )
 
     def _invoke(self, request: D1CloudReviewRequest) -> _ProcessResult:
+        failure: D1ExternalReviewError | None = None
         try:
             return self._runner(  # nosec B603 -- fixed argv and shell=False are contract-tested
                 self.argv,
@@ -452,20 +324,34 @@ class D1ExternalReviewSubprocessAdapter:
                 close_fds=True,
                 start_new_session=True,
             )
-        except D1ExternalReviewError:
-            raise
+        except D1ExternalReviewError as error:
+            if self._runner_is_internal:
+                raise
+            failure = self._normalize_runner_failure(error)
         except Exception as error:
-            raise D1ExternalReviewError(
+            failure = self._normalize_runner_failure(error)
+        raise failure
+
+    def _normalize_runner_failure(self, error: Exception) -> D1ExternalReviewError:
+        stdout = getattr(error, "stdout", None)
+        stderr = getattr(error, "stderr", None)
+        stdout_sha256 = _exception_hash(stdout)
+        stderr_sha256 = _exception_hash(stderr)
+        if stdout_sha256 is None or stderr_sha256 is None:
+            return D1ExternalReviewError(
                 "subprocess_failure",
-                type(error).__name__,
+                "exception output type is invalid",
                 attempt_id=self._attempt_id,
-                stdout_sha256=_exception_hash(
-                    getattr(error, "stdout", None), "stdout", self._attempt_id
-                ),
-                stderr_sha256=_exception_hash(
-                    getattr(error, "stderr", None), "stderr", self._attempt_id
-                ),
-            ) from error
+                stdout_type=type(stdout).__name__,
+                stderr_type=type(stderr).__name__,
+            )
+        return D1ExternalReviewError(
+            "subprocess_failure",
+            type(error).__name__,
+            attempt_id=self._attempt_id,
+            stdout_sha256=stdout_sha256,
+            stderr_sha256=stderr_sha256,
+        )
 
     def review(self, request: D1CloudReviewRequest) -> D1CloudReviewResponse:
         if type(request) is not D1CloudReviewRequest:
@@ -503,6 +389,10 @@ class D1ExternalReviewSubprocessAdapter:
             raise D1ExternalReviewError(
                 "stderr_output", "successful worker emitted stderr", **exit_context
             )
+        wire: Mapping[str, object] | None = None
+        provider_response: bytes | None = None
+        report: bytes | None = None
+        protocol_failure: D1ExternalReviewError | None = None
         try:
             wire = _parse_result(result.stdout)
             provider_response = _decode(wire["provider_response_base64"], "provider response")
@@ -518,7 +408,11 @@ class D1ExternalReviewSubprocessAdapter:
                 code = "payload_digest"
             else:
                 code = "protocol_identity"
-            raise D1ExternalReviewError(code, str(error), **exit_context) from error
+            protocol_failure = D1ExternalReviewError(code, str(error), **exit_context)
+        if protocol_failure is not None:
+            raise protocol_failure
+        if wire is None or provider_response is None or report is None:
+            raise AssertionError("D1 external review protocol admission lost its values")
         envelope = _canonical(
             {
                 "attempt": {
