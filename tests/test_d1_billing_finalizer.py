@@ -14,6 +14,7 @@ from d1_billing_finalizer_fixtures import (
     CompletedD1Case,
     billing_gap,
     completed_case,
+    partial_provider_bill,
     provider_bill,
 )
 from d1_resume_fixtures import RecordingObserver, origin, resume_start
@@ -36,9 +37,8 @@ from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind
 from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
     ExecutionSegmentTermination,
-    ProviderBilling,
+    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.evidence.resource_billing_reconciliation import (
     LogicalBillingMissingCost,
@@ -54,7 +54,7 @@ pytestmark = pytest.mark.unit
 
 def _finalize(
     case: CompletedD1Case,
-    provider: ProviderBilling | BillingGap,
+    provider: TerminalProviderBillingEvidence,
 ):
     return finalize_d1_billing(
         plan=case.plan,
@@ -124,8 +124,28 @@ def test_provider_gap_stays_missing_without_blocking_quality_export(tmp_path: Pa
     assert billing["provider_billed_duration_seconds"] is None
     assert payload["provider_billing_complete"] is False
     segment = cast(dict[str, object], cast(list[object], billing["segments"])[0])
-    gap = cast(dict[str, object], segment["billing_gap"])
+    gap = cast(dict[str, object], segment["provider_evidence"])
     assert cast(dict[str, object], gap["provider_billing_unit"])["kind"] == "gap"
+
+
+def test_partial_provider_rows_survive_without_cost_reconciliation(tmp_path: Path) -> None:
+    case = completed_case(tmp_path)
+
+    finalized = _finalize(case, partial_provider_bill(case.start))
+
+    assert type(finalized.billing) is LogicalBillingMissingCost
+    assert finalized.quality_export_ready is True
+    partial = cast(dict[str, object], finalized.billing.segments[0].manifest["provider_evidence"])
+    assert partial["kind"] == "partial_provider_billing"
+    assert partial["billed_duration_seconds"] == "24.726"
+    assert partial["billed_amount"] == {
+        "amount": "0.25",
+        "currency": {
+            "field": "provider_billed_currency",
+            "kind": "gap",
+            "reason": "RunPod billing rows omit this field",
+        },
+    }
 
 
 def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(

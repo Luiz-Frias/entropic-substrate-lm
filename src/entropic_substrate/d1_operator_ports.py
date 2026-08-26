@@ -23,9 +23,8 @@ from entropic_substrate.d1_operator_values import (
 )
 from entropic_substrate.d1_trainer_request_codec import D1TrainerRequest
 from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
     ExecutionSegmentTermination,
-    ProviderBilling,
+    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 
@@ -122,7 +121,7 @@ class D1RunPodPort(Protocol):
 
     def billing(
         self, pod_id: str, *, start: RunStartProvenance
-    ) -> ProviderBilling | BillingGap: ...
+    ) -> TerminalProviderBillingEvidence: ...
 
 
 class D1TrainerEvidencePort(Protocol):

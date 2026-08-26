@@ -45,9 +45,8 @@ from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
 from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
     ExecutionSegmentTermination,
-    ProviderBilling,
+    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
@@ -109,7 +108,7 @@ class D1ResumeOperatorHistory:
 
     starts: tuple[RunStartProvenance, ...]
     terminations: tuple[ExecutionSegmentTermination, ...]
-    billings: tuple[ProviderBilling | BillingGap, ...]
+    billings: tuple[TerminalProviderBillingEvidence, ...]
 
     def __post_init__(self) -> None:
         validate_execution_segments(self.starts)
@@ -133,7 +132,7 @@ class D1OperatorRunResult:
     placement: D1PodPlacement
     export: D1TrainerExportReceipt
     termination: ExecutionSegmentTermination
-    billing: ProviderBilling | BillingGap
+    billing: TerminalProviderBillingEvidence
     finalization: D1BillingFinalization
     finalized_cell: D1FinalizedCellCustodyRecord | None
     finalized_cell_artifact: ArtifactIdentity
@@ -310,7 +309,7 @@ class D1SequentialOperatorController:
         )
         self._custody.persist_attempt_ledger(ledger)
         self.attempt_ledger = ledger
-        queue_admissible = not failed and not isinstance(billing, BillingGap)
+        queue_admissible = not failed and billing.provider_billing_complete
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
         if queue_admissible:
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
@@ -367,7 +366,7 @@ class D1SequentialOperatorController:
             raise ValueError("D1 resume intent is not the exact next execution segment")
         if history.starts[0].logical_run_id != subject:
             raise ValueError("D1 resume history logical identity differs from the plan")
-        if any(isinstance(item, BillingGap) for item in history.billings):
+        if any(not item.provider_billing_complete for item in history.billings):
             raise ValueError("D1 resume history contains a provider billing evidence gap")
         if self.process_manager.active_subject != subject:
             raise ValueError("D1 resume requires the matching active lifecycle subject")
@@ -453,7 +452,7 @@ class D1SequentialOperatorController:
         )
         self._custody.persist_attempt_ledger(ledger)
         self.attempt_ledger = ledger
-        queue_admissible = not failed and not isinstance(billing, BillingGap)
+        queue_admissible = not failed and billing.provider_billing_complete
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
         if queue_admissible:
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)

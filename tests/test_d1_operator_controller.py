@@ -13,7 +13,7 @@ from typing import cast
 import pytest
 
 import d1_launch_admission_fixtures as launch_fixtures
-from d1_billing_finalizer_fixtures import provider_bill
+from d1_billing_finalizer_fixtures import partial_provider_bill, provider_bill
 from d1_trainer_fixtures import micro_plan
 from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
@@ -261,6 +261,7 @@ class _Provider:
     placement_drift: bool = False
     acknowledge_then_fail: bool = False
     acknowledged_pod_id: str | None = None
+    partial_billing: bool = False
     cancel_count: int = 0
     delete_count: int = 0
 
@@ -307,7 +308,7 @@ class _Provider:
     def billing(self, pod_id: str, *, start: object):
         del pod_id
         self.events.append("billing")
-        return provider_bill(start)
+        return partial_provider_bill(start) if self.partial_billing else provider_bill(start)
 
     def cancel(self, pod_id: str) -> datetime:
         del pod_id
@@ -448,6 +449,7 @@ def _controller(
     start_drift: str | None = None,
     acknowledge_then_fail: bool = False,
     acknowledged_pod_id: str | None = None,
+    partial_billing: bool = False,
 ) -> tuple[D1SequentialOperatorController, _Provider]:
     provider = _Provider(
         case.start,
@@ -455,6 +457,7 @@ def _controller(
         placement_drift=drift,
         acknowledge_then_fail=acknowledge_then_fail,
         acknowledged_pod_id=acknowledged_pod_id,
+        partial_billing=partial_billing,
     )
     trainer = _Trainer(
         D1ExportedTrainerHandoff(case.handoff, case.journal_path),
@@ -514,6 +517,25 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     assert trainer.bootstrap_attempt_sha256 == d1_trainer_bootstrap_attempt_sha256(
         "pod-123", case.intent
     )
+
+
+def test_partial_billing_preserves_quality_but_latches_paid_campaign_queue(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, _ = _controller(tmp_path, case, events, partial_billing=True)
+
+    result = controller.execute_fresh(case.intent)
+
+    assert result.billing.provider_billing_complete is False
+    assert result.billing.quality_evidence_admissible is True
+    assert result.queue_admissible is False
+    assert result.finalized_cell is None
+    assert "persist_finalization" in events
+    assert "persist_finalized_cell" not in events
+    with pytest.raises(D1OperatorQueueHalt, match="provider-billing evidence gap"):
+        controller.execute_fresh(case.intent)
 
 
 @pytest.mark.parametrize(

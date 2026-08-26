@@ -22,6 +22,8 @@ from entropic_substrate.evidence.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
     ProviderBilling,
+    ProviderBillingPartial,
+    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.evidence.resource_billing_reconciliation import (
     LogicalBillingMissingCost,
@@ -56,7 +58,7 @@ class D1BillingFinalizationRequest:
     plan: D1RunPlan
     segment_starts: tuple[RunStartProvenance, ...]
     segment_terminations: tuple[ExecutionSegmentTermination, ...]
-    provider_billings: tuple[ProviderBilling | BillingGap, ...]
+    provider_billings: tuple[TerminalProviderBillingEvidence, ...]
     handoff: D1TrainerHandoff
     journal_path: Path
     expected_journal_state: JournalCheckpointState
@@ -71,7 +73,11 @@ class D1BillingFinalizationRequest:
         for label, values, admitted in (
             ("segment_starts", self.segment_starts, (RunStartProvenance,)),
             ("segment_terminations", self.segment_terminations, (ExecutionSegmentTermination,)),
-            ("provider_billings", self.provider_billings, (ProviderBilling, BillingGap)),
+            (
+                "provider_billings",
+                self.provider_billings,
+                (ProviderBilling, ProviderBillingPartial, BillingGap),
+            ),
         ):
             if type(values) is not tuple or any(type(value) not in admitted for value in values):
                 raise TypeError(f"D1 {label} must be a tuple of typed evidence values")
