@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -93,9 +94,17 @@ class DockerBuildCloudD1Adapter:
                 ".",
             )
             try:
-                self._runner.run(argv, cwd=request.context, stdin=None)
+                result = self._runner.run(argv, cwd=request.context, stdin=None)
             except Exception as error:
                 _error(subject, str(error) or repr(error), error)
+            if result.returncode != 0:
+                stdout_sha = hashlib.sha256(result.stdout.encode()).hexdigest()
+                stderr_sha = hashlib.sha256(result.stderr.encode()).hexdigest()
+                _error(
+                    subject,
+                    f"command failed with exit {result.returncode}; "
+                    f"stdout_sha256={stdout_sha}; stderr_sha256={stderr_sha}",
+                )
             digest = _metadata(metadata, subject=subject)
         try:
             return D1ImmutableImage(

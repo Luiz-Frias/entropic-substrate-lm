@@ -19,8 +19,14 @@ from entropic_substrate.d1_command_runner import (
     D1BoundedProcessRunner,
     SubprocessD1CommandRunner,
 )
+from entropic_substrate.d1_operator_ports import D1CommandResult
 
 pytestmark = pytest.mark.unit
+
+
+def test_command_result_requires_exact_integer_exit_status() -> None:
+    with pytest.raises(TypeError, match="returncode"):
+        D1CommandResult("", "", True)  # type: ignore[arg-type]
 
 
 def _process_running(pid: int) -> bool:
@@ -50,6 +56,7 @@ def test_runner_captures_stdout_stderr_cwd_and_stdin(tmp_path: Path) -> None:
 
     assert result.stdout == f"{tmp_path}\npayload"
     assert result.stderr == "warning-stream"
+    assert result.returncode == 0
 
 
 def test_runner_uses_shell_free_checked_text_subprocess_contract(
@@ -59,6 +66,7 @@ def test_runner_uses_shell_free_checked_text_subprocess_contract(
     observed: dict[str, object] = {}
 
     class _Completed:
+        returncode = 0
         stdout = "ok"
         stderr = ""
 
@@ -74,7 +82,7 @@ def test_runner_uses_shell_free_checked_text_subprocess_contract(
     assert result.stdout == "ok"
     assert observed["argv"] == ("echo", "ok")
     assert observed["capture_output"] is True
-    assert observed["check"] is True
+    assert observed["check"] is False
     assert observed["cwd"] == tmp_path.resolve()
     assert observed["input"] is None
     assert observed["text"] is True
@@ -119,13 +127,14 @@ def test_runner_refuses_a_working_directory_below_a_symlinked_parent(
         )
 
 
-def test_runner_propagates_subprocess_failure_without_fallback(tmp_path: Path) -> None:
+def test_runner_returns_nonzero_exit_and_diagnostic_streams_without_raising(tmp_path: Path) -> None:
     script = "import sys; sys.stderr.write('boom'); raise SystemExit(3)"
 
-    with pytest.raises(subprocess.CalledProcessError) as captured:
-        SubprocessD1CommandRunner().run((sys.executable, "-c", script), cwd=tmp_path, stdin=None)
+    result = SubprocessD1CommandRunner().run(
+        (sys.executable, "-c", script), cwd=tmp_path, stdin=None
+    )
 
-    assert captured.value.returncode == 3
+    assert (result.returncode, result.stdout, result.stderr) == (3, "", "boom")
 
 
 def test_bounded_runner_returns_binary_streams_and_nonzero_exit(tmp_path: Path) -> None:

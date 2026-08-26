@@ -30,6 +30,9 @@ class _Runner:
         }
     )
     error: Exception | None = None
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
     calls: list[tuple[tuple[str, ...], Path | None, str | None]] = field(default_factory=list)
 
     def __bool__(self) -> bool:
@@ -47,7 +50,7 @@ class _Runner:
             raise self.error
         metadata_at = argv.index("--metadata-file") + 1
         Path(argv[metadata_at]).write_text(json.dumps(self.metadata), encoding="utf-8")
-        return D1CommandResult(stdout="", stderr="")
+        return D1CommandResult(stdout=self.stdout, stderr=self.stderr, returncode=self.returncode)
 
 
 def _request(tmp_path: Path) -> D1ImageBuildRequest:
@@ -116,6 +119,16 @@ def test_build_cloud_wraps_runner_failure_without_fallback(tmp_path: Path) -> No
 
     assert captured.value.operation == "build_image"
     assert len(runner.calls) == 1
+
+
+def test_build_cloud_refuses_nonzero_result_without_echoing_raw_output(tmp_path: Path) -> None:
+    secret = "build-secret-sentinel"  # pragma: allowlist secret
+    runner = _Runner(returncode=17, stdout=secret, stderr=secret)
+
+    with pytest.raises(D1OperatorTransportError, match="exit 17") as caught:
+        DockerBuildCloudD1Adapter(runner=runner).build_and_push(_request(tmp_path))
+
+    assert secret not in str(caught.value)
 
 
 def test_build_cloud_rejects_duplicate_or_nonfinite_json_metadata(tmp_path: Path) -> None:

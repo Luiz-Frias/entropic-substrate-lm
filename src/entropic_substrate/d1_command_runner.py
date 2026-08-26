@@ -292,6 +292,10 @@ class SubprocessD1CommandRunner:
             input=_stdin(stdin),
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
-        return D1CommandResult(stdout=result.stdout, stderr=result.stderr)
+        return D1CommandResult(
+            stdout=result.stdout,
+            stderr=result.stderr,
+            returncode=result.returncode,
+        )

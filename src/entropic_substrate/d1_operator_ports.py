@@ -45,10 +45,13 @@ class D1CommandResult:
 
     stdout: str
     stderr: str
+    returncode: int = 0
 
     def __post_init__(self) -> None:
         if type(self.stdout) is not str or type(self.stderr) is not str:
             raise TypeError("D1 command result streams must be strings")
+        if type(self.returncode) is not int:
+            raise TypeError("D1 command result returncode must be an integer")
 
 
 class D1CommandRunner(Protocol):
