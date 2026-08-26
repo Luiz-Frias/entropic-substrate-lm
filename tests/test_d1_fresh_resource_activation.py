@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as trainer_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -184,7 +184,7 @@ def test_failed_train_is_timed_once_and_reaches_terminal_ledger_state(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("deliberate failed transaction")
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,

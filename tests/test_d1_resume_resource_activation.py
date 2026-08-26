@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_resume_trainer as resume_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_resume_fixtures import (
     RecordingObserver,
     captured_step_one_case,
@@ -123,7 +123,7 @@ def test_failed_resumed_train_is_timed_without_modeling_a_complete_step(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("deliberate resumed transaction failure")
 
-    monkeypatch.setattr(resume_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1ResumeRunFailure) as captured:
         run_d1_resume(
             plan=case.plan,

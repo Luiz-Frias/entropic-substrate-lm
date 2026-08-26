@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 import torch
 
-import entropic_substrate.d1_fresh_trainer as trainer_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -116,7 +116,7 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
 ) -> None:
     plan = micro_plan(D1Arm.BOTH)
     journal, checkpoint = output_paths(tmp_path, D1Arm.BOTH)
-    real_step = trainer_module.apply_d1_training_step
+    real_step = segment_engine.apply_d1_training_step
     calls = 0
 
     def fail_step(**kwargs: object) -> object:
@@ -126,7 +126,7 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
             raise RuntimeError("deliberate train defect")
         return real_step(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1FreshRunFailure, match="deliberate train defect") as captured:
         run_d1_fresh(
             plan=plan,

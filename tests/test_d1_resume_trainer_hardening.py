@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_resume_trainer as trainer_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
@@ -29,7 +29,7 @@ def test_failed_attempt_appends_one_trainer_aborted_and_returns_typed_handoff(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("resume step defect")
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1ResumeRunFailure, match="resume step defect") as captured:
         run_d1_resume(
             plan=case.plan,

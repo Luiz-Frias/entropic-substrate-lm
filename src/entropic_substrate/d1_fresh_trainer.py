@@ -26,14 +26,12 @@ from entropic_substrate.d1_trainer_handoff import (
     capture_d1_trainer_termination,
 )
 from entropic_substrate.d1_trainer_runtime import (
-    D1FreshComponents,
     D1TrainerClock,
     D1TrainerWallOrigin,
     SystemD1TrainerClock,
     build_d1_fresh_components,
     create_d1_resource_ledger,
 )
-from entropic_substrate.d1_training_step import apply_d1_training_step
 from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
@@ -41,13 +39,9 @@ from entropic_substrate.evidence.d1_journal_values import (
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.predictive_state.checkpoint_repository import (
-    D1CheckpointArtifactReceipt,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,13 +117,6 @@ def _next_event(
     )
 
 
-def _data_order(components: D1FreshComponents) -> tuple[str, int]:
-    observed = components.train_sampler.data_order_digest()
-    if observed is None:
-        raise RuntimeError("D1 fresh trainer has no observed training data-order digest")
-    return observed
-
-
 def run_d1_fresh(
     *,
     plan: D1RunPlan,
@@ -200,95 +187,26 @@ def run_d1_fresh(
                     },
                 )
             )
-            final_eval, final_work = segment_engine.record_d1_segment_evaluation(
+            initial_eval, _initial_work = segment_engine.record_d1_segment_evaluation(
                 components=components,
                 journal=journal,
                 clock=active_clock,
                 meter=activation.meter,
                 successful_step=0,
             )
-            best_nats = final_eval.nats_per_byte
-            final_receipt: D1CheckpointArtifactReceipt | None = None
-            protocol = plan.profile.draft.execution_protocol
-            for _ in range(protocol.optimization.max_steps):
-                batch = components.train_sampler.predictive_batch(protocol.batching.horizon)
-                online_positions = batch.online_observations.numel()
-                target_positions = batch.target_encoder_context.numel()
-                try:
-                    with activation.meter.measure(ResourcePhase.TRAIN):
-                        train_result = apply_d1_training_step(
-                            system=components.system,
-                            optimizer_bundle=components.optimizer,
-                            batch=batch,
-                            spec=protocol.optimization,
-                            successful_step=successful_step,
-                        )
-                except BaseException:
-                    ledger.record_train_attempt(
-                        online_positions=online_positions,
-                        target_positions=target_positions,
-                        quality_source_byte_exposures=online_positions,
-                        committed=False,
-                    )
-                    raise
-                activation.meter.record_positions(
-                    ResourcePhase.TRAIN,
-                    online_positions=online_positions,
-                    target_positions=target_positions,
-                )
-                successful_step = train_result.successful_step
-                ledger.record_train_attempt(
-                    online_positions=online_positions,
-                    target_positions=target_positions,
-                    quality_source_byte_exposures=online_positions,
-                    committed=True,
-                )
-                order_sha256, order_batches = _data_order(components)
-                journal.append(
-                    _next_event(
-                        journal,
-                        plan,
-                        JournalEventKind.TRAIN,
-                        successful_step=successful_step,
-                        payload={
-                            "data_order": {
-                                "batches_attested": order_batches,
-                                "sha256": order_sha256,
-                            },
-                            "scheduled_log_boundary": (
-                                successful_step % protocol.evaluation.log_interval == 0
-                            ),
-                            "train": train_result.manifest,
-                        },
-                    )
-                )
-                terminal = successful_step == protocol.optimization.max_steps
-                if successful_step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = segment_engine.record_d1_segment_evaluation(
-                        components=components,
-                        journal=journal,
-                        clock=active_clock,
-                        meter=activation.meter,
-                        successful_step=successful_step,
-                    )
-                    best_nats = min(best_nats, final_eval.nats_per_byte)
-                    scheduled_save = (
-                        protocol.evaluation.save_interval > 0
-                        and successful_step % protocol.evaluation.save_interval == 0
-                    )
-                    if scheduled_save or terminal:
-                        final_receipt = segment_engine.save_d1_segment_checkpoint(
-                            components=components,
-                            journal=journal,
-                            checkpoint_path=locations.checkpoint_path,
-                            baseline=baseline,
-                            successful_step=successful_step,
-                            best_nats_per_byte=best_nats,
-                        )
-                        latest_checkpoint_sha256 = final_receipt.sha256
-            if final_receipt is None:
-                raise RuntimeError("D1 terminal evaluation did not produce a checkpoint")
-            order_sha256, order_batches = _data_order(components)
+            training = segment_engine.run_d1_training_segment(
+                components=components,
+                journal=journal,
+                clock=active_clock,
+                meter=activation.meter,
+                baseline=baseline,
+                checkpoint_path=locations.checkpoint_path,
+                successful_step=successful_step,
+                best_nats_per_byte=initial_eval.nats_per_byte,
+                latest_checkpoint_sha256=latest_checkpoint_sha256,
+            )
+            successful_step = training.successful_step
+            latest_checkpoint_sha256 = training.final_checkpoint.sha256
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=active_clock.utc_now(),
@@ -298,13 +216,19 @@ def run_d1_fresh(
             )
             return D1FreshRunCompletion(
                 termination=termination,
-                final_checkpoint=final_receipt,
-                final_evaluation=final_eval,
-                final_resource_work=final_work,
-                data_order_sha256=order_sha256,
-                data_order_batches_attested=order_batches,
+                final_checkpoint=training.final_checkpoint,
+                final_evaluation=training.final_evaluation,
+                final_resource_work=training.final_resource_work,
+                data_order_sha256=training.data_order_sha256,
+                data_order_batches_attested=training.data_order_batches_attested,
             )
-        except Exception as error:
+        except Exception as caught:
+            if isinstance(caught, segment_engine.D1TrainingInterrupted):
+                successful_step = caught.successful_step
+                latest_checkpoint_sha256 = caught.latest_checkpoint_sha256
+                error = caught.primary
+            else:
+                error = caught
             trainer_ended_at = active_clock.utc_now()
             secondary_failure: D1SecondaryFailureEvidence | None = None
             failure_cause: BaseException = error

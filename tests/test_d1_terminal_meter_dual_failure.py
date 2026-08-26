@@ -8,8 +8,6 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
-import entropic_substrate.d1_resume_trainer as resume_module
 import entropic_substrate.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
@@ -135,7 +133,7 @@ def test_fresh_generic_dual_failure_is_journaled_and_replayed(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("primary train failure")
 
-    monkeypatch.setattr(fresh_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,
@@ -200,7 +198,7 @@ def test_resumed_dual_failure_preserves_primary_and_secondary(
         primary_type = "D1NonfiniteMetricError"
     else:
         monkeypatch.setattr(
-            resume_module,
+            segment_engine,
             "apply_d1_training_step",
             lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("primary resumed failure")),
         )

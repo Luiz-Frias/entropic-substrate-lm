@@ -95,3 +95,63 @@ def test_resume_routes_evaluation_and_checkpoint_through_shared_owners(
 
     assert eval_steps == [2]
     assert checkpoint_steps == [2]
+
+
+def test_fresh_routes_the_full_training_segment_through_shared_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = micro_plan(D1Arm.SG)
+    journal, checkpoint = output_paths(tmp_path, D1Arm.SG)
+    real_run = segment_engine.run_d1_training_segment
+    starts: list[tuple[int, str | None]] = []
+
+    def record_run(**kwargs: object):
+        starts.append(
+            (
+                kwargs["successful_step"],  # type: ignore[arg-type]
+                kwargs["latest_checkpoint_sha256"],  # type: ignore[arg-type]
+            )
+        )
+        return real_run(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(segment_engine, "run_d1_training_segment", record_run)
+    run_d1_fresh(
+        plan=plan,
+        start=run_start(plan),
+        origin=D1TrainerWallOrigin(STARTED_AT, ORIGIN_NS),
+        locations=D1FreshRunLocations(journal, checkpoint),
+        clock=DeterministicTrainerClock(),
+    )
+
+    assert starts == [(0, None)]
+
+
+def test_resume_routes_the_full_training_segment_through_shared_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = captured_step_one_case(tmp_path, monkeypatch)
+    real_run = segment_engine.run_d1_training_segment
+    starts: list[tuple[int, str | None]] = []
+
+    def record_run(**kwargs: object):
+        starts.append(
+            (
+                kwargs["successful_step"],  # type: ignore[arg-type]
+                kwargs["latest_checkpoint_sha256"],  # type: ignore[arg-type]
+            )
+        )
+        return real_run(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(segment_engine, "run_d1_training_segment", record_run)
+    run_d1_resume(
+        plan=case.plan,
+        start=resume_start(case.plan, case.checkpoint_sha256),
+        origin=origin(),
+        locations=D1ResumeRunLocations(case.journal_path, case.checkpoint_path),
+        observer=RecordingObserver(),
+        clock=DeterministicTrainerClock(),
+    )
+
+    assert starts == [(1, case.checkpoint_sha256)]

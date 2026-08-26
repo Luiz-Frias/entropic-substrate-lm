@@ -33,7 +33,6 @@ from entropic_substrate.d1_trainer_runtime import (
     D1TrainerWallOrigin,
     SystemD1TrainerClock,
 )
-from entropic_substrate.d1_training_step import apply_d1_training_step
 from entropic_substrate.evidence.d1_journal import JournalTailQuarantineReceipt
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
@@ -44,7 +43,6 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_ledger import (
     ResourceLedger,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
@@ -304,90 +302,19 @@ def run_d1_resume(
         try:
             restored = restore_d1_resume_runtime(admission)
             components = restored.components
-            best_nats = restored.best_nats_per_byte
-            protocol = plan.profile.draft.execution_protocol
-            final_eval: D1EvalResult | None = None
-            final_work: ResourceWorkSnapshot | None = None
-            final_receipt: D1CheckpointArtifactReceipt | None = None
-            while step < protocol.optimization.max_steps:
-                batch = components.train_sampler.predictive_batch(protocol.batching.horizon)
-                online, target = (
-                    batch.online_observations.numel(),
-                    batch.target_encoder_context.numel(),
-                )
-                try:
-                    with admission.resource_activation.meter.measure(ResourcePhase.TRAIN):
-                        result = apply_d1_training_step(
-                            system=components.system,
-                            optimizer_bundle=components.optimizer,
-                            batch=batch,
-                            spec=protocol.optimization,
-                            successful_step=step,
-                        )
-                except BaseException:
-                    ledger.record_train_attempt(
-                        online_positions=online,
-                        target_positions=target,
-                        quality_source_byte_exposures=online,
-                        committed=False,
-                    )
-                    raise
-                admission.resource_activation.meter.record_positions(
-                    ResourcePhase.TRAIN,
-                    online_positions=online,
-                    target_positions=target,
-                )
-                step = result.successful_step
-                ledger.record_train_attempt(
-                    online_positions=online,
-                    target_positions=target,
-                    quality_source_byte_exposures=online,
-                    committed=True,
-                )
-                order = components.train_sampler.data_order_digest()
-                if order is None:
-                    raise RuntimeError("D1 resumed segment has no data-order attestation")
-                journal.append(
-                    _event(
-                        plan,
-                        journal,
-                        JournalEventKind.TRAIN,
-                        step,
-                        {
-                            "data_order": {"batches_attested": order[1], "sha256": order[0]},
-                            "scheduled_log_boundary": step % protocol.evaluation.log_interval == 0,
-                            "train": result.manifest,
-                        },
-                    )
-                )
-                terminal = step == protocol.optimization.max_steps
-                if step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = segment_engine.record_d1_segment_evaluation(
-                        components=components,
-                        journal=journal,
-                        clock=active_clock,
-                        meter=admission.resource_activation.meter,
-                        successful_step=step,
-                    )
-                    best_nats = min(best_nats, final_eval.nats_per_byte)
-                    scheduled = protocol.evaluation.save_interval > 0 and (
-                        step % protocol.evaluation.save_interval == 0
-                    )
-                    if scheduled or terminal:
-                        final_receipt = segment_engine.save_d1_segment_checkpoint(
-                            components=components,
-                            journal=journal,
-                            checkpoint_path=locations.checkpoint_path,
-                            baseline=restored.baseline,
-                            successful_step=step,
-                            best_nats_per_byte=best_nats,
-                        )
-                        latest_checkpoint_sha256 = final_receipt.sha256
-            if final_eval is None or final_work is None or final_receipt is None:
-                raise RuntimeError("D1 resumed terminal boundary lacks evaluation/checkpoint")
-            order = components.train_sampler.data_order_digest()
-            if order is None:
-                raise RuntimeError("D1 resumed segment lacks data-order evidence")
+            training = segment_engine.run_d1_training_segment(
+                components=components,
+                journal=journal,
+                clock=active_clock,
+                meter=admission.resource_activation.meter,
+                baseline=restored.baseline,
+                checkpoint_path=locations.checkpoint_path,
+                successful_step=step,
+                best_nats_per_byte=restored.best_nats_per_byte,
+                latest_checkpoint_sha256=latest_checkpoint_sha256,
+            )
+            step = training.successful_step
+            latest_checkpoint_sha256 = training.final_checkpoint.sha256
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=active_clock.utc_now(),
@@ -397,16 +324,22 @@ def run_d1_resume(
             )
             return D1ResumeRunCompletion(
                 termination=termination,
-                final_checkpoint=final_receipt,
-                final_evaluation=final_eval,
-                final_resource_work=final_work,
+                final_checkpoint=training.final_checkpoint,
+                final_evaluation=training.final_evaluation,
+                final_resource_work=training.final_resource_work,
                 resumed_from_sha256=admission.checkpoint_receipt.sha256,
                 run_start_provenance=start,
-                segment_data_order_sha256=order[0],
-                segment_data_order_batches_attested=order[1],
+                segment_data_order_sha256=training.data_order_sha256,
+                segment_data_order_batches_attested=training.data_order_batches_attested,
                 tail_quarantine=journal.tail_quarantine,
             )
-        except Exception as error:
+        except Exception as caught:
+            if isinstance(caught, segment_engine.D1TrainingInterrupted):
+                step = caught.successful_step
+                latest_checkpoint_sha256 = caught.latest_checkpoint_sha256
+                error = caught.primary
+            else:
+                error = caught
             handoff, failure_cause = _trainer_failure(
                 plan,
                 journal,

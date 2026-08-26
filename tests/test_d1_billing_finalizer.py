@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as trainer_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_billing_finalizer_fixtures import (
     CompletedD1Case,
     billing_gap,
@@ -135,7 +135,7 @@ def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
     plan = micro_plan(D1Arm.BOTH)
     start = run_start(plan)
     journal_path = tmp_path / "failed.jsonl"
-    real_step = trainer_module.apply_d1_training_step
+    real_step = segment_engine.apply_d1_training_step
     calls = 0
 
     def fail_second_step(**kwargs: object) -> object:
@@ -145,7 +145,7 @@ def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
             raise RuntimeError("operator-finalized defect")
         return real_step(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_second_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_second_step)
     with pytest.raises(D1FreshRunFailure) as caught:
         run_d1_fresh(
             plan=plan,
