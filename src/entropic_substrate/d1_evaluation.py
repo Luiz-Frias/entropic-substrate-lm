@@ -246,17 +246,15 @@ class D1Evaluator:
         residual_elements = 0
         positions = 0
         try:
-            with (
-                torch.no_grad(),
-                torch.autocast(
-                    device_type=device.type,
-                    dtype=torch.bfloat16,
-                    enabled=amp is D1AmpPolicy.BF16,
-                ),
-            ):
+            with torch.no_grad(), torch.autocast(device_type=device.type, enabled=False):
                 for _ in range(spec.num_batches):
                     batch = sampler.predictive_batch(horizon=1)
-                    output = system(batch)
+                    with torch.autocast(
+                        device_type=device.type,
+                        dtype=torch.bfloat16,
+                        enabled=amp is D1AmpPolicy.BF16,
+                    ):
+                        output = system(batch)
                     if output.collapse.diagnostics is None:
                         msg = "D1 evaluation requires complete collapse diagnostics"
                         raise ValueError(msg)
@@ -276,18 +274,19 @@ class D1Evaluator:
                         coverage_counts[index] += int((residual.abs() <= threshold).sum().item())
                     positions += batch_positions
                     residual_elements += batch_residuals
+                result = _finish_result(
+                    sums=sums,
+                    states=state_moments,
+                    residual_sum=residual_sum,
+                    residual_square_sum=residual_square_sum,
+                    coverage_counts=coverage_counts,
+                    batch_count=spec.num_batches,
+                    positions=positions,
+                    residual_elements=residual_elements,
+                )
         finally:
             system.train(was_training)
-        return _finish_result(
-            sums=sums,
-            states=state_moments,
-            residual_sum=residual_sum,
-            residual_square_sum=residual_square_sum,
-            coverage_counts=coverage_counts,
-            batch_count=spec.num_batches,
-            positions=positions,
-            residual_elements=residual_elements,
-        )
+        return result
 
     @staticmethod
     def _validate_inputs(*, system: D1PredictiveSystem, sampler: SequenceSampler) -> None:
