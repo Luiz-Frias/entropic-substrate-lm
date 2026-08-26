@@ -17,6 +17,7 @@ __all__ = [
 
 class D1SecondaryFailureStage(StrEnum):
     TERMINAL_METER_REFRESH = "terminal-meter-refresh"
+    TRAINER_ABORT_APPEND = "trainer-abort-append"
 
 
 def _nonempty(value: str, *, label: str) -> None:
@@ -84,7 +85,13 @@ def secondary_failure_from_mapping(value: object) -> D1SecondaryFailureEvidence:
 class D1PrimarySecondaryFailure(RuntimeError):
     """Nominal wrapper retaining the causal primary and measurement secondary errors."""
 
-    def __init__(self, primary: BaseException, secondary: BaseException) -> None:
+    def __init__(
+        self,
+        primary: BaseException,
+        secondary: BaseException,
+        *,
+        secondary_stage: D1SecondaryFailureStage,
+    ) -> None:
         if not isinstance(cast(object, primary), BaseException) or not isinstance(
             cast(object, secondary), BaseException
         ):
@@ -93,7 +100,7 @@ class D1PrimarySecondaryFailure(RuntimeError):
         self.secondary = secondary
         self.exceptions = (primary, secondary)
         self.secondary_evidence = D1SecondaryFailureEvidence.from_error(
-            D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+            secondary_stage,
             secondary,
         )
         primary_message = str(primary) or repr(primary)

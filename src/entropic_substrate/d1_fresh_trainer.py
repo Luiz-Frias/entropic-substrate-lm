@@ -161,6 +161,7 @@ def run_d1_fresh(
     )
     with journal_factory(locations.journal_path, start_event) as journal, activation:
         successful_step = 0
+        model_successful_step = 0
         latest_checkpoint_sha256: str | None = None
         try:
             components = build_d1_fresh_components(
@@ -206,11 +207,13 @@ def run_d1_fresh(
                 latest_checkpoint_sha256=latest_checkpoint_sha256,
             )
             successful_step = training.successful_step
+            model_successful_step = training.successful_step
             latest_checkpoint_sha256 = training.final_checkpoint.sha256
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=active_clock.utc_now(),
                 successful_step=successful_step,
+                model_successful_step=model_successful_step,
                 journal_state=journal.state,
                 resource_ledger_state=ledger.current_state(),
             )
@@ -224,7 +227,8 @@ def run_d1_fresh(
             )
         except Exception as caught:
             if isinstance(caught, segment_engine.D1TrainingInterrupted):
-                successful_step = caught.successful_step
+                successful_step = caught.durable_successful_step
+                model_successful_step = caught.model_successful_step
                 latest_checkpoint_sha256 = caught.latest_checkpoint_sha256
                 error = caught.primary
             else:
@@ -239,7 +243,11 @@ def run_d1_fresh(
                     D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
                     meter_error,
                 )
-                failure_cause = D1PrimarySecondaryFailure(error, meter_error)
+                failure_cause = D1PrimarySecondaryFailure(
+                    error,
+                    meter_error,
+                    secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+                )
             journal_cursor = journal.state
             resource_ledger_state = ledger.current_state()
             error_message = str(error) or repr(error)
@@ -250,6 +258,7 @@ def run_d1_fresh(
                 "execution_segment_index": start.execution_segment_index,
                 "journal_cursor": journal_cursor.manifest,
                 "logical_run_id": start.logical_run_id,
+                "model_successful_step": model_successful_step,
                 "operator_finalization_required": True,
                 "resource_ledger_state": resource_ledger_state.manifest,
                 "rollback_claimed": False,
@@ -268,19 +277,27 @@ def run_d1_fresh(
             )
             if numerical_defect is not None:
                 failure_payload["numerical_defect"] = numerical_defect.manifest
-            journal.append(
-                _next_event(
-                    journal,
-                    plan,
-                    JournalEventKind.TRAINER_ABORTED,
-                    successful_step=successful_step,
-                    payload=failure_payload,
+            try:
+                journal.append(
+                    _next_event(
+                        journal,
+                        plan,
+                        JournalEventKind.TRAINER_ABORTED,
+                        successful_step=successful_step,
+                        payload=failure_payload,
+                    )
                 )
-            )
+            except Exception as append_error:
+                raise D1PrimarySecondaryFailure(
+                    failure_cause,
+                    append_error,
+                    secondary_stage=D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
+                ) from error
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=trainer_ended_at,
                 successful_step=successful_step,
+                model_successful_step=model_successful_step,
                 journal_state=journal.state,
                 resource_ledger_state=resource_ledger_state,
             )

@@ -152,13 +152,14 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
         sorted(payload)
         == (
             "error_message error_type execution_segment_id execution_segment_index journal_cursor "
-            "logical_run_id operator_finalization_required resource_ledger_state rollback_claimed "
-            "secondary_failure trainer_ended_at"
+            "logical_run_id model_successful_step operator_finalization_required "
+            "resource_ledger_state rollback_claimed secondary_failure trainer_ended_at"
         ).split()
     )
     assert payload["error_type"] == "RuntimeError"
     assert payload["error_message"] == "deliberate train defect"
     assert payload["logical_run_id"] == plan.logical_run_id
+    assert payload["model_successful_step"] == 1
     assert payload["execution_segment_index"] == 0
     assert payload["execution_segment_id"] == f"{plan.logical_run_id}:segment:0"
     prefix = b"".join(canonical_event_line(event) for event in events[:-1])

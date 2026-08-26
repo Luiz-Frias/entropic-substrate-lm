@@ -196,20 +196,32 @@ class D1TrainingInterrupted(RuntimeError):
         self,
         primary: Exception,
         *,
-        successful_step: int,
+        model_successful_step: int,
+        durable_successful_step: int,
         latest_checkpoint_sha256: str | None,
     ) -> None:
         if not isinstance(cast(object, primary), Exception):
             raise TypeError("D1 training interruption requires an Exception")
-        if type(successful_step) is not int or successful_step < 0:
-            raise ValueError("D1 training interruption successful_step must be nonnegative")
+        for label, value in (
+            ("model_successful_step", model_successful_step),
+            ("durable_successful_step", durable_successful_step),
+        ):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"D1 training interruption {label} must be nonnegative")
+        if model_successful_step not in {
+            durable_successful_step,
+            durable_successful_step + 1,
+        }:
+            raise ValueError("D1 training interruption model/durable cursor gap is invalid")
         if latest_checkpoint_sha256 is not None:
             _require_sha256(latest_checkpoint_sha256, label="latest_checkpoint_sha256")
         self.primary = primary
-        self.successful_step = successful_step
+        self.model_successful_step = model_successful_step
+        self.durable_successful_step = durable_successful_step
         self.latest_checkpoint_sha256 = latest_checkpoint_sha256
         super().__init__(
-            f"D1 training segment interrupted after step {successful_step}: "
+            f"D1 training segment interrupted at model step {model_successful_step}, "
+            f"durable step {durable_successful_step}: "
             f"{type(primary).__name__}: {str(primary) or repr(primary)}"
         )
 
@@ -346,6 +358,7 @@ def run_d1_training_segment(
     except Exception as primary:
         raise D1TrainingInterrupted(
             primary,
-            successful_step=step,
+            model_successful_step=step,
+            durable_successful_step=journal.state.successful_step,
             latest_checkpoint_sha256=latest_checkpoint,
         ) from primary

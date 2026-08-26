@@ -67,6 +67,7 @@ _TERMINATION_KEYS = frozenset(
         "execution_segment_index",
         "journal_state",
         "logical_run_id",
+        "model_successful_step",
         "resource_ledger_state",
         "schema_version",
         "successful_step",
@@ -410,6 +411,7 @@ def _termination_to_mapping(value: D1TrainerTermination) -> dict[str, object]:
         "execution_segment_index": value.execution_segment_index,
         "journal_state": value.journal_state.manifest,
         "logical_run_id": value.logical_run_id,
+        "model_successful_step": value.model_successful_step,
         "resource_ledger_state": resource_ledger_state_to_mapping(value.resource_ledger_state),
         "schema_version": value.schema_version,
         "successful_step": value.successful_step,
@@ -437,6 +439,11 @@ def _termination_from_mapping(value: object) -> D1TrainerTermination:
             trainer_ended_at=datetime.fromisoformat(timestamp[:-1] + "+00:00"),
             successful_step=_integer(
                 item["successful_step"], label="termination successful_step", minimum=0
+            ),
+            model_successful_step=_integer(
+                item["model_successful_step"],
+                label="termination model_successful_step",
+                minimum=0,
             ),
             journal_state=JournalCheckpointState.from_mapping(item["journal_state"]),
             resource_ledger_state=resource_ledger_state_from_mapping(item["resource_ledger_state"]),

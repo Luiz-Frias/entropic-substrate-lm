@@ -57,6 +57,8 @@ def test_fresh_completion_round_trips_every_value_and_rebinds_checkpoint(
     assert observed.final_checkpoint.path == rebound_checkpoint
     mapping = json.loads(payload)
     assert mapping["kind"] == "fresh_completion"
+    assert mapping["termination"]["model_successful_step"] == 2
+    assert mapping["termination"]["schema_version"] == "d1-trainer-termination-v2"
     assert mapping["final_checkpoint"]["path"] == "none.pt"
     assert mapping["final_evaluation"]["state_sample_covariance"]
     assert mapping["final_resource_work"]["event"] == "resource.work_snapshot"
@@ -92,6 +94,43 @@ def test_failure_round_trips_primary_secondary_and_termination_authority(
     assert json.loads(payload)["kind"] == "trainer_failure"
 
 
+def test_failure_codec_refuses_abort_append_stage_as_durable_handoff(
+    case: CompletedD1Case,
+    tmp_path: Path,
+) -> None:
+    secondary = D1SecondaryFailureEvidence.from_error(
+        D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+        RuntimeError("meter stopped"),
+    )
+    failure = D1TrainerFailureHandoff.from_error(
+        case.completion.termination,
+        RuntimeError("training stopped"),
+        secondary_failure=secondary,
+    )
+    value = trainer_handoff_to_mapping(failure, artifact_root=tmp_path)
+    cast(dict[str, object], value["secondary_failure"])["stage"] = "trainer-abort-append"
+
+    with pytest.raises(ValueError, match="durable TRAINER_ABORTED"):
+        trainer_handoff_from_mapping(value, artifact_root=tmp_path)
+
+
+def test_failure_codec_refuses_eval_ledger_ahead_of_durable_cursor(
+    case: CompletedD1Case,
+    tmp_path: Path,
+) -> None:
+    failure = D1TrainerFailureHandoff.from_error(
+        case.completion.termination,
+        RuntimeError("training stopped"),
+    )
+    value = trainer_handoff_to_mapping(failure, artifact_root=tmp_path)
+    termination = cast(dict[str, object], value["termination"])
+    termination["successful_step"] = 1
+    cast(dict[str, object], termination["journal_state"])["successful_step"] = 1
+
+    with pytest.raises(ValueError, match="durable successful_step"):
+        trainer_handoff_from_mapping(value, artifact_root=tmp_path)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -118,6 +157,18 @@ def test_failure_round_trips_primary_secondary_and_termination_authority(
         (
             lambda value: cast(dict[str, object], value["termination"]).update(
                 {"successful_step": 1}
+            ),
+            "termination",
+        ),
+        (
+            lambda value: cast(dict[str, object], value["termination"]).pop(
+                "model_successful_step"
+            ),
+            "keys",
+        ),
+        (
+            lambda value: cast(dict[str, object], value["termination"]).update(
+                {"model_successful_step": 4}
             ),
             "termination",
         ),

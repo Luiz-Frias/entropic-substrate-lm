@@ -91,6 +91,8 @@ class D1ResumeRunCompletion:
             raise ValueError("D1 resume completion successful_step must be positive")
         if self.journal_state.successful_step != self.successful_step:
             raise ValueError("D1 resume completion journal cursor differs")
+        if self.termination.model_successful_step != self.successful_step:
+            raise ValueError("D1 resume completion model and durable cursors differ")
         ledger = self.termination.resource_ledger_state
         if ledger.last_training_step != self.successful_step:
             raise ValueError("D1 resume completion resource ledger cursor differs")
@@ -207,6 +209,7 @@ def _trainer_failure(
     start: RunStartProvenance,
     clock: D1TrainerClock,
     step: int,
+    model_step: int,
     error: Exception,
     checkpoint_sha256: str | None,
 ) -> tuple[D1TrainerFailureHandoff, BaseException]:
@@ -220,7 +223,11 @@ def _trainer_failure(
             D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
             meter_error,
         )
-        failure_cause = D1PrimarySecondaryFailure(error, meter_error)
+        failure_cause = D1PrimarySecondaryFailure(
+            error,
+            meter_error,
+            secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+        )
     journal_cursor = journal.state
     resource_state = ledger.current_state()
     error_message = str(error) or repr(error)
@@ -231,6 +238,7 @@ def _trainer_failure(
         "execution_segment_index": start.execution_segment_index,
         "journal_cursor": journal_cursor.manifest,
         "logical_run_id": start.logical_run_id,
+        "model_successful_step": model_step,
         "operator_finalization_required": True,
         "resource_ledger_state": resource_state.manifest,
         "rollback_claimed": False,
@@ -247,19 +255,27 @@ def _trainer_failure(
     )
     if numerical_defect is not None:
         payload["numerical_defect"] = numerical_defect.manifest
-    journal.append(
-        _event(
-            plan,
-            journal,
-            JournalEventKind.TRAINER_ABORTED,
-            step,
-            payload,
+    try:
+        journal.append(
+            _event(
+                plan,
+                journal,
+                JournalEventKind.TRAINER_ABORTED,
+                step,
+                payload,
+            )
         )
-    )
+    except Exception as append_error:
+        raise D1PrimarySecondaryFailure(
+            failure_cause,
+            append_error,
+            secondary_stage=D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
+        ) from error
     termination = capture_d1_trainer_termination(
         start=start,
         trainer_ended_at=trainer_ended_at,
         successful_step=step,
+        model_successful_step=model_step,
         journal_state=journal.state,
         resource_ledger_state=resource_state,
     )
@@ -296,6 +312,7 @@ def run_d1_resume(
         resource_activation_factory=resource_activation_factory,
     )
     step = admission.successful_step
+    model_step = step
     ledger = admission.resource_ledger
     latest_checkpoint_sha256 = admission.checkpoint_receipt.sha256
     with admission.journal as journal, admission.resource_activation:
@@ -314,11 +331,13 @@ def run_d1_resume(
                 latest_checkpoint_sha256=latest_checkpoint_sha256,
             )
             step = training.successful_step
+            model_step = training.successful_step
             latest_checkpoint_sha256 = training.final_checkpoint.sha256
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=active_clock.utc_now(),
                 successful_step=step,
+                model_successful_step=model_step,
                 journal_state=journal.state,
                 resource_ledger_state=ledger.current_state(),
             )
@@ -335,7 +354,8 @@ def run_d1_resume(
             )
         except Exception as caught:
             if isinstance(caught, segment_engine.D1TrainingInterrupted):
-                step = caught.successful_step
+                step = caught.durable_successful_step
+                model_step = caught.model_successful_step
                 latest_checkpoint_sha256 = caught.latest_checkpoint_sha256
                 error = caught.primary
             else:
@@ -347,6 +367,7 @@ def run_d1_resume(
                 start,
                 active_clock,
                 step,
+                model_step,
                 error,
                 latest_checkpoint_sha256,
             )

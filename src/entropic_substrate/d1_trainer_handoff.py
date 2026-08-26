@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import cast
 
-from entropic_substrate.d1_dual_failure import D1SecondaryFailureEvidence
+from entropic_substrate.d1_dual_failure import (
+    D1SecondaryFailureEvidence,
+    D1SecondaryFailureStage,
+)
 from entropic_substrate.d1_evaluation import D1EvalResult
 from entropic_substrate.evidence.d1_journal_values import JournalCheckpointState
 from entropic_substrate.evidence.resource_ledger import ResourceLedgerState
@@ -44,12 +47,13 @@ class D1TrainerTermination:
     execution_segment_id: str
     trainer_ended_at: datetime
     successful_step: int
+    model_successful_step: int
     journal_state: JournalCheckpointState
     resource_ledger_state: ResourceLedgerState
-    schema_version: str = "d1-trainer-termination-v1"
+    schema_version: str = "d1-trainer-termination-v2"
 
     def __post_init__(self) -> None:
-        if self.schema_version != "d1-trainer-termination-v1":
+        if self.schema_version != "d1-trainer-termination-v2":
             raise ValueError("unsupported D1 trainer termination schema")
         if type(self.logical_run_id) is not str or not self.logical_run_id.strip():
             raise ValueError("D1 trainer termination logical_run_id must be nonempty")
@@ -62,6 +66,10 @@ class D1TrainerTermination:
         _utc(self.trainer_ended_at, label="D1 trainer_ended_at")
         if type(self.successful_step) is not int or self.successful_step < 0:
             raise ValueError("D1 trainer termination successful_step must be nonnegative")
+        if type(self.model_successful_step) is not int or self.model_successful_step < 0:
+            raise ValueError("D1 trainer termination model_successful_step must be nonnegative")
+        if self.model_successful_step not in {self.successful_step, self.successful_step + 1}:
+            raise ValueError("D1 termination model/durable cursor gap is invalid")
         if type(self.journal_state) is not JournalCheckpointState:
             raise TypeError("D1 trainer termination requires JournalCheckpointState")
         if type(self.resource_ledger_state) is not ResourceLedgerState:
@@ -72,11 +80,11 @@ class D1TrainerTermination:
             raise ValueError("D1 termination resource-ledger logical_run_id differs")
         if self.resource_ledger_state.execution_segment_index != self.execution_segment_index:
             raise ValueError("D1 termination resource-ledger segment differs")
-        if self.journal_state.successful_step > self.successful_step:
-            raise ValueError("D1 termination journal is ahead of successful_step")
+        if self.journal_state.successful_step != self.successful_step:
+            raise ValueError("D1 termination journal differs from durable successful_step")
         ledger_step = self.resource_ledger_state.last_training_step
         if ledger_step is not None and ledger_step > self.successful_step:
-            raise ValueError("D1 termination resource ledger is ahead of successful_step")
+            raise ValueError("D1 termination resource ledger is ahead of durable successful_step")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -85,6 +93,7 @@ class D1TrainerTermination:
             "execution_segment_index": self.execution_segment_index,
             "journal_state": self.journal_state.manifest,
             "logical_run_id": self.logical_run_id,
+            "model_successful_step": self.model_successful_step,
             "resource_ledger_state": self.resource_ledger_state.manifest,
             "schema_version": self.schema_version,
             "successful_step": self.successful_step,
@@ -97,6 +106,7 @@ def capture_d1_trainer_termination(
     start: RunStartProvenance,
     trainer_ended_at: datetime,
     successful_step: int,
+    model_successful_step: int,
     journal_state: JournalCheckpointState,
     resource_ledger_state: ResourceLedgerState,
 ) -> D1TrainerTermination:
@@ -112,6 +122,7 @@ def capture_d1_trainer_termination(
         execution_segment_id=start.execution_segment_id,
         trainer_ended_at=trainer_ended_at,
         successful_step=successful_step,
+        model_successful_step=model_successful_step,
         journal_state=journal_state,
         resource_ledger_state=resource_ledger_state,
     )
@@ -136,6 +147,8 @@ class D1FreshRunCompletion:
             raise ValueError("D1 completion successful_step must be positive")
         if self.termination.journal_state.successful_step != self.successful_step:
             raise ValueError("D1 completion journal and successful-step cursors differ")
+        if self.termination.model_successful_step != self.successful_step:
+            raise ValueError("D1 completion model and durable cursors differ")
         if self.termination.resource_ledger_state.last_training_step != self.successful_step:
             raise ValueError("D1 completion resource ledger is not at the terminal eval")
         if type(self.final_checkpoint) is not D1CheckpointArtifactReceipt:
@@ -199,6 +212,13 @@ class D1TrainerFailureHandoff:
             and type(self.secondary_failure) is not D1SecondaryFailureEvidence
         ):
             raise TypeError("D1 failure handoff secondary_failure is invalid")
+        if (
+            self.secondary_failure is not None
+            and self.secondary_failure.stage is not D1SecondaryFailureStage.TERMINAL_METER_REFRESH
+        ):
+            raise ValueError(
+                "D1 failure handoff durable TRAINER_ABORTED cannot carry abort-append secondary"
+            )
         if self.trainer_event_kind != _TRAINER_ABORT_EVENT:
             raise ValueError("D1 failure handoff must attest TRAINER_ABORTED")
         if self.rollback_claimed is not False:

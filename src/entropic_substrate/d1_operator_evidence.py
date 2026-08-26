@@ -15,7 +15,11 @@ from entropic_substrate.d1_trainer_handoff import (
     D1TrainerFailureHandoff,
 )
 from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.evidence.d1_journal_values import (
+    JournalCheckpointState,
+    JournalEventKind,
+    canonical_event_line,
+)
 from entropic_substrate.evidence.lifecycle import (
     ArtifactIdentity,
     ContentHash,
@@ -33,6 +37,10 @@ from entropic_substrate.predictive_state.checkpoint_repository import (
 )
 
 _RECEIPT_TOKEN: Final = object()
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +195,33 @@ def _journal_identity(candidate: D1ExportedTrainerHandoff) -> ArtifactIdentity:
     )
     if last.event_kind is not expected_tail:
         raise ValueError(f"exported journal must end in {expected_tail.value}")
+    if isinstance(candidate.handoff, D1TrainerFailureHandoff):
+        termination = candidate.handoff.termination
+        abort_payload = cast(dict[str, object], last.manifest["payload"])
+        observed_model_step = abort_payload.get("model_successful_step")
+        if (
+            type(observed_model_step) is not int
+            or observed_model_step != termination.model_successful_step
+        ):
+            raise ValueError("exported TRAINER_ABORTED model_successful_step differs from handoff")
+        prior = events[-2]
+        pre_abort = JournalCheckpointState(
+            logical_run_id=prior.logical_run_id,
+            execution_digest=prior.execution_digest,
+            last_event_sequence=prior.event_seq,
+            prefix_sha256=hashlib.sha256(
+                b"".join(canonical_event_line(event) for event in events[:-1])
+            ).hexdigest(),
+            successful_step=prior.successful_step,
+        )
+        if _canonical_json(abort_payload.get("journal_cursor")) != _canonical_json(
+            pre_abort.manifest
+        ):
+            raise ValueError("exported TRAINER_ABORTED journal_cursor differs from pre-abort bytes")
+        if _canonical_json(abort_payload.get("resource_ledger_state")) != _canonical_json(
+            termination.resource_ledger_state.manifest
+        ):
+            raise ValueError("exported TRAINER_ABORTED resource_ledger_state differs from handoff")
     return ArtifactIdentity(str(path), ContentHash("sha256", digest))
 
 
