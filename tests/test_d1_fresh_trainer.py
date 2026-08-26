@@ -11,6 +11,7 @@ import pytest
 import torch
 
 import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.telemetry as telemetry_api
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -78,6 +79,16 @@ def test_four_arm_fresh_run_has_exact_evidence_order_and_final_receipt(
     assert set(final_payload) == {"eval_index", "quality", "resource_work"}
     assert final_payload["eval_index"] == completion.final_resource_work.eval_index
     assert final_payload["quality"] == completion.final_evaluation.telemetry_manifest
+    journal, _ = output_paths(tmp_path, arm)
+    readback = telemetry_api.read_d1_run_evidence(journal, allow_incomplete=True)
+    observed = readback.evals[-1].quality
+    assert readback.status.value == "partial"
+    assert readback.evals[-1].eval_index == completion.final_resource_work.eval_index
+    assert (observed.state_moments, observed.target_moments, observed.predicted_moments) == (
+        completion.final_evaluation.state_moments,
+        completion.final_evaluation.target_moments,
+        completion.final_evaluation.predicted_moments,
+    )
     assert final_payload["resource_work"] == resource_snapshot_to_mapping(
         completion.final_resource_work
     )

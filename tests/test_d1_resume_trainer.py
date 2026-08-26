@@ -88,6 +88,15 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
         allow_incomplete=True,
     )
     assert [item.successful_step for item in admitted.train_steps] == [1, 2]
+    observed = admitted.evals[-1].quality
+    assert (observed.state_moments, observed.target_moments, observed.predicted_moments) == (
+        completion.final_evaluation.state_moments,
+        completion.final_evaluation.target_moments,
+        completion.final_evaluation.predicted_moments,
+    )
+    assert {item.quality.latent_width for item in admitted.evals} == {
+        completion.final_evaluation.state_moments.width
+    }
     resume_event = events[-4]
     assert resume_event.payload["run_start_provenance"] == run_start_to_mapping(
         completion.run_start_provenance

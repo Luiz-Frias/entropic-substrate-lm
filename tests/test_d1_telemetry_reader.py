@@ -256,19 +256,20 @@ def test_eval_payload_mutations_are_rejected(tmp_path: Path, mutation: str) -> N
         read_d1_run_evidence(_path(tmp_path, events))
 
 
+@pytest.mark.parametrize(("resumed", "drift_index"), [(False, 1), (True, 2)])
 def test_reader_enforces_cross_eval_width_on_the_complete_series(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resumed: bool, drift_index: int
 ) -> None:
     real_parse = query_module.parse_eval_event
     width_one = type("WidthOne", (), {"latent_width": 1})()
 
     def drift(event: object, index: int) -> D1EvalEvidence:
         evidence = real_parse(event, index)  # type: ignore[arg-type]
-        return replace(evidence, quality=cast(Any, width_one)) if index == 1 else evidence
+        return replace(evidence, quality=cast(Any, width_one)) if index == drift_index else evidence
 
     monkeypatch.setattr(query_module, "parse_eval_event", drift)
     with pytest.raises(D1TelemetryGap, match="latent width changed"):
-        read_d1_run_evidence(_path(tmp_path, valid_events()))
+        read_d1_run_evidence(_path(tmp_path, valid_events(resumed=resumed)))
 
 
 def test_nonmonotonic_resource_and_data_order_are_refused(tmp_path: Path) -> None:

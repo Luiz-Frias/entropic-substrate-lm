@@ -93,6 +93,16 @@ def _eval_event() -> D1JournalEvent:
             "quality": {
                 "nats_per_byte": 1.2345678901234567,
                 "effective_rank": 7.75,
+                "state_rms_l2_norm": 1.25,
+                "target_effective_rank": 1.95,
+                "target_numerical_rank": 2,
+                "target_rms_l2_norm": 0.61,
+                "predicted_effective_rank": 1.9,
+                "predicted_numerical_rank": 2,
+                "predicted_rms_l2_norm": 0.55,
+                "residual_mean_l2_norm": 0.02,
+                "target_predicted_exact_match_count": 0,
+                "target_predicted_exact_match_fraction": 0.0,
                 "state_variance": [0.2, 0.3],
                 "state_covariance_eigenvalues": [0.1, 0.4],
                 "state_sample_covariance": [[1.0, 0.0], [0.0, 1.0]],
@@ -198,6 +208,8 @@ def test_mlflow_observer_projects_only_registered_scalars_at_journal_step(
     metrics = {key: value for _run_id, key, value, _step in client.calls}
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
     assert metrics["d1/quality/derived_from_measured/effective_rank"] == 7.75
+    assert metrics["d1/quality/derived_from_measured/predicted_rms_l2_norm"] == 0.55
+    assert metrics["d1/quality/measured/target_predicted_exact_match_count"] == 0.0
     assert metrics["d1/resource/measured/trainer_wall_seconds"] == 12.5
     assert metrics["d1/cursor/measured/eval_index"] == 3.0
     assert all(run_id == "mlflow-run-123" for run_id, *_rest in client.calls)
