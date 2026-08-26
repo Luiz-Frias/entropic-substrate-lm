@@ -19,6 +19,7 @@ from entropic_substrate.d1_operator_values import (
     D1OperatorLaunchIntent,
     D1PodPlacement,
     D1RuntimeObservation,
+    require_d1_pod_id,
 )
 from entropic_substrate.d1_trainer_request_codec import D1TrainerRequest
 from entropic_substrate.evidence.resource_billing import (
@@ -37,6 +38,29 @@ class D1OperatorTransportError(RuntimeError):
         self.subject = subject
         self.context = MappingProxyType({"operation": operation, "subject": subject})
         super().__init__(f"D1 operator {operation} for {subject}: {detail}")
+
+
+class D1PodDeletionAcknowledgedError(D1OperatorTransportError):
+    """Provider deleted the pod, but complete termination evidence could not be minted."""
+
+    deletion_acknowledged = True
+
+    def __init__(self, *, pod_id: str, detail: str) -> None:
+        pod = require_d1_pod_id(pod_id)
+        if (
+            type(detail) is not str
+            or not detail
+            or detail.strip() != detail
+            or len(detail) > 512
+            or any(ord(character) < 32 for character in detail)
+        ):
+            raise ValueError("acknowledged deletion detail must be bounded safe text")
+        self.pod_id = pod
+        super().__init__(
+            operation="terminate_pod",
+            subject=pod,
+            detail=f"pod deletion was acknowledged; {detail}",
+        )
 
 
 @dataclass(frozen=True, slots=True)

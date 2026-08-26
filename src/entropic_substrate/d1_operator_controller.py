@@ -21,6 +21,7 @@ from entropic_substrate.d1_operator_evidence import (
     verify_d1_trainer_export,
 )
 from entropic_substrate.d1_operator_ports import (
+    D1PodDeletionAcknowledgedError,
     D1RunPodAuthReceipt,
     D1RunPodPort,
     D1TrainerEvidencePort,
@@ -285,12 +286,11 @@ class D1SequentialOperatorController:
             event_id=f"{subject}:trainer-stop:0",
         )
         self.process_manager = manager
-        termination = self._runpod.terminate(
+        termination = self._terminate_active_pod(
             placement.pod_id,
             start=start,
             trainer_ended_at=stopped.trainer_ended_at,
         )
-        self._active_pod_id = None
         billing = self._runpod.billing(placement.pod_id, start=start)
         finalization = finalize_d1_billing(
             plan=intent.plan,
@@ -429,12 +429,11 @@ class D1SequentialOperatorController:
             event_id=f"{subject}:trainer-stop:{segment}",
         )
         self.process_manager = manager
-        termination = self._runpod.terminate(
+        termination = self._terminate_active_pod(
             placement.pod_id,
             start=start,
             trainer_ended_at=stopped.trainer_ended_at,
         )
-        self._active_pod_id = None
         billing = self._runpod.billing(placement.pod_id, start=start)
         finalization = finalize_d1_billing(
             plan=intent.plan,
@@ -554,6 +553,29 @@ class D1SequentialOperatorController:
         ):
             raise ValueError("trainer start receipt differs from staged request or runtime")
         return staged.artifact
+
+    def _terminate_active_pod(
+        self,
+        pod_id: str,
+        *,
+        start: RunStartProvenance,
+        trainer_ended_at: datetime,
+    ) -> ExecutionSegmentTermination:
+        if self._active_pod_id != pod_id:
+            raise RuntimeError("termination target differs from active pod custody")
+        try:
+            termination = self._runpod.terminate(
+                pod_id,
+                start=start,
+                trainer_ended_at=trainer_ended_at,
+            )
+        except D1PodDeletionAcknowledgedError as error:
+            if error.pod_id != pod_id:
+                raise ValueError("deletion acknowledgement differs from active pod") from None
+            self._active_pod_id = None
+            raise
+        self._active_pod_id = None
+        return termination
 
     def _halt(self, subject: str, primary: BaseException) -> NoReturn:
         cleanup: list[BaseException] = []

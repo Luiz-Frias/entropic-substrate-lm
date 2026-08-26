@@ -28,6 +28,7 @@ from entropic_substrate.experiments.d1_primitives import (
 
 _OCI_DIGEST: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FULL_COMMIT: Final = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_POD_ID: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _PLATFORM: Final = "linux/amd64"
 
 
@@ -48,6 +49,13 @@ def _commit(value: str) -> None:
 def _utc(value: datetime, *, label: str) -> None:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() != timedelta(0):
         raise ValueError(f"{label} must be a UTC timestamp")
+
+
+def require_d1_pod_id(value: object) -> str:
+    """Return one provider resource identity safe for argv and durable errors."""
+    if type(value) is not str or _POD_ID.fullmatch(value) is None:
+        raise ValueError("pod id is not safe for lifecycle reconciliation")
+    return value
 
 
 def _plain_path(value: object, *, label: str) -> Path:
@@ -267,7 +275,7 @@ class D1PodPlacement:
     pod_created_at: datetime
 
     def __post_init__(self) -> None:
-        require_nonempty_string(self.pod_id, label="pod_id")
+        require_d1_pod_id(self.pod_id)
         D1A100ResourceRequest(
             self.accelerator_form_factor,
             self.accelerator_model,
@@ -308,7 +316,7 @@ class D1RuntimeObservation:
     trainer_monotonic_origin_ns: int
 
     def __post_init__(self) -> None:
-        require_nonempty_string(self.pod_id, label="runtime pod_id")
+        require_d1_pod_id(self.pod_id)
         _utc(self.trainer_started_at, label="trainer_started_at")
         for label, value in (
             ("cuda_version", self.cuda_version),

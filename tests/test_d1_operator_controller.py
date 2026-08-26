@@ -29,7 +29,10 @@ from entropic_substrate.d1_operator_evidence import (
     attest_d1_trainer_start,
     d1_runtime_observation_sha256,
 )
-from entropic_substrate.d1_operator_ports import D1RunPodAuthReceipt
+from entropic_substrate.d1_operator_ports import (
+    D1PodDeletionAcknowledgedError,
+    D1RunPodAuthReceipt,
+)
 from entropic_substrate.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
@@ -256,7 +259,10 @@ class _Provider:
     start: object
     events: list[str]
     placement_drift: bool = False
+    acknowledge_then_fail: bool = False
+    acknowledged_pod_id: str | None = None
     cancel_count: int = 0
+    delete_count: int = 0
 
     def verify_authenticated(self) -> D1RunPodAuthReceipt:
         self.events.append("authenticate")
@@ -283,8 +289,13 @@ class _Provider:
     def terminate(self, pod_id: str, *, start: object, trainer_ended_at: datetime):
         from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
 
-        del pod_id
         self.events.append("terminate")
+        self.delete_count += 1
+        if self.acknowledge_then_fail:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=self.acknowledged_pod_id or pod_id,
+                detail="post-delete termination evidence is invalid",
+            )
         return ExecutionSegmentTermination(
             start.logical_run_id,
             start.execution_segment_index,
@@ -302,6 +313,7 @@ class _Provider:
         del pod_id
         self.events.append("cancel")
         self.cancel_count += 1
+        self.delete_count += 1
         return self.start.trainer_started_at + timedelta(seconds=1)
 
 
@@ -434,11 +446,15 @@ def _controller(
     custody_failure: bool = False,
     stage_drift: str | None = None,
     start_drift: str | None = None,
+    acknowledge_then_fail: bool = False,
+    acknowledged_pod_id: str | None = None,
 ) -> tuple[D1SequentialOperatorController, _Provider]:
     provider = _Provider(
         case.start,
         events,
         placement_drift=drift,
+        acknowledge_then_fail=acknowledge_then_fail,
+        acknowledged_pod_id=acknowledged_pod_id,
     )
     trainer = _Trainer(
         D1ExportedTrainerHandoff(case.handoff, case.journal_path),
@@ -574,4 +590,51 @@ def test_resource_drift_cancels_pod_halts_queue_and_never_starts_next_arm(
     assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
     with pytest.raises(D1OperatorQueueHalt, match="halted"):
         controller.execute_fresh(case.intent)
+    assert provider.cancel_count == 1
+
+
+def test_acknowledged_termination_failure_never_deletes_active_pod_twice(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, provider = _controller(
+        tmp_path,
+        case,
+        events,
+        acknowledge_then_fail=True,
+    )
+
+    with pytest.raises(D1OperatorQueueHalt, match="post-delete termination evidence"):
+        controller.execute_fresh(case.intent)
+
+    assert events.count("terminate") == 1
+    assert "cancel" not in events
+    assert provider.delete_count == 1
+    assert provider.cancel_count == 0
+    assert controller.process_manager.state is D1ProcessState.PROBLEM
+    with pytest.raises(D1OperatorQueueHalt, match="halted"):
+        controller.execute_fresh(case.intent)
+    assert provider.delete_count == 1
+
+
+def test_foreign_deletion_acknowledgement_keeps_and_cleans_active_pod_custody(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, provider = _controller(
+        tmp_path,
+        case,
+        events,
+        acknowledge_then_fail=True,
+        acknowledged_pod_id="foreign-pod",
+    )
+
+    with pytest.raises(D1OperatorQueueHalt, match="acknowledgement differs"):
+        controller.execute_fresh(case.intent)
+
+    assert events.count("terminate") == 1
+    assert events.count("cancel") == 1
+    assert provider.delete_count == 2
     assert provider.cancel_count == 1

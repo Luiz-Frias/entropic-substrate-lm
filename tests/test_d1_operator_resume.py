@@ -101,7 +101,8 @@ def _actor_automation():
 
 
 @pytest.mark.parametrize(
-    "outcome", ["admissible", "billing_gap", "trainer_failure", "start_failure"]
+    "outcome",
+    ["admissible", "billing_gap", "trainer_failure", "start_failure", "termination_ack"],
 )
 def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     tmp_path: Path,
@@ -199,7 +200,7 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         return finalized_cell
 
     monkeypatch.setattr(controller_module, "attest_d1_finalized_cell_custody", attest)
-    provider = _Provider(start1, events)
+    provider = _Provider(start1, events, acknowledge_then_fail=outcome == "termination_ack")
     if outcome == "billing_gap":
 
         def missing_billing(*_args: object, **_kwargs: object) -> BillingGap:
@@ -229,6 +230,16 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         assert all(
             event.event_kind.value != "resumed" for event in controller.process_manager.events
         )
+        return
+    if outcome == "termination_ack":
+        with pytest.raises(D1OperatorQueueHalt, match="post-delete termination evidence"):
+            controller.execute_resume(intent, history=history)
+        assert events.count("terminate") == 1
+        assert "cancel" not in events
+        assert provider.delete_count == 1
+        assert provider.cancel_count == 0
+        assert history.terminations == (prior_termination,)
+        assert history.billings == (provider_bill(start0),)
         return
 
     result = controller.execute_resume(intent, history=history)

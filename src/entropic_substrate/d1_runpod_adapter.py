@@ -15,11 +15,13 @@ from entropic_substrate.d1_operator_ports import (
     D1CommandResult,
     D1CommandRunner,
     D1OperatorTransportError,
+    D1PodDeletionAcknowledgedError,
     D1RunPodAuthReceipt,
 )
 from entropic_substrate.d1_operator_values import (
     D1OperatorLaunchIntent,
     D1PodPlacement,
+    require_d1_pod_id,
 )
 from entropic_substrate.evidence.resource_billing import (
     BillingGap,
@@ -38,7 +40,6 @@ from entropic_substrate.experiments.d1_primitives import EvidenceClass
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
 _WAIT_TIMEOUT = re.compile(r"^[1-9][0-9]*[smhd]$")
-_RESOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _RUNPODCTL_VERSION = "runpodctl 2.9.0-c094cac"
 _POD_REQUIRED = frozenset(
@@ -87,13 +88,6 @@ def _text(value: object, *, label: str) -> str:
     if type(value) is not str or not value or value.strip() != value:
         raise ValueError(f"{label} must be a nonempty string")
     return value
-
-
-def _resource_id(value: object) -> str:
-    text = _text(value, label="pod id")
-    if _RESOURCE_ID.fullmatch(text) is None:
-        raise ValueError("pod id is not safe for lifecycle reconciliation")
-    return text
 
 
 def _timestamp(value: object, *, label: str) -> datetime:
@@ -178,7 +172,7 @@ class RunpodctlD1Adapter:
         unsafe_resource_id = False
         if resource_id is not None:
             try:
-                resource_id = _resource_id(resource_id)
+                resource_id = require_d1_pod_id(resource_id)
             except (TypeError, ValueError):
                 resource_id, unsafe_resource_id = None, True
         return code, status, resource_id, unsafe_resource_id
@@ -219,7 +213,7 @@ class RunpodctlD1Adapter:
         return result
 
     def _delete_attempt(self, pod_id: str, *, operation: str) -> tuple[str, int | None] | None:
-        pod_id = _resource_id(pod_id)
+        pod_id = require_d1_pod_id(pod_id)
         result = self._execute(
             operation,
             pod_id,
@@ -340,7 +334,15 @@ class RunpodctlD1Adapter:
                 "json",
             ]
         )
-        result = self._execute("create_pod", subject, tuple(argv))
+        try:
+            result = self._execute("create_pod", subject, tuple(argv))
+        except D1OperatorTransportError:
+            _error(
+                "create_pod",
+                subject,
+                "create command outcome is unknown; allocation state is unknown; COST RISK: "
+                "reconcile by logical run name; automatic cleanup impossible",
+            )
         if result.returncode != 0:
             failure = self._coded_failure(result.stderr)
             if failure is None:
@@ -376,7 +378,7 @@ class RunpodctlD1Adapter:
                 "cleanup impossible",
             )
         try:
-            resource_id = _resource_id(payload.get("id"))
+            resource_id = require_d1_pod_id(payload.get("id"))
         except (TypeError, ValueError):
             _error(
                 "create_pod",
@@ -443,11 +445,11 @@ class RunpodctlD1Adapter:
             self._cleanup_and_raise(subject, resource_id, str(error))
 
     def cancel(self, pod_id: str) -> datetime:
-        pod = _resource_id(pod_id)
+        pod = require_d1_pod_id(pod_id)
         operation = "terminate_pod"
         try:
             self._now()
-        except (TypeError, ValueError):
+        except Exception:
             raise ValueError("RunPod pre-delete clock is not valid UTC") from None
         failure = self._delete_attempt(pod, operation=operation)
         if failure is not None:
@@ -455,13 +457,11 @@ class RunpodctlD1Adapter:
             _error(operation, pod, self._failure_detail(code, status))
         try:
             return self._now()
-        except (TypeError, ValueError):
-            _error(
-                operation,
-                pod,
-                "pod deletion was acknowledged; post-delete UTC measurement is invalid; "
-                "do not retry deletion",
-            )
+        except Exception:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=pod,
+                detail="post-delete UTC measurement is invalid; do not retry deletion",
+            ) from None
 
     def terminate(
         self,
@@ -470,21 +470,32 @@ class RunpodctlD1Adapter:
         start: RunStartProvenance,
         trainer_ended_at: datetime,
     ) -> ExecutionSegmentTermination:
+        pod = require_d1_pod_id(pod_id)
         if type(start) is not RunStartProvenance:
             raise TypeError("RunPod termination requires RunStartProvenance")
+        if (
+            type(trainer_ended_at) is not datetime
+            or trainer_ended_at.tzinfo is None
+            or trainer_ended_at.utcoffset() != timedelta(0)
+        ):
+            raise ValueError("trainer_ended_at must be an exact UTC datetime")
+        pod_terminated_at = self.cancel(pod)
         try:
             return ExecutionSegmentTermination(
                 start.logical_run_id,
                 start.execution_segment_index,
                 start.execution_segment_id,
                 trainer_ended_at,
-                self.cancel(pod_id),
+                pod_terminated_at,
             )
-        except (TypeError, ValueError) as error:
-            _error("terminate_pod", pod_id, f"invalid termination evidence: {error}", error)
+        except Exception:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=pod,
+                detail="termination evidence is invalid after deletion; do not retry deletion",
+            ) from None
 
     def billing(self, pod_id: str, *, start: RunStartProvenance) -> ProviderBilling | BillingGap:
-        pod = _resource_id(pod_id)
+        pod = require_d1_pod_id(pod_id)
         if type(start) is not RunStartProvenance:
             raise TypeError("RunPod billing requires RunStartProvenance")
         operation = "provider_billing"

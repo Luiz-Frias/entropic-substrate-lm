@@ -15,6 +15,7 @@ from d1_launch_admission_fixtures import plan, profiles, start
 from entropic_substrate.d1_operator_ports import (
     D1CommandResult,
     D1OperatorTransportError,
+    D1PodDeletionAcknowledgedError,
 )
 from entropic_substrate.d1_operator_values import (
     D1A100FormFactor,
@@ -334,6 +335,57 @@ def test_cancel_refuses_invalid_pre_delete_clock_without_mutation() -> None:
     assert runner.calls == []
 
 
+def test_cancel_sanitizes_raising_pre_delete_clock_without_mutation() -> None:
+    runner = _Runner([])
+
+    def clock() -> datetime:
+        raise RuntimeError("secret clock failure")
+
+    with pytest.raises(ValueError, match="pre-delete clock") as caught:
+        _adapter(runner, clock=clock).cancel("pod-123")
+
+    assert "secret clock failure" not in "".join(traceback.format_exception(caught.value))
+    assert runner.calls == []
+
+
+def test_cancel_reports_typed_acknowledgement_when_post_delete_clock_fails() -> None:
+    runner = _Runner([_result({"deleted": True, "id": "pod-123"})])
+    calls = 0
+
+    def clock() -> datetime:
+        nonlocal calls
+        calls += 1
+        return _CONTROL_AT if calls == 1 else datetime(2026, 8, 24, 17, 0, 5)
+
+    with pytest.raises(D1PodDeletionAcknowledgedError) as caught:
+        _adapter(runner, clock=clock).cancel("pod-123")
+
+    assert caught.value.pod_id == "pod-123"
+    assert caught.value.deletion_acknowledged is True
+    assert "do not retry deletion" in str(caught.value)
+    assert len(runner.calls) == 1
+
+
+def test_cancel_reports_typed_acknowledgement_when_post_delete_clock_raises() -> None:
+    runner = _Runner([_result({"deleted": True, "id": "pod-123"})])
+    calls = 0
+
+    def clock() -> datetime:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("secret clock failure")
+        return _CONTROL_AT
+
+    with pytest.raises(D1PodDeletionAcknowledgedError) as caught:
+        _adapter(runner, clock=clock).cancel("pod-123")
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "secret clock failure" not in rendered
+    assert caught.value.pod_id == "pod-123"
+    assert len(runner.calls) == 1
+
+
 @pytest.mark.parametrize(
     "pod_id",
     ["--help", "../pod-123", "pod id", "pod\nforged", "pоd", "p" * 129],
@@ -349,8 +401,9 @@ def test_cancel_refuses_unsafe_pod_id_before_provider_command(pod_id: str) -> No
     "payload", [{"deleted": False, "id": "pod-123"}, {"deleted": True, "id": "other"}]
 )
 def test_cancel_refuses_delete_identity_drift(payload: dict[str, object]) -> None:
-    with pytest.raises(D1OperatorTransportError, match="termination response identity"):
+    with pytest.raises(D1OperatorTransportError, match="termination response identity") as caught:
         _adapter(_Runner([_result(payload)])).cancel("pod-123")
+    assert not isinstance(caught.value, D1PodDeletionAcknowledgedError)
 
 
 def test_exact_cli_version_is_required_before_user_lookup() -> None:
@@ -390,6 +443,69 @@ def test_failure_code_cannot_inject_control_characters_into_error() -> None:
     rendered = "".join(traceback.format_exception(caught.value))
     assert "forged" not in rendered
     assert "secret" not in rendered
+    assert len(runner.calls) == 1
+
+
+def test_create_runner_exception_is_allocation_unknown_without_raw_retention() -> None:
+    runner = _Runner([RuntimeError("secret runner failure")])
+
+    with pytest.raises(D1OperatorTransportError, match="COST RISK") as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "allocation state is unknown" in rendered
+    assert "reconcile by logical run name" in rendered
+    assert "secret runner failure" not in rendered
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("pod_id", ["--bad", "pod\nforged", "pоd", "p" * 129])
+def test_terminate_refuses_unsafe_pod_id_without_reflection_or_mutation(pod_id: str) -> None:
+    runner = _Runner([])
+
+    with pytest.raises(ValueError, match="lifecycle reconciliation") as caught:
+        _adapter(runner).terminate(
+            pod_id,
+            start=start(_intent().plan),
+            trainer_ended_at=_STARTED,
+        )
+
+    assert pod_id not in "".join(traceback.format_exception(caught.value))
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize("pod_id", ["--bad", "pod\nforged", "pоd", "p" * 129])
+def test_deletion_acknowledgement_refuses_unsafe_pod_identity(pod_id: str) -> None:
+    with pytest.raises(ValueError, match="lifecycle reconciliation"):
+        D1PodDeletionAcknowledgedError(pod_id=pod_id, detail="safe fixed detail")
+
+
+def test_terminate_refuses_invalid_trainer_end_before_delete() -> None:
+    runner = _Runner([])
+
+    with pytest.raises(ValueError, match="trainer_ended_at"):
+        _adapter(runner).terminate(
+            "pod-123",
+            start=start(_intent().plan),
+            trainer_ended_at=datetime(2026, 8, 24, 17, 0, 5),
+        )
+
+    assert runner.calls == []
+
+
+def test_terminate_reports_typed_acknowledgement_on_post_delete_ordering_failure() -> None:
+    started = _STARTED + timedelta(hours=1)
+    runner = _Runner([_result({"deleted": True, "id": "pod-123"})])
+
+    with pytest.raises(D1PodDeletionAcknowledgedError) as caught:
+        _adapter(runner, clock=lambda: started - timedelta(seconds=1)).terminate(
+            "pod-123",
+            start=start(_intent().plan),
+            trainer_ended_at=started,
+        )
+
+    assert caught.value.pod_id == "pod-123"
+    assert "termination evidence is invalid after deletion" in str(caught.value)
     assert len(runner.calls) == 1
 
 
