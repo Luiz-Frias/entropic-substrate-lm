@@ -108,12 +108,15 @@ def attest_d1_staged_trainer_request(
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class D1TrainerStartReceipt(_NoncopyableTrainerReceipt):
-    """Acknowledges the bootstrap-process timestamp; raw attempt binding is adapter-B work."""
+    """Acknowledges the raw bootstrap process and its exact trainer command."""
 
     pod_id: str
+    attempt_sha256: str
     request_sha256: str
     trainer_started_at: datetime
     runtime_sha256: str
+    process_id: str
+    command_sha256: str
 
     def __init__(self, *_: object, **__: object) -> None:
         raise TypeError("D1TrainerStartReceipt is factory-attested")
@@ -129,13 +132,24 @@ _TRAINER_RECEIPTS = FactoryAttestation[_NoncopyableTrainerReceipt, str](_receipt
 def attest_d1_trainer_start(
     *,
     pod_id: str,
+    attempt_sha256: str,
     request_sha256: str,
     trainer_started_at: datetime,
     runtime_sha256: str,
+    process_id: str,
+    command_sha256: str,
 ) -> D1TrainerStartReceipt:
     require_nonempty_string(pod_id, label="D1 trainer start pod_id")
-    require_sha256(request_sha256, label="D1 trainer start request")
-    require_sha256(runtime_sha256, label="D1 trainer start runtime")
+    require_nonempty_string(process_id, label="D1 trainer start process_id")
+    if process_id.strip() != process_id:
+        raise ValueError("D1 trainer start process_id must be trimmed")
+    for value, label in (
+        (attempt_sha256, "attempt"),
+        (request_sha256, "request"),
+        (runtime_sha256, "runtime"),
+        (command_sha256, "command"),
+    ):
+        require_sha256(value, label=f"D1 trainer start {label}")
     if (
         type(trainer_started_at) is not datetime
         or trainer_started_at.tzinfo is None
@@ -144,9 +158,12 @@ def attest_d1_trainer_start(
         raise ValueError("D1 trainer start timestamp must be UTC")
     receipt = object.__new__(D1TrainerStartReceipt)
     object.__setattr__(receipt, "pod_id", pod_id)
+    object.__setattr__(receipt, "attempt_sha256", attempt_sha256)
     object.__setattr__(receipt, "request_sha256", request_sha256)
     object.__setattr__(receipt, "trainer_started_at", trainer_started_at)
     object.__setattr__(receipt, "runtime_sha256", runtime_sha256)
+    object.__setattr__(receipt, "process_id", process_id)
+    object.__setattr__(receipt, "command_sha256", command_sha256)
     _TRAINER_RECEIPTS.register(receipt)
     return receipt
 

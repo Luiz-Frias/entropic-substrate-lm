@@ -38,10 +38,12 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     D1RuntimeObservation,
 )
+from entropic_substrate.d1_trainer_process_contracts import D1TrainerStartReport
 from entropic_substrate.d1_trainer_request_codec import (
     D1TrainerRequest,
     build_d1_trainer_request,
     d1_trainer_bootstrap_attempt_sha256,
+    d1_trainer_command_sha256,
     d1_trainer_request_sha256,
     serialize_d1_trainer_request,
 )
@@ -375,8 +377,15 @@ class _Trainer:
             object.__setattr__(self.runtime, "trainer_started_at", mutated_time)
         elif self.start_drift == "runtime_version":
             object.__setattr__(self.runtime, "pytorch_version", "mutated-version")
+        if self.start_drift == "raw_report":
+            return cast(D1TrainerStartReceipt, object.__new__(D1TrainerStartReport))
         return attest_d1_trainer_start(
             pod_id="other-pod" if self.start_drift == "pod" else pod_id,
+            attempt_sha256=(
+                "0" * 64
+                if self.start_drift == "attempt"
+                else self.bootstrap_attempt_sha256 or "0" * 64
+            ),
             request_sha256=(
                 "0" * 64
                 if self.start_drift == "request"
@@ -391,6 +400,14 @@ class _Trainer:
                 "0" * 64
                 if self.start_drift == "runtime_digest"
                 else d1_runtime_observation_sha256(self.runtime)
+            ),
+            process_id={"process": " ", "process_padded": " trainer "}.get(
+                self.start_drift, "trainer-123"
+            ),
+            command_sha256=(
+                "0" * 64
+                if self.start_drift == "command"
+                else d1_trainer_command_sha256(self.staged_request)
             ),
         )
 
@@ -488,7 +505,8 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     (
         "stage:plan stage:start stage:origin stage:locations stage:digest "
         "stage:artifact_algorithm stage:artifact_digest stage:runtime_version start:pod start:request start:time "
-        "start:runtime_digest start:runtime_time start:runtime_version start:none start:raise"
+        "start:runtime_digest start:runtime_time start:runtime_version start:attempt start:command "
+        "start:process start:process_padded start:raw_report start:none start:raise"
     ).split(),
 )
 def test_fresh_refuses_stage_or_start_receipt_drift(tmp_path: Path, drift: str) -> None:

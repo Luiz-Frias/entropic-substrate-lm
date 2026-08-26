@@ -35,6 +35,7 @@ from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
 from entropic_substrate.d1_trainer_request_codec import (
     build_d1_trainer_request,
     d1_trainer_bootstrap_attempt_sha256,
+    d1_trainer_command_sha256,
     d1_trainer_request_sha256,
     serialize_d1_trainer_request,
 )
@@ -251,7 +252,9 @@ class D1SequentialOperatorController:
         runtime = self._trainer.bootstrap_runtime(placement.pod_id, attempt_sha256)
         start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
         self._custody.persist_run_start(start)
-        input_artifact = self._stage_and_start(placement.pod_id, intent.plan, start, runtime)
+        input_artifact = self._stage_and_start(
+            placement.pod_id, intent.plan, start, runtime, attempt_sha256
+        )
         manager = manager.start_running(
             subject_id=subject,
             actor=self._automation,
@@ -404,7 +407,9 @@ class D1SequentialOperatorController:
         start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
         validate_execution_segments((*history.starts, start))
         self._custody.persist_run_start(start)
-        input_artifact = self._stage_and_start(placement.pod_id, intent.plan, start, runtime)
+        input_artifact = self._stage_and_start(
+            placement.pod_id, intent.plan, start, runtime, attempt_sha256
+        )
         manager = self.process_manager.resume(
             subject_id=subject,
             actor=self._automation,
@@ -493,6 +498,7 @@ class D1SequentialOperatorController:
         plan: D1RunPlan,
         start: RunStartProvenance,
         runtime: D1RuntimeObservation,
+        attempt_sha256: str,
     ) -> ArtifactIdentity:
         runtime_sha256 = d1_runtime_observation_sha256(runtime)
         origin = D1TrainerWallOrigin(
@@ -519,7 +525,14 @@ class D1SequentialOperatorController:
             or staged.artifact.content_hash.digest != request_sha256
         ):
             raise ValueError("staged trainer request differs from controller request")
-        start_snapshot = pod_id, staged.request_sha256, origin.started_at, runtime_sha256
+        start_snapshot = (
+            pod_id,
+            attempt_sha256,
+            staged.request_sha256,
+            origin.started_at,
+            runtime_sha256,
+            d1_trainer_command_sha256(request),
+        )
         started = self._trainer.start_trainer(pod_id)
         if type(started) is not D1TrainerStartReceipt:
             raise TypeError("trainer start must return a factory-attested receipt")
@@ -529,11 +542,15 @@ class D1SequentialOperatorController:
             or serialize_d1_trainer_request(request) != request_bytes
             or (
                 started.pod_id,
+                started.attempt_sha256,
                 started.request_sha256,
                 started.trainer_started_at,
                 started.runtime_sha256,
+                started.command_sha256,
             )
             != start_snapshot
+            or not started.process_id.strip()
+            or started.process_id.strip() != started.process_id
         ):
             raise ValueError("trainer start receipt differs from staged request or runtime")
         return staged.artifact

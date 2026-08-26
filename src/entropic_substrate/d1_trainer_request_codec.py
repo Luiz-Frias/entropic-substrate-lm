@@ -47,6 +47,7 @@ __all__ = [
     "D1TrainerRequestError",
     "build_d1_trainer_request",
     "d1_trainer_bootstrap_attempt_sha256",
+    "d1_trainer_command_sha256",
     "d1_trainer_request_sha256",
     "parse_d1_trainer_request",
     "serialize_d1_trainer_request",
@@ -304,6 +305,13 @@ def serialize_d1_trainer_request(request: D1TrainerRequest) -> bytes:
 
 def d1_trainer_request_sha256(request: D1TrainerRequest) -> str:
     return hashlib.sha256(serialize_d1_trainer_request(request)).hexdigest()
+
+
+def d1_trainer_command_sha256(request: D1TrainerRequest) -> str:
+    if type(request) not in (D1FreshTrainerRequest, D1ResumeTrainerRequest):
+        raise TypeError("D1 trainer command identity requires an exact nominal request")
+    command = trainer_request_to_mapping(request)["command"]
+    return hashlib.sha256(str(command).encode()).hexdigest()
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
