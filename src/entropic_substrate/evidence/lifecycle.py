@@ -149,6 +149,14 @@ class SuccessorAuthorization(StrEnum):
     RETIRED = "RETIRED"
 
 
+def _valid_identifiers(values: object) -> bool:
+    return (
+        type(values) is tuple
+        and all(type(item) is str and item and item.strip() == item for item in values)
+        and len(set(values)) == len(values)
+    )
+
+
 @dataclass(frozen=True)
 class FiledVerdictEvidence:
     """The machine-readable filing facts the lifecycle may consume.
@@ -162,6 +170,7 @@ class FiledVerdictEvidence:
     review_packet: ArtifactIdentity
     open_major_findings: tuple[str, ...]
     successor_authorization: SuccessorAuthorization
+    eligible_arms: tuple[str, ...]
     eligible_strategies: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -177,10 +186,16 @@ class FiledVerdictEvidence:
                 detail="open major findings must have nonempty identifiers",
                 context={},
             )
-        if any(not strategy for strategy in self.eligible_strategies):
+        if not _valid_identifiers(self.eligible_strategies):
             raise LifecycleContractError(
                 code="invalid_successor_strategy",
-                detail="eligible strategies must have nonempty identifiers",
+                detail="eligible strategies must be unique, trimmed identifiers",
+                context={},
+            )
+        if not _valid_identifiers(self.eligible_arms):
+            raise LifecycleContractError(
+                code="invalid_successor_arm",
+                detail="eligible arms must be unique, trimmed identifiers",
                 context={},
             )
 
@@ -456,11 +471,23 @@ def _validate_filed_outcome(record: LifecycleRecord, event: LifecycleEvent) -> N
             event,
             "successor authorization requires at least one eligible successor strategy",
         )
+    if expected is SuccessorAuthorization.AUTHORIZED and not evidence.eligible_arms:
+        raise _transition_error(
+            record,
+            event,
+            "successor authorization requires at least one eligible successor arm",
+        )
     if expected is not SuccessorAuthorization.AUTHORIZED and evidence.eligible_strategies:
         raise _transition_error(
             record,
             event,
             f"{expected.value} filed outcome must not name eligible successor strategies",
+        )
+    if expected is not SuccessorAuthorization.AUTHORIZED and evidence.eligible_arms:
+        raise _transition_error(
+            record,
+            event,
+            f"{expected.value} filed outcome must not name eligible successor arms",
         )
 
 

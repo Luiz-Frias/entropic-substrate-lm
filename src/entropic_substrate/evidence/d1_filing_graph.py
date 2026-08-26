@@ -295,6 +295,7 @@ class ValidatedD1Filing:
             review_packet=self.manifest.artifacts["review_packet"].artifact_identity(),
             open_major_findings=self.verdict.review.open_major_findings,
             successor_authorization=self.verdict.successor.authorization,
+            eligible_arms=self.verdict.successor.eligible_arms,
             eligible_strategies=self.verdict.successor.eligible_strategies,
         )
 

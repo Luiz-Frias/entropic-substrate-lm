@@ -107,6 +107,10 @@ class D1ProcessManager:
         return self._replay.finalized_subjects
 
     @property
+    def eligible_arms(self) -> tuple[str, ...]:
+        return self._replay.eligible_arms
+
+    @property
     def scientific_state(self) -> LifecycleState:
         return self._replay.pure_lifecycle.state
 
@@ -125,6 +129,7 @@ class D1ProcessManager:
         subject_id: str | None = None,
         problem_kind: D1ProblemKind | None = None,
         gate: SuccessorAuthorization | None = None,
+        arms: tuple[str, ...] = (),
         strategies: tuple[str, ...] = (),
     ) -> D1LifecycleEvent:
         return D1LifecycleEvent(
@@ -136,6 +141,7 @@ class D1ProcessManager:
             subject_id=subject_id,
             problem_kind=problem_kind,
             gate_authorization=gate,
+            eligible_arms=arms,
             eligible_strategies=strategies,
         )
 

@@ -112,6 +112,7 @@ class D1ProcessReplay:
     active_subject: str | None = None
     launched_subjects: frozenset[str] = field(default_factory=frozenset)
     finalized_subjects: tuple[str, ...] = ()
+    eligible_arms: tuple[str, ...] = ()
 
 
 def _pure_event(
@@ -346,6 +347,7 @@ def _advance_pure(replay: D1ProcessReplay, event: D1LifecycleEvent) -> Lifecycle
         review_packet=review.artifacts[0],
         open_major_findings=(),
         successor_authorization=authorization,
+        eligible_arms=event.eligible_arms,
         eligible_strategies=event.eligible_strategies,
     )
     pure = transition(
@@ -410,7 +412,14 @@ def advance_d1_process(replay: D1ProcessReplay | None, event: D1LifecycleEvent) 
         pure = _advance_pure(replay, event)
     except LifecycleTransitionError as exc:
         raise reject_transition("pure_lifecycle", replay.state, str(exc)) from exc
-    return D1ProcessReplay(target, pure, (*replay.events, event), active, launched, finalized)
+    eligible_arms = (
+        event.eligible_arms
+        if event.event_kind is D1ProcessEventKind.GATE_AUTHORIZED
+        else replay.eligible_arms
+    )
+    return D1ProcessReplay(
+        target, pure, (*replay.events, event), active, launched, finalized, eligible_arms
+    )
 
 
 def replay_d1_process(events: tuple[D1LifecycleEvent, ...]) -> D1ProcessReplay:

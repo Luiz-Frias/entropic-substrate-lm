@@ -395,6 +395,7 @@ def test_only_semantically_verified_graph_authorizes_pure_gate(tmp_path: Path) -
     outcome = decide_filed_verdict(filing)
     assert isinstance(outcome, FiledGateAuthorization)
     assert outcome.eligible_arms == ("sg", "ac", "both")
+    assert filing.to_filed_evidence().eligible_arms == outcome.eligible_arms
     with pytest.raises(TypeError, match="semantic evidence graph"):
         decide_filed_verdict(detached)  # type: ignore[arg-type]
 

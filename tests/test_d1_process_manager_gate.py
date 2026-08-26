@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import entropic_substrate.evidence.d1_process_filing as filing_module
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
 from entropic_substrate.evidence.d1_contract import D1DecisionRule
 from entropic_substrate.evidence.d1_filing_graph import ValidatedD1Filing, verify_d1_filing
@@ -23,6 +24,7 @@ from entropic_substrate.evidence.d1_process_manager import (
     D1ProcessManager,
     D1ProcessTransitionError,
 )
+from entropic_substrate.evidence.d1_types import FiledGateAuthorization
 from entropic_substrate.evidence.lifecycle import ActorRole, LifecycleState, SuccessorAuthorization
 
 from . import test_d1_filing_graph_gate as filing_cases
@@ -192,9 +194,14 @@ def test_only_factory_gate_outcome_reaches_matching_terminal(
 
     assert terminal.state is expected_state
     assert terminal.scientific_state is expected_pure_state
+    expected_arms = ("sg", "ac", "both") if outcome == "authorized" else ()
+    assert terminal.events[-1].eligible_arms == expected_arms
+    assert terminal.eligible_arms == expected_arms
     reloaded = D1ProcessManager.load(terminal.repository)
     assert isinstance(reloaded, D1ProcessManager)
     assert reloaded.state is expected_state
+    assert reloaded.events[-1].eligible_arms == expected_arms
+    assert reloaded.eligible_arms == expected_arms
 
 
 def test_detached_filing_and_operator_selected_wrong_outcome_cannot_advance(
@@ -225,6 +232,30 @@ def test_detached_filing_and_operator_selected_wrong_outcome_cannot_advance(
 
     assert error.value.code == "gate_outcome"
     assert filed.manager.repository.load().prefix == filed.manager.history.prefix
+
+
+def test_gate_refuses_an_outcome_whose_frontier_differs_from_filed_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    filing = _filing(tmp_path, monkeypatch, "authorized")
+    filed = file_d1_verdict(
+        _adjudicated(tmp_path, filing),
+        actor=_actor(ActorRole.OPERATOR),
+        filing=filing,
+        event_id="verdict",
+    )
+    monkeypatch.setattr(
+        filing_module,
+        "decide_filed_verdict",
+        lambda _: FiledGateAuthorization("d1", ("both",), ("d2-pullback",)),
+    )
+    with pytest.raises(D1ProcessTransitionError) as error:
+        filed.authorize_d2(
+            actor=_actor(ActorRole.OPERATOR),
+            artifact=_artifact(122, "gate"),
+            event_id="mismatched-frontier",
+        )
+    assert error.value.code == "gate_arms"
 
 
 def test_filing_identity_must_match_every_prior_campaign_artifact(
