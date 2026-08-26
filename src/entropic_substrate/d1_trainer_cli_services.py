@@ -147,15 +147,29 @@ class D1FreshTrainerCliService:
             )
             if type(decoded) is not D1FreshTrainerRequest:
                 raise D1CliInvalidEvidence("D1 fresh command requires a fresh trainer request")
-            root = self._artifact_root or _root(invocation.manifest_path.parent)
-            locations = decoded.resolve_locations(root)
         except (D1TrainerRequestError, ValueError) as error:
+            raise D1CliInvalidEvidence(str(error)) from error
+        return self.execute_request(decoded, manifest_path=invocation.manifest_path)
+
+    def execute_request(
+        self,
+        request: D1FreshTrainerRequest,
+        *,
+        manifest_path: Path,
+    ) -> Mapping[str, object]:
+        """Execute one already-admitted fresh request without another codec pass."""
+        if type(request) is not D1FreshTrainerRequest:
+            raise D1CliInvalidEvidence("D1 fresh execution requires a fresh trainer request")
+        try:
+            root = self._artifact_root or _root(manifest_path.parent)
+            locations = request.resolve_locations(root)
+        except ValueError as error:
             raise D1CliInvalidEvidence(str(error)) from error
         try:
             handoff = run_d1_fresh(
-                plan=decoded.plan,
-                start=decoded.start,
-                origin=decoded.origin,
+                plan=request.plan,
+                start=request.start,
+                origin=request.origin,
                 locations=locations,
                 clock=self._clock,
                 resource_activation_factory=self._resource_activation_factory,
@@ -198,15 +212,29 @@ class D1ResumeTrainerCliService:
             )
             if type(decoded) is not D1ResumeTrainerRequest:
                 raise D1CliInvalidEvidence("D1 resume command requires a resume trainer request")
-            root = self._artifact_root or _root(invocation.manifest_path.parent)
-            locations = decoded.resolve_locations(root)
         except (D1TrainerRequestError, ValueError) as error:
+            raise D1CliInvalidEvidence(str(error)) from error
+        return self.execute_request(decoded, manifest_path=invocation.manifest_path)
+
+    def execute_request(
+        self,
+        request: D1ResumeTrainerRequest,
+        *,
+        manifest_path: Path,
+    ) -> Mapping[str, object]:
+        """Execute one already-admitted resume request without another codec pass."""
+        if type(request) is not D1ResumeTrainerRequest:
+            raise D1CliInvalidEvidence("D1 resume execution requires a resume trainer request")
+        try:
+            root = self._artifact_root or _root(manifest_path.parent)
+            locations = request.resolve_locations(root)
+        except ValueError as error:
             raise D1CliInvalidEvidence(str(error)) from error
         try:
             handoff = run_d1_resume(
-                plan=decoded.plan,
-                start=decoded.start,
-                origin=decoded.origin,
+                plan=request.plan,
+                start=request.start,
+                origin=request.origin,
                 locations=locations,
                 observer=self._observer,
                 clock=self._clock,

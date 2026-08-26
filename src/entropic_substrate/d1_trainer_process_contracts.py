@@ -20,6 +20,8 @@ __all__ = [
     "D1TrainerProcessTransport",
     "D1TrainerStartReport",
     "d1_trainer_request_path",
+    "d1_trainer_runtime_report_path",
+    "d1_trainer_start_report_path",
     "parse_d1_runtime_report",
     "parse_d1_start_report",
     "serialize_d1_runtime_report",
@@ -82,6 +84,25 @@ def d1_trainer_request_path(attempt_sha256: str) -> str:
     return normalize_d1_relative_artifact_path(
         f"requests/{attempt_sha256}.json",
         label="D1 trainer request",
+    )
+
+
+def d1_trainer_runtime_report_path(attempt_sha256: str) -> str:
+    """Derive the immutable runtime-report path for one bootstrap attempt."""
+    require_sha256(attempt_sha256, label="D1 trainer runtime-report attempt")
+    return normalize_d1_relative_artifact_path(
+        f"trainer-runtime-{attempt_sha256}.json",
+        label="D1 trainer runtime report",
+    )
+
+
+def d1_trainer_start_report_path(attempt_sha256: str, request_sha256: str) -> str:
+    """Derive the immutable start-report path for one staged request attempt."""
+    require_sha256(attempt_sha256, label="D1 trainer start-report attempt")
+    require_sha256(request_sha256, label="D1 trainer start-report request")
+    return normalize_d1_relative_artifact_path(
+        f"trainer-start-{attempt_sha256}-{request_sha256}.json",
+        label="D1 trainer start report",
     )
 
 

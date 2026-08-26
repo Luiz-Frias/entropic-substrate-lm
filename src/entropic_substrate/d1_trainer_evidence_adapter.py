@@ -32,6 +32,7 @@ from entropic_substrate.d1_trainer_request_codec import (
     d1_trainer_request_sha256,
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
+    verify_d1_trainer_request_runtime,
 )
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
@@ -188,26 +189,7 @@ class D1TrainerEvidenceAdapter:
             serialize_d1_trainer_request(request),
             d1_trainer_request_sha256(request),
         )
-        observed = (
-            runtime.trainer_started_at,
-            runtime.cuda_version,
-            runtime.driver_version,
-            runtime.pytorch_version,
-            runtime.compiler_enabled,
-            runtime.compiler_version,
-            runtime.trainer_monotonic_origin_ns,
-        )
-        expected = (
-            request.start.trainer_started_at,
-            request.start.cuda_version,
-            request.start.driver_version,
-            request.start.pytorch_version,
-            request.start.compiler_enabled,
-            request.start.compiler_version,
-            request.origin.monotonic_ns,
-        )
-        if observed != expected:
-            raise ValueError("D1 trainer request differs from attested runtime")
+        verify_d1_trainer_request_runtime(request, runtime)
         target = d1_trainer_request_path(session.attempt_sha256)
         session.phase = D1TrainerAdapterPhase.STAGE_WRITE_ATTEMPTED
         self._transport.write_request(session.pod_id, session.attempt_sha256, target, payload)

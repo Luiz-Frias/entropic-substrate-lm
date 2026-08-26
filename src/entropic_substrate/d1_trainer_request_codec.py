@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent, D1RuntimeObservation
 from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.resource_provenance import (
@@ -51,6 +51,7 @@ __all__ = [
     "d1_trainer_request_sha256",
     "parse_d1_trainer_request",
     "serialize_d1_trainer_request",
+    "verify_d1_trainer_request_runtime",
 ]
 
 _SCHEMA = "d1-trainer-command-request-v1"
@@ -207,6 +208,37 @@ class D1ResumeTrainerRequest:
 
 
 type D1TrainerRequest = D1FreshTrainerRequest | D1ResumeTrainerRequest
+
+
+def verify_d1_trainer_request_runtime(
+    request: D1TrainerRequest,
+    runtime: D1RuntimeObservation,
+) -> None:
+    """Require one measured runtime to equal every request-side runtime fact."""
+    if type(request) not in (D1FreshTrainerRequest, D1ResumeTrainerRequest):
+        raise TypeError("D1 runtime binding requires a nominal trainer request")
+    if type(runtime) is not D1RuntimeObservation:
+        raise TypeError("D1 runtime binding requires a D1RuntimeObservation")
+    observed = (
+        runtime.trainer_started_at,
+        runtime.cuda_version,
+        runtime.driver_version,
+        runtime.pytorch_version,
+        runtime.compiler_enabled,
+        runtime.compiler_version,
+        runtime.trainer_monotonic_origin_ns,
+    )
+    expected = (
+        request.start.trainer_started_at,
+        request.start.cuda_version,
+        request.start.driver_version,
+        request.start.pytorch_version,
+        request.start.compiler_enabled,
+        request.start.compiler_version,
+        request.origin.monotonic_ns,
+    )
+    if observed != expected:
+        raise ValueError("D1 trainer request differs from attested runtime")
 
 
 def d1_trainer_bootstrap_attempt_sha256(pod_id: str, intent: D1OperatorLaunchIntent) -> str:
