@@ -14,6 +14,7 @@ from d1_billing_finalizer_fixtures import billing_gap, provider_bill
 from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
 from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
 from entropic_substrate.d1_operator_controller import (
+    D1OperatorQueueHalt,
     D1ResumeOperatorHistory,
     D1SequentialOperatorController,
 )
@@ -99,7 +100,9 @@ def _actor_automation():
     return ActorIdentity("automation", "automation-session", ActorRole.AUTOMATION)
 
 
-@pytest.mark.parametrize("outcome", ["admissible", "billing_gap", "trainer_failure"])
+@pytest.mark.parametrize(
+    "outcome", ["admissible", "billing_gap", "trainer_failure", "start_failure"]
+)
 def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -209,12 +212,24 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         process_manager=manager,
         attempt_ledger=ledger,
         runpod=provider,
-        trainer=_Trainer(candidate, events, start1),
+        trainer=_Trainer(
+            candidate, events, start1, start_drift="raise" if outcome == "start_failure" else None
+        ),
         custody=_Custody(events),
         operator=_actor_operator(),
         automation=_actor_automation(),
         clock=_Clock(start1.trainer_started_at - timedelta(minutes=1)),
     )
+
+    if outcome == "start_failure":
+        with pytest.raises(D1OperatorQueueHalt, match="trainer start failed"):
+            controller.execute_resume(intent, history=history)
+        assert "cancel" in events
+        assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
+        assert all(
+            event.event_kind.value != "resumed" for event in controller.process_manager.events
+        )
+        return
 
     result = controller.execute_resume(intent, history=history)
 
@@ -230,6 +245,7 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         "runtime",
         "persist_run_start",
         "stage_inputs",
+        "start_trainer",
         "await_handoff",
         "terminate",
         "billing",

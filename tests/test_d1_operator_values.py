@@ -228,4 +228,10 @@ def test_measured_placement_and_runtime_construct_exact_start_provenance(
 
 def test_trainer_runtime_observation_belongs_to_the_trainer_port() -> None:
     assert "runtime" not in D1RunPodPort.__dict__
-    assert "observe_runtime" in D1TrainerEvidencePort.__dict__
+    assert "observe_runtime" not in D1TrainerEvidencePort.__dict__
+    assert {
+        "bootstrap_runtime",
+        "stage_inputs",
+        "start_trainer",
+        "await_exported_handoff",
+    } <= D1TrainerEvidencePort.__dict__.keys()

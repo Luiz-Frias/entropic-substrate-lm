@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-import d1_launch_admission_fixtures as launch_fixtures
 import entropic_substrate.d1_operator_evidence as operator_module
 import entropic_substrate.d1_segment_engine as segment_engine
 from d1_billing_finalizer_fixtures import completed_case
@@ -23,7 +22,6 @@ from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fres
 from entropic_substrate.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     D1TrainerExportReceipt,
-    D1TrainerInputEnvelope,
     verify_d1_trainer_export,
 )
 from entropic_substrate.d1_trainer_handoff import (
@@ -32,32 +30,18 @@ from entropic_substrate.d1_trainer_handoff import (
 )
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 
 
-def test_trainer_input_envelope_is_canonical_and_binds_plan_to_start(tmp_path: Path) -> None:
-    del tmp_path
-    run = launch_fixtures.plan(launch_fixtures.profiles()[0], 101)
-    start = launch_fixtures.start(run)
+def test_duplicate_operator_trainer_input_wire_is_retired() -> None:
+    source_root = Path(__file__).parents[1] / "src/entropic_substrate"
+    production = "\n".join(path.read_text() for path in source_root.rglob("*.py"))
 
-    envelope = D1TrainerInputEnvelope(plan=run, start=start)
-
-    assert envelope.payload == {
-        "command": "d1-run-fresh",
-        "plan": run.plan_manifest,
-        "run_start": run_start_to_mapping(start),
-        "schema_version": "d1-operator-trainer-input-v1",
-    }
-    assert envelope.canonical_json == envelope.canonical_json.strip()
-    assert "secret" not in envelope.canonical_json.lower()
-    with pytest.raises(ValueError, match="image"):
-        D1TrainerInputEnvelope(
-            plan=run,
-            start=replace(start, image_digest="sha256:" + "9" * 64),
-        )
+    assert "D1TrainerInputEnvelope" not in production
+    assert "d1-operator-trainer-input-v1" not in production
+    assert "observe_runtime" not in production
 
 
 def test_successful_export_rechecks_journal_prefix_and_checkpoint_bytes(

@@ -10,7 +10,8 @@ from typing import Protocol
 
 from entropic_substrate.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
-    D1TrainerInputEnvelope,
+    D1StagedTrainerRequestReceipt,
+    D1TrainerStartReceipt,
 )
 from entropic_substrate.d1_operator_values import (
     D1ImageBuildRequest,
@@ -19,7 +20,7 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     D1RuntimeObservation,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.d1_trainer_request_codec import D1TrainerRequest
 from entropic_substrate.evidence.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
@@ -100,8 +101,12 @@ class D1RunPodPort(Protocol):
 class D1TrainerEvidencePort(Protocol):
     """Transport canonical inputs and return exported bytes, never loose metrics."""
 
-    def observe_runtime(self, pod_id: str) -> D1RuntimeObservation: ...
+    def bootstrap_runtime(self, pod_id: str, attempt_sha256: str) -> D1RuntimeObservation: ...
 
-    def stage_inputs(self, pod_id: str, envelope: D1TrainerInputEnvelope) -> ArtifactIdentity: ...
+    def stage_inputs(
+        self, pod_id: str, *, request: D1TrainerRequest
+    ) -> D1StagedTrainerRequestReceipt: ...
+
+    def start_trainer(self, pod_id: str) -> D1TrainerStartReceipt: ...
 
     def await_exported_handoff(self, pod_id: str) -> D1ExportedTrainerHandoff: ...

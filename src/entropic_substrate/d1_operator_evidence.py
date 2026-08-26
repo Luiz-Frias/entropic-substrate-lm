@@ -5,14 +5,20 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
 from entropic_substrate.d1_billing_finalization_values import D1TrainerHandoff
+from entropic_substrate.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
 from entropic_substrate.d1_trainer_handoff import (
     D1FreshRunCompletion,
     D1TrainerFailureHandoff,
+)
+from entropic_substrate.d1_trainer_request_codec import (
+    D1TrainerRequest,
+    d1_trainer_request_sha256,
 )
 from entropic_substrate.evidence.d1_journal import read_journal
 from entropic_substrate.evidence.d1_journal_values import (
@@ -24,14 +30,13 @@ from entropic_substrate.evidence.lifecycle import (
     ArtifactIdentity,
     ContentHash,
 )
-from entropic_substrate.evidence.resource_provenance import (
-    EvidenceGap,
-    RunStartProvenance,
-    SegmentStartMode,
+from entropic_substrate.evidence.resource_provenance import EvidenceGap
+from entropic_substrate.experiments.d1_primitives import (
+    canonical_digest,
+    require_nonempty_string,
+    require_sha256,
 )
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.factory_attestation import FactoryAttestation
 from entropic_substrate.predictive_state.checkpoint_repository import (
     load_checkpoint_candidate,
 )
@@ -43,55 +48,107 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True)
 
 
-@dataclass(frozen=True, slots=True)
-class D1TrainerInputEnvelope:
-    """Canonical plan/start bytes staged before invoking the trainer CLI."""
-
-    plan: D1RunPlan
-    start: RunStartProvenance
-
-    def __post_init__(self) -> None:
-        if not isinstance(cast(object, self.plan), D1RunPlan):
-            raise TypeError("trainer input requires a typed D1 run plan")
-        if type(self.start) is not RunStartProvenance:
-            raise TypeError("trainer input requires RunStartProvenance")
-        if self.start.logical_run_id != self.plan.logical_run_id:
-            raise ValueError("trainer input plan and start logical identities differ")
-        container = self.plan.run.execution.container
-        if container is None and self.plan.run.run_class is not RunClass.SMOKE:
-            raise ValueError("trainer input run plan is missing its container identity")
-        if container is not None and self.start.image_digest != container.image_digest:
-            raise ValueError("trainer input start image differs from the run plan")
-        compile_expected = self.plan.profile.draft.execution_protocol.optimization.compile
-        if self.start.compiler_enabled is not compile_expected:
-            raise ValueError("trainer input compiler posture differs from the run plan")
-
-    @property
-    def command(self) -> str:
-        return (
-            "d1-run-fresh"
-            if self.start.segment_start_mode is SegmentStartMode.FRESH
-            else "d1-run-resume"
-        )
-
-    @property
-    def payload(self) -> dict[str, object]:
-        return {
-            "command": self.command,
-            "plan": self.plan.plan_manifest,
-            "run_start": run_start_to_mapping(self.start),
-            "schema_version": "d1-operator-trainer-input-v1",
+def d1_runtime_observation_sha256(runtime: D1RuntimeObservation) -> str:
+    if type(runtime) is not D1RuntimeObservation:
+        raise TypeError("D1 runtime identity requires D1RuntimeObservation")
+    return canonical_digest(
+        {
+            "compiler_enabled": runtime.compiler_enabled,
+            "compiler_version": runtime.compiler_version,
+            "cuda_version": runtime.cuda_version,
+            "driver_version": runtime.driver_version,
+            "pod_id": runtime.pod_id,
+            "pytorch_version": runtime.pytorch_version,
+            "trainer_monotonic_origin_ns": runtime.trainer_monotonic_origin_ns,
+            "trainer_started_at": runtime.trainer_started_at.isoformat(),
         }
+    )
 
-    @property
-    def canonical_json(self) -> str:
-        return json.dumps(
-            self.payload,
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+
+class _NoncopyableTrainerReceipt:
+    __slots__ = ()
+
+    def require_factory_attested(self) -> None:
+        if not _TRAINER_RECEIPTS.registered(self):
+            raise TypeError("D1 trainer receipt is not factory-attested")
+        if not _TRAINER_RECEIPTS.contains(self):
+            raise TypeError("D1 trainer receipt changed after minting")
+
+    def _reject_copy(self, *_: object) -> NoReturn:
+        raise TypeError("D1 trainer receipt cannot be copied")
+
+    __copy__ = __deepcopy__ = __reduce_ex__ = _reject_copy
+
+
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
+class D1StagedTrainerRequestReceipt(_NoncopyableTrainerReceipt):
+    request: D1TrainerRequest
+    request_sha256: str
+    artifact: ArtifactIdentity
+
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1StagedTrainerRequestReceipt is factory-attested")
+
+
+def attest_d1_staged_trainer_request(
+    *, request: D1TrainerRequest, artifact: ArtifactIdentity
+) -> D1StagedTrainerRequestReceipt:
+    request_sha256 = d1_trainer_request_sha256(request)
+    if type(artifact) is not ArtifactIdentity:
+        raise TypeError("D1 staged trainer request requires ArtifactIdentity")
+    if artifact.content_hash != ContentHash("sha256", request_sha256):
+        raise ValueError("D1 staged trainer artifact differs from the canonical request digest")
+    receipt = object.__new__(D1StagedTrainerRequestReceipt)
+    object.__setattr__(receipt, "request", request)
+    object.__setattr__(receipt, "request_sha256", request_sha256)
+    object.__setattr__(receipt, "artifact", artifact)
+    _TRAINER_RECEIPTS.register(receipt)
+    return receipt
+
+
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
+class D1TrainerStartReceipt(_NoncopyableTrainerReceipt):
+    """Acknowledges the bootstrap-process timestamp; raw attempt binding is adapter-B work."""
+
+    pod_id: str
+    request_sha256: str
+    trainer_started_at: datetime
+    runtime_sha256: str
+
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1TrainerStartReceipt is factory-attested")
+
+
+def _receipt_fp(value: _NoncopyableTrainerReceipt) -> str:
+    return hashlib.sha256(repr(value).encode()).hexdigest()
+
+
+_TRAINER_RECEIPTS = FactoryAttestation[_NoncopyableTrainerReceipt, str](_receipt_fp)
+
+
+def attest_d1_trainer_start(
+    *,
+    pod_id: str,
+    request_sha256: str,
+    trainer_started_at: datetime,
+    runtime_sha256: str,
+) -> D1TrainerStartReceipt:
+    require_nonempty_string(pod_id, label="D1 trainer start pod_id")
+    require_sha256(request_sha256, label="D1 trainer start request")
+    require_sha256(runtime_sha256, label="D1 trainer start runtime")
+    if (
+        type(trainer_started_at) is not datetime
+        or trainer_started_at.tzinfo is None
+        or trainer_started_at.utcoffset() != timedelta(0)
+    ):
+        raise ValueError("D1 trainer start timestamp must be UTC")
+    receipt = object.__new__(D1TrainerStartReceipt)
+    object.__setattr__(receipt, "pod_id", pod_id)
+    object.__setattr__(receipt, "request_sha256", request_sha256)
+    object.__setattr__(receipt, "trainer_started_at", trainer_started_at)
+    object.__setattr__(receipt, "runtime_sha256", runtime_sha256)
+    _TRAINER_RECEIPTS.register(receipt)
+    return receipt
 
 
 @dataclass(frozen=True, slots=True)

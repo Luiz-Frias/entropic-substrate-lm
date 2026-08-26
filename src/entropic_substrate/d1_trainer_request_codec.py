@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -11,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations
-from entropic_substrate.d1_operator_evidence import D1TrainerInputEnvelope
+from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.resource_provenance import (
@@ -27,16 +28,26 @@ from entropic_substrate.experiments.d1_config import D1LaunchProfile
 from entropic_substrate.experiments.d1_plan import (
     ConfirmatoryD1RunPlan,
     D1PlanManifestError,
+    D1RunPlan,
     SmokeD1RunPlan,
     parse_d1_confirmatory_plan,
     parse_d1_smoke_plan,
+)
+from entropic_substrate.experiments.d1_primitives import (
+    RunClass,
+    canonical_digest,
+    require_nonempty_string,
 )
 
 __all__ = [
     "D1FreshTrainerRequest",
     "D1ResumeTrainerRequest",
     "D1TrainerLocationSpec",
+    "D1TrainerRequest",
     "D1TrainerRequestError",
+    "build_d1_trainer_request",
+    "d1_trainer_bootstrap_attempt_sha256",
+    "d1_trainer_request_sha256",
     "parse_d1_trainer_request",
     "serialize_d1_trainer_request",
 ]
@@ -146,7 +157,16 @@ def _validate_common(
         or type(origin) is not D1TrainerWallOrigin
     ):
         raise TypeError("D1 trainer request requires exact plan, start, and wall-origin types")
-    D1TrainerInputEnvelope(plan, start)
+    if start.logical_run_id != plan.logical_run_id:
+        raise ValueError("D1 trainer request plan and start logical identities differ")
+    container = plan.run.execution.container
+    if container is None and plan.run.run_class is not RunClass.SMOKE:
+        raise ValueError("D1 trainer request run plan is missing its container identity")
+    if container is not None and start.image_digest != container.image_digest:
+        raise ValueError("D1 trainer request start image differs from the run plan")
+    compile_expected = plan.profile.draft.execution_protocol.optimization.compile
+    if start.compiler_enabled is not compile_expected:
+        raise ValueError("D1 trainer request compiler posture differs from the run plan")
     if origin.started_at != start.trainer_started_at:
         raise ValueError("D1 trainer wall origin differs from run start")
 
@@ -186,6 +206,38 @@ class D1ResumeTrainerRequest:
 
 
 type D1TrainerRequest = D1FreshTrainerRequest | D1ResumeTrainerRequest
+
+
+def d1_trainer_bootstrap_attempt_sha256(pod_id: str, intent: D1OperatorLaunchIntent) -> str:
+    require_nonempty_string(pod_id, label="D1 trainer bootstrap pod_id")
+    if type(intent) is not D1OperatorLaunchIntent:
+        raise TypeError("D1 trainer bootstrap requires a launch intent")
+    return canonical_digest({"intent": intent.manifest, "pod_id": pod_id})
+
+
+def build_d1_trainer_request(
+    plan: D1RunPlan,
+    start: RunStartProvenance,
+    origin: D1TrainerWallOrigin,
+) -> D1TrainerRequest:
+    if type(plan) not in (ConfirmatoryD1RunPlan, SmokeD1RunPlan):
+        raise TypeError("D1 trainer request builder requires a runnable nominal plan")
+    plan = cast(ConfirmatoryD1RunPlan | SmokeD1RunPlan, plan)
+    run_identity = {"logical_run_id": plan.logical_run_id, "plan_digest": plan.plan_digest}
+    root = f"runs/{canonical_digest(run_identity)}"
+    locations = D1TrainerLocationSpec(
+        f"{root}/journal.jsonl",
+        f"{root}/checkpoint.pt",
+        f"{root}/quarantined-tail-{start.execution_segment_index:06d}.jsonl"
+        if start.segment_start_mode is SegmentStartMode.RESUME
+        else None,
+    )
+    request_type = (
+        D1FreshTrainerRequest
+        if start.segment_start_mode is SegmentStartMode.FRESH
+        else D1ResumeTrainerRequest
+    )
+    return request_type(plan, start, origin, locations)
 
 
 def _z(value: datetime) -> str:
@@ -248,6 +300,10 @@ def serialize_d1_trainer_request(request: D1TrainerRequest) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode()
+
+
+def d1_trainer_request_sha256(request: D1TrainerRequest) -> str:
+    return hashlib.sha256(serialize_d1_trainer_request(request)).hexdigest()
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:

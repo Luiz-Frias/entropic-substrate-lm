@@ -14,6 +14,7 @@ from entropic_substrate.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
+    build_d1_trainer_request,
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
 )
@@ -63,6 +64,42 @@ def test_fresh_request_round_trips_and_resolves_safe_output_locations(tmp_path: 
     assert parsed == request
     assert locations.journal_path == tmp_path / "runs/journal.jsonl"
     assert locations.checkpoint_path == tmp_path / "runs/checkpoint.pt"
+
+
+def test_request_builder_owns_the_deterministic_per_run_location_policy() -> None:
+    request, _ = _fresh()
+    built = build_d1_trainer_request(request.plan, request.start, request.origin)
+    assert type(built) is D1FreshTrainerRequest
+    other_execution = replace(request.plan.run.execution, seed=request.plan.seed + 1)
+    other_run = replace(request.plan.run, execution=other_execution)
+    other = build_d1_trainer_request(
+        replace(request.plan, run=other_run), request.start, request.origin
+    )
+    assert other.locations.journal_path != built.locations.journal_path
+
+
+def test_non_smoke_plan_rejects_missing_container_identity() -> None:
+    request, _ = _fresh()
+    execution = replace(request.plan.run.execution, container=None)
+    with pytest.raises(ValueError, match="container identity"):
+        replace(request.plan.run, execution=execution)
+
+
+def test_request_directly_binds_plan_to_start_identity_and_runtime_posture() -> None:
+    request, _ = _fresh()
+    with pytest.raises(ValueError, match="logical identities"):
+        replace(
+            request,
+            start=replace(
+                request.start,
+                logical_run_id="another-run",
+                execution_segment_id=execution_segment_id("another-run", 0),
+            ),
+        )
+    with pytest.raises(ValueError, match="image"):
+        replace(request, start=replace(request.start, image_digest="sha256:" + "9" * 64))
+    with pytest.raises(ValueError, match="compiler posture"):
+        replace(request, start=replace(request.start, compiler_enabled=True))
 
 
 def test_tiny_smoke_request_round_trips_without_confirmatory_reinterpretation() -> None:
@@ -188,6 +225,19 @@ def test_resume_request_round_trips_with_checkpoint_source_and_quarantine(
     assert locations.checkpoint_path == checkpoint
     assert locations.journal_path == journal
     assert locations.quarantine_path == tmp_path / "runs/quarantined-tail.jsonl"
+    built1 = build_d1_trainer_request(fresh.plan, start, request.origin)
+    start2 = replace(
+        start,
+        execution_segment_index=2,
+        execution_segment_id=execution_segment_id(fresh.plan.logical_run_id, 2),
+    )
+    built2 = build_d1_trainer_request(fresh.plan, start2, request.origin)
+    fresh_built = build_d1_trainer_request(fresh.plan, fresh.start, fresh.origin)
+    assert built1.locations.journal_path == built2.locations.journal_path
+    assert built1.locations.journal_path == fresh_built.locations.journal_path
+    assert built1.locations.checkpoint_path == fresh_built.locations.checkpoint_path
+    assert built1.locations.quarantine_path.endswith("-000001.jsonl")
+    assert built2.locations.quarantine_path.endswith("-000002.jsonl")
 
 
 @pytest.mark.parametrize(
