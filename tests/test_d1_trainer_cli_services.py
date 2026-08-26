@@ -28,6 +28,9 @@ from entropic_substrate.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
 )
+from entropic_substrate.d1_trainer_output_publication import (
+    load_d1_published_trainer_output,
+)
 from entropic_substrate.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
@@ -109,6 +112,14 @@ def test_d1_run_fresh_cli_reaches_real_optimizer_journal_and_checkpoint(tmp_path
     assert outcome.payload["successful_step"] == 2
     assert (tmp_path / "run/journal.jsonl").is_file()
     assert (tmp_path / "run/checkpoint.pt").is_file()
+    assert (tmp_path / "run/checkpoint.pt.handoff.json").is_file()
+    assert (tmp_path / "run/checkpoint.pt.complete.json").is_file()
+    assert outcome.payload["marker"]["path"] == str(tmp_path / "run/checkpoint.pt.complete.json")
+    published = load_d1_published_trainer_output(
+        artifact_root=tmp_path,
+        publication_prefix="run/checkpoint.pt",
+    )
+    assert published.handoff.successful_step == 2
 
 
 def test_resume_service_rejects_a_fresh_request_before_trainer_execution(tmp_path: Path) -> None:
@@ -133,6 +144,26 @@ def test_resume_service_rejects_a_fresh_request_before_trainer_execution(tmp_pat
 
     assert outcome.exit_code is D1CliExitCode.INVALID_EVIDENCE
     assert "command does not match" in str(outcome.detail)
+
+
+def test_fresh_service_never_reports_success_when_marker_publication_fails(
+    tmp_path: Path,
+) -> None:
+    manifest, request = _manifest(tmp_path)
+    handoff_path = tmp_path / "run/checkpoint.pt.handoff.json"
+    marker_path = tmp_path / "run/checkpoint.pt.complete.json"
+    handoff_path.write_bytes(b"occupied")
+    service = D1FreshTrainerCliService(
+        catalog=(request.plan.profile,),
+        artifact_root=tmp_path,
+        clock=_Clock(request.start.trainer_started_at),
+    )
+
+    outcome = _application(service).execute(D1CliCommand.RUN_FRESH, manifest)
+
+    assert outcome.exit_code is D1CliExitCode.INVALID_EVIDENCE
+    assert "publication failed" in str(outcome.detail)
+    assert not marker_path.exists()
 
 
 def test_d1_run_resume_cli_restores_and_completes_real_training(
@@ -187,6 +218,16 @@ def test_d1_run_resume_cli_restores_and_completes_real_training(
     assert outcome.payload["successful_step"] == 2
     assert case.journal_path.is_file()
     assert case.checkpoint_path.is_file()
+    prefix = str(case.checkpoint_path.relative_to(tmp_path))
+    assert (tmp_path / f"{prefix}.handoff.json").is_file()
+    assert (tmp_path / f"{prefix}.complete.json").is_file()
+    assert (
+        load_d1_published_trainer_output(
+            artifact_root=tmp_path,
+            publication_prefix=prefix,
+        ).handoff.successful_step
+        == 2
+    )
     resumed = torch.load(case.checkpoint_path, map_location="cpu", weights_only=True)
     assert case.uninterrupted_terminal is not None
     for field in ("model", "optimizer", "sampler", "rng"):

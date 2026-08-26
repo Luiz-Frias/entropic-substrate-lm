@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
+from entropic_substrate.d1_billing_finalization_values import D1TrainerHandoff
 from entropic_substrate.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
@@ -27,6 +28,10 @@ from entropic_substrate.d1_resume_trainer import (
     D1ResumeRunFailure,
     run_d1_resume,
 )
+from entropic_substrate.d1_trainer_output_publication import (
+    load_d1_published_trainer_output,
+    publish_d1_trainer_output,
+)
 from entropic_substrate.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
@@ -37,6 +42,7 @@ from entropic_substrate.d1_trainer_runtime import (
     D1TrainerClock,
     SystemD1TrainerClock,
 )
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
 
 __all__ = ["D1FreshTrainerCliService", "D1ResumeTrainerCliService"]
@@ -72,16 +78,47 @@ def _request_bytes(invocation: D1CliInvocation) -> bytes:
         ) from error
 
 
-def _result(receipt: D1TrainerExportReceipt) -> Mapping[str, object]:
+def _result(
+    receipt: D1TrainerExportReceipt,
+    marker: ArtifactIdentity,
+) -> Mapping[str, object]:
     termination = receipt.handoff.termination
     return {
         "execution_segment_index": termination.execution_segment_index,
         "export": receipt.manifest,
         "handoff_kind": receipt.handoff_kind,
         "logical_run_id": termination.logical_run_id,
+        "marker": {
+            "path": marker.path,
+            "sha256": marker.content_hash.digest,
+        },
         "schema_version": "d1-trainer-cli-result-v1",
         "successful_step": termination.successful_step,
     }
+
+
+def _publish_result(
+    handoff: D1TrainerHandoff,
+    *,
+    journal_path: Path,
+    checkpoint_path: Path,
+    artifact_root: Path,
+) -> Mapping[str, object]:
+    try:
+        prefix = checkpoint_path.relative_to(artifact_root).as_posix()
+        candidate = D1ExportedTrainerHandoff(handoff, journal_path)
+        marker = publish_d1_trainer_output(
+            candidate,
+            artifact_root=artifact_root,
+            publication_prefix=prefix,
+        )
+        published = load_d1_published_trainer_output(
+            artifact_root=artifact_root,
+            publication_prefix=prefix,
+        )
+        return _result(verify_d1_trainer_export(published), marker)
+    except ValueError as error:
+        raise D1CliInvalidEvidence(f"D1 trainer export publication failed: {error}") from error
 
 
 class D1FreshTrainerCliService:
@@ -125,10 +162,12 @@ class D1FreshTrainerCliService:
             )
         except D1FreshRunFailure as error:
             handoff = error.handoff
-        receipt = verify_d1_trainer_export(
-            D1ExportedTrainerHandoff(handoff, locations.journal_path)
+        return _publish_result(
+            handoff,
+            journal_path=locations.journal_path,
+            checkpoint_path=locations.checkpoint_path,
+            artifact_root=root,
         )
-        return _result(receipt)
 
 
 class D1ResumeTrainerCliService:
@@ -175,7 +214,9 @@ class D1ResumeTrainerCliService:
             )
         except D1ResumeRunFailure as error:
             handoff = error.handoff
-        receipt = verify_d1_trainer_export(
-            D1ExportedTrainerHandoff(handoff, locations.journal_path)
+        return _publish_result(
+            handoff,
+            journal_path=locations.journal_path,
+            checkpoint_path=locations.checkpoint_path,
+            artifact_root=root,
         )
-        return _result(receipt)
