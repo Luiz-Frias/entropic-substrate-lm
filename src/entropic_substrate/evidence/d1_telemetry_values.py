@@ -10,6 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final, cast
 
+from entropic_substrate.d1_training_step import D1TrainStepResult
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
@@ -331,6 +332,7 @@ class D1RunEvidence:
     segments: tuple[RunStartProvenance, ...]
     baseline: D1JournalEvent | None
     evals: tuple[D1EvalEvidence, ...]
+    train_steps: tuple[D1TrainStepResult, ...]
     data_order_segments: tuple[tuple[int, str, int], ...]
     checkpoint_receipts: tuple[tuple[int, str], ...]
     tail_quarantine_evidence: tuple[D1TailQuarantineEvidence, ...]

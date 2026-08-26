@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
+from entropic_substrate.d1_training_step import D1GradientEvidenceKind, D1TrainStepResult
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind, canonical_event_line
 from entropic_substrate.evidence.d1_telemetry_query import (
     final_d1_eval_metric,
@@ -23,7 +25,7 @@ from entropic_substrate.evidence.d1_telemetry_values import (
     D1TelemetryGap,
 )
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
 
 from .d1_telemetry_fixtures import (
     IDENTITY,
@@ -63,6 +65,8 @@ def test_complete_run_returns_immutable_quality_resource_and_identity(tmp_path: 
     assert run.final_checkpoint_sha256 == "f" * 64
     assert run.data_order_segments == ((0, "e" * 64, 2),)
     assert len(run.segments) == 1
+    assert [item.successful_step for item in run.train_steps] == [1, 2]
+    assert all(type(item) is D1TrainStepResult for item in run.train_steps)
 
 
 def test_resumed_run_binds_checkpoint_segment_provenance_and_local_order(tmp_path: Path) -> None:
@@ -74,6 +78,45 @@ def test_resumed_run_binds_checkpoint_segment_provenance_and_local_order(tmp_pat
     assert run.evals[-1].resource_work.execution_segment_index == 1
     assert len(run.tail_quarantine_evidence) == 1
     assert run.tail_quarantine_evidence[0].kind is D1TailQuarantineKind.NO_TAIL
+    assert [item.successful_step for item in run.train_steps] == [1, 2]
+
+
+def test_online_target_arm_admits_measured_target_gradients(tmp_path: Path) -> None:
+    run = read_d1_run_evidence(_path(tmp_path, valid_events(arm=D1Arm.NONE)))
+
+    assert [item.successful_step for item in run.train_steps] == [1, 2]
+    assert all(
+        item.gradient_reachability.target_branch.kind is D1GradientEvidenceKind.MEASURED_NONZERO
+        for item in run.train_steps
+    )
+
+
+@pytest.mark.parametrize(
+    ("plan_mutation", "match"),
+    [
+        (
+            lambda plan: cast(dict[str, object], plan["evidence"]).update(
+                {"telemetry_schema_version": 1}
+            ),
+            "telemetry_schema_version",
+        ),
+        (lambda plan: plan.update({"arm": "none"}), "target gradient posture"),
+    ],
+)
+def test_run_start_binds_train_schema_and_target_posture(
+    tmp_path: Path,
+    plan_mutation: Callable[[dict[str, Any]], object],
+    match: str,
+) -> None:
+    events = valid_events()
+    start_payload = cast(dict[str, object], events[0].manifest["payload"])
+    plan = cast(dict[str, Any], start_payload["plan"])
+    plan_mutation(plan)
+    start_payload["plan_digest"] = canonical_digest(plan)
+    events[0] = replace_payload(events[0], start_payload)
+
+    with pytest.raises(D1TelemetryGap, match=match):
+        read_d1_run_evidence(_path(tmp_path, events))
 
 
 def _quarantined_resume_path(tmp_path: Path) -> tuple[Path, Path]:

@@ -18,9 +18,11 @@ from entropic_substrate.evidence.resource_provenance import (
 from entropic_substrate.evidence.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     run_start_from_mapping,
+    run_start_to_mapping,
 )
 from entropic_substrate.experiments.d1_plan import D1_RUN_PLAN_SCHEMA
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
+from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
 
 __all__ = [
     "exact_fields",
@@ -93,21 +95,11 @@ def _canonical_z(value: object, *, path: str) -> str:
 
 def parse_run_start_manifest(value: object, *, path: str) -> RunStartProvenance:
     manifest = require_mapping(value, path=path)
-    wire = dict(manifest)
-    wire["event"] = "resource.segment_start"
-    for field in ("pod_created_at", "trainer_started_at"):
-        wire[field] = _canonical_z(wire.get(field), path=f"{path}.{field}")
-    quoted = require_mapping(wire.get("quoted_rate"), path=f"{path}.quoted_rate")
-    quoted_wire = dict(quoted)
-    quoted_wire["observed_at"] = _canonical_z(
-        quoted_wire.get("observed_at"), path=f"{path}.quoted_rate.observed_at"
-    )
-    wire["quoted_rate"] = quoted_wire
     try:
-        start = run_start_from_mapping(wire)
+        start = run_start_from_mapping(manifest)
     except ResourceProvenanceCodecGap as error:
         raise gap("invalid_provenance", path, str(error)) from error
-    if start.manifest != manifest:
+    if run_start_to_mapping(start) != manifest:
         raise gap("noncanonical_provenance", path, "does not equal the typed manifest")
     return start
 
@@ -133,6 +125,30 @@ def parse_run_start_event(
     exact_fields(plan, _PLAN_KEYS, path="run_start.plan")
     if plan["schema_version"] != D1_RUN_PLAN_SCHEMA:
         raise gap("plan_schema", "run_start.plan.schema_version", "unsupported plan schema")
+    evidence = require_mapping(plan["evidence"], path="run_start.plan.evidence")
+    required = evidence.get("required_classes")
+    if type(required) is not list or any(type(value) is not str for value in required):
+        raise gap(
+            "evidence_schema",
+            "run_start.plan.evidence.required_classes",
+            "must be a list of evidence-class strings",
+        )
+    try:
+        typed_evidence = EvidenceEnvelope(
+            schema_version=cast(str, evidence["schema_version"]),
+            required_classes=frozenset(EvidenceClass(value) for value in required),
+            checkpoint_schema_version=cast(int, evidence["checkpoint_schema_version"]),
+            telemetry_schema_version=cast(int, evidence["telemetry_schema_version"]),
+            dvc_capture_required=cast(bool, evidence["dvc_capture_required"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise gap("evidence_schema", "run_start.plan.evidence", str(error)) from error
+    if typed_evidence.manifest != evidence:
+        raise gap(
+            "evidence_schema",
+            "run_start.plan.evidence",
+            "does not equal the complete typed evidence manifest",
+        )
     plan_digest = require_sha256(payload["plan_digest"], path="run_start.plan_digest")
     if canonical_digest(plan) != plan_digest:
         raise gap("plan_digest", "run_start.plan_digest", "does not bind the embedded plan")

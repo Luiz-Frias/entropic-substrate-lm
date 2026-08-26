@@ -33,6 +33,7 @@ from entropic_substrate.experiments.d1_plan import (
     parse_d1_confirmatory_plan,
 )
 from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.experiments.d1_provenance import D1_TELEMETRY_SCHEMA_VERSION
 
 SEEDS = (101, 103, 107, 109)
 PREREG_PATH = "docs/d1-preregistration.md"
@@ -99,7 +100,7 @@ def plan(profile: D1LaunchProfile, seed: int, **overrides: object) -> Confirmato
             "dvc_capture_required": True,
             "required_classes": ["derived_from_measured", "measured"],
             "schema_version": "d1-evidence-v1",
-            "telemetry_schema_version": 1,
+            "telemetry_schema_version": D1_TELEMETRY_SCHEMA_VERSION,
         },
         "preregistration": {
             "path": PREREG_PATH,

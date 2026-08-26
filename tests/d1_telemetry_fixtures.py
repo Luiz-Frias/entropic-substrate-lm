@@ -9,7 +9,12 @@ from decimal import Decimal
 from pathlib import Path
 
 from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
-from entropic_substrate.d1_training_step import D1TrainStepResult
+from entropic_substrate.d1_training_step import (
+    D1ComponentGradientEvidence,
+    D1GradientEvidenceKind,
+    D1GradientReachability,
+    D1TrainStepResult,
+)
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
     JournalEventKind,
@@ -31,10 +36,17 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
+from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass, canonical_digest
+from entropic_substrate.experiments.d1_primitives import (
+    D1Arm,
+    EvidenceClass,
+    RunClass,
+    canonical_digest,
+)
+from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
 
 LOGICAL_RUN_ID = "d1-confirmatory-both-seed-7"
 IDENTITY = {
@@ -48,19 +60,22 @@ IDENTITY = {
 STARTED_AT = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
 
 
-def plan_manifest() -> dict[str, object]:
+def plan_manifest(arm: D1Arm = D1Arm.BOTH) -> dict[str, object]:
     return {
-        "arm": "both",
+        "arm": arm.value,
         "code": None,
         "construction_digest": IDENTITY["construction_digest"],
         "container": None,
         "data": None,
-        "evidence": {"telemetry_schema_version": 1},
+        "evidence": EvidenceEnvelope(
+            schema_version="d1-evidence-v1",
+            required_classes=frozenset({EvidenceClass.MEASURED}),
+        ).manifest,
         "family_digest": IDENTITY["family_digest"],
         "logical_run_id": LOGICAL_RUN_ID,
         "pairing_id": "seed-7",
         "preregistration": None,
-        "profile_name": "d1-both",
+        "profile_name": f"d1-{arm.value}",
         "run_class": RunClass.CONFIRMATORY.value,
         "schema_version": "d1-run-plan-v1",
         "seed": 7,
@@ -182,7 +197,16 @@ def quality(step: int) -> dict[str, object]:
     }
 
 
-def _train(step: int) -> dict[str, object]:
+def _train(step: int, arm: D1Arm) -> dict[str, object]:
+    measured = D1GradientEvidenceKind.MEASURED_NONZERO
+    target = (
+        D1ComponentGradientEvidence(D1GradientEvidenceKind.STRUCTURALLY_ABSENT_STOP_GRADIENT, None)
+        if arm in (D1Arm.SG, D1Arm.BOTH)
+        else D1ComponentGradientEvidence(measured, 0.4)
+    )
+    component_norms = (0.5, 0.25, 0.75)
+    if target.pre_clip_l2_norm is not None:
+        component_norms = (*component_norms, target.pre_clip_l2_norm)
     return D1TrainStepResult(
         successful_step=step,
         learning_rate=0.001,
@@ -203,7 +227,13 @@ def _train(step: int) -> dict[str, object]:
         coverage_95=0.95,
         effective_rank=2.0,
         numerical_rank=2,
-        gradient_norm=1.0,
+        gradient_norm=math.hypot(*component_norms),
+        gradient_reachability=D1GradientReachability(
+            online_branch=D1ComponentGradientEvidence(measured, 0.5),
+            target_branch=target,
+            language_readout=D1ComponentGradientEvidence(measured, 0.25),
+            future_law=D1ComponentGradientEvidence(measured, 0.75),
+        ),
     ).manifest
 
 
@@ -219,8 +249,8 @@ def event(
     )
 
 
-def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
-    plan = plan_manifest()
+def valid_events(*, resumed: bool = False, arm: D1Arm = D1Arm.BOTH) -> list[D1JournalEvent]:
+    plan = plan_manifest(arm)
     start = start_provenance()
     baseline = D1BaselineCalibrationAttestation(
         protocol_digest="6" * 64,
@@ -258,7 +288,7 @@ def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
             {
                 "plan": plan,
                 "plan_digest": canonical_digest(plan),
-                "run_start_provenance": start.manifest,
+                "run_start_provenance": run_start_to_mapping(start),
                 "trainer_wall_origin": _origin(0),
             },
         ),
@@ -285,7 +315,7 @@ def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
             {
                 "data_order": {"batches_attested": 1, "sha256": "c" * 64},
                 "scheduled_log_boundary": False,
-                "train": _train(1),
+                "train": _train(1, arm),
             },
         ),
         event(
@@ -309,7 +339,7 @@ def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
                 1,
                 {
                     "checkpoint_sha256": "d" * 64,
-                    "run_start_provenance": resume.manifest,
+                    "run_start_provenance": run_start_to_mapping(resume),
                     "tail_quarantine": {
                         "kind": "no_tail",
                         "schema_version": "d1-tail-quarantine/v1",
@@ -332,7 +362,7 @@ def valid_events(*, resumed: bool = False) -> list[D1JournalEvent]:
                         "sha256": "e" * 64,
                     },
                     "scheduled_log_boundary": False,
-                    "train": _train(2),
+                    "train": _train(2, arm),
                 },
             ),
             event(

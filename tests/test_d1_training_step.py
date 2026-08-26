@@ -134,6 +134,7 @@ def test_one_transaction_path_optimizes_every_arm(
     assert result.successful_step == 1
     assert result.manifest["successful_step"] == 1
     assert result.manifest["objective"] == result.objective
+    assert result.manifest["gradient_reachability"] == result.gradient_reachability.manifest
     assert set(result.manifest) == {
         "covariance_penalty",
         "coverage_50",
@@ -142,6 +143,7 @@ def test_one_transaction_path_optimizes_every_arm(
         "effective_rank",
         "future_nll",
         "gradient_norm",
+        "gradient_reachability",
         "language_loss",
         "learning_rate",
         "mean_displacement_nll",

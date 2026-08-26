@@ -16,7 +16,9 @@ from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
 from entropic_substrate.evidence.d1_capture_roster import D1ExpectedRun, D1LaunchRoster
 from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
 from entropic_substrate.evidence.resource_provenance import execution_segment_id
+from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
+from entropic_substrate.experiments.d1_provenance import D1_TELEMETRY_SCHEMA_VERSION
 
 from .d1_telemetry_fixtures import start_provenance, valid_events, write_events
 
@@ -44,7 +46,7 @@ def _events_for(
     seed: int = 7,
     pairing_id: str = PAIRING_ID,
 ) -> tuple[list[D1JournalEvent], str]:
-    events = valid_events()
+    events = valid_events(arm=arm)
     start_payload = cast(dict[str, object], events[0].manifest["payload"])
     plan = cast(dict[str, object], start_payload["plan"])
     plan.update(
@@ -64,7 +66,7 @@ def _events_for(
                 "dvc_capture_required": True,
                 "required_classes": ["measured"],
                 "schema_version": "d1-evidence-v1",
-                "telemetry_schema_version": 1,
+                "telemetry_schema_version": D1_TELEMETRY_SCHEMA_VERSION,
             },
             "family_digest": FAMILY_DIGEST,
             "logical_run_id": logical_run_id,
@@ -80,11 +82,13 @@ def _events_for(
         }
     )
     start_payload["plan_digest"] = canonical_digest(plan)
-    start_payload["run_start_provenance"] = replace(
-        start_provenance(),
-        logical_run_id=logical_run_id,
-        execution_segment_id=execution_segment_id(logical_run_id, 0),
-    ).manifest
+    start_payload["run_start_provenance"] = run_start_to_mapping(
+        replace(
+            start_provenance(),
+            logical_run_id=logical_run_id,
+            execution_segment_id=execution_segment_id(logical_run_id, 0),
+        )
+    )
     rewritten: list[D1JournalEvent] = []
     for event in events:
         payload = (

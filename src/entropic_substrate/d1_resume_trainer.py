@@ -52,7 +52,6 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
 )
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
@@ -434,7 +433,6 @@ def run_d1_resume(
                         step,
                         {
                             "data_order": {"batches_attested": order[1], "sha256": order[0]},
-                            "execution_segment": run_start_to_mapping(start),
                             "scheduled_log_boundary": step % protocol.evaluation.log_interval == 0,
                             "train": result.manifest,
                         },

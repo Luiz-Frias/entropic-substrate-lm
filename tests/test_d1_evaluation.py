@@ -100,6 +100,7 @@ def test_evaluation_is_repeatable_count_weighted_and_restores_training_mode() ->
         first.mean_displacement_nll - first.future_nll
     )
     assert "state_sample_covariance" not in first.telemetry_manifest
+    assert "gradient_reachability" not in first.telemetry_manifest
     assert first.telemetry_manifest["state_variance"] == list(first.state_variance)
     assert first.telemetry_manifest["pairwise_cosine_semantic"] == (
         "all_distinct_online_state_positions_v1"

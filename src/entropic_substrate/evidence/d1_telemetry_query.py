@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
+from entropic_substrate.d1_training_step import D1TrainStepResult
 from entropic_substrate.evidence.d1_journal import read_journal
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
@@ -41,7 +42,8 @@ from entropic_substrate.evidence.resource_provenance import (
     validate_execution_segments,
 )
 from entropic_substrate.evidence.resource_work import validate_resource_work_series
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_family import strategies_for_arm
+from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 __all__ = ["final_d1_eval_metric", "read_d1_eval_series", "read_d1_run_evidence"]
 
@@ -191,7 +193,11 @@ def read_d1_run_evidence(
         expected_family_digest=expected_family_digest,
         expected_run_class=expected_run_class,
     )
-    _plan, plan_digest, first_segment = parse_run_start_event(start_event)
+    plan, plan_digest, first_segment = parse_run_start_event(start_event)
+    try:
+        target_update = strategies_for_arm(D1Arm(plan["arm"]))[0]
+    except (TypeError, ValueError) as error:
+        raise gap("plan_arm", "run_start.plan.arm", "is not a registered D1 arm") from error
     if expected_plan_digest is not None:
         require_sha256(expected_plan_digest, path="expected_plan_digest")
         if plan_digest != expected_plan_digest:
@@ -205,6 +211,7 @@ def read_d1_run_evidence(
     body = events[1:-1] if terminal is not None else events[1:]
     baselines: list[D1JournalEvent] = []
     evaluations: list[D1EvalEvidence] = []
+    train_steps: list[D1TrainStepResult] = []
     checkpoints: list[tuple[int, str]] = []
     segments = [first_segment]
     tail_quarantine: list[D1TailQuarantineEvidence] = []
@@ -217,7 +224,11 @@ def read_d1_run_evidence(
             parse_baseline_event(event)
             baselines.append(event)
         elif kind is JournalEventKind.TRAIN:
-            digest, count = parse_train_event(event)
+            digest, count, result = parse_train_event(
+                event,
+                expected_target_update=target_update,
+            )
+            train_steps.append(result)
             prior = order_state.get(current_segment)
             expected_count = 1 if prior is None else min(prior[1] + 1, DATA_ORDER_DIGEST_BATCHES)
             if count != expected_count or (
@@ -303,6 +314,7 @@ def read_d1_run_evidence(
         segments=tuple(segments),
         baseline=baselines[0] if baselines else None,
         evals=tuple(evaluations),
+        train_steps=tuple(train_steps),
         data_order_segments=data_order,
         checkpoint_receipts=tuple(checkpoints),
         tail_quarantine_evidence=tuple(tail_quarantine),

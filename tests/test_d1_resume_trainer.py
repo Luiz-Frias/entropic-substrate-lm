@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -24,10 +24,16 @@ from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
 from entropic_substrate.d1_resume_trainer import run_d1_resume
 from entropic_substrate.evidence.d1_journal import read_journal
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 
 pytestmark = pytest.mark.unit
+
+
+class _LaterSegmentClock(DeterministicTrainerClock):
+    def utc_now(self) -> datetime:
+        return super().utc_now() + timedelta(hours=1)
 
 
 def test_resume_matches_uninterrupted_and_journals_before_materialization(
@@ -52,7 +58,7 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
         origin=origin(),
         locations=D1ResumeRunLocations(case.journal_path, case.checkpoint_path),
         observer=observer,
-        clock=DeterministicTrainerClock(),
+        clock=_LaterSegmentClock(),
     )
 
     assert observed == [case.plan]
@@ -71,9 +77,17 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
     assert completion.operator_finalization_required is True
     assert completion.termination.execution_segment_index == 1
     assert completion.termination.execution_segment_id.endswith(":segment:1")
-    assert completion.termination.trainer_ended_at == origin().started_at + timedelta(seconds=2)
+    assert completion.termination.trainer_ended_at == origin().started_at + timedelta(
+        hours=1, seconds=2
+    )
     assert completion.termination.journal_state == completion.journal_state
     assert completion.termination.resource_ledger_state.last_training_step == 2
+    admitted = read_d1_run_evidence(
+        case.journal_path,
+        expected_plan_digest=case.plan.plan_digest,
+        allow_incomplete=True,
+    )
+    assert [item.successful_step for item in admitted.train_steps] == [1, 2]
     resume_event = events[-4]
     assert resume_event.payload["run_start_provenance"] == run_start_to_mapping(
         completion.run_start_provenance

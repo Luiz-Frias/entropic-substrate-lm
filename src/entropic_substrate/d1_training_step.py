@@ -122,6 +122,7 @@ class D1TrainStepResult:
     effective_rank: float
     numerical_rank: int
     gradient_norm: float
+    gradient_reachability: D1GradientReachability
 
     def __post_init__(self) -> None:
         if type(self.successful_step) is not int or self.successful_step < 1:
@@ -161,6 +162,9 @@ class D1TrainStepResult:
         if type(self.numerical_rank) is not int or self.numerical_rank < 0:
             msg = "D1 train result numerical_rank must be a nonnegative integer"
             raise ValueError(msg)
+        if type(self.gradient_reachability) is not D1GradientReachability:
+            raise TypeError("D1 train result requires typed gradient reachability")
+        _require_aggregate_gradient_norm(self.gradient_reachability, self.gradient_norm)
 
     @property
     def coverages(self) -> tuple[float, float, float]:
@@ -176,6 +180,7 @@ class D1TrainStepResult:
             "effective_rank": self.effective_rank,
             "future_nll": self.future_nll,
             "gradient_norm": self.gradient_norm,
+            "gradient_reachability": self.gradient_reachability.manifest,
             "language_loss": self.language_loss,
             "learning_rate": self.learning_rate,
             "mean_displacement_nll": self.mean_displacement_nll,
@@ -268,6 +273,7 @@ def apply_d1_training_step(
             successful_step=next_step,
             learning_rate=learning_rate,
             gradient_norm=gradient_norm_value,
+            gradient_reachability=gradient_reachability,
         )
         optimizer_bundle.optimizer.step()
         _require_finite_parameters(owned)
@@ -518,6 +524,7 @@ def _result(
     successful_step: int,
     learning_rate: float,
     gradient_norm: float,
+    gradient_reachability: D1GradientReachability,
 ) -> D1TrainStepResult:
     law, collapse = output.future_law_loss, output.collapse
     diagnostics = collapse.diagnostics
@@ -544,4 +551,5 @@ def _result(
         effective_rank=float(diagnostics.effective_rank),
         numerical_rank=diagnostics.numerical_rank,
         gradient_norm=gradient_norm,
+        gradient_reachability=gradient_reachability,
     )
