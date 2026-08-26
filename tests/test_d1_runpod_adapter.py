@@ -40,7 +40,7 @@ _VERSION = "runpodctl 2.9.0-c094cac"
 
 @dataclass
 class _Runner:
-    results: list[D1CommandResult]
+    results: list[D1CommandResult | Exception]
     calls: list[tuple[tuple[str, ...], Path | None, str | None]] = field(default_factory=list)
 
     def __bool__(self) -> bool:
@@ -54,7 +54,10 @@ class _Runner:
         stdin: str | None,
     ) -> D1CommandResult:
         self.calls.append((argv, cwd, stdin))
-        return self.results[len(self.calls) - 1]
+        result = self.results[len(self.calls) - 1]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def _result(value: object, *, stderr: str = "", returncode: int = 0) -> D1CommandResult:
@@ -205,6 +208,32 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
     assert all("token" not in argument.lower() for argument in argv)
 
 
+def test_community_market_maps_to_cli_cloud_and_public_ip() -> None:
+    intent = _intent()
+    intent = replace(intent, resource=replace(intent.resource, market="community-cloud"))
+    payload = _create_payload()
+    payload["machine"] = {
+        "dataCenterId": "US-KS-2",
+        "gpuId": "NVIDIA A100-SXM4-80GB",
+        "secureCloud": False,
+    }
+    runner = _Runner([_result(payload)])
+
+    placement = _adapter(runner).create(intent)
+
+    argv = runner.calls[0][0]
+    assert argv[argv.index("--cloud-type") + 1] == "COMMUNITY"
+    assert "--public-ip" in argv
+    assert placement.market == "community-cloud"
+
+
+def test_additive_documented_provider_fields_do_not_break_placement() -> None:
+    payload = _create_payload()
+    payload.update({"lastStatusChange": "Rented by User", "runtimeStatusReason": ""})
+    placement = _adapter(_Runner([_result(payload)])).create(_intent())
+    assert placement.pod_id == "pod-123"
+
+
 def test_create_refuses_spot_before_any_provider_command() -> None:
     intent = _intent()
     intent = replace(intent, resource=replace(intent.resource, purchase_option=PurchaseOption.SPOT))
@@ -272,17 +301,48 @@ def test_unavailable_provider_billing_is_a_complete_typed_gap() -> None:
     assert result.billed_amount.reason == "provider billing export unavailable"
 
 
+def test_billing_refuses_unsafe_pod_id_before_provider_command() -> None:
+    runner = _Runner([])
+    with pytest.raises(ValueError, match="lifecycle reconciliation"):
+        _adapter(runner).billing("--output", start=start(_intent().plan))
+    assert runner.calls == []
+
+
 def test_cancel_returns_locally_measured_termination_timestamp() -> None:
     payload = {"deleted": True, "id": "pod-123"}
     measured = datetime(2026, 8, 24, 17, 0, 5, tzinfo=UTC)
     runner = _Runner([_result(payload)])
+    calls = 0
 
-    observed = _adapter(
-        runner,
-        clock=lambda: measured if runner.calls else pytest.fail("clock ran before delete"),
-    ).cancel("pod-123")
+    def clock() -> datetime:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            assert runner.calls, "post-delete clock ran before delete"
+        return measured - timedelta(seconds=1) if calls == 1 else measured
+
+    observed = _adapter(runner, clock=clock).cancel("pod-123")
 
     assert observed == measured
+    assert calls == 2
+
+
+def test_cancel_refuses_invalid_pre_delete_clock_without_mutation() -> None:
+    runner = _Runner([_result({"deleted": True, "id": "pod-123"})])
+    with pytest.raises(ValueError, match="UTC"):
+        _adapter(runner, clock=lambda: datetime(2026, 8, 24, 17, 0, 5)).cancel("pod-123")
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize(
+    "pod_id",
+    ["--help", "../pod-123", "pod id", "pod\nforged", "pоd", "p" * 129],
+)
+def test_cancel_refuses_unsafe_pod_id_before_provider_command(pod_id: str) -> None:
+    runner = _Runner([_result({"deleted": True, "id": pod_id})])
+    with pytest.raises(ValueError, match="lifecycle reconciliation"):
+        _adapter(runner).cancel(pod_id)
+    assert runner.calls == []
 
 
 @pytest.mark.parametrize(
@@ -319,7 +379,206 @@ def test_nonzero_failure_surfaces_only_coded_status_without_raw_retention(stderr
         assert "failure payload is malformed" in str(caught.value)
     assert "secret detail" not in rendered
     assert "secret non-json failure" not in rendered
+    assert "COST RISK" in rendered
     assert len(runner.calls) == 1
+
+
+def test_failure_code_cannot_inject_control_characters_into_error() -> None:
+    runner = _Runner([D1CommandResult("", '{"error":"secret","code":"bad\\nforged"}', 1)])
+    with pytest.raises(D1OperatorTransportError, match="failure payload is malformed") as caught:
+        _adapter(runner).create(_intent())
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "forged" not in rendered
+    assert "secret" not in rendered
+    assert len(runner.calls) == 1
+
+
+def test_partial_wait_failure_with_resource_id_deletes_once_before_raising() -> None:
+    runner = _Runner(
+        [
+            D1CommandResult(
+                "",
+                "waiting for ssh on pod pod-partial (timeout 12m)\n"
+                '{"error":"secret wait detail","code":"wait_timeout","id":"pod-partial"}',
+                1,
+            ),
+            _result({"deleted": True, "id": "pod-partial"}),
+        ]
+    )
+
+    with pytest.raises(D1OperatorTransportError) as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "code=wait_timeout" in rendered
+    assert "resource_id=pod-partial" in rendered
+    assert "cleanup=deleted" in rendered
+    assert "secret wait detail" not in rendered
+    assert [call[0][:3] for call in runner.calls] == [
+        ("runpodctl", "pod", "create"),
+        ("runpodctl", "pod", "delete"),
+    ]
+
+
+def test_create_error_without_resource_id_requires_operator_reconciliation() -> None:
+    runner = _Runner(
+        [D1CommandResult("", '{"error":"secret","code":"bad_request","status":400}', 1)]
+    )
+    with pytest.raises(D1OperatorTransportError, match="code=bad_request status=400") as caught:
+        _adapter(runner).create(_intent())
+    assert "COST RISK" in str(caught.value)
+    assert "reconcile by logical run name" in str(caught.value)
+    assert len(runner.calls) == 1
+
+
+def test_create_error_with_unsafe_resource_id_reports_unreconciled_cost_risk() -> None:
+    runner = _Runner(
+        [
+            D1CommandResult(
+                "",
+                '{"error":"secret","code":"wait_timeout","id":"--unsafe"}',
+                1,
+            )
+        ]
+    )
+
+    with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "cleanup impossible" in rendered
+    assert "--unsafe" not in rendered
+    assert "secret" not in rendered
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("pod_id", [None, "pod id with spaces", "pod-123\nforged"])
+def test_success_without_safe_resource_id_reports_unreconciled_cost_risk(
+    pod_id: object,
+) -> None:
+    payload = _create_payload()
+    payload["id"] = pod_id
+    runner = _Runner([_result(payload)])
+
+    with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
+        _adapter(runner).create(_intent())
+
+    assert "cleanup impossible" in str(caught.value)
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    ["not-json", "[]", '{"id":"one","id":"two"}', '{"id":NaN}'],
+)
+def test_success_with_malformed_payload_reports_unreconciled_cost_risk(stdout: str) -> None:
+    runner = _Runner([D1CommandResult(stdout, "waiting for ssh\n", 0)])
+
+    with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
+        _adapter(runner).create(_intent())
+
+    assert "cleanup impossible" in str(caught.value)
+    assert stdout not in "".join(traceback.format_exception(caught.value))
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "cleanup",
+    [
+        D1CommandResult("not-json", "secret cleanup output", 0),
+        _result({"deleted": False, "id": "pod-partial"}),
+        _result({"deleted": True, "id": "foreign-pod"}),
+    ],
+)
+def test_malformed_cleanup_acknowledgement_remains_a_cost_leak(
+    cleanup: D1CommandResult,
+) -> None:
+    runner = _Runner(
+        [
+            D1CommandResult(
+                "",
+                '{"error":"secret create","code":"wait_timeout","id":"pod-partial"}',
+                1,
+            ),
+            cleanup,
+        ]
+    )
+
+    with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "cleanup_code=uncoded_failure" in rendered
+    assert "secret create" not in rendered
+    assert "secret cleanup output" not in rendered
+    assert len(runner.calls) == 2
+
+
+def test_cleanup_runner_exception_remains_a_sanitized_cost_leak() -> None:
+    runner = _Runner(
+        [
+            D1CommandResult(
+                "",
+                '{"error":"secret create","code":"wait_timeout","id":"pod-partial"}',
+                1,
+            ),
+            RuntimeError("secret cleanup exception"),
+        ]
+    )
+
+    with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "cleanup_code=uncoded_failure" in rendered
+    assert "secret create" not in rendered
+    assert "secret cleanup exception" not in rendered
+    assert len(runner.calls) == 2
+
+
+def test_post_success_ssh_refusal_deletes_created_pod_before_raising() -> None:
+    payload = _create_payload()
+    payload["ssh"] = {"error": "pod not ready"}
+    runner = _Runner([_result(payload), _result({"deleted": True, "id": "pod-123"})])
+
+    with pytest.raises(D1OperatorTransportError) as caught:
+        _adapter(runner).create(_intent())
+
+    assert "pod SSH is not usable" in str(caught.value)
+    assert "resource_id=pod-123" in str(caught.value)
+    assert "cleanup=deleted" in str(caught.value)
+    assert str(caught.value).count("D1 operator create_pod") == 1
+    assert len(runner.calls) == 2
+
+
+def test_cleanup_failure_preserves_primary_and_makes_cost_leak_unmistakable() -> None:
+    runner = _Runner(
+        [
+            D1CommandResult(
+                "",
+                '{"error":"secret wait detail","code":"wait_interrupted","id":"pod-leak"}',
+                1,
+            ),
+            D1CommandResult(
+                "",
+                '{"error":"secret cleanup detail","code":"unauthorized","status":401}',
+                1,
+            ),
+        ]
+    )
+
+    with pytest.raises(D1OperatorTransportError) as caught:
+        _adapter(runner).create(_intent())
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "code=wait_interrupted" in rendered
+    assert "resource_id=pod-leak" in rendered
+    assert "COST LEAK" in rendered
+    assert "cleanup_code=unauthorized" in rendered
+    assert "cleanup_status=401" in rendered
+    assert "secret wait detail" not in rendered
+    assert "secret cleanup detail" not in rendered
+    assert len(runner.calls) == 2
 
 
 @pytest.mark.parametrize(
@@ -345,6 +604,18 @@ def test_nonzero_failure_surfaces_only_coded_status_without_raw_retention(stderr
         ),
         ("name", "foreign-run", "name"),
         ("ssh", {"error": "pod not ready"}, "SSH"),
+        (
+            "ssh",
+            {
+                "id": "foreign-pod",
+                "name": "d1-confirmatory-none-s101",
+                "ssh_command": "ssh root@203.0.113.10 -p 22022",
+                "ip": "203.0.113.10",
+                "port": 22022,
+                "ssh_key": {"exists": True, "in_account": True},
+            },
+            "SSH identity",
+        ),
         ("missing:machine", None, "fields"),
     ],
 )
@@ -356,5 +627,8 @@ def test_create_refuses_unusable_or_identity_drifted_pod(
         payload.pop(field.removeprefix("missing:"))
     else:
         payload[field] = value
-    with pytest.raises(D1OperatorTransportError, match=match):
-        _adapter(_Runner([_result(payload)])).create(_intent())
+    runner = _Runner([_result(payload), _result({"deleted": True, "id": "pod-123"})])
+    with pytest.raises(D1OperatorTransportError, match=match) as caught:
+        _adapter(runner).create(_intent())
+    assert "cleanup=deleted" in str(caught.value)
+    assert len(runner.calls) == 2
