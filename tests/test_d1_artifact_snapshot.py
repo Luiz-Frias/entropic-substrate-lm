@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from entropic_substrate.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
+    publish_d1_atomic_bytes,
     relative_d1_artifact_path,
     snapshot_d1_artifact,
 )
@@ -85,3 +87,52 @@ def test_relative_derivation_refuses_outside_root(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="escapes"):
         relative_d1_artifact_path(root, outside, label="checkpoint")
+
+
+def test_atomic_publication_writes_once_and_returns_exact_artifact_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "exports"
+    (root / "run").mkdir(parents=True)
+    payload = b'{"schema_version":"d1-output-v1"}'
+
+    artifact = publish_d1_atomic_bytes(
+        root,
+        "run/handoff.json",
+        payload,
+        label="handoff",
+    )
+
+    target = root / "run/handoff.json"
+    assert target.read_bytes() == payload
+    assert artifact.path == str(target)
+    assert artifact.content_hash.algorithm == "sha256"
+    assert artifact.content_hash.digest == hashlib.sha256(payload).hexdigest()
+    with pytest.raises(ValueError, match="occupied"):
+        publish_d1_atomic_bytes(root, "run/handoff.json", b"different", label="handoff")
+    assert target.read_bytes() == payload
+
+
+def test_partial_publication_is_removed_before_target_becomes_visible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "exports"
+    root.mkdir()
+    real_write = os.write
+    calls = 0
+
+    def short_then_stall(descriptor: int, data: object) -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return real_write(descriptor, memoryview(data)[:2])
+        return 0
+
+    monkeypatch.setattr(os, "write", short_then_stall)
+
+    with pytest.raises(ValueError, match="partial"):
+        publish_d1_atomic_bytes(root, "handoff.json", b"payload", label="handoff")
+
+    assert not (root / "handoff.json").exists()
+    assert list(root.iterdir()) == []
