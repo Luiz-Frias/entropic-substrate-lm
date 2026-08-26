@@ -71,7 +71,7 @@ class D1TrainerAdapterPhase(StrEnum):
     START_READBACK_ATTEMPTED = "start_readback_attempted"
     TRAINER_STARTED = "trainer_started"
     EXPORT_ATTEMPTED = "export_attempted"
-    EXPORT_ADMITTED_UNBOUND = "export_admitted_unbound"
+    EXPORT_VERIFIED = "export_verified"
 
 
 def d1_trainer_request_path(attempt_sha256: str) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 from entropic_substrate.d1_artifact_snapshot import normalize_d1_relative_artifact_path
 from entropic_substrate.d1_operator_evidence import (
@@ -13,6 +14,7 @@ from entropic_substrate.d1_operator_evidence import (
     attest_d1_staged_trainer_request,
     attest_d1_trainer_start,
     d1_runtime_observation_sha256,
+    verify_d1_trainer_export_for_request,
 )
 from entropic_substrate.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.d1_trainer_output_publication import load_d1_published_trainer_output
@@ -46,6 +48,8 @@ class _Session:
     runtime: D1RuntimeObservation | None = None
     request: D1TrainerRequest | None = None
     staged: D1StagedTrainerRequestReceipt | None = None
+    started: D1TrainerStartReceipt | None = None
+    start_authority: tuple[object, ...] | None = None
 
 
 def _pod(value: str) -> str:
@@ -58,6 +62,72 @@ def _pod(value: str) -> str:
 def _attempt(value: str) -> str:
     require_sha256(value, label="trainer attempt")
     return value
+
+
+def _started_authority(started: D1TrainerStartReceipt) -> tuple[object, ...]:
+    return (
+        started.pod_id,
+        started.attempt_sha256,
+        started.request_sha256,
+        started.runtime_sha256,
+        started.trainer_started_at,
+        started.process_id,
+        started.command_sha256,
+    )
+
+
+def _load_session_export(root: Path, session: _Session) -> D1ExportedTrainerHandoff:
+    runtime, request, staged, started, start_authority = (
+        session.runtime,
+        session.request,
+        session.staged,
+        session.started,
+        session.start_authority,
+    )
+    if (
+        runtime is None
+        or request is None
+        or staged is None
+        or started is None
+        or start_authority is None
+    ):
+        raise RuntimeError("D1 trainer session lost its staged request")
+    staged.require_factory_attested()
+    started.require_factory_attested()
+    if staged.request is not request:
+        raise ValueError("active trainer request differs from its staged request")
+    request_sha256 = d1_trainer_request_sha256(request)
+    if request_sha256 != staged.request_sha256:
+        raise ValueError("active trainer request digest differs from its staged request")
+    expected = (
+        session.pod_id,
+        session.attempt_sha256,
+        staged.request_sha256,
+        d1_runtime_observation_sha256(runtime),
+        request.start.trainer_started_at,
+        d1_trainer_command_sha256(request),
+    )
+    observed = _started_authority(started)
+    if observed != start_authority or observed[:5] + observed[6:] != expected:
+        raise ValueError("trainer start receipt differs from its staged request")
+    candidate = load_d1_published_trainer_output(
+        artifact_root=root,
+        publication_prefix=request.locations.checkpoint_path,
+    )
+    verify_d1_trainer_export_for_request(candidate, request=request, artifact_root=root)
+    staged.require_factory_attested()
+    started.require_factory_attested()
+    live_started = session.started
+    if (
+        staged.request is not request
+        or d1_trainer_request_sha256(request) != request_sha256
+        or live_started is None
+        or live_started is not started
+        or session.start_authority != start_authority
+        or _started_authority(live_started) != start_authority
+    ):
+        raise ValueError("trainer export authority changed during admission")
+    return candidate
 
 
 class D1TrainerEvidenceAdapter:
@@ -189,16 +259,18 @@ class D1TrainerEvidenceAdapter:
             process_id=report.process_id,
             command_sha256=report.command_sha256,
         )
+        session.started = receipt
+        session.start_authority = _started_authority(receipt)
         session.phase = D1TrainerAdapterPhase.TRAINER_STARTED
         return receipt
 
     def await_exported_handoff(self, pod_id: str) -> D1ExportedTrainerHandoff:
         session = self._session(pod_id, D1TrainerAdapterPhase.TRAINER_STARTED)
+        session.phase = D1TrainerAdapterPhase.EXPORT_ATTEMPTED
         if session.request is None:
             raise RuntimeError("D1 trainer session lost its request")
-        session.phase = D1TrainerAdapterPhase.EXPORT_ATTEMPTED
         prefix = session.request.locations.checkpoint_path
         root = self._transport.await_export(session.pod_id, session.attempt_sha256, prefix)
-        candidate = load_d1_published_trainer_output(artifact_root=root, publication_prefix=prefix)
-        session.phase = D1TrainerAdapterPhase.EXPORT_ADMITTED_UNBOUND
+        candidate = _load_session_export(root, session)
+        session.phase = D1TrainerAdapterPhase.EXPORT_VERIFIED
         return candidate
