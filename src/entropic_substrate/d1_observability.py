@@ -166,6 +166,10 @@ class ObservedD1Journal:
     def tail_quarantine(self) -> JournalTailQuarantineReceipt | None:
         return self._journal.tail_quarantine
 
+    @property
+    def latest_checkpoint_sha256(self) -> str | None:
+        return self._journal.latest_checkpoint_sha256
+
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         state = self._journal.append(event)
         self._observer.observe(event)

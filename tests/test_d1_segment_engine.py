@@ -104,15 +104,11 @@ def test_fresh_routes_the_full_training_segment_through_shared_owner(
     plan = micro_plan(D1Arm.SG)
     journal, checkpoint = output_paths(tmp_path, D1Arm.SG)
     real_run = segment_engine.run_d1_training_segment
-    starts: list[tuple[int, str | None]] = []
+    starts: list[int] = []
 
     def record_run(**kwargs: object):
-        starts.append(
-            (
-                kwargs["successful_step"],  # type: ignore[arg-type]
-                kwargs["latest_checkpoint_sha256"],  # type: ignore[arg-type]
-            )
-        )
+        assert "latest_checkpoint_sha256" not in kwargs
+        starts.append(kwargs["successful_step"])  # type: ignore[arg-type]
         return real_run(**kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(segment_engine, "run_d1_training_segment", record_run)
@@ -124,7 +120,7 @@ def test_fresh_routes_the_full_training_segment_through_shared_owner(
         clock=DeterministicTrainerClock(),
     )
 
-    assert starts == [(0, None)]
+    assert starts == [0]
 
 
 def test_resume_routes_the_full_training_segment_through_shared_owner(
@@ -133,15 +129,11 @@ def test_resume_routes_the_full_training_segment_through_shared_owner(
 ) -> None:
     case = captured_step_one_case(tmp_path, monkeypatch)
     real_run = segment_engine.run_d1_training_segment
-    starts: list[tuple[int, str | None]] = []
+    starts: list[int] = []
 
     def record_run(**kwargs: object):
-        starts.append(
-            (
-                kwargs["successful_step"],  # type: ignore[arg-type]
-                kwargs["latest_checkpoint_sha256"],  # type: ignore[arg-type]
-            )
-        )
+        assert "latest_checkpoint_sha256" not in kwargs
+        starts.append(kwargs["successful_step"])  # type: ignore[arg-type]
         return real_run(**kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(segment_engine, "run_d1_training_segment", record_run)
@@ -154,4 +146,4 @@ def test_resume_routes_the_full_training_segment_through_shared_owner(
         clock=DeterministicTrainerClock(),
     )
 
-    assert starts == [(1, case.checkpoint_sha256)]
+    assert starts == [1]

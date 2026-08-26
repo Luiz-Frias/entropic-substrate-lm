@@ -328,7 +328,6 @@ def run_d1_resume(
                 checkpoint_path=locations.checkpoint_path,
                 successful_step=step,
                 best_nats_per_byte=restored.best_nats_per_byte,
-                latest_checkpoint_sha256=latest_checkpoint_sha256,
             )
             step = training.successful_step
             model_step = training.successful_step

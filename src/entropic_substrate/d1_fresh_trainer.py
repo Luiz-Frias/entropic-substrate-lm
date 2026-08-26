@@ -69,6 +69,8 @@ class D1FreshRunLocations:
 class D1FreshJournal(Protocol):
     @property
     def state(self) -> JournalCheckpointState: ...
+    @property
+    def latest_checkpoint_sha256(self) -> str | None: ...
     def append(self, event: D1JournalEvent) -> JournalCheckpointState: ...
     def append_checkpoint(self, checkpoint_sha256: str) -> JournalCheckpointState: ...
     def __enter__(self) -> D1FreshJournal: ...
@@ -204,7 +206,6 @@ def run_d1_fresh(
                 checkpoint_path=locations.checkpoint_path,
                 successful_step=successful_step,
                 best_nats_per_byte=initial_eval.nats_per_byte,
-                latest_checkpoint_sha256=latest_checkpoint_sha256,
             )
             successful_step = training.successful_step
             model_successful_step = training.successful_step

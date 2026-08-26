@@ -853,6 +853,13 @@ class AuthoritativeRunJournal:
     def tail_quarantine(self) -> JournalTailQuarantineReceipt | None:
         return self._tail_quarantine
 
+    @property
+    def latest_checkpoint_sha256(self) -> str | None:
+        for event in reversed(self._history.events):
+            if event.event_kind is JournalEventKind.CHECKPOINT:
+                return cast(str, event.payload["checkpoint_sha256"])
+        return None
+
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         if self._closed:
             raise _error("closed_journal", "path", "journal is closed")

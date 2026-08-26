@@ -43,6 +43,8 @@ class D1SegmentJournal(Protocol):
 
     @property
     def state(self) -> JournalCheckpointState: ...
+    @property
+    def latest_checkpoint_sha256(self) -> str | None: ...
     def append(self, event: D1JournalEvent) -> JournalCheckpointState: ...
     def append_checkpoint(self, checkpoint_sha256: str) -> JournalCheckpointState: ...
 
@@ -243,7 +245,6 @@ def run_d1_training_segment(
     checkpoint_path: Path,
     successful_step: int,
     best_nats_per_byte: float,
-    latest_checkpoint_sha256: str | None,
 ) -> D1TrainingResult:
     """Run the shared train/eval/checkpoint loop after segment-specific admission."""
     if type(components) is not D1FreshComponents:
@@ -259,11 +260,7 @@ def run_d1_training_segment(
         raise ValueError("D1 training segment requires remaining optimization budget")
     if type(best_nats_per_byte) is not float or not math.isfinite(best_nats_per_byte):
         raise ValueError("D1 training segment best nats/byte must be finite")
-    if latest_checkpoint_sha256 is not None:
-        _require_sha256(latest_checkpoint_sha256, label="latest_checkpoint_sha256")
-
     step = successful_step
-    latest_checkpoint = latest_checkpoint_sha256
     final_evaluation: D1EvalResult | None = None
     final_work: ResourceWorkSnapshot | None = None
     final_checkpoint: D1CheckpointArtifactReceipt | None = None
@@ -343,7 +340,6 @@ def run_d1_training_segment(
                         successful_step=step,
                         best_nats_per_byte=best_nats_per_byte,
                     )
-                    latest_checkpoint = final_checkpoint.sha256
         if final_evaluation is None or final_work is None or final_checkpoint is None:
             raise RuntimeError("D1 terminal training boundary lacks evaluation/checkpoint")
         order_sha256, order_batches = _data_order(components)
@@ -360,5 +356,5 @@ def run_d1_training_segment(
             primary,
             model_successful_step=step,
             durable_successful_step=journal.state.successful_step,
-            latest_checkpoint_sha256=latest_checkpoint,
+            latest_checkpoint_sha256=journal.latest_checkpoint_sha256,
         ) from primary
