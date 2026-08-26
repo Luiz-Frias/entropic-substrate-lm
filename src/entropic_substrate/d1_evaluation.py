@@ -8,6 +8,10 @@ from typing import Final
 
 import torch
 
+from entropic_substrate.d1_evaluation_values import (
+    TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
+    D1ChannelMoments,
+)
 from entropic_substrate.d1_numerical_defect import d1_nonfinite_metric_error
 from entropic_substrate.data.batching import SequenceSampler
 from entropic_substrate.experiments.d1_execution import (
@@ -19,80 +23,17 @@ from entropic_substrate.predictive_state.runtime_components import D1PredictiveR
 
 __all__ = [
     "PAIRWISE_COSINE_SEMANTIC",
+    "TARGET_PREDICTED_EXACT_MATCH_SEMANTIC",
     "D1ChannelMoments",
     "D1EvalResult",
     "D1Evaluator",
 ]
 
 _COVERAGE_Z: Final = (0.6744897501960817, 1.2815515655446004, 1.959963984540054)
-_EXACT_MATCH_SEMANTIC: Final = "elementwise_fp32_equality_v1"
 
 
 def _close(left: float, right: float) -> bool:
     return math.isclose(left, right, rel_tol=1e-5, abs_tol=1e-6)
-
-
-@dataclass(frozen=True, slots=True)
-class D1ChannelMoments:
-    """Direct held-out moments for one latent channel, with no fitted estimator."""
-
-    mean: tuple[float, ...]
-    variance: tuple[float, ...]
-    covariance_eigenvalues: tuple[float, ...]
-    effective_rank: float
-    numerical_rank: int
-    rms_l2_norm: float
-
-    def __post_init__(self) -> None:
-        width = len(self.mean)
-        if width < 1 or len(self.variance) != width or len(self.covariance_eigenvalues) != width:
-            raise ValueError("D1 channel moment vectors must share one positive width")
-        vectors = (self.mean, self.variance, self.covariance_eigenvalues)
-        if any(type(vector) is not tuple for vector in vectors):
-            raise TypeError("D1 channel moment vectors must be immutable tuples")
-        if any(
-            type(value) is not float or not math.isfinite(value)
-            for vector in vectors
-            for value in vector
-        ):
-            raise ValueError("D1 channel moments must contain only finite floats")
-        if any(value < 0.0 for value in (*self.variance, *self.covariance_eigenvalues)):
-            raise ValueError("D1 channel variance and eigenvalues must be nonnegative")
-        if tuple(sorted(self.covariance_eigenvalues)) != self.covariance_eigenvalues:
-            raise ValueError("D1 channel covariance eigenvalues must be ascending")
-        if not _close(sum(self.variance), sum(self.covariance_eigenvalues)):
-            raise ValueError("D1 channel variance trace differs from its covariance spectrum")
-        mass = sum(self.covariance_eigenvalues)
-        expected_effective_rank = 0.0
-        if mass > 0.0:
-            probabilities = tuple(
-                value / mass for value in self.covariance_eigenvalues if value > 0
-            )
-            expected_effective_rank = math.exp(
-                -sum(value * math.log(value) for value in probabilities)
-            )
-        if (
-            type(self.effective_rank) is not float
-            or not math.isfinite(self.effective_rank)
-            or not 0.0 <= self.effective_rank <= float(width)
-        ):
-            raise ValueError("D1 channel effective rank is outside the channel width")
-        if not _close(self.effective_rank, expected_effective_rank):
-            raise ValueError("D1 channel effective rank differs from its covariance spectrum")
-        tolerance = max(self.covariance_eigenvalues, default=0.0) * width * 2**-23
-        expected_numerical_rank = sum(value > tolerance for value in self.covariance_eigenvalues)
-        if type(self.numerical_rank) is not int or self.numerical_rank != expected_numerical_rank:
-            raise ValueError("D1 channel numerical rank is outside the channel width")
-        if (
-            type(self.rms_l2_norm) is not float
-            or not math.isfinite(self.rms_l2_norm)
-            or self.rms_l2_norm < 0.0
-        ):
-            raise ValueError("D1 channel RMS L2 norm must be finite and nonnegative")
-
-    @property
-    def width(self) -> int:
-        return len(self.mean)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +219,7 @@ class D1EvalResult:
 
     @property
     def target_predicted_exact_match_semantic(self) -> str:
-        return _EXACT_MATCH_SEMANTIC
+        return TARGET_PREDICTED_EXACT_MATCH_SEMANTIC
 
     @property
     def telemetry_manifest(self) -> dict[str, object]:
@@ -300,14 +241,33 @@ class D1EvalResult:
             "online_positions": self.online_positions,
             "pairwise_cosine_semantic": PAIRWISE_COSINE_SEMANTIC,
             "perplexity": self.perplexity,
+            "predicted_covariance_eigenvalues": list(self.predicted_moments.covariance_eigenvalues),
+            "predicted_effective_rank": self.predicted_moments.effective_rank,
+            "predicted_mean": list(self.predicted_moments.mean),
+            "predicted_numerical_rank": self.predicted_moments.numerical_rank,
+            "predicted_rms_l2_norm": self.predicted_moments.rms_l2_norm,
+            "predicted_variance": list(self.predicted_moments.variance),
             "raw_covariance_penalty": self.raw_covariance_penalty,
             "raw_variance_penalty": self.raw_variance_penalty,
             "residual_elements": self.residual_elements,
             "residual_mean": self.residual_mean,
+            "residual_mean_l2_norm": self.residual_mean_l2_norm,
+            "residual_mean_vector": list(self.residual_mean_vector),
             "residual_rms": self.residual_rms,
             "residual_variance": self.residual_variance,
             "state_covariance_eigenvalues": list(self.state_covariance_eigenvalues),
+            "state_mean": list(self.state_mean),
+            "state_rms_l2_norm": self.state_rms_l2_norm,
             "state_variance": list(self.state_variance),
+            "target_covariance_eigenvalues": list(self.target_moments.covariance_eigenvalues),
+            "target_effective_rank": self.target_moments.effective_rank,
+            "target_mean": list(self.target_moments.mean),
+            "target_numerical_rank": self.target_moments.numerical_rank,
+            "target_predicted_exact_match_count": self.target_predicted_exact_match_count,
+            "target_predicted_exact_match_fraction": self.target_predicted_exact_match_fraction,
+            "target_predicted_exact_match_semantic": self.target_predicted_exact_match_semantic,
+            "target_rms_l2_norm": self.target_moments.rms_l2_norm,
+            "target_variance": list(self.target_moments.variance),
             "weighted_covariance_penalty": self.weighted_covariance_penalty,
             "weighted_variance_penalty": self.weighted_variance_penalty,
             "zero_baseline_improvement": self.zero_baseline_improvement,

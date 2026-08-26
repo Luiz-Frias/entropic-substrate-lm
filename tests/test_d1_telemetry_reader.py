@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import pytest
 
+import entropic_substrate.evidence.d1_telemetry_query as query_module
 from entropic_substrate.d1_training_step import D1GradientEvidenceKind, D1TrainStepResult
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind, canonical_event_line
 from entropic_substrate.evidence.d1_telemetry_query import (
@@ -62,6 +63,7 @@ def test_complete_run_returns_immutable_quality_resource_and_identity(tmp_path: 
     assert [item.step for item in run.evals] == [0, 1, 2]
     assert all(type(item) is D1EvalEvidence for item in run.evals)
     assert [item.resource_work.eval_index for item in run.evals] == [0, 1, 2]
+    assert [item.quality.target_rms_l2_norm for item in run.evals] == [0.6127805479941412] * 3
     assert run.final_checkpoint_sha256 == "f" * 64
     assert run.data_order_segments == ((0, "e" * 64, 2),)
     assert len(run.segments) == 1
@@ -97,6 +99,12 @@ def test_online_target_arm_admits_measured_target_gradients(tmp_path: Path) -> N
         (
             lambda plan: cast(dict[str, object], plan["evidence"]).update(
                 {"telemetry_schema_version": 1}
+            ),
+            "telemetry_schema_version",
+        ),
+        (
+            lambda plan: cast(dict[str, object], plan["evidence"]).update(
+                {"telemetry_schema_version": 2}
             ),
             "telemetry_schema_version",
         ),
@@ -171,6 +179,7 @@ def test_series_and_terminal_metric_share_the_whole_run_admission_gate(tmp_path:
     assert [row.quality.nats_per_byte for row in read_d1_eval_series(path)] == [0.8, 0.79, 0.78]
     assert final_d1_eval_metric(path, "nats_per_byte") == 0.78
     assert final_d1_eval_metric(path, "numerical_rank") == 2.0
+    assert final_d1_eval_metric(path, "target_rms_l2_norm") == 0.6127805479941412
     with pytest.raises(D1TelemetryGap, match="registered scalar quality metric"):
         final_d1_eval_metric(path, "state_variance")
 
@@ -245,6 +254,21 @@ def test_eval_payload_mutations_are_rejected(tmp_path: Path, mutation: str) -> N
 
     with pytest.raises(D1TelemetryGap):
         read_d1_run_evidence(_path(tmp_path, events))
+
+
+def test_reader_enforces_cross_eval_width_on_the_complete_series(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_parse = query_module.parse_eval_event
+    width_one = type("WidthOne", (), {"latent_width": 1})()
+
+    def drift(event: object, index: int) -> D1EvalEvidence:
+        evidence = real_parse(event, index)  # type: ignore[arg-type]
+        return replace(evidence, quality=cast(Any, width_one)) if index == 1 else evidence
+
+    monkeypatch.setattr(query_module, "parse_eval_event", drift)
+    with pytest.raises(D1TelemetryGap, match="latent width changed"):
+        read_d1_run_evidence(_path(tmp_path, valid_events()))
 
 
 def test_nonmonotonic_resource_and_data_order_are_refused(tmp_path: Path) -> None:

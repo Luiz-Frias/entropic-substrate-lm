@@ -36,11 +36,12 @@ def _condition(
     operator: str,
     source: str = "ARM_ENDPOINT_MEAN",
     contrast_id: str | None = None,
+    metric: str = "nats_per_byte",
 ) -> dict[str, object]:
     return {
         "contrast_id": contrast_id,
         "estimator": "last_k_mean" if source == "ARM_ENDPOINT_MEAN" else None,
-        "metric": "nats_per_byte" if source == "ARM_ENDPOINT_MEAN" else None,
+        "metric": metric if source == "ARM_ENDPOINT_MEAN" else None,
         "operator": operator,
         "smoothing_window": 5 if source == "ARM_ENDPOINT_MEAN" else None,
         "source": source,
@@ -80,25 +81,30 @@ def _contract_with_policy(
     *,
     diagnostic_policy: dict[str, object] | None = None,
     nonexcluded_seed_count: bool = False,
+    contrast_metric: str | None = None,
 ) -> D1DecisionContract:
     base = contract()
     constants = {"analysis_policy": policy, "primary": {"alpha": 0.025}, "seeds": list(SEEDS)}
     if diagnostic_policy is not None:
         constants["diagnostic_policy"] = diagnostic_policy
+    contrast_rules = dict(base.contrast_rules)
+    if nonexcluded_seed_count:
+        contrast_rules = {
+            name: replace(rule, n_rule="NONEXCLUDED_SEED_COUNT", registered_n=None)
+            for name, rule in contrast_rules.items()
+        }
+    if contrast_metric is not None:
+        contrast_rules = {
+            name: replace(rule, endpoint=replace(rule.endpoint, metric=contrast_metric))
+            for name, rule in contrast_rules.items()
+        }
     return D1DecisionContract(
         family_identity=base.family_identity,
         registered_constants=constants,
         arm_ids=base.arm_ids,
         contrast_ids=base.contrast_ids,
         clause_ids=base.clause_ids,
-        contrast_rules=(
-            {
-                name: replace(rule, n_rule="NONEXCLUDED_SEED_COUNT", registered_n=None)
-                for name, rule in base.contrast_rules.items()
-            }
-            if nonexcluded_seed_count
-            else base.contrast_rules
-        ),
+        contrast_rules=contrast_rules,
         clause_rules=base.clause_rules,
         exclusion_rules=base.exclusion_rules,
         clause_precedence=base.clause_precedence,
@@ -157,6 +163,15 @@ def test_empty_feasible_set_is_a_first_class_result_not_an_exception() -> None:
     )
 
 
+@pytest.mark.parametrize("metric", ["target_rms_l2_norm", "unregistered_metric"])
+def test_report_only_or_unknown_metrics_cannot_enter_deciding_clauses(metric: str) -> None:
+    policy = _policy()
+    conditions = policy["clauses"]["noncollapse"]["conditions_by_arm"]["sg"]  # type: ignore[index]
+    conditions[0]["metric"] = metric  # type: ignore[index]
+    with pytest.raises(D1ClausePolicyError, match="deciding scalar"):
+        parse_d1_clause_policy(_contract_with_policy(policy))
+
+
 def test_registered_contrast_interval_can_return_inconclusive() -> None:
     policy = _policy()
     clauses = policy["clauses"]
@@ -185,6 +200,9 @@ def test_registered_contrast_interval_can_return_inconclusive() -> None:
     assert clause.status is D1ConditionStatus.INCONCLUSIVE
     assert clause.conditions[0].observed_lower == pytest.approx(-0.195941650636283)
     assert clause.conditions[0].observed_upper == pytest.approx(5.195941650636283)
+    report_only = _contract_with_policy(policy, contrast_metric="target_rms_l2_norm")
+    with pytest.raises(D1ClausePolicyError, match="deciding scalar"):
+        parse_d1_clause_policy(report_only)
 
 
 def test_clause_cells_must_equal_the_factorial_survivor_grid() -> None:

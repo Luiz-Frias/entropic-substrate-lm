@@ -245,6 +245,8 @@ def _read_d1_run_evidence(
             evidence = parse_eval_event(event, len(evaluations))
             if evidence.step <= last_eval_step:
                 raise gap("eval_step", "eval.successful_step", "must be strictly increasing")
+            if evaluations and evidence.quality.latent_width != evaluations[0].quality.latent_width:
+                raise gap("vector_width", "eval.quality", "latent width changed across evaluations")
             segment = segments[current_segment]
             if evidence.resource_work.execution_segment_index != current_segment:
                 raise gap("resource_segment", "eval.resource_work", "differs from active segment")

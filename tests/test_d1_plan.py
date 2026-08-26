@@ -49,16 +49,16 @@ def _data() -> DataIdentity:
     )
 
 
-def test_new_evidence_envelopes_select_gradient_telemetry_schema_v2() -> None:
-    assert _evidence().telemetry_schema_version == D1_TELEMETRY_SCHEMA_VERSION == 2
-    with pytest.raises(ValueError, match="telemetry_schema_version must be 2"):
+def test_new_evidence_envelopes_select_direct_channel_telemetry_schema_v3() -> None:
+    assert _evidence().telemetry_schema_version == D1_TELEMETRY_SCHEMA_VERSION == 3
+    with pytest.raises(ValueError, match="telemetry_schema_version must be 3"):
         EvidenceEnvelope(
             schema_version="d1-evidence-v1",
             required_classes=frozenset({EvidenceClass.MEASURED}),
             telemetry_schema_version=1,
         )
-    with pytest.raises(ValueError, match="telemetry_schema_version must be 2"):
-        float_version = cast(int, 2.0)
+    with pytest.raises(ValueError, match="telemetry_schema_version must be 3"):
+        float_version = cast(int, 3.0)
         EvidenceEnvelope(
             schema_version="d1-evidence-v1",
             required_classes=frozenset({EvidenceClass.MEASURED}),

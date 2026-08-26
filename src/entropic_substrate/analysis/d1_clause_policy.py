@@ -14,6 +14,10 @@ from entropic_substrate.analysis.d1_factorial import (
     D1FactorialAnalysis,
 )
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_telemetry_values import (
+    D1_REPORT_ONLY_METRICS,
+    D1_SCALAR_METRICS,
+)
 from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
@@ -162,6 +166,8 @@ def _condition(
         metric, estimator, window = item["metric"], item["estimator"], item["smoothing_window"]
         if type(metric) is not str or not metric or estimator != "last_k_mean":
             _fail("endpoint", path, "requires metric and estimator='last_k_mean'")
+        if metric not in D1_SCALAR_METRICS or metric in D1_REPORT_ONLY_METRICS:
+            _fail("endpoint", path, "metric must be a registered deciding scalar")
         if type(window) is not int or window < 1 or item["contrast_id"] is not None:
             _fail("endpoint", path, "requires positive smoothing_window and null contrast_id")
         return D1RegisteredCondition(
@@ -180,6 +186,9 @@ def _condition(
         or any(item[field] is not None for field in ("metric", "estimator", "smoothing_window"))
     ):
         _fail("contrast_id", path, "must name one registered contrast and no endpoint fields")
+    contrast_metric = contract.contrast_rules[contrast_id].endpoint.metric
+    if contrast_metric not in D1_SCALAR_METRICS or contrast_metric in D1_REPORT_ONLY_METRICS:
+        _fail("contrast_id", path, "contrast endpoint must use a registered deciding scalar")
     return D1RegisteredCondition(source, operator, threshold, None, None, None, contrast_id)
 
 

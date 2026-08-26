@@ -28,6 +28,11 @@ def test_eval_and_train_payloads_return_typed_same_cursor_evidence() -> None:
     )
     assert evaluation.step == evaluation.resource_work.training_step == 0
     assert evaluation.quality.nats_per_byte == 0.8
+    assert evaluation.quality.state_mean == (0.1, -0.2)
+    assert evaluation.quality.target_mean == (0.02, 0.01)
+    assert evaluation.quality.predicted_mean == (0.01, -0.01)
+    assert evaluation.quality.residual_mean_vector == (0.01, 0.02)
+    assert evaluation.quality.target_predicted_exact_match_fraction == 0.0
     assert len(digest) == 64
     assert count == 1
     assert result.successful_step == 1
@@ -51,6 +56,27 @@ def test_measurement_parsers_refuse_partial_extra_and_wrong_cursor_payloads() ->
             replace_payload(events[3], train_payload),
             expected_target_update=TargetUpdateStrategy.STOP_GRADIENT_EMA,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("predicted_mean", [0.01], "width"),
+        ("residual_mean_vector", [0.02, 0.02], "derivation"),
+        ("residual_mean_l2_norm", 0.03, "derivation"),
+        ("target_predicted_exact_match_fraction", 0.25, "derivation"),
+        ("target_predicted_exact_match_semantic", "different", "derivation"),
+        ("target_variance", [float("nan"), 0.3], "finite"),
+    ],
+)
+def test_quality_parser_refuses_direct_channel_width_and_assertion_drift(
+    field: str, value: object, match: str
+) -> None:
+    quality = cast(dict[str, object], valid_events()[2].manifest["payload"])["quality"]
+    drifted = cast(dict[str, object], quality)
+    drifted[field] = value
+    with pytest.raises(D1TelemetryGap, match=match):
+        parse_quality(drifted)
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_evaluation import D1ChannelMoments, D1EvalResult
+from entropic_substrate.d1_evaluation import D1EvalResult
+from entropic_substrate.d1_evaluation_values import D1ChannelMoments
 
 __all__ = [
     "D1EvaluationCodecError",

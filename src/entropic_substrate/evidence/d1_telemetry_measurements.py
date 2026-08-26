@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import D1ChannelMoments
 from entropic_substrate.d1_training_step import (
     D1ComponentGradientEvidence,
     D1GradientEvidenceKind,
@@ -86,29 +87,87 @@ def parse_quality(value: object) -> D1QualityEvidence:
             raise gap("invalid_vector", f"eval.quality.{field}", "must be a float list")
         return tuple(cast(list[float], value))
 
+    def channel(prefix: str) -> D1ChannelMoments:
+        rank_prefix = "" if prefix == "state" else f"{prefix}_"
+        try:
+            return D1ChannelMoments(
+                mean=vector(f"{prefix}_mean"),
+                variance=vector(f"{prefix}_variance"),
+                covariance_eigenvalues=vector(f"{prefix}_covariance_eigenvalues"),
+                effective_rank=number(f"{rank_prefix}effective_rank"),
+                numerical_rank=integer(f"{rank_prefix}numerical_rank"),
+                rms_l2_norm=number(f"{prefix}_rms_l2_norm"),
+            )
+        except (TypeError, ValueError) as error:
+            raise gap("invalid_channel", f"eval.quality.{prefix}", str(error)) from error
+
     scalar_fields = D1_QUALITY_FIELDS - {
         "batch_count",
+        "effective_rank",
         "numerical_rank",
         "online_positions",
         "pairwise_cosine_semantic",
+        "predicted_covariance_eigenvalues",
+        "predicted_effective_rank",
+        "predicted_mean",
+        "predicted_numerical_rank",
+        "predicted_rms_l2_norm",
+        "predicted_variance",
         "residual_elements",
+        "residual_mean_l2_norm",
+        "residual_mean_vector",
         "state_covariance_eigenvalues",
+        "state_mean",
+        "state_rms_l2_norm",
         "state_variance",
+        "target_covariance_eigenvalues",
+        "target_effective_rank",
+        "target_mean",
+        "target_numerical_rank",
+        "target_predicted_exact_match_count",
+        "target_predicted_exact_match_fraction",
+        "target_predicted_exact_match_semantic",
+        "target_rms_l2_norm",
+        "target_variance",
     }
     values = {field: number(field) for field in scalar_fields}
-    semantic = item["pairwise_cosine_semantic"]
-    if type(semantic) is not str:
-        raise gap("invalid_metric", "eval.quality.pairwise_cosine_semantic", "must be a string")
-    return D1QualityEvidence(
+    pairwise_semantic = item["pairwise_cosine_semantic"]
+    exact_match_semantic = item["target_predicted_exact_match_semantic"]
+    if type(pairwise_semantic) is not str or type(exact_match_semantic) is not str:
+        raise gap("invalid_metric", "eval.quality.semantics", "must be strings")
+    result = D1QualityEvidence(
         **values,  # type: ignore[arg-type]
         batch_count=integer("batch_count"),
-        numerical_rank=integer("numerical_rank"),
         online_positions=integer("online_positions"),
         residual_elements=integer("residual_elements"),
-        pairwise_cosine_semantic=semantic,
-        state_covariance_eigenvalues=vector("state_covariance_eigenvalues"),
-        state_variance=vector("state_variance"),
+        pairwise_cosine_semantic=pairwise_semantic,
+        state_moments=channel("state"),
+        target_moments=channel("target"),
+        predicted_moments=channel("predicted"),
+        target_predicted_exact_match_count=integer("target_predicted_exact_match_count"),
     )
+    assertions = (
+        (vector("residual_mean_vector"), result.residual_mean_vector, "residual_mean_vector"),
+        (
+            number("residual_mean_l2_norm"),
+            result.residual_mean_l2_norm,
+            "residual_mean_l2_norm",
+        ),
+        (
+            number("target_predicted_exact_match_fraction"),
+            result.target_predicted_exact_match_fraction,
+            "target_predicted_exact_match_fraction",
+        ),
+        (
+            exact_match_semantic,
+            result.target_predicted_exact_match_semantic,
+            "target_predicted_exact_match_semantic",
+        ),
+    )
+    for actual, expected, field in assertions:
+        if actual != expected:
+            raise gap("metric_identity", f"eval.quality.{field}", "differs from derivation")
+    return result
 
 
 def parse_eval_event(event: D1JournalEvent, expected_index: int) -> D1EvalEvidence:

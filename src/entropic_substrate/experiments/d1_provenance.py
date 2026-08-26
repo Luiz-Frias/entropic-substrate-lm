@@ -24,7 +24,7 @@ __all__ = [
     "PreregistrationIdentity",
 ]
 
-D1_TELEMETRY_SCHEMA_VERSION: Final[int] = 2
+D1_TELEMETRY_SCHEMA_VERSION: Final[int] = 3
 
 
 @dataclass(frozen=True, slots=True)

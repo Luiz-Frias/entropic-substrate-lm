@@ -121,6 +121,8 @@ def test_installed_reader_set_is_the_discovered_code_owned_closure() -> None:
     assert tuple(item.identity for item in files) == D1_READER_SOURCE_MODULES
     assert set(D1_READER_ROOT_MODULES) <= set(D1_READER_SOURCE_MODULES)
     assert "entropic_substrate.telemetry" in D1_READER_SOURCE_MODULES
+    assert "entropic_substrate.d1_evaluation_values" in D1_READER_SOURCE_MODULES
+    assert "entropic_substrate.d1_evaluation" not in D1_READER_SOURCE_MODULES
     assert all(item.path.startswith("entropic_substrate/") for item in files)
 
 
