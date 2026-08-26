@@ -10,6 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
+from entropic_substrate.d1_artifact_snapshot import normalize_d1_relative_artifact_path
 from entropic_substrate.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.experiments.d1_primitives import require_sha256
 
@@ -18,6 +19,7 @@ __all__ = [
     "D1TrainerArtifactReadback",
     "D1TrainerProcessTransport",
     "D1TrainerStartReport",
+    "d1_trainer_request_path",
     "parse_d1_runtime_report",
     "parse_d1_start_report",
 ]
@@ -60,6 +62,7 @@ class D1TrainerStartReport:
 
 class D1TrainerAdapterPhase(StrEnum):
     BOOTSTRAP_ATTEMPTED = "bootstrap_attempted"
+    RUNTIME_READBACK_ATTEMPTED = "runtime_readback_attempted"
     RUNTIME_ATTESTED = "runtime_attested"
     STAGE_WRITE_ATTEMPTED = "stage_write_attempted"
     STAGE_READBACK_ATTEMPTED = "stage_readback_attempted"
@@ -68,14 +71,27 @@ class D1TrainerAdapterPhase(StrEnum):
     START_READBACK_ATTEMPTED = "start_readback_attempted"
     TRAINER_STARTED = "trainer_started"
     EXPORT_ATTEMPTED = "export_attempted"
-    EXPORT_VERIFIED = "export_verified"
+    EXPORT_ADMITTED_UNBOUND = "export_admitted_unbound"
+
+
+def d1_trainer_request_path(attempt_sha256: str) -> str:
+    """Derive the sole remote request target from the bootstrap attempt identity."""
+    require_sha256(attempt_sha256, label="D1 trainer request attempt")
+    return normalize_d1_relative_artifact_path(
+        f"requests/{attempt_sha256}.json",
+        label="D1 trainer request",
+    )
 
 
 class D1TrainerProcessTransport(Protocol):
     def bootstrap(self, pod_id: str, attempt_sha256: str) -> None: ...
     def read_runtime_report(self, pod_id: str, attempt_sha256: str) -> bytes: ...
-    def write_request(self, pod_id: str, attempt_sha256: str, payload: bytes) -> None: ...
-    def read_request(self, pod_id: str, attempt_sha256: str) -> D1TrainerArtifactReadback: ...
+    def write_request(
+        self, pod_id: str, attempt_sha256: str, path: str, payload: bytes
+    ) -> None: ...
+    def read_request(
+        self, pod_id: str, attempt_sha256: str, path: str
+    ) -> D1TrainerArtifactReadback: ...
     def start_trainer(self, pod_id: str, attempt_sha256: str, request_sha256: str) -> None: ...
     def read_start_report(self, pod_id: str, attempt_sha256: str, request_sha256: str) -> bytes: ...
     def await_export(self, pod_id: str, attempt_sha256: str, prefix: str) -> Path: ...
