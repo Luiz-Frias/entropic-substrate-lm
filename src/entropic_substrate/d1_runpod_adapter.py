@@ -18,7 +18,6 @@ from entropic_substrate.d1_operator_values import (
     D1A100FormFactor,
     D1OperatorLaunchIntent,
     D1PodPlacement,
-    D1RuntimeObservation,
 )
 from entropic_substrate.evidence.resource_billing import (
     BillingGap,
@@ -192,44 +191,6 @@ class RunpodctlD1Adapter:
             )
         except (TypeError, ValueError) as error:
             _error("create_pod", subject, f"invalid placement: {error}", error)
-
-    def runtime(self, pod_id: str) -> D1RuntimeObservation:
-        pod = _text(pod_id, label="pod_id")
-        operation = "inspect_runtime"
-        payload = self._run(
-            operation,
-            pod,
-            ("runpodctl", "get", "pod", pod, "--output", "json"),
-        )
-        keys = {
-            "compiler_enabled",
-            "compiler_version",
-            "cuda_version",
-            "driver_version",
-            "pod_id",
-            "pytorch_version",
-            "schema_version",
-            "trainer_started_at",
-        }
-        _exact(payload, keys, operation=operation, subject=pod)
-        if payload["schema_version"] != "d1-runpod-runtime-v1":
-            _error(operation, pod, "unsupported runtime response schema")
-        if payload["pod_id"] != pod:
-            _error(operation, pod, "runtime pod identity differs from the request")
-        try:
-            return D1RuntimeObservation(
-                pod_id=pod,
-                trainer_started_at=_timestamp(
-                    payload["trainer_started_at"], label="trainer_started_at"
-                ),
-                cuda_version=_text(payload["cuda_version"], label="cuda_version"),
-                driver_version=_text(payload["driver_version"], label="driver_version"),
-                pytorch_version=_text(payload["pytorch_version"], label="pytorch_version"),
-                compiler_enabled=cast(bool, payload["compiler_enabled"]),
-                compiler_version=_text(payload["compiler_version"], label="compiler_version"),
-            )
-        except (TypeError, ValueError) as error:
-            _error(operation, pod, f"invalid runtime observation: {error}", error)
 
     def cancel(self, pod_id: str) -> datetime:
         pod = _text(pod_id, label="pod_id")

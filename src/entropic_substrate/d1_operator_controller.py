@@ -237,7 +237,7 @@ class D1SequentialOperatorController:
         self.process_manager = manager
         placement = self._runpod.create(intent)
         self._active_pod_id = placement.pod_id
-        runtime = self._runpod.runtime(placement.pod_id)
+        runtime = self._trainer.observe_runtime(placement.pod_id)
         start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
         self._custody.persist_run_start(start)
         input_artifact = self._trainer.stage_inputs(
@@ -390,7 +390,7 @@ class D1SequentialOperatorController:
         del precreate
         placement = self._runpod.create(intent)
         self._active_pod_id = placement.pod_id
-        runtime = self._runpod.runtime(placement.pod_id)
+        runtime = self._trainer.observe_runtime(placement.pod_id)
         start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
         validate_execution_segments((*history.starts, start))
         self._custody.persist_run_start(start)

@@ -82,8 +82,6 @@ class D1RunPodPort(Protocol):
 
     def create(self, intent: D1OperatorLaunchIntent) -> D1PodPlacement: ...
 
-    def runtime(self, pod_id: str) -> D1RuntimeObservation: ...
-
     def cancel(self, pod_id: str) -> datetime: ...
 
     def terminate(
@@ -101,6 +99,8 @@ class D1RunPodPort(Protocol):
 
 class D1TrainerEvidencePort(Protocol):
     """Transport canonical inputs and return exported bytes, never loose metrics."""
+
+    def observe_runtime(self, pod_id: str) -> D1RuntimeObservation: ...
 
     def stage_inputs(self, pod_id: str, envelope: D1TrainerInputEnvelope) -> ArtifactIdentity: ...
 

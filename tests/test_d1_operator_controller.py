@@ -239,19 +239,6 @@ class _Provider:
             start.pod_created_at,
         )
 
-    def runtime(self, pod_id: str) -> D1RuntimeObservation:
-        self.events.append("runtime")
-        start = self.start
-        return D1RuntimeObservation(
-            pod_id,
-            start.trainer_started_at,
-            start.cuda_version,
-            start.driver_version,
-            start.pytorch_version,
-            start.compiler_enabled,
-            start.compiler_version,
-        )
-
     def terminate(self, pod_id: str, *, start: object, trainer_ended_at: datetime):
         from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
 
@@ -281,6 +268,21 @@ class _Provider:
 class _Trainer:
     candidate: D1ExportedTrainerHandoff
     events: list[str]
+    start: object
+
+    def observe_runtime(self, pod_id: str) -> D1RuntimeObservation:
+        self.events.append("runtime")
+        start = self.start
+        return D1RuntimeObservation(
+            pod_id,
+            start.trainer_started_at,
+            start.cuda_version,
+            start.driver_version,
+            start.pytorch_version,
+            start.compiler_enabled,
+            start.compiler_version,
+            10_000,
+        )
 
     def stage_inputs(self, pod_id: str, envelope: D1TrainerInputEnvelope) -> ArtifactIdentity:
         del pod_id
@@ -319,7 +321,11 @@ def _controller(
         process_manager=_manager(tmp_path),
         attempt_ledger=D1LaunchAttemptLedger(),
         runpod=provider,
-        trainer=_Trainer(D1ExportedTrainerHandoff(case.handoff, case.journal_path), events),
+        trainer=_Trainer(
+            D1ExportedTrainerHandoff(case.handoff, case.journal_path),
+            events,
+            case.start,
+        ),
         custody=_Custody(events, fail_finalized_cell=custody_failure),
         operator=ActorIdentity("operator", "operator-session", ActorRole.OPERATOR),
         automation=ActorIdentity("automation", "automation-session", ActorRole.AUTOMATION),

@@ -133,26 +133,6 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
     assert all("token" not in argument.lower() for argument in argv)
 
 
-def test_status_returns_measured_runtime_and_rejects_wrong_pod_identity() -> None:
-    payload = {
-        "compiler_enabled": False,
-        "compiler_version": "disabled",
-        "cuda_version": "12.6",
-        "driver_version": "560.35.03",
-        "pod_id": "pod-123",
-        "pytorch_version": "2.13.0",
-        "schema_version": "d1-runpod-runtime-v1",
-        "trainer_started_at": "2026-08-24T16:00:00Z",
-    }
-    adapter = RunpodctlD1Adapter(runner=_Runner([payload]))
-
-    runtime = adapter.runtime("pod-123")
-
-    assert runtime.trainer_started_at == _STARTED
-    with pytest.raises(D1OperatorTransportError, match="pod identity"):
-        RunpodctlD1Adapter(runner=_Runner([{**payload, "pod_id": "wrong"}])).runtime("pod-123")
-
-
 def test_terminate_and_provider_billing_are_typed_evidence() -> None:
     intent = _intent()
     start_provenance = start(intent.plan)

@@ -305,6 +305,7 @@ class D1RuntimeObservation:
     pytorch_version: str
     compiler_enabled: bool
     compiler_version: str
+    trainer_monotonic_origin_ns: int
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.pod_id, label="runtime pod_id")
@@ -320,6 +321,11 @@ class D1RuntimeObservation:
             raise TypeError("compiler_enabled must be bool")
         if not self.compiler_enabled and self.compiler_version != "disabled":
             raise ValueError("disabled compiler requires compiler_version='disabled'")
+        if (
+            type(self.trainer_monotonic_origin_ns) is not int
+            or self.trainer_monotonic_origin_ns < 0
+        ):
+            raise ValueError("trainer_monotonic_origin_ns must be nonnegative")
 
 
 def attest_d1_run_start(
@@ -328,7 +334,7 @@ def attest_d1_run_start(
     placement: D1PodPlacement,
     runtime: D1RuntimeObservation,
 ) -> RunStartProvenance:
-    """Join requested and measured facts only when the provider matched exactly."""
+    """Join requested placement and trainer facts only when they match exactly."""
     if type(intent) is not D1OperatorLaunchIntent:
         raise TypeError("run-start attestation requires D1OperatorLaunchIntent")
     if type(placement) is not D1PodPlacement or type(runtime) is not D1RuntimeObservation:

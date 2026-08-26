@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import IMAGE_DIGEST, plan, profiles, start
+from entropic_substrate.d1_operator_ports import D1RunPodPort, D1TrainerEvidencePort
 from entropic_substrate.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
@@ -202,11 +203,15 @@ def test_measured_placement_and_runtime_construct_exact_start_provenance(
         pytorch_version="2.13.0",
         compiler_enabled=False,
         compiler_version="disabled",
+        trainer_monotonic_origin_ns=123,
     )
 
     observed = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
 
     assert observed.manifest == expected.manifest
+    assert runtime.trainer_monotonic_origin_ns == 123
+    with pytest.raises(ValueError, match="monotonic"):
+        replace(runtime, trainer_monotonic_origin_ns=-1)
     with pytest.raises(ValueError, match="resource placement"):
         attest_d1_run_start(
             intent=intent,
@@ -219,3 +224,8 @@ def test_measured_placement_and_runtime_construct_exact_start_provenance(
             placement=placement,
             runtime=replace(runtime, pod_id="another-pod"),
         )
+
+
+def test_trainer_runtime_observation_belongs_to_the_trainer_port() -> None:
+    assert "runtime" not in D1RunPodPort.__dict__
+    assert "observe_runtime" in D1TrainerEvidencePort.__dict__
