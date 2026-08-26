@@ -22,6 +22,8 @@ __all__ = [
     "d1_trainer_request_path",
     "parse_d1_runtime_report",
     "parse_d1_start_report",
+    "serialize_d1_runtime_report",
+    "serialize_d1_start_report",
 ]
 
 _RUNTIME_SCHEMA = "d1-trainer-runtime-report-v1"
@@ -107,31 +109,49 @@ def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     value: dict[str, object] = {}
     for key, item in pairs:
         if key in value:
-            _fail(f"D1 trainer report repeats key {key!r}")
+            _fail("D1 trainer report repeats a key")
         value[key] = item
     return value
+
+
+def _reject_constant(value: str) -> object:
+    del value
+    _fail("D1 trainer report contains a nonfinite constant")
+
+
+def _canonical(value: dict[str, object]) -> bytes:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
 
 
 def _decode(payload: bytes, *, keys: frozenset[str], schema: str) -> dict[str, object]:
     if type(payload) is not bytes or not payload:
         _fail("D1 trainer report must be nonempty bytes")
+    value: object | None = None
+    decode_failed = False
     try:
         value = json.loads(
             payload,
             object_pairs_hook=_pairs,
-            parse_constant=lambda item: _fail(f"D1 trainer report contains {item}"),
+            parse_constant=_reject_constant,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        _fail("D1 trainer report must be UTF-8 JSON", error)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        decode_failed = True
     except ValueError:
         raise
+    if decode_failed:
+        _fail("D1 trainer report must be UTF-8 JSON")
     if type(value) is not dict or frozenset(value) != keys:
         _fail("D1 trainer report keys must be exact")
     root = cast(dict[str, object], value)
     if root["schema_version"] != schema:
         _fail(f"D1 trainer report schema must be {schema}")
-    canonical = json.dumps(root, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
-    if canonical != payload:
+    if _canonical(root) != payload:
         _fail("D1 trainer report must be canonical JSON")
     return root
 
@@ -148,6 +168,8 @@ def _sha(value: object, label: str) -> str:
         require_sha256(text, label=label)
     except ValueError as error:
         _fail(str(error), error)
+    if text.lower() != text:
+        _fail(f"{label} must use lowercase hexadecimal")
     return text
 
 
@@ -235,3 +257,77 @@ def parse_d1_start_report(
         process_id,
         observed_command,
     )
+
+
+def serialize_d1_runtime_report(
+    runtime: D1RuntimeObservation,
+    *,
+    attempt_sha256: str,
+) -> bytes:
+    """Serialize one measured runtime through the canonical parser contract."""
+    if type(runtime) is not D1RuntimeObservation:
+        raise TypeError("D1 runtime report serializer requires D1RuntimeObservation")
+    attempt = _sha(attempt_sha256, "runtime attempt")
+    payload = _canonical(
+        {
+            "attempt_sha256": attempt,
+            "compiler_enabled": runtime.compiler_enabled,
+            "compiler_version": runtime.compiler_version,
+            "cuda_version": runtime.cuda_version,
+            "driver_version": runtime.driver_version,
+            "pod_id": runtime.pod_id,
+            "pytorch_version": runtime.pytorch_version,
+            "schema_version": _RUNTIME_SCHEMA,
+            "trainer_monotonic_origin_ns": runtime.trainer_monotonic_origin_ns,
+            "trainer_started_at": runtime.trainer_started_at.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    if (
+        parse_d1_runtime_report(
+            payload,
+            pod_id=runtime.pod_id,
+            attempt_sha256=attempt,
+        )
+        != runtime
+    ):
+        raise ValueError("serialized D1 runtime report does not round-trip")
+    return payload
+
+
+def serialize_d1_start_report(report: D1TrainerStartReport) -> bytes:
+    """Serialize one raw start DTO only when parser admission reproduces it."""
+    if type(report) is not D1TrainerStartReport:
+        raise TypeError("D1 start report serializer requires D1TrainerStartReport")
+    pod = _text(report.pod_id, "serialized start pod_id")
+    attempt = _sha(report.attempt_sha256, "serialized start attempt")
+    request = _sha(report.request_sha256, "serialized start request")
+    runtime = _sha(report.runtime_sha256, "serialized start runtime")
+    started_at = _utc_datetime(report.trainer_started_at, "serialized start timestamp")
+    process_id = _text(report.process_id, "serialized start process_id")
+    command = _sha(report.command_sha256, "serialized start command")
+    payload = _canonical(
+        {
+            "attempt_sha256": attempt,
+            "command_sha256": command,
+            "pod_id": pod,
+            "process_id": process_id,
+            "request_sha256": request,
+            "runtime_sha256": runtime,
+            "schema_version": _START_SCHEMA,
+            "trainer_started_at": started_at.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    if (
+        parse_d1_start_report(
+            payload,
+            pod_id=pod,
+            attempt_sha256=attempt,
+            request_sha256=request,
+            runtime_sha256=runtime,
+            trainer_started_at=started_at,
+            command_sha256=command,
+        )
+        != report
+    ):
+        raise ValueError("serialized D1 start report does not round-trip")
+    return payload

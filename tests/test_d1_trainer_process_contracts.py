@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import traceback
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -15,6 +17,8 @@ from entropic_substrate.d1_trainer_process_contracts import (
     D1TrainerStartReport,
     parse_d1_runtime_report,
     parse_d1_start_report,
+    serialize_d1_runtime_report,
+    serialize_d1_start_report,
 )
 from entropic_substrate.d1_trainer_request_codec import (
     D1TrainerRequest,
@@ -131,6 +135,102 @@ def test_canonical_reports_admit_every_field_with_known_command_digest() -> None
     assert observed_start == D1TrainerStartReport(**expected)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         d1_trainer_command_sha256(object())  # type: ignore[arg-type]
+
+
+def test_report_serializers_are_the_canonical_parser_inverse() -> None:
+    plan = micro_plan(D1Arm.NONE)
+    start = run_start(plan)
+    runtime = runtime_value(start)
+    request = trainer_request(plan, start)
+    expected_start = start_report(request, start)
+    report = D1TrainerStartReport(
+        pod_id=POD,
+        attempt_sha256=ATTEMPT,
+        request_sha256=d1_trainer_request_sha256(request),
+        runtime_sha256=d1_runtime_observation_sha256(runtime),
+        trainer_started_at=start.trainer_started_at,
+        process_id="trainer-123",
+        command_sha256=d1_trainer_command_sha256(request),
+    )
+
+    runtime_payload = serialize_d1_runtime_report(runtime, attempt_sha256=ATTEMPT)
+    start_payload = serialize_d1_start_report(report)
+
+    assert runtime_payload == canonical_json(runtime_report(start))
+    assert start_payload == canonical_json(expected_start)
+    assert (
+        parse_d1_runtime_report(
+            runtime_payload,
+            pod_id=POD,
+            attempt_sha256=ATTEMPT,
+        )
+        == runtime
+    )
+    assert admit_start(start_payload, request, runtime, start.trainer_started_at) == report
+
+
+def test_report_serializers_reject_unadmitted_values() -> None:
+    plan = micro_plan(D1Arm.NONE)
+    start = run_start(plan)
+    request = trainer_request(plan, start)
+    report = D1TrainerStartReport(
+        POD,
+        ATTEMPT,
+        d1_trainer_request_sha256(request),
+        d1_runtime_observation_sha256(runtime_value(start)),
+        start.trainer_started_at,
+        "trainer-123",
+        d1_trainer_command_sha256(request),
+    )
+
+    with pytest.raises(TypeError):
+        serialize_d1_runtime_report(object(), attempt_sha256=ATTEMPT)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        serialize_d1_runtime_report(runtime_value(start), attempt_sha256="invalid")
+    with pytest.raises(ValueError):
+        serialize_d1_runtime_report(runtime_value(start), attempt_sha256=ATTEMPT.upper())
+    with pytest.raises(TypeError):
+        serialize_d1_start_report(object())  # type: ignore[arg-type]
+    subclass = type("DatetimeSubclass", (datetime,), {}).fromtimestamp(
+        start.trainer_started_at.timestamp(),
+        tz=UTC,
+    )
+    invalid_reports = (
+        replace(report, process_id=" "),
+        replace(report, pod_id=True),  # type: ignore[arg-type]
+        replace(report, attempt_sha256="invalid"),
+        replace(report, attempt_sha256=ATTEMPT.upper()),
+        replace(report, request_sha256=report.request_sha256.upper()),
+        replace(report, runtime_sha256=report.runtime_sha256.upper()),
+        replace(report, command_sha256=report.command_sha256.upper()),
+        replace(report, trainer_started_at="not-a-datetime"),  # type: ignore[arg-type]
+        replace(report, trainer_started_at=start.trainer_started_at.replace(tzinfo=None)),
+        replace(
+            report,
+            trainer_started_at=start.trainer_started_at.astimezone(timezone(timedelta(hours=1))),
+        ),
+        replace(report, trainer_started_at=subclass),
+    )
+    for invalid in invalid_reports:
+        with pytest.raises(ValueError):
+            serialize_d1_start_report(invalid)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"secret-sentinel":1,"secret-sentinel":2}',
+        b'{"secret-sentinel":',
+    ],
+)
+def test_report_parser_errors_never_retain_raw_payload(payload: bytes) -> None:
+    with pytest.raises(ValueError) as caught:
+        parse_d1_runtime_report(payload, pod_id=POD, attempt_sha256=ATTEMPT)
+
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert "secret-sentinel" not in rendered
 
 
 @pytest.mark.parametrize(
