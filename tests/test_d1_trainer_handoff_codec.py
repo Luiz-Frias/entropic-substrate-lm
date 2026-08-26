@@ -1,4 +1,4 @@
-"""Fresh completion and durable failure cross the trainer process boundary."""
+"""Fresh, resume, and durable failure cross the trainer process boundary."""
 
 from __future__ import annotations
 
@@ -10,10 +10,20 @@ from typing import cast
 import pytest
 
 from d1_billing_finalizer_fixtures import CompletedD1Case, completed_case
+from d1_resume_fixtures import (
+    RecordingObserver,
+    captured_step_one_case,
+    origin,
+    resume_start,
+)
+from d1_resume_hard_crash_fixture import hard_crash_tail_case
+from d1_trainer_fixtures import DeterministicTrainerClock
 from entropic_substrate.d1_dual_failure import (
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
+from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.d1_resume_trainer import run_d1_resume
 from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
 from entropic_substrate.d1_trainer_handoff_codec import (
     parse_d1_trainer_handoff,
@@ -191,3 +201,83 @@ def test_hydration_refuses_symlinked_root_and_checkpoint(
             serialize_d1_trainer_handoff(case.completion, artifact_root=tmp_path),
             artifact_root=root_link,
         )
+
+
+def test_resume_completion_without_tail_round_trips_under_a_new_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interrupted = captured_step_one_case(tmp_path, monkeypatch)
+    completion = run_d1_resume(
+        plan=interrupted.plan,
+        start=resume_start(interrupted.plan, interrupted.checkpoint_sha256),
+        origin=origin(),
+        locations=D1ResumeRunLocations(
+            interrupted.journal_path,
+            interrupted.checkpoint_path,
+        ),
+        observer=RecordingObserver(),
+        clock=DeterministicTrainerClock(),
+    )
+    payload = serialize_d1_trainer_handoff(completion, artifact_root=tmp_path)
+    rebound_root = tmp_path / "rebound-resume"
+    rebound_root.mkdir()
+    rebound_checkpoint = rebound_root / completion.final_checkpoint.path.name
+    rebound_checkpoint.write_bytes(completion.final_checkpoint.path.read_bytes())
+
+    observed = parse_d1_trainer_handoff(payload, artifact_root=rebound_root)
+
+    expected_receipt = replace(completion.final_checkpoint, path=rebound_checkpoint)
+    assert observed == replace(completion, final_checkpoint=expected_receipt)
+    mapping = json.loads(payload)
+    assert mapping["kind"] == "resume_completion"
+    assert mapping["resume"]["tail_quarantine"] is None
+    assert mapping["resume"]["resumed_from_sha256"] == interrupted.checkpoint_sha256
+
+
+def test_resume_quarantine_binds_artifact_prefix_and_tail_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interrupted = hard_crash_tail_case(tmp_path, monkeypatch)
+    quarantine_path = tmp_path / "crashed-tail.jsonl"
+    completion = run_d1_resume(
+        plan=interrupted.plan,
+        start=resume_start(interrupted.plan, interrupted.checkpoint_sha256),
+        origin=origin(),
+        locations=D1ResumeRunLocations(
+            interrupted.journal_path,
+            interrupted.checkpoint_path,
+            quarantine_path,
+        ),
+        observer=RecordingObserver(),
+        clock=DeterministicTrainerClock(),
+    )
+    payload = serialize_d1_trainer_handoff(completion, artifact_root=tmp_path)
+    rebound_root = tmp_path / "rebound-quarantine"
+    rebound_root.mkdir()
+    rebound_checkpoint = rebound_root / completion.final_checkpoint.path.name
+    rebound_checkpoint.write_bytes(completion.final_checkpoint.path.read_bytes())
+    rebound_quarantine = rebound_root / quarantine_path.name
+    rebound_quarantine.write_bytes(quarantine_path.read_bytes())
+
+    observed = parse_d1_trainer_handoff(payload, artifact_root=rebound_root)
+
+    assert completion.tail_quarantine is not None
+    expected = replace(
+        completion,
+        final_checkpoint=replace(completion.final_checkpoint, path=rebound_checkpoint),
+        tail_quarantine=replace(
+            completion.tail_quarantine,
+            quarantine_path=rebound_quarantine,
+        ),
+    )
+    assert observed == expected
+    tail = json.loads(payload)["resume"]["tail_quarantine"]
+    assert [event["event_kind"] for event in tail["tail_events"]] == ["train", "eval"]
+
+    mapping = trainer_handoff_to_mapping(completion, artifact_root=tmp_path)
+    original = quarantine_path.read_bytes()
+    quarantine_path.write_bytes(b"x" * len(original))
+    with pytest.raises(ValueError, match="quarantine"):
+        trainer_handoff_from_mapping(mapping, artifact_root=tmp_path)
