@@ -36,14 +36,16 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
 ) -> None:
     case = captured_step_one_case(tmp_path, monkeypatch)
     observer = RecordingObserver()
-    real_materialize = runtime_module._materialize  # pyright: ignore[reportPrivateUsage]
+    real_materialize = runtime_module.materialize_d1_model_runtime
+    observed: list[object] = []
 
     def materialize_after_resume(plan: object):
         assert observer.events[-1].event_kind is JournalEventKind.RUN_RESUME
         assert read_journal(case.journal_path)[-1] == observer.events[-1]
+        observed.append(plan)
         return real_materialize(plan)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(runtime_module, "_materialize", materialize_after_resume)
+    monkeypatch.setattr(runtime_module, "materialize_d1_model_runtime", materialize_after_resume)
     completion = run_d1_resume(
         plan=case.plan,
         start=resume_start(case.plan, case.checkpoint_sha256),
@@ -53,6 +55,7 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
         clock=DeterministicTrainerClock(),
     )
 
+    assert observed == [case.plan]
     resumed = torch.load(case.checkpoint_path, map_location="cpu", weights_only=True)
     assert case.uninterrupted_terminal is not None
     for field in ("model", "optimizer", "sampler", "rng"):
