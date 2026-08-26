@@ -48,7 +48,10 @@ from entropic_substrate.evidence.resource_ledger import (
     ResourceLedger,
 )
 from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
+from entropic_substrate.evidence.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
+)
 from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
@@ -67,6 +70,16 @@ __all__ = [
 ]
 
 
+def _require_lower_sha256(value: str, *, label: str) -> None:
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or value != value.lower()
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+
+
 @dataclass(frozen=True, slots=True)
 class D1ResumeRunCompletion:
     termination: D1TrainerTermination
@@ -79,6 +92,79 @@ class D1ResumeRunCompletion:
     segment_data_order_batches_attested: int
     tail_quarantine: JournalTailQuarantineReceipt | None
     operator_finalization_required: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.termination) is not D1TrainerTermination:
+            raise TypeError("D1 resume completion requires trainer termination")
+        if self.successful_step < 1:
+            raise ValueError("D1 resume completion successful_step must be positive")
+        if self.journal_state.successful_step != self.successful_step:
+            raise ValueError("D1 resume completion journal cursor differs")
+        ledger = self.termination.resource_ledger_state
+        if ledger.last_training_step != self.successful_step:
+            raise ValueError("D1 resume completion resource ledger cursor differs")
+        if type(self.final_checkpoint) is not D1CheckpointArtifactReceipt:
+            raise TypeError("D1 resume completion requires checkpoint receipt")
+        if type(self.final_evaluation) is not D1EvalResult:
+            raise TypeError("D1 resume completion requires final evaluation")
+        if type(self.final_resource_work) is not ResourceWorkSnapshot:
+            raise TypeError("D1 resume completion requires final resource work")
+        work = self.final_resource_work
+        if (
+            work.logical_run_id != self.termination.logical_run_id
+            or work.execution_segment_index != self.termination.execution_segment_index
+            or work.training_step != self.successful_step
+            or self.termination.trainer_ended_at < work.observed_at
+        ):
+            raise ValueError("D1 resume completion resource snapshot cursor differs")
+        for field in (
+            "committed_quality_source_bytes",
+            "committed_quality_model_tokens",
+            "online_train_token_positions",
+            "target_train_token_positions",
+            "baseline_calibration_positions",
+            "eval_positions",
+        ):
+            if getattr(work, field) != getattr(ledger, field):
+                raise ValueError(f"D1 resume completion resource evidence differs at {field}")
+        start = self.run_start_provenance
+        if type(start) is not RunStartProvenance:
+            raise TypeError("D1 resume completion requires run-start provenance")
+        if (
+            start.segment_start_mode is not SegmentStartMode.RESUME
+            or start.execution_segment_index < 1
+            or (
+                start.logical_run_id,
+                start.execution_segment_index,
+                start.execution_segment_id,
+            )
+            != (
+                self.termination.logical_run_id,
+                self.termination.execution_segment_index,
+                self.termination.execution_segment_id,
+            )
+            or self.termination.trainer_ended_at < start.trainer_started_at
+        ):
+            raise ValueError("D1 resume completion segment identity differs")
+        _require_lower_sha256(self.resumed_from_sha256, label="resumed_from_sha256")
+        if start.resume_checkpoint_sha256 != self.resumed_from_sha256:
+            raise ValueError("D1 resume completion checkpoint lineage differs")
+        _require_lower_sha256(
+            self.segment_data_order_sha256,
+            label="segment_data_order_sha256",
+        )
+        if (
+            type(self.segment_data_order_batches_attested) is not int
+            or self.segment_data_order_batches_attested < 1
+        ):
+            raise ValueError("D1 resume completion must attest a data-order batch")
+        if (
+            self.tail_quarantine is not None
+            and type(self.tail_quarantine) is not JournalTailQuarantineReceipt
+        ):
+            raise TypeError("D1 resume completion tail quarantine is invalid")
+        if self.operator_finalization_required is not True:
+            raise ValueError("D1 resumed trainer cannot finalize provider billing or RUN_END")
 
     @property
     def successful_step(self) -> int:

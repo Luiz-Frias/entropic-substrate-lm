@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import cast
@@ -83,6 +84,31 @@ def test_resume_matches_uninterrupted_and_journals_before_materialization(
         completion.final_resource_work
     )
     assert all(event.event_kind is not JournalEventKind.RUN_END for event in events)
+
+
+def test_resume_completion_refuses_lineage_and_finalization_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = captured_step_one_case(tmp_path, monkeypatch)
+    completion = run_d1_resume(
+        plan=case.plan,
+        start=resume_start(case.plan, case.checkpoint_sha256),
+        origin=origin(),
+        locations=D1ResumeRunLocations(case.journal_path, case.checkpoint_path),
+        observer=RecordingObserver(),
+        clock=DeterministicTrainerClock(),
+    )
+
+    for field, value in (
+        ("resumed_from_sha256", "0" * 64),
+        ("segment_data_order_sha256", "not-a-digest"),
+        ("segment_data_order_batches_attested", 0),
+        ("tail_quarantine", object()),
+        ("operator_finalization_required", False),
+    ):
+        with pytest.raises((TypeError, ValueError)):
+            replace(completion, **{field: value})
 
 
 def test_hard_crash_tail_is_quarantined_and_counted_as_work_not_quality(

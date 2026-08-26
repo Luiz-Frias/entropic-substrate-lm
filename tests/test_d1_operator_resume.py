@@ -141,11 +141,16 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         trainer_ended_at=start1.trainer_started_at + timedelta(seconds=2),
         resource_ledger_state=ledger_state,
     )
+    resume_work = replace(
+        fresh.final_resource_work,
+        execution_segment_index=1,
+        execution_segment_id=start1.execution_segment_id,
+    )
     resume = D1ResumeRunCompletion(
         termination,
         fresh.final_checkpoint,
         fresh.final_evaluation,
-        fresh.final_resource_work,
+        resume_work,
         fresh.final_checkpoint.sha256,
         start1,
         "a" * 64,
