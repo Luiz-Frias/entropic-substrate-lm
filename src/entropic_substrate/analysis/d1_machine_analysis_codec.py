@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from typing import NoReturn, cast
 
 from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.evidence.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 
 __all__ = [
     "D1MachineAnalysisCodecError",
@@ -16,7 +17,7 @@ __all__ = [
 ]
 
 _SCHEMA = "d1-aliased-machine-analysis-v2"
-_ALIASES = frozenset({"A", "B", "C", "D"})
+_ALIASES = frozenset(D1_OPAQUE_ARM_ALIAS_IDS)
 _EVIDENCE = "DERIVED_FROM_MEASURED"
 _STATUS = frozenset({"PASS", "FAIL", "INCONCLUSIVE"})
 _TOP = frozenset(

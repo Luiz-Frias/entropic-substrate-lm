@@ -30,6 +30,7 @@ from entropic_substrate.evidence.d1_review_adjudication import (
     validate_d1_review_outcome_prompt,
 )
 from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.evidence.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 from entropic_substrate.experiments.d1_primitives import (
     D1Arm,
     canonical_digest,
@@ -81,7 +82,7 @@ _NONBLINDABLE = (
         "reason": "failure/completion role is reviewable integrity evidence",
     },
 )
-_BLIND_ALIASES = ("A", "B", "C", "D")
+_BLIND_ALIASES = D1_OPAQUE_ARM_ALIAS_IDS
 _ROSTER_ALGORITHM = "sha256-registered-seed-alias-sort-v1"
 
 

@@ -44,10 +44,12 @@ from entropic_substrate.evidence.d1_types import (
     D1FamilyIdentity,
     D1VerdictValidationError,
     FiledGateAuthorization,
+    FiledGateValidNegative,
 )
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .d1_capture_fixtures import capture_family
+from .test_d1_aliased_analysis import _packet
 
 pytestmark = pytest.mark.unit
 
@@ -141,7 +143,11 @@ def _capture_contract(aggregate: D1HeterogeneousCaptureAggregate) -> D1DecisionC
 
 
 def _case(
-    tmp_path: Path, mutation: str | None = None, *, mixed: bool = False
+    tmp_path: Path,
+    mutation: str | None = None,
+    *,
+    mixed: bool = False,
+    verdict_name: str | None = None,
 ) -> tuple[
     D1DetachedFiling,
     D1HeterogeneousCaptureAggregate,
@@ -199,7 +205,7 @@ def _case(
             ),
         )
     integrity = recompute_capture_integrity(aggregate, contract)
-    machine = machine_verdict()
+    machine = machine_verdict() if verdict_name is None else machine_verdict(verdict=verdict_name)
     machine["registered_constants"] = {"seeds": seeds, "primary": {"alpha": 0.025}}
     machine["preregistration"] = {
         "commit": roster.preregistration_commit,
@@ -264,17 +270,62 @@ def _case(
     }
     prereg = b"registered design bytes\n"
     capture = _json(aggregate.manifest)
-    analysis = b'{"decision":"aliased"}'
     reader = b"def read_capture(): ...\n"
     isolation = b'{"session":"fresh","network":"disabled"}'
+    reveal_mapping = {"A": "none", "B": "sg", "C": "ac", "D": "both"}
+    if mutation == "analysis_alias_domain":
+        reveal_mapping = {"A": "none", "X": "sg", "C": "ac", "D": "both"}
+    elif mutation == "analysis_reveal":
+        reveal_mapping.update({"A": "sg", "B": "none"})
     reveal = _json(
         {
-            "mapping": {"A": "none", "B": "sg", "C": "ac", "D": "both"},
+            "mapping": reveal_mapping,
             "nonce": "sealed",
             "schema_version": "d1-alias-reveal-v1",
         }
     )
     commitment = _json({"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"})
+    future_threshold = 0.0 if machine["feasible_arms"] else 30.0
+    analysis_manifest = _packet(future_threshold=future_threshold).manifest
+    analysis_manifest["alias_commitment"] = _sha(commitment)
+    if not machine["feasible_arms"]:
+        for alias, arm_id in reveal_mapping.items():
+            if arm_id == "none":
+                continue
+            for clause_id, machine_clause in machine["clauses_by_arm"][arm_id].items():  # type: ignore[index]
+                clause = analysis_manifest["clauses_by_alias"][alias][clause_id]  # type: ignore[index]
+                clause["status"] = machine_clause["status"]
+                for condition in clause["conditions"]:
+                    condition["status"] = machine_clause["status"]
+    if mutation == "analysis_feasible":
+        analysis_manifest["feasible_aliases"].pop(0)  # type: ignore[union-attr]
+    elif mutation == "analysis_clause":
+        analysis_manifest["clauses_by_alias"]["B"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+    elif mutation == "analysis_machine_frontier":
+        analysis_manifest["feasible_aliases"] = ["D"]
+        for alias in ("B", "C"):
+            analysis_manifest["clauses_by_alias"][alias]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+    elif mutation in {
+        "analysis_clause_population",
+        "analysis_clause_derivation",
+        "analysis_machine_clause_status",
+    }:
+        if mutation == "analysis_clause_population":
+            analysis_manifest["clauses_by_alias"].pop("B")  # type: ignore[union-attr]
+        elif mutation == "analysis_clause_derivation":
+            analysis_manifest["clauses_by_alias"]["B"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+        else:
+            language = analysis_manifest["clauses_by_alias"]["B"]["language"]  # type: ignore[index]
+            language["status"] = "FAIL"
+            for condition in language["conditions"]:
+                condition["status"] = "FAIL"
+        analysis_manifest["feasible_aliases"].remove("B")  # type: ignore[union-attr]
+        machine["clauses_by_arm"]["sg"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+        machine["feasible_arms"] = ["ac", "both"]
+        machine["successor"]["eligible_arms"] = ["ac", "both"]  # type: ignore[index]
+    elif mutation == "analysis_precedence":
+        analysis_manifest["clause_precedence"].reverse()  # type: ignore[union-attr]
+    analysis = _json(analysis_manifest)
     payloads = {role: role.encode() for role in REQUIRED_D1_FILING_ARTIFACTS}
     payloads.update(
         {
@@ -398,6 +449,42 @@ def test_only_semantically_verified_graph_authorizes_pure_gate(tmp_path: Path) -
     assert filing.to_filed_evidence().eligible_arms == outcome.eligible_arms
     with pytest.raises(TypeError, match="semantic evidence graph"):
         decide_filed_verdict(detached)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["analysis_feasible", "analysis_clause", "analysis_machine_frontier", "analysis_reveal"],
+)
+def test_filing_graph_independently_binds_the_dealiased_feasible_frontier(
+    tmp_path: Path, mutation: str
+) -> None:
+    with pytest.raises(D1FilingGraphError, match="frontier"):
+        verify_d1_filing(*_case(tmp_path, mutation))
+
+
+def test_valid_negative_graph_retains_an_empty_non_authorized_frontier(tmp_path: Path) -> None:
+    filing = verify_d1_filing(*_case(tmp_path, verdict_name="VALID_NEGATIVE"))
+
+    assert filing.detached.verdict.feasible_arms == ()
+    assert filing.detached.verdict.successor.eligible_arms == ()
+    assert type(decide_filed_verdict(filing)) is FiledGateValidNegative
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("analysis_alias_domain", "bijection"),
+        ("analysis_clause_population", "clauses_by_alias"),
+        ("analysis_clause_derivation", "derive"),
+        ("analysis_machine_clause_status", "clauses_by_arm"),
+        ("analysis_precedence", "clause_precedence"),
+    ],
+)
+def test_filing_graph_requires_a_total_derived_registered_clause_frontier(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    with pytest.raises(D1FilingGraphError, match=message):
+        verify_d1_filing(*_case(tmp_path, mutation))
 
 
 def test_mixed_filing_binds_registered_exclusion_and_effective_sample_size(

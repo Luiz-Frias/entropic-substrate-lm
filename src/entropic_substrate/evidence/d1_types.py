@@ -16,6 +16,7 @@ from entropic_substrate.evidence.lifecycle import (
 D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v2"
 D1_ARM_IDS: Final[tuple[str, ...]] = ("none", "sg", "ac", "both")
 D1_STABILIZATION_ARM_IDS: Final[tuple[str, ...]] = ("sg", "ac", "both")
+D1_OPAQUE_ARM_ALIAS_IDS: Final[tuple[str, ...]] = ("A", "B", "C", "D")
 
 ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     {

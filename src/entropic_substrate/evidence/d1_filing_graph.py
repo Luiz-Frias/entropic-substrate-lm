@@ -453,7 +453,7 @@ def verify_d1_filing(
             "capture_manifest_digest": capture.manifest_digest,
             "edge_digest": edges.digest,
             "integrity_digest": integrity.evidence_digest,
-            "schema_version": "d1-verified-filing-graph-v1",
+            "schema_version": "d1-verified-filing-graph-v2",
         }
     )
     return ValidatedD1Filing(

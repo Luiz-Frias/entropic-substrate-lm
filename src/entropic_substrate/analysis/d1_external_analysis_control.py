@@ -32,6 +32,7 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,
 )
+from entropic_substrate.evidence.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.experiments.d1_registered_design import (
     D1PreregistrationArtifact,
@@ -72,7 +73,7 @@ _COMMITMENT_SCHEMA = "d1-alias-commitment-v1"
 _REVEAL_SCHEMA = "d1-alias-reveal-v1"
 _COMMITMENT_FIELDS = frozenset({"reveal_sha256", "schema_version"})
 _REVEAL_FIELDS = frozenset({"mapping", "nonce", "schema_version"})
-_ALIASES = frozenset({"A", "B", "C", "D"})
+_ALIASES = frozenset(D1_OPAQUE_ARM_ALIAS_IDS)
 _INPUT_TOKEN = object()
 _CAPTURE_RECEIPT_SCHEMA = "d1-heterogeneous-capture-receipt-v1"
 _CAPTURE_RECEIPT_FIELDS = frozenset(

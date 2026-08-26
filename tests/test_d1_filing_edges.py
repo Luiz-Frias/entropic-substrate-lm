@@ -26,6 +26,8 @@ from entropic_substrate.evidence.d1_review_adjudication import (
 )
 from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 
+from .test_d1_aliased_analysis import _packet
+
 pytestmark = pytest.mark.unit
 
 
@@ -78,7 +80,7 @@ def _case(mutation: str | None = None):
             "narrative": b"pending",
             "preregistration": b"registered design bytes\n",
             "raw_capture_manifest": b'{"capture":"bound"}',
-            "blinded_analysis": b'{"decision":"aliased"}',
+            "blinded_analysis": b"pending",
             "analysis_reader": b"def read_capture(): ...\n",
             "analysis_isolation_attestation": b'{"session":"fresh","network":"disabled"}',
             "review_packet": _json(
@@ -144,17 +146,6 @@ def _case(mutation: str | None = None):
     elif mutation == "mixed_review_schema":
         review_fields["major_finding_ids"] = []
     payloads["reviewer_execution_receipt"] = _json(review_fields)
-    analysis_fields = {
-        "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
-        "isolation_attestation_sha256": _sha(payloads["analysis_isolation_attestation"]),
-        "output_sha256": _sha(payloads["blinded_analysis"]),
-        "preregistration_sha256": _sha(payloads["preregistration"]),
-        "reader_sha256": _sha(payloads["analysis_reader"]),
-        "schema_version": "d1-analysis-receipt-v1",
-    }
-    if mutation == "analysis_binding":
-        analysis_fields["output_sha256"] = "0" * 64
-    payloads["analysis_receipt"] = _json(analysis_fields)
     if mutation == "alias_bijection":
         alias = json.loads(payloads["alias_reveal"])
         alias["mapping"]["D"] = "sg"
@@ -173,6 +164,20 @@ def _case(mutation: str | None = None):
         payloads["reviewer_execution_receipt"] = _json(receipt)
     elif mutation == "narrative":
         payloads["narrative"] = b"# unbound narrative\n"
+    analysis_manifest = _packet(future_threshold=0.0).manifest
+    analysis_manifest["alias_commitment"] = _sha(payloads["alias_commitment"])
+    payloads["blinded_analysis"] = _json(analysis_manifest)
+    analysis_fields = {
+        "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
+        "isolation_attestation_sha256": _sha(payloads["analysis_isolation_attestation"]),
+        "output_sha256": _sha(payloads["blinded_analysis"]),
+        "preregistration_sha256": _sha(payloads["preregistration"]),
+        "reader_sha256": _sha(payloads["analysis_reader"]),
+        "schema_version": "d1-analysis-receipt-v1",
+    }
+    if mutation == "analysis_binding":
+        analysis_fields["output_sha256"] = "0" * 64
+    payloads["analysis_receipt"] = _json(analysis_fields)
     adjudication = machine["review"]["adjudication"]  # type: ignore[index]
     receipt = json.loads(payloads["reviewer_execution_receipt"])
     adjudication.update(  # type: ignore[union-attr]
@@ -236,6 +241,7 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
     evidence = verify_filing_edges(*_case())
     assert evidence.review_model_id == "review-model"
     assert evidence.alias_mapping["A"] == "none"
+    assert evidence.feasible_arms == ("sg", "ac", "both")
     assert len(evidence.digest) == 64
 
 
