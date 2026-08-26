@@ -9,6 +9,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
+from entropic_substrate.d1_artifact_snapshot import (
+    normalize_d1_artifact_root,
+    normalize_d1_relative_artifact_path,
+    read_d1_artifact_bytes,
+)
 from entropic_substrate.d1_billing_finalization_values import D1TrainerHandoff
 from entropic_substrate.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
@@ -17,14 +22,24 @@ from entropic_substrate.d1_trainer_handoff import (
     D1TrainerFailureHandoff,
 )
 from entropic_substrate.d1_trainer_request_codec import (
+    D1FreshTrainerRequest,
+    D1ResumeTrainerRequest,
     D1TrainerRequest,
     d1_trainer_request_sha256,
 )
-from entropic_substrate.evidence.d1_journal import read_journal
+from entropic_substrate.evidence.d1_journal import read_journal_bytes
 from entropic_substrate.evidence.d1_journal_values import (
+    D1JournalEvent,
     JournalCheckpointState,
     JournalEventKind,
     canonical_event_line,
+)
+from entropic_substrate.evidence.d1_telemetry_query import (
+    _read_d1_run_evidence,  # pyright: ignore[reportPrivateUsage]
+)
+from entropic_substrate.evidence.d1_telemetry_values import (
+    D1RunStatus,
+    D1TailQuarantineKind,
 )
 from entropic_substrate.evidence.lifecycle import (
     ArtifactIdentity,
@@ -244,14 +259,17 @@ class D1TrainerExportReceipt:
         }
 
 
-def _journal_identity(candidate: D1ExportedTrainerHandoff) -> ArtifactIdentity:
+def _journal_identity(
+    candidate: D1ExportedTrainerHandoff,
+    *,
+    journal_payload: bytes,
+) -> tuple[ArtifactIdentity, tuple[D1JournalEvent, ...]]:
     path = candidate.journal_path
     try:
-        data = path.read_bytes()
-        events = read_journal(path)
+        events = read_journal_bytes(journal_payload, journal_path=path)
     except Exception as error:
         raise ValueError(f"exported journal is invalid: {error}") from error
-    digest = hashlib.sha256(data).hexdigest()
+    digest = hashlib.sha256(journal_payload).hexdigest()
     state = candidate.handoff.termination.journal_state
     last = events[-1]
     if (
@@ -296,11 +314,12 @@ def _journal_identity(candidate: D1ExportedTrainerHandoff) -> ArtifactIdentity:
             termination.resource_ledger_state.manifest
         ):
             raise ValueError("exported TRAINER_ABORTED resource_ledger_state differs from handoff")
-    return ArtifactIdentity(str(path), ContentHash("sha256", digest))
+    return ArtifactIdentity(str(path), ContentHash("sha256", digest)), events
 
 
 def _checkpoint_identity(
     candidate: D1ExportedTrainerHandoff,
+    events: tuple[D1JournalEvent, ...],
 ) -> ArtifactIdentity | EvidenceGap:
     handoff = candidate.handoff
     if isinstance(handoff, D1TrainerFailureHandoff):
@@ -318,7 +337,6 @@ def _checkpoint_identity(
         raise ValueError(f"exported checkpoint is invalid: {error}") from error
     if actual != receipt:
         raise ValueError("exported checkpoint bytes differ from trainer handoff receipt")
-    events = read_journal(candidate.journal_path)
     if events[-1].payload.get("checkpoint_sha256") != receipt.sha256:
         raise ValueError("exported checkpoint differs from authoritative journal")
     return ArtifactIdentity(
@@ -327,14 +345,18 @@ def _checkpoint_identity(
     )
 
 
-def verify_d1_trainer_export(
+def _verify_d1_trainer_export_snapshot(
     candidate: D1ExportedTrainerHandoff,
+    *,
+    journal_path: Path,
+    journal_payload: bytes,
 ) -> D1TrainerExportReceipt:
-    """Re-open exported bytes; never trust the transport handoff alone."""
     if type(candidate) is not D1ExportedTrainerHandoff:
         raise TypeError("trainer export verification requires a typed candidate")
-    journal = _journal_identity(candidate)
-    checkpoint = _checkpoint_identity(candidate)
+    if candidate.journal_path.absolute() != journal_path:
+        raise ValueError("trainer export snapshot path differs from its candidate")
+    journal, events = _journal_identity(candidate, journal_payload=journal_payload)
+    checkpoint = _checkpoint_identity(candidate, events)
     return D1TrainerExportReceipt(
         handoff=candidate.handoff,
         journal=journal,
@@ -342,3 +364,126 @@ def verify_d1_trainer_export(
         quality_export_ready=isinstance(checkpoint, ArtifactIdentity),
         _token=_RECEIPT_TOKEN,
     )
+
+
+def verify_d1_trainer_export(candidate: D1ExportedTrainerHandoff) -> D1TrainerExportReceipt:
+    """Re-open exported bytes; never trust the transport handoff alone."""
+    if type(candidate) is not D1ExportedTrainerHandoff:
+        raise TypeError("trainer export verification requires a typed candidate")
+    target = candidate.journal_path.absolute()
+    path, payload, _ = read_d1_artifact_bytes(
+        target.parent,
+        target.name,
+        label="exported trainer journal",
+    )
+    return _verify_d1_trainer_export_snapshot(
+        candidate,
+        journal_path=path,
+        journal_payload=payload,
+    )
+
+
+def verify_d1_trainer_export_for_request(
+    candidate: D1ExportedTrainerHandoff,
+    *,
+    request: D1TrainerRequest,
+    artifact_root: Path,
+) -> D1TrainerExportReceipt:
+    """Compare one verified export with a nominal trainer request."""
+    if type(request) not in (D1FreshTrainerRequest, D1ResumeTrainerRequest):
+        raise TypeError("trainer export binding requires a nominal trainer request")
+    root = normalize_d1_artifact_root(artifact_root)
+    journal_relative = normalize_d1_relative_artifact_path(
+        request.locations.journal_path,
+        label="requested trainer journal",
+    )
+    journal, journal_payload, _ = read_d1_artifact_bytes(
+        root,
+        journal_relative,
+        label="requested trainer journal",
+    )
+    receipt = _verify_d1_trainer_export_snapshot(
+        candidate,
+        journal_path=journal,
+        journal_payload=journal_payload,
+    )
+    if candidate.journal_path != journal or receipt.journal.path != str(journal):
+        raise ValueError("trainer export journal path differs from its request")
+    handoff, start = receipt.handoff, request.start
+    termination = handoff.termination
+    if (
+        termination.logical_run_id,
+        termination.execution_segment_index,
+        termination.execution_segment_id,
+    ) != (start.logical_run_id, start.execution_segment_index, start.execution_segment_id):
+        raise ValueError("trainer export segment identity differs from its request")
+    plan = request.plan
+    run = _read_d1_run_evidence(
+        journal,
+        expected_logical_run_id=plan.logical_run_id,
+        expected_family_digest=plan.profile.family.family_digest,
+        expected_run_class=plan.run.run_class,
+        expected_plan_digest=plan.plan_digest,
+        allow_incomplete=True,
+        journal_payload=journal_payload,
+    )
+    if (
+        (
+            run.identity.execution_digest,
+            run.identity.aggregation_digest,
+            run.identity.construction_digest,
+        )
+        != (
+            plan.run.execution_digest,
+            plan.run.aggregation_digest,
+            plan.run.construction_digest,
+        )
+        or len(run.segments) != start.execution_segment_index + 1
+        or run.segments[-1] != start
+    ):
+        raise ValueError("trainer export run evidence differs from its request")
+    events = read_journal_bytes(journal_payload, journal_path=journal)
+    if type(request) is D1FreshTrainerRequest:
+        if len(run.segments) != 1 or type(handoff) is D1ResumeRunCompletion:
+            raise ValueError("fresh trainer request returned a resume handoff")
+        provenance_event = events[0]
+    else:
+        if type(handoff) is D1FreshRunCompletion:
+            raise ValueError("resume trainer request returned a fresh handoff")
+        resume_events = tuple(
+            event for event in events if event.event_kind is JournalEventKind.RUN_RESUME
+        )
+        provenance_event = resume_events[-1]
+        tail_evidence = run.tail_quarantine_evidence[-1]
+        if tail_evidence.kind is D1TailQuarantineKind.QUARANTINED_TAIL:
+            quarantine = request.locations.quarantine_path
+            if (
+                quarantine is None
+                or journal.parent / cast(str, tail_evidence.artifact_file_name) != root / quarantine
+            ):
+                raise ValueError("trainer export quarantine differs from its request")
+            if type(handoff) is D1ResumeRunCompletion:
+                if handoff.tail_quarantine is None or (
+                    handoff.tail_quarantine.quarantine_path != root / quarantine
+                    or canonical_digest(handoff.tail_quarantine.manifest)
+                    != canonical_digest(tail_evidence.manifest)
+                ):
+                    raise ValueError("trainer export quarantine evidence differs from its request")
+        elif type(handoff) is D1ResumeRunCompletion and handoff.tail_quarantine is not None:
+            raise ValueError("trainer export handoff invents a quarantined resume tail")
+    if provenance_event.payload.get("trainer_wall_origin") != request.origin.manifest:
+        raise ValueError("trainer export provenance differs from its request")
+    if type(handoff) is D1ResumeRunCompletion and handoff.run_start_provenance != start:
+        raise ValueError("resumed trainer handoff start differs from its request")
+    if (type(handoff) is D1TrainerFailureHandoff) != (run.status is D1RunStatus.TRAINER_ABORTED):
+        raise ValueError("trainer export outcome differs from its journal status")
+    if type(handoff) is not D1TrainerFailureHandoff:
+        checkpoint = root / normalize_d1_relative_artifact_path(
+            request.locations.checkpoint_path,
+            label="requested trainer checkpoint",
+        )
+        if not isinstance(receipt.checkpoint, ArtifactIdentity) or (
+            receipt.checkpoint.path != str(checkpoint)
+        ):
+            raise ValueError("trainer export checkpoint path differs from its request")
+    return receipt

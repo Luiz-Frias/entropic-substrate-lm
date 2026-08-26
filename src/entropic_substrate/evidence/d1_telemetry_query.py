@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from entropic_substrate.d1_training_step import D1TrainStepResult
-from entropic_substrate.evidence.d1_journal import read_journal
+from entropic_substrate.evidence.d1_journal import read_journal, read_journal_bytes
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
@@ -168,7 +168,7 @@ def _status(events: tuple[D1JournalEvent, ...], *, allow_incomplete: bool) -> D1
     return status
 
 
-def read_d1_run_evidence(
+def _read_d1_run_evidence(
     path: str | Path,
     *,
     expected_logical_run_id: str | None = None,
@@ -176,13 +176,18 @@ def read_d1_run_evidence(
     expected_run_class: RunClass | None = None,
     expected_plan_digest: str | None = None,
     allow_incomplete: bool = False,
+    journal_payload: bytes | None = None,
 ) -> D1RunEvidence:
     """Admit one D1 journal; incomplete states require explicit opt-in."""
     from entropic_substrate.data.batching import DATA_ORDER_DIGEST_BATCHES
 
     target = Path(path)
     try:
-        events = read_journal(target)
+        events = (
+            read_journal(target)
+            if journal_payload is None
+            else read_journal_bytes(journal_payload, journal_path=target)
+        )
     except D1JournalError as error:
         raise gap(f"journal_{error.code}", error.path, str(error)) from error
     start_event = events[0]
@@ -319,6 +324,27 @@ def read_d1_run_evidence(
         checkpoint_receipts=tuple(checkpoints),
         tail_quarantine_evidence=tuple(tail_quarantine),
         terminal=terminal,
+    )
+
+
+def read_d1_run_evidence(
+    path: str | Path,
+    *,
+    expected_logical_run_id: str | None = None,
+    expected_family_digest: str | None = None,
+    expected_run_class: RunClass | None = None,
+    expected_plan_digest: str | None = None,
+    allow_incomplete: bool = False,
+) -> D1RunEvidence:
+    """Admit one D1 journal from bytes read by the authoritative reader."""
+    return _read_d1_run_evidence(
+        path,
+        expected_logical_run_id=expected_logical_run_id,
+        expected_family_digest=expected_family_digest,
+        expected_run_class=expected_run_class,
+        expected_plan_digest=expected_plan_digest,
+        allow_incomplete=allow_incomplete,
+        journal_payload=None,
     )
 
 

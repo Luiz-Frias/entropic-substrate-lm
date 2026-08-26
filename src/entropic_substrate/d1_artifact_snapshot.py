@@ -16,6 +16,7 @@ __all__ = [
     "normalize_d1_artifact_root",
     "normalize_d1_relative_artifact_path",
     "publish_d1_atomic_bytes",
+    "read_d1_artifact_bytes",
     "relative_d1_artifact_path",
     "snapshot_d1_artifact",
 ]
@@ -107,18 +108,16 @@ def _measure_file_descriptor(descriptor: int, *, label: str) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def snapshot_d1_artifact(
+def _open_artifact_descriptor(
     root: Path,
     relative_path: object,
     *,
     label: str,
-) -> tuple[Path, int, str]:
-    """Hash and size one regular file from the same no-follow descriptor."""
+) -> tuple[Path, int, int]:
     admitted_root = _absolute_path(root, label="D1 artifact root")
     relative = normalize_d1_relative_artifact_path(relative_path, label=label)
     parts = PurePosixPath(relative).parts
     directory_fd: int | None = None
-    file_fd: int | None = None
     try:
         directory_fd = _open_directory_path(admitted_root, label="D1 artifact root")
         for part in parts[:-1]:
@@ -126,15 +125,57 @@ def snapshot_d1_artifact(
             os.close(directory_fd)
             directory_fd = next_descriptor
         file_fd = os.open(parts[-1], _FILE_FLAGS, dir_fd=directory_fd)
-        size, digest = _measure_file_descriptor(file_fd, label=label)
-        return admitted_root.joinpath(*parts), size, digest
+        return admitted_root.joinpath(*parts), directory_fd, file_fd
     except OSError as error:
-        _fail(f"{label} artifact could not be opened beneath its root without a symlink", error)
-    finally:
-        if file_fd is not None:
-            os.close(file_fd)
         if directory_fd is not None:
             os.close(directory_fd)
+        _fail(f"{label} artifact could not be opened beneath its root without a symlink", error)
+
+
+def snapshot_d1_artifact(
+    root: Path,
+    relative_path: object,
+    *,
+    label: str,
+) -> tuple[Path, int, str]:
+    """Hash and size one regular file from the same no-follow descriptor."""
+    path, directory_fd, file_fd = _open_artifact_descriptor(
+        root,
+        relative_path,
+        label=label,
+    )
+    try:
+        size, digest = _measure_file_descriptor(file_fd, label=label)
+        return path, size, digest
+    finally:
+        os.close(file_fd)
+        os.close(directory_fd)
+
+
+def read_d1_artifact_bytes(
+    root: Path,
+    relative_path: object,
+    *,
+    label: str,
+) -> tuple[Path, bytes, str]:
+    """Read and hash one regular artifact through the same no-follow descriptor."""
+    path, directory_fd, file_fd = _open_artifact_descriptor(
+        root,
+        relative_path,
+        label=label,
+    )
+    try:
+        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+            _fail(f"{label} artifact must be a regular file")
+        chunks: list[bytes] = []
+        digest = hashlib.sha256()
+        while chunk := os.read(file_fd, _CHUNK_SIZE):
+            chunks.append(chunk)
+            digest.update(chunk)
+        return path, b"".join(chunks), digest.hexdigest()
+    finally:
+        os.close(file_fd)
+        os.close(directory_fd)
 
 
 def _write_all(descriptor: int, payload: bytes, *, label: str) -> None:

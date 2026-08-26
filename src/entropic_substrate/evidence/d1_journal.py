@@ -541,14 +541,25 @@ def _checkpoint_state(history: _History, prefix_sha256: str) -> JournalCheckpoin
     )
 
 
+def read_journal_bytes(
+    payload: bytes,
+    *,
+    journal_path: str | Path,
+) -> tuple[D1JournalEvent, ...]:
+    """Validate one already-snapshotted authoritative journal payload."""
+    if type(payload) is not bytes:
+        raise TypeError("journal payload must be bytes")
+    history, _ = _replay(payload, journal_path=Path(journal_path))
+    return history.events
+
+
 def read_journal(path: str | Path) -> tuple[D1JournalEvent, ...]:
     """Read and validate every canonical record in an authoritative prefix."""
     try:
         data = Path(path).read_bytes()
     except OSError as exc:
         raise _error("journal_io", "path", f"cannot read journal: {exc}") from exc
-    history, _ = _replay(data, journal_path=Path(path))
-    return history.events
+    return read_journal_bytes(data, journal_path=path)
 
 
 def _fsync_parent(path: Path) -> None:
