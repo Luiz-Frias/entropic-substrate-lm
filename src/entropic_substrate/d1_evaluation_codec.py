@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_evaluation import D1EvalResult
+from entropic_substrate.d1_evaluation import D1ChannelMoments, D1EvalResult
 
 __all__ = [
     "D1EvaluationCodecError",
@@ -15,7 +15,7 @@ __all__ = [
     "serialize_d1_evaluation",
 ]
 
-_SCHEMA = "d1-evaluation-wire-v1"
+_SCHEMA = "d1-evaluation-wire-v2"
 _FLOAT_FIELDS = (
     "language_loss",
     "nats_per_byte",
@@ -29,21 +29,32 @@ _FLOAT_FIELDS = (
     "residual_mean",
     "residual_rms",
     "residual_variance",
+    "residual_mean_l2_norm",
+    "target_predicted_exact_match_fraction",
     "coverage_50",
     "coverage_80",
     "coverage_95",
-    "effective_rank",
     "mean_pairwise_cosine_distance",
     "raw_variance_penalty",
     "weighted_variance_penalty",
     "raw_covariance_penalty",
     "weighted_covariance_penalty",
 )
-_INT_FIELDS = ("numerical_rank", "batch_count", "online_positions", "residual_elements")
-_VECTOR_FIELDS = ("state_variance", "state_covariance_eigenvalues")
+_INT_FIELDS = (
+    "batch_count",
+    "online_positions",
+    "residual_elements",
+    "target_predicted_exact_match_count",
+)
+_VECTOR_FIELDS = ("residual_mean_vector",)
+_CHANNEL_VECTOR_FIELDS = ("mean", "variance", "covariance_eigenvalues")
+_CHANNEL_FLOAT_FIELDS = ("effective_rank", "rms_l2_norm")
+_CHANNEL_INT_FIELDS = ("numerical_rank",)
+_CHANNEL_KEYS = frozenset({*_CHANNEL_VECTOR_FIELDS, *_CHANNEL_FLOAT_FIELDS, *_CHANNEL_INT_FIELDS})
 _KEYS = frozenset(
     {
         "schema_version",
+        "channels",
         "state_sample_covariance",
         *_FLOAT_FIELDS,
         *_INT_FIELDS,
@@ -95,6 +106,33 @@ def _matrix(value: object) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(cast(list[float], row)) for row in rows)
 
 
+def _channel_to_mapping(value: D1ChannelMoments) -> dict[str, object]:
+    return {
+        "covariance_eigenvalues": list(value.covariance_eigenvalues),
+        "effective_rank": value.effective_rank,
+        "mean": list(value.mean),
+        "numerical_rank": value.numerical_rank,
+        "rms_l2_norm": value.rms_l2_norm,
+        "variance": list(value.variance),
+    }
+
+
+def _channel_from_mapping(value: object, *, field: str) -> D1ChannelMoments:
+    root = _mapping(value)
+    if frozenset(root) != _CHANNEL_KEYS:
+        _fail(f"D1 evaluation {field} channel keys must be exact")
+    return D1ChannelMoments(
+        mean=_vector(root["mean"], field=f"{field}.mean"),
+        variance=_vector(root["variance"], field=f"{field}.variance"),
+        covariance_eigenvalues=_vector(
+            root["covariance_eigenvalues"], field=f"{field}.covariance_eigenvalues"
+        ),
+        effective_rank=_floating(root["effective_rank"], field=f"{field}.effective_rank"),
+        numerical_rank=_integer(root["numerical_rank"], field=f"{field}.numerical_rank"),
+        rms_l2_norm=_floating(root["rms_l2_norm"], field=f"{field}.rms_l2_norm"),
+    )
+
+
 def d1_evaluation_to_mapping(result: D1EvalResult) -> dict[str, object]:
     """Return the exact JSON-compatible process record, including dense covariance."""
     if type(result) is not D1EvalResult:
@@ -104,10 +142,14 @@ def d1_evaluation_to_mapping(result: D1EvalResult) -> dict[str, object]:
     }
     mapping.update(
         {
+            "channels": {
+                "predicted": _channel_to_mapping(result.predicted_moments),
+                "state": _channel_to_mapping(result.state_moments),
+                "target": _channel_to_mapping(result.target_moments),
+            },
+            "residual_mean_vector": list(result.residual_mean_vector),
             "schema_version": _SCHEMA,
-            "state_covariance_eigenvalues": list(result.state_covariance_eigenvalues),
             "state_sample_covariance": [list(row) for row in result.state_sample_covariance],
-            "state_variance": list(result.state_variance),
         }
     )
     return mapping
@@ -120,8 +162,11 @@ def d1_evaluation_from_mapping(value: object) -> D1EvalResult:
         _fail("D1 evaluation keys must be exact")
     if root["schema_version"] != _SCHEMA:
         _fail(f"D1 evaluation schema_version must be {_SCHEMA}")
+    channels = _mapping(root["channels"])
+    if frozenset(channels) != frozenset({"state", "target", "predicted"}):
+        _fail("D1 evaluation channel identities must be exact")
     try:
-        return D1EvalResult(
+        result = D1EvalResult(
             language_loss=_floating(root["language_loss"], field="language_loss"),
             nats_per_byte=_floating(root["nats_per_byte"], field="nats_per_byte"),
             bits_per_byte=_floating(root["bits_per_byte"], field="bits_per_byte"),
@@ -142,17 +187,17 @@ def d1_evaluation_from_mapping(value: object) -> D1EvalResult:
             residual_mean=_floating(root["residual_mean"], field="residual_mean"),
             residual_rms=_floating(root["residual_rms"], field="residual_rms"),
             residual_variance=_floating(root["residual_variance"], field="residual_variance"),
+            target_predicted_exact_match_count=_integer(
+                root["target_predicted_exact_match_count"],
+                field="target_predicted_exact_match_count",
+            ),
             coverage_50=_floating(root["coverage_50"], field="coverage_50"),
             coverage_80=_floating(root["coverage_80"], field="coverage_80"),
             coverage_95=_floating(root["coverage_95"], field="coverage_95"),
             state_sample_covariance=_matrix(root["state_sample_covariance"]),
-            state_variance=_vector(root["state_variance"], field="state_variance"),
-            state_covariance_eigenvalues=_vector(
-                root["state_covariance_eigenvalues"],
-                field="state_covariance_eigenvalues",
-            ),
-            effective_rank=_floating(root["effective_rank"], field="effective_rank"),
-            numerical_rank=_integer(root["numerical_rank"], field="numerical_rank"),
+            state_moments=_channel_from_mapping(channels["state"], field="state"),
+            target_moments=_channel_from_mapping(channels["target"], field="target"),
+            predicted_moments=_channel_from_mapping(channels["predicted"], field="predicted"),
             mean_pairwise_cosine_distance=_floating(
                 root["mean_pairwise_cosine_distance"],
                 field="mean_pairwise_cosine_distance",
@@ -173,6 +218,19 @@ def d1_evaluation_from_mapping(value: object) -> D1EvalResult:
             online_positions=_integer(root["online_positions"], field="online_positions"),
             residual_elements=_integer(root["residual_elements"], field="residual_elements"),
         )
+        wire_residual_vector = _vector(root["residual_mean_vector"], field="residual_mean_vector")
+        wire_residual_norm = _floating(root["residual_mean_l2_norm"], field="residual_mean_l2_norm")
+        wire_exact_fraction = _floating(
+            root["target_predicted_exact_match_fraction"],
+            field="target_predicted_exact_match_fraction",
+        )
+        if wire_residual_vector != result.residual_mean_vector:
+            _fail("D1 evaluation residual mean vector differs from channel means")
+        if wire_residual_norm != result.residual_mean_l2_norm:
+            _fail("D1 evaluation residual mean norm differs from channel means")
+        if wire_exact_fraction != result.target_predicted_exact_match_fraction:
+            _fail("D1 evaluation exact-match fraction differs from its count")
+        return result
     except D1EvaluationCodecError:
         raise
     except (TypeError, ValueError) as error:

@@ -60,6 +60,7 @@ def test_fresh_completion_round_trips_every_value_and_rebinds_checkpoint(
     assert mapping["termination"]["model_successful_step"] == 2
     assert mapping["termination"]["schema_version"] == "d1-trainer-termination-v2"
     assert mapping["final_checkpoint"]["path"] == "none.pt"
+    assert mapping["final_evaluation"]["schema_version"] == "d1-evaluation-wire-v2"
     assert mapping["final_evaluation"]["state_sample_covariance"]
     assert mapping["final_resource_work"]["event"] == "resource.work_snapshot"
     assert (

@@ -11,7 +11,7 @@ import torch
 
 import entropic_substrate.d1_evaluation as evaluation_module
 from d1_runtime_fixtures import fit_runtime_baseline, runtime_family
-from entropic_substrate.d1_evaluation import D1Evaluator
+from entropic_substrate.d1_evaluation import D1ChannelMoments, D1Evaluator
 from entropic_substrate.data.batching import SequenceSampler, TokenSplit
 from entropic_substrate.experiments.d1_execution import D1AmpPolicy
 from entropic_substrate.experiments.d1_family import build_d1_experiment_family
@@ -54,7 +54,9 @@ def _sampler() -> SequenceSampler:
     return SequenceSampler(split, batch_size=2, seq_len=4, train=False)
 
 
-def _materialize(system: D1PredictiveSystem, sampler: SequenceSampler) -> torch.Tensor:
+def _materialize(
+    system: D1PredictiveSystem, sampler: SequenceSampler, channel: str = "state"
+) -> torch.Tensor:
     sampler.reset_eval()
     states: list[torch.Tensor] = []
     was_training = system.training
@@ -63,10 +65,51 @@ def _materialize(system: D1PredictiveSystem, sampler: SequenceSampler) -> torch.
         with torch.no_grad(), torch.autocast(device_type="cpu", enabled=False):
             for _ in range(3):
                 result = system(sampler.predictive_batch(horizon=1))
-                states.append(result.online_states.values.float().reshape(-1, 8))
+                values = {
+                    "state": result.online_states.values,
+                    "target": result.target.values,
+                    "predicted": result.future_law_loss.mean,
+                }.get(channel)
+                if values is None:
+                    raise ValueError("unknown test channel")
+                states.append(values.detach().float().reshape(-1, 8))
     finally:
         system.train(was_training)
     return torch.cat(states)
+
+
+def _channel_oracle(values: torch.Tensor) -> D1ChannelMoments:
+    covariance = torch.cov(values.T, correction=1)
+    covariance = (covariance + covariance.T) * 0.5
+    eigenvalues = torch.linalg.eigvalsh(covariance).clamp_min(0.0)
+    mass = eigenvalues.sum()
+    effective_rank = 0.0
+    if float(mass.item()) > 0.0:
+        probabilities = eigenvalues / mass
+        positive = probabilities > 0.0
+        effective_rank = float(
+            (-(probabilities[positive] * probabilities[positive].log()).sum()).exp().item()
+        )
+    return D1ChannelMoments(
+        mean=tuple(float(value) for value in values.mean(dim=0).tolist()),
+        variance=tuple(float(value) for value in covariance.diagonal().tolist()),
+        covariance_eigenvalues=tuple(float(value) for value in eigenvalues.tolist()),
+        effective_rank=effective_rank,
+        numerical_rank=int(torch.linalg.matrix_rank(covariance).item()),
+        rms_l2_norm=float(values.square().sum(dim=1).mean().sqrt().item()),
+    )
+
+
+def _assert_channel_close(observed: D1ChannelMoments, expected: D1ChannelMoments) -> None:
+    for field in ("mean", "variance", "covariance_eigenvalues"):
+        torch.testing.assert_close(
+            torch.tensor(getattr(observed, field)),
+            torch.tensor(getattr(expected, field)),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+    assert observed.effective_rank == pytest.approx(expected.effective_rank, rel=1e-5)
+    assert observed.rms_l2_norm == pytest.approx(expected.rms_l2_norm, rel=1e-5)
 
 
 def _bf16_forward_states(system: D1PredictiveSystem, sampler: SequenceSampler) -> torch.Tensor:
@@ -172,6 +215,54 @@ def test_global_covariance_rank_and_pairwise_cosine_match_materialized_oracle() 
     assert result.mean_pairwise_cosine_distance == pytest.approx(float(pairwise_distance), abs=1e-6)
 
 
+def test_direct_state_target_and_prediction_channels_match_materialized_oracles() -> None:
+    system = _system()
+    sampler = _sampler()
+    result = D1Evaluator().evaluate(system=system, sampler=sampler)
+    state = _materialize(system, sampler)
+    target = _materialize(system, sampler, "target")
+    predicted = _materialize(system, sampler, "predicted")
+
+    _assert_channel_close(result.state_moments, _channel_oracle(state))
+    _assert_channel_close(result.target_moments, _channel_oracle(target))
+    _assert_channel_close(result.predicted_moments, _channel_oracle(predicted))
+    residual = target - predicted
+    expected_mean = residual.mean(dim=0)
+    assert result.residual_mean_vector == pytest.approx(tuple(expected_mean.tolist()))
+    assert result.residual_mean_l2_norm == pytest.approx(
+        float(torch.linalg.vector_norm(expected_mean).item())
+    )
+    assert result.target_predicted_exact_match_fraction == pytest.approx(
+        float((target == predicted).float().mean().item())
+    )
+    assert result.target_predicted_exact_match_semantic == "elementwise_fp32_equality_v1"
+    assert result.state_mean == result.state_moments.mean
+    assert result.state_rms_l2_norm == result.state_moments.rms_l2_norm
+
+
+def test_exact_target_copy_canary_reports_complete_match_and_zero_residual(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    system = _system()
+    real_forward = system.forward
+
+    def copied_target(batch: object):
+        output = real_forward(batch)  # type: ignore[arg-type]
+        copied_law = replace(
+            output.future_law_loss,
+            mean=output.target.values.detach().float(),
+        )
+        return replace(output, future_law_loss=copied_law)
+
+    monkeypatch.setattr(system, "forward", copied_target)
+    result = D1Evaluator().evaluate(system=system, sampler=_sampler())
+
+    assert result.target_predicted_exact_match_fraction == 1.0
+    assert result.residual_mean_vector == (0.0,) * 8
+    assert result.residual_mean_l2_norm == 0.0
+    assert result.residual_rms == 0.0
+
+
 @pytest.mark.parametrize(
     ("amp", "expected"),
     [(D1AmpPolicy.OFF, False), (D1AmpPolicy.BF16, True)],
@@ -197,9 +288,9 @@ def test_bf16_evaluation_autocast_is_forward_only(
     reduction_autocast: list[bool] = []
     weighted_autocast: list[bool] = []
     finish_autocast: list[bool] = []
-    real_add = evaluation_module._StateMoments.add  # pyright: ignore[reportPrivateUsage]
+    real_add = evaluation_module._ChannelAccumulator.add  # pyright: ignore[reportPrivateUsage]
     real_weighted = evaluation_module._add_weighted  # pyright: ignore[reportPrivateUsage]
-    real_finish = evaluation_module._StateMoments.finish  # pyright: ignore[reportPrivateUsage]
+    real_finish = evaluation_module._ChannelAccumulator.finish  # pyright: ignore[reportPrivateUsage]
 
     def record_add(moment: object, states: torch.Tensor) -> None:
         reduction_autocast.append(torch.is_autocast_enabled("cpu"))
@@ -216,9 +307,9 @@ def test_bf16_evaluation_autocast_is_forward_only(
     handle = system.register_forward_pre_hook(
         lambda _module, _args: forward_autocast.append(torch.is_autocast_enabled("cpu"))
     )
-    monkeypatch.setattr(evaluation_module._StateMoments, "add", record_add)
+    monkeypatch.setattr(evaluation_module._ChannelAccumulator, "add", record_add)
     monkeypatch.setattr(evaluation_module, "_add_weighted", record_weighted)
-    monkeypatch.setattr(evaluation_module._StateMoments, "finish", record_finish)
+    monkeypatch.setattr(evaluation_module._ChannelAccumulator, "finish", record_finish)
     try:
         with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
             D1Evaluator().evaluate(system=system, sampler=_sampler())
@@ -226,9 +317,9 @@ def test_bf16_evaluation_autocast_is_forward_only(
         handle.remove()
 
     assert forward_autocast == [True] * 3
-    assert reduction_autocast == [False] * 3
+    assert reduction_autocast == [False] * 9
     assert weighted_autocast == [False] * 3
-    assert finish_autocast == [False]
+    assert finish_autocast == [False] * 3
 
 
 def test_bf16_diagnostics_match_fp32_materialized_oracle() -> None:
@@ -258,6 +349,10 @@ def test_result_is_immutable_and_evaluation_fails_loud_on_invalid_evidence() -> 
     result = D1Evaluator().evaluate(system=system, sampler=_sampler())
     with pytest.raises(FrozenInstanceError):
         result.batch_count = 4  # type: ignore[misc]
+    with pytest.raises(TypeError, match="immutable tuples"):
+        replace(result.state_moments, mean=list(result.state_mean))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="immutable tuple rows"):
+        replace(result, state_sample_covariance=list(result.state_sample_covariance))  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="finite"):
         replace(result, future_nll=float("nan"))
 
