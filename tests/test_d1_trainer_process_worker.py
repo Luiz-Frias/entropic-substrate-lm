@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import os
+import traceback
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +23,10 @@ from entropic_substrate.d1_artifact_snapshot import (
 )
 from entropic_substrate.d1_operator_evidence import d1_runtime_observation_sha256
 from entropic_substrate.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.d1_system_runtime_probe import (
+    D1RuntimeProbeError,
+    SystemD1RuntimeProbe,
+)
 from entropic_substrate.d1_trainer_process_contracts import (
     d1_trainer_request_path,
     d1_trainer_runtime_report_path,
@@ -35,6 +45,7 @@ from entropic_substrate.d1_trainer_request_codec import (
     serialize_d1_trainer_request,
     verify_d1_trainer_request_runtime,
 )
+from entropic_substrate.d1_trainer_worker_command import run_d1_trainer_worker_command
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
@@ -287,3 +298,258 @@ def test_start_runs_real_resume_service_and_preserves_export_marker_semantics(
     assert Path(f"{prefix}.handoff.json").is_file()
     assert Path(f"{prefix}.complete.json").is_file()
     assert result["marker"]["path"] == str(Path(f"{prefix}.complete.json"))  # type: ignore[index]
+
+
+def _torch_runtime(*, cuda_available: bool, cuda_version: str | None) -> object:
+    return SimpleNamespace(
+        __version__="2.13.0+test",
+        cuda=SimpleNamespace(is_available=lambda: cuda_available),
+        version=SimpleNamespace(cuda=cuda_version),
+    )
+
+
+class _Nvml:
+    def __init__(self, driver: object = b"560.35.03") -> None:
+        self.driver = driver
+        self.calls: list[str] = []
+
+    def nvmlInit(self) -> None:
+        self.calls.append("init")
+
+    def nvmlSystemGetDriverVersion(self) -> object:
+        self.calls.append("driver")
+        return self.driver
+
+    def nvmlShutdown(self) -> None:
+        self.calls.append("shutdown")
+
+
+def test_system_runtime_probe_measures_cpu_boundary_without_loading_nvml() -> None:
+    measured_at = datetime(2026, 8, 26, 18, 0, tzinfo=UTC)
+    calls: list[str] = []
+
+    def unavailable_nvml() -> object:
+        raise AssertionError("CPU probe must not import NVML")
+
+    probe = SystemD1RuntimeProbe(
+        torch_runtime=_torch_runtime(cuda_available=False, cuda_version=None),
+        nvml_loader=unavailable_nvml,
+        utc_now=lambda: calls.append("utc") or measured_at,
+        monotonic_ns=lambda: calls.append("monotonic") or 123_456,
+    )
+
+    runtime = probe(_POD)
+
+    assert calls == ["utc", "monotonic"]
+    assert runtime.trainer_started_at == measured_at
+    assert runtime.trainer_monotonic_origin_ns == 123_456
+    assert runtime.pytorch_version == "2.13.0+test"
+    assert runtime.cuda_version == "not-available"
+    assert runtime.driver_version == "not-available"
+    assert runtime.compiler_enabled is False
+    assert runtime.compiler_version == "disabled"
+
+
+def test_system_runtime_probe_normalizes_torch_version_string_subclass() -> None:
+    version_type = type("TorchVersion", (str,), {})
+    torch_runtime = _torch_runtime(cuda_available=False, cuda_version=None)
+    torch_runtime.__version__ = version_type("2.13.0+cpu")  # type: ignore[attr-defined]
+    probe = SystemD1RuntimeProbe(
+        torch_runtime=torch_runtime,
+        utc_now=lambda: datetime(2026, 8, 26, 18, 0, tzinfo=UTC),
+        monotonic_ns=lambda: 1,
+    )
+
+    runtime = probe(_POD)
+
+    assert runtime.pytorch_version == "2.13.0+cpu"
+    assert type(runtime.pytorch_version) is str
+
+
+def test_system_runtime_probe_measures_cuda_and_nvml_driver_with_shutdown() -> None:
+    nvml = _Nvml()
+    probe = SystemD1RuntimeProbe(
+        torch_runtime=_torch_runtime(cuda_available=True, cuda_version="12.6"),
+        nvml_loader=lambda: nvml,
+        utc_now=lambda: datetime(2026, 8, 26, 18, 0, tzinfo=UTC),
+        monotonic_ns=lambda: 789,
+    )
+
+    runtime = probe(_POD)
+
+    assert runtime.cuda_version == "12.6"
+    assert runtime.driver_version == "560.35.03"
+    assert nvml.calls == ["init", "driver", "shutdown"]
+
+
+@pytest.mark.parametrize("missing", ["cuda_version", "nvml"])
+def test_system_runtime_probe_fails_loud_when_cuda_facts_are_unavailable(missing: str) -> None:
+    nvml = _Nvml()
+
+    def load_nvml() -> object:
+        if missing == "nvml":
+            raise ModuleNotFoundError("secret-nvml-import-detail")
+        return nvml
+
+    probe = SystemD1RuntimeProbe(
+        torch_runtime=_torch_runtime(
+            cuda_available=True,
+            cuda_version=None if missing == "cuda_version" else "12.6",
+        ),
+        nvml_loader=load_nvml,
+        utc_now=lambda: datetime(2026, 8, 26, 18, 0, tzinfo=UTC),
+        monotonic_ns=lambda: 789,
+    )
+
+    with pytest.raises(D1RuntimeProbeError, match="runtime probe refused") as caught:
+        probe(_POD)
+    assert caught.value.code == f"{missing}_unavailable"
+    assert caught.value.__cause__ is None
+    assert "secret-nvml-import-detail" not in str(caught.value)
+    assert "secret-nvml-import-detail" not in "".join(traceback.format_exception(caught.value))
+
+
+def _canonical_output(stream: io.StringIO) -> dict[str, object]:
+    raw = stream.getvalue()
+    assert raw.endswith("\n") and raw.count("\n") == 1
+    value = json.loads(raw)
+    assert raw == json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True) + "\n"
+    return value
+
+
+def _run_command(
+    argv: tuple[str, ...],
+    *,
+    request: D1TrainerRequest,
+    stdout: io.StringIO,
+    stderr: io.StringIO,
+) -> int:
+    return run_d1_trainer_worker_command(
+        argv,
+        catalog=(request.plan.profile,),
+        runtime_probe=lambda _pod_id: _runtime(request),
+        clock=DeterministicTrainerClock(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def test_internal_worker_command_bootstrap_and_foreground_start_real_tiny_trainer(
+    tmp_path: Path,
+) -> None:
+    request = _fresh_request(tmp_path)
+    request_sha = d1_trainer_request_sha256(request)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    common = (
+        "--artifact-root",
+        str(tmp_path),
+        "--pod-id",
+        _POD,
+        "--attempt-sha256",
+        _ATTEMPT,
+    )
+
+    assert _run_command(("bootstrap", *common), request=request, stdout=stdout, stderr=stderr) == 0
+    bootstrap = _canonical_output(stdout)
+    assert bootstrap["status"] == "success"
+    assert stderr.getvalue() == ""
+    _stage(tmp_path, request)
+    stdout = io.StringIO()
+
+    assert (
+        _run_command(
+            ("start", *common, "--request-sha256", request_sha),
+            request=request,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        == 0
+    )
+    started = _canonical_output(stdout)
+    assert started["status"] == "success"
+    assert (tmp_path / request.locations.journal_path).is_file()
+    assert (tmp_path / request.locations.checkpoint_path).is_file()
+    assert Path(f"{tmp_path / request.locations.checkpoint_path}.handoff.json").is_file()
+    assert Path(f"{tmp_path / request.locations.checkpoint_path}.complete.json").is_file()
+    _, payload, _ = read_d1_artifact_bytes(
+        tmp_path,
+        d1_trainer_start_report_path(_ATTEMPT, request_sha),
+        label="start report",
+    )
+    assert parse_d1_start_report(
+        payload,
+        pod_id=_POD,
+        attempt_sha256=_ATTEMPT,
+        request_sha256=request_sha,
+        runtime_sha256=d1_runtime_observation_sha256(_runtime(request)),
+        trainer_started_at=request.start.trainer_started_at,
+        command_sha256=d1_trainer_command_sha256(request),
+    ).process_id == str(os.getpid())
+
+
+def test_internal_worker_command_emits_typed_canonical_error_without_raw_request(
+    tmp_path: Path,
+) -> None:
+    request = _fresh_request(tmp_path)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    common = (
+        "--artifact-root",
+        str(tmp_path),
+        "--pod-id",
+        _POD,
+        "--attempt-sha256",
+        _ATTEMPT,
+    )
+    assert _run_command(("bootstrap", *common), request=request, stdout=stdout, stderr=stderr) == 0
+    relative = d1_trainer_request_path(_ATTEMPT)
+    (tmp_path / Path(relative).parent).mkdir(parents=True)
+    raw = b"secret-request-sentinel"
+    publish_d1_atomic_bytes(tmp_path, relative, raw, label="malformed request")
+    stdout, stderr = io.StringIO(), io.StringIO()
+
+    exit_code = _run_command(
+        ("start", *common, "--request-sha256", hashlib.sha256(raw).hexdigest()),
+        request=request,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 21
+    error = _canonical_output(stderr)
+    assert error["status"] == "error"
+    assert error["error"]["code"] == "worker_refused"  # type: ignore[index]
+    assert stdout.getvalue() == ""
+    assert "secret-request-sentinel" not in stderr.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_exit", "expected_code"),
+    [
+        ("argv", 21, "worker_refused"),
+        ("runtime", 20, "runtime-sentinel"),
+        ("defect", 70, "unexpected_defect"),
+    ],
+)
+def test_internal_worker_command_preserves_failure_classes(
+    tmp_path: Path, kind: str, expected_exit: int, expected_code: str
+) -> None:
+    stdout, stderr = io.StringIO(), io.StringIO()
+    common = ("--artifact-root", str(tmp_path), "--pod-id", _POD, "--attempt-sha256", _ATTEMPT)
+    argv = ("unknown",) if kind == "argv" else ("bootstrap", *common)
+    error: Exception = (
+        D1RuntimeProbeError("runtime-sentinel") if kind == "runtime" else ValueError("deep defect")
+    )
+
+    def probe(_pod_id: str) -> D1RuntimeObservation:
+        raise error
+
+    exit_code = run_d1_trainer_worker_command(
+        argv,
+        catalog=(micro_plan(D1Arm.NONE).profile,),
+        runtime_probe=probe,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    assert exit_code == expected_exit
+    assert _canonical_output(stderr)["error"]["code"] == expected_code  # type: ignore[index]
+    assert stdout.getvalue() == ""

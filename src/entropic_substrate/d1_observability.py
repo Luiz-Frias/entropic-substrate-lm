@@ -20,11 +20,19 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.tracking_contracts import MetricExtractor
 
 __all__ = [
+    "AuthoritativeJournalOnlyObserver",
     "D1JournalObserver",
     "D1MlflowMetricClient",
     "D1MlflowObserver",
     "ObservedD1Journal",
 ]
+
+
+class AuthoritativeJournalOnlyObserver:
+    """Explicit null projection; the durable journal remains authoritative."""
+
+    def observe(self, event: D1JournalEvent) -> None:
+        del event
 
 
 @runtime_checkable

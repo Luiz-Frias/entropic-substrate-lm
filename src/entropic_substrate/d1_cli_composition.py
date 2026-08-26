@@ -8,21 +8,14 @@ from entropic_substrate.d1_cli import (
     D1CliCommandService,
     D1CliServiceUnavailable,
 )
+from entropic_substrate.d1_observability import AuthoritativeJournalOnlyObserver
 from entropic_substrate.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
 )
-from entropic_substrate.evidence.d1_journal_values import D1JournalEvent
 from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
 
 __all__ = ["build_default_d1_cli_application"]
-
-
-class _AuthoritativeJournalOnlyObserver:
-    """Explicit null projection; the durable journal remains authoritative."""
-
-    def observe(self, event: D1JournalEvent) -> None:
-        del event
 
 
 def build_default_d1_cli_application() -> D1CliApplication:
@@ -38,6 +31,6 @@ def build_default_d1_cli_application() -> D1CliApplication:
     services[D1CliCommand.RUN_FRESH] = D1FreshTrainerCliService(catalog=catalog)
     services[D1CliCommand.RUN_RESUME] = D1ResumeTrainerCliService(
         catalog=catalog,
-        observer=_AuthoritativeJournalOnlyObserver(),
+        observer=AuthoritativeJournalOnlyObserver(),
     )
     return D1CliApplication(services)
