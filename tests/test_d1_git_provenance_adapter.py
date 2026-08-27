@@ -62,8 +62,17 @@ def test_adapter_reads_commit_time_raw_blob_hash_and_ancestry(tmp_path: Path) ->
 
     assert adapter.commit_time(_PREREG) == datetime(2026, 8, 24, 12, 30, 45, tzinfo=UTC)
     assert adapter.blob_sha256(_PREREG, _PATH) == hashlib.sha256(blob).hexdigest()
+    assert adapter.read_file(_PREREG, _PATH) == blob
     assert adapter.is_ancestor(_PREREG, _CODE) is True
-    assert runner.calls == list(responses)
+    assert runner.calls == [
+        ("git", "cat-file", "-e", f"{_PREREG}^{{commit}}"),
+        ("git", "show", "-s", "--format=%cI", "--no-patch", _PREREG, "--"),
+        ("git", "cat-file", "-e", f"{_PREREG}:{_PATH}"),
+        ("git", "cat-file", "blob", f"{_PREREG}:{_PATH}"),
+        ("git", "cat-file", "-e", f"{_PREREG}:{_PATH}"),
+        ("git", "cat-file", "blob", f"{_PREREG}:{_PATH}"),
+        ("git", "merge-base", "--is-ancestor", _PREREG, _CODE),
+    ]
 
 
 def test_missing_commit_or_blob_and_nonancestor_are_explicit_false_values(
@@ -80,6 +89,7 @@ def test_missing_commit_or_blob_and_nonancestor_are_explicit_false_values(
 
     assert adapter.commit_time(_PREREG) is None
     assert adapter.blob_sha256(_PREREG, _PATH) is None
+    assert adapter.read_file(_PREREG, _PATH) is None
     assert adapter.is_ancestor(_PREREG, _CODE) is False
 
 
@@ -88,6 +98,7 @@ def test_missing_commit_or_blob_and_nonancestor_are_explicit_false_values(
     [
         ("commit", ("--help",)),
         ("blob", (_PREREG, "../secret")),
+        ("read", (_PREREG, "../secret")),
         ("ancestor", (_PREREG, "not-a-commit")),
     ],
 )
@@ -104,6 +115,8 @@ def test_invalid_identity_refuses_before_subprocess(
             adapter.commit_time(*args)
         elif call == "blob":
             adapter.blob_sha256(*args)
+        elif call == "read":
+            adapter.read_file(*args)
         else:
             adapter.is_ancestor(*args)
     assert runner.calls == []

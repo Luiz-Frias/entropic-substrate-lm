@@ -114,7 +114,12 @@ class SubprocessD1GitProvenance:
         return value
 
     def blob_sha256(self, commit: str, path: str) -> str | None:
-        identity = _commit(commit)
+        payload = self.read_file(commit, path)
+        return None if payload is None else hashlib.sha256(payload).hexdigest()
+
+    def read_file(self, revision: str, path: str) -> bytes | None:
+        """Read exact committed blob bytes through the bounded shell-free runner."""
+        identity = _commit(revision)
         relative = normalize_d1_relative_artifact_path(path, label="D1 Git blob")
         specification = f"{identity}:{relative}"
         if not self._exists("blob", specification):
@@ -122,7 +127,7 @@ class SubprocessD1GitProvenance:
         result = self._run("blob", ("git", "cat-file", "blob", specification))
         if result.returncode != 0:
             _fail("blob", f"git cat-file blob exited {result.returncode}")
-        return hashlib.sha256(result.stdout).hexdigest()
+        return result.stdout
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         before = _commit(ancestor)
