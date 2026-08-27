@@ -29,6 +29,10 @@ from entropic_substrate.experiments.d1_primitives import EvidenceClass
 __all__ = [
     "ResourceProvenanceCodecGap",
     "parse_run_start_line",
+    "quoted_rate_from_mapping",
+    "quoted_rate_to_mapping",
+    "resource_activation_from_mapping",
+    "resource_activation_to_mapping",
     "run_start_from_mapping",
     "run_start_to_mapping",
     "serialize_run_start_line",
@@ -223,6 +227,30 @@ def _z(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def quoted_rate_to_mapping(rate: QuotedRate) -> dict[str, object]:
+    if type(rate) is not QuotedRate:
+        _fail("quoted-rate codec requires QuotedRate")
+    mapping = dict(rate.manifest)
+    mapping["observed_at"] = _z(rate.observed_at)
+    return mapping
+
+
+def quoted_rate_from_mapping(value: object) -> QuotedRate:
+    return _rate(value)
+
+
+def resource_activation_to_mapping(
+    registration: ResourceActivationRegistration,
+) -> dict[str, object]:
+    if type(registration) is not ResourceActivationRegistration:
+        _fail("resource-activation codec requires ResourceActivationRegistration")
+    return dict(registration.manifest)
+
+
+def resource_activation_from_mapping(value: object) -> ResourceActivationRegistration:
+    return _activation(value)
+
+
 def run_start_to_mapping(start: RunStartProvenance) -> dict[str, object]:
     if type(start) is not RunStartProvenance:
         _fail("run-start codec requires RunStartProvenance")
@@ -230,9 +258,8 @@ def run_start_to_mapping(start: RunStartProvenance) -> dict[str, object]:
     mapping["event"] = _EVENT
     mapping["pod_created_at"] = _z(start.pod_created_at)
     mapping["trainer_started_at"] = _z(start.trainer_started_at)
-    quoted = dict(start.quoted_rate.manifest)
-    quoted["observed_at"] = _z(start.quoted_rate.observed_at)
-    mapping["quoted_rate"] = quoted
+    mapping["quoted_rate"] = quoted_rate_to_mapping(start.quoted_rate)
+    mapping["resource_activation"] = resource_activation_to_mapping(start.resource_activation)
     return mapping
 
 
@@ -266,8 +293,8 @@ def run_start_from_mapping(value: object) -> RunStartProvenance:
             pytorch_version=cast(str, mapping["pytorch_version"]),
             compiler_enabled=cast(bool, mapping["compiler_enabled"]),
             compiler_version=cast(str, mapping["compiler_version"]),
-            resource_activation=_activation(mapping["resource_activation"]),
-            quoted_rate=_rate(mapping["quoted_rate"]),
+            resource_activation=resource_activation_from_mapping(mapping["resource_activation"]),
+            quoted_rate=quoted_rate_from_mapping(mapping["quoted_rate"]),
             pod_created_at=_timestamp(mapping["pod_created_at"], label="pod_created_at"),
             trainer_started_at=_timestamp(
                 mapping["trainer_started_at"], label="trainer_started_at"
