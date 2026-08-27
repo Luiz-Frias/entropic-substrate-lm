@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, SupportsIndex, cast
 
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
+from entropic_substrate.d1_billing_finalization_values import (
+    D1BillingFinalization,
+    d1_billing_finalization_to_mapping,
+)
 from entropic_substrate.d1_numerical_defect import (
     D1TerminalNumericalDefectRecord,
     terminal_numerical_defect_from_mapping,
@@ -126,14 +129,10 @@ def _artifact(value: object, label: str) -> ArtifactIdentity:
 
 
 def _finalization_manifest(finalization: D1BillingFinalization) -> dict[str, object]:
-    return {
-        "billing": finalization.billing.manifest,
-        "journal_state": finalization.journal_state.manifest,
-        "quality_export_ready": finalization.quality_export_ready,
-        "schema_version": _FINALIZATION_SCHEMA,
-        "terminal_event": finalization.terminal_event.manifest,
-        "trainer_outcome": finalization.trainer_outcome,
-    }
+    manifest = d1_billing_finalization_to_mapping(finalization)
+    if manifest["schema_version"] != _FINALIZATION_SCHEMA:
+        raise ValueError("D1 finalization mapping schema differs from custody")
+    return manifest
 
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)

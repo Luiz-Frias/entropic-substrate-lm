@@ -45,6 +45,7 @@ __all__ = [
     "D1TerminalResourceEvidence",
     "D1TrainerHandoff",
     "attest_durable_d1_finalization",
+    "d1_billing_finalization_to_mapping",
 ]
 
 _RESULT_TOKEN = object()
@@ -230,6 +231,21 @@ class D1BillingFinalization:
             raise ValueError("D1 trainer_outcome must be completed or failed")
         if type(self.quality_export_ready) is not bool:
             raise TypeError("D1 quality_export_ready must be bool")
+
+
+def d1_billing_finalization_to_mapping(
+    finalization: D1BillingFinalization,
+) -> dict[str, object]:
+    if type(finalization) is not D1BillingFinalization:
+        raise TypeError("D1 finalization mapping requires D1BillingFinalization")
+    return {
+        "billing": finalization.billing.manifest,
+        "journal_state": finalization.journal_state.manifest,
+        "quality_export_ready": finalization.quality_export_ready,
+        "schema_version": "d1-finalized-cell-evidence-v1",
+        "terminal_event": finalization.terminal_event.manifest,
+        "trainer_outcome": finalization.trainer_outcome,
+    }
 
 
 def attest_durable_d1_finalization(
