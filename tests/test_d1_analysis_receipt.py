@@ -18,6 +18,9 @@ from entropic_substrate.analysis.d1_execution_receipt import (
     D1IsolationRequest,
     issue_d1_analysis_receipt,
 )
+from entropic_substrate.analysis.d1_external_analysis_control import (
+    D1ReaderSourceManifestControl,
+)
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1ArtifactRole,
@@ -58,14 +61,29 @@ def _admitted():
     )
 
 
-def _implementation() -> D1AnalysisImplementationIdentity:
+def _implementation(
+    reader_source: D1ReaderSourceManifestControl | None = None,
+) -> D1AnalysisImplementationIdentity:
+    module_digests = (
+        {}
+        if reader_source is None
+        else {entry.identity: entry.sha256 for entry in reader_source.modules}
+    )
     return D1AnalysisImplementationIdentity(
         code_commit="1" * 40,
         repository_digest="2" * 64,
-        analysis_code_digest="3" * 64,
+        analysis_code_digest=(
+            "3" * 64 if reader_source is None else reader_source.analysis_code_digest
+        ),
         image_digest="sha256:" + "4" * 64,
-        complete_reader_digest="5" * 64,
-        defect_reader_digest="6" * 64,
+        complete_reader_digest=module_digests.get(
+            getattr(reader_source, "complete_reader", "").rpartition(".")[0],
+            "5" * 64,
+        ),
+        defect_reader_digest=module_digests.get(
+            getattr(reader_source, "terminal_defect_reader", "").rpartition(".")[0],
+            "6" * 64,
+        ),
     )
 
 

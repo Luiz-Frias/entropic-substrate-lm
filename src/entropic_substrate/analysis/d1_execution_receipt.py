@@ -558,6 +558,16 @@ def issue_d1_verified_analysis_receipt(
         raise TypeError("D1 v2 analysis receipt requires nominal verified values")
     if analysis.expected is not request.input_control:
         raise ValueError("D1 v2 receipt request input differs from verified analysis")
+    reader_source = request.input_control.reader_source
+    reader_digests = {entry.identity: entry.sha256 for entry in reader_source.modules}
+    complete_reader_module = reader_source.complete_reader.rpartition(".")[0]
+    defect_reader_module = reader_source.terminal_defect_reader.rpartition(".")[0]
+    if implementation.analysis_code_digest != reader_source.analysis_code_digest:
+        raise ValueError("D1 v2 receipt analysis code digest differs from reader source")
+    if implementation.complete_reader_digest != reader_digests.get(complete_reader_module):
+        raise ValueError("D1 v2 receipt complete reader digest differs from reader source")
+    if implementation.defect_reader_digest != reader_digests.get(defect_reader_module):
+        raise ValueError("D1 v2 receipt terminal defect reader digest differs from reader source")
     if analysis.aggregate.manifest_digest != request.input_control.aggregate.manifest_digest:
         raise ValueError("D1 v2 receipt aggregate differs from request input")
     if worker_response.analysis_request_digest != request.analysis_request_digest:

@@ -272,13 +272,12 @@ def _case(
     capture = _json(aggregate.manifest)
     reader_manifest = {
         "analysis_code_digest": "9" * 64,
-        "complete_reader": "reader.complete",
+        "complete_reader": "reader.module.complete",
         "modules": [
-            {"identity": "reader.complete", "path": "reader/complete.py", "sha256": "7" * 64},
-            {"identity": "reader.defect", "path": "reader/defect.py", "sha256": "8" * 64},
+            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
         ],
         "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": "reader.defect",
+        "terminal_defect_reader": "reader.module.defect",
     }
     reader = _json(reader_manifest)
     isolation_manifest = {
@@ -381,8 +380,14 @@ def _case(
             "implementation": {
                 "analysis_code_digest": reader_manifest["analysis_code_digest"],
                 "readers": {
-                    "complete": {"identity": "reader.complete", "sha256": "7" * 64},
-                    "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+                    "complete": {
+                        "identity": "reader.module.complete",
+                        "sha256": "7" * 64,
+                    },
+                    "terminal_defect": {
+                        "identity": "reader.module.defect",
+                        "sha256": "7" * 64,
+                    },
                 },
             },
             "inputs": [{"sha256": "8" * 64}],
@@ -397,8 +402,11 @@ def _case(
             "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
             "bindings": analysis_manifest["bindings"],
             "validated_readers": {
-                "complete": {"identity": "reader.complete", "sha256": "7" * 64},
-                "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
+                "terminal_defect": {
+                    "identity": "reader.module.defect",
+                    "sha256": "7" * 64,
+                },
             },
         }
     )

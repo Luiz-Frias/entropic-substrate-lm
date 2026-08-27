@@ -55,13 +55,12 @@ def _case(mutation: str | None = None):
     machine = machine_verdict()
     reader_manifest = {
         "analysis_code_digest": "9" * 64,
-        "complete_reader": "reader.complete",
+        "complete_reader": "reader.module.complete",
         "modules": [
-            {"identity": "reader.complete", "path": "reader/complete.py", "sha256": "7" * 64},
-            {"identity": "reader.defect", "path": "reader/defect.py", "sha256": "8" * 64},
+            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
         ],
         "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": "reader.defect",
+        "terminal_defect_reader": "reader.module.defect",
     }
     isolation_manifest = {
         "execution_evidence": {"analysis_sha256": "6" * 64},
@@ -204,8 +203,11 @@ def _case(mutation: str | None = None):
         "implementation": {
             "analysis_code_digest": reader_manifest["analysis_code_digest"],
             "readers": {
-                "complete": {"identity": "reader.complete", "sha256": "7" * 64},
-                "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
+                "terminal_defect": {
+                    "identity": "reader.module.defect",
+                    "sha256": "7" * 64,
+                },
             },
         },
         "inputs": [{"sha256": "8" * 64}],
@@ -252,7 +254,7 @@ def _case(mutation: str | None = None):
         elif mutation == "packet_analysis_readers":
             review_packet["validated_readers"] = {
                 **analysis_receipt["implementation"]["readers"],
-                "complete": {"identity": "reader.complete", "sha256": "0" * 64},
+                "complete": {"identity": "reader.module.complete", "sha256": "0" * 64},
             }
         payloads["review_packet"] = _json(review_packet)
     review_receipt = json.loads(payloads["reviewer_execution_receipt"])

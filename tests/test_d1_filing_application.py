@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -11,11 +13,22 @@ import entropic_substrate.d1_filing_application as filing_module
 from entropic_substrate.d1_filing_application import (
     D1FilingArtifactPaths,
     D1LocalFilingArtifactStore,
+    finalize_d1_filing,
     prepare_d1_filing_bundle,
 )
-from entropic_substrate.evidence.d1_filing import REQUIRED_D1_FILING_ARTIFACTS
+from entropic_substrate.evidence.d1_filing import (
+    REQUIRED_D1_FILING_ARTIFACTS,
+    validate_d1_filing_manifest,
+)
+from entropic_substrate.evidence.d1_filing_graph import verify_d1_filing
+from entropic_substrate.evidence.d1_filing_receipts import D1FilingRevisions
+from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.evidence.lifecycle import ActorRole
 from entropic_substrate.experiments.d1_primitives import canonical_json
 
+from .test_d1_filing_graph_gate import FakeGit
+from .test_d1_process_manager import _actor, _artifact
+from .test_d1_process_manager_gate import _adjudicated
 from .test_d1_real_arm_verdict_assembly import _lineage
 from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 
@@ -181,3 +194,159 @@ def test_local_store_failure_before_manifest_marker_is_restartable(
     monkeypatch.setattr(filing_module, "publish_d1_atomic_bytes", real_publish)
     marker = store.publish(prepared, manifest_path="filing/manifest.json")
     assert marker.path == str(root / "filing/manifest.json")
+
+
+def _filing_git(prepared, revisions: D1FilingRevisions) -> FakeGit:
+    verdict = prepared.verdict.verdict
+    chain = (verdict.preregistration.commit, *revisions.ordered)
+    git = FakeGit({}, set(pairwise(chain)))
+    paths = prepared.paths.mapping
+    payloads = prepared.payloads
+    git.files[(verdict.preregistration.commit, verdict.preregistration.path)] = payloads[
+        "preregistration"
+    ]
+    stages = {
+        revisions.capture: ("raw_capture_manifest",),
+        revisions.analysis: (
+            "blinded_analysis",
+            "analysis_receipt",
+            "analysis_reader",
+            "analysis_isolation_attestation",
+        ),
+        revisions.alias_commitment: ("alias_commitment",),
+        revisions.review: (
+            "review_packet",
+            "reviewer_prompt",
+            "reviewer_report",
+            "reviewer_execution_receipt",
+        ),
+        revisions.alias_reveal: ("alias_reveal",),
+        revisions.filing: REQUIRED_D1_FILING_ARTIFACTS,
+    }
+    for revision, roles in stages.items():
+        for role in roles:
+            git.files[(revision, paths[role])] = payloads[role]
+    return git
+
+
+def test_finalization_verifies_root_git_files_verdict_and_authorized_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _lineage(tmp_path / "lineage", monkeypatch)
+    prepared = prepare_d1_filing_bundle(
+        verified=lineage.verified,
+        analysis_receipt=lineage.analysis_receipt,
+        execution=lineage.execution,
+        reveal=lineage.reveal,
+        adjudication=lineage.adjudication,
+        verdict="SUPPORTED",
+        narrative_body=b"# D1 stabilized latent verdict\n",
+        preregistration_bytes=_RAW_PREREGISTRATION,
+        paths=_paths(),
+    )
+    root = tmp_path / "artifact-root"
+    (root / "filing").mkdir(parents=True)
+    store = D1LocalFilingArtifactStore(root)
+    store.publish(prepared, manifest_path="filing/manifest.json")
+    revisions = D1FilingRevisions(
+        "b" * 40,
+        "c" * 40,
+        "d" * 40,
+        "e" * 40,
+        "1" * 40,
+        "2" * 40,
+    )
+    git = _filing_git(prepared, revisions)
+    detached = validate_d1_filing_manifest(
+        prepared.verdict.manifest,
+        json.loads(prepared.manifest_bytes),
+        decision_contract=prepared.verdict.verified.expected.decision_contract,
+        artifact_root=root,
+    )
+    filing = verify_d1_filing(
+        detached,
+        prepared.verdict.verified.aggregate,
+        revisions,
+        store,
+        git,
+    )
+    manager = _adjudicated(tmp_path, filing)
+
+    result = finalize_d1_filing(
+        prepared=prepared,
+        artifact_root=root,
+        manifest_path="filing/manifest.json",
+        revisions=revisions,
+        git=git,
+        manager=manager,
+        actor=_actor(ActorRole.OPERATOR),
+        filing_event_id="verdict",
+        gate_artifact=_artifact(140, "gate"),
+        gate_event_id="gate",
+    )
+
+    assert result.filing.graph_digest == filing.graph_digest
+    assert result.terminal.state is D1ProcessState.GATE_AUTHORIZED
+    assert result.terminal.eligible_arms == ("sg", "ac", "both")
+
+
+def test_finalization_requires_manifest_marker_before_lifecycle_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _lineage(tmp_path / "lineage", monkeypatch)
+    prepared = prepare_d1_filing_bundle(
+        verified=lineage.verified,
+        analysis_receipt=lineage.analysis_receipt,
+        execution=lineage.execution,
+        reveal=lineage.reveal,
+        adjudication=lineage.adjudication,
+        verdict="SUPPORTED",
+        narrative_body=b"# D1 stabilized latent verdict\n",
+        preregistration_bytes=_RAW_PREREGISTRATION,
+        paths=_paths(),
+    )
+    root = tmp_path / "artifact-root"
+    (root / "filing").mkdir(parents=True)
+    revisions = D1FilingRevisions(
+        "b" * 40,
+        "c" * 40,
+        "d" * 40,
+        "e" * 40,
+        "1" * 40,
+        "2" * 40,
+    )
+    git = _filing_git(prepared, revisions)
+    store = D1LocalFilingArtifactStore(root)
+    store.publish(prepared, manifest_path="filing/manifest.json")
+    detached = validate_d1_filing_manifest(
+        prepared.verdict.manifest,
+        json.loads(prepared.manifest_bytes),
+        decision_contract=prepared.verdict.verified.expected.decision_contract,
+        artifact_root=root,
+    )
+    filing = verify_d1_filing(
+        detached,
+        prepared.verdict.verified.aggregate,
+        revisions,
+        store,
+        git,
+    )
+    manager = _adjudicated(tmp_path, filing)
+    (root / "filing/manifest.json").unlink()
+
+    with pytest.raises(ValueError, match="manifest marker"):
+        finalize_d1_filing(
+            prepared=prepared,
+            artifact_root=root,
+            manifest_path="filing/manifest.json",
+            revisions=revisions,
+            git=git,
+            manager=manager,
+            actor=_actor(ActorRole.OPERATOR),
+            filing_event_id="verdict",
+            gate_artifact=_artifact(141, "gate"),
+            gate_event_id="gate",
+        )
+    assert manager.state is D1ProcessState.ADJUDICATED

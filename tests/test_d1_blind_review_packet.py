@@ -130,7 +130,7 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _BlindCase:
         analysis=result.analysis,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(),
+        implementation=_implementation(result.request.input_control.reader_source),
         isolation=result.isolation,
     )
     evidence = tuple(
@@ -327,8 +327,8 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
         assert set(identity) == {f"I{index:02d}" for index in range(1, 19)}
         assert all(identity.values())
     readers = manifest["validated_readers"]
-    assert readers["complete"]["sha256"] == "5" * 64  # type: ignore[index]
-    assert readers["terminal_defect"]["sha256"] == "6" * 64  # type: ignore[index]
+    receipt_implementation = cast(dict[str, object], receipt.manifest["implementation"])
+    assert readers == receipt_implementation["readers"]
     assert manifest["nonblindable_fields"]
     randomized = _randomization(manifest)
     assert randomized["algorithm"] == "sha256-registered-seed-alias-sort-v1"

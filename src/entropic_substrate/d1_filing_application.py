@@ -35,21 +35,44 @@ from entropic_substrate.d1_artifact_snapshot import (
 from entropic_substrate.evidence.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,
+    validate_d1_filing_manifest,
 )
 from entropic_substrate.evidence.d1_filing_assembly import (
     D1FilingArtifactMaterial,
     assemble_d1_filing_manifest,
     assemble_d1_narrative,
 )
+from entropic_substrate.evidence.d1_filing_graph import (
+    ValidatedD1Filing,
+    verify_d1_filing,
+)
+from entropic_substrate.evidence.d1_filing_receipts import (
+    D1FilingGitPort,
+    D1FilingRevisions,
+)
+from entropic_substrate.evidence.d1_gate import decide_filed_verdict
+from entropic_substrate.evidence.d1_process_filing import file_d1_verdict
+from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.evidence.d1_review_adjudication import (
     D1ReviewAdjudicationSurface,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.evidence.d1_types import (
+    FiledGateAuthorization,
+    FiledGateRetirement,
+    FiledGateValidNegative,
+)
+from entropic_substrate.evidence.lifecycle import (
+    ActorIdentity,
+    ArtifactIdentity,
+    ContentHash,
+)
 
 __all__ = [
     "D1FilingArtifactPaths",
+    "D1FinalizedFiling",
     "D1LocalFilingArtifactStore",
     "D1PreparedFilingBundle",
+    "finalize_d1_filing",
     "prepare_d1_filing_bundle",
 ]
 
@@ -206,6 +229,99 @@ class D1LocalFilingArtifactStore:
             prepared.manifest_bytes,
             label="D1 filing manifest",
         )
+
+
+def _require_process_manager(value: object) -> None:
+    if not isinstance(value, D1ProcessManager):
+        raise TypeError("D1 finalized filing requires a terminal process manager")
+
+
+@dataclass(frozen=True, slots=True)
+class D1FinalizedFiling:
+    filing: ValidatedD1Filing
+    terminal: D1ProcessManager
+
+    def __post_init__(self) -> None:
+        if type(self.filing) is not ValidatedD1Filing:
+            raise TypeError("D1 finalized filing requires verified semantic evidence")
+        _require_process_manager(self.terminal)
+
+
+def finalize_d1_filing(
+    *,
+    prepared: D1PreparedFilingBundle,
+    artifact_root: Path,
+    manifest_path: str,
+    revisions: D1FilingRevisions,
+    git: D1FilingGitPort,
+    manager: D1ProcessManager,
+    actor: ActorIdentity,
+    filing_event_id: str,
+    gate_artifact: ArtifactIdentity,
+    gate_event_id: str,
+) -> D1FinalizedFiling:
+    """Verify committed bytes, file the verdict, and apply only its derived gate."""
+    if (
+        type(prepared) is not D1PreparedFilingBundle
+        or type(revisions) is not D1FilingRevisions
+        or type(manager) is not D1ProcessManager
+        or type(actor) is not ActorIdentity
+        or type(gate_artifact) is not ArtifactIdentity
+    ):
+        raise TypeError("D1 filing finalization requires exact application values")
+    if not all(hasattr(git, method) for method in ("read_file", "is_ancestor")):
+        raise TypeError("D1 filing finalization requires a read-only Git port")
+    store = D1LocalFilingArtifactStore(artifact_root)
+    marker = store.read_bytes(manifest_path)
+    if marker is None or marker != prepared.manifest_bytes:
+        raise ValueError("D1 filing manifest marker is absent or differs")
+    try:
+        manifest_value: object = json.loads(marker)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:  # pragma: no cover - equality pins
+        raise ValueError("D1 filing manifest marker is invalid JSON") from error
+    if type(manifest_value) is not dict:
+        raise ValueError("D1 filing manifest marker must be an object")
+    detached = validate_d1_filing_manifest(
+        prepared.verdict.manifest,
+        cast(dict[str, object], manifest_value),
+        decision_contract=prepared.verdict.verified.expected.decision_contract,
+        artifact_root=artifact_root,
+    )
+    filing = verify_d1_filing(
+        detached,
+        prepared.verdict.verified.aggregate,
+        revisions,
+        store,
+        git,
+    )
+    filed = file_d1_verdict(
+        manager,
+        actor=actor,
+        filing=filing,
+        event_id=filing_event_id,
+    )
+    outcome = decide_filed_verdict(filing)
+    if type(outcome) is FiledGateAuthorization:
+        terminal = filed.authorize_d2(
+            actor=actor,
+            artifact=gate_artifact,
+            event_id=gate_event_id,
+        )
+    elif type(outcome) is FiledGateValidNegative:
+        terminal = filed.record_valid_negative(
+            actor=actor,
+            artifact=gate_artifact,
+            event_id=gate_event_id,
+        )
+    elif type(outcome) is FiledGateRetirement:
+        terminal = filed.retire(
+            actor=actor,
+            artifact=gate_artifact,
+            event_id=gate_event_id,
+        )
+    else:  # pragma: no cover - gate returns a closed union
+        raise TypeError("D1 filing gate returned an unsupported outcome")
+    return D1FinalizedFiling(filing=filing, terminal=terminal)
 
 
 def _require_bytes(value: object, *, label: str) -> bytes:

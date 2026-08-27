@@ -212,7 +212,8 @@ def _verify_analysis_reader(
         entry = cast(dict[str, object], entry)
         if set(entry) != {"identity", "sha256"} or entry.get("identity") != identity:
             _fail("analysis_reader", f"analysis_receipt.readers.{role}", "identity differs")
-        if entry.get("sha256") != by_identity.get(cast(str, identity)):
+        module_identity = cast(str, identity).rpartition(".")[0]
+        if entry.get("sha256") != by_identity.get(module_identity):
             _fail("analysis_reader", f"analysis_receipt.readers.{role}", "digest differs")
 
 
