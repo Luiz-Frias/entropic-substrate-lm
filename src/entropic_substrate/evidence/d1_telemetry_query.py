@@ -45,7 +45,12 @@ from entropic_substrate.evidence.resource_work import validate_resource_work_ser
 from entropic_substrate.experiments.d1_family import strategies_for_arm
 from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
-__all__ = ["final_d1_eval_metric", "read_d1_eval_series", "read_d1_run_evidence"]
+__all__ = [
+    "final_d1_eval_metric",
+    "read_d1_eval_series",
+    "read_d1_run_evidence",
+    "read_d1_run_evidence_bytes",
+]
 
 
 def _tail_quarantine(event: D1JournalEvent) -> D1TailQuarantineEvidence:
@@ -347,6 +352,30 @@ def read_d1_run_evidence(
         expected_plan_digest=expected_plan_digest,
         allow_incomplete=allow_incomplete,
         journal_payload=None,
+    )
+
+
+def read_d1_run_evidence_bytes(
+    payload: bytes,
+    *,
+    journal_path: str | Path,
+    expected_logical_run_id: str | None = None,
+    expected_family_digest: str | None = None,
+    expected_run_class: RunClass | None = None,
+    expected_plan_digest: str | None = None,
+    allow_incomplete: bool = False,
+) -> D1RunEvidence:
+    """Admit exact journal bytes already captured by a trusted snapshot adapter."""
+    if type(payload) is not bytes:
+        raise TypeError("D1 journal snapshot payload must be bytes")
+    return _read_d1_run_evidence(
+        journal_path,
+        expected_logical_run_id=expected_logical_run_id,
+        expected_family_digest=expected_family_digest,
+        expected_run_class=expected_run_class,
+        expected_plan_digest=expected_plan_digest,
+        allow_incomplete=allow_incomplete,
+        journal_payload=payload,
     )
 
 

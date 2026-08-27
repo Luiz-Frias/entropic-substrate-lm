@@ -23,6 +23,7 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.experiments.d1_primitives import canonical_digest, thaw_for_digest
 
 __all__ = [
     "D1_REPORT_ONLY_METRICS",
@@ -217,6 +218,21 @@ class D1TailQuarantineEvidence:
             first_tail_event_sequence,
             last_tail_event_sequence,
         )
+
+    @property
+    def authority_manifest(self) -> dict[str, object]:
+        return {
+            "artifact_byte_count": self.artifact_byte_count,
+            "artifact_file_name": self.artifact_file_name,
+            "artifact_sha256": self.artifact_sha256,
+            "first_tail_event_sequence": self.first_tail_event_sequence,
+            "kind": self.kind.value,
+            "last_tail_event_sequence": self.last_tail_event_sequence,
+            "manifest": thaw_for_digest(self.manifest),
+            "retained_prefix_byte_count": self.retained_prefix_byte_count,
+            "retained_prefix_sha256": self.retained_prefix_sha256,
+            "tail_event_count": self.tail_event_count,
+        }
 
 
 def _finite(value: float, field: str) -> None:
@@ -452,6 +468,10 @@ class D1QualityEvidence:
             raise AssertionError("registered scalar metric has a non-scalar representation")
         return float(value)
 
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {field: thaw_for_digest(getattr(self, field)) for field in sorted(D1_QUALITY_FIELDS)}
+
 
 @dataclass(frozen=True, slots=True)
 class D1EvalEvidence:
@@ -461,6 +481,15 @@ class D1EvalEvidence:
     eval_index: int
     quality: D1QualityEvidence
     resource_work: ResourceWorkSnapshot
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "eval_index": self.eval_index,
+            "quality": self.quality.manifest,
+            "resource_work": self.resource_work.manifest,
+            "step": self.step,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,3 +527,45 @@ class D1RunEvidence:
             for segment in self.segments[1:]
             if segment.resume_checkpoint_sha256 is not None
         )
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        identity = self.identity
+        return {
+            "baseline": None if self.baseline is None else self.baseline.manifest,
+            "checkpoint_receipts": [
+                {"sha256": digest, "successful_step": step}
+                for step, digest in self.checkpoint_receipts
+            ],
+            "data_order_segments": [
+                {
+                    "batch_count": batches,
+                    "data_order_digest": digest,
+                    "execution_segment_index": segment,
+                }
+                for segment, digest, batches in self.data_order_segments
+            ],
+            "evals": [item.manifest for item in self.evals],
+            "identity": {
+                "aggregation_digest": identity.aggregation_digest,
+                "construction_digest": identity.construction_digest,
+                "execution_digest": identity.execution_digest,
+                "family_digest": identity.family_digest,
+                "logical_run_id": identity.logical_run_id,
+                "run_class": identity.run_class.value,
+            },
+            "path": str(self.path),
+            "plan_digest": self.plan_digest,
+            "plan_manifest": thaw_for_digest(self.plan_manifest),
+            "segments": [segment.manifest for segment in self.segments],
+            "status": self.status.value,
+            "tail_quarantine_evidence": [
+                item.authority_manifest for item in self.tail_quarantine_evidence
+            ],
+            "terminal": None if self.terminal is None else self.terminal.manifest,
+            "train_steps": [item.manifest for item in self.train_steps],
+        }
+
+    @property
+    def authority_digest(self) -> str:
+        return canonical_digest(self.manifest)

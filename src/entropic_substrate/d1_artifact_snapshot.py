@@ -28,7 +28,12 @@ _DIRECTORY_FLAGS = (
     | getattr(os, "O_NOFOLLOW", 0)
     | getattr(os, "O_CLOEXEC", 0)
 )
-_FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+_FILE_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+)
 
 
 class D1ArtifactSnapshotError(ValueError):
@@ -62,7 +67,7 @@ def _open_directory_path(path: Path, *, label: str) -> int:
         if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
             _fail(f"{label} must be a real directory")
         return descriptor
-    except OSError as error:
+    except (OSError, ValueError) as error:
         if descriptor is not None:
             os.close(descriptor)
         _fail(f"{label} could not be opened without a symlink", error)
@@ -126,7 +131,7 @@ def _open_artifact_descriptor(
             directory_fd = next_descriptor
         file_fd = os.open(parts[-1], _FILE_FLAGS, dir_fd=directory_fd)
         return admitted_root.joinpath(*parts), directory_fd, file_fd
-    except OSError as error:
+    except (OSError, ValueError) as error:
         if directory_fd is not None:
             os.close(directory_fd)
         _fail(f"{label} artifact could not be opened beneath its root without a symlink", error)
@@ -157,22 +162,44 @@ def read_d1_artifact_bytes(
     relative_path: object,
     *,
     label: str,
+    max_bytes: int | None = None,
 ) -> tuple[Path, bytes, str]:
     """Read and hash one regular artifact through the same no-follow descriptor."""
+    if max_bytes is not None:
+        if type(max_bytes) is not int:
+            raise TypeError(f"{label} max_bytes must be an integer or None")
+        if max_bytes < 1:
+            raise ValueError(f"{label} max_bytes must be positive")
     path, directory_fd, file_fd = _open_artifact_descriptor(
         root,
         relative_path,
         label=label,
     )
     try:
-        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
-            _fail(f"{label} artifact must be a regular file")
-        chunks: list[bytes] = []
-        digest = hashlib.sha256()
-        while chunk := os.read(file_fd, _CHUNK_SIZE):
-            chunks.append(chunk)
-            digest.update(chunk)
-        return path, b"".join(chunks), digest.hexdigest()
+        try:
+            metadata = os.fstat(file_fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                _fail(f"{label} artifact must be a regular file")
+            if max_bytes is not None and metadata.st_size > max_bytes:
+                _fail(f"{label} artifact exceeds its byte limit")
+            chunks: list[bytes] = []
+            digest = hashlib.sha256()
+            size = 0
+            while True:
+                read_size = (
+                    _CHUNK_SIZE if max_bytes is None else min(_CHUNK_SIZE, max_bytes - size + 1)
+                )
+                chunk = os.read(file_fd, read_size)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if max_bytes is not None and size > max_bytes:
+                    _fail(f"{label} artifact exceeds its byte limit")
+                chunks.append(chunk)
+                digest.update(chunk)
+            return path, b"".join(chunks), digest.hexdigest()
+        except OSError as error:
+            _fail(f"{label} artifact descriptor read failed", error)
     finally:
         os.close(file_fd)
         os.close(directory_fd)

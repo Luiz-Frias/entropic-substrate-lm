@@ -9,6 +9,7 @@ from entropic_substrate.evidence.d1_telemetry_query import (
     final_d1_eval_metric,
     read_d1_eval_series,
     read_d1_run_evidence,
+    read_d1_run_evidence_bytes,
 )
 from entropic_substrate.evidence.d1_telemetry_values import (
     D1EvalEvidence,
@@ -30,6 +31,7 @@ __all__ = [
     "final_d1_eval_metric",
     "read_d1_eval_series",
     "read_d1_run_evidence",
+    "read_d1_run_evidence_bytes",
     "read_d1_terminal_defect",
 ]
 
