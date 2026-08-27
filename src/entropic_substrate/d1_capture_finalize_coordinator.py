@@ -13,6 +13,9 @@ from entropic_substrate.d1_campaign_capture import (
     D1CapturedCampaign,
 )
 from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
+from entropic_substrate.evidence.d1_capture_preparation_custody import (
+    D1CampaignCaptureAuthority,
+)
 from entropic_substrate.evidence.d1_capture_preparation_custody_repository import (
     D1CapturePreparationCustodyRepository,
 )
@@ -43,12 +46,22 @@ class _FinalizationOnlyAssembler:
 class D1PublishedCaptureFinalization:
     captured: D1CapturedCampaign
     preparation_artifact: ArtifactIdentity
+    authority: D1CampaignCaptureAuthority
 
     def __post_init__(self) -> None:
         if type(self.captured) is not D1CapturedCampaign:
             raise TypeError("published capture finalization requires captured campaign")
         if type(self.preparation_artifact) is not ArtifactIdentity:
             raise TypeError("published capture finalization requires preparation artifact")
+        if type(self.authority) is not D1CampaignCaptureAuthority:
+            raise TypeError("published capture finalization requires campaign authority")
+        campaign = self.captured.campaign
+        if (
+            self.authority.registered_design_digest != campaign.design_digest
+            or self.authority.matrix_digest != campaign.matrix.matrix_digest
+            or self.authority.attempt_ledger_digest != campaign.attempt_ledger.ledger_digest
+        ):
+            raise ValueError("published capture authority differs from captured campaign")
 
 
 class D1CampaignCaptureFinalizationCoordinator:
@@ -97,6 +110,10 @@ class D1CampaignCaptureFinalizationCoordinator:
                 capture_root=repo_root / "results" / "captured",
             )
             captured = service.finalize(prepared)
-            return D1PublishedCaptureFinalization(captured, preparation_artifact)
+            return D1PublishedCaptureFinalization(
+                captured,
+                preparation_artifact,
+                record.authority,
+            )
         finally:
             repository.close()

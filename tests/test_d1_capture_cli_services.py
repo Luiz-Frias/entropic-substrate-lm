@@ -12,7 +12,14 @@ from entropic_substrate.d1_campaign_authority_loader import (
     D1LoadedCampaignAuthority,
 )
 from entropic_substrate.d1_campaign_request import D1CampaignCommandRequest
-from entropic_substrate.d1_capture_cli_services import D1CapturePrepareCliService
+from entropic_substrate.d1_capture_cli_services import (
+    D1CaptureFinalizeCliService,
+    D1CapturePrepareCliService,
+)
+from entropic_substrate.d1_capture_finalize_coordinator import (
+    D1PublishedCaptureFinalization,
+)
+from entropic_substrate.d1_capture_finalize_request import D1CaptureFinalizeRequest
 from entropic_substrate.d1_capture_prepare_coordinator import (
     D1PublishedCapturePreparation,
 )
@@ -28,6 +35,7 @@ from entropic_substrate.evidence.d1_capture_preparation_custody import (
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 from .test_d1_campaign_authority_loader import _loaded_prefix
+from .test_d1_capture_finalize_coordinator import _prepared
 from .test_d1_capture_preparation_custody import _authority, _case
 from .test_d1_confirmatory_matrix import FakeGit
 
@@ -70,6 +78,26 @@ class _Factory:
         return self.coordinator
 
 
+@dataclass
+class _FinalCoordinator:
+    published: D1PublishedCaptureFinalization
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    def finalize(self, **kwargs: object) -> D1PublishedCaptureFinalization:
+        self.calls.append(kwargs)
+        return self.published
+
+
+@dataclass
+class _FinalFactory:
+    coordinator: _FinalCoordinator
+    calls: list[D1CampaignCommandRequest] = field(default_factory=list)
+
+    def build(self, request: D1CampaignCommandRequest) -> _FinalCoordinator:
+        self.calls.append(request)
+        return self.coordinator
+
+
 def _published(tmp_path: Path) -> D1PublishedCapturePreparation:
     preparation, _capture_root = _case(tmp_path / "capture")
     record = capture_preparation_custody_from_preparation(
@@ -87,6 +115,35 @@ def _invocation(tmp_path: Path, request: D1CampaignCommandRequest) -> D1CliInvoc
     manifest = tmp_path / "capture-prepare.json"
     manifest.write_text("{}", encoding="utf-8")
     return D1CliInvocation(D1CliCommand.CAPTURE_PREPARE, manifest, request.manifest)
+
+
+def _finalize_case(tmp_path: Path):  # type: ignore[no-untyped-def]
+    _campaign, coordinator, prepared, preparation_root, repo_root, _events = _prepared(
+        tmp_path / "real"
+    )
+    publication = coordinator.finalize(
+        campaign=_campaign,
+        preparation_artifact=prepared.artifact,
+        repo_root=repo_root,
+        preparation_custody_root=preparation_root,
+    )
+    loaded = _loaded_prefix(tmp_path / "authority", 4)
+    loaded = replace(
+        loaded,
+        request=replace(
+            loaded.request,
+            locations=replace(
+                loaded.request.locations,
+                repo_root=repo_root,
+                capture_preparation_custody_root=preparation_root,
+            ),
+        ),
+    )
+    request = D1CaptureFinalizeRequest(loaded.request, prepared.artifact)
+    manifest = tmp_path / "capture-finalize.json"
+    manifest.write_text("{}", encoding="utf-8")
+    invocation = D1CliInvocation(D1CliCommand.CAPTURE_FINALIZE, manifest, request.manifest)
+    return loaded, request, invocation, publication
 
 
 def test_prepare_command_loads_complete_campaign_and_returns_commit_required_result(
@@ -178,5 +235,77 @@ def test_prepare_command_refuses_loader_authority_substitution_before_factory(
 
     with pytest.raises(D1CliInvalidEvidence, match="substituted"):
         service.execute(_invocation(tmp_path, loaded.request))
+
+    assert factory.calls == []
+
+
+def test_finalize_command_reloads_authority_and_returns_captured_result(
+    tmp_path: Path,
+) -> None:
+    loaded, _request, invocation, publication = _finalize_case(tmp_path)
+    coordinator = _FinalCoordinator(publication)
+    factory = _FinalFactory(coordinator)
+    service = D1CaptureFinalizeCliService(
+        catalog=fixtures.profiles(),
+        authority_loader=_Loader(loaded),
+        git=FakeGit(),
+        coordinator_factory=factory,
+    )
+
+    result = service.execute(invocation)
+
+    assert result["schema_version"] == "d1-capture-finalize-result-v1"
+    assert result["status"] == "captured"
+    assert result["pointer_commit"] == "abcdef1"
+    assert result["lifecycle"]["state"] == "captured"  # type: ignore[index]
+    assert len(factory.calls) == len(coordinator.calls) == 1
+
+
+def test_finalize_command_refuses_artifact_outside_declared_custody_root(
+    tmp_path: Path,
+) -> None:
+    loaded, request, invocation, publication = _finalize_case(tmp_path)
+    outside = replace(
+        request,
+        preparation_artifact=replace(
+            request.preparation_artifact,
+            path=str(
+                tmp_path / "outside" / f"{request.preparation_artifact.content_hash.digest}.json"
+            ),
+        ),
+    )
+    invocation = D1CliInvocation(
+        D1CliCommand.CAPTURE_FINALIZE,
+        invocation.manifest_path,
+        outside.manifest,
+    )
+    factory = _FinalFactory(_FinalCoordinator(publication))
+    service = D1CaptureFinalizeCliService(
+        catalog=fixtures.profiles(),
+        authority_loader=_Loader(loaded),
+        git=FakeGit(),
+        coordinator_factory=factory,
+    )
+
+    with pytest.raises(D1CliInvalidEvidence, match="custody root"):
+        service.execute(invocation)
+
+    assert factory.calls == []
+
+
+def test_finalize_command_refuses_partial_campaign_before_factory(tmp_path: Path) -> None:
+    _loaded, request, invocation, publication = _finalize_case(tmp_path)
+    partial = _loaded_prefix(tmp_path / "partial", 2)
+    partial = replace(partial, request=request.campaign)
+    factory = _FinalFactory(_FinalCoordinator(publication))
+    service = D1CaptureFinalizeCliService(
+        catalog=fixtures.profiles(),
+        authority_loader=_Loader(partial),
+        git=FakeGit(),
+        coordinator_factory=factory,
+    )
+
+    with pytest.raises(D1CliOperatorGap, match="not complete"):
+        service.execute(invocation)
 
     assert factory.calls == []

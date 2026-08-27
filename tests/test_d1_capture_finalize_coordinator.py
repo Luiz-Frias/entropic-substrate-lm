@@ -82,6 +82,7 @@ def test_finalize_verifies_git_then_persists_captured_lifecycle(tmp_path: Path) 
     assert finalized.captured.process_manager.state is D1ProcessState.CAPTURED
     assert finalized.captured.capture.pointer_commit == "abcdef1"
     assert finalized.preparation_artifact == prepared.artifact
+    assert finalized.authority == prepared.record.authority
     assert events == ["export", "dvc_add", "dvc_push", "cloud", "git"]
     assert _reloaded_state(campaign) is D1ProcessState.CAPTURED
 
