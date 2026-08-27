@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import time
 from collections.abc import Callable, Mapping
@@ -19,9 +18,11 @@ from entropic_substrate.d1_operator_values import require_d1_pod_id
 from entropic_substrate.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     D1TrainerMailboxCommandKind,
+    D1TrainerMailboxErrorReport,
     d1_trainer_mailbox_attempt_prefix,
     d1_trainer_mailbox_command_path,
     parse_d1_trainer_mailbox_command,
+    serialize_d1_trainer_mailbox_error,
 )
 from entropic_substrate.d1_trainer_process_contracts import (
     d1_trainer_runtime_report_path,
@@ -34,8 +35,6 @@ __all__ = [
     "D1TrainerMailboxWorker",
     "D1TrainerMailboxWorkerError",
 ]
-
-_ERROR_SCHEMA = "d1-trainer-mailbox-error-v1"
 
 
 class D1TrainerMailboxProcessWorkerPort(Protocol):
@@ -200,19 +199,14 @@ class D1TrainerMailboxWorker:
         return observed
 
     def _publish_error(self, root: Path, error: D1TrainerMailboxWorkerError) -> None:
-        payload = json.dumps(
-            {
-                "attempt_sha256": root.name,
-                "error_type": error.error_type,
-                "pod_id": self._pod_id,
-                "schema_version": _ERROR_SCHEMA,
-                "stage": error.stage,
-            },
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
+        payload = serialize_d1_trainer_mailbox_error(
+            D1TrainerMailboxErrorReport(
+                self._pod_id,
+                root.name,
+                error.stage,
+                error.error_type,
+            )
+        )
         publish_d1_atomic_bytes(
             root,
             "trainer-error.json",

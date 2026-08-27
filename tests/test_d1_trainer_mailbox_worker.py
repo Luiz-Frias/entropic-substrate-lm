@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from entropic_substrate.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     d1_trainer_mailbox_attempt_prefix,
     d1_trainer_mailbox_command_path,
+    parse_d1_trainer_mailbox_error,
     serialize_d1_trainer_mailbox_command,
 )
 from entropic_substrate.d1_trainer_mailbox_worker import (
@@ -116,14 +116,11 @@ def test_mailbox_worker_rejects_foreign_bootstrap_and_publishes_safe_error(
         ).run()
 
     assert factory_calls == []
-    error = json.loads((root / "trainer-error.json").read_bytes())
-    assert error == {
-        "attempt_sha256": _ATTEMPT,
-        "error_type": "ValueError",
-        "pod_id": _POD,
-        "schema_version": "d1-trainer-mailbox-error-v1",
-        "stage": "bootstrap",
-    }
+    error = parse_d1_trainer_mailbox_error((root / "trainer-error.json").read_bytes())
+    assert error.pod_id == _POD
+    assert error.attempt_sha256 == _ATTEMPT
+    assert error.stage == "bootstrap"
+    assert error.error_type == "ValueError"
 
 
 @dataclass

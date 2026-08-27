@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import NoReturn, cast
@@ -14,14 +16,24 @@ from entropic_substrate.experiments.d1_primitives import require_sha256
 __all__ = [
     "D1TrainerMailboxCommand",
     "D1TrainerMailboxCommandKind",
+    "D1TrainerMailboxErrorReport",
+    "D1TrainerMailboxObjectIdentity",
+    "D1TrainerMailboxObjectRead",
     "d1_trainer_mailbox_attempt_prefix",
     "d1_trainer_mailbox_command_path",
+    "d1_trainer_mailbox_error_path",
     "parse_d1_trainer_mailbox_command",
+    "parse_d1_trainer_mailbox_error",
     "serialize_d1_trainer_mailbox_command",
+    "serialize_d1_trainer_mailbox_error",
 ]
 
 _SCHEMA = "d1-trainer-mailbox-command-v1"
 _FIELDS = frozenset({"attempt_sha256", "kind", "pod_id", "request_sha256", "schema_version"})
+_ERROR_SCHEMA = "d1-trainer-mailbox-error-v1"
+_ERROR_FIELDS = frozenset({"attempt_sha256", "error_type", "pod_id", "schema_version", "stage"})
+_STAGE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_ERROR_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
 
 
 def _digest(value: str, *, label: str) -> str:
@@ -34,6 +46,72 @@ def _digest(value: str, *, label: str) -> str:
 class D1TrainerMailboxCommandKind(StrEnum):
     BOOTSTRAP = "bootstrap"
     START = "start"
+
+
+@dataclass(frozen=True, slots=True)
+class D1TrainerMailboxObjectIdentity:
+    key: str
+    size_bytes: int
+    sha256: str
+
+    def __post_init__(self) -> None:
+        normalized = normalize_d1_relative_artifact_path(
+            self.key,
+            label="D1 trainer mailbox object key",
+        )
+        if normalized != self.key:
+            raise ValueError("D1 trainer mailbox object key is noncanonical")
+        if type(self.size_bytes) is not int or self.size_bytes < 1:
+            raise ValueError("D1 trainer mailbox object size must be positive")
+        _digest(self.sha256, label="D1 trainer mailbox object")
+
+
+@dataclass(frozen=True, slots=True)
+class D1TrainerMailboxObjectRead:
+    identity: D1TrainerMailboxObjectIdentity
+    payload: bytes
+
+    def __post_init__(self) -> None:
+        if type(self.identity) is not D1TrainerMailboxObjectIdentity:
+            raise TypeError("D1 trainer mailbox read requires a nominal object identity")
+        if type(self.payload) is not bytes:
+            raise TypeError("D1 trainer mailbox read payload must be bytes")
+        if (
+            len(self.payload) != self.identity.size_bytes
+            or hashlib.sha256(self.payload).hexdigest() != self.identity.sha256
+        ):
+            raise ValueError("D1 trainer mailbox object bytes differ from their identity")
+
+
+@dataclass(frozen=True, slots=True)
+class D1TrainerMailboxErrorReport:
+    pod_id: str
+    attempt_sha256: str
+    stage: str
+    error_type: str
+    schema_version: str = _ERROR_SCHEMA
+
+    def __post_init__(self) -> None:
+        require_d1_pod_id(self.pod_id)
+        _digest(self.attempt_sha256, label="D1 trainer mailbox error attempt")
+        if type(self.stage) is not str or _STAGE.fullmatch(self.stage) is None:
+            raise ValueError("D1 trainer mailbox error stage is unsafe")
+        if type(self.error_type) is not str or _ERROR_TYPE.fullmatch(self.error_type) is None:
+            raise ValueError("D1 trainer mailbox error type is unsafe")
+        if type(self.schema_version) is not str:
+            raise TypeError("D1 trainer mailbox error schema_version must be text")
+        if self.schema_version != _ERROR_SCHEMA:
+            raise ValueError("D1 trainer mailbox error schema_version is unsupported")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "attempt_sha256": self.attempt_sha256,
+            "error_type": self.error_type,
+            "pod_id": self.pod_id,
+            "schema_version": self.schema_version,
+            "stage": self.stage,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,16 +193,34 @@ def d1_trainer_mailbox_command_path(command: D1TrainerMailboxCommand) -> str:
     )
 
 
-def serialize_d1_trainer_mailbox_command(command: D1TrainerMailboxCommand) -> bytes:
-    if type(command) is not D1TrainerMailboxCommand:
-        raise TypeError("D1 trainer mailbox serializer requires a nominal command")
+def d1_trainer_mailbox_error_path(pod_id: str, attempt_sha256: str) -> str:
+    prefix = d1_trainer_mailbox_attempt_prefix(pod_id, attempt_sha256)
+    return normalize_d1_relative_artifact_path(
+        f"{prefix}/trainer-error.json",
+        label="D1 trainer mailbox error",
+    )
+
+
+def _canonical(value: dict[str, object]) -> bytes:
     return json.dumps(
-        command.manifest,
+        value,
         allow_nan=False,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def serialize_d1_trainer_mailbox_command(command: D1TrainerMailboxCommand) -> bytes:
+    if type(command) is not D1TrainerMailboxCommand:
+        raise TypeError("D1 trainer mailbox serializer requires a nominal command")
+    return _canonical(command.manifest)
+
+
+def serialize_d1_trainer_mailbox_error(report: D1TrainerMailboxErrorReport) -> bytes:
+    if type(report) is not D1TrainerMailboxErrorReport:
+        raise TypeError("D1 trainer mailbox error serializer requires a nominal report")
+    return _canonical(report.manifest)
 
 
 def _fail(message: str, error: Exception | None = None) -> NoReturn:
@@ -137,35 +233,42 @@ def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     value: dict[str, object] = {}
     for key, item in pairs:
         if key in value:
-            _fail(f"D1 trainer mailbox command contains duplicate key {key!r}")
+            _fail(f"D1 trainer mailbox payload contains duplicate key {key!r}")
         value[key] = item
     return value
 
 
-def parse_d1_trainer_mailbox_command(payload: bytes) -> D1TrainerMailboxCommand:
+def _decode(payload: bytes, *, fields: frozenset[str], label: str) -> dict[str, object]:
     if type(payload) is not bytes:
-        raise TypeError("D1 trainer mailbox command payload must be bytes")
+        raise TypeError(f"{label} payload must be bytes")
     try:
         text = payload.decode("utf-8")
     except UnicodeError as error:
-        _fail("D1 trainer mailbox command must be UTF-8 JSON", error)
+        _fail(f"{label} must be UTF-8 JSON", error)
     try:
         value: object = json.loads(
             text,
             object_pairs_hook=_pairs,
             parse_constant=lambda constant: _fail(
-                f"D1 trainer mailbox command contains nonfinite constant {constant}"
+                f"{label} contains nonfinite constant {constant}"
             ),
         )
     except json.JSONDecodeError as error:
-        _fail("D1 trainer mailbox command must be UTF-8 JSON", error)
+        _fail(f"{label} must be UTF-8 JSON", error)
     except ValueError:
         raise
     if type(value) is not dict:
-        _fail("D1 trainer mailbox command root must be an object")
+        _fail(f"{label} root must be an object")
     root = cast(dict[str, object], value)
-    if frozenset(root) != _FIELDS:
-        _fail("D1 trainer mailbox command fields must be exact")
+    if frozenset(root) != fields:
+        _fail(f"{label} fields must be exact")
+    if _canonical(root) != payload:
+        _fail(f"{label} must use canonical JSON bytes")
+    return root
+
+
+def parse_d1_trainer_mailbox_command(payload: bytes) -> D1TrainerMailboxCommand:
+    root = _decode(payload, fields=_FIELDS, label="D1 trainer mailbox command")
     try:
         command = D1TrainerMailboxCommand(
             D1TrainerMailboxCommandKind(cast(str, root["kind"])),
@@ -176,6 +279,18 @@ def parse_d1_trainer_mailbox_command(payload: bytes) -> D1TrainerMailboxCommand:
         )
     except (TypeError, ValueError) as error:
         _fail(f"D1 trainer mailbox command value is invalid: {error}", error)
-    if serialize_d1_trainer_mailbox_command(command) != payload:
-        _fail("D1 trainer mailbox command must use canonical JSON bytes")
     return command
+
+
+def parse_d1_trainer_mailbox_error(payload: bytes) -> D1TrainerMailboxErrorReport:
+    root = _decode(payload, fields=_ERROR_FIELDS, label="D1 trainer mailbox error")
+    try:
+        return D1TrainerMailboxErrorReport(
+            cast(str, root["pod_id"]),
+            cast(str, root["attempt_sha256"]),
+            cast(str, root["stage"]),
+            cast(str, root["error_type"]),
+            cast(str, root["schema_version"]),
+        )
+    except (TypeError, ValueError) as error:
+        _fail(f"D1 trainer mailbox error value is invalid: {error}", error)
