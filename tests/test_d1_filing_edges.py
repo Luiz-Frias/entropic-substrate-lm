@@ -53,6 +53,25 @@ class FakeGit:
 
 def _case(mutation: str | None = None):
     machine = machine_verdict()
+    reader_manifest = {
+        "analysis_code_digest": "9" * 64,
+        "complete_reader": "reader.complete",
+        "modules": [
+            {"identity": "reader.complete", "path": "reader/complete.py", "sha256": "7" * 64},
+            {"identity": "reader.defect", "path": "reader/defect.py", "sha256": "8" * 64},
+        ],
+        "schema_version": "d1-reader-source-manifest-v1",
+        "terminal_defect_reader": "reader.defect",
+    }
+    isolation_manifest = {
+        "execution_evidence": {"analysis_sha256": "6" * 64},
+        "executor_kind": "external_enforced",
+        "filesystem_read_only": True,
+        "live_tracking_blocked": True,
+        "mechanism": "container-network-none",
+        "network_disabled": True,
+        "request_digest": "5" * 64,
+    }
     reveal = _json(
         {
             "mapping": {"A": "none", "B": "sg", "C": "ac", "D": "both"},
@@ -81,8 +100,8 @@ def _case(mutation: str | None = None):
             "preregistration": b"registered design bytes\n",
             "raw_capture_manifest": b'{"capture":"bound"}',
             "blinded_analysis": b"pending",
-            "analysis_reader": b"def read_capture(): ...\n",
-            "analysis_isolation_attestation": b'{"session":"fresh","network":"disabled"}',
+            "analysis_reader": _json(reader_manifest),
+            "analysis_isolation_attestation": _json(isolation_manifest),
             "review_packet": _json(
                 {
                     "alias_commitment": _sha(commitment),
@@ -176,19 +195,41 @@ def _case(mutation: str | None = None):
     }
     if mutation == "analysis_binding":
         analysis_fields["output_sha256"] = "0" * 64
-    payloads["analysis_receipt"] = _json(
-        {
-            "alias_commitment": analysis_manifest["alias_commitment"],
-            "analysis_digest": _sha(payloads["blinded_analysis"]),
-            "bindings": analysis_manifest["bindings"],
-            "filing_bindings": analysis_fields,
-            "filing_eligible": True,
-            "implementation": {"analysis_code_digest": "9" * 64},
-            "inputs": [{"sha256": "8" * 64}],
-            "isolation": {"executor_kind": "external_enforced"},
-            "schema_version": "d1-analysis-execution-receipt-v1",
+    analysis_receipt = {
+        "alias_commitment": analysis_manifest["alias_commitment"],
+        "analysis_digest": _sha(payloads["blinded_analysis"]),
+        "bindings": analysis_manifest["bindings"],
+        "filing_bindings": analysis_fields,
+        "filing_eligible": True,
+        "implementation": {
+            "analysis_code_digest": reader_manifest["analysis_code_digest"],
+            "readers": {
+                "complete": {"identity": "reader.complete", "sha256": "7" * 64},
+                "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+            },
+        },
+        "inputs": [{"sha256": "8" * 64}],
+        "isolation": isolation_manifest,
+        "schema_version": "d1-analysis-execution-receipt-v1",
+    }
+    if mutation == "analysis_receipt_alias":
+        analysis_receipt["alias_commitment"] = "0" * 64
+    elif mutation == "analysis_receipt_bindings":
+        analysis_receipt["bindings"] = {
+            **analysis_manifest["bindings"],
+            "capture_digest": "0" * 64,
         }
-    )
+    elif mutation == "analysis_receipt_isolation":
+        analysis_receipt["isolation"] = {
+            **isolation_manifest,
+            "mechanism": "unrelated-execution",
+        }
+    elif mutation == "analysis_receipt_reader":
+        analysis_receipt["implementation"] = {
+            **analysis_receipt["implementation"],
+            "analysis_code_digest": "0" * 64,
+        }
+    payloads["analysis_receipt"] = _json(analysis_receipt)
     adjudication = machine["review"]["adjudication"]  # type: ignore[index]
     receipt = json.loads(payloads["reviewer_execution_receipt"])
     adjudication.update(  # type: ignore[union-attr]
@@ -260,6 +301,10 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
     ("mutation", "error", "message"),
     [
         ("analysis_binding", D1FilingGraphError, "analysis"),
+        ("analysis_receipt_alias", D1FilingGraphError, "analysis"),
+        ("analysis_receipt_bindings", D1FilingGraphError, "analysis"),
+        ("analysis_receipt_isolation", D1FilingGraphError, "isolation"),
+        ("analysis_receipt_reader", D1FilingGraphError, "reader"),
         ("alias_bijection", D1FilingGraphError, "bijection"),
         ("missing_model", D1EvidenceGapError, "model_id"),
         ("major_ids", D1FilingGraphError, "MAJOR"),

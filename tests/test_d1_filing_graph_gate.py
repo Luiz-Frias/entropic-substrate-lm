@@ -270,8 +270,27 @@ def _case(
     }
     prereg = b"registered design bytes\n"
     capture = _json(aggregate.manifest)
-    reader = b"def read_capture(): ...\n"
-    isolation = b'{"session":"fresh","network":"disabled"}'
+    reader_manifest = {
+        "analysis_code_digest": "9" * 64,
+        "complete_reader": "reader.complete",
+        "modules": [
+            {"identity": "reader.complete", "path": "reader/complete.py", "sha256": "7" * 64},
+            {"identity": "reader.defect", "path": "reader/defect.py", "sha256": "8" * 64},
+        ],
+        "schema_version": "d1-reader-source-manifest-v1",
+        "terminal_defect_reader": "reader.defect",
+    }
+    reader = _json(reader_manifest)
+    isolation_manifest = {
+        "execution_evidence": {"analysis_sha256": "6" * 64},
+        "executor_kind": "external_enforced",
+        "filesystem_read_only": True,
+        "live_tracking_blocked": True,
+        "mechanism": "container-network-none",
+        "network_disabled": True,
+        "request_digest": "5" * 64,
+    }
+    isolation = _json(isolation_manifest)
     reveal_mapping = {"A": "none", "B": "sg", "C": "ac", "D": "both"}
     if mutation == "analysis_alias_domain":
         reveal_mapping = {"A": "none", "X": "sg", "C": "ac", "D": "both"}
@@ -359,9 +378,15 @@ def _case(
                 "reader_sha256": _sha(reader),
             },
             "filing_eligible": True,
-            "implementation": {"analysis_code_digest": "9" * 64},
+            "implementation": {
+                "analysis_code_digest": reader_manifest["analysis_code_digest"],
+                "readers": {
+                    "complete": {"identity": "reader.complete", "sha256": "7" * 64},
+                    "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+                },
+            },
             "inputs": [{"sha256": "8" * 64}],
-            "isolation": {"executor_kind": "external_enforced"},
+            "isolation": isolation_manifest,
             "schema_version": "d1-analysis-execution-receipt-v1",
         }
     )

@@ -54,6 +54,19 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _canonical_bytes(value: object, *, path: str) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError, RecursionError) as error:
+        _fail("analysis_binding", path, f"must be finite canonical JSON: {error}")
+
+
 def _fail(code: str, path: str, detail: str) -> NoReturn:
     raise D1FilingGraphError(code=code, path=path, detail=detail)
 
@@ -140,6 +153,66 @@ def _verify_git(
             )
 
 
+def _verify_analysis_reader(
+    receipt_manifest: Mapping[str, object], payloads: Mapping[str, bytes]
+) -> None:
+    try:
+        reader_value: object = json.loads(payloads["analysis_reader"])
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        _fail("analysis_reader", "analysis_reader", f"must be UTF-8 JSON: {error}")
+    if type(reader_value) is not dict:
+        _fail("analysis_reader", "analysis_reader", "must be an object")
+    reader = cast(dict[str, object], reader_value)
+    expected_fields = {
+        "analysis_code_digest",
+        "complete_reader",
+        "modules",
+        "schema_version",
+        "terminal_defect_reader",
+    }
+    if set(reader) != expected_fields or reader.get("schema_version") != (
+        "d1-reader-source-manifest-v1"
+    ):
+        _fail("analysis_reader", "analysis_reader", "schema or fields differ")
+    if _canonical_bytes(reader, path="analysis_reader") != payloads["analysis_reader"]:
+        _fail("analysis_reader", "analysis_reader", "bytes must be canonical JSON")
+    modules = reader["modules"]
+    if type(modules) is not list:
+        _fail("analysis_reader", "analysis_reader.modules", "must be an array")
+    by_identity: dict[str, str] = {}
+    for index, raw in enumerate(cast(list[object], modules)):
+        if type(raw) is not dict or set(raw) != {"identity", "path", "sha256"}:
+            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "fields differ")
+        row = cast(dict[str, object], raw)
+        identity, digest = row["identity"], row["sha256"]
+        if type(identity) is not str or type(digest) is not str or identity in by_identity:
+            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "identity differs")
+        by_identity[identity] = digest
+    implementation = receipt_manifest["implementation"]
+    if type(implementation) is not dict:
+        _fail("analysis_reader", "analysis_receipt.implementation", "must be an object")
+    implementation = cast(dict[str, object], implementation)
+    if implementation.get("analysis_code_digest") != reader["analysis_code_digest"]:
+        _fail("analysis_reader", "analysis_receipt.implementation", "code digest differs")
+    readers = implementation.get("readers")
+    if type(readers) is not dict or set(readers) != {"complete", "terminal_defect"}:
+        _fail("analysis_reader", "analysis_receipt.implementation.readers", "fields differ")
+    readers = cast(dict[str, object], readers)
+    expected = {
+        "complete": reader["complete_reader"],
+        "terminal_defect": reader["terminal_defect_reader"],
+    }
+    for role, identity in expected.items():
+        entry = readers[role]
+        if type(entry) is not dict:
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "must be an object")
+        entry = cast(dict[str, object], entry)
+        if set(entry) != {"identity", "sha256"} or entry.get("identity") != identity:
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "identity differs")
+        if entry.get("sha256") != by_identity.get(cast(str, identity)):
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "digest differs")
+
+
 def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
     receipt = parse_analysis_receipt(payloads["analysis_receipt"])
     filing = receipt.filing_bindings
@@ -156,9 +229,23 @@ def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
         if getattr(filing, field) != value:
             _fail("analysis_binding", f"analysis_receipt.{field}", "digest differs")
     try:
-        return decode_d1_machine_analysis_declaration(payloads["blinded_analysis"]).manifest
+        analysis = decode_d1_machine_analysis_declaration(payloads["blinded_analysis"]).manifest
     except D1MachineAnalysisCodecError as error:
         _fail("analysis_schema", "blinded_analysis", str(error))
+    receipt_manifest = receipt.manifest
+    if receipt_manifest["analysis_digest"] != _sha(payloads["blinded_analysis"]):
+        _fail("analysis_binding", "analysis_receipt.analysis_digest", "digest differs")
+    if receipt_manifest["alias_commitment"] != _sha(payloads["alias_commitment"]):
+        _fail("analysis_binding", "analysis_receipt.alias_commitment", "digest differs")
+    if receipt_manifest["bindings"] != analysis["bindings"]:
+        _fail("analysis_binding", "analysis_receipt.bindings", "analysis differs")
+    if (
+        _canonical_bytes(receipt_manifest["isolation"], path="analysis_receipt.isolation")
+        != payloads["analysis_isolation_attestation"]
+    ):
+        _fail("analysis_isolation", "analysis_receipt.isolation", "filed bytes differ")
+    _verify_analysis_reader(receipt_manifest, payloads)
+    return analysis
 
 
 def _verify_aliases(payloads: Mapping[str, bytes]) -> Mapping[str, str]:
