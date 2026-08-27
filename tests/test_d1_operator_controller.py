@@ -532,9 +532,10 @@ def test_partial_billing_preserves_quality_but_latches_paid_campaign_queue(
     assert result.billing.provider_billing_complete is False
     assert result.billing.quality_evidence_admissible is True
     assert result.queue_admissible is False
-    assert result.finalized_cell is None
-    assert "persist_finalization" in events
-    assert "persist_finalized_cell" not in events
+    assert result.finalized_cell is not None
+    assert result.finalized_cell.billing_posture == "missing_cost"
+    assert "persist_finalized_cell" in events
+    assert "persist_finalization" not in events
     with pytest.raises(D1OperatorQueueHalt, match="provider-billing evidence gap"):
         controller.execute_fresh(case.intent)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import NoReturn, Protocol
 
 from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
@@ -13,6 +14,7 @@ from entropic_substrate.d1_finalized_cell_custody import (
     attest_d1_finalized_cell_custody,
     identify_d1_finalized_journal,
 )
+from entropic_substrate.d1_numerical_defect import D1TerminalNumericalDefectRecord
 from entropic_substrate.d1_operator_evidence import (
     D1StagedTrainerRequestReceipt,
     D1TrainerExportReceipt,
@@ -44,6 +46,8 @@ from entropic_substrate.d1_trainer_request_codec import (
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
+from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
+from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
 from entropic_substrate.evidence.lifecycle import (
     ActorIdentity,
     ActorRole,
@@ -82,6 +86,22 @@ def _quarantined_siblings(handoff: object) -> tuple[ArtifactIdentity, ...]:
             ContentHash("sha256", receipt.quarantined_journal_sha256),
         ),
     )
+
+
+def _terminal_defect(
+    intent: D1OperatorLaunchIntent, journal_path: Path
+) -> D1TerminalNumericalDefectRecord | None:
+    run = read_d1_run_evidence(
+        journal_path,
+        expected_logical_run_id=intent.plan.logical_run_id,
+        expected_family_digest=intent.plan.profile.family.family_digest,
+        expected_run_class=RunClass.CONFIRMATORY,
+        expected_plan_digest=intent.plan.plan_digest,
+        allow_incomplete=True,
+    )
+    if run.status is not D1RunStatus.TRAINER_ABORTED or run.trainer_abort is None:
+        return None
+    return run.trainer_abort.numerical_defect
 
 
 class D1OperatorCustodyPort(Protocol):
@@ -328,11 +348,10 @@ class D1SequentialOperatorController:
         self._custody.persist_attempt_ledger(ledger)
         self.attempt_ledger = ledger
         queue_admissible = not failed and billing.provider_billing_complete
+        defect = _terminal_defect(intent, candidate.journal_path) if failed else None
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
-        if queue_admissible:
+        if isinstance(export.checkpoint, ArtifactIdentity) and (not failed or defect is not None):
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-            if not isinstance(export.checkpoint, ArtifactIdentity):
-                raise ValueError("queue-admissible export lost its checkpoint identity")
             finalized_cell = attest_d1_finalized_cell_custody(
                 intent=intent,
                 segment_starts=(start,),
@@ -341,6 +360,7 @@ class D1SequentialOperatorController:
                 journal=journal,
                 checkpoint=export.checkpoint,
                 quarantined_siblings=_quarantined_siblings(handoff),
+                numerical_defect=defect,
             )
             finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:
@@ -475,11 +495,10 @@ class D1SequentialOperatorController:
         self._custody.persist_attempt_ledger(ledger)
         self.attempt_ledger = ledger
         queue_admissible = not failed and billing.provider_billing_complete
+        defect = _terminal_defect(intent, candidate.journal_path) if failed else None
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
-        if queue_admissible:
+        if isinstance(export.checkpoint, ArtifactIdentity) and (not failed or defect is not None):
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-            if not isinstance(export.checkpoint, ArtifactIdentity):
-                raise ValueError("queue-admissible export lost its checkpoint identity")
             finalized_cell = attest_d1_finalized_cell_custody(
                 intent=intent,
                 segment_starts=(*history.starts, start),
@@ -488,6 +507,7 @@ class D1SequentialOperatorController:
                 journal=journal,
                 checkpoint=export.checkpoint,
                 quarantined_siblings=_quarantined_siblings(handoff),
+                numerical_defect=defect,
             )
             artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:

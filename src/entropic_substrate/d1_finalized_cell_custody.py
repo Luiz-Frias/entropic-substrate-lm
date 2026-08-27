@@ -11,10 +11,15 @@ from pathlib import Path
 from typing import NoReturn, SupportsIndex, cast
 
 from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
+from entropic_substrate.d1_numerical_defect import (
+    D1TerminalNumericalDefectRecord,
+    terminal_numerical_defect_from_mapping,
+)
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.evidence.resource_billing_reconciliation import (
+    LogicalBillingMissingCost,
     LogicalBillingReconciliation,
 )
 from entropic_substrate.evidence.resource_provenance import (
@@ -42,12 +47,12 @@ from entropic_substrate.experiments.d1_primitives import (
     require_sha256,
 )
 
-_SCHEMA = "d1-finalized-cell-custody-v3"
+_SCHEMA = "d1-finalized-cell-custody-v4"
 _FINALIZATION_SCHEMA = "d1-finalized-cell-evidence-v1"
 _ROOT_KEYS = frozenset(
     (
         "arm attempt_ledger billing_posture checkpoint finalization intent journal logical_run_id "
-        "plan_digest quality_export_ready quarantined_siblings registered_design_digest schema_version seed "
+        "numerical_defect plan_digest quality_export_ready quarantined_siblings registered_design_digest schema_version seed "
         "segment_starts trainer_outcome"
     ).split()
 )
@@ -145,6 +150,7 @@ class D1FinalizedCellCustodyRecord:
     journal: ArtifactIdentity
     checkpoint: ArtifactIdentity
     quarantined_siblings: tuple[ArtifactIdentity, ...]
+    numerical_defect: D1TerminalNumericalDefectRecord | None
     billing_posture: str
     quality_export_ready: bool
     trainer_outcome: str
@@ -183,6 +189,9 @@ class D1FinalizedCellCustodyRecord:
                 "sha256": self.checkpoint.content_hash.digest,
             },
             "logical_run_id": self.logical_run_id,
+            "numerical_defect": (
+                None if self.numerical_defect is None else self.numerical_defect.manifest
+            ),
             "plan_digest": self.plan_digest,
             "quality_export_ready": self.quality_export_ready,
             "quarantined_siblings": [
@@ -241,13 +250,14 @@ def _validate_record(record: D1FinalizedCellCustodyRecord) -> None:
         for event in record.attempt_ledger.events
         if event.identity.logical_run_id == record.logical_run_id
     )
+    terminal_status = (
+        D1LaunchAttemptStatus.COMPLETED
+        if record.trainer_outcome == "completed"
+        else D1LaunchAttemptStatus.FAILED
+    )
     if (
         tuple(item.status for item in history)
-        != (
-            D1LaunchAttemptStatus.RECORDED,
-            D1LaunchAttemptStatus.TRAINER_STARTED,
-            D1LaunchAttemptStatus.COMPLETED,
-        )
+        != (D1LaunchAttemptStatus.RECORDED, D1LaunchAttemptStatus.TRAINER_STARTED, terminal_status)
         or history[-1] is not record.attempt_ledger.events[-1]
     ):
         _fail("finalized cell requires one terminal completed attempt")
@@ -264,14 +274,14 @@ def _validate_record(record: D1FinalizedCellCustodyRecord) -> None:
         _fail("finalization manifest must use canonical JSON")
     if (
         finalization.get("schema_version") != _FINALIZATION_SCHEMA
-        or record.billing_posture != "reconciled"
-        or _mapping(finalization.get("billing"), "billing").get("kind") != "reconciled"
-        or record.trainer_outcome != "completed"
-        or finalization.get("trainer_outcome") != "completed"
+        or record.billing_posture not in {"reconciled", "missing_cost"}
+        or _mapping(finalization.get("billing"), "billing").get("kind") != record.billing_posture
+        or record.trainer_outcome not in {"completed", "failed"}
+        or finalization.get("trainer_outcome") != record.trainer_outcome
         or record.quality_export_ready is not True
         or finalization.get("quality_export_ready") is not True
     ):
-        _fail("finalized cell requires completed, reconciled, export-ready billing")
+        _fail("finalized cell requires terminal, explicit-billing, export-ready evidence")
     state = _mapping(finalization.get("journal_state"), "finalization journal_state")
     terminal = _mapping(finalization.get("terminal_event"), "finalization terminal_event")
     if (
@@ -314,6 +324,23 @@ def _validate_record(record: D1FinalizedCellCustodyRecord) -> None:
             _identify_finalized_artifact(Path(sibling.path), "quarantined sibling") != sibling
         ):
             _fail("quarantined sibling identity differs from its bytes")
+    defect = record.numerical_defect
+    if record.trainer_outcome == "completed":
+        if defect is not None:
+            _fail("completed finalized cell cannot claim a numerical defect")
+    elif type(defect) is not D1TerminalNumericalDefectRecord:
+        _fail("failed finalized cell requires a numerical defect")
+    elif (
+        defect.logical_run_id != record.logical_run_id
+        or defect.arm is not record.arm
+        or defect.seed != record.seed
+        or defect.plan_digest != record.plan_digest
+        or defect.family_digest != plan.get("family_digest")
+        or defect.construction_digest != plan.get("construction_digest")
+        or defect.source_exception_code != "d1.eval.nats_per_byte.nonfinite.v1"
+        or defect.checkpoint.sha256 != record.checkpoint.content_hash.digest
+    ):
+        _fail("numerical defect identity differs from finalized cell custody")
 
 
 def _mint(
@@ -330,17 +357,20 @@ def _mint(
     journal: ArtifactIdentity,
     checkpoint: ArtifactIdentity,
     quarantined_siblings: tuple[ArtifactIdentity, ...],
+    numerical_defect: D1TerminalNumericalDefectRecord | None,
 ) -> D1FinalizedCellCustodyRecord:
     record = object.__new__(D1FinalizedCellCustodyRecord)
     source = locals()
     for name in (
         "logical_run_id arm seed registered_design_digest plan_digest intent_json "
-        "segment_starts attempt_ledger finalization_json journal checkpoint quarantined_siblings"
+        "segment_starts attempt_ledger finalization_json journal checkpoint quarantined_siblings numerical_defect"
     ).split():
         object.__setattr__(record, name, source[name])
-    object.__setattr__(record, "billing_posture", "reconciled")
-    object.__setattr__(record, "quality_export_ready", True)
-    object.__setattr__(record, "trainer_outcome", "completed")
+    finalization = _mapping(json.loads(finalization_json), "finalization manifest")
+    billing = _mapping(finalization.get("billing"), "billing")
+    object.__setattr__(record, "billing_posture", billing.get("kind"))
+    object.__setattr__(record, "quality_export_ready", finalization.get("quality_export_ready"))
+    object.__setattr__(record, "trainer_outcome", finalization.get("trainer_outcome"))
     object.__setattr__(record, "_mint_digest", "0" * 64)
     _validate_record(record)
     object.__setattr__(record, "_mint_digest", record.record_digest)
@@ -357,6 +387,7 @@ def attest_d1_finalized_cell_custody(
     journal: ArtifactIdentity,
     checkpoint: ArtifactIdentity,
     quarantined_siblings: tuple[ArtifactIdentity, ...],
+    numerical_defect: D1TerminalNumericalDefectRecord | None,
 ) -> D1FinalizedCellCustodyRecord:
     if (
         type(intent) is not D1OperatorLaunchIntent
@@ -366,12 +397,16 @@ def attest_d1_finalized_cell_custody(
         or type(journal) is not ArtifactIdentity
         or type(checkpoint) is not ArtifactIdentity
         or type(quarantined_siblings) is not tuple
+        or (
+            numerical_defect is not None
+            and type(numerical_defect) is not D1TerminalNumericalDefectRecord
+        )
     ):
         raise TypeError("finalized-cell custody requires nominal source evidence")
-    if type(finalization.billing) is not LogicalBillingReconciliation:
-        raise ValueError("finalized-cell custody requires reconciled provider billing")
-    if finalization.trainer_outcome != "completed" or not finalization.quality_export_ready:
-        raise ValueError("finalized-cell custody requires successful quality finalization")
+    if type(finalization.billing) not in (LogicalBillingReconciliation, LogicalBillingMissingCost):
+        raise ValueError("finalized-cell custody requires explicit provider billing posture")
+    if not finalization.quality_export_ready:
+        raise ValueError("finalized-cell custody requires quality export readiness")
     return _mint(
         logical_run_id=intent.plan.logical_run_id,
         arm=intent.plan.profile.arm,
@@ -385,6 +420,7 @@ def attest_d1_finalized_cell_custody(
         journal=journal,
         checkpoint=checkpoint,
         quarantined_siblings=quarantined_siblings,
+        numerical_defect=numerical_defect,
     )
 
 
@@ -493,6 +529,11 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
             quarantined_siblings=tuple(
                 _artifact(value, f"quarantined_siblings[{index}]")
                 for index, value in enumerate(siblings_raw)
+            ),
+            numerical_defect=(
+                None
+                if root["numerical_defect"] is None
+                else terminal_numerical_defect_from_mapping(root["numerical_defect"])
             ),
         )
     except D1FinalizedCellCustodyError:

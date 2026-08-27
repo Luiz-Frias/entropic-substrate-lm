@@ -12,7 +12,10 @@ from typing import NamedTuple, cast
 import pytest
 
 from d1_billing_finalizer_fixtures import billing_gap, provider_bill
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
+from entropic_substrate.d1_billing_finalization_values import (
+    D1BillingFinalization,
+    attest_durable_d1_finalization,
+)
 from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyError,
@@ -20,6 +23,11 @@ from entropic_substrate.d1_finalized_cell_custody import (
     attest_d1_finalized_cell_custody,
     parse_d1_finalized_cell_custody,
     serialize_d1_finalized_cell_custody,
+)
+from entropic_substrate.d1_numerical_defect import (
+    D1DefectCheckpointReference,
+    D1NonfiniteClassification,
+    D1TerminalNumericalDefectRecord,
 )
 from entropic_substrate.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
@@ -39,7 +47,12 @@ from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_json
+from entropic_substrate.experiments.d1_primitives import (
+    D1Arm,
+    EvidenceClass,
+    RunClass,
+    canonical_json,
+)
 
 from .test_d1_operator_controller import _case
 
@@ -54,6 +67,7 @@ class _FinalizedCase(NamedTuple):
     journal: ArtifactIdentity
     checkpoint: ArtifactIdentity
     quarantined_siblings: tuple[ArtifactIdentity, ...]
+    numerical_defect: D1TerminalNumericalDefectRecord | None
 
 
 def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _FinalizedCase:
@@ -116,6 +130,7 @@ def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _Finalized
         journal,
         export.checkpoint,
         (),
+        None,
     )
 
 
@@ -128,6 +143,7 @@ def _attest(case: _FinalizedCase) -> D1FinalizedCellCustodyRecord:
         journal=case.journal,
         checkpoint=case.checkpoint,
         quarantined_siblings=case.quarantined_siblings,
+        numerical_defect=case.numerical_defect,
     )
 
 
@@ -143,7 +159,8 @@ def test_finalized_cell_round_trips_exact_canonical_evidence(tmp_path: Path) -> 
     )
     assert record.checkpoint == case.checkpoint
     assert record.quarantined_siblings == ()
-    assert record.schema_version == "d1-finalized-cell-custody-v3"
+    assert record.numerical_defect is None
+    assert record.schema_version == "d1-finalized-cell-custody-v4"
     payload = serialize_d1_finalized_cell_custody(record)
     restored = parse_d1_finalized_cell_custody(payload)
 
@@ -159,9 +176,8 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
     with pytest.raises(ValueError, match="completed attempt"):
         _attest(case._replace(ledger=D1LaunchAttemptLedger(case.ledger.events[:-1])))
 
-    gap = _finalized_case(tmp_path / "gap", missing_cost=True)
-    with pytest.raises(ValueError, match="billing"):
-        _attest(gap)
+    gap = _attest(_finalized_case(tmp_path / "gap", missing_cost=True))
+    assert gap.billing_posture == "missing_cost"
 
     wrong_journal = replace(
         case.journal,
@@ -195,6 +211,7 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
         ("journal_digest", "final journal identity"),
         ("checkpoint_digest", "checkpoint"),
         ("quarantine_unknown", "quarantined sibling"),
+        ("numerical_defect_invented", "numerical defect"),
         ("billing_posture", "billing and quality posture"),
         ("quality_ready", "billing and quality posture"),
         ("unknown_field", "fields must be exact"),
@@ -232,6 +249,8 @@ def test_codec_rejects_each_substituted_evidence_edge(
         value["checkpoint"]["sha256"] = "0" * 64
     elif mutation == "quarantine_unknown":
         value["quarantined_siblings"] = [value["checkpoint"]]
+    elif mutation == "numerical_defect_invented":
+        value["numerical_defect"] = {"invented": True}
     elif mutation == "billing_posture":
         value["billing_posture"] = "missing_cost"
     elif mutation == "quality_ready":
@@ -289,6 +308,60 @@ def test_resumed_cell_custody_retains_verified_quarantined_sibling(tmp_path: Pat
     wrong = replace(quarantine, content_hash=ContentHash("sha256", "0" * 64))
     with pytest.raises(ValueError, match="quarantined sibling"):
         _attest(resumed._replace(quarantined_siblings=(wrong,)))
+
+
+def test_failed_cell_custody_requires_and_retains_terminal_numerical_defect(
+    tmp_path: Path,
+) -> None:
+    case = _finalized_case(tmp_path)
+    plan = case.intent.plan
+    defect = D1TerminalNumericalDefectRecord(
+        "nats_per_byte",
+        D1NonfiniteClassification.NAN,
+        "d1.eval.nats_per_byte.nonfinite.v1",
+        2,
+        2,
+        2,
+        D1Arm.NONE,
+        plan.seed,
+        plan.run.execution.pairing_id,
+        plan.logical_run_id,
+        RunClass.CONFIRMATORY,
+        0,
+        case.starts[0].execution_segment_id,
+        plan.plan_digest,
+        plan.profile.family.family_digest,
+        plan.run.construction_digest,
+        plan.run.execution_digest,
+        plan.run.aggregation_digest,
+        D1DefectCheckpointReference.receipt(case.checkpoint.content_hash.digest),
+        EvidenceClass.MEASURED,
+    )
+    failed_event = replace(
+        case.ledger.events[-1],
+        status=D1LaunchAttemptStatus.FAILED,
+        reason="terminal numerical defect",
+    )
+    failed_ledger = D1LaunchAttemptLedger((*case.ledger.events[:-1], failed_event))
+    failed_finalization = attest_durable_d1_finalization(
+        billing=case.finalization.billing,
+        journal_state=case.finalization.journal_state,
+        terminal_event=case.finalization.terminal_event,
+        trainer_outcome="failed",
+        quality_export_ready=True,
+    )
+    failed = case._replace(
+        ledger=failed_ledger,
+        finalization=failed_finalization,
+        numerical_defect=defect,
+    )
+
+    record = _attest(failed)
+
+    assert record.trainer_outcome == "failed"
+    assert record.numerical_defect == defect
+    with pytest.raises(ValueError, match="numerical defect"):
+        _attest(failed._replace(numerical_defect=None))
 
 
 def test_attestation_rejects_unminted_and_mutated_records(tmp_path: Path) -> None:

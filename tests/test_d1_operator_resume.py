@@ -246,7 +246,7 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
 
     expected_tail = (
         ["persist_attempt_ledger", "persist_finalized_cell"]
-        if outcome == "admissible"
+        if outcome in {"admissible", "billing_gap"}
         else ["persist_attempt_ledger", "persist_finalization"]
     )
     assert events == [
@@ -272,7 +272,7 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     assert captured["segment_starts"] == (start0, start1)
     assert captured["segment_terminations"] == (prior_termination, result.termination)
     assert result.queue_admissible is (outcome == "admissible")
-    if outcome == "admissible":
+    if outcome in {"admissible", "billing_gap"}:
         assert custody_captured["segment_starts"] == (start0, start1)
         assert custody_captured["attempt_ledger"] == result.attempt_ledger
         assert custody_captured["quarantined_siblings"] == ()
