@@ -510,6 +510,7 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     assert result.finalized_cell is not None
     result.finalized_cell.require_factory_attested()
     assert result.finalized_cell.attempt_ledger == result.attempt_ledger
+    assert result.finalized_cell.checkpoint == result.export.checkpoint
     assert result.finalized_cell_artifact.content_hash.digest == result.finalized_cell.record_digest
     assert result.process_manager.events[-1].artifacts == (result.finalized_cell_artifact,)
     assert read_journal(case.journal_path)[-1].event_kind is JournalEventKind.RUN_END

@@ -42,11 +42,11 @@ from entropic_substrate.experiments.d1_primitives import (
     require_sha256,
 )
 
-_SCHEMA = "d1-finalized-cell-custody-v1"
+_SCHEMA = "d1-finalized-cell-custody-v2"
 _FINALIZATION_SCHEMA = "d1-finalized-cell-evidence-v1"
 _ROOT_KEYS = frozenset(
     (
-        "arm attempt_ledger billing_posture finalization intent journal logical_run_id "
+        "arm attempt_ledger billing_posture checkpoint finalization intent journal logical_run_id "
         "plan_digest quality_export_ready registered_design_digest schema_version seed "
         "segment_starts trainer_outcome"
     ).split()
@@ -134,6 +134,7 @@ class D1FinalizedCellCustodyRecord:
     attempt_ledger: D1LaunchAttemptLedger
     finalization_json: str
     journal: ArtifactIdentity
+    checkpoint: ArtifactIdentity
     billing_posture: str
     quality_export_ready: bool
     trainer_outcome: str
@@ -167,11 +168,15 @@ class D1FinalizedCellCustodyRecord:
                 "path": self.journal.path,
                 "sha256": self.journal.content_hash.digest,
             },
+            "checkpoint": {
+                "path": self.checkpoint.path,
+                "sha256": self.checkpoint.content_hash.digest,
+            },
             "logical_run_id": self.logical_run_id,
             "plan_digest": self.plan_digest,
             "quality_export_ready": self.quality_export_ready,
             "registered_design_digest": self.registered_design_digest,
-            "schema_version": _SCHEMA,
+            "schema_version": self.schema_version,
             "seed": self.seed,
             "segment_starts": [run_start_to_mapping(item) for item in self.segment_starts],
             "trainer_outcome": self.trainer_outcome,
@@ -180,6 +185,10 @@ class D1FinalizedCellCustodyRecord:
     @property
     def record_digest(self) -> str:
         return canonical_digest(self.manifest)
+
+    @property
+    def schema_version(self) -> str:
+        return _SCHEMA
 
     def require_factory_attested(self) -> None:
         if _MINTED.get(id(self)) is not self:
@@ -259,8 +268,21 @@ def _validate_record(record: D1FinalizedCellCustodyRecord) -> None:
         or state.get("last_event_sequence") != terminal.get("event_seq")
     ):
         _fail("final journal identity differs from successful finalization")
-    if record.journal.content_hash.algorithm != "sha256":
-        _fail("final journal identity must use SHA-256")
+    if (
+        type(record.journal) is not ArtifactIdentity
+        or type(record.checkpoint) is not ArtifactIdentity
+        or record.journal.content_hash.algorithm != "sha256"
+        or record.checkpoint.content_hash.algorithm != "sha256"
+        or record.journal.path == record.checkpoint.path
+    ):
+        _fail("final journal and checkpoint identities must be distinct SHA-256 artifacts")
+    if _identify_finalized_artifact(Path(record.journal.path), "journal") != record.journal:
+        _fail("final journal identity differs from its bytes")
+    if (
+        _identify_finalized_artifact(Path(record.checkpoint.path), "checkpoint")
+        != record.checkpoint
+    ):
+        _fail("final checkpoint identity differs from its bytes")
 
 
 def _mint(
@@ -275,12 +297,13 @@ def _mint(
     attempt_ledger: D1LaunchAttemptLedger,
     finalization_json: str,
     journal: ArtifactIdentity,
+    checkpoint: ArtifactIdentity,
 ) -> D1FinalizedCellCustodyRecord:
     record = object.__new__(D1FinalizedCellCustodyRecord)
     source = locals()
     for name in (
         "logical_run_id arm seed registered_design_digest plan_digest intent_json "
-        "segment_starts attempt_ledger finalization_json journal"
+        "segment_starts attempt_ledger finalization_json journal checkpoint"
     ).split():
         object.__setattr__(record, name, source[name])
     object.__setattr__(record, "billing_posture", "reconciled")
@@ -300,6 +323,7 @@ def attest_d1_finalized_cell_custody(
     attempt_ledger: D1LaunchAttemptLedger,
     finalization: D1BillingFinalization,
     journal: ArtifactIdentity,
+    checkpoint: ArtifactIdentity,
 ) -> D1FinalizedCellCustodyRecord:
     if (
         type(intent) is not D1OperatorLaunchIntent
@@ -307,6 +331,7 @@ def attest_d1_finalized_cell_custody(
         or type(attempt_ledger) is not D1LaunchAttemptLedger
         or type(finalization) is not D1BillingFinalization
         or type(journal) is not ArtifactIdentity
+        or type(checkpoint) is not ArtifactIdentity
     ):
         raise TypeError("finalized-cell custody requires nominal source evidence")
     if type(finalization.billing) is not LogicalBillingReconciliation:
@@ -324,43 +349,52 @@ def attest_d1_finalized_cell_custody(
         attempt_ledger=attempt_ledger,
         finalization_json=canonical_json(_finalization_manifest(finalization)),
         journal=journal,
+        checkpoint=checkpoint,
     )
 
 
-def identify_d1_finalized_journal(
-    path: Path, finalization: D1BillingFinalization
-) -> ArtifactIdentity:
-    if not isinstance(cast(object, path), Path) or type(finalization) is not D1BillingFinalization:
-        raise TypeError("finalized journal identity requires Path and D1BillingFinalization")
+def _identify_finalized_artifact(path: Path, label: str) -> ArtifactIdentity:
+    if not isinstance(cast(object, path), Path):
+        raise TypeError(f"finalized {label} identity requires Path")
     try:
         info = path.lstat()
     except FileNotFoundError as error:
-        raise ValueError("finalized journal is missing") from error
+        raise ValueError(f"finalized {label} is missing") from error
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        raise ValueError("finalized journal must be a regular non-symlink file")
+        raise ValueError(f"finalized {label} must be a regular non-symlink file")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
     except FileNotFoundError as error:
-        raise ValueError("finalized journal disappeared before open") from error
+        raise ValueError(f"finalized {label} disappeared before open") from error
     except OSError as error:
-        raise ValueError(f"finalized journal cannot be opened: {error}") from error
+        raise ValueError(f"finalized {label} cannot be opened: {error}") from error
     try:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
             info.st_dev,
             info.st_ino,
         ):
-            raise ValueError("finalized journal changed between lstat and open")
+            raise ValueError(f"finalized {label} changed between lstat and open")
         data = bytearray()
         while chunk := os.read(descriptor, 1024 * 1024):
             data.extend(chunk)
     finally:
         os.close(descriptor)
     digest = hashlib.sha256(data).hexdigest()
+    return ArtifactIdentity(str(path), ContentHash("sha256", digest))
+
+
+def identify_d1_finalized_journal(
+    path: Path, finalization: D1BillingFinalization
+) -> ArtifactIdentity:
+    if type(finalization) is not D1BillingFinalization:
+        raise TypeError("finalized journal identity requires D1BillingFinalization")
+    artifact = _identify_finalized_artifact(path, "journal")
+    digest = artifact.content_hash.digest
     if digest != finalization.journal_state.prefix_sha256:
         raise ValueError("finalized journal bytes differ from finalization state")
-    return ArtifactIdentity(str(path), ContentHash("sha256", digest))
+    return artifact
 
 
 def serialize_d1_finalized_cell_custody(record: D1FinalizedCellCustodyRecord) -> str:
@@ -396,6 +430,8 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
     _, finalization_text = _decode_envelope(root["finalization"], "finalization")
     journal = _mapping(root["journal"], "journal")
     _exact(journal, _JOURNAL_KEYS, "journal")
+    checkpoint = _mapping(root["checkpoint"], "checkpoint")
+    _exact(checkpoint, _JOURNAL_KEYS, "checkpoint")
     starts_raw = root["segment_starts"]
     if type(starts_raw) is not list or not starts_raw:
         _fail("segment_starts must be a nonempty array")
@@ -419,6 +455,10 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
             journal=ArtifactIdentity(
                 _text(journal["path"], "journal.path"),
                 ContentHash("sha256", _sha(journal["sha256"], "journal.sha256")),
+            ),
+            checkpoint=ArtifactIdentity(
+                _text(checkpoint["path"], "checkpoint.path"),
+                ContentHash("sha256", _sha(checkpoint["sha256"], "checkpoint.sha256")),
             ),
         )
     except D1FinalizedCellCustodyError:

@@ -21,6 +21,10 @@ from entropic_substrate.d1_finalized_cell_custody import (
     parse_d1_finalized_cell_custody,
     serialize_d1_finalized_cell_custody,
 )
+from entropic_substrate.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    verify_d1_trainer_export,
+)
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.d1_trainer_handoff import D1FreshRunCompletion
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
@@ -44,6 +48,7 @@ class _FinalizedCase(NamedTuple):
     ledger: D1LaunchAttemptLedger
     finalization: D1BillingFinalization
     journal: ArtifactIdentity
+    checkpoint: ArtifactIdentity
 
 
 def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _FinalizedCase:
@@ -52,6 +57,8 @@ def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _Finalized
     intent = case.intent
     start = cast(RunStartProvenance, case.start)
     handoff = cast(D1FreshRunCompletion, case.handoff)
+    export = verify_d1_trainer_export(D1ExportedTrainerHandoff(handoff, case.journal_path))
+    assert isinstance(export.checkpoint, ArtifactIdentity)
     ended = handoff.termination.trainer_ended_at
     termination = ExecutionSegmentTermination(
         start.logical_run_id,
@@ -92,9 +99,18 @@ def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _Finalized
         status=D1LaunchAttemptStatus.COMPLETED,
         observed_at=termination.pod_terminated_at,
     )
-    digest = hashlib.sha256(case.journal_path.read_bytes()).hexdigest()
-    journal = ArtifactIdentity(str(case.journal_path), ContentHash("sha256", digest))
-    return _FinalizedCase(intent, (start,), ledger, finalization, journal)
+    journal = ArtifactIdentity(
+        str(case.journal_path),
+        ContentHash("sha256", hashlib.sha256(case.journal_path.read_bytes()).hexdigest()),
+    )
+    return _FinalizedCase(
+        intent,
+        (start,),
+        ledger,
+        finalization,
+        journal,
+        export.checkpoint,
+    )
 
 
 def _attest(case: _FinalizedCase) -> D1FinalizedCellCustodyRecord:
@@ -104,11 +120,13 @@ def _attest(case: _FinalizedCase) -> D1FinalizedCellCustodyRecord:
         attempt_ledger=case.ledger,
         finalization=case.finalization,
         journal=case.journal,
+        checkpoint=case.checkpoint,
     )
 
 
 def test_finalized_cell_round_trips_exact_canonical_evidence(tmp_path: Path) -> None:
-    record = _attest(_finalized_case(tmp_path))
+    case = _finalized_case(tmp_path)
+    record = _attest(case)
 
     record.require_factory_attested()
     assert (record.billing_posture, record.quality_export_ready, record.trainer_outcome) == (
@@ -116,6 +134,8 @@ def test_finalized_cell_round_trips_exact_canonical_evidence(tmp_path: Path) -> 
         True,
         "completed",
     )
+    assert record.checkpoint == case.checkpoint
+    assert record.schema_version == "d1-finalized-cell-custody-v2"
     payload = serialize_d1_finalized_cell_custody(record)
     restored = parse_d1_finalized_cell_custody(payload)
 
@@ -142,6 +162,13 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
     with pytest.raises(ValueError, match="journal"):
         _attest(case._replace(journal=wrong_journal))
 
+    wrong_checkpoint = replace(
+        case.checkpoint,
+        content_hash=ContentHash("sha256", "0" * 64),
+    )
+    with pytest.raises(ValueError, match="checkpoint"):
+        _attest(case._replace(checkpoint=wrong_checkpoint))
+
     wrong_design = replace(case.intent, registered_design_digest="1" * 64)
     with pytest.raises(ValueError, match="attempt identity"):
         _attest(case._replace(intent=wrong_design))
@@ -158,6 +185,7 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
         ("ledger_terminal", "finalized-cell evidence is invalid"),
         ("finalization_digest", "finalization digest"),
         ("journal_digest", "final journal identity"),
+        ("checkpoint_digest", "checkpoint"),
         ("billing_posture", "billing and quality posture"),
         ("quality_ready", "billing and quality posture"),
         ("unknown_field", "fields must be exact"),
@@ -191,6 +219,8 @@ def test_codec_rejects_each_substituted_evidence_edge(
         value["finalization"]["sha256"] = "0" * 64
     elif mutation == "journal_digest":
         value["journal"]["sha256"] = "0" * 64
+    elif mutation == "checkpoint_digest":
+        value["checkpoint"]["sha256"] = "0" * 64
     elif mutation == "billing_posture":
         value["billing_posture"] = "missing_cost"
     elif mutation == "quality_ready":

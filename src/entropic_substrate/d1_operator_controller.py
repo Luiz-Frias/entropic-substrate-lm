@@ -313,12 +313,15 @@ class D1SequentialOperatorController:
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
         if queue_admissible:
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
+            if not isinstance(export.checkpoint, ArtifactIdentity):
+                raise ValueError("queue-admissible export lost its checkpoint identity")
             finalized_cell = attest_d1_finalized_cell_custody(
                 intent=intent,
                 segment_starts=(start,),
                 attempt_ledger=ledger,
                 finalization=finalization,
                 journal=journal,
+                checkpoint=export.checkpoint,
             )
             finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:
@@ -456,12 +459,15 @@ class D1SequentialOperatorController:
         finalized_cell: D1FinalizedCellCustodyRecord | None = None
         if queue_admissible:
             journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
+            if not isinstance(export.checkpoint, ArtifactIdentity):
+                raise ValueError("queue-admissible export lost its checkpoint identity")
             finalized_cell = attest_d1_finalized_cell_custody(
                 intent=intent,
                 segment_starts=(*history.starts, start),
                 attempt_ledger=ledger,
                 finalization=finalization,
                 journal=journal,
+                checkpoint=export.checkpoint,
             )
             artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:
