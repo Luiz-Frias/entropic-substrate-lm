@@ -80,6 +80,8 @@ def _adapter(
         registry_auth_id=_REGISTRY_AUTH,
         network_volume_id=_NETWORK_VOLUME,
         network_volume_mount_path=_VOLUME_MOUNT,
+        trainer_mailbox_wait_seconds=300.0,
+        trainer_mailbox_poll_seconds=0.25,
     )
 
 
@@ -118,6 +120,8 @@ def test_default_process_boundary_requires_explicit_local_bounds() -> None:
         "registry_auth_id": _REGISTRY_AUTH,
         "network_volume_id": _NETWORK_VOLUME,
         "network_volume_mount_path": _VOLUME_MOUNT,
+        "trainer_mailbox_wait_seconds": 300.0,
+        "trainer_mailbox_poll_seconds": 0.25,
     }
     with pytest.raises(ValueError, match="process bounds"):
         RunpodctlD1Adapter(**kwargs)  # type: ignore[arg-type]
@@ -194,6 +198,12 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         "SECURE",
         "--data-center-ids",
         "US-KS-2",
+        "--docker-args",
+        (
+            "python -m entropic_substrate.d1_trainer_mailbox_command "
+            "--volume-root /workspace --maximum-wait-seconds 300.0 "
+            "--poll-interval-seconds 0.25"
+        ),
         "--ssh",
         "--registry-auth-id",
         _REGISTRY_AUTH,

@@ -26,6 +26,7 @@ from entropic_substrate.d1_runpod_billing_parser import (
     RunpodBillingSchemaError,
     parse_runpodctl_billing_observation,
 )
+from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
 from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBillingObservation,
@@ -111,6 +112,8 @@ class RunpodctlD1Adapter:
         registry_auth_id: str,
         network_volume_id: str,
         network_volume_mount_path: str,
+        trainer_mailbox_wait_seconds: float,
+        trainer_mailbox_poll_seconds: float,
         runner: D1CommandRunner | None = None,
         command_timeout_seconds: float | None = None,
         max_output_bytes: int | None = None,
@@ -131,10 +134,17 @@ class RunpodctlD1Adapter:
         mount = PurePosixPath(_text(network_volume_mount_path, label="network volume mount"))
         if not mount.is_absolute() or ".." in mount.parts or mount.as_posix() != str(mount):
             raise ValueError("RunPod network volume mount must be a normalized absolute POSIX path")
+        if any(character.isspace() for character in str(mount)):
+            raise ValueError("RunPod network volume mount must not contain whitespace")
+        wait = D1TrainerMailboxWaitPolicy(
+            trainer_mailbox_wait_seconds,
+            trainer_mailbox_poll_seconds,
+        )
         self._runner, self._clock = selected, clock
         self._registry_auth_id = _text(registry_auth_id, label="registry auth id")
         self._network_volume_id = _text(network_volume_id, label="network volume id")
         self._network_volume_mount_path = str(mount)
+        self._trainer_mailbox_wait = wait
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -315,6 +325,20 @@ class RunpodctlD1Adapter:
             cloud_type,
             "--data-center-ids",
             intent.resource.region,
+            "--docker-args",
+            " ".join(
+                (
+                    "python",
+                    "-m",
+                    "entropic_substrate.d1_trainer_mailbox_command",
+                    "--volume-root",
+                    self._network_volume_mount_path,
+                    "--maximum-wait-seconds",
+                    str(self._trainer_mailbox_wait.maximum_seconds),
+                    "--poll-interval-seconds",
+                    str(self._trainer_mailbox_wait.poll_interval_seconds),
+                )
+            ),
         ]
         argv.extend(
             [
