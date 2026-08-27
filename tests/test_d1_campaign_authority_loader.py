@@ -167,6 +167,38 @@ def test_loader_refuses_symlinked_preregistration_path(tmp_path: Path) -> None:
         )
 
 
+def test_fresh_loader_bootstraps_empty_checkpoint_without_provider_access(
+    tmp_path: Path,
+) -> None:
+    request, manifest, design, manager, _checkpoint, _receipt = _case(tmp_path)
+    request.locations.checkpoint_path.unlink()
+    fresh = replace(request, cursor=D1FreshCampaignCursor())
+
+    loaded = D1CampaignAuthorityLoader(catalog=fixtures.profiles()).load_fresh(
+        fresh,
+        manifest_path=manifest,
+    )
+
+    assert loaded.design == design
+    assert loaded.process_manager.history == manager.history
+    assert loaded.checkpoint.next_index == 0
+    assert loaded.checkpoint.attempt_ledger == D1LaunchAttemptLedger()
+    assert type(loaded.request.cursor) is D1PersistedCampaignCursor
+    assert loaded.request.cursor.sha256 == loaded.checkpoint_receipt.sha256
+    assert loaded.recovery.status is D1CampaignRecoveryStatus.READY
+
+
+def test_fresh_loader_refuses_persisted_cursor_or_occupied_checkpoint(tmp_path: Path) -> None:
+    request, manifest, *_ = _case(tmp_path)
+    loader = D1CampaignAuthorityLoader(catalog=fixtures.profiles())
+
+    with pytest.raises(D1CampaignAuthorityLoaderError, match="fresh cursor"):
+        loader.load_fresh(request, manifest_path=manifest)
+    fresh = replace(request, cursor=D1FreshCampaignCursor())
+    with pytest.raises(D1CampaignAuthorityLoaderError, match="checkpoint"):
+        loader.load_fresh(fresh, manifest_path=manifest)
+
+
 def _loaded_prefix(tmp_path: Path, count: int) -> D1LoadedCampaignAuthority:
     design, intents, _starts, manager, _ledger, checkpoint = _prefix(
         tmp_path / "recovery",

@@ -11,6 +11,10 @@ from entropic_substrate.d1_artifact_snapshot import (
     D1ArtifactSnapshotError,
     read_d1_artifact_bytes,
 )
+from entropic_substrate.d1_campaign_bootstrap import (
+    D1CampaignBootstrapError,
+    bootstrap_d1_ready_checkpoint,
+)
 from entropic_substrate.d1_campaign_checkpoint import D1CampaignCheckpoint
 from entropic_substrate.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointReceipt,
@@ -28,6 +32,7 @@ from entropic_substrate.d1_campaign_recovery import (
 from entropic_substrate.d1_campaign_recovery_queue import D1RecoverableCampaignQueue
 from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
+    D1FreshCampaignCursor,
     D1PersistedCampaignCursor,
 )
 from entropic_substrate.d1_operator_controller import D1OperatorRunResult
@@ -206,6 +211,62 @@ class D1CampaignAuthorityLoader:
             _fail("recovery", str(error), error)
         return D1LoadedCampaignAuthority(
             resolved,
+            design,
+            process_manager,
+            checkpoint,
+            receipt,
+            recovery,
+        )
+
+    def load_fresh(
+        self,
+        request: D1CampaignCommandRequest,
+        *,
+        manifest_path: Path,
+    ) -> D1LoadedCampaignAuthority:
+        """Persist the sole empty READY checkpoint before any provider call."""
+        if type(request) is not D1CampaignCommandRequest:
+            raise TypeError("campaign authority loader requires campaign request")
+        if type(request.cursor) is not D1FreshCampaignCursor:
+            _fail("cursor", "fresh campaign authority requires fresh cursor")
+        manifest = self._manifest_path(manifest_path)
+        try:
+            resolved = replace(request, locations=request.locations.resolve(manifest.parent))
+        except (TypeError, ValueError) as error:
+            _fail("locations", str(error), error)
+        design = self._design(resolved)
+        process_manager = self._process(resolved)
+        path = resolved.locations.checkpoint_path
+        if path.exists() or path.is_symlink():
+            _fail("checkpoint", "fresh campaign checkpoint path is already occupied")
+        try:
+            repository = D1CampaignCheckpointRepository(path)
+            checkpoint, receipt = bootstrap_d1_ready_checkpoint(
+                design=design,
+                process_manager=process_manager,
+                attempt_ledger=D1LaunchAttemptLedger(),
+                repository=repository,
+            )
+            persisted = replace(
+                resolved,
+                cursor=D1PersistedCampaignCursor(receipt.sha256),
+            )
+            recovery = hydrate_d1_campaign_recovery(
+                design=design,
+                intents=persisted.intents,
+                checkpoint=checkpoint,
+                process_manager=process_manager,
+            )
+        except (
+            D1CampaignBootstrapError,
+            D1CampaignCheckpointRepositoryError,
+            D1CampaignRecoveryError,
+            TypeError,
+            ValueError,
+        ) as error:
+            _fail("checkpoint", str(error), error)
+        return D1LoadedCampaignAuthority(
+            persisted,
             design,
             process_manager,
             checkpoint,
