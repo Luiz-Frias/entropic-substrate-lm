@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Final, Protocol
 
 from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
@@ -10,6 +11,12 @@ from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInp
 from entropic_substrate.evidence.d1_capture_bundle import (
     D1AttemptEvidence,
     D1CaptureInput,
+)
+from entropic_substrate.evidence.d1_capture_preparation_custody import (
+    D1CampaignCaptureAuthority,
+    D1CapturePreparationCustodyRecord,
+    capture_preparation_custody_from_preparation,
+    hydrate_d1_capture_preparation_custody,
 )
 from entropic_substrate.evidence.d1_capture_roster import (
     D1ExpectedRun,
@@ -135,6 +142,19 @@ def _campaign_identity(campaign: D1CompletedCampaign) -> str:
     )
 
 
+def _campaign_authority(campaign: D1CompletedCampaign) -> D1CampaignCaptureAuthority:
+    digest = _campaign_identity(campaign)
+    prefix = campaign.process_manager.history.prefix
+    return D1CampaignCaptureAuthority(
+        campaign_digest=digest,
+        registered_design_digest=campaign.design_digest,
+        matrix_digest=campaign.matrix.matrix_digest,
+        attempt_ledger_digest=campaign.attempt_ledger.ledger_digest,
+        lifecycle_prefix=prefix.prefix_sha256,
+        lifecycle_event_count=prefix.event_count,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class D1PreparedCampaignCapture:
     campaign: D1CompletedCampaign
@@ -254,21 +274,91 @@ class D1CampaignCaptureService:
             _token=_CAPTURE_TOKEN,
         )
 
-    def finalize(self, prepared: D1PreparedCampaignCapture) -> D1CapturedCampaign:
+    @staticmethod
+    def _require_prepared(
+        prepared: D1PreparedCampaignCapture,
+    ) -> tuple[D1CompletedCampaign, D1ProcessManager, D1LaunchRoster]:
         if type(prepared) is not D1PreparedCampaignCapture:
-            raise TypeError("campaign capture finalize requires its prepared typestate")
+            raise TypeError("campaign capture requires its prepared typestate")
         campaign = prepared.campaign
         manager = campaign.process_manager
         prefix = manager.history.prefix
+        campaign_digest = _campaign_identity(campaign)
+        roster = _expected_roster(campaign)
+        aggregate = getattr(prepared.preparation, "aggregate", None)
         if (
-            _campaign_identity(campaign) != prepared.campaign_digest
+            campaign_digest != prepared.campaign_digest
             or manager != prepared.process_manager
             or prefix.prefix_sha256 != prepared.lifecycle_prefix
             or prefix.event_count != prepared.lifecycle_event_count
+            or prepared.material.roster != roster
+            or getattr(aggregate, "roster", None) != roster
         ):
-            raise ValueError("prepared campaign or lifecycle identity differs at finalize")
+            raise ValueError("prepared campaign or lifecycle identity differs")
+        return campaign, manager, roster
+
+    def preparation_custody(
+        self,
+        prepared: D1PreparedCampaignCapture,
+    ) -> D1CapturePreparationCustodyRecord:
+        """Freeze one prepared campaign for the operator's pointer-commit pause."""
+        campaign, _manager, _roster = self._require_prepared(prepared)
+        if type(prepared.preparation) is not D1HeterogeneousCapturePreparation:
+            raise TypeError("campaign custody requires heterogeneous capture preparation")
+        return capture_preparation_custody_from_preparation(
+            prepared.preparation,
+            authority=_campaign_authority(campaign),
+        )
+
+    def rehydrate_preparation(
+        self,
+        *,
+        campaign: D1CompletedCampaign,
+        record: D1CapturePreparationCustodyRecord,
+        capture_root: Path,
+    ) -> D1PreparedCampaignCapture:
+        """Re-earn prepared typestate from raw captures plus persisted authority."""
+        if type(campaign) is not D1CompletedCampaign:
+            raise TypeError("campaign capture rehydrate requires D1CompletedCampaign")
+        if type(record) is not D1CapturePreparationCustodyRecord:
+            raise TypeError("campaign capture rehydrate requires custody record")
+        expected = _campaign_authority(campaign)
+        if record.authority != expected:
+            raise ValueError("capture preparation campaign authority differs")
+        preparation = hydrate_d1_capture_preparation_custody(
+            record,
+            capture_root=capture_root,
+        )
+        aggregate = preparation.aggregate
+        roster = _expected_roster(campaign)
+        if aggregate.roster != roster:
+            raise ValueError("capture preparation roster differs from campaign authority")
+        material = D1CampaignCaptureMaterial(
+            roster,
+            tuple(item.capture_input for item in aggregate.complete_runs),
+            tuple(item.capture_input for item in aggregate.terminal_defects),
+            aggregate.attempts,
+        )
+        if (
+            tuple(item.logical_run_id for item in material.terminal_defect_inputs)
+            != campaign.matrix.terminal_defect_run_ids
+        ):
+            raise ValueError("capture preparation defect partition differs from campaign")
+        manager = campaign.process_manager
+        return D1PreparedCampaignCapture(
+            campaign,
+            material,
+            preparation,
+            manager,
+            expected.campaign_digest,
+            expected.lifecycle_prefix,
+            expected.lifecycle_event_count,
+            _token=_CAPTURE_TOKEN,
+        )
+
+    def finalize(self, prepared: D1PreparedCampaignCapture) -> D1CapturedCampaign:
+        campaign, manager, roster = self._require_prepared(prepared)
         receipt = self._capture.finalize(prepared.preparation)
-        roster = prepared.material.roster
         if receipt.aggregate.roster != roster:
             raise ValueError("campaign capture receipt roster differs from the matrix")
         if receipt.manifest.get("analysis_ready") is not True:

@@ -45,6 +45,16 @@ def _events_for(
     checkpoint_sha256: str,
     seed: int = 7,
     pairing_id: str = PAIRING_ID,
+    family_digest: str = FAMILY_DIGEST,
+    code_commit: str = "abcdef0",
+    repository_digest: str = "d" * 64,
+    image_digest: str = "sha256:" + "5" * 64,
+    dataset_digest: str = "f" * 64,
+    split_digest: str = "0" * 64,
+    sampler_construction_digest: str = "9" * 64,
+    preregistration_path: str = "docs/d1-preregistration.md",
+    preregistration_commit: str = "abcdef0",
+    required_evidence_classes: tuple[str, ...] = ("measured",),
 ) -> tuple[list[D1JournalEvent], str]:
     events = valid_events(arm=arm)
     start_payload = cast(dict[str, object], events[0].manifest["payload"])
@@ -52,29 +62,29 @@ def _events_for(
     plan.update(
         {
             "arm": arm.value,
-            "code": {"commit": "abcdef0", "repository_digest": "d" * 64},
+            "code": {"commit": code_commit, "repository_digest": repository_digest},
             "construction_digest": construction_digest,
-            "container": {"image_digest": "sha256:" + "5" * 64},
+            "container": {"image_digest": image_digest},
             "data": {
-                "dataset_digest": "f" * 64,
+                "dataset_digest": dataset_digest,
                 "dataset_name": "enwik8",
-                "sampler_construction_digest": "9" * 64,
-                "split_digest": "0" * 64,
+                "sampler_construction_digest": sampler_construction_digest,
+                "split_digest": split_digest,
             },
             "evidence": {
                 "checkpoint_schema_version": 1,
                 "dvc_capture_required": True,
-                "required_classes": ["measured"],
+                "required_classes": list(required_evidence_classes),
                 "schema_version": "d1-evidence-v1",
                 "telemetry_schema_version": D1_TELEMETRY_SCHEMA_VERSION,
             },
-            "family_digest": FAMILY_DIGEST,
+            "family_digest": family_digest,
             "logical_run_id": logical_run_id,
             "pairing_id": pairing_id,
             "preregistration": {
-                "commit": "abcdef0",
-                "family_digest": FAMILY_DIGEST,
-                "path": "docs/d1-preregistration.md",
+                "commit": preregistration_commit,
+                "family_digest": family_digest,
+                "path": preregistration_path,
             },
             "profile_name": f"d1-{arm.value}",
             "run_class": RunClass.CONFIRMATORY.value,
@@ -87,6 +97,7 @@ def _events_for(
             start_provenance(),
             logical_run_id=logical_run_id,
             execution_segment_id=execution_segment_id(logical_run_id, 0),
+            image_digest=image_digest,
         )
     )
     rewritten: list[D1JournalEvent] = []
@@ -109,7 +120,7 @@ def _events_for(
                 execution_digest=execution_digest,
                 aggregation_digest=aggregation_digest,
                 construction_digest=construction_digest,
-                family_digest=FAMILY_DIGEST,
+                family_digest=family_digest,
                 payload=payload,
             )
         )
