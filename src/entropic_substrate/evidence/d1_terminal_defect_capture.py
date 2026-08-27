@@ -11,7 +11,6 @@ import entropic_substrate.telemetry as telemetry_api
 from entropic_substrate.d1_numerical_defect import (
     D1CheckpointReferenceKind,
     D1TerminalNumericalDefectRecord,
-    terminal_numerical_defect_from_mapping,
 )
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
@@ -25,8 +24,6 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1PairExclusion,
     D1PairExclusionReason,
 )
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import D1JournalError, JournalEventKind
 from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
 from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest
 
@@ -190,18 +187,10 @@ def read_d1_terminal_numerical_defect(
         _fail("authoritative_reader", capture.journal.normalized_path, str(error), error)
     if run.status is not D1RunStatus.TRAINER_ABORTED:
         _fail("defect_lane", capture.journal.normalized_path, "journal is not trainer_aborted")
-    try:
-        events = read_journal(journal_path)
-    except D1JournalError as error:
-        _fail("canonical_journal", capture.journal.normalized_path, str(error), error)
-    terminal = events[-1]
-    if terminal.event_kind is not JournalEventKind.TRAINER_ABORTED:
-        _fail("defect_lane", capture.journal.normalized_path, "abort is not the final event")
-    raw = terminal.payload.get("numerical_defect")
-    try:
-        record = terminal_numerical_defect_from_mapping(raw)
-    except (TypeError, ValueError) as error:
-        _fail("defect_payload", capture.journal.normalized_path, str(error), error)
+    abort = run.trainer_abort
+    if abort is None or abort.numerical_defect is None:
+        _fail("defect_payload", capture.journal.normalized_path, "validated defect is absent")
+    terminal, record = abort.event, abort.numerical_defect
     _match_expected(record, capture.expected)
     if record.source_exception_code != _SOURCE_CODE:
         _fail("source_exception", record.source_exception_code, "is not a registered guard")
