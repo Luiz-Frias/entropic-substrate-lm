@@ -62,8 +62,8 @@ class D1CompletedCampaign:
     def __post_init__(self) -> None:
         if self._token is not _CAMPAIGN_TOKEN:
             raise TypeError("D1CompletedCampaign is factory-only")
-        if any(not item.queue_admissible for item in self.results):
-            raise ValueError("completed D1 campaign requires only queue-admissible results")
+        if any(not item.campaign_continuable for item in self.results):
+            raise ValueError("completed D1 campaign contains a non-continuable result")
         if self.results and self.attempt_ledger != self.results[-1].attempt_ledger:
             raise ValueError("completed D1 campaign ledger differs from its final result")
         if self.results and self.process_manager != self.results[-1].process_manager:
@@ -177,6 +177,11 @@ def validate_d1_campaign_ledger_extension(
         or type(prior) is not D1LaunchAttemptLedger
     ):
         raise TypeError("D1 campaign ledger validation requires nominal values")
+    terminal_status = (
+        D1LaunchAttemptStatus.FAILED
+        if result.terminal_numerical_defect is not None
+        else D1LaunchAttemptStatus.COMPLETED
+    )
     prior_events = prior.events
     extension = result.attempt_ledger.events[len(prior_events) :]
     expected_identity = D1LaunchAttemptIdentity(
@@ -193,7 +198,7 @@ def validate_d1_campaign_ledger_extension(
         != (
             D1LaunchAttemptStatus.RECORDED,
             D1LaunchAttemptStatus.TRAINER_STARTED,
-            D1LaunchAttemptStatus.COMPLETED,
+            terminal_status,
         )
         or any(event.identity != expected_identity for event in extension)
     ):
@@ -237,7 +242,7 @@ class D1CampaignQueue:
                 raise D1CampaignQueueHalt(subject, tuple(results), str(error)) from error
             results.append(result)
             prior = result.attempt_ledger
-            if not result.queue_admissible:
+            if not result.campaign_continuable:
                 raise D1CampaignQueueHalt(
                     subject, tuple(results), "cell returned an evidence gap or trainer failure"
                 )
@@ -254,6 +259,11 @@ class D1CampaignQueue:
             launches=tuple(launches),
             git=self._git,
             ledger=prior,
+            terminal_defect_run_ids=tuple(
+                result.start.logical_run_id
+                for result in results
+                if result.terminal_numerical_defect is not None
+            ),
         )
         return D1CompletedCampaign.from_attested(
             design_digest=self._design.design_digest,

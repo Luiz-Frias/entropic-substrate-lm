@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import timedelta
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -25,7 +26,7 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
 )
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBilling,
@@ -45,6 +46,7 @@ from entropic_substrate.experiments.d1_registered_design import (
 )
 
 from .test_d1_confirmatory_matrix import FakeGit
+from .test_d1_finalized_cell_custody_values import _attest, _failed_case, _finalized_case
 
 pytestmark = pytest.mark.unit
 
@@ -202,6 +204,51 @@ def test_first_inadmissible_result_stops_before_any_later_arm() -> None:
         D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(intents)
 
     assert controller.calls == [intent.plan.logical_run_id for intent in intents[:2]]
+
+
+def _campaign_with_defect(tmp_path: Path):
+    design, intents, starts = _campaign()
+    results = list(_results(intents, starts))
+    defect_index = 1
+    defect_id = intents[defect_index].plan.logical_run_id
+    record = _attest(_failed_case(_finalized_case(tmp_path / "defect")))
+    for index in range(defect_index, len(results)):
+        events = tuple(
+            replace(
+                event,
+                status=D1LaunchAttemptStatus.FAILED,
+                reason="terminal numerical defect",
+            )
+            if event.identity.logical_run_id == defect_id
+            and event.status is D1LaunchAttemptStatus.COMPLETED
+            else event
+            for event in results[index].attempt_ledger.events
+        )
+        results[index] = replace(results[index], attempt_ledger=D1LaunchAttemptLedger(events))
+    results[defect_index] = replace(
+        results[defect_index],
+        finalized_cell=record,
+        finalized_cell_artifact=ArtifactIdentity(
+            "operator/terminal-defect.json",
+            ContentHash("sha256", record.record_digest),
+        ),
+        queue_admissible=False,
+    )
+    controller = _Controller(tuple(results), [])
+
+    completed = D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(intents)
+    return completed, intents, starts, defect_index, controller
+
+
+def test_registered_terminal_defect_continues_matrix_but_remains_nonadmissible(
+    tmp_path: Path,
+) -> None:
+    completed, intents, _, defect_index, controller = _campaign_with_defect(tmp_path)
+    defect_id = intents[defect_index].plan.logical_run_id
+
+    assert controller.calls == [intent.plan.logical_run_id for intent in intents]
+    assert completed.results[defect_index].queue_admissible is False
+    assert completed.matrix.terminal_defect_run_ids == (defect_id,)
 
 
 @pytest.mark.parametrize("mutation", ["missing_completion", "wrong_identity"])

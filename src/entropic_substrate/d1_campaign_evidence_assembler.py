@@ -11,6 +11,7 @@ from typing import Protocol, cast
 from entropic_substrate.d1_campaign_capture import D1CampaignCaptureMaterial
 from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
 from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
+from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1ArtifactRole,
@@ -98,7 +99,7 @@ class D1CampaignEvidenceAssembler:
         campaign: D1CompletedCampaign,
         expected: D1ExpectedRun,
         artifact: ArtifactIdentity,
-    ) -> D1CaptureInput:
+    ) -> D1CaptureInput | D1TerminalDefectInput:
         try:
             record = self._custody.load(artifact)
         except Exception as error:
@@ -112,10 +113,15 @@ class D1CampaignEvidenceAssembler:
         ):
             raise ValueError("finalized-cell artifact identity differs from custody record")
         journal = _capture_artifact(self._root, record.journal, D1ArtifactRole.JOURNAL)
+        checkpoint_role = (
+            D1ArtifactRole.NUMERICAL_DEFECT_CHECKPOINT
+            if record.numerical_defect is not None
+            else D1ArtifactRole.CHECKPOINT
+        )
         checkpoint = _capture_artifact(
             self._root,
             record.checkpoint,
-            D1ArtifactRole.CHECKPOINT,
+            checkpoint_role,
         )
         billing = _capture_artifact(
             self._root,
@@ -126,13 +132,13 @@ class D1CampaignEvidenceAssembler:
             _capture_artifact(self._root, item, D1ArtifactRole.QUARANTINED_SIBLING)
             for item in record.quarantined_siblings
         )
-        return D1CaptureInput(
-            expected.logical_run_id,
-            journal,
-            checkpoint,
-            (billing,),
-            quarantined,
-        )
+        if record.numerical_defect is not None:
+            return D1TerminalDefectInput(
+                expected.logical_run_id,
+                journal,
+                (checkpoint, billing, *quarantined),
+            )
+        return D1CaptureInput(expected.logical_run_id, journal, checkpoint, (billing,), quarantined)
 
     def prepare(
         self,
@@ -146,8 +152,15 @@ class D1CampaignEvidenceAssembler:
             raise ValueError("campaign finalized-cell artifact set differs from roster")
         if roster.attempts:
             raise ValueError("completed campaign assembler requires explicit attempt evidence")
-        complete = tuple(
+        values = tuple(
             self._input(campaign, expected, self._artifacts[expected.logical_run_id])
             for expected in roster.expected_confirmatory
         )
-        return D1CampaignCaptureMaterial(roster, complete, (), ())
+        complete = tuple(item for item in values if type(item) is D1CaptureInput)
+        defects = tuple(item for item in values if type(item) is D1TerminalDefectInput)
+        if (
+            tuple(item.logical_run_id for item in defects)
+            != campaign.matrix.terminal_defect_run_ids
+        ):
+            raise ValueError("campaign matrix and custody terminal-defect partitions differ")
+        return D1CampaignCaptureMaterial(roster, complete, defects, ())

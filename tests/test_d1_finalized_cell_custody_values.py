@@ -310,10 +310,7 @@ def test_resumed_cell_custody_retains_verified_quarantined_sibling(tmp_path: Pat
         _attest(resumed._replace(quarantined_siblings=(wrong,)))
 
 
-def test_failed_cell_custody_requires_and_retains_terminal_numerical_defect(
-    tmp_path: Path,
-) -> None:
-    case = _finalized_case(tmp_path)
+def _failed_case(case: _FinalizedCase) -> _FinalizedCase:
     plan = case.intent.plan
     defect = D1TerminalNumericalDefectRecord(
         "nats_per_byte",
@@ -350,16 +347,22 @@ def test_failed_cell_custody_requires_and_retains_terminal_numerical_defect(
         trainer_outcome="failed",
         quality_export_ready=True,
     )
-    failed = case._replace(
+    return case._replace(
         ledger=failed_ledger,
         finalization=failed_finalization,
         numerical_defect=defect,
     )
 
+
+def test_failed_cell_custody_requires_and_retains_terminal_numerical_defect(
+    tmp_path: Path,
+) -> None:
+    failed = _failed_case(_finalized_case(tmp_path))
+
     record = _attest(failed)
 
     assert record.trainer_outcome == "failed"
-    assert record.numerical_defect == defect
+    assert record.numerical_defect == failed.numerical_defect
     with pytest.raises(ValueError, match="numerical defect"):
         _attest(failed._replace(numerical_defect=None))
 

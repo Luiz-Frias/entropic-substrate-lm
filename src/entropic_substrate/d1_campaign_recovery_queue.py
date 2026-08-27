@@ -180,8 +180,8 @@ class D1RecoverableCampaignQueue:
         ledger: D1LaunchAttemptLedger,
         manager: D1ProcessManager,
     ) -> None:
-        if type(result) is not D1OperatorRunResult or not result.queue_admissible:
-            raise ValueError("controller result is not a queue-admissible D1 result")
+        if type(result) is not D1OperatorRunResult or not result.campaign_continuable:
+            raise ValueError("controller result is not a campaign-continuable D1 result")
         if (
             result.start.logical_run_id != intent.plan.logical_run_id
             or result.start.execution_segment_index != 0
@@ -213,6 +213,11 @@ class D1RecoverableCampaignQueue:
             launches=tuple(launches),
             git=self._git,
             ledger=ledger,
+            terminal_defect_run_ids=tuple(
+                result.start.logical_run_id
+                for result in results
+                if result.terminal_numerical_defect is not None
+            ),
         )
         return D1CompletedCampaign.from_attested(
             design_digest=self._design.design_digest,

@@ -13,6 +13,11 @@ from entropic_substrate.d1_finalized_cell_custody import parse_d1_finalized_cell
 from entropic_substrate.d1_finalized_cell_custody_repository import (
     D1FinalizedCellCustodyRepository,
 )
+from entropic_substrate.d1_numerical_defect import (
+    D1DefectCheckpointReference,
+    D1NonfiniteClassification,
+    D1TerminalNumericalDefectRecord,
+)
 from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactRole
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
@@ -23,10 +28,10 @@ from entropic_substrate.evidence.resource_provenance_codec import run_start_to_m
 from entropic_substrate.experiments.d1_launch_attempt_codec import (
     launch_attempt_ledger_to_mapping,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_json
+from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass, canonical_json
 
 from .test_d1_campaign_capture import _completed
-from .test_d1_campaign_queue import _campaign
+from .test_d1_campaign_queue import _campaign, _campaign_with_defect
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +41,7 @@ def _envelope(value: dict[str, object]) -> dict[str, object]:
     return {"manifest": value, "sha256": hashlib.sha256(text.encode()).hexdigest()}
 
 
-def _record(intent: object, start: object, ledger: object, root: Path):
+def _record(intent: object, start: object, ledger: object, root: Path, *, failed: bool = False):
     plan = intent.plan
     run_root = root / "runs" / plan.logical_run_id
     run_root.mkdir(parents=True)
@@ -46,6 +51,32 @@ def _record(intent: object, start: object, ledger: object, root: Path):
     checkpoint.write_bytes(f"checkpoint {plan.logical_run_id}\n".encode())
     journal_sha = hashlib.sha256(journal.read_bytes()).hexdigest()
     checkpoint_sha = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    defect = (
+        D1TerminalNumericalDefectRecord(
+            "nats_per_byte",
+            D1NonfiniteClassification.NAN,
+            "d1.eval.nats_per_byte.nonfinite.v1",
+            2,
+            2,
+            2,
+            plan.profile.arm,
+            plan.seed,
+            plan.run.execution.pairing_id,
+            plan.logical_run_id,
+            RunClass.CONFIRMATORY,
+            0,
+            start.execution_segment_id,
+            plan.plan_digest,
+            plan.profile.family.family_digest,
+            plan.run.construction_digest,
+            plan.run.execution_digest,
+            plan.run.aggregation_digest,
+            D1DefectCheckpointReference.receipt(checkpoint_sha),
+            EvidenceClass.MEASURED,
+        )
+        if failed
+        else None
+    )
     terminal = D1JournalEvent(
         JournalEventKind.RUN_END,
         1,
@@ -67,7 +98,7 @@ def _record(intent: object, start: object, ledger: object, root: Path):
         "quality_export_ready": True,
         "schema_version": "d1-finalized-cell-evidence-v1",
         "terminal_event": terminal.manifest,
-        "trainer_outcome": "completed",
+        "trainer_outcome": "failed" if failed else "completed",
     }
     value = {
         "arm": plan.profile.arm.value,
@@ -78,7 +109,7 @@ def _record(intent: object, start: object, ledger: object, root: Path):
         "intent": _envelope(intent.manifest),
         "journal": {"path": str(journal), "sha256": journal_sha},
         "logical_run_id": plan.logical_run_id,
-        "numerical_defect": None,
+        "numerical_defect": None if defect is None else defect.manifest,
         "plan_digest": plan.plan_digest,
         "quality_export_ready": True,
         "registered_design_digest": intent.registered_design_digest,
@@ -86,21 +117,33 @@ def _record(intent: object, start: object, ledger: object, root: Path):
         "schema_version": "d1-finalized-cell-custody-v4",
         "seed": plan.seed,
         "segment_starts": [run_start_to_mapping(start)],
-        "trainer_outcome": "completed",
+        "trainer_outcome": "failed" if failed else "completed",
     }
     return parse_d1_finalized_cell_custody(canonical_json(value))
 
 
-def _case(tmp_path: Path):
-    campaign, _ = _completed(tmp_path / "lifecycle")
-    _, intents, starts = _campaign()
+def _case(tmp_path: Path, *, defect: bool = False):
+    if defect:
+        campaign, intents, starts, defect_index, _ = _campaign_with_defect(tmp_path / "lifecycle")
+    else:
+        campaign, _ = _completed(tmp_path / "lifecycle")
+        _, intents, starts = _campaign()
+        defect_index = -1
     source = tmp_path / "source"
     custody_root = source / "custody"
     custody_root.mkdir(parents=True)
     repository = D1FinalizedCellCustodyRepository(custody_root)
     artifacts = {}
-    for intent, start, result in zip(intents, starts, campaign.results, strict=True):
-        record = _record(intent, start, result.attempt_ledger, source)
+    for index, (intent, start, result) in enumerate(
+        zip(intents, starts, campaign.results, strict=True)
+    ):
+        record = _record(
+            intent,
+            start,
+            result.attempt_ledger,
+            source,
+            failed=index == defect_index,
+        )
         artifacts[intent.plan.logical_run_id] = repository.save(record)
     roster = D1CampaignCaptureService.expected_roster_from_matrix(campaign)
     return campaign, roster, source, repository, artifacts
@@ -158,3 +201,23 @@ def test_assembler_refuses_missing_swapped_or_drifted_cell_evidence(tmp_path: Pa
             custody=repository,
             cell_artifacts=artifacts,
         ).prepare(campaign, roster)
+
+
+def test_assembler_partitions_registered_failure_into_terminal_defect_lane(
+    tmp_path: Path,
+) -> None:
+    campaign, roster, source, repository, artifacts = _case(tmp_path, defect=True)
+
+    material = D1CampaignEvidenceAssembler(
+        source_root=source,
+        custody=repository,
+        cell_artifacts=artifacts,
+    ).prepare(campaign, roster)
+
+    assert len(material.complete_inputs) == 3
+    assert len(material.terminal_defect_inputs) == 1
+    defect = material.terminal_defect_inputs[0]
+    assert defect.logical_run_id == campaign.matrix.terminal_defect_run_ids[0]
+    roles = {item.role for item in defect.supporting_artifacts}
+    assert D1ArtifactRole.NUMERICAL_DEFECT_CHECKPOINT in roles
+    assert D1ArtifactRole.BILLING_SIDECAR in roles

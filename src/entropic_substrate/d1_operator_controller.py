@@ -176,6 +176,18 @@ class D1OperatorRunResult:
     finalized_cell_artifact: ArtifactIdentity
     queue_admissible: bool
 
+    @property
+    def terminal_numerical_defect(self) -> D1TerminalNumericalDefectRecord | None:
+        cell = self.finalized_cell
+        if type(cell) is not D1FinalizedCellCustodyRecord:
+            return None
+        cell.require_factory_attested()
+        return cell.numerical_defect
+
+    @property
+    def campaign_continuable(self) -> bool:
+        return self.queue_admissible or self.terminal_numerical_defect is not None
+
 
 def _validate_registered(design: D1RegisteredDesign, intent: D1OperatorLaunchIntent) -> None:
     plan = intent.plan

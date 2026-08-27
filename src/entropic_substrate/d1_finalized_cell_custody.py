@@ -540,9 +540,12 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
         raise
     except (ResourceProvenanceCodecGap, TypeError, ValueError) as error:
         _fail(f"finalized-cell evidence is invalid: {error}", error)
-    if root["billing_posture"] != "reconciled" or root["quality_export_ready"] is not True:
+    if (
+        root["billing_posture"] != record.billing_posture
+        or root["quality_export_ready"] is not record.quality_export_ready
+    ):
         _fail("finalized-cell billing and quality posture differ")
-    if root["trainer_outcome"] != "completed":
+    if root["trainer_outcome"] != record.trainer_outcome:
         _fail("finalized-cell trainer outcome differs")
     if serialize_d1_finalized_cell_custody(record) != payload:
         _fail("finalized-cell payload must use exact canonical JSON")
