@@ -137,6 +137,12 @@ class D1RecoverableCampaignQueue:
                 ledger.ledger_digest,
                 manager.history.prefix.prefix_sha256,
                 len(manager.events),
+                (
+                    "numerical_defect"
+                    if result.terminal_numerical_defect is not None
+                    else "completed"
+                ),
+                result.finalized_cell_artifact,
             )
             try:
                 checkpoint = D1CampaignCheckpoint(
@@ -213,10 +219,17 @@ class D1RecoverableCampaignQueue:
             launches=tuple(launches),
             git=self._git,
             ledger=ledger,
-            terminal_defect_run_ids=tuple(
-                result.start.logical_run_id
-                for result in results
-                if result.terminal_numerical_defect is not None
+            terminal_defect_run_ids=(
+                *(
+                    cell.logical_run_id
+                    for cell in recovery.checkpoint.completed_cells
+                    if cell.terminal_outcome == "numerical_defect"
+                ),
+                *(
+                    result.start.logical_run_id
+                    for result in results
+                    if result.terminal_numerical_defect is not None
+                ),
             ),
         )
         return D1CompletedCampaign.from_attested(

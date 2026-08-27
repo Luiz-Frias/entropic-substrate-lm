@@ -157,7 +157,10 @@ def _results(
                 cast(ProviderBilling, object()),
                 cast(D1BillingFinalization, object()),
                 None,
-                cast(ArtifactIdentity, object()),
+                ArtifactIdentity(
+                    f"operator/finalized-{index}.json",
+                    ContentHash("sha256", f"{index + 1:064x}"),
+                ),
                 halt_at != index,
             )
         )

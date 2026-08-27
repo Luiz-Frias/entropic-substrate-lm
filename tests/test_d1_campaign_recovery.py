@@ -22,7 +22,11 @@ from entropic_substrate.d1_campaign_recovery import (
 )
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
-from entropic_substrate.evidence.lifecycle import ActorRole
+from entropic_substrate.evidence.lifecycle import (
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+)
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
@@ -83,6 +87,11 @@ def _prefix(tmp_path, count: int):  # type: ignore[no-untyped-def]
                 ledger.ledger_digest,
                 manager.history.prefix.prefix_sha256,
                 len(manager.events),
+                "completed",
+                ArtifactIdentity(
+                    f"custody/{index:064x}.json",
+                    ContentHash("sha256", f"{index:064x}"),
+                ),
             )
         )
     checkpoint = D1CampaignCheckpoint(

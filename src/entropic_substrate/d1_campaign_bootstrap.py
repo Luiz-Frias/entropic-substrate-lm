@@ -143,12 +143,17 @@ def _adopted_checkpoint(
     prior_events = checkpoint.attempt_ledger.events
     ledger = record.attempt_ledger
     extension = ledger.events[len(prior_events) :]
+    terminal_status = (
+        D1LaunchAttemptStatus.FAILED
+        if record.numerical_defect is not None
+        else D1LaunchAttemptStatus.COMPLETED
+    )
     if ledger.events[: len(prior_events)] != prior_events or tuple(
         item.status for item in extension
     ) != (
         D1LaunchAttemptStatus.RECORDED,
         D1LaunchAttemptStatus.TRAINER_STARTED,
-        D1LaunchAttemptStatus.COMPLETED,
+        terminal_status,
     ):
         _fail("finalized candidate attempt ledger is not exactly one completed cell ahead")
     expected_subjects = (
@@ -181,6 +186,8 @@ def _adopted_checkpoint(
         ledger.ledger_digest,
         prefix.prefix_sha256,
         prefix.event_count,
+        "numerical_defect" if record.numerical_defect is not None else "completed",
+        artifact,
     )
     return D1CampaignCheckpoint(
         design.design_digest,
