@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 from entropic_substrate.d1_training_step import D1TrainStepResult
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_journal import read_journal, read_journal_bytes
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
@@ -35,6 +37,9 @@ from entropic_substrate.evidence.d1_telemetry_values import (
     D1TailQuarantineEvidence,
     D1TailQuarantineKind,
     gap,
+)
+from entropic_substrate.evidence.d1_terminal_defect_query import (
+    validate_d1_terminal_defect_event,
 )
 from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
@@ -213,6 +218,16 @@ def _read_d1_run_evidence(
         if plan_digest != expected_plan_digest:
             raise gap("identity_mismatch", "plan_digest", "differs from the requested plan")
     status = _status(events, allow_incomplete=allow_incomplete)
+    trainer_aborts = tuple(
+        event for event in events if event.event_kind is JournalEventKind.TRAINER_ABORTED
+    )
+    if len(trainer_aborts) > 1:
+        raise gap(
+            "trainer_abort_count",
+            "event_kind",
+            "run contains more than one TRAINER_ABORTED event",
+        )
+    trainer_abort_event = trainer_aborts[0] if trainer_aborts else None
     terminal = (
         events[-1]
         if events[-1].event_kind in {JournalEventKind.RUN_END, JournalEventKind.RUN_ABORT}
@@ -317,7 +332,7 @@ def _read_d1_run_evidence(
     if not isinstance(frozen_plan, Mapping):  # pragma: no cover - parsed above
         raise AssertionError("validated plan lost its mapping representation")
     data_order = tuple((index, *order_state[index]) for index in sorted(order_state))
-    return D1RunEvidence(
+    run = D1RunEvidence(
         path=target,
         status=status,
         identity=identity,
@@ -330,8 +345,21 @@ def _read_d1_run_evidence(
         data_order_segments=data_order,
         checkpoint_receipts=tuple(checkpoints),
         tail_quarantine_evidence=tuple(tail_quarantine),
+        trainer_abort=None,
         terminal=terminal,
     )
+    if trainer_abort_event is not None:
+        raw_defect = trainer_abort_event.payload.get("numerical_defect")
+        defect = (
+            None
+            if raw_defect is None
+            else validate_d1_terminal_defect_event(run, trainer_abort_event)
+        )
+        run = replace(
+            run,
+            trainer_abort=D1TrainerAbortEvidence(trainer_abort_event, defect),
+        )
+    return run
 
 
 def read_d1_run_evidence(

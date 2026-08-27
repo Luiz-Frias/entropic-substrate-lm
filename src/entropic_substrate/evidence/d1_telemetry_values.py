@@ -15,6 +15,7 @@ from entropic_substrate.d1_evaluation_values import (
     D1ChannelMoments,
 )
 from entropic_substrate.d1_training_step import D1TrainStepResult
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
@@ -508,6 +509,7 @@ class D1RunEvidence:
     data_order_segments: tuple[tuple[int, str, int], ...]
     checkpoint_receipts: tuple[tuple[int, str], ...]
     tail_quarantine_evidence: tuple[D1TailQuarantineEvidence, ...]
+    trainer_abort: D1TrainerAbortEvidence | None
     terminal: D1JournalEvent | None
 
     @property
@@ -562,6 +564,7 @@ class D1RunEvidence:
             "tail_quarantine_evidence": [
                 item.authority_manifest for item in self.tail_quarantine_evidence
             ],
+            "trainer_abort": (None if self.trainer_abort is None else self.trainer_abort.manifest),
             "terminal": None if self.terminal is None else self.terminal.manifest,
             "train_steps": [item.manifest for item in self.train_steps],
         }

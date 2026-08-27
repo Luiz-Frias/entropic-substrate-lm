@@ -12,6 +12,7 @@ import pytest
 
 import entropic_substrate.evidence.d1_telemetry_query as query_module
 from entropic_substrate.d1_training_step import D1GradientEvidenceKind, D1TrainStepResult
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind, canonical_event_line
 from entropic_substrate.evidence.d1_telemetry_query import (
     final_d1_eval_metric,
@@ -217,11 +218,40 @@ def test_abort_state_is_returned_only_when_explicitly_requested(
         events[-1] = replace(events[-1], event_seq=events[-2].event_seq + 1)
     run = read_d1_run_evidence(_path(tmp_path, events), allow_incomplete=True)
     assert run.status is status
+    if terminal is JournalEventKind.TRAINER_ABORTED:
+        assert type(run.trainer_abort) is D1TrainerAbortEvidence
+        assert run.trainer_abort.numerical_defect is None
+        assert run.terminal is not None
+        assert run.terminal.event_kind is JournalEventKind.RUN_END
+    else:
+        assert run.trainer_abort is None
+        assert run.terminal is not None
+        assert run.terminal.event_kind is JournalEventKind.RUN_ABORT
 
 
 def test_partial_state_is_returned_only_when_explicitly_requested(tmp_path: Path) -> None:
     run = read_d1_run_evidence(_path(tmp_path, valid_events()[:-1]), allow_incomplete=True)
     assert run.status is D1RunStatus.PARTIAL
+    assert run.trainer_abort is None
+    assert run.terminal is None
+
+
+def test_unfinalized_trainer_abort_retains_abort_evidence_without_terminal_event(
+    tmp_path: Path,
+) -> None:
+    events = valid_events()
+    events[-2] = replace(
+        events[-2],
+        event_kind=JournalEventKind.TRAINER_ABORTED,
+        payload={"error": "trainer stopped before operator finalization"},
+    )
+
+    run = read_d1_run_evidence(_path(tmp_path, events[:-1]), allow_incomplete=True)
+
+    assert run.status is D1RunStatus.TRAINER_ABORTED
+    assert type(run.trainer_abort) is D1TrainerAbortEvidence
+    assert run.trainer_abort.event == events[-2]
+    assert run.trainer_abort.numerical_defect is None
     assert run.terminal is None
 
 

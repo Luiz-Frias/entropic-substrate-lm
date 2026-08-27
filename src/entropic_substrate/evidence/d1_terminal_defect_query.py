@@ -11,15 +11,14 @@ from entropic_substrate.d1_numerical_defect import (
     D1TerminalNumericalDefectRecord,
     terminal_numerical_defect_from_mapping,
 )
-from entropic_substrate.evidence.d1_journal import D1JournalError, read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
 from entropic_substrate.evidence.d1_telemetry_values import (
     D1RunEvidence,
     D1RunStatus,
     D1TelemetryGap,
 )
 
-__all__ = ["validate_d1_terminal_defect"]
+__all__ = ["validate_d1_terminal_defect", "validate_d1_terminal_defect_event"]
 
 
 def _gap(code: str, path: str, detail: str) -> D1TelemetryGap:
@@ -32,36 +31,29 @@ def _plan_value(plan: Mapping[str, object], field: str) -> object:
     return plan[field]
 
 
-def validate_d1_terminal_defect(
-    path: str | Path,
+def validate_d1_terminal_defect_event(
     run: D1RunEvidence,
+    event: D1JournalEvent,
 ) -> D1TerminalNumericalDefectRecord:
-    """Validate the canonical nested defect after whole-journal admission."""
-    target = Path(path)
+    """Validate one retained TRAINER_ABORTED event against admitted run evidence."""
     if type(run) is not D1RunEvidence:
         raise TypeError("terminal defect validation requires D1RunEvidence")
-    if run.path != target:
-        raise _gap("terminal_defect_identity", str(target), "run evidence belongs to another path")
     if run.status is not D1RunStatus.TRAINER_ABORTED:
         raise _gap(
             "terminal_defect_status",
             "event_kind",
             "terminal numerical defect requires trainer_aborted run evidence",
         )
-    try:
-        events = read_journal(target)
-    except D1JournalError as error:
-        raise _gap(f"journal_{error.code}", error.path, str(error)) from error
-    aborted = tuple(
-        event for event in events if event.event_kind is JournalEventKind.TRAINER_ABORTED
-    )
-    if len(aborted) != 1:
+    if (
+        type(event) is not D1JournalEvent
+        or event.event_kind is not JournalEventKind.TRAINER_ABORTED
+    ):
         raise _gap(
-            "terminal_defect_count",
+            "terminal_defect_event",
             "event_kind",
-            "requires exactly one TRAINER_ABORTED event",
+            "requires one retained TRAINER_ABORTED event",
         )
-    raw = aborted[0].payload.get("numerical_defect")
+    raw = event.payload.get("numerical_defect")
     if raw is None:
         raise _gap(
             "terminal_defect_missing",
@@ -100,7 +92,7 @@ def validate_d1_terminal_defect(
         record.seed,
         record.pairing_id,
     )
-    if observed != expected or record.successful_step != aborted[0].successful_step:
+    if observed != expected or record.successful_step != event.successful_step:
         raise _gap(
             "terminal_defect_identity",
             "trainer_aborted.numerical_defect",
@@ -123,5 +115,31 @@ def validate_d1_terminal_defect(
             "terminal_defect_checkpoint",
             "trainer_aborted.numerical_defect.checkpoint",
             "receipt is absent from the admitted journal prefix",
+        )
+    return record
+
+
+def validate_d1_terminal_defect(
+    path: str | Path,
+    run: D1RunEvidence,
+) -> D1TerminalNumericalDefectRecord:
+    """Return the retained defect without reopening the admitted journal path."""
+    target = Path(path)
+    if type(run) is not D1RunEvidence:
+        raise TypeError("terminal defect validation requires D1RunEvidence")
+    if run.path != target:
+        raise _gap("terminal_defect_identity", str(target), "run evidence belongs to another path")
+    if run.trainer_abort is None:
+        raise _gap(
+            "terminal_defect_status",
+            "event_kind",
+            "terminal numerical defect requires trainer_aborted run evidence",
+        )
+    record = validate_d1_terminal_defect_event(run, run.trainer_abort.event)
+    if run.trainer_abort.numerical_defect != record:
+        raise _gap(
+            "terminal_defect_identity",
+            "trainer_aborted.numerical_defect",
+            "retained numerical defect differs from its event",
         )
     return record

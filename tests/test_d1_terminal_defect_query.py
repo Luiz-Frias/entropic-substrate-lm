@@ -13,8 +13,11 @@ from entropic_substrate.d1_numerical_defect import (
     D1NonfiniteClassification,
     D1TerminalNumericalDefectRecord,
 )
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
 from entropic_substrate.evidence.d1_telemetry_values import D1TelemetryGap
+from entropic_substrate.evidence.d1_terminal_defect_query import validate_d1_terminal_defect
 from entropic_substrate.evidence.resource_provenance import execution_segment_id
 from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
@@ -50,16 +53,19 @@ def _journal(tmp_path: Path, *, mutation: str = "defect") -> tuple[Path, str]:
             pairing_id=PAIRING_ID,
             logical_run_id="wrong-run" if mutation == "identity" else logical_run_id,
             run_class=RunClass.CONFIRMATORY,
-            execution_segment_index=0,
+            execution_segment_index=1 if mutation == "segment" else 0,
             execution_segment_id=execution_segment_id(
-                "wrong-run" if mutation == "identity" else logical_run_id, 0
+                "wrong-run" if mutation == "identity" else logical_run_id,
+                1 if mutation == "segment" else 0,
             ),
             plan_digest=plan_digest,
             family_digest=FAMILY_DIGEST,
             construction_digest=construction,
             execution_digest=execution,
             aggregation_digest=aggregation,
-            checkpoint=D1DefectCheckpointReference.receipt("d" * 64),
+            checkpoint=D1DefectCheckpointReference.receipt(
+                ("e" if mutation == "checkpoint" else "d") * 64
+            ),
         )
         payload: dict[str, object] = (
             {"error": "generic failure"}
@@ -100,12 +106,46 @@ def test_public_reader_returns_canonical_terminal_defect_and_uses_strict_run_adm
     assert record.checkpoint.sha256 == "d" * 64
 
 
+def test_admitted_run_retains_validated_trainer_abort_without_path_reread(
+    tmp_path: Path,
+) -> None:
+    path, _ = _journal(tmp_path)
+
+    run = read_d1_run_evidence(path, allow_incomplete=True)
+
+    assert type(run.trainer_abort) is D1TrainerAbortEvidence
+    assert run.trainer_abort.event.event_kind is JournalEventKind.TRAINER_ABORTED
+    assert type(run.trainer_abort.numerical_defect) is D1TerminalNumericalDefectRecord
+    path.unlink()
+    assert validate_d1_terminal_defect(path, run) == run.trainer_abort.numerical_defect
+
+
+def test_generic_trainer_abort_is_retained_without_fabricating_numerical_defect(
+    tmp_path: Path,
+) -> None:
+    path, _ = _journal(tmp_path, mutation="generic_abort")
+
+    run = read_d1_run_evidence(path, allow_incomplete=True)
+
+    assert type(run.trainer_abort) is D1TrainerAbortEvidence
+    assert run.trainer_abort.numerical_defect is None
+
+
+def test_mismatched_embedded_defect_fails_whole_run_admission(tmp_path: Path) -> None:
+    path, _ = _journal(tmp_path, mutation="identity")
+
+    with pytest.raises(D1TelemetryGap, match="identity"):
+        read_d1_run_evidence(path, allow_incomplete=True)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
         ("complete", "trainer_aborted"),
         ("generic_abort", "numerical_defect"),
         ("identity", "identity"),
+        ("checkpoint", "checkpoint"),
+        ("segment", "segment"),
     ],
 )
 def test_reader_refuses_complete_generic_abort_or_mismatched_defect_identity(
