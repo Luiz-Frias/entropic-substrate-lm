@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, fields
+from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
@@ -24,6 +25,13 @@ from entropic_substrate.analysis.d1_review_execution import (
     D1ExecutedBlindReview,
     D1ReleasedAliasReveal,
 )
+from entropic_substrate.d1_artifact_snapshot import (
+    D1ArtifactSnapshotError,
+    normalize_d1_artifact_root,
+    normalize_d1_relative_artifact_path,
+    publish_d1_atomic_bytes,
+    read_d1_artifact_bytes,
+)
 from entropic_substrate.evidence.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,
@@ -36,9 +44,11 @@ from entropic_substrate.evidence.d1_filing_assembly import (
 from entropic_substrate.evidence.d1_review_adjudication import (
     D1ReviewAdjudicationSurface,
 )
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 __all__ = [
     "D1FilingArtifactPaths",
+    "D1LocalFilingArtifactStore",
     "D1PreparedFilingBundle",
     "prepare_d1_filing_bundle",
 ]
@@ -93,6 +103,7 @@ class D1PreparedFilingBundle:
     """Byte-owned preparation only; semantic graph verification grants authority later."""
 
     verdict: D1AssembledRealArmVerdict
+    paths: D1FilingArtifactPaths
     materials: tuple[D1FilingArtifactMaterial, ...]
     manifest: D1FilingManifest
 
@@ -100,6 +111,8 @@ class D1PreparedFilingBundle:
         if type(self.verdict) is not D1AssembledRealArmVerdict:
             raise TypeError("D1 filing preparation requires an assembled real-arm verdict")
         self.verdict.require_factory_attested()
+        if type(self.paths) is not D1FilingArtifactPaths:
+            raise TypeError("D1 filing preparation requires typed artifact paths")
         if (
             type(self.materials) is not tuple
             or tuple(item.role for item in self.materials) != REQUIRED_D1_FILING_ARTIFACTS
@@ -107,10 +120,92 @@ class D1PreparedFilingBundle:
             raise ValueError("D1 filing preparation material roles differ")
         if type(self.manifest) is not D1FilingManifest:
             raise TypeError("D1 filing preparation requires a typed manifest")
+        if any(
+            self.manifest.artifacts[item.role].path != self.paths.mapping[item.role]
+            for item in self.materials
+        ):
+            raise ValueError("D1 filing preparation paths differ from its manifest")
 
     @property
     def payloads(self) -> MappingProxyType[str, bytes]:
         return MappingProxyType({item.role: item.payload for item in self.materials})
+
+    @property
+    def manifest_bytes(self) -> bytes:
+        return _canonical(
+            {
+                "artifacts": {
+                    role: {
+                        "md5": artifact.md5.digest,
+                        "path": artifact.path,
+                        "sha256": artifact.sha256.digest,
+                        "size": artifact.size,
+                    }
+                    for role, artifact in self.manifest.artifacts.items()
+                },
+                "rung": "d1",
+                "schema_version": "d1-filing-manifest/v2",
+            }
+        )
+
+
+class D1LocalFilingArtifactStore:
+    """Restartable local publisher and exact-byte read adapter for one filing root."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = normalize_d1_artifact_root(root)
+
+    def read_bytes(self, path: str) -> bytes | None:
+        relative = normalize_d1_relative_artifact_path(path, label="D1 filing")
+        try:
+            _, payload, _ = read_d1_artifact_bytes(
+                self._root,
+                relative,
+                label="D1 filing",
+            )
+        except D1ArtifactSnapshotError as error:
+            if isinstance(error.__cause__, FileNotFoundError):
+                return None
+            raise
+        return payload
+
+    def _ensure(self, path: str, payload: bytes, *, label: str) -> ArtifactIdentity:
+        existing = self.read_bytes(path)
+        if existing is None:
+            return publish_d1_atomic_bytes(self._root, path, payload, label=label)
+        if existing != payload:
+            raise ValueError(f"{label} existing bytes differ from prepared filing")
+        digest = hashlib.sha256(payload).hexdigest()
+        return ArtifactIdentity(
+            str(self._root.joinpath(*Path(path).parts)),
+            ContentHash("sha256", digest),
+        )
+
+    def publish(
+        self,
+        prepared: D1PreparedFilingBundle,
+        *,
+        manifest_path: str,
+    ) -> ArtifactIdentity:
+        if type(prepared) is not D1PreparedFilingBundle:
+            raise TypeError("D1 filing store requires a prepared filing bundle")
+        marker = normalize_d1_relative_artifact_path(
+            manifest_path,
+            label="D1 filing manifest",
+        )
+        if marker in set(prepared.paths.mapping.values()):
+            raise ValueError("D1 filing manifest path duplicates an artifact path")
+        for material in prepared.materials:
+            self._ensure(
+                material.path,
+                material.payload,
+                label=f"D1 filing {material.role}",
+            )
+        return self._ensure(
+            marker,
+            prepared.manifest_bytes,
+            label="D1 filing manifest",
+        )
 
 
 def _require_bytes(value: object, *, label: str) -> bytes:
@@ -210,6 +305,7 @@ def prepare_d1_filing_bundle(
     )
     return D1PreparedFilingBundle(
         verdict=assembled,
+        paths=paths,
         materials=materials,
         manifest=assemble_d1_filing_manifest(materials),
     )

@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+import entropic_substrate.d1_filing_application as filing_module
 from entropic_substrate.d1_filing_application import (
     D1FilingArtifactPaths,
+    D1LocalFilingArtifactStore,
     prepare_d1_filing_bundle,
 )
 from entropic_substrate.evidence.d1_filing import REQUIRED_D1_FILING_ARTIFACTS
@@ -100,3 +102,82 @@ def test_preparation_refuses_preregistration_or_path_substitution(
                 ),
             }
         )
+
+
+def test_local_store_publishes_payloads_then_manifest_as_restartable_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _lineage(tmp_path / "lineage", monkeypatch)
+    prepared = prepare_d1_filing_bundle(
+        verified=lineage.verified,
+        analysis_receipt=lineage.analysis_receipt,
+        execution=lineage.execution,
+        reveal=lineage.reveal,
+        adjudication=lineage.adjudication,
+        verdict="SUPPORTED",
+        narrative_body=b"# D1 stabilized latent verdict\n",
+        preregistration_bytes=_RAW_PREREGISTRATION,
+        paths=_paths(),
+    )
+    root = tmp_path / "artifact-root"
+    (root / "filing").mkdir(parents=True)
+    store = D1LocalFilingArtifactStore(root)
+
+    marker = store.publish(prepared, manifest_path="filing/manifest.json")
+
+    assert marker.path == str(root / "filing/manifest.json")
+    assert store.read_bytes("filing/manifest.json") == prepared.manifest_bytes
+    assert all(
+        store.read_bytes(prepared.paths.mapping[role]) == payload
+        for role, payload in prepared.payloads.items()
+    )
+    assert store.publish(prepared, manifest_path="filing/manifest.json") == marker
+    (root / prepared.paths.narrative).write_bytes(b"drift")
+    with pytest.raises(ValueError, match="differ"):
+        store.publish(prepared, manifest_path="filing/manifest.json")
+
+
+def test_local_store_missing_artifact_is_explicit_none(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    assert D1LocalFilingArtifactStore(tmp_path).read_bytes("filing/missing.json") is None
+
+
+def test_local_store_failure_before_manifest_marker_is_restartable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lineage = _lineage(tmp_path / "lineage", monkeypatch)
+    prepared = prepare_d1_filing_bundle(
+        verified=lineage.verified,
+        analysis_receipt=lineage.analysis_receipt,
+        execution=lineage.execution,
+        reveal=lineage.reveal,
+        adjudication=lineage.adjudication,
+        verdict="SUPPORTED",
+        narrative_body=b"# D1 stabilized latent verdict\n",
+        preregistration_bytes=_RAW_PREREGISTRATION,
+        paths=_paths(),
+    )
+    root = tmp_path / "artifact-root"
+    (root / "filing").mkdir(parents=True)
+    store = D1LocalFilingArtifactStore(root)
+    real_publish = filing_module.publish_d1_atomic_bytes
+
+    def fail_marker(*args: object, **kwargs: object):
+        if kwargs.get("label") == "D1 filing manifest":
+            raise ValueError("injected marker failure")
+        return real_publish(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(filing_module, "publish_d1_atomic_bytes", fail_marker)
+    with pytest.raises(ValueError, match="marker failure"):
+        store.publish(prepared, manifest_path="filing/manifest.json")
+    assert store.read_bytes("filing/manifest.json") is None
+    assert all(
+        store.read_bytes(prepared.paths.mapping[role]) == payload
+        for role, payload in prepared.payloads.items()
+    )
+
+    monkeypatch.setattr(filing_module, "publish_d1_atomic_bytes", real_publish)
+    marker = store.publish(prepared, manifest_path="filing/manifest.json")
+    assert marker.path == str(root / "filing/manifest.json")
