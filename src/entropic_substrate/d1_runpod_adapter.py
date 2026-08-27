@@ -39,13 +39,9 @@ from entropic_substrate.evidence.resource_provenance import (
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
-_WAIT_TIMEOUT = re.compile(r"^[1-9][0-9]*[smhd]$")
 _FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _RUNPODCTL_VERSION = "runpodctl 2.11.0-0592468"
-_POD_REQUIRED = frozenset(
-    "id name desiredStatus runtimeStatus imageName gpuCount createdAt machine ssh".split()
-)
-_SSH_REQUIRED = frozenset({"ssh_command", "ip", "port"})
+_POD_REQUIRED = frozenset("id name desiredStatus imageName gpuCount createdAt machine".split())
 _MARKETS = {"secure-cloud": "SECURE", "community-cloud": "COMMUNITY"}
 
 
@@ -115,7 +111,6 @@ class RunpodctlD1Adapter:
         registry_auth_id: str,
         network_volume_id: str,
         network_volume_mount_path: str,
-        wait_timeout: str,
         runner: D1CommandRunner | None = None,
         command_timeout_seconds: float | None = None,
         max_output_bytes: int | None = None,
@@ -136,21 +131,10 @@ class RunpodctlD1Adapter:
         mount = PurePosixPath(_text(network_volume_mount_path, label="network volume mount"))
         if not mount.is_absolute() or ".." in mount.parts or mount.as_posix() != str(mount):
             raise ValueError("RunPod network volume mount must be a normalized absolute POSIX path")
-        wait_match = _WAIT_TIMEOUT.fullmatch(wait_timeout)
-        if wait_match is None:
-            raise ValueError("RunPod wait timeout must be a positive duration")
-        if runner is None:
-            if command_timeout_seconds is None:  # pragma: no cover - guarded above
-                raise RuntimeError("RunPod validated process timeout was lost")
-            multiplier = {"s": 1, "m": 60, "h": 3600, "d": 86400}[wait_timeout[-1]]
-            wait_seconds = int(wait_timeout[:-1]) * multiplier
-            if command_timeout_seconds <= wait_seconds:
-                raise ValueError("RunPod local process timeout must exceed CLI wait timeout")
         self._runner, self._clock = selected, clock
         self._registry_auth_id = _text(registry_auth_id, label="registry auth id")
         self._network_volume_id = _text(network_volume_id, label="network volume id")
         self._network_volume_mount_path = str(mount)
-        self._wait_timeout = wait_timeout
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -332,13 +316,9 @@ class RunpodctlD1Adapter:
             "--data-center-ids",
             intent.resource.region,
         ]
-        if cloud_type == "COMMUNITY":
-            argv.append("--public-ip")
         argv.extend(
             [
                 "--ssh",
-                "--ports",
-                "22/tcp",
                 "--registry-auth-id",
                 self._registry_auth_id,
                 "--network-volume-id",
@@ -347,9 +327,6 @@ class RunpodctlD1Adapter:
                 self._network_volume_mount_path,
                 "--terminate-after",
                 terminate_after.isoformat().replace("+00:00", "Z"),
-                "--wait",
-                "--wait-timeout",
-                self._wait_timeout,
                 "--output",
                 "json",
             ]
@@ -408,7 +385,7 @@ class RunpodctlD1Adapter:
         try:
             if not _POD_REQUIRED <= set(payload):
                 raise ValueError("pod response fields differ from the pinned runpodctl schema")
-            machine, ssh = payload["machine"], payload["ssh"]
+            machine = payload["machine"]
             if type(machine) is not dict or machine.get("dataCenterId") != intent.resource.region:
                 raise ValueError("pod region differs from request")
             observed_gpu = machine.get("gpuId")
@@ -416,37 +393,14 @@ class RunpodctlD1Adapter:
                 raise ValueError("pod GPU differs from request")
             if machine.get("secureCloud") is not (cloud_type == "SECURE"):
                 raise ValueError("pod cloud market differs from request")
-            if (
-                type(ssh) is not dict
-                or not _SSH_REQUIRED <= set(ssh)
-                or "error" in ssh
-                or "setup" in ssh
-            ):
-                raise ValueError("pod SSH is not usable")
-            ssh_key = ssh.get("ssh_key")
-            if (
-                type(ssh_key) is not dict
-                or ssh_key.get("exists") is not True
-                or ssh_key.get("in_account") is not True
-            ):
-                raise ValueError("pod SSH key is not usable")
-            if ssh.get("id") != resource_id or ssh.get("name") != subject:
-                raise ValueError("pod SSH identity differs from placement")
             if payload["desiredStatus"] != "RUNNING":
                 raise ValueError("pod desiredStatus is not RUNNING")
-            if payload["runtimeStatus"] != "running":
-                raise ValueError("pod runtimeStatus is not running")
             if payload["imageName"] != intent.image.reference:
                 raise ValueError("pod image differs from request")
             if payload["gpuCount"] != intent.resource.accelerator_count:
                 raise ValueError("pod accelerator count differs from request")
             if payload["name"] != subject:
                 raise ValueError("pod name differs from request")
-            _text(ssh["ssh_command"], label="SSH command")
-            _text(ssh["ip"], label="SSH ip")
-            port = _integer(ssh["port"], label="SSH port")
-            if not 1 <= port <= 65535:
-                raise ValueError("SSH port must be usable")
             # The on-demand mutation and this adapter's provider identity are
             # command constraints; GPU/count/region/cloud/timestamp are response facts.
             return D1PodPlacement(

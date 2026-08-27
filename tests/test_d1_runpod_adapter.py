@@ -40,7 +40,6 @@ _CONTROL_AT = datetime(2026, 8, 24, 15, 50, tzinfo=UTC)
 _REGISTRY_AUTH = "registry-auth-123"
 _NETWORK_VOLUME = "network-volume-123"
 _VOLUME_MOUNT = "/workspace"
-_WAIT_TIMEOUT = "12m"
 _VERSION = "runpodctl 2.11.0-0592468"
 
 
@@ -81,7 +80,6 @@ def _adapter(
         registry_auth_id=_REGISTRY_AUTH,
         network_volume_id=_NETWORK_VOLUME,
         network_volume_mount_path=_VOLUME_MOUNT,
-        wait_timeout=_WAIT_TIMEOUT,
     )
 
 
@@ -120,34 +118,25 @@ def test_default_process_boundary_requires_explicit_local_bounds() -> None:
         "registry_auth_id": _REGISTRY_AUTH,
         "network_volume_id": _NETWORK_VOLUME,
         "network_volume_mount_path": _VOLUME_MOUNT,
-        "wait_timeout": _WAIT_TIMEOUT,
     }
     with pytest.raises(ValueError, match="process bounds"):
         RunpodctlD1Adapter(**kwargs)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match=r"exceed.*wait timeout"):
-        RunpodctlD1Adapter(
-            **kwargs,  # type: ignore[arg-type]
-            command_timeout_seconds=719,
-            max_output_bytes=1024,
-        )
-
     adapter = RunpodctlD1Adapter(
         **kwargs,  # type: ignore[arg-type]
-        command_timeout_seconds=780,
+        command_timeout_seconds=60,
         max_output_bytes=1024 * 1024,
     )
     assert isinstance(adapter._runner, BoundedSubprocessD1CommandRunner)  # pyright: ignore[reportPrivateUsage]
 
 
 def _create_payload() -> dict[str, object]:
-    # Sanitized known-answer shape captured 2026-08-26 from exact local
-    # runpodctl 2.9.0-c094cac (`pod create --wait`, secure RTX A4000).
-    # The probe pod was deleted successfully before this fixture was filed.
+    # GPU identity fields retain the measured GPU fixture; required allocation
+    # keys follow the 2026-08-27 runpodctl 2.11 no-wait CPU schema capture.
+    # The guarded schema pod was deleted immediately and had no billing rows.
     return {
         "id": "pod-123",
         "name": "d1-confirmatory-none-s101",
         "desiredStatus": "RUNNING",
-        "runtimeStatus": "running",
         "imageName": f"registry.example/entropic-substrate-lm@{_DIGEST}",
         "gpuCount": 1,
         "createdAt": "2026-08-24 15:58:00.000 +0000 UTC",
@@ -156,18 +145,6 @@ def _create_payload() -> dict[str, object]:
             "gpuId": "NVIDIA A100-SXM4-80GB",
             "location": "US",
             "secureCloud": True,
-        },
-        "ssh": {
-            "id": "pod-123",
-            "name": "d1-confirmatory-none-s101",
-            "ssh_command": "ssh -i key root@203.0.113.10 -p 22022",
-            "ip": "203.0.113.10",
-            "port": 22022,
-            "ssh_key": {
-                "path": "/root/.ssh/id_ed25519",
-                "exists": True,
-                "in_account": True,
-            },
         },
         "containerDiskInGb": 20,
         "volumeInGb": 0,
@@ -182,7 +159,7 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         [
             D1CommandResult(_VERSION, "warning: local version note"),
             _result({"id": "account-123", "email": "user@example.test", "balance": 12.5}),
-            _result(_create_payload(), stderr="note: waiting for ssh\n"),
+            _result(_create_payload(), stderr="note: allocation accepted\n"),
         ]
     )
     adapter = _adapter(runner)
@@ -218,8 +195,6 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         "--data-center-ids",
         "US-KS-2",
         "--ssh",
-        "--ports",
-        "22/tcp",
         "--registry-auth-id",
         _REGISTRY_AUTH,
         "--network-volume-id",
@@ -228,9 +203,6 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         _VOLUME_MOUNT,
         "--terminate-after",
         "2026-08-24T17:50:00Z",
-        "--wait",
-        "--wait-timeout",
-        _WAIT_TIMEOUT,
         "--output",
         "json",
     )
@@ -239,7 +211,22 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
     assert all("token" not in argument.lower() for argument in argv)
 
 
-def test_community_market_maps_to_cli_cloud_and_public_ip() -> None:
+def test_proxy_only_create_does_not_require_tcp_ssh_or_wait() -> None:
+    payload = _create_payload()
+    runner = _Runner([_result(payload)])
+
+    placement = _adapter(runner).create(_intent())
+
+    argv = runner.calls[0][0]
+    assert placement.pod_id == "pod-123"
+    assert "--ssh" in argv
+    assert "--ports" not in argv
+    assert "--wait" not in argv
+    assert "--wait-timeout" not in argv
+    assert "--public-ip" not in argv
+
+
+def test_community_market_maps_to_cli_cloud_without_direct_public_ip() -> None:
     intent = _intent()
     intent = replace(intent, resource=replace(intent.resource, market="community-cloud"))
     payload = _create_payload()
@@ -254,7 +241,7 @@ def test_community_market_maps_to_cli_cloud_and_public_ip() -> None:
 
     argv = runner.calls[0][0]
     assert argv[argv.index("--cloud-type") + 1] == "COMMUNITY"
-    assert "--public-ip" in argv
+    assert "--public-ip" not in argv
     assert placement.market == "community-cloud"
 
 
@@ -614,13 +601,13 @@ def test_terminate_reports_typed_acknowledgement_on_post_delete_ordering_failure
     assert len(runner.calls) == 1
 
 
-def test_partial_wait_failure_with_resource_id_deletes_once_before_raising() -> None:
+def test_partial_create_failure_with_resource_id_deletes_once_before_raising() -> None:
     runner = _Runner(
         [
             D1CommandResult(
                 "",
-                "waiting for ssh on pod pod-partial (timeout 12m)\n"
-                '{"error":"secret wait detail","code":"wait_timeout","id":"pod-partial"}',
+                "allocation response retained pod id\n"
+                '{"error":"secret create detail","code":"create_timeout","id":"pod-partial"}',
                 1,
             ),
             _result({"deleted": True, "id": "pod-partial"}),
@@ -631,10 +618,10 @@ def test_partial_wait_failure_with_resource_id_deletes_once_before_raising() -> 
         _adapter(runner).create(_intent())
 
     rendered = "".join(traceback.format_exception(caught.value))
-    assert "code=wait_timeout" in rendered
+    assert "code=create_timeout" in rendered
     assert "resource_id=pod-partial" in rendered
     assert "cleanup=deleted" in rendered
-    assert "secret wait detail" not in rendered
+    assert "secret create detail" not in rendered
     assert [call[0][:3] for call in runner.calls] == [
         ("runpodctl", "pod", "create"),
         ("runpodctl", "pod", "delete"),
@@ -657,7 +644,7 @@ def test_create_error_with_unsafe_resource_id_reports_unreconciled_cost_risk() -
         [
             D1CommandResult(
                 "",
-                '{"error":"secret","code":"wait_timeout","id":"--unsafe"}',
+                '{"error":"secret","code":"create_timeout","id":"--unsafe"}',
                 1,
             )
         ]
@@ -693,7 +680,7 @@ def test_success_without_safe_resource_id_reports_unreconciled_cost_risk(
     ["not-json", "[]", '{"id":"one","id":"two"}', '{"id":NaN}'],
 )
 def test_success_with_malformed_payload_reports_unreconciled_cost_risk(stdout: str) -> None:
-    runner = _Runner([D1CommandResult(stdout, "waiting for ssh\n", 0)])
+    runner = _Runner([D1CommandResult(stdout, "allocation response\n", 0)])
 
     with pytest.raises(D1OperatorTransportError, match="COST LEAK") as caught:
         _adapter(runner).create(_intent())
@@ -718,7 +705,7 @@ def test_malformed_cleanup_acknowledgement_remains_a_cost_leak(
         [
             D1CommandResult(
                 "",
-                '{"error":"secret create","code":"wait_timeout","id":"pod-partial"}',
+                '{"error":"secret create","code":"create_timeout","id":"pod-partial"}',
                 1,
             ),
             cleanup,
@@ -740,7 +727,7 @@ def test_cleanup_runner_exception_remains_a_sanitized_cost_leak() -> None:
         [
             D1CommandResult(
                 "",
-                '{"error":"secret create","code":"wait_timeout","id":"pod-partial"}',
+                '{"error":"secret create","code":"create_timeout","id":"pod-partial"}',
                 1,
             ),
             RuntimeError("secret cleanup exception"),
@@ -757,27 +744,12 @@ def test_cleanup_runner_exception_remains_a_sanitized_cost_leak() -> None:
     assert len(runner.calls) == 2
 
 
-def test_post_success_ssh_refusal_deletes_created_pod_before_raising() -> None:
-    payload = _create_payload()
-    payload["ssh"] = {"error": "pod not ready"}
-    runner = _Runner([_result(payload), _result({"deleted": True, "id": "pod-123"})])
-
-    with pytest.raises(D1OperatorTransportError) as caught:
-        _adapter(runner).create(_intent())
-
-    assert "pod SSH is not usable" in str(caught.value)
-    assert "resource_id=pod-123" in str(caught.value)
-    assert "cleanup=deleted" in str(caught.value)
-    assert str(caught.value).count("D1 operator create_pod") == 1
-    assert len(runner.calls) == 2
-
-
 def test_cleanup_failure_preserves_primary_and_makes_cost_leak_unmistakable() -> None:
     runner = _Runner(
         [
             D1CommandResult(
                 "",
-                '{"error":"secret wait detail","code":"wait_interrupted","id":"pod-leak"}',
+                '{"error":"secret create detail","code":"create_interrupted","id":"pod-leak"}',
                 1,
             ),
             D1CommandResult(
@@ -792,12 +764,12 @@ def test_cleanup_failure_preserves_primary_and_makes_cost_leak_unmistakable() ->
         _adapter(runner).create(_intent())
 
     rendered = "".join(traceback.format_exception(caught.value))
-    assert "code=wait_interrupted" in rendered
+    assert "code=create_interrupted" in rendered
     assert "resource_id=pod-leak" in rendered
     assert "COST LEAK" in rendered
     assert "cleanup_code=unauthorized" in rendered
     assert "cleanup_status=401" in rendered
-    assert "secret wait detail" not in rendered
+    assert "secret create detail" not in rendered
     assert "secret cleanup detail" not in rendered
     assert len(runner.calls) == 2
 
@@ -806,7 +778,6 @@ def test_cleanup_failure_preserves_primary_and_makes_cost_leak_unmistakable() ->
     ("field", "value", "match"),
     [
         ("desiredStatus", "EXITED", "desiredStatus"),
-        ("runtimeStatus", "initializing", "runtimeStatus"),
         ("imageName", "mutable:latest", "image"),
         (
             "machine",
@@ -824,19 +795,6 @@ def test_cleanup_failure_preserves_primary_and_makes_cost_leak_unmistakable() ->
             "region",
         ),
         ("name", "foreign-run", "name"),
-        ("ssh", {"error": "pod not ready"}, "SSH"),
-        (
-            "ssh",
-            {
-                "id": "foreign-pod",
-                "name": "d1-confirmatory-none-s101",
-                "ssh_command": "ssh root@203.0.113.10 -p 22022",
-                "ip": "203.0.113.10",
-                "port": 22022,
-                "ssh_key": {"exists": True, "in_account": True},
-            },
-            "SSH identity",
-        ),
         ("missing:machine", None, "fields"),
     ],
 )
