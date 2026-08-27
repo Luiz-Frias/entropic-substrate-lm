@@ -13,6 +13,7 @@ from entropic_substrate.d1_artifact_snapshot import (
 )
 from entropic_substrate.d1_campaign_bootstrap import (
     D1CampaignBootstrapError,
+    adopt_d1_finalized_cell_after_crash,
     bootstrap_d1_ready_checkpoint,
 )
 from entropic_substrate.d1_campaign_checkpoint import D1CampaignCheckpoint
@@ -34,6 +35,10 @@ from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1FreshCampaignCursor,
     D1PersistedCampaignCursor,
+)
+from entropic_substrate.d1_finalized_cell_custody_repository import (
+    D1FinalizedCellCustodyRepository,
+    D1FinalizedCellCustodyRepositoryError,
 )
 from entropic_substrate.d1_operator_controller import D1OperatorRunResult
 from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
@@ -194,12 +199,48 @@ class D1CampaignAuthorityLoader:
             _fail("locations", str(error), error)
         design = self._design(resolved)
         process_manager = self._process(resolved)
+        repository = D1CampaignCheckpointRepository(resolved.locations.checkpoint_path)
         try:
-            checkpoint, receipt = D1CampaignCheckpointRepository(
-                resolved.locations.checkpoint_path
-            ).load(expected_sha256=request.cursor.sha256)
+            checkpoint, receipt = repository.load(expected_sha256=request.cursor.sha256)
         except (D1CampaignCheckpointRepositoryError, TypeError, ValueError) as error:
             _fail("checkpoint", str(error), error)
+        expected_subjects = tuple(cell.logical_run_id for cell in checkpoint.completed_cells)
+        observed_subjects = process_manager.finalized_subjects
+        if checkpoint.next_index < len(resolved.intents) and observed_subjects == (
+            *expected_subjects,
+            resolved.intents[checkpoint.next_index].plan.logical_run_id,
+        ):
+            custody = D1FinalizedCellCustodyRepository(
+                resolved.locations.finalized_cell_custody_root
+            )
+            try:
+                candidates = custody.discover(
+                    exclude=tuple(
+                        cell.finalized_cell_artifact for cell in checkpoint.completed_cells
+                    )
+                )
+                checkpoint, receipt = adopt_d1_finalized_cell_after_crash(
+                    design=design,
+                    intent=resolved.intents[checkpoint.next_index],
+                    checkpoint=checkpoint,
+                    process_manager=process_manager,
+                    candidates=candidates,
+                    repository=repository,
+                    generation=receipt,
+                )
+                resolved = replace(
+                    resolved,
+                    cursor=D1PersistedCampaignCursor(receipt.sha256),
+                )
+            except (
+                D1CampaignBootstrapError,
+                D1FinalizedCellCustodyRepositoryError,
+                TypeError,
+                ValueError,
+            ) as error:
+                _fail("adoption", str(error), error)
+            finally:
+                custody.close()
         try:
             recovery = hydrate_d1_campaign_recovery(
                 design=design,

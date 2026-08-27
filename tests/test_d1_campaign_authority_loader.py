@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -15,6 +17,11 @@ from entropic_substrate.d1_campaign_authority_loader import (
     D1LoadedCampaignAuthority,
 )
 from entropic_substrate.d1_campaign_bootstrap import bootstrap_d1_ready_checkpoint
+from entropic_substrate.d1_campaign_checkpoint import (
+    D1CampaignCheckpoint,
+    D1CampaignCompletedCell,
+    D1CampaignDisposition,
+)
 from entropic_substrate.d1_campaign_checkpoint_repository import D1CampaignCheckpointRepository
 from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
 from entropic_substrate.d1_campaign_recovery import (
@@ -28,7 +35,16 @@ from entropic_substrate.d1_campaign_request import (
     D1FreshCampaignCursor,
     D1PersistedCampaignCursor,
 )
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.d1_finalized_cell_custody_repository import (
+    D1FinalizedCellCustodyRepository,
+)
+from entropic_substrate.evidence.lifecycle import ActorRole
+from entropic_substrate.evidence.resource_provenance import RunStartProvenance
+from entropic_substrate.experiments.d1_launch_attempts import (
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.experiments.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
@@ -40,10 +56,12 @@ from entropic_substrate.experiments.d1_registration_codec import (
     serialize_registered_design,
 )
 
-from .test_d1_campaign_queue import _intent
-from .test_d1_campaign_recovery import _prefix
+from .test_d1_campaign_evidence_assembler import _record
+from .test_d1_campaign_queue import _campaign, _intent
+from .test_d1_campaign_recovery import _attempt, _prefix
 from .test_d1_confirmatory_matrix import FakeGit
 from .test_d1_operator_controller import _manager
+from .test_d1_process_manager import _actor, _artifact
 
 pytestmark = pytest.mark.unit
 
@@ -197,6 +215,127 @@ def test_fresh_loader_refuses_persisted_cursor_or_occupied_checkpoint(tmp_path: 
     fresh = replace(request, cursor=D1FreshCampaignCursor())
     with pytest.raises(D1CampaignAuthorityLoaderError, match="checkpoint"):
         loader.load_fresh(fresh, manifest_path=manifest)
+
+
+def _finalize_with_artifact(manager, subject: str, base: int, artifact):  # type: ignore[no-untyped-def]
+    manager = manager.admit_launch(
+        subject_id=subject,
+        actor=_actor(ActorRole.OPERATOR),
+        artifact=_artifact(base, "admission"),
+        event_id=f"{subject}-admit",
+    )
+    manager = manager.start_running(
+        subject_id=subject,
+        actor=_actor(ActorRole.AUTOMATION),
+        artifact=_artifact(base + 1, "running"),
+        event_id=f"{subject}-running",
+    )
+    manager = manager.resume(
+        subject_id=subject,
+        actor=_actor(ActorRole.AUTOMATION),
+        artifact=_artifact(base + 2, "resume"),
+        event_id=f"{subject}-resume",
+    )
+    manager = manager.record_trainer_stop(
+        subject_id=subject,
+        actor=_actor(ActorRole.AUTOMATION),
+        artifact=_artifact(base + 3, "trainer-stop"),
+        event_id=f"{subject}-stop",
+    )
+    return manager.finalize_operator(
+        subject_id=subject,
+        actor=_actor(ActorRole.OPERATOR),
+        artifact=artifact,
+        event_id=f"{subject}-finalize",
+    )
+
+
+def test_persisted_loader_adopts_exactly_one_finalized_cell_ahead_of_checkpoint(
+    tmp_path: Path,
+) -> None:
+    request, manifest, design, manager, _checkpoint, _receipt = _case(tmp_path)
+    request.locations.checkpoint_path.unlink()
+    _original_design, _original_intents, raw_starts = _campaign()
+    starts = cast(tuple[RunStartProvenance, ...], raw_starts)
+    custody = D1FinalizedCellCustodyRepository(request.locations.finalized_cell_custody_root)
+    ledger = D1LaunchAttemptLedger()
+    cells: list[D1CampaignCompletedCell] = []
+    boundary = manager
+    adopted_artifact = None
+    for index, (intent, start) in enumerate(zip(request.intents[:3], starts[:3], strict=True)):
+        identity = _attempt(intent)
+        ledger = ledger.record(
+            identity, observed_at=start.trainer_started_at - timedelta(seconds=1)
+        )
+        ledger = ledger.transition(
+            identity,
+            status=D1LaunchAttemptStatus.TRAINER_STARTED,
+            observed_at=start.trainer_started_at,
+        )
+        ledger = ledger.transition(
+            identity,
+            status=D1LaunchAttemptStatus.COMPLETED,
+            observed_at=start.trainer_started_at + timedelta(seconds=1),
+        )
+        record = _record(intent, start, ledger, request.locations.artifact_root)
+        artifact = custody.save(record)
+        manager = _finalize_with_artifact(
+            manager,
+            intent.plan.logical_run_id,
+            100 + index * 10,
+            artifact,
+        )
+        if index < 2:
+            prefix = manager.history.prefix
+            cells.append(
+                D1CampaignCompletedCell(
+                    index,
+                    intent.plan.logical_run_id,
+                    intent.plan.profile.arm,
+                    intent.plan.seed,
+                    intent.plan.plan_digest,
+                    canonical_digest(intent.manifest),
+                    start,
+                    ledger.ledger_digest,
+                    prefix.prefix_sha256,
+                    prefix.event_count,
+                    "completed",
+                    artifact,
+                )
+            )
+            boundary = manager
+        else:
+            adopted_artifact = artifact
+    custody.close()
+    checkpoint = D1CampaignCheckpoint(
+        design.design_digest,
+        design.decision_contract_digest,
+        tuple(cells),
+        D1LaunchAttemptLedger(ledger.events[:6]),
+        boundary.state,
+        boundary.history.prefix.prefix_sha256,
+        len(boundary.events),
+        boundary.active_subject,
+        D1CampaignDisposition.READY,
+        None,
+    )
+    receipt = D1CampaignCheckpointRepository(request.locations.checkpoint_path).save(
+        checkpoint,
+        expected_previous_sha256=None,
+    )
+    request = replace(request, cursor=D1PersistedCampaignCursor(receipt.sha256))
+
+    loaded = D1CampaignAuthorityLoader(catalog=fixtures.profiles()).load_persisted(
+        request,
+        manifest_path=manifest,
+    )
+
+    assert adopted_artifact is not None
+    assert loaded.checkpoint.next_index == 3
+    assert loaded.checkpoint.completed_cells[-1].finalized_cell_artifact == adopted_artifact
+    assert loaded.process_manager.history == manager.history
+    assert loaded.checkpoint_receipt.sha256 != receipt.sha256
+    assert loaded.recovery.next_index == 3
 
 
 def _loaded_prefix(tmp_path: Path, count: int) -> D1LoadedCampaignAuthority:

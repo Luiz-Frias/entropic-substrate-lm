@@ -176,6 +176,25 @@ def test_already_complete_campaign_never_builds_controller(tmp_path: Path) -> No
     assert controller.calls == []
 
 
+def test_persisted_loader_may_promote_only_checkpoint_cursor_after_adoption(
+    tmp_path: Path,
+) -> None:
+    loaded, controller, manifest = _case(tmp_path, 4)
+    stale = replace(loaded.request, cursor=D1PersistedCampaignCursor("0" * 64))
+    service = D1CampaignRunCliService(
+        catalog=fixtures.profiles(),
+        authority_loader=_Loader(loaded),
+        git=FakeGit(),
+        controller_factory=_Factory(controller),
+    )
+
+    result = service.execute(_invocation(manifest, stale))
+
+    assert result["status"] == "campaign_complete"
+    assert result["checkpoint_generation"]["sha256"] == loaded.checkpoint_receipt.sha256  # type: ignore[index]
+    assert controller.calls == []
+
+
 def test_campaign_run_rejects_wrong_command_and_bad_payload(tmp_path: Path) -> None:
     loaded, controller, manifest = _case(tmp_path, 0)
     service = D1CampaignRunCliService(

@@ -172,7 +172,11 @@ class D1CampaignRunCliService:
                     )
                 return loaded
             loaded = self._loader.load_persisted(request, manifest_path=manifest_path)
-            if loaded.request != resolved:
+            if (
+                type(loaded.request.cursor) is not D1PersistedCampaignCursor
+                or loaded.request.cursor.sha256 != loaded.checkpoint_receipt.sha256
+                or loaded.request != replace(resolved, cursor=loaded.request.cursor)
+            ):
                 raise D1CliInvalidEvidence(
                     "D1 persisted campaign loader returned substituted authority"
                 )
