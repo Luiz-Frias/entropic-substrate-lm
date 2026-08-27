@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_finalized_cell_custody_repository as repository_module
+import entropic_substrate.d1_content_addressed_custody as repository_module
 from entropic_substrate.d1_finalized_cell_custody_repository import (
     D1FinalizedCellCustodyRepository,
     D1FinalizedCellCustodyRepositoryError,
