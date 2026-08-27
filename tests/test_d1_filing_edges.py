@@ -230,6 +230,34 @@ def _case(mutation: str | None = None):
             "analysis_code_digest": "0" * 64,
         }
     payloads["analysis_receipt"] = _json(analysis_receipt)
+    if mutation not in {"packet_invalid_json", "packet_noncanonical", "packet_nonfinite"}:
+        review_packet = json.loads(payloads["review_packet"])
+        review_packet.update(
+            {
+                "analysis": analysis_manifest,
+                "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
+                "bindings": analysis_manifest["bindings"],
+                "validated_readers": analysis_receipt["implementation"]["readers"],
+            }
+        )
+        if mutation == "packet_analysis_receipt":
+            review_packet["analysis_receipt_digest"] = "0" * 64
+        elif mutation == "packet_analysis_payload":
+            review_packet["analysis"] = {"substituted": True}
+        elif mutation == "packet_analysis_bindings":
+            review_packet["bindings"] = {
+                **analysis_manifest["bindings"],
+                "capture_digest": "0" * 64,
+            }
+        elif mutation == "packet_analysis_readers":
+            review_packet["validated_readers"] = {
+                **analysis_receipt["implementation"]["readers"],
+                "complete": {"identity": "reader.complete", "sha256": "0" * 64},
+            }
+        payloads["review_packet"] = _json(review_packet)
+    review_receipt = json.loads(payloads["reviewer_execution_receipt"])
+    review_receipt["packet_sha256"] = _sha(payloads["review_packet"])
+    payloads["reviewer_execution_receipt"] = _json(review_receipt)
     adjudication = machine["review"]["adjudication"]  # type: ignore[index]
     receipt = json.loads(payloads["reviewer_execution_receipt"])
     adjudication.update(  # type: ignore[union-attr]
@@ -310,6 +338,10 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("major_ids", D1FilingGraphError, "MAJOR"),
         ("mixed_review_schema", D1FilingGraphError, "schema_fields"),
         ("packet_alias_lineage", D1FilingGraphError, "packet"),
+        ("packet_analysis_receipt", D1FilingGraphError, "review_packet"),
+        ("packet_analysis_payload", D1FilingGraphError, "review_packet"),
+        ("packet_analysis_bindings", D1FilingGraphError, "review_packet"),
+        ("packet_analysis_readers", D1FilingGraphError, "review_packet"),
         ("packet_invalid_json", D1FilingGraphError, "review_packet"),
         ("packet_schema", D1FilingGraphError, "review_packet"),
         ("packet_noncanonical", D1FilingGraphError, "review_packet"),

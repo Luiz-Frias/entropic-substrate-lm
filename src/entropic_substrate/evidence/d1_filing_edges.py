@@ -10,6 +10,9 @@ from itertools import pairwise
 from types import MappingProxyType
 from typing import NoReturn, cast
 
+from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+    D1AnalysisExecutionReceipt,
+)
 from entropic_substrate.analysis.d1_machine_analysis_codec import (
     D1MachineAnalysisCodecError,
     decode_d1_machine_analysis_declaration,
@@ -213,7 +216,9 @@ def _verify_analysis_reader(
             _fail("analysis_reader", f"analysis_receipt.readers.{role}", "digest differs")
 
 
-def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
+def _verify_analysis(
+    payloads: Mapping[str, bytes],
+) -> tuple[Mapping[str, object], D1AnalysisExecutionReceipt]:
     receipt = parse_analysis_receipt(payloads["analysis_receipt"])
     filing = receipt.filing_bindings
     if filing is None:  # pragma: no cover - parser requires filing eligibility
@@ -245,10 +250,15 @@ def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
     ):
         _fail("analysis_isolation", "analysis_receipt.isolation", "filed bytes differ")
     _verify_analysis_reader(receipt_manifest, payloads)
-    return analysis
+    return analysis, receipt
 
 
-def _verify_aliases(payloads: Mapping[str, bytes]) -> Mapping[str, str]:
+def _verify_aliases(
+    payloads: Mapping[str, bytes],
+    *,
+    analysis: Mapping[str, object],
+    analysis_receipt: D1AnalysisExecutionReceipt,
+) -> Mapping[str, str]:
     commitment = parse_alias_commitment(payloads["alias_commitment"])
     reveal = parse_alias_reveal(payloads["alias_reveal"])
     try:
@@ -269,6 +279,21 @@ def _verify_aliases(payloads: Mapping[str, bytes]) -> Mapping[str, str]:
         _fail("review_packet", "review_packet", f"must be finite canonical JSON: {error}")
     if canonical_packet != payloads["review_packet"]:
         _fail("review_packet", "review_packet", "bytes must use canonical JSON")
+    receipt_manifest = analysis_receipt.manifest
+    implementation = cast(dict[str, object], receipt_manifest["implementation"])
+    expected_analysis_lineage = {
+        "analysis": analysis,
+        "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
+        "bindings": receipt_manifest["bindings"],
+        "validated_readers": implementation["readers"],
+    }
+    for field, expected in expected_analysis_lineage.items():
+        if packet.get(field) != expected:
+            _fail(
+                "review_packet_analysis",
+                f"review_packet.{field}",
+                "differs from the filed analysis execution",
+            )
     if packet.get("alias_commitment") != _sha(payloads["alias_commitment"]):
         _fail(
             "review_packet_alias",
@@ -420,8 +445,12 @@ def verify_filing_edges(
         raise TypeError("D1 filing edges require typed revisions")
     _verify_payloads(manifest, payloads)
     _verify_git(verdict, manifest, revisions, payloads, git)
-    analysis = _verify_analysis(payloads)
-    alias_mapping = _verify_aliases(payloads)
+    analysis, analysis_receipt = _verify_analysis(payloads)
+    alias_mapping = _verify_aliases(
+        payloads,
+        analysis=analysis,
+        analysis_receipt=analysis_receipt,
+    )
     feasible_arms = _verify_feasible_frontier(verdict, analysis, alias_mapping, payloads)
     model_id, provider, round_number = _verify_review(verdict, payloads)
     _verify_narrative(payloads)

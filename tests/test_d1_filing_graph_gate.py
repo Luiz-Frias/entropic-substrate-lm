@@ -390,6 +390,19 @@ def _case(
             "schema_version": "d1-analysis-execution-receipt-v1",
         }
     )
+    review_packet = json.loads(payloads["review_packet"])
+    review_packet.update(
+        {
+            "analysis": analysis_manifest,
+            "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
+            "bindings": analysis_manifest["bindings"],
+            "validated_readers": {
+                "complete": {"identity": "reader.complete", "sha256": "7" * 64},
+                "terminal_defect": {"identity": "reader.defect", "sha256": "8" * 64},
+            },
+        }
+    )
+    payloads["review_packet"] = _json(review_packet)
     payloads["reviewer_execution_receipt"] = _json(
         {
             "model_id": "review-model",
