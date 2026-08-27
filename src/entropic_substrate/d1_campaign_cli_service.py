@@ -67,11 +67,15 @@ class D1CampaignAuthorityLoaderPort(Protocol):
     ) -> D1LoadedCampaignAuthority: ...
 
 
+class D1ManagedCampaignControllerPort(D1RecoveryAttemptControllerPort, Protocol):
+    def close(self) -> None: ...
+
+
 class D1CampaignControllerFactoryPort(Protocol):
     def build(
         self,
         loaded: D1LoadedCampaignAuthority,
-    ) -> D1RecoveryAttemptControllerPort: ...
+    ) -> D1ManagedCampaignControllerPort: ...
 
 
 def _parse(
@@ -201,16 +205,36 @@ class D1CampaignRunCliService:
                 raise D1CliInvalidEvidence(str(error)) from error
         try:
             controller = self._factory.build(loaded)
-            return D1RecoverableCampaignQueue(
+            if not callable(getattr(controller, "close", None)):
+                raise TypeError("D1 campaign controller must own a close operation")
+            queue = D1RecoverableCampaignQueue(
                 design=loaded.design,
                 intents=loaded.request.intents,
                 controller=controller,
                 git=self._git,
                 repository=D1CampaignCheckpointRepository(loaded.request.locations.checkpoint_path),
-            ).run(
-                recovery,
-                generation=loaded.checkpoint_receipt,
             )
+            try:
+                campaign = queue.run(
+                    recovery,
+                    generation=loaded.checkpoint_receipt,
+                )
+            except Exception as primary:
+                try:
+                    controller.close()
+                except Exception as cleanup:
+                    raise D1CliOperatorGap(
+                        "D1 campaign execution and controller close both failed"
+                    ) from ExceptionGroup(
+                        "D1 campaign primary and cleanup failures",
+                        [primary, cleanup],
+                    )
+                raise
+            try:
+                controller.close()
+            except Exception as error:
+                raise D1CliOperatorGap("D1 campaign controller close failed") from error
+            return campaign
         except D1CliOperatorGap:
             raise
         except D1CampaignQueueHalt as error:

@@ -38,6 +38,7 @@ class _RecoveryController:
     calls: list[str]
     process_manager: D1ProcessManager
     attempt_ledger: D1LaunchAttemptLedger
+    closed: bool = False
 
     def execute_fresh(self, intent):  # type: ignore[no-untyped-def]
         self.calls.append(intent.plan.logical_run_id)
@@ -45,6 +46,9 @@ class _RecoveryController:
         self.process_manager = result.process_manager
         self.attempt_ledger = result.attempt_ledger
         return result
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @dataclass

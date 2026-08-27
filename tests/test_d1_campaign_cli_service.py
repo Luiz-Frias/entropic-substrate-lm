@@ -22,6 +22,7 @@ from entropic_substrate.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
+    D1CliOperatorGap,
 )
 from entropic_substrate.experiments.d1_registration_codec import (
     parse_registered_design_declaration,
@@ -137,6 +138,7 @@ def test_persisted_campaign_executes_only_remaining_suffix_and_returns_complete(
     assert result["required_next_command"] == "d1-capture-prepare"
     assert loader.calls == ["persisted"]
     assert controller.calls == [intent.plan.logical_run_id for intent in loaded.request.intents[2:]]
+    assert controller.closed is True
 
 
 def test_fresh_campaign_uses_fresh_loader_then_executes_all_cells(tmp_path: Path) -> None:
@@ -156,6 +158,7 @@ def test_fresh_campaign_uses_fresh_loader_then_executes_all_cells(tmp_path: Path
     assert result["recovered_prefix_count"] == 0
     assert loader.calls == ["fresh"]
     assert len(controller.calls) == 4
+    assert controller.closed is True
 
 
 def test_already_complete_campaign_never_builds_controller(tmp_path: Path) -> None:
@@ -174,6 +177,22 @@ def test_already_complete_campaign_never_builds_controller(tmp_path: Path) -> No
     assert result["recovered_prefix_count"] == 4
     assert factory.calls == []
     assert controller.calls == []
+
+
+def test_campaign_run_closes_controller_after_queue_failure(tmp_path: Path) -> None:
+    loaded, controller, manifest = _case(tmp_path, 0)
+    controller.results = ()
+    service = D1CampaignRunCliService(
+        catalog=fixtures.profiles(),
+        authority_loader=_Loader(loaded),
+        git=FakeGit(),
+        controller_factory=_Factory(controller),
+    )
+
+    with pytest.raises(D1CliOperatorGap):
+        service.execute(_invocation(manifest, loaded.request))
+
+    assert controller.closed is True
 
 
 def test_persisted_loader_may_promote_only_checkpoint_cursor_after_adoption(
