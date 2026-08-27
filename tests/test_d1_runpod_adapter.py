@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import traceback
 from dataclasses import dataclass, field, replace
@@ -12,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import plan, profiles, start
+from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.d1_operator_ports import (
     D1CommandResult,
     D1OperatorTransportError,
@@ -24,7 +26,10 @@ from entropic_substrate.d1_operator_values import (
     D1OperatorLaunchIntent,
 )
 from entropic_substrate.d1_runpod_adapter import RunpodctlD1Adapter
-from entropic_substrate.evidence.resource_billing import BillingGap, ProviderBilling
+from entropic_substrate.evidence.resource_billing import (
+    ProviderBillingPartial,
+    ProviderBillingPending,
+)
 from entropic_substrate.evidence.resource_provenance import PurchaseOption
 
 pytestmark = pytest.mark.unit
@@ -36,7 +41,7 @@ _REGISTRY_AUTH = "registry-auth-123"
 _NETWORK_VOLUME = "network-volume-123"
 _VOLUME_MOUNT = "/workspace"
 _WAIT_TIMEOUT = "12m"
-_VERSION = "runpodctl 2.9.0-c094cac"
+_VERSION = "runpodctl 2.11.0-0592468"
 
 
 @dataclass
@@ -107,6 +112,31 @@ def _intent() -> D1OperatorLaunchIntent:
         resume_checkpoint_sha256=None,
         terminate_after_seconds=7200,
     )
+
+
+def test_default_process_boundary_requires_explicit_local_bounds() -> None:
+    kwargs = {
+        "clock": lambda: _CONTROL_AT,
+        "registry_auth_id": _REGISTRY_AUTH,
+        "network_volume_id": _NETWORK_VOLUME,
+        "network_volume_mount_path": _VOLUME_MOUNT,
+        "wait_timeout": _WAIT_TIMEOUT,
+    }
+    with pytest.raises(ValueError, match="process bounds"):
+        RunpodctlD1Adapter(**kwargs)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"exceed.*wait timeout"):
+        RunpodctlD1Adapter(
+            **kwargs,  # type: ignore[arg-type]
+            command_timeout_seconds=719,
+            max_output_bytes=1024,
+        )
+
+    adapter = RunpodctlD1Adapter(
+        **kwargs,  # type: ignore[arg-type]
+        command_timeout_seconds=780,
+        max_output_bytes=1024 * 1024,
+    )
+    assert isinstance(adapter._runner, BoundedSubprocessD1CommandRunner)  # pyright: ignore[reportPrivateUsage]
 
 
 def _create_payload() -> dict[str, object]:
@@ -253,53 +283,118 @@ def test_create_refuses_unmeasurable_provider_sku_before_provider_command() -> N
     assert runner.calls == []
 
 
-def test_terminate_and_provider_billing_are_typed_evidence() -> None:
+def test_terminate_and_live_provider_buckets_are_typed_partial_evidence() -> None:
     intent = _intent()
     start_provenance = start(intent.plan)
     ended = _STARTED + timedelta(hours=1)
-    runner = _Runner(
+    billing_result = _result(
         [
-            _result({"deleted": True, "id": "pod-123"}),
-            _result(
-                {
-                    "billed_amount": {"amount": "1.99", "currency": "USD"},
-                    "billed_duration_seconds": "3605",
-                    "billing_record_id": "bill-123",
-                    "billing_unit": "hour",
-                    "kind": "provider_billing",
-                    "pod_id": "pod-123",
-                    "schema_version": "d1-runpod-billing-v1",
-                }
-            ),
+            {
+                "amount": 0.0017170833889394999,
+                "diskSpaceBilledGb": 20,
+                "podId": "pod-123",
+                "time": "2026-08-24 17:00:00",
+                "timeBilledMs": 24726,
+            }
         ]
     )
+    runner = _Runner([_result({"deleted": True, "id": "pod-123"}), billing_result])
     adapter = _adapter(runner, clock=lambda: ended + timedelta(seconds=5))
 
     termination = adapter.terminate("pod-123", start=start_provenance, trainer_ended_at=ended)
     billing = adapter.billing("pod-123", start=start_provenance)
 
     assert termination.pod_terminated_at == ended + timedelta(seconds=5)
-    assert type(billing) is ProviderBilling
-    assert billing.billed_amount.amount == Decimal("1.99")
+    assert type(billing) is ProviderBillingPartial
+    assert billing.billed_duration_seconds == Decimal("24.726")
+    assert billing.billed_amount.amount == Decimal("0.0017170833889394999")
+    assert billing.billed_amount.currency.field == "provider_billed_currency"
+    assert billing.provider_timestamp == "2026-08-24 17:00:00"
+    assert billing.observation_sha256 == hashlib.sha256(billing_result.stdout.encode()).hexdigest()
     assert [call[0] for call in runner.calls] == [
         ("runpodctl", "pod", "delete", "pod-123", "--output", "json"),
-        ("runpodctl", "billing", "pod", "pod-123", "--output", "json"),
+        (
+            "runpodctl",
+            "billing",
+            "pods",
+            "--pod-id",
+            "pod-123",
+            "--bucket-size",
+            "hour",
+            "--grouping",
+            "podId",
+            "--output",
+            "json",
+        ),
     ]
 
 
-def test_unavailable_provider_billing_is_a_complete_typed_gap() -> None:
-    payload = {
-        "kind": "billing_gap",
-        "pod_id": "pod-123",
-        "reason": "provider billing export unavailable",
-        "schema_version": "d1-runpod-billing-v1",
-    }
+def test_empty_provider_query_is_pending_and_cannot_enter_terminal_billing() -> None:
+    adapter = _adapter(_Runner([_result([])]))
+    pending = adapter.observe_billing("pod-123", start=start(_intent().plan))
+    assert type(pending) is ProviderBillingPending
+    assert pending.is_terminal is False
 
-    result = _adapter(_Runner([_result(payload)])).billing("pod-123", start=start(_intent().plan))
+    with pytest.raises(D1OperatorTransportError, match="pending"):
+        _adapter(_Runner([_result([])])).billing("pod-123", start=start(_intent().plan))
 
-    assert type(result) is BillingGap
-    assert result.quality_evidence_admissible is True
-    assert result.billed_amount.reason == "provider billing export unavailable"
+
+def test_multiple_provider_buckets_sum_exactly_and_retain_latest_provider_time() -> None:
+    rows = [
+        {
+            "amount": 0.1,
+            "podId": "pod-123",
+            "time": "2026-08-24 17:00:00",
+            "timeBilledMs": 1000,
+        },
+        {
+            "amount": 0.2,
+            "diskSpaceBilledGb": 20,
+            "podId": "pod-123",
+            "time": "2026-08-24 18:00:00",
+            "timeBilledMs": 2500,
+        },
+    ]
+
+    observed = _adapter(_Runner([_result(rows)])).observe_billing(
+        "pod-123", start=start(_intent().plan)
+    )
+
+    assert type(observed) is ProviderBillingPartial
+    assert observed.billed_duration_seconds == Decimal("3.5")
+    assert observed.billed_amount.amount == Decimal("0.3")
+    assert observed.provider_timestamp == "2026-08-24 18:00:00"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"not": "an array"},
+        [{"amount": 0.1, "podId": "foreign", "time": "x", "timeBilledMs": 1}],
+        [{"amount": 0.1, "podId": "pod-123", "time": "x"}],
+        [
+            {
+                "amount": -0.1,
+                "podId": "pod-123",
+                "time": "2026-08-24 17:00:00",
+                "timeBilledMs": 1,
+            }
+        ],
+        [
+            {
+                "amount": 0.1,
+                "podId": "pod-123",
+                "time": "2026-99-99 99:99:99",
+                "timeBilledMs": 1,
+            }
+        ],
+    ],
+)
+def test_provider_billing_refuses_root_row_identity_and_domain_drift(payload: object) -> None:
+    with pytest.raises(D1OperatorTransportError, match="billing"):
+        _adapter(_Runner([_result(payload)])).observe_billing(
+            "pod-123", start=start(_intent().plan)
+        )
 
 
 def test_billing_refuses_unsafe_pod_id_before_provider_command() -> None:

@@ -15,6 +15,7 @@ import pytest
 
 import entropic_substrate.d1_command_runner as runner_module
 from entropic_substrate.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
     D1BoundedProcessError,
     D1BoundedProcessRunner,
     SubprocessD1CommandRunner,
@@ -151,6 +152,44 @@ def test_bounded_runner_returns_binary_streams_and_nonzero_exit(tmp_path: Path) 
     )
 
     assert (result.returncode, result.stdout, result.stderr) == (7, b"payload", b"warning")
+
+
+def test_bounded_text_runner_reuses_timeout_output_and_utf8_boundary(tmp_path: Path) -> None:
+    runner = BoundedSubprocessD1CommandRunner(timeout_seconds=2, max_output_bytes=1024)
+    result = runner.run(
+        (sys.executable, "-c", "import sys;print(sys.stdin.read());raise SystemExit(3)"),
+        cwd=tmp_path,
+        stdin="payload",
+    )
+    assert (result.returncode, result.stdout, result.stderr) == (3, "payload\n", "")
+
+    with pytest.raises(D1BoundedProcessError) as timeout:
+        BoundedSubprocessD1CommandRunner(
+            timeout_seconds=0.1,
+            max_output_bytes=1024,
+        ).run(
+            (sys.executable, "-c", "import time;time.sleep(60)"),
+            cwd=tmp_path,
+            stdin=None,
+        )
+    assert timeout.value.code == "timeout"
+
+    with pytest.raises(D1BoundedProcessError) as invalid_utf8:
+        runner.run(
+            (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'\\xff')"),
+            cwd=tmp_path,
+            stdin=None,
+        )
+    assert invalid_utf8.value.code == "invalid_utf8"
+    assert invalid_utf8.value.output_bytes == 1
+    assert (
+        invalid_utf8.value.stdout_sha256
+        == (
+            "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"  # pragma: allowlist secret
+        )
+    )
+    assert invalid_utf8.value.process_group_swept is True
+    assert invalid_utf8.value.process_reaped is True
 
 
 @pytest.mark.parametrize(

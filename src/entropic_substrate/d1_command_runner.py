@@ -17,6 +17,7 @@ from typing import IO, NoReturn, cast
 from entropic_substrate.d1_operator_ports import D1CommandResult
 
 __all__ = [
+    "BoundedSubprocessD1CommandRunner",
     "D1BoundedProcessError",
     "D1BoundedProcessResult",
     "D1BoundedProcessRunner",
@@ -274,6 +275,45 @@ class D1BoundedProcessRunner:
                     process_group_swept=swept,
                     process_reaped=reaped,
                 )
+
+
+class BoundedSubprocessD1CommandRunner:
+    """Adapt the shared binary process owner to the text command port."""
+
+    def __init__(self, *, timeout_seconds: float, max_output_bytes: int) -> None:
+        self._runner = D1BoundedProcessRunner(
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+        )
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        cwd: Path | None,
+        stdin: str | None,
+    ) -> D1CommandResult:
+        validated_stdin = _stdin(stdin)
+        result = self._runner.run(
+            _argv(argv),
+            cwd=Path.cwd() if cwd is None else cwd,
+            input=b"" if validated_stdin is None else validated_stdin.encode("utf-8"),
+            env=dict(os.environ),
+        )
+        try:
+            return D1CommandResult(
+                stdout=result.stdout.decode("utf-8"),
+                stderr=result.stderr.decode("utf-8"),
+                returncode=result.returncode,
+            )
+        except UnicodeDecodeError as error:
+            raise D1BoundedProcessError(
+                "invalid_utf8",
+                stdout=result.stdout,
+                stderr=result.stderr,
+                process_group_swept=True,
+                process_reaped=True,
+            ) from error
 
 
 class SubprocessD1CommandRunner:
