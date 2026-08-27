@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
 from pathlib import PurePosixPath
 from typing import NoReturn, cast
 
@@ -24,27 +22,25 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     require_d1_pod_id,
 )
+from entropic_substrate.d1_runpod_billing_parser import (
+    RunpodBillingSchemaError,
+    parse_runpodctl_billing_observation,
+)
 from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
-    ProviderBilledAmountObservation,
     ProviderBillingObservation,
-    ProviderBillingPartial,
     ProviderBillingPending,
     TerminalProviderBillingEvidence,
-    canonical_decimal,
 )
 from entropic_substrate.evidence.resource_provenance import (
-    EvidenceGap,
     PurchaseOption,
     RunStartProvenance,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
 _WAIT_TIMEOUT = re.compile(r"^[1-9][0-9]*[smhd]$")
 _FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-_BILLING_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 _RUNPODCTL_VERSION = "runpodctl 2.11.0-0592468"
 _POD_REQUIRED = frozenset(
     "id name desiredStatus runtimeStatus imageName gpuCount createdAt machine ssh".split()
@@ -107,19 +103,6 @@ def _integer(value: object, *, label: str) -> int:
     if type(value) is not int:
         raise TypeError(f"{label} must be an integer")
     return value
-
-
-def _provider_billing_timestamp(value: object) -> str:
-    text = _text(value, label="billing row time")
-    if _BILLING_TIMESTAMP.fullmatch(text) is None:
-        raise ValueError("billing row time is invalid")
-    try:
-        parsed = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
-    except ValueError as error:
-        raise ValueError("billing row time is invalid") from error
-    if parsed.strftime("%Y-%m-%d %H:%M:%S") != text:
-        raise ValueError("billing row time is noncanonical")
-    return text
 
 
 class RunpodctlD1Adapter:
@@ -556,69 +539,17 @@ class RunpodctlD1Adapter:
             ),
         )
         try:
-            rows: object = json.loads(
-                result.stdout,
-                object_pairs_hook=_pairs,
-                parse_float=Decimal,
-                parse_constant=_nonfinite,
-            )
-            if type(rows) is not list:
-                raise ValueError("billing response root must be an array")
             checked_at = self._now()
-            if not rows:
-                return ProviderBillingPending(
-                    start.logical_run_id,
-                    start.execution_segment_index,
-                    start.execution_segment_id,
-                    checked_at,
-                    "provider billing query returned no settled rows",
-                )
-            amounts: list[Decimal] = []
-            billed_ms = 0
-            timestamps: list[str] = []
-            required = {"amount", "podId", "time", "timeBilledMs"}
-            allowed = required | {"diskSpaceBilledGb"}
-            for row in rows:
-                if type(row) is not dict or not required <= set(row) or set(row) - allowed:
-                    raise ValueError("billing row fields differ from the pinned runpodctl schema")
-                if row["podId"] != pod:
-                    raise ValueError("billing row pod identity differs")
-                amount = row["amount"]
-                if type(amount) is int:
-                    amount = Decimal(amount)
-                if type(amount) is not Decimal or not amount.is_finite() or amount < 0:
-                    raise ValueError("billing row amount is invalid")
-                milliseconds = row["timeBilledMs"]
-                if type(milliseconds) is not int or milliseconds < 0:
-                    raise ValueError("billing row timeBilledMs is invalid")
-                timestamp = _provider_billing_timestamp(row["time"])
-                disk = row.get("diskSpaceBilledGb")
-                if disk is not None and (type(disk) is not int or disk < 0):
-                    raise ValueError("billing row diskSpaceBilledGb is invalid")
-                amounts.append(amount)
-                billed_ms += milliseconds
-                timestamps.append(timestamp)
-            if len(set(timestamps)) != len(timestamps):
-                raise ValueError("billing rows repeat a provider bucket timestamp")
-            reason = "runpodctl billing rows omit this provider field"
-            return ProviderBillingPartial(
-                start.logical_run_id,
-                start.execution_segment_index,
-                start.execution_segment_id,
-                canonical_decimal(Decimal(billed_ms) / Decimal(1000)),
-                ProviderBilledAmountObservation(
-                    canonical_decimal(sum(amounts, Decimal(0))),
-                    EvidenceGap("provider_billed_currency", reason),
-                ),
-                EvidenceGap("provider_billing_unit", reason),
-                EvidenceGap("provider_billing_record_id", reason),
-                EvidenceGap("provider_billing_status", reason),
-                max(timestamps),
-                hashlib.sha256(result.stdout.encode("utf-8")).hexdigest(),
-                checked_at,
-                EvidenceClass.PROVIDER_BILLED,
+        except Exception:
+            _error(operation, pod, "RunPod control clock is invalid")
+        try:
+            return parse_runpodctl_billing_observation(
+                result.stdout,
+                pod_id=pod,
+                start=start,
+                checked_at=checked_at,
             )
-        except (InvalidOperation, KeyError, TypeError, UnicodeError, ValueError) as error:
+        except RunpodBillingSchemaError as error:
             _error(operation, pod, f"invalid provider billing: {error}", error)
 
     def billing(self, pod_id: str, *, start: RunStartProvenance) -> TerminalProviderBillingEvidence:

@@ -339,6 +339,16 @@ def test_empty_provider_query_is_pending_and_cannot_enter_terminal_billing() -> 
         _adapter(_Runner([_result([])])).billing("pod-123", start=start(_intent().plan))
 
 
+def test_billing_clock_failure_is_normalized_at_the_control_adapter() -> None:
+    adapter = _adapter(
+        _Runner([_result([])]),
+        clock=lambda: datetime(2026, 8, 26, 18, 0),
+    )
+
+    with pytest.raises(D1OperatorTransportError, match="control clock"):
+        adapter.observe_billing("pod-123", start=start(_intent().plan))
+
+
 def test_multiple_provider_buckets_sum_exactly_and_retain_latest_provider_time() -> None:
     rows = [
         {
