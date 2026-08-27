@@ -95,6 +95,8 @@ def _rebind_analysis(
     receipt_bindings["capture_digest"] = capture_digest
     receipt_bindings["decision_contract_digest"] = contract_digest
     receipt_manifest["analysis_digest"] = rebound_analysis.analysis_digest
+    filing_bindings = cast(dict[str, object], receipt_manifest["filing_bindings"])
+    filing_bindings["output_sha256"] = rebound_analysis.analysis_digest
     rebound_receipt = D1AnalysisExecutionReceipt(canonical_json(receipt_manifest))
     return rebound_analysis, rebound_receipt
 
@@ -730,14 +732,15 @@ def test_packet_refuses_incomplete_all_run_reader_roster(
             aliases=aliases,
             run_evidence=evidence[:-1],
         )
+    nonfiling_manifest = receipt.manifest
+    nonfiling_manifest["filing_eligible"] = False
+    nonfiling_manifest["filing_bindings"] = None
     with pytest.raises(ValueError, match="filing-eligible"):
         build_d1_blind_review_packet(
             decision_contract=decision,
             aggregate=aggregate,
             analysis=analysis,
-            analysis_receipt=replace(
-                receipt, canonical_json=receipt.canonical_json.replace("true", "false")
-            ),
+            analysis_receipt=D1AnalysisExecutionReceipt(canonical_json(nonfiling_manifest)),
             aliases=aliases,
             run_evidence=evidence,
         )

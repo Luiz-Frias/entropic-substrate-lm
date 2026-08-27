@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol, cast
 
+from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+    D1AnalysisExecutionReceipt,
+    parse_d1_analysis_execution_receipt,
+)
 from entropic_substrate.evidence.d1_review_adjudication import (
     D1ReviewExecutionReceiptV2,
     parse_d1_review_execution_receipt,
@@ -97,15 +101,6 @@ class D1FilingRevisions:
 
 
 @dataclass(frozen=True, slots=True)
-class D1AnalysisReceipt:
-    capture_manifest_sha256: str
-    preregistration_sha256: str
-    reader_sha256: str
-    isolation_attestation_sha256: str
-    output_sha256: str
-
-
-@dataclass(frozen=True, slots=True)
 class D1AliasCommitment:
     reveal_sha256: str
 
@@ -173,34 +168,23 @@ def _sha256(value: object, *, path: str) -> str:
     return text
 
 
-def parse_analysis_receipt(payload: bytes) -> D1AnalysisReceipt:
+def parse_analysis_receipt(payload: bytes) -> D1AnalysisExecutionReceipt:
     role = "analysis_receipt"
-    fields = frozenset(
-        {
-            "schema_version",
-            "capture_manifest_sha256",
-            "preregistration_sha256",
-            "reader_sha256",
-            "isolation_attestation_sha256",
-            "output_sha256",
-        }
-    )
-    data = _document(payload, role=role, fields=fields)
-    _schema(data, "d1-analysis-receipt-v1", role=role)
-    return D1AnalysisReceipt(
-        capture_manifest_sha256=_sha256(
-            data["capture_manifest_sha256"], path=f"{role}.capture_manifest_sha256"
-        ),
-        preregistration_sha256=_sha256(
-            data["preregistration_sha256"], path=f"{role}.preregistration_sha256"
-        ),
-        reader_sha256=_sha256(data["reader_sha256"], path=f"{role}.reader_sha256"),
-        isolation_attestation_sha256=_sha256(
-            data["isolation_attestation_sha256"],
-            path=f"{role}.isolation_attestation_sha256",
-        ),
-        output_sha256=_sha256(data["output_sha256"], path=f"{role}.output_sha256"),
-    )
+    try:
+        receipt = parse_d1_analysis_execution_receipt(payload)
+    except (TypeError, ValueError) as error:
+        raise D1FilingGraphError(
+            code="invalid_analysis_receipt",
+            path=role,
+            detail=f"analysis execution receipt was refused: {error}",
+        ) from error
+    if receipt.manifest["filing_eligible"] is not True or receipt.filing_bindings is None:
+        raise D1FilingGraphError(
+            code="filing_ineligible",
+            path=role,
+            detail="analysis execution receipt lacks verified filing bindings",
+        )
+    return receipt
 
 
 def parse_alias_commitment(payload: bytes) -> D1AliasCommitment:

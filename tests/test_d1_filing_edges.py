@@ -173,11 +173,22 @@ def _case(mutation: str | None = None):
         "output_sha256": _sha(payloads["blinded_analysis"]),
         "preregistration_sha256": _sha(payloads["preregistration"]),
         "reader_sha256": _sha(payloads["analysis_reader"]),
-        "schema_version": "d1-analysis-receipt-v1",
     }
     if mutation == "analysis_binding":
         analysis_fields["output_sha256"] = "0" * 64
-    payloads["analysis_receipt"] = _json(analysis_fields)
+    payloads["analysis_receipt"] = _json(
+        {
+            "alias_commitment": analysis_manifest["alias_commitment"],
+            "analysis_digest": _sha(payloads["blinded_analysis"]),
+            "bindings": analysis_manifest["bindings"],
+            "filing_bindings": analysis_fields,
+            "filing_eligible": True,
+            "implementation": {"analysis_code_digest": "9" * 64},
+            "inputs": [{"sha256": "8" * 64}],
+            "isolation": {"executor_kind": "external_enforced"},
+            "schema_version": "d1-analysis-execution-receipt-v1",
+        }
+    )
     adjudication = machine["review"]["adjudication"]  # type: ignore[index]
     receipt = json.loads(payloads["reviewer_execution_receipt"])
     adjudication.update(  # type: ignore[union-attr]

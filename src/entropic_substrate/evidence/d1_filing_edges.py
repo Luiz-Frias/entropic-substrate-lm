@@ -142,6 +142,9 @@ def _verify_git(
 
 def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
     receipt = parse_analysis_receipt(payloads["analysis_receipt"])
+    filing = receipt.filing_bindings
+    if filing is None:  # pragma: no cover - parser requires filing eligibility
+        raise AssertionError("filing-eligible analysis receipt lost its bindings")
     expected = {
         "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
         "preregistration_sha256": _sha(payloads["preregistration"]),
@@ -150,7 +153,7 @@ def _verify_analysis(payloads: Mapping[str, bytes]) -> Mapping[str, object]:
         "output_sha256": _sha(payloads["blinded_analysis"]),
     }
     for field, value in expected.items():
-        if getattr(receipt, field) != value:
+        if getattr(filing, field) != value:
             _fail("analysis_binding", f"analysis_receipt.{field}", "digest differs")
     try:
         return decode_d1_machine_analysis_declaration(payloads["blinded_analysis"]).manifest

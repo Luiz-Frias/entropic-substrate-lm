@@ -348,12 +348,21 @@ def _case(
     )
     payloads["analysis_receipt"] = _json(
         {
-            "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
-            "isolation_attestation_sha256": _sha(isolation),
-            "output_sha256": _sha(analysis),
-            "preregistration_sha256": _sha(prereg),
-            "reader_sha256": _sha(reader),
-            "schema_version": "d1-analysis-receipt-v1",
+            "alias_commitment": analysis_manifest["alias_commitment"],
+            "analysis_digest": _sha(analysis),
+            "bindings": analysis_manifest["bindings"],
+            "filing_bindings": {
+                "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
+                "isolation_attestation_sha256": _sha(isolation),
+                "output_sha256": _sha(analysis),
+                "preregistration_sha256": _sha(prereg),
+                "reader_sha256": _sha(reader),
+            },
+            "filing_eligible": True,
+            "implementation": {"analysis_code_digest": "9" * 64},
+            "inputs": [{"sha256": "8" * 64}],
+            "isolation": {"executor_kind": "external_enforced"},
+            "schema_version": "d1-analysis-execution-receipt-v1",
         }
     )
     payloads["reviewer_execution_receipt"] = _json(

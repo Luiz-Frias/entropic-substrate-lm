@@ -12,6 +12,13 @@ from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import NoReturn, Protocol, SupportsIndex
 
+from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+    D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA,
+    D1AnalysisExecutionReceipt,
+    D1AnalysisFilingBindings,
+    canonical_d1_analysis_receipt_bytes,
+    parse_d1_analysis_execution_receipt,
+)
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelopeV2,
@@ -43,21 +50,11 @@ __all__ = [
     "D1IsolationRequest",
     "issue_d1_analysis_receipt",
     "issue_d1_verified_analysis_receipt",
+    "parse_d1_analysis_execution_receipt",
 ]
 
-_SCHEMA = "d1-analysis-execution-receipt-v1"
 _COMPLETE_READER = "entropic_substrate.telemetry.read_d1_run_evidence"
 _DEFECT_READER = "entropic_substrate.telemetry.read_d1_terminal_defect"
-
-
-def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
 
 
 def _sha256(value: str, *, label: str) -> None:
@@ -443,53 +440,6 @@ class D1AnalysisImplementationIdentity:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class D1AnalysisExecutionReceipt:
-    canonical_json: str
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        value = json.loads(self.canonical_json)
-        if not isinstance(value, dict):  # pragma: no cover - issuer always writes an object
-            raise AssertionError("D1 analysis receipt lost its object root")
-        return value
-
-    @property
-    def receipt_digest(self) -> str:
-        return hashlib.sha256(self.canonical_json.encode("utf-8")).hexdigest()
-
-
-@dataclass(frozen=True, slots=True)
-class D1AnalysisFilingBindings:
-    """Exact filed-byte identities issued with an externally verified analysis."""
-
-    capture_manifest_sha256: str
-    preregistration_sha256: str
-    reader_sha256: str
-    isolation_attestation_sha256: str
-    output_sha256: str
-
-    def __post_init__(self) -> None:
-        for name in (
-            "capture_manifest_sha256",
-            "preregistration_sha256",
-            "reader_sha256",
-            "isolation_attestation_sha256",
-            "output_sha256",
-        ):
-            _sha256(getattr(self, name), label=f"D1 filing {name}")
-
-    @property
-    def manifest(self) -> dict[str, str]:
-        return {
-            "capture_manifest_sha256": self.capture_manifest_sha256,
-            "isolation_attestation_sha256": self.isolation_attestation_sha256,
-            "output_sha256": self.output_sha256,
-            "preregistration_sha256": self.preregistration_sha256,
-            "reader_sha256": self.reader_sha256,
-        }
-
-
 def _inputs(admitted: D1AdmittedAnalysisCapture) -> list[dict[str, object]]:
     values: list[dict[str, object]] = []
     for artifact in sorted(admitted.input_artifacts, key=lambda item: item.normalized_path):
@@ -556,7 +506,7 @@ def _issue_d1_analysis_receipt(
         "implementation": implementation.manifest,
         "inputs": _inputs(admitted),
         "isolation": isolation.manifest,
-        "schema_version": _SCHEMA,
+        "schema_version": D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA,
     }
     canonical = json.dumps(
         manifest,
@@ -656,7 +606,7 @@ def issue_d1_verified_analysis_receipt(
             request.input_control.reader_source.canonical_bytes
         ).hexdigest(),
         isolation_attestation_sha256=hashlib.sha256(
-            _canonical_bytes(isolation.manifest)
+            canonical_d1_analysis_receipt_bytes(isolation.manifest)
         ).hexdigest(),
         output_sha256=analysis.analysis_digest,
     )
