@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,6 +13,7 @@ import pytest
 
 from entropic_substrate.evidence.d1_capture_preparation_custody import (
     D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA,
+    D1CampaignCaptureAuthority,
     D1CapturePreparationCustodyError,
     capture_preparation_custody_from_preparation,
     hydrate_d1_capture_preparation_custody,
@@ -24,6 +26,17 @@ from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .test_d1_capture_service import _service
 
 pytestmark = pytest.mark.unit
+
+
+def _authority() -> D1CampaignCaptureAuthority:
+    return D1CampaignCaptureAuthority(
+        campaign_digest="1" * 64,
+        registered_design_digest="2" * 64,
+        matrix_digest="3" * 64,
+        attempt_ledger_digest="4" * 64,
+        lifecycle_prefix="5" * 64,
+        lifecycle_event_count=17,
+    )
 
 
 def _case(tmp_path: Path):
@@ -57,7 +70,10 @@ def test_preparation_round_trip_rehydrates_authority_from_raw_capture_files(
     tmp_path: Path,
 ) -> None:
     preparation, capture_root = _case(tmp_path)
-    record = capture_preparation_custody_from_preparation(preparation)
+    record = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
     payload = serialize_d1_capture_preparation_custody(record)
 
     restored = parse_d1_capture_preparation_custody(payload)
@@ -66,6 +82,7 @@ def test_preparation_round_trip_rehydrates_authority_from_raw_capture_files(
     assert restored == record
     assert restored.schema_version == D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA
     assert restored.status is D1CapturePreparationStatus.COMMIT_REQUIRED
+    assert restored.authority == _authority()
     assert restored.record_sha256 == record.record_sha256
     assert hydrated is not preparation
     assert hydrated.aggregate.manifest == preparation.aggregate.manifest
@@ -81,6 +98,11 @@ def test_preparation_round_trip_rehydrates_authority_from_raw_capture_files(
         (lambda value: value.update({"extra": True}), "keys"),
         (lambda value: value.update({"schema_version": "unknown"}), "schema"),
         (lambda value: value.update({"status": "captured"}), "status"),
+        (lambda value: value["campaign_authority"].pop("matrix_digest"), "keys"),
+        (
+            lambda value: value["campaign_authority"].update({"lifecycle_event_count": 0}),
+            "invalid",
+        ),
         (lambda value: value["aggregate"].update({"sha256": "0" * 64}), "aggregate"),
         (lambda value: value["pointer"].update({"sha256": "0" * 64}), "pointer"),
         (lambda value: value["pointer"].update({"bytes_base64": "AA=="}), "pointer"),
@@ -92,7 +114,10 @@ def test_parser_refuses_missing_unknown_or_substituted_authority(
     preparation, _ = _case(tmp_path)
     value = _mapping(
         serialize_d1_capture_preparation_custody(
-            capture_preparation_custody_from_preparation(preparation)
+            capture_preparation_custody_from_preparation(
+                preparation,
+                authority=_authority(),
+            )
         )
     )
     mutation(value)
@@ -104,7 +129,10 @@ def test_parser_refuses_missing_unknown_or_substituted_authority(
 def test_parser_refuses_duplicate_nonfinite_and_noncanonical_json(tmp_path: Path) -> None:
     preparation, _ = _case(tmp_path)
     payload = serialize_d1_capture_preparation_custody(
-        capture_preparation_custody_from_preparation(preparation)
+        capture_preparation_custody_from_preparation(
+            preparation,
+            authority=_authority(),
+        )
     )
     duplicate = '{"schema_version":"duplicate",' + payload[1:]
 
@@ -117,7 +145,10 @@ def test_hydration_rejects_artifact_drift_after_preparation(tmp_path: Path) -> N
     preparation, capture_root = _case(tmp_path)
     record = parse_d1_capture_preparation_custody(
         serialize_d1_capture_preparation_custody(
-            capture_preparation_custody_from_preparation(preparation)
+            capture_preparation_custody_from_preparation(
+                preparation,
+                authority=_authority(),
+            )
         )
     )
     artifact = preparation.aggregate.complete_runs[0].capture_input.journal
@@ -129,8 +160,25 @@ def test_hydration_rejects_artifact_drift_after_preparation(tmp_path: Path) -> N
 
 def test_record_digest_changes_with_any_pointer_or_aggregate_authority(tmp_path: Path) -> None:
     preparation, _ = _case(tmp_path)
-    record = capture_preparation_custody_from_preparation(preparation)
+    record = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
     value = copy.deepcopy(record.manifest)
     value["pointer"]["object_id"] = "0" * 32 + ".dir"  # type: ignore[index]
 
     assert record.record_sha256 != hashlib.sha256(_canonical(value).encode()).hexdigest()
+
+
+def test_record_digest_binds_campaign_and_lifecycle_authority(tmp_path: Path) -> None:
+    preparation, _ = _case(tmp_path)
+    first = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
+    changed = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=replace(_authority(), lifecycle_prefix="6" * 64),
+    )
+
+    assert first.record_sha256 != changed.record_sha256

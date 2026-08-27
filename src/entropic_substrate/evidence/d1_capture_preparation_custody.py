@@ -26,6 +26,7 @@ from entropic_substrate.experiments.d1_primitives import require_sha256
 
 __all__ = [
     "D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA",
+    "D1CampaignCaptureAuthority",
     "D1CapturePreparationCustodyError",
     "D1CapturePreparationCustodyRecord",
     "capture_preparation_custody_from_preparation",
@@ -34,9 +35,23 @@ __all__ = [
     "serialize_d1_capture_preparation_custody",
 ]
 
-D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA: Final = "d1-capture-preparation-custody-v1"
+D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA: Final = "d1-capture-preparation-custody-v2"
 _MAX_BYTES: Final = 8 * 1024 * 1024
-_ROOT_KEYS: Final = {"aggregate", "pointer", "schema_version", "status"}
+_ROOT_KEYS: Final = {
+    "aggregate",
+    "campaign_authority",
+    "pointer",
+    "schema_version",
+    "status",
+}
+_AUTHORITY_KEYS: Final = {
+    "attempt_ledger_digest",
+    "campaign_digest",
+    "lifecycle_event_count",
+    "lifecycle_prefix",
+    "matrix_digest",
+    "registered_design_digest",
+}
 
 
 class D1CapturePreparationCustodyError(ValueError):
@@ -87,17 +102,55 @@ def _validate_aggregate_binding(
 
 
 @dataclass(frozen=True, slots=True)
+class D1CampaignCaptureAuthority:
+    """Campaign and lifecycle identity frozen at the COMMIT_REQUIRED boundary."""
+
+    campaign_digest: str
+    registered_design_digest: str
+    matrix_digest: str
+    attempt_ledger_digest: str
+    lifecycle_prefix: str
+    lifecycle_event_count: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("campaign_digest", self.campaign_digest),
+            ("registered_design_digest", self.registered_design_digest),
+            ("matrix_digest", self.matrix_digest),
+            ("attempt_ledger_digest", self.attempt_ledger_digest),
+            ("lifecycle_prefix", self.lifecycle_prefix),
+        ):
+            require_sha256(value, label=f"campaign capture {label}")
+        if type(self.lifecycle_event_count) is not int or self.lifecycle_event_count < 1:
+            raise ValueError("campaign capture lifecycle_event_count must be positive")
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "attempt_ledger_digest": self.attempt_ledger_digest,
+            "campaign_digest": self.campaign_digest,
+            "lifecycle_event_count": self.lifecycle_event_count,
+            "lifecycle_prefix": self.lifecycle_prefix,
+            "matrix_digest": self.matrix_digest,
+            "registered_design_digest": self.registered_design_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class D1CapturePreparationCustodyRecord:
     aggregate_json: str
     aggregate_sha256: str
     pointer: D1DvcPointerIdentity
     pointer_bytes: bytes
+    authority: D1CampaignCaptureAuthority
     status: D1CapturePreparationStatus = D1CapturePreparationStatus.COMMIT_REQUIRED
     schema_version: str = D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA
 
     def __post_init__(self) -> None:
         if type(self.pointer) is not D1DvcPointerIdentity:
             raise TypeError("capture preparation custody requires D1DvcPointerIdentity")
+        if type(self.authority) is not D1CampaignCaptureAuthority:
+            raise TypeError("capture preparation custody requires campaign authority")
         if type(self.pointer_bytes) is not bytes or not self.pointer_bytes:
             raise ValueError("capture preparation custody pointer bytes must be nonempty")
         if hashlib.sha256(self.pointer_bytes).hexdigest() != self.pointer.pointer_sha256:
@@ -113,6 +166,7 @@ class D1CapturePreparationCustodyRecord:
         encoded = base64.b64encode(self.pointer_bytes).decode("ascii")
         return {
             "aggregate": {"json": self.aggregate_json, "sha256": self.aggregate_sha256},
+            "campaign_authority": self.authority.manifest,
             "pointer": {
                 "byte_count": len(self.pointer_bytes),
                 "bytes_base64": encoded,
@@ -131,6 +185,8 @@ class D1CapturePreparationCustodyRecord:
 
 def capture_preparation_custody_from_preparation(
     preparation: D1HeterogeneousCapturePreparation,
+    *,
+    authority: D1CampaignCaptureAuthority,
 ) -> D1CapturePreparationCustodyRecord:
     if type(preparation) is not D1HeterogeneousCapturePreparation:
         raise TypeError("capture preparation custody requires heterogeneous preparation")
@@ -140,6 +196,7 @@ def capture_preparation_custody_from_preparation(
         preparation.aggregate.manifest_digest,
         preparation.pointer,
         preparation.pointer_bytes,
+        authority,
     )
 
 
@@ -193,6 +250,11 @@ def parse_d1_capture_preparation_custody(payload: str) -> D1CapturePreparationCu
     if root["status"] != D1CapturePreparationStatus.COMMIT_REQUIRED.value:
         _fail("D1 capture preparation custody status is unsupported")
     aggregate = _object(root["aggregate"], label="aggregate", keys={"json", "sha256"})
+    authority = _object(
+        root["campaign_authority"],
+        label="campaign authority",
+        keys=_AUTHORITY_KEYS,
+    )
     pointer = _object(
         root["pointer"],
         label="pointer",
@@ -217,11 +279,28 @@ def parse_d1_capture_preparation_custody(payload: str) -> D1CapturePreparationCu
                 cast(str, pointer["object_id"]),
             ),
             pointer_bytes,
+            D1CampaignCaptureAuthority(
+                campaign_digest=cast(str, authority["campaign_digest"]),
+                registered_design_digest=cast(
+                    str,
+                    authority["registered_design_digest"],
+                ),
+                matrix_digest=cast(str, authority["matrix_digest"]),
+                attempt_ledger_digest=cast(
+                    str,
+                    authority["attempt_ledger_digest"],
+                ),
+                lifecycle_prefix=cast(str, authority["lifecycle_prefix"]),
+                lifecycle_event_count=cast(int, authority["lifecycle_event_count"]),
+            ),
         )
     except D1CapturePreparationCustodyError:
         raise
     except (binascii.Error, TypeError, ValueError) as error:
-        _fail(f"D1 capture preparation pointer or aggregate is invalid: {error}", error)
+        _fail(
+            f"D1 capture preparation pointer, aggregate, or campaign authority is invalid: {error}",
+            error,
+        )
     if serialize_d1_capture_preparation_custody(record) != payload:
         _fail("D1 capture preparation custody JSON is noncanonical")
     return record

@@ -17,14 +17,17 @@ from entropic_substrate.evidence.d1_capture_preparation_custody_repository impor
 )
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
-from .test_d1_capture_preparation_custody import _case
+from .test_d1_capture_preparation_custody import _authority, _case
 
 pytestmark = pytest.mark.unit
 
 
 def test_repository_saves_loads_and_reuses_exact_canonical_record(tmp_path: Path) -> None:
     preparation, _ = _case(tmp_path / "case")
-    record = capture_preparation_custody_from_preparation(preparation)
+    record = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
     root = tmp_path / "custody"
     root.mkdir()
     repository = D1CapturePreparationCustodyRepository(root)
@@ -42,7 +45,10 @@ def test_repository_saves_loads_and_reuses_exact_canonical_record(tmp_path: Path
 
 def test_repository_refuses_substituted_artifact_path_or_hash(tmp_path: Path) -> None:
     preparation, _ = _case(tmp_path / "case")
-    record = capture_preparation_custody_from_preparation(preparation)
+    record = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
     root = tmp_path / "custody"
     root.mkdir()
     repository = D1CapturePreparationCustodyRepository(root)
@@ -58,7 +64,10 @@ def test_repository_refuses_substituted_artifact_path_or_hash(tmp_path: Path) ->
 
 def test_repository_refuses_symlink_root_and_existing_collision(tmp_path: Path) -> None:
     preparation, _ = _case(tmp_path / "case")
-    record = capture_preparation_custody_from_preparation(preparation)
+    record = capture_preparation_custody_from_preparation(
+        preparation,
+        authority=_authority(),
+    )
     root = tmp_path / "custody"
     root.mkdir()
     linked = tmp_path / "linked"
