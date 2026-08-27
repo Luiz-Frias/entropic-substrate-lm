@@ -27,6 +27,7 @@ pytestmark = pytest.mark.unit
 
 
 def _case(tmp_path: Path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     roster, complete, defects, attempts, source_root = heterogeneous_family(tmp_path)
     service, _, repo_root = _service(tmp_path, source_root)
     preparation = service.prepare_heterogeneous(
