@@ -14,10 +14,12 @@ from typing import cast
 import pytest
 
 import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
+from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_execution_receipt import (
     D1ExecutorKind,
     D1ExternalIsolationAttestation,
     D1IsolationRequest,
+    issue_d1_analysis_receipt,
     issue_d1_verified_analysis_receipt,
 )
 from entropic_substrate.analysis.d1_external_analysis_adapter import (
@@ -373,6 +375,43 @@ def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
 
     assert receipt.manifest["filing_eligible"] is True
     assert receipt.manifest["analysis_digest"] == result.analysis.analysis_digest
+    assert receipt.manifest["filing_bindings"] == {
+        "capture_manifest_sha256": hashlib.sha256(
+            result.request.input_control.aggregate.canonical_json.encode("utf-8")
+        ).hexdigest(),
+        "isolation_attestation_sha256": hashlib.sha256(
+            json.dumps(
+                result.isolation.manifest,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+        "output_sha256": result.analysis.analysis_digest,
+        "preregistration_sha256": result.request.input_control.preregistration.sha256,
+        "reader_sha256": hashlib.sha256(
+            result.request.input_control.reader_source.canonical_bytes
+        ).hexdigest(),
+    }
+    with pytest.raises(ValueError, match="verified_analysis_receipt"):
+        issue_d1_analysis_receipt(
+            analysis=result.analysis.analysis,
+            admitted=D1AdmittedAnalysisCapture(
+                design_digest=result.request.input_control.design.design_digest,
+                decision_contract_digest=(
+                    result.request.input_control.design.decision_contract_digest
+                ),
+                capture_digest=result.analysis.aggregate.manifest_digest,
+                cells=(),
+                exclusions=(),
+                runs=(),
+                input_artifacts=result.analysis.aggregate.dvc_handoff.artifacts,
+            ),
+            aliases=result.request.input_control.alias_application.aliases,
+            implementation=_implementation(),
+            isolation=result.isolation,
+        )
     for field_name, value, message in (
         ("analysis_request_digest", "1" * 64, "worker response differs from request"),
         ("isolation_request_digest", "2" * 64, "worker response differs from isolation"),

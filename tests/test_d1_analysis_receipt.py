@@ -8,6 +8,7 @@ import pytest
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_execution_receipt import (
+    D1AnalysisFilingBindings,
     D1AnalysisImplementationIdentity,
     D1AnalysisRunnerRequest,
     D1ExecutorKind,
@@ -98,6 +99,7 @@ def test_in_process_fake_satisfies_port_but_cannot_issue_filing_eligible_receipt
 
     assert result.isolation.executor_kind is D1ExecutorKind.TEST_FAKE
     assert receipt.manifest["filing_eligible"] is False
+    assert receipt.manifest["filing_bindings"] is None
     assert receipt.manifest["isolation"]["mechanism"] == "in-process-contract-fake"  # type: ignore[index]
     assert receipt.manifest["inputs"] == [  # exact MD5 and SHA survive
         {
@@ -182,4 +184,15 @@ def test_receipt_rejects_alias_or_analysis_binding_drift() -> None:
             aliases=replace(_aliases(), sealed_commitment="9" * 64),
             implementation=_implementation(),
             isolation=isolation,
+        )
+
+
+def test_filing_bindings_require_exact_sha256_values() -> None:
+    with pytest.raises(ValueError, match="reader_sha256"):
+        D1AnalysisFilingBindings(
+            capture_manifest_sha256="1" * 64,
+            preregistration_sha256="2" * 64,
+            reader_sha256="not-a-digest",
+            isolation_attestation_sha256="4" * 64,
+            output_sha256="5" * 64,
         )

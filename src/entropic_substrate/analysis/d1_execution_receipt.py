@@ -31,6 +31,7 @@ from entropic_substrate.experiments.d1_primitives import canonical_digest, requi
 
 __all__ = [
     "D1AnalysisExecutionReceipt",
+    "D1AnalysisFilingBindings",
     "D1AnalysisImplementationIdentity",
     "D1AnalysisRunnerPort",
     "D1AnalysisRunnerRequest",
@@ -47,6 +48,16 @@ __all__ = [
 _SCHEMA = "d1-analysis-execution-receipt-v1"
 _COMPLETE_READER = "entropic_substrate.telemetry.read_d1_run_evidence"
 _DEFECT_READER = "entropic_substrate.telemetry.read_d1_terminal_defect"
+
+
+def _canonical_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _sha256(value: str, *, label: str) -> None:
@@ -448,6 +459,37 @@ class D1AnalysisExecutionReceipt:
         return hashlib.sha256(self.canonical_json.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class D1AnalysisFilingBindings:
+    """Exact filed-byte identities issued with an externally verified analysis."""
+
+    capture_manifest_sha256: str
+    preregistration_sha256: str
+    reader_sha256: str
+    isolation_attestation_sha256: str
+    output_sha256: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "capture_manifest_sha256",
+            "preregistration_sha256",
+            "reader_sha256",
+            "isolation_attestation_sha256",
+            "output_sha256",
+        ):
+            _sha256(getattr(self, name), label=f"D1 filing {name}")
+
+    @property
+    def manifest(self) -> dict[str, str]:
+        return {
+            "capture_manifest_sha256": self.capture_manifest_sha256,
+            "isolation_attestation_sha256": self.isolation_attestation_sha256,
+            "output_sha256": self.output_sha256,
+            "preregistration_sha256": self.preregistration_sha256,
+            "reader_sha256": self.reader_sha256,
+        }
+
+
 def _inputs(admitted: D1AdmittedAnalysisCapture) -> list[dict[str, object]]:
     values: list[dict[str, object]] = []
     for artifact in sorted(admitted.input_artifacts, key=lambda item: item.normalized_path):
@@ -471,15 +513,15 @@ def _inputs(admitted: D1AdmittedAnalysisCapture) -> list[dict[str, object]]:
     return values
 
 
-def issue_d1_analysis_receipt(
+def _issue_d1_analysis_receipt(
     *,
     analysis: D1AliasedMachineAnalysis,
     admitted: D1AdmittedAnalysisCapture,
     aliases: D1ArmAliasMap,
     implementation: D1AnalysisImplementationIdentity,
     isolation: D1ExternalIsolationAttestation,
+    filing_bindings: D1AnalysisFilingBindings | None,
 ) -> D1AnalysisExecutionReceipt:
-    """Bind analysis bytes to capture, readers, code, image, isolation, and inputs."""
     if (
         type(analysis) is not D1AliasedMachineAnalysis
         or type(admitted) is not D1AdmittedAnalysisCapture
@@ -499,11 +541,18 @@ def issue_d1_analysis_receipt(
         raise ValueError("D1 analysis receipt machine bindings differ from admitted capture")
     if machine.get("alias_commitment") != aliases.sealed_commitment:
         raise ValueError("D1 analysis receipt alias commitment differs")
+    if isolation.filing_eligible is not (type(filing_bindings) is D1AnalysisFilingBindings):
+        raise ValueError(
+            "D1 analysis receipt filing eligibility requires exact filed-byte bindings"
+        )
+    if filing_bindings is not None and filing_bindings.output_sha256 != analysis.analysis_digest:
+        raise ValueError("D1 analysis receipt filing output differs from analysis")
     manifest: dict[str, object] = {
         "alias_commitment": aliases.sealed_commitment,
         "analysis_digest": analysis.analysis_digest,
         "bindings": expected,
         "filing_eligible": isolation.filing_eligible,
+        "filing_bindings": (None if filing_bindings is None else filing_bindings.manifest),
         "implementation": implementation.manifest,
         "inputs": _inputs(admitted),
         "isolation": isolation.manifest,
@@ -517,6 +566,27 @@ def issue_d1_analysis_receipt(
         sort_keys=True,
     )
     return D1AnalysisExecutionReceipt(canonical)
+
+
+def issue_d1_analysis_receipt(
+    *,
+    analysis: D1AliasedMachineAnalysis,
+    admitted: D1AdmittedAnalysisCapture,
+    aliases: D1ArmAliasMap,
+    implementation: D1AnalysisImplementationIdentity,
+    isolation: D1ExternalIsolationAttestation,
+) -> D1AnalysisExecutionReceipt:
+    """Issue a non-filing receipt for an in-process analysis contract fake."""
+    if isolation.filing_eligible:
+        raise ValueError("filing-eligible analysis requires issue_d1_verified_analysis_receipt")
+    return _issue_d1_analysis_receipt(
+        analysis=analysis,
+        admitted=admitted,
+        aliases=aliases,
+        implementation=implementation,
+        isolation=isolation,
+        filing_bindings=None,
+    )
 
 
 def issue_d1_verified_analysis_receipt(
@@ -577,10 +647,24 @@ def issue_d1_verified_analysis_receipt(
         runs=(),
         input_artifacts=analysis.aggregate.dvc_handoff.artifacts,
     )
-    return issue_d1_analysis_receipt(
+    filing_bindings = D1AnalysisFilingBindings(
+        capture_manifest_sha256=hashlib.sha256(
+            request.input_control.aggregate.canonical_json.encode("utf-8")
+        ).hexdigest(),
+        preregistration_sha256=request.input_control.preregistration.sha256,
+        reader_sha256=hashlib.sha256(
+            request.input_control.reader_source.canonical_bytes
+        ).hexdigest(),
+        isolation_attestation_sha256=hashlib.sha256(
+            _canonical_bytes(isolation.manifest)
+        ).hexdigest(),
+        output_sha256=analysis.analysis_digest,
+    )
+    return _issue_d1_analysis_receipt(
         analysis=analysis.analysis,
         admitted=admitted,
         aliases=request.input_control.alias_application.aliases,
         implementation=implementation,
         isolation=isolation,
+        filing_bindings=filing_bindings,
     )
