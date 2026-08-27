@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import re
 from pathlib import Path
 from typing import NoReturn
 
@@ -16,7 +18,9 @@ from entropic_substrate.d1_finalized_cell_custody import (
     parse_d1_finalized_cell_custody,
     serialize_d1_finalized_cell_custody,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+
+_RECORD_NAME = re.compile(r"^([0-9a-f]{64})\.json$")
 
 
 class D1FinalizedCellCustodyRepositoryError(RuntimeError):
@@ -85,3 +89,53 @@ class D1FinalizedCellCustodyRepository:
         except D1ContentAddressedCustodyError as error:
             _translate(error)
         return _decode(data, Path(artifact.path))
+
+    def discover(
+        self,
+        *,
+        exclude: tuple[ArtifactIdentity, ...] = (),
+    ) -> tuple[tuple[D1FinalizedCellCustodyRecord, ArtifactIdentity], ...]:
+        """Enumerate a closed set of canonical custody files for crash adoption."""
+        if type(exclude) is not tuple or any(
+            type(item) is not ArtifactIdentity for item in exclude
+        ):
+            raise TypeError("finalized-cell discovery exclude must be an artifact tuple")
+        excluded: set[tuple[str, str]] = set()
+        for artifact in exclude:
+            digest = artifact.content_hash.digest
+            expected = self.root / f"{digest}.json"
+            if (
+                artifact.content_hash.algorithm != "sha256"
+                or artifact.path != str(expected)
+                or _RECORD_NAME.fullmatch(expected.name) is None
+            ):
+                raise D1FinalizedCellCustodyRepositoryError(
+                    code="discover_exclude",
+                    path=expected,
+                    detail="excluded artifact differs from content-addressed custody",
+                )
+            excluded.add((artifact.path, digest))
+        try:
+            entries = sorted(os.scandir(self.root), key=lambda item: item.name)
+        except OSError as error:
+            raise D1FinalizedCellCustodyRepositoryError(
+                code="discover_io",
+                path=self.root,
+                detail=f"cannot enumerate custody root: {error}",
+            ) from error
+        discovered: list[tuple[D1FinalizedCellCustodyRecord, ArtifactIdentity]] = []
+        for entry in entries:
+            match = _RECORD_NAME.fullmatch(entry.name)
+            path = self.root / entry.name
+            if match is None or entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                raise D1FinalizedCellCustodyRepositoryError(
+                    code="discover_entry",
+                    path=path,
+                    detail="discovery found a noncanonical custody entry",
+                )
+            digest = match.group(1)
+            artifact = ArtifactIdentity(str(path), ContentHash("sha256", digest))
+            if (artifact.path, digest) in excluded:
+                continue
+            discovered.append((self.load(artifact), artifact))
+        return tuple(discovered)

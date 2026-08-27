@@ -164,3 +164,56 @@ def test_existing_wrong_bytes_at_content_address_are_never_overwritten(tmp_path:
 
     assert target.read_bytes() == before
     assert _temps(root) == []
+
+
+def test_discovery_returns_canonical_records_and_supports_exact_exclusion(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "custody"
+    root.mkdir()
+    repository = D1FinalizedCellCustodyRepository(root)
+    first = repository.save(_attest(_finalized_case(tmp_path / "first")))
+    second = repository.save(_attest(_finalized_case(tmp_path / "second")))
+
+    discovered = repository.discover()
+    remaining = repository.discover(exclude=(first,))
+
+    assert tuple(artifact for _record, artifact in discovered) == tuple(
+        sorted((first, second), key=lambda item: item.path)
+    )
+    assert tuple(artifact for _record, artifact in remaining) == (second,)
+    assert all(
+        record.record_digest == artifact.content_hash.digest for record, artifact in discovered
+    )
+
+
+@pytest.mark.parametrize("hazard", ["stray", "symlink"])
+def test_discovery_refuses_noncanonical_or_symlink_entries(
+    tmp_path: Path,
+    hazard: str,
+) -> None:
+    root = tmp_path / "custody"
+    root.mkdir()
+    repository = D1FinalizedCellCustodyRepository(root)
+    repository.save(_attest(_finalized_case(tmp_path / "case")))
+    target = root / "stray.txt"
+    if hazard == "stray":
+        target.write_text("unexpected", encoding="utf-8")
+    else:
+        source = tmp_path / "source"
+        source.write_text("unexpected", encoding="utf-8")
+        target.symlink_to(source)
+
+    with pytest.raises(D1FinalizedCellCustodyRepositoryError, match="discover"):
+        repository.discover()
+
+
+def test_discovery_refuses_substituted_exclusion_identity(tmp_path: Path) -> None:
+    root = tmp_path / "custody"
+    root.mkdir()
+    repository = D1FinalizedCellCustodyRepository(root)
+    artifact = repository.save(_attest(_finalized_case(tmp_path / "case")))
+    substituted = replace(artifact, content_hash=ContentHash("sha256", "0" * 64))
+
+    with pytest.raises(D1FinalizedCellCustodyRepositoryError, match="exclude"):
+        repository.discover(exclude=(substituted,))
