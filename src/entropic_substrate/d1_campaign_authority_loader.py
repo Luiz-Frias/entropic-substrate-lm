@@ -17,16 +17,21 @@ from entropic_substrate.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointRepository,
     D1CampaignCheckpointRepositoryError,
 )
+from entropic_substrate.d1_campaign_queue import D1CampaignQueueHalt, D1CompletedCampaign
 from entropic_substrate.d1_campaign_recovery import (
     D1CampaignRecoveryError,
     D1CampaignRecoveryHalt,
+    D1CampaignRecoveryStatus,
     D1HydratedCampaignRecovery,
     hydrate_d1_campaign_recovery,
 )
+from entropic_substrate.d1_campaign_recovery_queue import D1RecoverableCampaignQueue
 from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1PersistedCampaignCursor,
 )
+from entropic_substrate.d1_operator_controller import D1OperatorRunResult
+from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.evidence.d1_lifecycle_repository import (
     D1LifecycleCorruptionError,
     D1LifecycleRepository,
@@ -34,7 +39,9 @@ from entropic_substrate.evidence.d1_lifecycle_repository import (
 )
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
+from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
 from entropic_substrate.experiments.d1_family import D1ExperimentFamily
+from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
 from entropic_substrate.experiments.d1_primitives import canonical_json
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 from entropic_substrate.experiments.d1_registration_codec import (
@@ -205,3 +212,45 @@ class D1CampaignAuthorityLoader:
             receipt,
             recovery,
         )
+
+    @staticmethod
+    def completed_campaign(
+        loaded: D1LoadedCampaignAuthority,
+        *,
+        git: D1GitProvenancePort,
+    ) -> D1CompletedCampaign:
+        """Re-attest a COMPLETE recovery without exposing a provider method."""
+        if type(loaded) is not D1LoadedCampaignAuthority:
+            raise TypeError("completed campaign reconstruction requires loaded authority")
+        recovery = loaded.recovery
+        if (
+            type(recovery) is not D1HydratedCampaignRecovery
+            or recovery.status is not D1CampaignRecoveryStatus.COMPLETE
+        ):
+            _fail("complete", "campaign recovery is not complete")
+
+        @dataclass
+        class _NoProviderController:
+            process_manager: D1ProcessManager
+            attempt_ledger: D1LaunchAttemptLedger
+
+            def execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult:
+                del intent
+                _fail("complete", "complete recovery attempted a provider call")
+
+        try:
+            return D1RecoverableCampaignQueue(
+                design=loaded.design,
+                intents=loaded.request.intents,
+                controller=_NoProviderController(
+                    loaded.process_manager,
+                    loaded.checkpoint.attempt_ledger,
+                ),
+                git=git,
+                repository=D1CampaignCheckpointRepository(loaded.request.locations.checkpoint_path),
+            ).run(
+                recovery,
+                generation=loaded.checkpoint_receipt,
+            )
+        except (D1CampaignQueueHalt, TypeError, ValueError) as error:
+            _fail("complete", str(error), error)

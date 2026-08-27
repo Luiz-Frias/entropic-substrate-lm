@@ -12,12 +12,16 @@ import d1_launch_admission_fixtures as fixtures
 from entropic_substrate.d1_campaign_authority_loader import (
     D1CampaignAuthorityLoader,
     D1CampaignAuthorityLoaderError,
+    D1LoadedCampaignAuthority,
 )
 from entropic_substrate.d1_campaign_bootstrap import bootstrap_d1_ready_checkpoint
-from entropic_substrate.d1_campaign_checkpoint_repository import (
-    D1CampaignCheckpointRepository,
+from entropic_substrate.d1_campaign_checkpoint_repository import D1CampaignCheckpointRepository
+from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
+from entropic_substrate.d1_campaign_recovery import (
+    D1CampaignRecoveryStatus,
+    D1HydratedCampaignRecovery,
+    hydrate_d1_campaign_recovery,
 )
-from entropic_substrate.d1_campaign_recovery import D1CampaignRecoveryStatus
 from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignLocations,
@@ -37,6 +41,8 @@ from entropic_substrate.experiments.d1_registration_codec import (
 )
 
 from .test_d1_campaign_queue import _intent
+from .test_d1_campaign_recovery import _prefix
+from .test_d1_confirmatory_matrix import FakeGit
 from .test_d1_operator_controller import _manager
 
 pytestmark = pytest.mark.unit
@@ -159,3 +165,60 @@ def test_loader_refuses_symlinked_preregistration_path(tmp_path: Path) -> None:
             request,
             manifest_path=manifest,
         )
+
+
+def _loaded_prefix(tmp_path: Path, count: int) -> D1LoadedCampaignAuthority:
+    design, intents, _starts, manager, _ledger, checkpoint = _prefix(
+        tmp_path / "recovery",
+        count,
+    )
+    request, _manifest, *_ = _case(tmp_path / "request")
+    checkpoint_path = request.locations.checkpoint_path.with_name("complete.json")
+    receipt = D1CampaignCheckpointRepository(checkpoint_path).save(
+        checkpoint,
+        expected_previous_sha256=None,
+    )
+    request = replace(
+        request,
+        design=parse_registered_design_declaration(serialize_registered_design(design)),
+        intents=intents,
+        cursor=D1PersistedCampaignCursor(receipt.sha256),
+        locations=replace(request.locations, checkpoint_path=checkpoint_path),
+    )
+    recovery = hydrate_d1_campaign_recovery(
+        design=design,
+        intents=intents,
+        checkpoint=checkpoint,
+        process_manager=manager,
+    )
+    assert type(recovery) is D1HydratedCampaignRecovery
+    return D1LoadedCampaignAuthority(
+        request,
+        design,
+        manager,
+        checkpoint,
+        receipt,
+        recovery,
+    )
+
+
+def test_complete_recovery_reconstructs_attested_campaign_without_provider_calls(
+    tmp_path: Path,
+) -> None:
+    loaded = _loaded_prefix(tmp_path, 4)
+
+    campaign = D1CampaignAuthorityLoader.completed_campaign(loaded, git=FakeGit())
+
+    assert type(campaign) is D1CompletedCampaign
+    assert campaign.results == ()
+    assert campaign.recovered_prefix_count == 4
+    assert campaign.matrix.matrix_digest
+
+
+def test_partial_recovery_is_refused_before_completed_campaign_attestation(
+    tmp_path: Path,
+) -> None:
+    loaded = _loaded_prefix(tmp_path, 2)
+
+    with pytest.raises(D1CampaignAuthorityLoaderError, match="recovery is not complete"):
+        D1CampaignAuthorityLoader.completed_campaign(loaded, git=FakeGit())
