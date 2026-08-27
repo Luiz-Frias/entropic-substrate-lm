@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Final, Protocol, cast
 
 from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
 from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
@@ -105,10 +105,10 @@ class D1HeterogeneousCaptureAdapter:
             attempt_evidence=material.attempt_evidence,
         )
 
-    def finalize(
-        self, preparation: D1HeterogeneousCapturePreparation
-    ) -> D1HeterogeneousCaptureReceipt:
-        return self._service.finalize_heterogeneous(preparation)
+    def finalize(self, preparation: object) -> D1HeterogeneousCaptureReceipt:
+        return self._service.finalize_heterogeneous(
+            cast(D1HeterogeneousCapturePreparation, preparation)
+        )
 
 
 def _campaign_identity(campaign: D1CompletedCampaign) -> str:

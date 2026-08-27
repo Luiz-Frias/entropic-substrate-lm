@@ -13,6 +13,7 @@ from entropic_substrate.d1_campaign_authority_loader import (
     D1CampaignAuthorityLoaderError,
     D1LoadedCampaignAuthority,
 )
+from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
 from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignRequestError,
@@ -40,6 +41,7 @@ from entropic_substrate.evidence.d1_capture_preparation_custody_repository impor
     D1CapturePreparationCustodyRepositoryError,
 )
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
 from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
 from entropic_substrate.experiments.d1_primitives import canonical_digest, canonical_json
@@ -57,7 +59,15 @@ class D1CampaignAuthorityLoaderPort(Protocol):
 
 
 class D1CapturePreparationCoordinatorPort(Protocol):
-    def prepare(self, **kwargs: object) -> D1PublishedCapturePreparation: ...
+    def prepare(
+        self,
+        *,
+        campaign: D1CompletedCampaign,
+        cell_artifacts: Mapping[str, ArtifactIdentity],
+        source_root: Path,
+        finalized_cell_custody_root: Path,
+        preparation_custody_root: Path,
+    ) -> D1PublishedCapturePreparation: ...
 
 
 class D1CapturePreparationCoordinatorFactoryPort(Protocol):
@@ -68,7 +78,14 @@ class D1CapturePreparationCoordinatorFactoryPort(Protocol):
 
 
 class D1CaptureFinalizationCoordinatorPort(Protocol):
-    def finalize(self, **kwargs: object) -> D1PublishedCaptureFinalization: ...
+    def finalize(
+        self,
+        *,
+        campaign: D1CompletedCampaign,
+        preparation_artifact: ArtifactIdentity,
+        repo_root: Path,
+        preparation_custody_root: Path,
+    ) -> D1PublishedCaptureFinalization: ...
 
 
 class D1CaptureFinalizationCoordinatorFactoryPort(Protocol):

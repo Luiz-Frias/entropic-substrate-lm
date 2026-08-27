@@ -174,6 +174,24 @@ def test_unconfigured_campaign_command_returns_operator_gap_not_live_fallback(
     assert "composition service is unavailable" in output["detail"]
 
 
+@pytest.mark.parametrize(
+    "command",
+    [D1CliCommand.CAPTURE_PREPARE, D1CliCommand.CAPTURE_FINALIZE],
+)
+def test_default_capture_commands_are_real_and_reject_bad_payload_as_invalid_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: D1CliCommand,
+) -> None:
+    code = main([command.value, "--manifest", str(_manifest(tmp_path, command))])
+
+    assert code is D1CliExitCode.INVALID_EVIDENCE
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "invalid_evidence"
+    assert "request" in output["detail"]
+    assert "composition service is unavailable" not in output["detail"]
+
+
 def test_invalid_manifest_exit_survives_cli_rendering(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
