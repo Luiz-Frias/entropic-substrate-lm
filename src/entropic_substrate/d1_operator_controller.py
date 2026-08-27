@@ -32,6 +32,7 @@ from entropic_substrate.d1_operator_values import (
     D1RuntimeObservation,
     attest_d1_run_start,
 )
+from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
 from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
 from entropic_substrate.d1_trainer_request_codec import (
     build_d1_trainer_request,
@@ -43,7 +44,12 @@ from entropic_substrate.d1_trainer_request_codec import (
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
+from entropic_substrate.evidence.lifecycle import (
+    ActorIdentity,
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+)
 from entropic_substrate.evidence.resource_billing import (
     ExecutionSegmentTermination,
     TerminalProviderBillingEvidence,
@@ -64,6 +70,18 @@ from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesi
 
 class D1OperatorClock(Protocol):
     def now_utc(self) -> datetime: ...
+
+
+def _quarantined_siblings(handoff: object) -> tuple[ArtifactIdentity, ...]:
+    if type(handoff) is not D1ResumeRunCompletion or handoff.tail_quarantine is None:
+        return ()
+    receipt = handoff.tail_quarantine
+    return (
+        ArtifactIdentity(
+            str(receipt.quarantine_path),
+            ContentHash("sha256", receipt.quarantined_journal_sha256),
+        ),
+    )
 
 
 class D1OperatorCustodyPort(Protocol):
@@ -322,6 +340,7 @@ class D1SequentialOperatorController:
                 finalization=finalization,
                 journal=journal,
                 checkpoint=export.checkpoint,
+                quarantined_siblings=_quarantined_siblings(handoff),
             )
             finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:
@@ -468,6 +487,7 @@ class D1SequentialOperatorController:
                 finalization=finalization,
                 journal=journal,
                 checkpoint=export.checkpoint,
+                quarantined_siblings=_quarantined_siblings(handoff),
             )
             artifact = self._custody.persist_finalized_cell(finalized_cell)
         else:

@@ -275,6 +275,7 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     if outcome == "admissible":
         assert custody_captured["segment_starts"] == (start0, start1)
         assert custody_captured["attempt_ledger"] == result.attempt_ledger
+        assert custody_captured["quarantined_siblings"] == ()
         assert result.finalized_cell is finalized_cell
     else:
         assert custody_captured == {}

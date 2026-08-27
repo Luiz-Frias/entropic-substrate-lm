@@ -29,7 +29,11 @@ from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.d1_trainer_handoff import D1FreshRunCompletion
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
+from entropic_substrate.evidence.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
+    execution_segment_id,
+)
 from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
@@ -49,6 +53,7 @@ class _FinalizedCase(NamedTuple):
     finalization: D1BillingFinalization
     journal: ArtifactIdentity
     checkpoint: ArtifactIdentity
+    quarantined_siblings: tuple[ArtifactIdentity, ...]
 
 
 def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _FinalizedCase:
@@ -110,6 +115,7 @@ def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _Finalized
         finalization,
         journal,
         export.checkpoint,
+        (),
     )
 
 
@@ -121,6 +127,7 @@ def _attest(case: _FinalizedCase) -> D1FinalizedCellCustodyRecord:
         finalization=case.finalization,
         journal=case.journal,
         checkpoint=case.checkpoint,
+        quarantined_siblings=case.quarantined_siblings,
     )
 
 
@@ -135,7 +142,8 @@ def test_finalized_cell_round_trips_exact_canonical_evidence(tmp_path: Path) -> 
         "completed",
     )
     assert record.checkpoint == case.checkpoint
-    assert record.schema_version == "d1-finalized-cell-custody-v2"
+    assert record.quarantined_siblings == ()
+    assert record.schema_version == "d1-finalized-cell-custody-v3"
     payload = serialize_d1_finalized_cell_custody(record)
     restored = parse_d1_finalized_cell_custody(payload)
 
@@ -186,6 +194,7 @@ def test_factory_requires_completed_ledger_reconciled_billing_and_final_journal(
         ("finalization_digest", "finalization digest"),
         ("journal_digest", "final journal identity"),
         ("checkpoint_digest", "checkpoint"),
+        ("quarantine_unknown", "quarantined sibling"),
         ("billing_posture", "billing and quality posture"),
         ("quality_ready", "billing and quality posture"),
         ("unknown_field", "fields must be exact"),
@@ -221,6 +230,8 @@ def test_codec_rejects_each_substituted_evidence_edge(
         value["journal"]["sha256"] = "0" * 64
     elif mutation == "checkpoint_digest":
         value["checkpoint"]["sha256"] = "0" * 64
+    elif mutation == "quarantine_unknown":
+        value["quarantined_siblings"] = [value["checkpoint"]]
     elif mutation == "billing_posture":
         value["billing_posture"] = "missing_cost"
     elif mutation == "quality_ready":
@@ -242,6 +253,42 @@ def test_finalized_cell_capability_cannot_be_constructed_copied_or_replayed(
     for copier in (copy.copy, copy.deepcopy, pickle.dumps):
         with pytest.raises(TypeError, match="cannot be copied"):
             copier(record)
+
+
+def test_resumed_cell_custody_retains_verified_quarantined_sibling(tmp_path: Path) -> None:
+    case = _finalized_case(tmp_path)
+    start0 = case.starts[0]
+    start1 = replace(
+        start0,
+        execution_segment_index=1,
+        execution_segment_id=execution_segment_id(start0.logical_run_id, 1),
+        segment_start_mode=SegmentStartMode.RESUME,
+        resume_checkpoint_sha256=case.checkpoint.content_hash.digest,
+        pod_created_at=start0.pod_created_at + timedelta(seconds=2),
+        trainer_started_at=start0.trainer_started_at + timedelta(seconds=2),
+    )
+    quarantine_path = tmp_path / "run.quarantine.jsonl"
+    quarantine_path.write_bytes(b"quarantined tail\n")
+    quarantine = ArtifactIdentity(
+        str(quarantine_path),
+        ContentHash("sha256", hashlib.sha256(quarantine_path.read_bytes()).hexdigest()),
+    )
+    resumed = case._replace(
+        intent=replace(
+            case.intent,
+            execution_segment_index=1,
+            resume_checkpoint_sha256=case.checkpoint.content_hash.digest,
+        ),
+        starts=(start0, start1),
+        quarantined_siblings=(quarantine,),
+    )
+
+    record = _attest(resumed)
+
+    assert record.quarantined_siblings == (quarantine,)
+    wrong = replace(quarantine, content_hash=ContentHash("sha256", "0" * 64))
+    with pytest.raises(ValueError, match="quarantined sibling"):
+        _attest(resumed._replace(quarantined_siblings=(wrong,)))
 
 
 def test_attestation_rejects_unminted_and_mutated_records(tmp_path: Path) -> None:

@@ -111,8 +111,6 @@ class D1CampaignEvidenceAssembler:
             or artifact.content_hash.digest != record.record_digest
         ):
             raise ValueError("finalized-cell artifact identity differs from custody record")
-        if len(record.segment_starts) != 1:
-            raise ValueError("resumed finalized-cell custody requires quarantine evidence catalog")
         journal = _capture_artifact(self._root, record.journal, D1ArtifactRole.JOURNAL)
         checkpoint = _capture_artifact(
             self._root,
@@ -124,12 +122,16 @@ class D1CampaignEvidenceAssembler:
             artifact,
             D1ArtifactRole.BILLING_SIDECAR,
         )
+        quarantined = tuple(
+            _capture_artifact(self._root, item, D1ArtifactRole.QUARANTINED_SIBLING)
+            for item in record.quarantined_siblings
+        )
         return D1CaptureInput(
             expected.logical_run_id,
             journal,
             checkpoint,
             (billing,),
-            (),
+            quarantined,
         )
 
     def prepare(

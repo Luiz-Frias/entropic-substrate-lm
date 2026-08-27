@@ -42,12 +42,12 @@ from entropic_substrate.experiments.d1_primitives import (
     require_sha256,
 )
 
-_SCHEMA = "d1-finalized-cell-custody-v2"
+_SCHEMA = "d1-finalized-cell-custody-v3"
 _FINALIZATION_SCHEMA = "d1-finalized-cell-evidence-v1"
 _ROOT_KEYS = frozenset(
     (
         "arm attempt_ledger billing_posture checkpoint finalization intent journal logical_run_id "
-        "plan_digest quality_export_ready registered_design_digest schema_version seed "
+        "plan_digest quality_export_ready quarantined_siblings registered_design_digest schema_version seed "
         "segment_starts trainer_outcome"
     ).split()
 )
@@ -111,6 +111,15 @@ def _decode_envelope(value: object, label: str) -> tuple[dict[str, object], str]
     return manifest, text
 
 
+def _artifact(value: object, label: str) -> ArtifactIdentity:
+    item = _mapping(value, label)
+    _exact(item, _JOURNAL_KEYS, label)
+    return ArtifactIdentity(
+        _text(item["path"], f"{label}.path"),
+        ContentHash("sha256", _sha(item["sha256"], f"{label}.sha256")),
+    )
+
+
 def _finalization_manifest(finalization: D1BillingFinalization) -> dict[str, object]:
     return {
         "billing": finalization.billing.manifest,
@@ -135,6 +144,7 @@ class D1FinalizedCellCustodyRecord:
     finalization_json: str
     journal: ArtifactIdentity
     checkpoint: ArtifactIdentity
+    quarantined_siblings: tuple[ArtifactIdentity, ...]
     billing_posture: str
     quality_export_ready: bool
     trainer_outcome: str
@@ -175,6 +185,10 @@ class D1FinalizedCellCustodyRecord:
             "logical_run_id": self.logical_run_id,
             "plan_digest": self.plan_digest,
             "quality_export_ready": self.quality_export_ready,
+            "quarantined_siblings": [
+                {"path": item.path, "sha256": item.content_hash.digest}
+                for item in self.quarantined_siblings
+            ],
             "registered_design_digest": self.registered_design_digest,
             "schema_version": self.schema_version,
             "seed": self.seed,
@@ -283,6 +297,23 @@ def _validate_record(record: D1FinalizedCellCustodyRecord) -> None:
         != record.checkpoint
     ):
         _fail("final checkpoint identity differs from its bytes")
+    if type(record.quarantined_siblings) is not tuple or any(
+        type(item) is not ArtifactIdentity for item in record.quarantined_siblings
+    ):
+        _fail("quarantined siblings must be a nominal artifact tuple")
+    if len(record.segment_starts) == 1 and record.quarantined_siblings:
+        _fail("fresh finalized cell cannot claim a quarantined sibling")
+    sibling_paths = {item.path for item in record.quarantined_siblings}
+    if (
+        len(sibling_paths) != len(record.quarantined_siblings)
+        or {record.journal.path, record.checkpoint.path} & sibling_paths
+    ):
+        _fail("quarantined sibling paths must be unique and distinct")
+    for sibling in record.quarantined_siblings:
+        if sibling.content_hash.algorithm != "sha256" or (
+            _identify_finalized_artifact(Path(sibling.path), "quarantined sibling") != sibling
+        ):
+            _fail("quarantined sibling identity differs from its bytes")
 
 
 def _mint(
@@ -298,12 +329,13 @@ def _mint(
     finalization_json: str,
     journal: ArtifactIdentity,
     checkpoint: ArtifactIdentity,
+    quarantined_siblings: tuple[ArtifactIdentity, ...],
 ) -> D1FinalizedCellCustodyRecord:
     record = object.__new__(D1FinalizedCellCustodyRecord)
     source = locals()
     for name in (
         "logical_run_id arm seed registered_design_digest plan_digest intent_json "
-        "segment_starts attempt_ledger finalization_json journal checkpoint"
+        "segment_starts attempt_ledger finalization_json journal checkpoint quarantined_siblings"
     ).split():
         object.__setattr__(record, name, source[name])
     object.__setattr__(record, "billing_posture", "reconciled")
@@ -324,6 +356,7 @@ def attest_d1_finalized_cell_custody(
     finalization: D1BillingFinalization,
     journal: ArtifactIdentity,
     checkpoint: ArtifactIdentity,
+    quarantined_siblings: tuple[ArtifactIdentity, ...],
 ) -> D1FinalizedCellCustodyRecord:
     if (
         type(intent) is not D1OperatorLaunchIntent
@@ -332,6 +365,7 @@ def attest_d1_finalized_cell_custody(
         or type(finalization) is not D1BillingFinalization
         or type(journal) is not ArtifactIdentity
         or type(checkpoint) is not ArtifactIdentity
+        or type(quarantined_siblings) is not tuple
     ):
         raise TypeError("finalized-cell custody requires nominal source evidence")
     if type(finalization.billing) is not LogicalBillingReconciliation:
@@ -350,6 +384,7 @@ def attest_d1_finalized_cell_custody(
         finalization_json=canonical_json(_finalization_manifest(finalization)),
         journal=journal,
         checkpoint=checkpoint,
+        quarantined_siblings=quarantined_siblings,
     )
 
 
@@ -428,10 +463,11 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
     _, intent_text = _decode_envelope(root["intent"], "intent")
     ledger_manifest, _ = _decode_envelope(root["attempt_ledger"], "attempt_ledger")
     _, finalization_text = _decode_envelope(root["finalization"], "finalization")
-    journal = _mapping(root["journal"], "journal")
-    _exact(journal, _JOURNAL_KEYS, "journal")
-    checkpoint = _mapping(root["checkpoint"], "checkpoint")
-    _exact(checkpoint, _JOURNAL_KEYS, "checkpoint")
+    journal = _artifact(root["journal"], "journal")
+    checkpoint = _artifact(root["checkpoint"], "checkpoint")
+    siblings_raw = root["quarantined_siblings"]
+    if type(siblings_raw) is not list:
+        _fail("quarantined siblings must be an array")
     starts_raw = root["segment_starts"]
     if type(starts_raw) is not list or not starts_raw:
         _fail("segment_starts must be a nonempty array")
@@ -452,13 +488,11 @@ def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecor
             segment_starts=starts,
             attempt_ledger=attempt_ledger,
             finalization_json=finalization_text,
-            journal=ArtifactIdentity(
-                _text(journal["path"], "journal.path"),
-                ContentHash("sha256", _sha(journal["sha256"], "journal.sha256")),
-            ),
-            checkpoint=ArtifactIdentity(
-                _text(checkpoint["path"], "checkpoint.path"),
-                ContentHash("sha256", _sha(checkpoint["sha256"], "checkpoint.sha256")),
+            journal=journal,
+            checkpoint=checkpoint,
+            quarantined_siblings=tuple(
+                _artifact(value, f"quarantined_siblings[{index}]")
+                for index, value in enumerate(siblings_raw)
             ),
         )
     except D1FinalizedCellCustodyError:
