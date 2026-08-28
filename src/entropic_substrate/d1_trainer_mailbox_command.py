@@ -12,10 +12,17 @@ from typing import NoReturn, Protocol, TextIO, cast
 
 from entropic_substrate.d1_observability import AuthoritativeJournalOnlyObserver
 from entropic_substrate.d1_operator_values import require_d1_pod_id
+from entropic_substrate.d1_r2_runtime_composition import (
+    D1R2RuntimeCompositionError,
+    build_d1_r2_runtime_composition,
+)
+from entropic_substrate.d1_r2_trainer_mailbox_worker import (
+    D1R2TrainerMailboxWorker,
+    D1R2TrainerMailboxWorkerError,
+)
 from entropic_substrate.d1_system_runtime_probe import SystemD1RuntimeProbe
 from entropic_substrate.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWaitPolicy,
-    D1TrainerMailboxWorker,
     D1TrainerMailboxWorkerError,
 )
 from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
@@ -24,7 +31,14 @@ from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
 __all__ = ["main", "run_d1_trainer_mailbox_command"]
 
 _SCHEMA = "d1-trainer-mailbox-command-result-v1"
-_FLAGS = frozenset({"--maximum-wait-seconds", "--poll-interval-seconds", "--volume-root"})
+_FLAGS = frozenset(
+    {
+        "--max-mailbox-objects",
+        "--maximum-wait-seconds",
+        "--poll-interval-seconds",
+        "--repo-root",
+    }
+)
 
 
 class D1TrainerMailboxCommandRefusal(ValueError):
@@ -62,7 +76,7 @@ def _refuse(message: str, error: Exception | None = None) -> NoReturn:
     raise D1TrainerMailboxCommandRefusal(message) from error
 
 
-def _parse_argv(argv: Sequence[str]) -> tuple[Path, D1TrainerMailboxWaitPolicy]:
+def _parse_argv(argv: Sequence[str]) -> tuple[Path, D1TrainerMailboxWaitPolicy, int]:
     values = tuple(argv)
     if not values or len(values) % 2 or any(type(item) is not str or not item for item in values):
         _refuse("mailbox command argv is incomplete")
@@ -79,9 +93,12 @@ def _parse_argv(argv: Sequence[str]) -> tuple[Path, D1TrainerMailboxWaitPolicy]:
             float(parsed["--maximum-wait-seconds"]),
             float(parsed["--poll-interval-seconds"]),
         )
+        maximum = int(parsed["--max-mailbox-objects"])
+        if maximum < 1:
+            raise ValueError("max mailbox objects must be positive")
     except (TypeError, ValueError) as error:
         _refuse("mailbox wait policy is invalid", error)
-    return Path(parsed["--volume-root"]), policy
+    return Path(parsed["--repo-root"]), policy, maximum
 
 
 def _string_environment(value: object) -> Mapping[str, str]:
@@ -104,21 +121,37 @@ def _default_mailbox_factory(
     root: Path,
     pod_id: str,
     policy: D1TrainerMailboxWaitPolicy,
-) -> D1TrainerMailboxWorker:
+    *,
+    environ: Mapping[str, str],
+    max_objects: int,
+) -> D1R2TrainerMailboxWorker:
     catalog = (*load_d1_profile_catalog(), *load_d1_profile_catalog(tiny=True))
+    runtime = build_d1_r2_runtime_composition(
+        repo_root=root,
+        environ=environ,
+        max_objects=max_objects,
+    )
 
-    def worker_factory(artifact_root: Path) -> D1TrainerProcessWorker:
+    def worker_factory(start_report_publisher) -> D1TrainerProcessWorker:  # type: ignore[no-untyped-def]
         return D1TrainerProcessWorker(
-            artifact_root=artifact_root,
+            artifact_root=root,
             catalog=catalog,
             runtime_probe=SystemD1RuntimeProbe(),
             process_identity=lambda: str(os.getpid()),
             observer=AuthoritativeJournalOnlyObserver(),
+            checkpoint_sync_factory=lambda pod, attempt, logical: runtime.bind_checkpoint_sync(
+                pod_id=pod,
+                attempt_sha256=attempt,
+                logical_run_id=logical,
+            ),
+            start_report_publisher=start_report_publisher,
         )
 
-    return D1TrainerMailboxWorker(
-        volume_root=root,
+    return D1R2TrainerMailboxWorker(
+        repo_root=root,
         pod_id=pod_id,
+        objects=runtime.mailbox,
+        catalog=catalog,
         worker_factory=worker_factory,
         wait_policy=policy,
     )
@@ -142,10 +175,19 @@ def run_d1_trainer_mailbox_command(
 ) -> int:
     """Run exactly one mailbox attempt and emit only bounded diagnostic JSON."""
     try:
-        root, policy = _parse_argv(argv)
+        root, policy, max_objects = _parse_argv(argv)
         pod = _pod_id(environ)
-        factory = _default_mailbox_factory if mailbox_factory is None else mailbox_factory
-        result = factory(root, pod, policy).run()
+        if mailbox_factory is None:
+            mailbox = _default_mailbox_factory(
+                root,
+                pod,
+                policy,
+                environ=environ,
+                max_objects=max_objects,
+            )
+        else:
+            mailbox = mailbox_factory(root, pod, policy)
+        result = mailbox.run()
         result_sha256 = hashlib.sha256(_canonical(result)).hexdigest()
         _emit(
             stdout,
@@ -162,6 +204,12 @@ def run_d1_trainer_mailbox_command(
     except D1TrainerMailboxWorkerError as error:
         _emit(stderr, _error(f"mailbox_{error.stage}", error.error_type))
         return 21
+    except D1R2TrainerMailboxWorkerError as error:
+        _emit(stderr, _error(f"mailbox_{error.stage}", error.error_type))
+        return 21
+    except D1R2RuntimeCompositionError as error:
+        _emit(stderr, _error(f"r2_{error.code}", type(error).__name__))
+        return 22
     except Exception as error:
         _emit(stderr, _error("unexpected_defect", type(error).__name__))
         return 70

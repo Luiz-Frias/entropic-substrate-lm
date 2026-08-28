@@ -7,9 +7,11 @@ import io
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import entropic_substrate.d1_trainer_mailbox_command as command_module
 from entropic_substrate.d1_trainer_mailbox_command import (
     run_d1_trainer_mailbox_command,
 )
@@ -21,6 +23,8 @@ from entropic_substrate.d1_trainer_mailbox_worker import (
 pytestmark = pytest.mark.unit
 
 _POD = "pod-command-123"
+_ACCESS_VALUE = "access-value"
+_PRIVATE_VALUE = "private-value"
 
 
 @dataclass
@@ -37,8 +41,10 @@ class _Mailbox:
 
 def _argv(root: Path) -> tuple[str, ...]:
     return (
-        "--volume-root",
+        "--repo-root",
         str(root),
+        "--max-mailbox-objects",
+        "128",
         "--maximum-wait-seconds",
         "300.0",
         "--poll-interval-seconds",
@@ -71,18 +77,75 @@ def test_command_builds_one_foreground_worker_from_runpod_environment(tmp_path: 
     }
 
 
+def test_default_command_factory_builds_r2_worker_from_repo_and_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build_calls: list[dict[str, object]] = []
+    worker_calls: list[dict[str, object]] = []
+    mailbox = _Mailbox({"handoff_kind": "fresh_completion"})
+    runtime = SimpleNamespace(
+        mailbox=object(),
+        bind_checkpoint_sync=lambda **_kwargs: object(),
+    )
+
+    def build(**kwargs: object) -> object:
+        build_calls.append(dict(kwargs))
+        return runtime
+
+    def r2_worker(**kwargs: object) -> _Mailbox:
+        worker_calls.append(dict(kwargs))
+        return mailbox
+
+    monkeypatch.setattr(command_module, "build_d1_r2_runtime_composition", build)
+    monkeypatch.setattr(command_module, "D1R2TrainerMailboxWorker", r2_worker)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    environ = {
+        "RUNPOD_POD_ID": _POD,
+        "AWS_ACCESS_KEY_ID": _ACCESS_VALUE,
+        "AWS_SECRET_ACCESS_KEY": _PRIVATE_VALUE,
+    }
+
+    code = run_d1_trainer_mailbox_command(
+        _argv(tmp_path),
+        environ=environ,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0 and stderr.getvalue() == "" and mailbox.calls == 1
+    assert build_calls == [{"repo_root": tmp_path, "environ": environ, "max_objects": 128}]
+    assert len(worker_calls) == 1
+    assert worker_calls[0]["repo_root"] == tmp_path
+    assert worker_calls[0]["pod_id"] == _POD
+    assert worker_calls[0]["objects"] is runtime.mailbox
+    assert callable(worker_calls[0]["worker_factory"])
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         (),
-        ("--volume-root",),
+        ("--repo-root",),
         ("--unknown", "value"),
-        ("--volume-root", "/tmp", "--volume-root", "/other"),
+        ("--repo-root", "/tmp", "--repo-root", "/other"),
         (
-            "--volume-root",
+            "--repo-root",
             "/tmp",
+            "--max-mailbox-objects",
+            "128",
             "--maximum-wait-seconds",
             "nan",
+            "--poll-interval-seconds",
+            "0.25",
+        ),
+        (
+            "--repo-root",
+            "/tmp",
+            "--max-mailbox-objects",
+            "0",
+            "--maximum-wait-seconds",
+            "300.0",
             "--poll-interval-seconds",
             "0.25",
         ),
