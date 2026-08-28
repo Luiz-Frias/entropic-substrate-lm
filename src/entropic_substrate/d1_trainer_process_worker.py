@@ -43,9 +43,14 @@ from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
 from entropic_substrate.experiments.d1_primitives import RunClass, require_nonempty_string
 
-__all__ = ["D1TrainerCheckpointSyncFactory", "D1TrainerProcessWorker"]
+__all__ = [
+    "D1TrainerCheckpointSyncFactory",
+    "D1TrainerProcessWorker",
+    "D1TrainerStartReportPublisher",
+]
 
 type D1TrainerCheckpointSyncFactory = Callable[[str, str, str], D1CheckpointSyncPort]
+type D1TrainerStartReportPublisher = Callable[[str, bytes], None]
 
 
 def _pod_id(value: str) -> str:
@@ -69,16 +74,20 @@ class D1TrainerProcessWorker:
         clock: D1TrainerClock | None = None,
         resource_activation_factory: D1ResourceActivationFactory | None = None,
         checkpoint_sync_factory: D1TrainerCheckpointSyncFactory | None = None,
+        start_report_publisher: D1TrainerStartReportPublisher | None = None,
     ) -> None:
         if not callable(runtime_probe) or not callable(process_identity):
             raise TypeError("D1 process worker requires runtime and process identity probes")
         if checkpoint_sync_factory is not None and not callable(checkpoint_sync_factory):
             raise TypeError("D1 process worker checkpoint sync factory must be callable")
+        if start_report_publisher is not None and not callable(start_report_publisher):
+            raise TypeError("D1 process worker start report publisher must be callable")
         self._root = normalize_d1_artifact_root(artifact_root)
         self._catalog = tuple(catalog)
         self._runtime_probe = runtime_probe
         self._process_identity = process_identity
         self._checkpoint_sync_factory = checkpoint_sync_factory
+        self._start_report_publisher = start_report_publisher
         self._fresh = D1FreshTrainerCliService(
             catalog=self._catalog,
             artifact_root=self._root,
@@ -189,6 +198,8 @@ class D1TrainerProcessWorker:
         )
         if admitted != report:
             raise ValueError("D1 trainer start report changed after readback")
+        if self._start_report_publisher is not None:
+            self._start_report_publisher(relative, payload)
         if type(request) is D1FreshTrainerRequest:
             return self._fresh.execute_request(
                 request,

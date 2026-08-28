@@ -104,6 +104,7 @@ def _worker(
     runtime: D1RuntimeObservation | None = None,
     process_id: str = _PROCESS,
     checkpoint_sync_factory=None,  # type: ignore[no-untyped-def]
+    start_report_publisher=None,  # type: ignore[no-untyped-def]
 ) -> D1TrainerProcessWorker:
     measured = _runtime(request) if runtime is None else runtime
     return D1TrainerProcessWorker(
@@ -114,6 +115,7 @@ def _worker(
         observer=_Observer(),
         clock=DeterministicTrainerClock(),
         checkpoint_sync_factory=checkpoint_sync_factory,
+        start_report_publisher=start_report_publisher,
     )
 
 
@@ -293,7 +295,12 @@ def test_start_report_precedes_real_service_occupied_output_refusal(tmp_path: Pa
     request = _fresh_request(tmp_path)
     checkpoint = tmp_path / request.locations.checkpoint_path
     checkpoint.write_bytes(b"occupied-before-worker")
-    worker = _worker(tmp_path, request)
+    reports: list[tuple[str, bytes]] = []
+    worker = _worker(
+        tmp_path,
+        request,
+        start_report_publisher=lambda path, payload: reports.append((path, payload)),
+    )
     worker.bootstrap(_POD, _ATTEMPT)
     _stage(tmp_path, request)
     request_sha = d1_trainer_request_sha256(request)
@@ -301,6 +308,12 @@ def test_start_report_precedes_real_service_occupied_output_refusal(tmp_path: Pa
     with pytest.raises(FileExistsError, match="checkpoint target already exists"):
         worker.start_trainer(_POD, _ATTEMPT, request_sha)
 
+    assert reports == [
+        (
+            d1_trainer_start_report_path(_ATTEMPT, request_sha),
+            (tmp_path / d1_trainer_start_report_path(_ATTEMPT, request_sha)).read_bytes(),
+        )
+    ]
     assert (tmp_path / d1_trainer_start_report_path(_ATTEMPT, request_sha)).is_file(), (
         "start report must be durable before the real service is invoked"
     )
