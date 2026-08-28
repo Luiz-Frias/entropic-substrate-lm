@@ -52,6 +52,9 @@ class _Dvc:
     def push(self, **_kwargs: object) -> None:
         pass
 
+    def pull(self, **_kwargs: object) -> None:
+        pass
+
 
 class _Cloud:
     def object_is_present(self, **_kwargs: object) -> bool:
@@ -99,6 +102,8 @@ def test_composition_uses_committed_topology_and_environment_credentials() -> No
         )
     ]
     assert _ACCESS not in repr(composition) and _PRIVATE not in repr(composition)
+    assert callable(composition.checkpoint_recovery.latest)
+    assert callable(composition.checkpoint_recovery.restore)
     bound = composition.bind_checkpoint_sync(
         pod_id="pod-r2-123",
         attempt_sha256="a" * 64,

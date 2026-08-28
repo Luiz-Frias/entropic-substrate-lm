@@ -8,6 +8,7 @@ import os
 import time
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
+from typing import Protocol
 
 from entropic_substrate.d1_artifact_snapshot import (
     publish_d1_atomic_bytes,
@@ -35,6 +36,7 @@ from entropic_substrate.d1_trainer_process_worker import (
     D1TrainerStartReportPublisher,
 )
 from entropic_substrate.d1_trainer_request_codec import (
+    D1ResumeTrainerRequest,
     D1TrainerRequest,
     d1_trainer_request_sha256,
     parse_d1_trainer_request,
@@ -42,9 +44,22 @@ from entropic_substrate.d1_trainer_request_codec import (
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
 from entropic_substrate.experiments.d1_primitives import require_sha256
 
-__all__ = ["D1R2TrainerMailboxWorker", "D1R2TrainerMailboxWorkerError"]
+__all__ = [
+    "D1R2CheckpointRecoveryPort",
+    "D1R2TrainerMailboxWorker",
+    "D1R2TrainerMailboxWorkerError",
+]
 
 type D1R2ProcessWorkerFactory = Callable[[D1TrainerStartReportPublisher], D1TrainerProcessWorker]
+
+
+class D1R2CheckpointRecoveryPort(Protocol):
+    def restore(
+        self,
+        *,
+        logical_run_id: str,
+        expected_checkpoint_sha256: str,
+    ) -> object: ...
 
 
 class D1R2TrainerMailboxWorkerError(RuntimeError):
@@ -72,6 +87,7 @@ class D1R2TrainerMailboxWorker:
         objects: D1TrainerMailboxObjectPort,
         catalog: Iterable[D1LaunchProfile],
         worker_factory: D1R2ProcessWorkerFactory,
+        recovery: D1R2CheckpointRecoveryPort,
         wait_policy: D1TrainerMailboxWaitPolicy,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
@@ -86,6 +102,8 @@ class D1R2TrainerMailboxWorker:
             raise TypeError("D1 R2 worker requires an exact profile catalog")
         if not callable(worker_factory) or not callable(monotonic) or not callable(sleep):
             raise TypeError("D1 R2 worker requires callable process ports")
+        if not callable(getattr(recovery, "restore", None)):
+            raise TypeError("D1 R2 worker requires the checkpoint recovery port")
         if type(wait_policy) is not D1TrainerMailboxWaitPolicy:
             raise TypeError("D1 R2 worker requires a nominal wait policy")
         self._root = root
@@ -93,6 +111,7 @@ class D1R2TrainerMailboxWorker:
         self._objects = objects
         self._catalog = profiles
         self._worker_factory = worker_factory
+        self._recovery = recovery
         self._wait_policy = wait_policy
         self._monotonic = monotonic
         self._sleep = sleep
@@ -287,6 +306,15 @@ class D1R2TrainerMailboxWorker:
                 stage,
                 lambda: self._command(f"{prefix}/commands/start-{request_sha}.json", start),
             )
+            if type(request) is D1ResumeTrainerRequest:
+                stage = "recovery"
+                checkpoint_sha256 = request.start.resume_checkpoint_sha256
+                if checkpoint_sha256 is None:
+                    raise _error(stage, "checkpoint_source")
+                self._recovery.restore(
+                    logical_run_id=request.plan.logical_run_id,
+                    expected_checkpoint_sha256=checkpoint_sha256,
+                )
             result = process.start_trainer(self._pod_id, attempt, request_sha)
             stage = "export"
             self._publish_terminal(request, prefix)

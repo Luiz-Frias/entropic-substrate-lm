@@ -6,8 +6,11 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
+from entropic_substrate.d1_checkpoint_dvc_recovery import (
+    D1CheckpointDvcRecoveryService,
+)
 from entropic_substrate.d1_checkpoint_dvc_sync import (
     D1CheckpointDvcSyncAdapter,
     D1PublishedCheckpointDvcSync,
@@ -25,6 +28,7 @@ from entropic_substrate.d1_trainer_s3_object_adapter import (
 from entropic_substrate.evidence.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
+    D1DvcPullPort,
 )
 from entropic_substrate.evidence.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
@@ -43,6 +47,10 @@ __all__ = [
 ]
 
 type D1S3ClientFactory = Callable[..., object]
+
+
+class D1R2DvcPort(D1DvcCommandPort, D1DvcPullPort, Protocol):
+    """The one DVC adapter shared by cadence upload and crash recovery."""
 
 
 class D1R2RuntimeCompositionError(RuntimeError):
@@ -109,6 +117,7 @@ class D1BoundR2CheckpointSync(D1CheckpointSyncPort):
 class D1R2RuntimeComposition:
     topology: D1DvcS3Remote
     mailbox: Boto3D1TrainerMailboxObjectAdapter = field(repr=False)
+    checkpoint_recovery: D1CheckpointDvcRecoveryService = field(repr=False)
     _checkpoint_adapter: D1CheckpointDvcSyncAdapter = field(repr=False)
 
     def __post_init__(self) -> None:
@@ -116,6 +125,8 @@ class D1R2RuntimeComposition:
             raise TypeError("R2 runtime composition requires DVC topology")
         if type(self.mailbox) is not Boto3D1TrainerMailboxObjectAdapter:
             raise TypeError("R2 runtime composition requires mailbox adapter")
+        if type(self.checkpoint_recovery) is not D1CheckpointDvcRecoveryService:
+            raise TypeError("R2 runtime composition requires checkpoint recovery")
         if type(self._checkpoint_adapter) is not D1CheckpointDvcSyncAdapter:
             raise TypeError("R2 runtime composition requires checkpoint adapter")
 
@@ -162,13 +173,15 @@ def build_d1_r2_runtime_composition(
     environ: Mapping[str, str],
     max_objects: int,
     client_factory: D1S3ClientFactory | None = None,
-    dvc: D1DvcCommandPort | None = None,
+    dvc: D1R2DvcPort | None = None,
     cloud: D1CloudObjectVerifierPort | None = None,
 ) -> D1R2RuntimeComposition:
     """Join committed topology and process credentials without persisting credentials."""
     if type(max_objects) is not int or max_objects < 1:
         raise ValueError("R2 runtime max_objects must be a positive integer")
-    if dvc is not None and not all(callable(getattr(dvc, name, None)) for name in ("add", "push")):
+    if dvc is not None and not all(
+        callable(getattr(dvc, name, None)) for name in ("add", "pull", "push")
+    ):
         raise TypeError("R2 runtime DVC port is invalid")
     if cloud is not None and not callable(getattr(cloud, "object_is_present", None)):
         raise TypeError("R2 runtime cloud port is invalid")
@@ -205,4 +218,9 @@ def build_d1_r2_runtime_composition(
         cloud=selected_cloud,
         mailbox=mailbox,
     )
-    return D1R2RuntimeComposition(topology, mailbox, checkpoint)
+    recovery = D1CheckpointDvcRecoveryService(
+        repo_root=root,
+        objects=mailbox,
+        dvc=selected_dvc,
+    )
+    return D1R2RuntimeComposition(topology, mailbox, recovery, checkpoint)

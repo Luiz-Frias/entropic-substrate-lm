@@ -87,6 +87,7 @@ def test_default_command_factory_builds_r2_worker_from_repo_and_environment(
     runtime = SimpleNamespace(
         mailbox=object(),
         bind_checkpoint_sync=lambda **_kwargs: object(),
+        checkpoint_recovery=object(),
     )
 
     def build(**kwargs: object) -> object:
@@ -119,6 +120,7 @@ def test_default_command_factory_builds_r2_worker_from_repo_and_environment(
     assert worker_calls[0]["repo_root"] == tmp_path
     assert worker_calls[0]["pod_id"] == _POD
     assert worker_calls[0]["objects"] is runtime.mailbox
+    assert worker_calls[0]["recovery"] is runtime.checkpoint_recovery
     assert callable(worker_calls[0]["worker_factory"])
 
 

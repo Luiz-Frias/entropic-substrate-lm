@@ -153,6 +153,7 @@ def _default_mailbox_factory(
         objects=runtime.mailbox,
         catalog=catalog,
         worker_factory=worker_factory,
+        recovery=runtime.checkpoint_recovery,
         wait_policy=policy,
     )
 
