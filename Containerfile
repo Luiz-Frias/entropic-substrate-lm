@@ -59,6 +59,11 @@ RUN uv export --frozen --no-dev --group deploy --prune torch --no-emit-project -
 COPY src/ ./src/
 COPY configs/ ./configs/
 COPY scripts/ ./scripts/
+# The D1 pod-side worker composes its checkpoint and recovery transports from
+# this committed, credential-free topology. Runtime credentials arrive only
+# through RunPod secret references; no .env or local DVC config enters the
+# remote build context.
+COPY .dvc/config ./.dvc/config
 # E1.5c frozen field: the pretrained p_phi (2.5MB) the frozen arms load via
 # field_ckpt_path. Baked because pods are credential-free — and baking is
 # what puts these weights under the image digest the launch record pins.
