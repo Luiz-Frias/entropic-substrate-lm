@@ -257,7 +257,7 @@ def build_d1_trainer_request(
         raise TypeError("D1 trainer request builder requires a runnable nominal plan")
     plan = cast(ConfirmatoryD1RunPlan | SmokeD1RunPlan, plan)
     run_identity = {"logical_run_id": plan.logical_run_id, "plan_digest": plan.plan_digest}
-    root = f"runs/{canonical_digest(run_identity)}"
+    root = f"results/d1-run-{canonical_digest(run_identity)}"
     locations = D1TrainerLocationSpec(
         f"{root}/journal.jsonl",
         f"{root}/checkpoint.pt",

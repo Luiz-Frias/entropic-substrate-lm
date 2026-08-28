@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -75,6 +75,12 @@ def test_request_builder_owns_the_deterministic_per_run_location_policy() -> Non
     other = build_d1_trainer_request(
         replace(request.plan, run=other_run), request.start, request.origin
     )
+    run_root = PurePosixPath(built.locations.checkpoint_path).parent
+    assert run_root.parent == PurePosixPath("results")
+    assert run_root.name.startswith("d1-run-")
+    assert built.locations.journal_path == f"{run_root.as_posix()}/journal.jsonl"
+    assert built.locations.checkpoint_path == f"{run_root.as_posix()}/checkpoint.pt"
+    assert PurePosixPath(f"{run_root.as_posix()}.dvc").parent == PurePosixPath("results")
     assert other.locations.journal_path != built.locations.journal_path
 
 
