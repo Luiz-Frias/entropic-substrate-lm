@@ -41,6 +41,7 @@ from entropic_substrate.evidence.resource_provenance import (
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
 _FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_SECRET_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
 _RUNPODCTL_VERSION = "runpodctl 2.11.0-0592468"
 _POD_REQUIRED = frozenset("id name desiredStatus imageName gpuCount createdAt machine".split())
 _MARKETS = {"secure-cloud": "SECURE", "community-cloud": "COMMUNITY"}
@@ -114,6 +115,10 @@ class RunpodctlD1Adapter:
         network_volume_mount_path: str,
         trainer_mailbox_wait_seconds: float,
         trainer_mailbox_poll_seconds: float,
+        trainer_mailbox_max_objects: int,
+        trainer_repo_root: str,
+        r2_access_key_secret_name: str,
+        r2_private_key_secret_name: str,
         runner: D1CommandRunner | None = None,
         command_timeout_seconds: float | None = None,
         max_output_bytes: int | None = None,
@@ -140,11 +145,40 @@ class RunpodctlD1Adapter:
             trainer_mailbox_wait_seconds,
             trainer_mailbox_poll_seconds,
         )
+        repo_root = PurePosixPath(_text(trainer_repo_root, label="trainer repo root"))
+        if (
+            not repo_root.is_absolute()
+            or ".." in repo_root.parts
+            or repo_root.as_posix() != str(repo_root)
+            or any(character.isspace() for character in str(repo_root))
+        ):
+            raise ValueError("RunPod trainer repo root must be a safe absolute POSIX path")
+        if type(trainer_mailbox_max_objects) is not int or trainer_mailbox_max_objects < 1:
+            raise ValueError("RunPod trainer mailbox object bound must be positive")
+        access_secret = _text(r2_access_key_secret_name, label="R2 access secret name")
+        private_secret = _text(r2_private_key_secret_name, label="R2 private secret name")
+        if (
+            _SECRET_NAME.fullmatch(access_secret) is None
+            or _SECRET_NAME.fullmatch(private_secret) is None
+            or access_secret == private_secret
+        ):
+            raise ValueError("RunPod R2 secret reference names are unsafe or duplicated")
         self._runner, self._clock = selected, clock
         self._registry_auth_id = _text(registry_auth_id, label="registry auth id")
         self._network_volume_id = _text(network_volume_id, label="network volume id")
         self._network_volume_mount_path = str(mount)
         self._trainer_mailbox_wait = wait
+        self._trainer_mailbox_max_objects = trainer_mailbox_max_objects
+        self._trainer_repo_root = str(repo_root)
+        self._r2_secret_environment = json.dumps(
+            {
+                "AWS_ACCESS_KEY_ID": f"{{{{ RUNPOD_SECRET_{access_secret} }}}}",
+                "AWS_SECRET_ACCESS_KEY": f"{{{{ RUNPOD_SECRET_{private_secret} }}}}",
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -331,14 +365,18 @@ class RunpodctlD1Adapter:
                     "python",
                     "-m",
                     "entropic_substrate.d1_trainer_mailbox_command",
-                    "--volume-root",
-                    self._network_volume_mount_path,
+                    "--repo-root",
+                    self._trainer_repo_root,
+                    "--max-mailbox-objects",
+                    str(self._trainer_mailbox_max_objects),
                     "--maximum-wait-seconds",
                     str(self._trainer_mailbox_wait.maximum_seconds),
                     "--poll-interval-seconds",
                     str(self._trainer_mailbox_wait.poll_interval_seconds),
                 )
             ),
+            "--env",
+            self._r2_secret_environment,
         ]
         argv.extend(
             [

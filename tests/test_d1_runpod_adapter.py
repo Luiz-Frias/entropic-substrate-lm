@@ -40,6 +40,9 @@ _CONTROL_AT = datetime(2026, 8, 24, 15, 50, tzinfo=UTC)
 _REGISTRY_AUTH = "registry-auth-123"
 _NETWORK_VOLUME = "network-volume-123"
 _VOLUME_MOUNT = "/workspace"
+_TRAINER_REPO_ROOT = "/app"
+_R2_ACCESS_REFERENCE = "r2access"
+_R2_PRIVATE_REFERENCE = "r2key"
 _VERSION = "runpodctl 2.11.0-0592468"
 
 
@@ -82,6 +85,10 @@ def _adapter(
         network_volume_mount_path=_VOLUME_MOUNT,
         trainer_mailbox_wait_seconds=300.0,
         trainer_mailbox_poll_seconds=0.25,
+        trainer_mailbox_max_objects=128,
+        trainer_repo_root=_TRAINER_REPO_ROOT,
+        r2_access_key_secret_name=_R2_ACCESS_REFERENCE,
+        r2_private_key_secret_name=_R2_PRIVATE_REFERENCE,
     )
 
 
@@ -122,6 +129,10 @@ def test_default_process_boundary_requires_explicit_local_bounds() -> None:
         "network_volume_mount_path": _VOLUME_MOUNT,
         "trainer_mailbox_wait_seconds": 300.0,
         "trainer_mailbox_poll_seconds": 0.25,
+        "trainer_mailbox_max_objects": 128,
+        "trainer_repo_root": _TRAINER_REPO_ROOT,
+        "r2_access_key_secret_name": _R2_ACCESS_REFERENCE,
+        "r2_private_key_secret_name": _R2_PRIVATE_REFERENCE,
     }
     with pytest.raises(ValueError, match="process bounds"):
         RunpodctlD1Adapter(**kwargs)  # type: ignore[arg-type]
@@ -201,8 +212,14 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         "--docker-args",
         (
             "python -m entropic_substrate.d1_trainer_mailbox_command "
-            "--volume-root /workspace --maximum-wait-seconds 300.0 "
+            "--repo-root /app --max-mailbox-objects 128 "
+            "--maximum-wait-seconds 300.0 "
             "--poll-interval-seconds 0.25"
+        ),
+        "--env",
+        (
+            '{"AWS_ACCESS_KEY_ID":"{{ RUNPOD_SECRET_r2access }}",'
+            '"AWS_SECRET_ACCESS_KEY":"{{ RUNPOD_SECRET_r2key }}"}'
         ),
         "--ssh",
         "--registry-auth-id",
