@@ -14,6 +14,7 @@ from entropic_substrate.d1_observability import D1JournalObserver
 from entropic_substrate.d1_operator_evidence import d1_runtime_observation_sha256
 from entropic_substrate.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
+from entropic_substrate.d1_segment_engine import D1CheckpointSyncPort
 from entropic_substrate.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
@@ -40,9 +41,11 @@ from entropic_substrate.d1_trainer_request_codec import (
 from entropic_substrate.d1_trainer_runtime import D1TrainerClock
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_primitives import require_nonempty_string
+from entropic_substrate.experiments.d1_primitives import RunClass, require_nonempty_string
 
-__all__ = ["D1TrainerProcessWorker"]
+__all__ = ["D1TrainerCheckpointSyncFactory", "D1TrainerProcessWorker"]
+
+type D1TrainerCheckpointSyncFactory = Callable[[str, str, str], D1CheckpointSyncPort]
 
 
 def _pod_id(value: str) -> str:
@@ -65,13 +68,17 @@ class D1TrainerProcessWorker:
         observer: D1JournalObserver,
         clock: D1TrainerClock | None = None,
         resource_activation_factory: D1ResourceActivationFactory | None = None,
+        checkpoint_sync_factory: D1TrainerCheckpointSyncFactory | None = None,
     ) -> None:
         if not callable(runtime_probe) or not callable(process_identity):
             raise TypeError("D1 process worker requires runtime and process identity probes")
+        if checkpoint_sync_factory is not None and not callable(checkpoint_sync_factory):
+            raise TypeError("D1 process worker checkpoint sync factory must be callable")
         self._root = normalize_d1_artifact_root(artifact_root)
         self._catalog = tuple(catalog)
         self._runtime_probe = runtime_probe
         self._process_identity = process_identity
+        self._checkpoint_sync_factory = checkpoint_sync_factory
         self._fresh = D1FreshTrainerCliService(
             catalog=self._catalog,
             artifact_root=self._root,
@@ -144,6 +151,17 @@ class D1TrainerProcessWorker:
         runtime = self._runtime(pod, attempt_sha256)
         request, request_path = self._request(attempt_sha256, request_sha256)
         verify_d1_trainer_request_runtime(request, runtime)
+        checkpoint_sync: D1CheckpointSyncPort | None = None
+        if self._checkpoint_sync_factory is not None:
+            checkpoint_sync = self._checkpoint_sync_factory(
+                pod,
+                attempt_sha256,
+                request.plan.logical_run_id,
+            )
+            if not callable(getattr(checkpoint_sync, "sync", None)):
+                raise TypeError("D1 checkpoint sync factory returned an invalid port")
+        elif request.plan.run.run_class is RunClass.CONFIRMATORY:
+            raise ValueError("D1 confirmatory trainer requires remote checkpoint sync")
         process_id = self._process_identity()
         report = D1TrainerStartReport(
             pod_id=pod,
@@ -172,9 +190,17 @@ class D1TrainerProcessWorker:
         if admitted != report:
             raise ValueError("D1 trainer start report changed after readback")
         if type(request) is D1FreshTrainerRequest:
-            return self._fresh.execute_request(request, manifest_path=request_path)
+            return self._fresh.execute_request(
+                request,
+                manifest_path=request_path,
+                checkpoint_sync=checkpoint_sync,
+            )
         if type(request) is D1ResumeTrainerRequest:
-            return self._resume.execute_request(request, manifest_path=request_path)
+            return self._resume.execute_request(
+                request,
+                manifest_path=request_path,
+                checkpoint_sync=checkpoint_sync,
+            )
         raise AssertionError(
             "validated D1 trainer request lost its nominal type"
         )  # pragma: no cover

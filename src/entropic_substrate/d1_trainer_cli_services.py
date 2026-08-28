@@ -28,6 +28,7 @@ from entropic_substrate.d1_resume_trainer import (
     D1ResumeRunFailure,
     run_d1_resume,
 )
+from entropic_substrate.d1_segment_engine import D1CheckpointSyncPort
 from entropic_substrate.d1_trainer_output_publication import (
     load_d1_published_trainer_output,
     publish_d1_trainer_output,
@@ -156,6 +157,7 @@ class D1FreshTrainerCliService:
         request: D1FreshTrainerRequest,
         *,
         manifest_path: Path,
+        checkpoint_sync: D1CheckpointSyncPort | None = None,
     ) -> Mapping[str, object]:
         """Execute one already-admitted fresh request without another codec pass."""
         if type(request) is not D1FreshTrainerRequest:
@@ -173,6 +175,7 @@ class D1FreshTrainerCliService:
                 locations=locations,
                 clock=self._clock,
                 resource_activation_factory=self._resource_activation_factory,
+                checkpoint_sync=checkpoint_sync,
             )
         except D1FreshRunFailure as error:
             handoff = error.handoff
@@ -221,6 +224,7 @@ class D1ResumeTrainerCliService:
         request: D1ResumeTrainerRequest,
         *,
         manifest_path: Path,
+        checkpoint_sync: D1CheckpointSyncPort | None = None,
     ) -> Mapping[str, object]:
         """Execute one already-admitted resume request without another codec pass."""
         if type(request) is not D1ResumeTrainerRequest:
@@ -239,6 +243,7 @@ class D1ResumeTrainerCliService:
                 observer=self._observer,
                 clock=self._clock,
                 resource_activation_factory=self._resource_activation_factory,
+                checkpoint_sync=checkpoint_sync,
             )
         except D1ResumeRunFailure as error:
             handoff = error.handoff

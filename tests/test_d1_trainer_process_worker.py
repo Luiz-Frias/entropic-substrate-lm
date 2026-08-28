@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import d1_launch_admission_fixtures as launch
 from d1_resume_fixtures import captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
 from entropic_substrate.d1_artifact_snapshot import (
@@ -102,6 +103,7 @@ def _worker(
     *,
     runtime: D1RuntimeObservation | None = None,
     process_id: str = _PROCESS,
+    checkpoint_sync_factory=None,  # type: ignore[no-untyped-def]
 ) -> D1TrainerProcessWorker:
     measured = _runtime(request) if runtime is None else runtime
     return D1TrainerProcessWorker(
@@ -111,7 +113,16 @@ def _worker(
         process_identity=lambda: process_id,
         observer=_Observer(),
         clock=DeterministicTrainerClock(),
+        checkpoint_sync_factory=checkpoint_sync_factory,
     )
+
+
+class _Sync:
+    def __init__(self) -> None:
+        self.steps: list[int] = []
+
+    def sync(self, **kwargs: object) -> None:
+        self.steps.append(kwargs["successful_step"])  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -211,6 +222,48 @@ def test_start_runs_real_fresh_service_after_durable_start_report_and_refuses_re
     with pytest.raises(D1ArtifactSnapshotError, match="occupied"):
         worker.start_trainer(_POD, _ATTEMPT, request_sha)
     assert marker.read_bytes() == marker_bytes
+
+
+def test_smoke_worker_routes_every_checkpoint_through_bound_sync(tmp_path: Path) -> None:
+    request = _fresh_request(tmp_path)
+    sync = _Sync()
+    bindings: list[tuple[str, str, str]] = []
+
+    def factory(pod_id: str, attempt_sha256: str, logical_run_id: str) -> _Sync:
+        bindings.append((pod_id, attempt_sha256, logical_run_id))
+        return sync
+
+    worker = _worker(tmp_path, request, checkpoint_sync_factory=factory)
+    worker.bootstrap(_POD, _ATTEMPT)
+    _stage(tmp_path, request)
+    worker.start_trainer(_POD, _ATTEMPT, d1_trainer_request_sha256(request))
+
+    assert bindings == [(_POD, _ATTEMPT, request.plan.logical_run_id)]
+    assert sync.steps == [1, 2]
+
+
+def test_confirmatory_worker_refuses_missing_remote_sync_before_start_report(
+    tmp_path: Path,
+) -> None:
+    profile = launch.profiles()[0]
+    plan = launch.plan(profile, 101)
+    start = launch.start(plan)
+    request = build_d1_trainer_request(
+        plan,
+        start,
+        replace(origin(), started_at=start.trainer_started_at),
+    )
+    root = tmp_path / Path(request.locations.journal_path).parent
+    root.mkdir(parents=True)
+    worker = _worker(tmp_path, request)
+    worker.bootstrap(_POD, _ATTEMPT)
+    _stage(tmp_path, request)
+    request_sha = d1_trainer_request_sha256(request)
+
+    with pytest.raises(ValueError, match="remote checkpoint sync"):
+        worker.start_trainer(_POD, _ATTEMPT, request_sha)
+
+    assert not (tmp_path / d1_trainer_start_report_path(_ATTEMPT, request_sha)).exists()
 
 
 @pytest.mark.parametrize("mismatch", ["request_sha", "runtime"])
