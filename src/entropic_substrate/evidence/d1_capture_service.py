@@ -48,6 +48,7 @@ __all__ = [
     "D1CaptureService",
     "D1HeterogeneousCapturePreparation",
     "D1HeterogeneousCaptureReceipt",
+    "read_d1_dvc_pointer",
 ]
 
 _CAPTURE_RELATIVE: Final = Path("results/captured")
@@ -191,8 +192,40 @@ class D1HeterogeneousCaptureReceipt:
         }
 
 
-def _read_pointer(repo_root: Path) -> tuple[D1DvcPointerIdentity, bytes]:
-    pointer = repo_root / _POINTER_RELATIVE
+def _relative_repo_path(repo_root: Path, value: Path, *, label: str) -> Path:
+    root = Path(os.path.abspath(repo_root))
+    target = Path(os.path.abspath(value))
+    if root.is_symlink() or not root.is_dir():
+        raise _error("pointer_path", str(root), "repository root must be a real directory")
+    try:
+        relative = target.relative_to(root)
+    except ValueError as error:
+        raise _error("pointer_path", str(target), f"{label} is outside the repository") from error
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink():
+            raise _error("pointer_path", relative.as_posix(), f"{label} traverses a symlink")
+    return relative
+
+
+def read_d1_dvc_pointer(
+    *,
+    repo_root: Path,
+    tracked_path: Path,
+    pointer_path: Path,
+) -> tuple[D1DvcPointerIdentity, bytes]:
+    """Read one exact DVC pointer for an arbitrary repository-local tracked path."""
+    tracked_relative = _relative_repo_path(repo_root, tracked_path, label="tracked path")
+    pointer_relative = _relative_repo_path(repo_root, pointer_path, label="pointer path")
+    expected_pointer = tracked_relative.with_name(f"{tracked_relative.name}.dvc")
+    if pointer_relative != expected_pointer:
+        raise _error(
+            "pointer_path",
+            pointer_relative.as_posix(),
+            "pointer path must be the tracked path plus .dvc",
+        )
+    pointer = Path(os.path.abspath(repo_root)) / pointer_relative
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(pointer, flags)
@@ -207,21 +240,29 @@ def _read_pointer(repo_root: Path) -> tuple[D1DvcPointerIdentity, bytes]:
         if not isinstance(outs, list) or len(outs) != 1 or not isinstance(outs[0], dict):
             raise ValueError("DVC pointer must contain exactly one output mapping")
         output = cast(dict[object, object], outs[0])
-        if output.get("path") != _CAPTURE_RELATIVE.name:
-            raise ValueError("DVC pointer output path differs from results/captured")
+        if output.get("path") != tracked_relative.name:
+            raise ValueError("DVC pointer output path differs from its tracked path")
         object_id = output.get("md5")
         if type(object_id) is not str:
             raise ValueError("DVC pointer output requires an md5 object identity")
         return (
             D1DvcPointerIdentity(
-                pointer_path=_POINTER_RELATIVE.as_posix(),
+                pointer_path=pointer_relative.as_posix(),
                 pointer_sha256=hashlib.sha256(payload_bytes).hexdigest(),
                 object_id=object_id,
             ),
             payload_bytes,
         )
     except (OSError, ValueError, yaml.YAMLError) as error:
-        raise _error("pointer_identity", _POINTER_RELATIVE.as_posix(), str(error)) from error
+        raise _error("pointer_identity", pointer_relative.as_posix(), str(error)) from error
+
+
+def _read_pointer(repo_root: Path) -> tuple[D1DvcPointerIdentity, bytes]:
+    return read_d1_dvc_pointer(
+        repo_root=repo_root,
+        tracked_path=repo_root / _CAPTURE_RELATIVE,
+        pointer_path=repo_root / _POINTER_RELATIVE,
+    )
 
 
 def _bind_input(capture: D1CaptureInput, by_path: dict[str, D1ArtifactIdentity]) -> D1CaptureInput:
