@@ -29,6 +29,7 @@ from entropic_substrate.predictive_state.checkpoint_repository import (
 )
 
 __all__ = [
+    "D1CheckpointSyncPort",
     "D1SegmentJournal",
     "D1TrainingInterrupted",
     "D1TrainingResult",
@@ -47,6 +48,19 @@ class D1SegmentJournal(Protocol):
     def latest_checkpoint_sha256(self) -> str | None: ...
     def append(self, event: D1JournalEvent) -> JournalCheckpointState: ...
     def append_checkpoint(self, checkpoint_sha256: str) -> JournalCheckpointState: ...
+
+
+class D1CheckpointSyncPort(Protocol):
+    """Bound remote sync invoked after every locally durable checkpoint event."""
+
+    def sync(
+        self,
+        *,
+        successful_step: int,
+        run_root: Path,
+        checkpoint: D1CheckpointArtifactReceipt,
+        journal_path: Path,
+    ) -> None: ...
 
 
 def _event(
@@ -242,7 +256,9 @@ def run_d1_training_segment(
     clock: D1TrainerClock,
     meter: D1ActiveResourceMeter,
     baseline: D1BaselineCalibrationAttestation,
+    journal_path: Path,
     checkpoint_path: Path,
+    checkpoint_sync: D1CheckpointSyncPort | None,
     successful_step: int,
     best_nats_per_byte: float,
 ) -> D1TrainingResult:
@@ -260,6 +276,8 @@ def run_d1_training_segment(
         raise ValueError("D1 training segment requires remaining optimization budget")
     if type(best_nats_per_byte) is not float or not math.isfinite(best_nats_per_byte):
         raise ValueError("D1 training segment best nats/byte must be finite")
+    if checkpoint_sync is not None and not callable(getattr(checkpoint_sync, "sync", None)):
+        raise TypeError("D1 training segment checkpoint_sync must implement sync")
     step = successful_step
     final_evaluation: D1EvalResult | None = None
     final_work: ResourceWorkSnapshot | None = None
@@ -340,6 +358,13 @@ def run_d1_training_segment(
                         successful_step=step,
                         best_nats_per_byte=best_nats_per_byte,
                     )
+                    if checkpoint_sync is not None:
+                        checkpoint_sync.sync(
+                            successful_step=step,
+                            run_root=checkpoint_path.parent,
+                            checkpoint=final_checkpoint,
+                            journal_path=journal_path,
+                        )
         if final_evaluation is None or final_work is None or final_checkpoint is None:
             raise RuntimeError("D1 terminal training boundary lacks evaluation/checkpoint")
         order_sha256, order_batches = _data_order(components)

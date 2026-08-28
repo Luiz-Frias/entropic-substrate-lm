@@ -298,6 +298,7 @@ def run_d1_resume(
     observer: D1JournalObserver,
     clock: D1TrainerClock | None = None,
     resource_activation_factory: D1ResourceActivationFactory | None = None,
+    checkpoint_sync: segment_engine.D1CheckpointSyncPort | None = None,
 ) -> D1ResumeRunCompletion:
     """Record the segment, restore exact state, and stop before billing finalization."""
     active_clock = clock or SystemD1TrainerClock()
@@ -325,7 +326,9 @@ def run_d1_resume(
                 clock=active_clock,
                 meter=admission.resource_activation.meter,
                 baseline=restored.baseline,
+                journal_path=locations.journal_path,
                 checkpoint_path=locations.checkpoint_path,
+                checkpoint_sync=checkpoint_sync,
                 successful_step=step,
                 best_nats_per_byte=restored.best_nats_per_byte,
             )

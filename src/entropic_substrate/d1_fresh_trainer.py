@@ -128,6 +128,7 @@ def run_d1_fresh(
     clock: D1TrainerClock | None = None,
     resource_activation_factory: D1ResourceActivationFactory | None = None,
     journal_factory: D1FreshJournalFactory = AuthoritativeRunJournal.fresh,
+    checkpoint_sync: segment_engine.D1CheckpointSyncPort | None = None,
 ) -> D1FreshRunCompletion:
     """Execute one fresh D1 run and stop at the operator-finalization boundary."""
     if type(locations) is not D1FreshRunLocations:
@@ -203,7 +204,9 @@ def run_d1_fresh(
                 clock=active_clock,
                 meter=activation.meter,
                 baseline=baseline,
+                journal_path=locations.journal_path,
                 checkpoint_path=locations.checkpoint_path,
+                checkpoint_sync=checkpoint_sync,
                 successful_step=successful_step,
                 best_nats_per_byte=initial_eval.nats_per_byte,
             )
