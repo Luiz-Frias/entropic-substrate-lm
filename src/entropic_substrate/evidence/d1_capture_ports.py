@@ -18,6 +18,7 @@ __all__ = [
     "D1CloudObjectVerifierPort",
     "D1DvcCommandPort",
     "D1DvcPointerIdentity",
+    "D1DvcPullPort",
     "D1EvidenceExportSourcePort",
     "D1GitPointerCommitEvidence",
     "D1GitPointerStatusVerifierPort",
@@ -106,6 +107,12 @@ class D1DvcCommandPort(Protocol):
     def add(self, *, tracked_path: Path, pointer_path: Path) -> None: ...
 
     def push(self, *, pointer_path: Path) -> None: ...
+
+
+class D1DvcPullPort(Protocol):
+    """Materialize exactly the run tree addressed by one DVC pointer."""
+
+    def pull(self, *, pointer_path: Path) -> None: ...
 
 
 class D1CloudObjectVerifierPort(Protocol):

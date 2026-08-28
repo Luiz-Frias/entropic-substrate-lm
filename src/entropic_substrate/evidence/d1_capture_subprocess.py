@@ -90,7 +90,7 @@ def _invoke(
 
 
 class SubprocessD1DvcAdapter:
-    """Run repository-scoped DVC add and targeted push commands."""
+    """Run repository-scoped DVC add and targeted push/pull commands."""
 
     def __init__(
         self,
@@ -119,6 +119,16 @@ class SubprocessD1DvcAdapter:
         _invoke(
             self._runner,
             ["dvc", "push", pointer],
+            root=self._root,
+            code="dvc_command",
+            path=pointer,
+        )
+
+    def pull(self, *, pointer_path: Path) -> None:
+        pointer = _relative(self._root, pointer_path)
+        _invoke(
+            self._runner,
+            ["dvc", "pull", pointer],
             root=self._root,
             code="dvc_command",
             path=pointer,

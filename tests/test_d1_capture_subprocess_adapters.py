@@ -56,17 +56,19 @@ def _repo(tmp_path: Path) -> tuple[Path, Path, Path]:
     return repo, captured, pointer
 
 
-def test_dvc_adapter_runs_fixed_add_then_targeted_push_arguments(tmp_path: Path) -> None:
+def test_dvc_adapter_runs_fixed_targeted_add_push_and_pull_arguments(tmp_path: Path) -> None:
     repo, captured, pointer = _repo(tmp_path)
     runner = _Runner()
     adapter = SubprocessD1DvcAdapter(repo_root=repo, runner=runner)
 
     adapter.add(tracked_path=captured, pointer_path=pointer)
     adapter.push(pointer_path=pointer)
+    adapter.pull(pointer_path=pointer)
 
     assert runner.calls == [
         (["dvc", "add", "--", "results/captured"], repo),
         (["dvc", "push", "results/captured.dvc"], repo),
+        (["dvc", "pull", "results/captured.dvc"], repo),
     ]
 
 
@@ -83,6 +85,11 @@ def test_dvc_adapter_wraps_command_failure_and_rejects_paths_outside_repo(
     with pytest.raises(D1CaptureTransportError) as outside:
         adapter.add(tracked_path=tmp_path / "outside", pointer_path=pointer)
     assert outside.value.code == "command_path"
+
+    pull_runner = _Runner(fail_at=0)
+    with pytest.raises(D1CaptureTransportError) as pull_failed:
+        SubprocessD1DvcAdapter(repo_root=repo, runner=pull_runner).pull(pointer_path=pointer)
+    assert pull_failed.value.code == "dvc_command"
 
 
 @pytest.mark.parametrize(
