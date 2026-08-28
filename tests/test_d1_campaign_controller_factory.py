@@ -97,6 +97,12 @@ def test_runtime_config_reads_only_required_nonsecret_operator_identifiers() -> 
     assert "not-part-of-config" not in repr(config)
 
 
+def test_environment_template_declares_required_runpod_resource_identifiers() -> None:
+    template = Path(__file__).resolve().parents[1].joinpath(".env.example").read_text()
+    assert "D1_RUNPOD_REGISTRY_AUTH_ID=" in template
+    assert "D1_RUNPOD_NETWORK_VOLUME_ID=" in template
+
+
 @pytest.mark.parametrize(
     "environ",
     [

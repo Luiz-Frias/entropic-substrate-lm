@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError
 from entropic_substrate.d1_campaign_authority_loader import D1CampaignAuthorityLoader
 from entropic_substrate.d1_campaign_capture import D1HeterogeneousCaptureAdapter
+from entropic_substrate.d1_campaign_cli_service import D1CampaignRunCliService
+from entropic_substrate.d1_campaign_controller_factory import (
+    D1CampaignControllerFactory,
+    D1CampaignControllerFactoryError,
+    D1CampaignControllerRuntimeConfig,
+)
 from entropic_substrate.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignRequestError,
@@ -183,6 +191,60 @@ class _LazyCaptureCliService:
         return dict(service.execute(invocation))
 
 
+@dataclass(frozen=True, slots=True)
+class _SystemD1OperatorClock:
+    def now_utc(self) -> datetime:
+        return datetime.now(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class _LazyCampaignCliService:
+    def execute(self, invocation: D1CliInvocation) -> dict[str, object]:
+        if invocation.command is not D1CliCommand.CAMPAIGN_RUN:
+            raise D1CliInvalidEvidence("lazy D1 campaign service received the wrong command")
+        catalog = load_d1_profile_catalog()
+        try:
+            request = parse_d1_campaign_request(
+                canonical_json(dict(invocation.payload)),
+                catalog=catalog,
+            )
+        except D1CampaignRequestError as error:
+            raise D1CliInvalidEvidence(f"D1 campaign request was refused: {error}") from error
+        try:
+            resolved = replace(
+                request,
+                locations=request.locations.resolve(invocation.manifest_path.parent),
+            )
+            config = D1CampaignControllerRuntimeConfig.from_environment(os.environ)
+            git = SubprocessD1GitProvenance(repo_root=resolved.locations.repo_root)
+            factory = D1CampaignControllerFactory(
+                catalog=catalog,
+                environ=os.environ,
+                config=config,
+                clock=_SystemD1OperatorClock(),
+            )
+            service = D1CampaignRunCliService(
+                catalog=catalog,
+                authority_loader=D1CampaignAuthorityLoader(catalog=catalog),
+                git=git,
+                controller_factory=factory,
+            )
+            return dict(service.execute(invocation))
+        except D1CampaignControllerFactoryError as error:
+            raise D1CliOperatorGap(
+                f"D1 campaign production root is unavailable: {error.code}"
+            ) from error
+        except (
+            D1ArtifactSnapshotError,
+            D1GitProvenanceAdapterError,
+            TypeError,
+            ValueError,
+        ) as error:
+            raise D1CliOperatorGap(
+                f"D1 campaign production root is unavailable: {error}"
+            ) from error
+
+
 def build_default_d1_cli_application() -> D1CliApplication:
     """Compose connected local services and loud gaps for unfinished commands."""
     services: dict[D1CliCommand, D1CliCommandService] = {
@@ -194,6 +256,7 @@ def build_default_d1_cli_application() -> D1CliApplication:
     }
     services[D1CliCommand.RUN_FRESH] = _LazyTrainerCliService(D1CliCommand.RUN_FRESH)
     services[D1CliCommand.RUN_RESUME] = _LazyTrainerCliService(D1CliCommand.RUN_RESUME)
+    services[D1CliCommand.CAMPAIGN_RUN] = _LazyCampaignCliService()
     services[D1CliCommand.CAPTURE_PREPARE] = _LazyCaptureCliService(D1CliCommand.CAPTURE_PREPARE)
     services[D1CliCommand.CAPTURE_FINALIZE] = _LazyCaptureCliService(D1CliCommand.CAPTURE_FINALIZE)
     services[D1CliCommand.INSPECT] = D1InspectCliService()

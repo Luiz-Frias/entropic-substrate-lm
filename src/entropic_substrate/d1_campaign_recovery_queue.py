@@ -51,8 +51,11 @@ class D1CampaignCheckpointRepositoryPort(Protocol):
 
 
 class D1RecoveryAttemptControllerPort(Protocol):
-    process_manager: D1ProcessManager
-    attempt_ledger: D1LaunchAttemptLedger
+    @property
+    def process_manager(self) -> D1ProcessManager: ...
+
+    @property
+    def attempt_ledger(self) -> D1LaunchAttemptLedger: ...
 
     def execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult: ...
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import entropic_substrate.d1_cli_composition as composition_module
 from entropic_substrate.cli import build_parser, main
 from entropic_substrate.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
@@ -17,6 +18,8 @@ from entropic_substrate.d1_cli import (
     D1CliInvocation,
 )
 from test_d1_trainer_cli_services import _manifest as _trainer_manifest
+
+from .test_d1_campaign_request import _request as _campaign_request
 
 pytestmark = pytest.mark.unit
 
@@ -68,6 +71,22 @@ def _manifest(tmp_path: Path, command: D1CliCommand) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _campaign_manifest(tmp_path: Path) -> tuple[Path, object]:
+    request = _campaign_request(tmp_path / "request")
+    path = tmp_path / "d1-campaign-run.json"
+    path.write_text(
+        json.dumps(
+            {
+                "command": D1CliCommand.CAMPAIGN_RUN.value,
+                "payload": request.manifest,
+                "schema_version": D1_CLI_MANIFEST_SCHEMA,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path, request
 
 
 @pytest.mark.parametrize("command", list(D1CliCommand))
@@ -157,21 +176,106 @@ def test_default_shell_resume_command_reaches_real_service_validation(
     assert "segment mode" in output["detail"]
 
 
-def test_unconfigured_campaign_command_returns_operator_gap_not_live_fallback(
+def test_unconfigured_campaign_command_returns_precise_operator_gap(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
+    monkeypatch.delenv("D1_RUNPOD_REGISTRY_AUTH_ID", raising=False)
+    monkeypatch.delenv("D1_RUNPOD_NETWORK_VOLUME_ID", raising=False)
     command = D1CliCommand.CAMPAIGN_RUN
+    manifest, _request = _campaign_manifest(tmp_path)
 
-    code = main([command.value, "--manifest", str(_manifest(tmp_path, command))])
+    code = main([command.value, "--manifest", str(manifest)])
 
     assert code is D1CliExitCode.OPERATOR_GAP
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "operator_gap"
     assert output["exit_code"] == 20
-    assert "composition service is unavailable" in output["detail"]
+    assert "configuration" in output["detail"]
+    assert "composition service is unavailable" not in output["detail"]
+
+
+def test_invalid_campaign_evidence_precedes_missing_operator_configuration(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("D1_RUNPOD_REGISTRY_AUTH_ID", raising=False)
+    monkeypatch.delenv("D1_RUNPOD_NETWORK_VOLUME_ID", raising=False)
+    command = D1CliCommand.CAMPAIGN_RUN
+
+    code = main([command.value, "--manifest", str(_manifest(tmp_path, command))])
+
+    output = json.loads(capsys.readouterr().out)
+    assert code is D1CliExitCode.INVALID_EVIDENCE
+    assert output["status"] == "invalid_evidence"
+    assert "request" in output["detail"]
+
+
+def test_configured_campaign_command_reaches_real_service_composition(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest, request = _campaign_manifest(tmp_path)
+    profiles = tuple(intent.plan.profile for intent in request.intents)  # type: ignore[attr-defined]
+    monkeypatch.setattr(composition_module, "load_d1_profile_catalog", lambda: profiles)
+    monkeypatch.setenv("D1_RUNPOD_REGISTRY_AUTH_ID", "registry-auth-123")
+    monkeypatch.setenv("D1_RUNPOD_NETWORK_VOLUME_ID", "network-volume-123")
+    runtime_config = object()
+    config_calls: list[object] = []
+    factory_calls: list[dict[str, object]] = []
+    service_calls: list[dict[str, object]] = []
+
+    class _Config:
+        @staticmethod
+        def from_environment(environ: object) -> object:
+            config_calls.append(environ)
+            return runtime_config
+
+    def factory(**kwargs: object) -> object:
+        factory_calls.append(dict(kwargs))
+        return object()
+
+    class _CampaignService:
+        def __init__(self, **kwargs: object) -> None:
+            service_calls.append(dict(kwargs))
+
+        def execute(self, invocation: D1CliInvocation) -> dict[str, object]:
+            assert invocation.command is D1CliCommand.CAMPAIGN_RUN
+            return {"schema_version": "d1-campaign-run-result-v1", "status": "campaign_complete"}
+
+    monkeypatch.setattr(
+        composition_module,
+        "D1CampaignControllerRuntimeConfig",
+        _Config,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        composition_module,
+        "D1CampaignControllerFactory",
+        factory,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        composition_module,
+        "D1CampaignRunCliService",
+        _CampaignService,
+        raising=False,
+    )
+    git = object()
+    monkeypatch.setattr(composition_module, "SubprocessD1GitProvenance", lambda **_kwargs: git)
+
+    code = main([D1CliCommand.CAMPAIGN_RUN.value, "--manifest", str(manifest)])
+
+    output = json.loads(capsys.readouterr().out)
+    assert code is D1CliExitCode.SUCCESS
+    assert output["payload"]["status"] == "campaign_complete"
+    assert len(config_calls) == len(factory_calls) == len(service_calls) == 1
+    assert factory_calls[0]["config"] is runtime_config
+    assert service_calls[0]["controller_factory"] is not None
+    assert service_calls[0]["git"] is git
 
 
 @pytest.mark.parametrize(
