@@ -147,6 +147,8 @@ class SuccessorAuthorization(StrEnum):
     AUTHORIZED = "AUTHORIZED"
     VALID_NEGATIVE = "VALID_NEGATIVE"
     RETIRED = "RETIRED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+    COMPLETE = "COMPLETE"
 
 
 def _valid_identifiers(values: object) -> bool:

@@ -29,6 +29,11 @@ from entropic_substrate.evidence.d1_contract import (
     D1RegisteredContrast,
     D1RegisteredEndpoint,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import (
+    D1EstimateGap,
+    D1GapCell,
+    parse_endpoint_gap,
+)
 from entropic_substrate.evidence.d1_types import D1ContrastTerm
 from entropic_substrate.experiments.d1_primitives import D1Arm
 from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
@@ -187,6 +192,29 @@ def _bind_contrasts(
         }
         for name, value in required.items():
             _require_exact(row[name], value, f"contrast[{index}].{name}")
+        _bind_unavailable(root, row, included)
+
+
+def _bind_unavailable(
+    root: dict[str, object], row: dict[str, object], included: tuple[int, ...]
+) -> None:
+    endpoint = _mapping(root["endpoint"], "endpoint")
+    values = _mapping(endpoint["values_by_alias"], "endpoint values")
+    terms = tuple(_mapping(term, "term") for term in _rows(row["terms"], "terms"))
+    missing = tuple(
+        D1GapCell(alias, seed, parse_endpoint_gap(value))
+        for index, seed in enumerate(included)
+        for term in terms
+        if isinstance(
+            value := _rows(values[alias := cast(str, term["arm_alias"])], "arm values")[index], dict
+        )
+    )
+    expected = (
+        D1EstimateGap(missing).manifest({cell.arm: cell.arm for cell in missing})
+        if missing
+        else None
+    )
+    _require_exact(row.get("unavailable"), expected, "undefined estimate witnesses")
 
 
 def _bind_effects(
@@ -207,6 +235,7 @@ def _bind_effects(
         _require_exact(row["effect_alias"], f"F{index + 1:02d}", f"effect[{index}].alias")
         _require_exact(row["terms"], expected_terms, f"effect[{index}].terms")
         _require_exact(row["n"], len(included), f"effect[{index}].n")
+        _bind_unavailable(root, row, included)
 
 
 def _expected_condition(
@@ -257,7 +286,7 @@ def _expected_observation(
         _fail("registered contrast condition lacks a contrast identity")
     row = contrasts[contrast_aliases[contrast_id]]
     return (
-        float(cast(int | float, row["estimate"])),
+        None if row["estimate"] is None else float(cast(int | float, row["estimate"])),
         None if row["interval_lower"] is None else float(cast(int | float, row["interval_lower"])),
         None if row["interval_upper"] is None else float(cast(int | float, row["interval_upper"])),
     )

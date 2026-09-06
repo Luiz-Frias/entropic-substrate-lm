@@ -30,6 +30,11 @@ from entropic_substrate.evidence.d1_review_adjudication import (
     parse_d1_major_findings,
     parse_d1_review_execution_receipt,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import (
+    D1EstimateGap,
+    D1GapCell,
+    parse_estimate_gap,
+)
 from entropic_substrate.evidence.d1_types import (
     D1_STABILIZATION_ARM_IDS,
     VERDICTS,
@@ -185,6 +190,14 @@ def _contrast_rows(
                 {"arm_id": item.arm_id, "coefficient": item.coefficient} for item in rule.terms
             ],
         }
+        if "unavailable" in row:
+            gap = parse_estimate_gap(row["unavailable"], aliases=True)
+            mapping = {
+                verified.expected.alias_application.aliases.for_arm(arm): arm.value for arm in D1Arm
+            }
+            filed["unavailable"] = D1EstimateGap(
+                tuple(D1GapCell(mapping[cell.arm], cell.seed, cell.endpoint) for cell in gap.cells)
+            ).manifest()
         filed["evidence_hash"] = _evidence_hash(
             analysis_digest=verified.analysis_digest,
             role=f"contrast:{contrast_id}",
@@ -414,7 +427,12 @@ def assemble_d1_real_arm_verdict(
             "open_major_findings": list(adjudication.open_major_finding_ids),
         },
         "rung": "d1",
-        "schema_version": "d1-verdict/v2",
+        "schema_version": "d1-verdict/v3"
+        if any(
+            "unavailable" in _mapping(row, "contrast")
+            for row in _rows(verified.manifest["contrasts"], "contrasts")
+        )
+        else "d1-verdict/v2",
         "successor": {
             "authorization": rule.successor_authorization.value,
             "eligible_arms": (

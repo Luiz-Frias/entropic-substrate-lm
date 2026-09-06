@@ -12,10 +12,12 @@ import entropic_substrate.telemetry as telemetry_api
 from entropic_substrate.analysis.d1_factorial import (
     D1AnalysisCell,
     D1AppliedExclusion,
+    D1DiagnosticGapPoint,
     D1FactorialExclusionAuthority,
     D1MetricPoint,
     seal_d1_factorial_exclusion_authority,
 )
+from entropic_substrate.d1_evaluation_values import D1CosineGap
 from entropic_substrate.evidence.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
     D1ValidatedTerminalDefect,
@@ -259,14 +261,26 @@ def _cell(expected: object, run: D1RunEvidence) -> D1AnalysisCell:
 
     if type(expected) is not D1ExpectedRun:
         raise TypeError("analysis extraction requires D1ExpectedRun")
+    gaps = tuple(
+        D1DiagnosticGapPoint(item.step, item.eval_index, value)
+        for item in run.evals
+        if type(value := item.quality.mean_pairwise_cosine_distance) is D1CosineGap
+    )
+    diagnostic_gaps = {"mean_pairwise_cosine_distance": gaps} if gaps else {}
     metrics = {
-        name: tuple(
-            D1MetricPoint(item.step, item.eval_index, item.quality.scalar_metric(name))
-            for item in run.evals
-        )
+        name: points
         for name in sorted(D1_SCALAR_METRICS)
+        if (
+            points := tuple(
+                D1MetricPoint(item.step, item.eval_index, item.quality.scalar_metric(name))
+                for item in run.evals
+                if type(getattr(item.quality, name)) is not D1CosineGap
+            )
+        )
     }
-    return D1AnalysisCell(expected.arm, expected.seed, expected.pairing_id, metrics)
+    return D1AnalysisCell(
+        expected.arm, expected.seed, expected.pairing_id, metrics, diagnostic_gaps
+    )
 
 
 def admit_d1_analysis_capture(

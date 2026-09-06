@@ -26,6 +26,7 @@ from entropic_substrate.evidence.d1_parsing import (
     status,
     string,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import parse_estimate_gap
 from entropic_substrate.evidence.d1_types import (
     CLAUSE_NAMES,
     CONTRAST_DECISIONS,
@@ -83,7 +84,7 @@ class ValidatedD1Verdict:
     ) -> ValidatedD1Verdict:
         root = object_exact(payload, path="$", fields=ROOT_FIELDS)
         schema_version = string(root["schema_version"], path="schema_version")
-        if schema_version != D1_VERDICT_SCHEMA_VERSION:
+        if schema_version not in {D1_VERDICT_SCHEMA_VERSION, "d1-verdict/v3"}:
             raise error(
                 "unsupported_schema_version",
                 "schema_version",
@@ -121,7 +122,17 @@ class ValidatedD1Verdict:
                 "feasible_arms",
                 f"must preserve canonical order {D1_STABILIZATION_ARM_IDS}",
             )
-        contrasts = _parse_contrasts(root["contrasts"])
+        contrasts = _parse_contrasts(
+            root["contrasts"], allow_gaps=schema_version == "d1-verdict/v3"
+        )
+        if schema_version == "d1-verdict/v3" and not any(
+            row.unavailable is not None for row in contrasts
+        ):
+            raise error(
+                "missing_unavailable_estimate",
+                "contrasts",
+                "v3 requires a typed undefined estimate",
+            )
         clauses_by_arm = _parse_clauses_by_arm(root["clauses_by_arm"])
         integrity = _parse_integrity(root["integrity"])
         exclusions = _parse_exclusions(root["exclusions"])
@@ -246,7 +257,7 @@ def _parse_arms(value: object, family_identity: D1FamilyIdentity) -> tuple[D1Arm
     return tuple(parsed)
 
 
-def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
+def _parse_contrasts(value: object, *, allow_gaps: bool = False) -> tuple[D1Contrast, ...]:
     if not isinstance(value, list) or not value:
         raise error("invalid_contrasts", "contrasts", "must be a nonempty list")
     parsed: list[D1Contrast] = []
@@ -274,7 +285,11 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
     )
     for index, raw_contrast in enumerate(value):
         path = f"contrasts[{index}]"
-        contrast = object_exact(raw_contrast, path=path, fields=fields)
+        missing = allow_gaps and isinstance(raw_contrast, Mapping) and "unavailable" in raw_contrast
+        contrast = object_exact(
+            raw_contrast, path=path, fields=fields | ({"unavailable"} if missing else set())
+        )
+        unavailable = parse_estimate_gap(contrast["unavailable"]) if missing else None
         contrast_id = string(contrast["contrast_id"], path=f"{path}.contrast_id")
         if contrast_id in identifiers:
             raise error(
@@ -297,7 +312,11 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 endpoint_data["smoothing_window"], path=f"{path}.endpoint.smoothing_window"
             ),
         )
-        estimate = finite_number(contrast["estimate"], path=f"{path}.estimate")
+        estimate = (
+            number_or_none(contrast["estimate"], path=f"{path}.estimate")
+            if missing
+            else finite_number(contrast["estimate"], path=f"{path}.estimate")
+        )
         sample_sd = number_or_none(contrast["sample_sd"], path=f"{path}.sample_sd")
         if sample_sd is not None and sample_sd < 0:
             raise error("invalid_sample_sd", f"{path}.sample_sd", "must be nonnegative")
@@ -342,13 +361,38 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 )
             df: int | None = None
         else:
-            if sample_sd is None or lower is None or upper is None:
+            if not missing and (sample_sd is None or lower is None or upper is None):
                 raise error(
                     "missing_sample_statistics",
                     path,
                     "n>1 requires sample SD and finite interval bounds",
                 )
             df = positive_int(raw_df, path=f"{path}.df")
+        if unavailable is not None:
+            if (
+                any(item is not None for item in (estimate, sample_sd, lower, upper))
+                or endpoint.metric != "mean_pairwise_cosine_distance"
+            ):
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined cosine cannot contain inferred statistics",
+                )
+            if not {cell.arm for cell in unavailable.cells} <= {term.arm_id for term in terms}:
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined cells must belong to contrast terms",
+                )
+            if len({cell.seed for cell in unavailable.cells}) > n or any(
+                len(cell.endpoint.evaluations) > endpoint.smoothing_window
+                for cell in unavailable.cells
+            ):
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined witness exceeds registered population/window",
+                )
         evidence_class = string(contrast["evidence_class"], path=f"{path}.evidence_class")
         if evidence_class not in EVIDENCE_CLASSES:
             raise error(
@@ -395,6 +439,7 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 decision_vocabulary=vocabulary,
                 decision=decision,
                 evidence_hash=hash_value(contrast["evidence_hash"], path=f"{path}.evidence_hash"),
+                unavailable=unavailable,
             )
         )
     return tuple(parsed)
@@ -589,13 +634,16 @@ def _parse_successor(value: object) -> D1Successor:
         fields=frozenset({"authorization", "eligible_arms", "eligible_strategies"}),
     )
     raw_authorization = string(successor["authorization"], path="successor.authorization")
+    allowed = {"AUTHORIZED", "VALID_NEGATIVE", "RETIRED"}
     try:
+        if raw_authorization not in allowed:
+            raise ValueError("posture is not part of the historical D1 schema")
         authorization = SuccessorAuthorization(raw_authorization)
     except ValueError as exc:
         raise error(
             "invalid_successor_authorization",
             "successor.authorization",
-            f"must be one of {[item.value for item in SuccessorAuthorization]}",
+            f"must be one of {sorted(allowed)}",
         ) from exc
     strategies = successor["eligible_strategies"]
     if not isinstance(strategies, list) or any(

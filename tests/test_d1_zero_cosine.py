@@ -118,6 +118,48 @@ def test_tracking_preserves_gap_counts_without_emitting_numeric_cosine() -> None
     assert observed.metrics["d1/diagnostic_gap/undefined_zero_norm/affected_positions"] == 24.0
 
 
+def test_analysis_retains_gap_population_while_admitting_other_metrics(tmp_path: Path) -> None:
+    from entropic_substrate.analysis.d1_capture import _cell
+
+    from .test_d1_analysis_capture import _analysis_case
+
+    _, _, _, aggregate, runs = _analysis_case(tmp_path)
+    expected = aggregate.roster.expected_confirmatory[0]
+    run = runs[expected.logical_run_id]
+    collapsed = replace(
+        run,
+        evals=tuple(
+            replace(
+                item,
+                quality=replace(
+                    item.quality,
+                    mean_pairwise_cosine_distance=D1CosineGap(1, item.quality.online_positions),
+                ),
+            )
+            for item in run.evals
+        ),
+    )
+    cell = _cell(expected, collapsed)
+    assert "mean_pairwise_cosine_distance" not in cell.metrics
+    assert len(cell.diagnostic_gaps["mean_pairwise_cosine_distance"]) == len(run.evals)
+    assert "effective_rank" in cell.metrics and "nats_per_byte" in cell.metrics
+    from entropic_substrate.analysis.d1_clause_policy import (
+        D1ConditionSource,
+        D1RegisteredCondition,
+        D1ThresholdOperator,
+        _endpoint,
+    )
+
+    condition = D1RegisteredCondition(
+        source=D1ConditionSource.ARM_ENDPOINT_MEAN,
+        operator=D1ThresholdOperator.AT_LEAST,
+        threshold=0.1,
+        metric="mean_pairwise_cosine_distance",
+        estimator="last_k_mean",
+        smoothing_window=1,
+        contrast_id=None,
+    )
+    assert _endpoint(condition, cell.arm, (cell,)) is None
 
 
 def test_complete_collapsed_journal_is_read_by_authoritative_reader(tmp_path: Path) -> None:

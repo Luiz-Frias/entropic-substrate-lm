@@ -17,11 +17,13 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import D1CosineGap
 from entropic_substrate.evidence.d1_contract import (
     D1DecisionContract,
     D1RegisteredContrast,
     D1RegisteredEndpoint,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap, D1EstimateGap, D1GapCell
 from entropic_substrate.evidence.d1_types import D1ContrastTerm
 from entropic_substrate.experiments.d1_primitives import D1Arm
 from entropic_substrate.experiments.d1_registered_design import (
@@ -92,6 +94,23 @@ class D1MetricPoint:
 
 
 @dataclass(frozen=True, slots=True)
+class D1DiagnosticGapPoint:
+    """An explicitly undefined diagnostic at a retained evaluation cursor."""
+
+    step: int
+    eval_index: int
+    gap: D1CosineGap
+
+    def __post_init__(self) -> None:
+        if type(self.step) is not int or self.step < 0:
+            raise ValueError("D1 diagnostic gap step must be nonnegative")
+        if type(self.eval_index) is not int or self.eval_index < 0:
+            raise ValueError("D1 diagnostic gap eval_index must be nonnegative")
+        if type(self.gap) is not D1CosineGap:
+            raise TypeError("D1 diagnostic gap requires D1CosineGap")
+
+
+@dataclass(frozen=True, slots=True)
 class D1AnalysisCell:
     """Finite metric series for one arm in one paired seed block."""
 
@@ -99,6 +118,7 @@ class D1AnalysisCell:
     seed: int
     pairing_id: str
     metrics: Mapping[str, tuple[D1MetricPoint, ...]]
+    diagnostic_gaps: Mapping[str, tuple[D1DiagnosticGapPoint, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if type(self.arm) is not D1Arm:
@@ -122,6 +142,31 @@ class D1AnalysisCell:
         if not frozen:
             raise ValueError("D1 analysis cell requires at least one metric")
         object.__setattr__(self, "metrics", MappingProxyType(frozen))
+        gaps = dict(self.diagnostic_gaps)
+        for metric, points in gaps.items():
+            if metric != "mean_pairwise_cosine_distance":
+                raise ValueError("D1 diagnostic gap must refer to cosine")
+            if (
+                type(points) is not tuple
+                or not points
+                or any(type(point) is not D1DiagnosticGapPoint for point in points)
+            ):
+                raise TypeError("D1 diagnostic gaps require a nonempty tuple of gap points")
+            if any(
+                current.step <= previous.step or current.eval_index <= previous.eval_index
+                for previous, current in pairwise(points)
+            ):
+                raise ValueError("D1 diagnostic gap cursors must strictly increase")
+            known = {(point.step, point.eval_index) for point in frozen.get(metric, ())}
+            if known & {(point.step, point.eval_index) for point in points}:
+                raise ValueError("D1 metric cursor cannot be both measured and undefined")
+            combined = sorted((*frozen.get(metric, ()), *points), key=lambda point: point.step)
+            if any(
+                current.step <= previous.step or current.eval_index <= previous.eval_index
+                for previous, current in pairwise(combined)
+            ):
+                raise ValueError("D1 combined measured/gap cursors must strictly increase")
+        object.__setattr__(self, "diagnostic_gaps", MappingProxyType(gaps))
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,15 +295,15 @@ class D1EndpointSummary:
     metric: str
     estimator: str
     smoothing_window: int
-    values_by_arm: Mapping[D1Arm, tuple[float, ...]]
+    values_by_arm: Mapping[D1Arm, tuple[float | D1EndpointGap, ...]]
     evidence_class: str = _EVIDENCE_CLASS
 
 
 @dataclass(frozen=True, slots=True)
 class D1ContrastEstimate:
     contrast_id: str
-    paired_estimates: tuple[float, ...]
-    estimate: float
+    paired_estimates: tuple[float | None, ...]
+    estimate: float | None
     sample_sd: float | None
     standard_error: float | None
     interval_lower: float | None
@@ -269,17 +314,19 @@ class D1ContrastEstimate:
     df: int | None
     t_critical: float | None
     evidence_class: str = _EVIDENCE_CLASS
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class D1FactorialEffect:
     effect_id: str
     terms: tuple[tuple[D1Arm, float], ...]
-    paired_estimates: tuple[float, ...]
-    estimate: float
+    paired_estimates: tuple[float | None, ...]
+    estimate: float | None
     n: int
     deciding: bool = False
     evidence_class: str = _EVIDENCE_CLASS
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,24 +400,34 @@ def _student_t_quantile(probability: float, df: int) -> float:
     return (lower + upper) / 2.0
 
 
-def _endpoint_value(cell: D1AnalysisCell, endpoint: D1RegisteredEndpoint) -> float:
+def d1_cell_endpoint(cell: D1AnalysisCell, endpoint: D1RegisteredEndpoint) -> float | D1EndpointGap:
     if endpoint.estimator != "last_k_mean":
         raise ValueError(f"unsupported registered endpoint estimator {endpoint.estimator!r}")
-    try:
-        points = cell.metrics[endpoint.metric]
-    except KeyError as error:
-        raise ValueError(f"D1 analysis cell lacks registered metric {endpoint.metric!r}") from error
+    points = sorted(
+        (*cell.metrics.get(endpoint.metric, ()), *cell.diagnostic_gaps.get(endpoint.metric, ())),
+        key=lambda point: point.step,
+    )
     if len(points) < endpoint.smoothing_window:
         raise ValueError("D1 metric series is shorter than the registered smoothing window")
     tail = points[-endpoint.smoothing_window :]
-    return math.fsum(point.value for point in tail) / endpoint.smoothing_window
+    gaps = tuple(
+        (point.step, point.eval_index, point.gap)
+        for point in tail
+        if type(point) is D1DiagnosticGapPoint
+    )
+    if gaps:
+        return D1EndpointGap(gaps)
+    return (
+        math.fsum(point.value for point in tail if type(point) is D1MetricPoint)
+        / endpoint.smoothing_window
+    )
 
 
 def _contrast_values(
     terms: tuple[D1ContrastTerm, ...] | tuple[tuple[D1Arm, float], ...],
-    endpoints: Mapping[tuple[D1Arm, int], float],
+    endpoints: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
     seeds: tuple[int, ...],
-) -> tuple[float, ...]:
+) -> tuple[float | None, ...]:
     normalized: list[tuple[D1Arm, float]] = []
     for term in terms:
         if type(term) is D1ContrastTerm:
@@ -378,8 +435,53 @@ def _contrast_values(
         else:
             normalized.append(cast(tuple[D1Arm, float], term))
     return tuple(
-        math.fsum(coefficient * endpoints[(arm, seed)] for arm, coefficient in normalized)
+        None
+        if any(type(endpoints[(arm, seed)]) is D1EndpointGap for arm, _ in normalized)
+        else math.fsum(
+            coefficient * cast(float, endpoints[(arm, seed)]) for arm, coefficient in normalized
+        )
         for seed in seeds
+    )
+
+
+def _missing_endpoints(
+    arms: tuple[D1Arm, ...],
+    values: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
+    seeds: tuple[int, ...],
+) -> D1EstimateGap | None:
+    cells = tuple(
+        D1GapCell(arm.value, seed, value)
+        for seed in seeds
+        for arm in arms
+        if type(value := values[(arm, seed)]) is D1EndpointGap
+    )
+    return D1EstimateGap(cells) if cells else None
+
+
+def _registered_estimate(
+    rule: D1RegisteredContrast,
+    values: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
+    seeds: tuple[int, ...],
+) -> D1ContrastEstimate:
+    pairs = _contrast_values(rule.terms, values, seeds)
+    missing = _missing_endpoints(tuple(D1Arm(term.arm_id) for term in rule.terms), values, seeds)
+    if missing is None:
+        return _estimate(rule, cast(tuple[float, ...], pairs))
+    n = len(seeds)
+    return D1ContrastEstimate(
+        rule.contrast_id,
+        pairs,
+        None,
+        None,
+        None,
+        None,
+        None,
+        rule.confidence_level,
+        rule.multiplicity,
+        n,
+        None if rule.df_rule == "NOT_APPLICABLE" else n - 1,
+        None,
+        unavailable=missing,
     )
 
 
@@ -523,15 +625,12 @@ def compute_d1_factorial(
     if any(endpoint != endpoints[0] for endpoint in endpoints[1:]):
         raise ValueError("D1 factorial effects require one shared registered endpoint")
     endpoint = endpoints[0]
-    values = {key: _endpoint_value(cell, endpoint) for key, cell in admitted.items()}
+    values = {key: d1_cell_endpoint(cell, endpoint) for key, cell in admitted.items()}
     by_arm = MappingProxyType(
         {arm: tuple(values[(arm, seed)] for seed in included_seeds) for arm in _ALL_ARMS}
     )
     contrast_results = {
-        contrast_id: _estimate(
-            rule,
-            _contrast_values(rule.terms, values, included_seeds),
-        )
+        contrast_id: _registered_estimate(rule, values, included_seeds)
         for contrast_id, rule in decision_contract.contrast_rules.items()
     }
     effects = {
@@ -539,8 +638,11 @@ def compute_d1_factorial(
             effect_id=effect_id,
             terms=terms,
             paired_estimates=(paired := _contrast_values(terms, values, included_seeds)),
-            estimate=math.fsum(paired) / len(paired),
+            estimate=None
+            if any(value is None for value in paired)
+            else math.fsum(cast(tuple[float, ...], paired)) / len(paired),
             n=len(paired),
+            unavailable=_missing_endpoints(tuple(arm for arm, _ in terms), values, included_seeds),
         )
         for effect_id, terms in _FACTORIAL_TERMS.items()
     }

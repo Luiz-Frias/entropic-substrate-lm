@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
+from entropic_substrate.evidence.d1_statistical_gaps import D1EstimateGap
 from entropic_substrate.evidence.lifecycle import (
     ContentHash,
     LifecycleContractError,
@@ -137,7 +138,7 @@ class D1Contrast:
     contrast_kind: str
     terms: tuple[D1ContrastTerm, ...]
     endpoint: D1Endpoint
-    estimate: float
+    estimate: float | None
     sample_sd: float | None
     interval_lower: float | None
     interval_upper: float | None
@@ -150,6 +151,7 @@ class D1Contrast:
     decision_vocabulary: str
     decision: str
     evidence_hash: ContentHash
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True)

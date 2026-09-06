@@ -12,8 +12,10 @@ from typing import NoReturn, cast
 from entropic_substrate.analysis.d1_factorial import (
     D1AnalysisCell,
     D1FactorialAnalysis,
+    d1_cell_endpoint,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_contract import D1DecisionContract, D1RegisteredEndpoint
+from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap
 from entropic_substrate.evidence.d1_telemetry_values import (
     D1_REPORT_ONLY_METRICS,
     D1_SCALAR_METRICS,
@@ -265,15 +267,12 @@ def _endpoint(
     for cell in cells:
         if cell.arm is not arm:
             continue
-        points = cell.metrics.get(metric)
-        if points is None or len(points) < smoothing_window:
-            _fail(
-                "endpoint",
-                f"{arm.value}.{metric}",
-                "registered series is absent or short",
-            )
-        tail = points[-smoothing_window:]
-        values.append(math.fsum(point.value for point in tail) / smoothing_window)
+        point = d1_cell_endpoint(
+            cell, D1RegisteredEndpoint(metric, "last_k_mean", smoothing_window)
+        )
+        if type(point) is D1EndpointGap:
+            return None
+        values.append(cast(float, point))
     return None if not values else math.fsum(values) / len(values)
 
 
