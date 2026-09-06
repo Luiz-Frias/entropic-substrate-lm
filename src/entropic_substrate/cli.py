@@ -283,6 +283,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_d_ladder_parser(sub)
 
+    from entropic_substrate.d_ladder_probe_cli import add_score_gain_parser
+
+    add_score_gain_parser(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1073,6 +1077,10 @@ def main(
         from entropic_substrate.d_ladder_cli import cmd_d_probe
 
         return cmd_d_probe(args)
+    if args.command == "d-score-gain":
+        from entropic_substrate.d_ladder_probe_cli import cmd_score_gain
+
+        return cmd_score_gain(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
