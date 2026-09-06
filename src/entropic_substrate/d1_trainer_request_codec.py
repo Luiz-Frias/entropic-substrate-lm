@@ -29,8 +29,10 @@ from entropic_substrate.experiments.d1_plan import (
     ConfirmatoryD1RunPlan,
     D1PlanManifestError,
     D1RunPlan,
+    ExcludedPilotD1RunPlan,
     SmokeD1RunPlan,
     parse_d1_confirmatory_plan,
+    parse_d1_pilot_plan,
     parse_d1_smoke_plan,
 )
 from entropic_substrate.experiments.d1_primitives import (
@@ -55,6 +57,8 @@ __all__ = [
 ]
 
 _SCHEMA = "d1-trainer-command-request-v1"
+type D1RunnablePlan = ConfirmatoryD1RunPlan | SmokeD1RunPlan | ExcludedPilotD1RunPlan
+_RUNNABLE_PLANS = (ConfirmatoryD1RunPlan, SmokeD1RunPlan, ExcludedPilotD1RunPlan)
 _COMMANDS = {"d1-run-fresh", "d1-run-resume"}
 _TOP_KEYS = frozenset(
     {"command", "locations", "plan", "run_start", "schema_version", "wall_origin"}
@@ -149,12 +153,12 @@ class D1TrainerLocationSpec:
 
 
 def _validate_common(
-    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan,
+    plan: D1RunnablePlan,
     start: RunStartProvenance,
     origin: D1TrainerWallOrigin,
 ) -> None:
     if (
-        type(plan) not in (ConfirmatoryD1RunPlan, SmokeD1RunPlan)
+        type(plan) not in _RUNNABLE_PLANS
         or type(start) is not RunStartProvenance
         or type(origin) is not D1TrainerWallOrigin
     ):
@@ -175,7 +179,7 @@ def _validate_common(
 
 @dataclass(frozen=True, slots=True)
 class D1FreshTrainerRequest:
-    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan
+    plan: D1RunnablePlan
     start: RunStartProvenance
     origin: D1TrainerWallOrigin
     locations: D1TrainerLocationSpec
@@ -193,7 +197,7 @@ class D1FreshTrainerRequest:
 
 @dataclass(frozen=True, slots=True)
 class D1ResumeTrainerRequest:
-    plan: ConfirmatoryD1RunPlan | SmokeD1RunPlan
+    plan: D1RunnablePlan
     start: RunStartProvenance
     origin: D1TrainerWallOrigin
     locations: D1TrainerLocationSpec
@@ -253,9 +257,9 @@ def build_d1_trainer_request(
     start: RunStartProvenance,
     origin: D1TrainerWallOrigin,
 ) -> D1TrainerRequest:
-    if type(plan) not in (ConfirmatoryD1RunPlan, SmokeD1RunPlan):
+    if type(plan) not in _RUNNABLE_PLANS:
         raise TypeError("D1 trainer request builder requires a runnable nominal plan")
-    plan = cast(ConfirmatoryD1RunPlan | SmokeD1RunPlan, plan)
+    plan = cast(D1RunnablePlan, plan)
     run_identity = {"logical_run_id": plan.logical_run_id, "plan_digest": plan.plan_digest}
     root = f"results/d1-run-{canonical_digest(run_identity)}"
     locations = D1TrainerLocationSpec(
@@ -384,7 +388,7 @@ def parse_d1_trainer_request(
     if type(profile_name) is not str or not profile_name:
         _fail("trainer request profile_name must be a nonempty string")
     run_class = plan_mapping.get("run_class")
-    if run_class not in {"confirmatory", "smoke"}:
+    if run_class not in {"confirmatory", "smoke", "pilot"}:
         _fail("trainer request plan run_class is unsupported")
     profiles = tuple(catalog)
     if any(type(profile) is not D1LaunchProfile for profile in profiles):
@@ -404,8 +408,11 @@ def parse_d1_trainer_request(
         _fail("trainer request profile does not match exactly one installed construction")
     profile = matching_profiles[0]
     try:
+        plan: D1RunnablePlan
         if run_class == "confirmatory":
             plan = parse_d1_confirmatory_plan(profile, plan_mapping)
+        elif run_class == "pilot":
+            plan = parse_d1_pilot_plan(profile, plan_mapping)
         else:
             plan = parse_d1_smoke_plan(profile, plan_mapping)
         start = run_start_from_mapping(root["run_start"])

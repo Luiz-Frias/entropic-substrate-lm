@@ -62,7 +62,11 @@ from entropic_substrate.evidence.d1_capture_subprocess import (
     SubprocessD1GitPointerStatusVerifier,
 )
 from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.experiments.d1_config import D1LaunchProfile, load_d1_profile_catalog
+from entropic_substrate.experiments.d1_config import (
+    D1LaunchProfile,
+    load_d1_execution_catalog,
+    load_d1_profile_catalog,
+)
 from entropic_substrate.experiments.d1_primitives import canonical_digest, canonical_json
 
 __all__ = ["build_default_d1_cli_application"]
@@ -75,7 +79,7 @@ class _LazyTrainerCliService:
     def execute(self, invocation: D1CliInvocation) -> dict[str, object]:
         if invocation.command is not self.command:
             raise ValueError("lazy D1 trainer service received the wrong command")
-        catalog = (*load_d1_profile_catalog(), *load_d1_profile_catalog(tiny=True))
+        catalog = load_d1_execution_catalog()
         if self.command is D1CliCommand.RUN_FRESH:
             return dict(D1FreshTrainerCliService(catalog=catalog).execute(invocation))
         if self.command is D1CliCommand.RUN_RESUME:

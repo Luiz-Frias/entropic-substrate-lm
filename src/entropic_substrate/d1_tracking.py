@@ -189,7 +189,7 @@ def d1_tracking_descriptor(
     }
     return TrackingRunDescriptor(
         run_name=plan.logical_run_id,
-        tiny=profile.scale is D1LaunchScale.TINY,
+        tiny=profile.scale in (D1LaunchScale.TINY, D1LaunchScale.GPU_TINY),
         params=params,
         tags=tags,
         config_hash=config_key,

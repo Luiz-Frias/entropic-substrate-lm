@@ -74,10 +74,11 @@ _COLLAPSE_KEYS: Final = (
 
 
 class D1LaunchScale(StrEnum):
-    """Whether a profile is the full construction or the CPU smoke overlay."""
+    """Full construction or an explicitly selected CPU/GPU tiny execution."""
 
     FULL = "full"
     TINY = "tiny"
+    GPU_TINY = "gpu_tiny"
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,10 +458,16 @@ def parse_d1_profile_payload(
         raise ValueError(msg)
     data_snapshot, train_snapshot, execution_protocol = _runtime_contracts(payload)
     family = _build_family(payload, execution_protocol=execution_protocol)
-    expected_source = "synthetic" if scale is D1LaunchScale.TINY else "enwik8"
+    expected_source = "enwik8" if scale is D1LaunchScale.FULL else "synthetic"
     if _section(payload, "data")["source"] != expected_source:
         msg = f"D1 {scale.value} profile requires data.source={expected_source!r}"
         raise ValueError(msg)
+    if scale is D1LaunchScale.TINY and _section(payload, "train")["device"] != "cpu":
+        raise ValueError("D1 CPU tiny profile requires explicit CPU execution")
+    if scale is D1LaunchScale.GPU_TINY:
+        train = _section(payload, "train")
+        if train["device"] != "cuda" or train["amp_dtype"] != "bf16":
+            raise ValueError("D1 GPU tiny profile requires CUDA with bf16")
     return D1LaunchProfile(
         name=name,
         arm=arm,

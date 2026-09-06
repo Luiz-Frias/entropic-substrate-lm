@@ -140,8 +140,8 @@ def test_default_shell_fresh_command_reaches_real_trainer(
 ) -> None:
     manifest, request = _trainer_manifest(tmp_path)
     monkeypatch.setattr(
-        "entropic_substrate.d1_cli_composition.load_d1_profile_catalog",
-        lambda *, tiny=False: (request.plan.profile,) if tiny else (),
+        "entropic_substrate.d1_cli_composition.load_d1_execution_catalog",
+        lambda: (request.plan.profile,),
     )
 
     code = main([D1CliCommand.RUN_FRESH.value, "--manifest", str(manifest)])
@@ -164,8 +164,8 @@ def test_default_shell_resume_command_reaches_real_service_validation(
     value["payload"]["command"] = D1CliCommand.RUN_RESUME.value
     manifest.write_text(json.dumps(value), encoding="utf-8")
     monkeypatch.setattr(
-        "entropic_substrate.d1_cli_composition.load_d1_profile_catalog",
-        lambda *, tiny=False: (request.plan.profile,) if tiny else (),
+        "entropic_substrate.d1_cli_composition.load_d1_execution_catalog",
+        lambda: (request.plan.profile,),
     )
 
     code = main([D1CliCommand.RUN_RESUME.value, "--manifest", str(manifest)])

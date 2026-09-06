@@ -21,7 +21,7 @@ from entropic_substrate.d1_trainer_process_contracts import d1_trainer_runtime_r
 from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
 from entropic_substrate.d1_trainer_request_codec import D1TrainerRequestError
 from entropic_substrate.d1_trainer_runtime import D1TrainerClock
-from entropic_substrate.experiments.d1_config import D1LaunchProfile, load_d1_profile_catalog
+from entropic_substrate.experiments.d1_config import D1LaunchProfile, load_d1_execution_catalog
 
 __all__ = ["main", "run_d1_trainer_worker_command"]
 
@@ -69,7 +69,7 @@ def _parse_argv(argv: Sequence[str]) -> tuple[str, dict[str, str]]:
 
 
 def _installed_catalog() -> tuple[D1LaunchProfile, ...]:
-    return (*load_d1_profile_catalog(), *load_d1_profile_catalog(tiny=True))
+    return load_d1_execution_catalog()
 
 
 def _error(command: str, code: str, error: Exception) -> dict[str, object]:

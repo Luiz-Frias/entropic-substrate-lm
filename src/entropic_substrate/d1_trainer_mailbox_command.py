@@ -26,7 +26,7 @@ from entropic_substrate.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWorkerError,
 )
 from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
+from entropic_substrate.experiments.d1_config import load_d1_execution_catalog
 
 __all__ = ["main", "run_d1_trainer_mailbox_command"]
 
@@ -125,7 +125,7 @@ def _default_mailbox_factory(
     environ: Mapping[str, str],
     max_objects: int,
 ) -> D1R2TrainerMailboxWorker:
-    catalog = (*load_d1_profile_catalog(), *load_d1_profile_catalog(tiny=True))
+    catalog = load_d1_execution_catalog()
     runtime = build_d1_r2_runtime_composition(
         repo_root=root,
         environ=environ,
