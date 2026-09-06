@@ -66,6 +66,8 @@ _GRADIENT_COMPONENTS: Final = {
 
 
 def parse_quality(value: object) -> D1QualityEvidence:
+    from entropic_substrate.d1_evaluation_values import parse_d1_cosine
+
     item = require_mapping(value, path="eval.quality")
     exact_fields(item, D1_QUALITY_FIELDS, path="eval.quality")
 
@@ -102,6 +104,7 @@ def parse_quality(value: object) -> D1QualityEvidence:
             raise gap("invalid_channel", f"eval.quality.{prefix}", str(error)) from error
 
     scalar_fields = D1_QUALITY_FIELDS - {
+        "mean_pairwise_cosine_distance",
         "batch_count",
         "effective_rank",
         "numerical_rank",
@@ -131,12 +134,19 @@ def parse_quality(value: object) -> D1QualityEvidence:
         "target_variance",
     }
     values = {field: number(field) for field in scalar_fields}
+    try:
+        cosine = parse_d1_cosine(item["mean_pairwise_cosine_distance"])
+    except (TypeError, ValueError) as error:
+        raise gap(
+            "invalid_metric", "eval.quality.mean_pairwise_cosine_distance", str(error)
+        ) from error
     pairwise_semantic = item["pairwise_cosine_semantic"]
     exact_match_semantic = item["target_predicted_exact_match_semantic"]
     if type(pairwise_semantic) is not str or type(exact_match_semantic) is not str:
         raise gap("invalid_metric", "eval.quality.semantics", "must be strings")
     result = D1QualityEvidence(
         **values,  # type: ignore[arg-type]
+        mean_pairwise_cosine_distance=cosine,
         batch_count=integer("batch_count"),
         online_positions=integer("online_positions"),
         residual_elements=integer("residual_elements"),
@@ -283,12 +293,12 @@ def parse_train_event(
     if result.manifest != train or result.successful_step != event.successful_step:
         raise gap("train_step", "train.train", "does not match the enclosing successful step")
     target_kind = result.gradient_reachability.target_branch.kind
-    expected_kind = (
-        D1GradientEvidenceKind.STRUCTURALLY_ABSENT_STOP_GRADIENT
+    expected_kinds = (
+        {D1GradientEvidenceKind.STRUCTURALLY_ABSENT_STOP_GRADIENT}
         if expected_target_update is TargetUpdateStrategy.STOP_GRADIENT_EMA
-        else D1GradientEvidenceKind.MEASURED_NONZERO
+        else {D1GradientEvidenceKind.MEASURED_NONZERO, D1GradientEvidenceKind.MEASURED_ZERO}
     )
-    if target_kind is not expected_kind:
+    if target_kind not in expected_kinds:
         raise gap(
             "target_gradient_posture",
             "train.train.gradient_reachability.target_branch.kind",

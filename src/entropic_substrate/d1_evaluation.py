@@ -11,6 +11,8 @@ import torch
 from entropic_substrate.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
     D1ChannelMoments,
+    D1CosineGap,
+    validate_d1_cosine,
 )
 from entropic_substrate.d1_numerical_defect import d1_nonfinite_metric_error
 from entropic_substrate.data.batching import SequenceSampler
@@ -60,7 +62,7 @@ class D1EvalResult:
     state_moments: D1ChannelMoments
     target_moments: D1ChannelMoments
     predicted_moments: D1ChannelMoments
-    mean_pairwise_cosine_distance: float
+    mean_pairwise_cosine_distance: float | D1CosineGap
     raw_variance_penalty: float
     weighted_variance_penalty: float
     raw_covariance_penalty: float
@@ -86,7 +88,6 @@ class D1EvalResult:
             "coverage_50",
             "coverage_80",
             "coverage_95",
-            "mean_pairwise_cosine_distance",
             "raw_variance_penalty",
             "weighted_variance_penalty",
             "raw_covariance_penalty",
@@ -97,6 +98,7 @@ class D1EvalResult:
             if type(value) is not float or not math.isfinite(value):
                 msg = f"D1 evaluation {name} must be a finite float"
                 raise ValueError(msg)
+        validate_d1_cosine(self.mean_pairwise_cosine_distance, positions=self.online_positions)
         if any(not 0.0 <= value <= 1.0 for value in self.coverages):
             msg = "D1 evaluation coverage must be in [0, 1]"
             raise ValueError(msg)
@@ -235,7 +237,11 @@ class D1EvalResult:
             "language_loss": self.language_loss,
             "mean_baseline_improvement": self.mean_baseline_improvement,
             "mean_displacement_nll": self.mean_displacement_nll,
-            "mean_pairwise_cosine_distance": self.mean_pairwise_cosine_distance,
+            "mean_pairwise_cosine_distance": (
+                self.mean_pairwise_cosine_distance.manifest
+                if type(self.mean_pairwise_cosine_distance) is D1CosineGap
+                else self.mean_pairwise_cosine_distance
+            ),
             "nats_per_byte": self.nats_per_byte,
             "numerical_rank": self.numerical_rank,
             "online_positions": self.online_positions,
@@ -282,6 +288,7 @@ class _ChannelAccumulator:
     label: str
     pairwise_cosine: bool = False
     count: int = 0
+    zero_norm_count: int = 0
     mean: torch.Tensor = field(init=False)
     centered_outer_sum: torch.Tensor = field(init=False)
     normalized_sum: torch.Tensor = field(init=False)
@@ -306,9 +313,8 @@ class _ChannelAccumulator:
         if not bool(torch.isfinite(values).all().item()):
             raise ValueError(f"D1 evaluation {self.label} must be finite")
         norms = torch.linalg.vector_norm(values, dim=1)
-        if self.pairwise_cosine and bool((norms == 0.0).any().item()):
-            msg = "D1 pairwise cosine evidence forbids zero-norm online states"
-            raise ValueError(msg)
+        if self.pairwise_cosine:
+            self.zero_norm_count += int((norms == 0.0).sum().item())
         batch_count = values.shape[0]
         batch_mean = values.mean(dim=0)
         centered = values - batch_mean
@@ -324,12 +330,12 @@ class _ChannelAccumulator:
                 torch.outer(delta, delta) * (self.count * batch_count / total)
             )
             self.mean.add_(delta * (batch_count / total))
-        if self.pairwise_cosine:
+        if self.pairwise_cosine and self.zero_norm_count == 0:
             self.normalized_sum.add_((values / norms.unsqueeze(1)).sum(dim=0))
         self.squared_norm_sum.add_(values.square().sum())
         self.count += batch_count
 
-    def finish(self) -> tuple[D1ChannelMoments, torch.Tensor, float | None]:
+    def finish(self) -> tuple[D1ChannelMoments, torch.Tensor, float | D1CosineGap | None]:
         if self.count < 2:
             raise ValueError(f"D1 evaluation requires at least two {self.label} positions")
         covariance = self.centered_outer_sum / float(self.count - 1)
@@ -344,8 +350,10 @@ class _ChannelAccumulator:
                 (-(probabilities[positive] * probabilities[positive].log()).sum()).exp().item()
             )
         numerical_rank = int(torch.linalg.matrix_rank(covariance).item())
-        pairwise = None
-        if self.pairwise_cosine:
+        pairwise: float | D1CosineGap | None = None
+        if self.pairwise_cosine and self.zero_norm_count:
+            pairwise = D1CosineGap(self.zero_norm_count, self.count)
+        elif self.pairwise_cosine:
             cosine_mean = (self.normalized_sum.square().sum() - self.count) / (
                 self.count * (self.count - 1)
             )

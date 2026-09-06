@@ -300,21 +300,21 @@ def test_explicit_gradient_guard_has_teeth_when_norm_guard_is_neutralized(
     assert _cursor(system) == 0
 
 
-def test_component_gradient_guard_refuses_zero_and_unpartitioned_parameters() -> None:
+def test_component_gradient_guard_retains_zero_and_refuses_unpartitioned_parameters() -> None:
     system, bundle = _runtime(D1Arm.NONE)
-    before = _snap(system)
     handles = [
         parameter.register_hook(torch.zeros_like)
         for parameter in system.language_readout.parameters()
     ]
     try:
-        with pytest.raises(ValueError, match=r"language_readout.*nonzero"):
-            _apply(system, bundle)
+        result = _apply(system, bundle)
     finally:
         for handle in handles:
             handle.remove()
-    _unchanged(system, before)
-    assert not bundle.optimizer.state
+    assert (
+        result.gradient_reachability.language_readout.kind is D1GradientEvidenceKind.MEASURED_ZERO
+    )
+    assert bundle.optimizer.state
     assert _cursor(system) is None
 
     drifted = runtime_system(D1Arm.NONE)

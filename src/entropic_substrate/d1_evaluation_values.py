@@ -3,10 +3,71 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
 TARGET_PREDICTED_EXACT_MATCH_SEMANTIC: Final = "elementwise_fp32_equality_v1"
+
+
+@dataclass(frozen=True, slots=True)
+class D1CosineGap:
+    """Undefined full-population cosine, retaining the measured zero-vector count."""
+
+    affected_positions: int
+    total_positions: int
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.affected_positions) is not int
+            or type(self.total_positions) is not int
+            or self.total_positions < 2
+            or not 1 <= self.affected_positions <= self.total_positions
+        ):
+            raise ValueError("D1 cosine gap positions must satisfy 1 <= affected <= total >= 2")
+
+    @property
+    def reason(self) -> str:
+        return "undefined_zero_norm"
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "schema_version": "d1-cosine-gap-v1",
+            "reason": self.reason,
+            "affected_positions": self.affected_positions,
+            "total_positions": self.total_positions,
+        }
+
+
+def parse_d1_cosine(value: object) -> float | D1CosineGap:
+    """Dispatch historical scalar evidence or the exact versioned diagnostic gap."""
+    if type(value) is float:
+        if not math.isfinite(value) or not 0.0 <= value <= 2.0:
+            raise ValueError("D1 cosine must be finite and in [0, 2]")
+        return value
+    if not isinstance(value, Mapping) or set(value) != {
+        "schema_version",
+        "reason",
+        "affected_positions",
+        "total_positions",
+    }:
+        raise ValueError("D1 cosine gap requires exact versioned fields")
+    if value["schema_version"] != "d1-cosine-gap-v1" or value["reason"] != "undefined_zero_norm":
+        raise ValueError("D1 cosine gap schema or reason is unknown")
+    affected, total = value["affected_positions"], value["total_positions"]
+    if type(affected) is not int or type(total) is not int:
+        raise ValueError("D1 cosine gap positions must be integers")
+    return D1CosineGap(affected, total)
+
+
+def validate_d1_cosine(value: float | D1CosineGap, *, positions: int) -> None:
+    """Bind a measured scalar/gap to its unchanged full evaluation population."""
+    if type(value) is D1CosineGap:
+        if value.total_positions != positions:
+            raise ValueError("D1 cosine gap total positions differ from online positions")
+    else:
+        parse_d1_cosine(value)
 
 
 def _close(left: float, right: float) -> bool:

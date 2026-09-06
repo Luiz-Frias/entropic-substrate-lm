@@ -18,7 +18,10 @@ from types import MappingProxyType
 from typing import Final
 
 _SHA256_LENGTH: Final[int] = 64
-CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v3"
+# v4 admits measured-zero gradients and typed undefined zero-vector cosine.
+# Construction digests therefore prevent resuming an old scientific epoch with
+# the new producer semantics; historical payloads remain read-only admissible.
+CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v4"
 FAMILY_SCHEMA: Final[str] = "d1-family-v2"
 AGGREGATION_SCHEMA: Final[str] = "d1-aggregation-v3"
 EXECUTION_SCHEMA: Final[str] = "d1-execution-v3"

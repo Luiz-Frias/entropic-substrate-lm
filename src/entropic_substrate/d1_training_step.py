@@ -38,6 +38,7 @@ class D1GradientEvidenceKind(StrEnum):
     """The only admissible interpretations of a D1 component gradient."""
 
     MEASURED_NONZERO = "measured_nonzero"
+    MEASURED_ZERO = "measured_zero"
     STRUCTURALLY_ABSENT_STOP_GRADIENT = "structurally_absent_stop_gradient"
 
 
@@ -58,6 +59,9 @@ class D1ComponentGradientEvidence:
                 or self.pre_clip_l2_norm <= 0.0
             ):
                 raise ValueError("D1 measured component gradient must be a finite nonzero float")
+        elif self.kind is D1GradientEvidenceKind.MEASURED_ZERO:
+            if type(self.pre_clip_l2_norm) is not float or self.pre_clip_l2_norm != 0.0:
+                raise ValueError("D1 measured zero gradient must have a zero float norm")
         elif self.pre_clip_l2_norm is not None:
             raise ValueError("D1 structurally absent gradient must have a null norm")
 
@@ -85,8 +89,9 @@ class D1GradientReachability:
         if any(type(item) is not D1ComponentGradientEvidence for item in components):
             raise TypeError("D1 gradient reachability requires four component evidence values")
         required = (self.online_branch, self.language_readout, self.future_law)
-        if any(item.kind is not D1GradientEvidenceKind.MEASURED_NONZERO for item in required):
-            raise ValueError("D1 non-target component gradients must be measured nonzero")
+        measured = {D1GradientEvidenceKind.MEASURED_NONZERO, D1GradientEvidenceKind.MEASURED_ZERO}
+        if any(item.kind not in measured for item in required):
+            raise ValueError("D1 non-target component gradients must be measured")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -472,9 +477,16 @@ def _measured_component_gradient(
         tensor_norm = float(torch.linalg.vector_norm(gradient.detach().float()).item())
         squared_norm += tensor_norm * tensor_norm
     norm = math.sqrt(squared_norm)
-    if not math.isfinite(norm) or norm <= 0.0:
-        raise ValueError(f"D1 {name} gradient must be measured nonzero")
-    return D1ComponentGradientEvidence(D1GradientEvidenceKind.MEASURED_NONZERO, norm)
+    if not math.isfinite(norm):
+        raise ValueError(f"D1 {name} gradient norm must be finite")
+    # A connected stationary/collapsed model has finite zero gradients. The
+    # scientific clauses decide collapse; graph reachability is checked above.
+    kind = (
+        D1GradientEvidenceKind.MEASURED_ZERO
+        if norm == 0.0
+        else D1GradientEvidenceKind.MEASURED_NONZERO
+    )
+    return D1ComponentGradientEvidence(kind, norm)
 
 
 def _require_aggregate_gradient_norm(

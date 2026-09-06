@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import D1CosineGap, parse_d1_cosine
 from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
 from entropic_substrate.evidence.d1_telemetry_values import D1_REPORT_ONLY_METRICS
 from entropic_substrate.evidence.resource_provenance import EvidenceGap, RunStartProvenance
@@ -204,6 +205,15 @@ def _quality_metrics(value: object) -> dict[str, float]:
         if field not in value:
             continue
         item = value[field]
+        if field == "mean_pairwise_cosine_distance":
+            cosine = parse_d1_cosine(item)
+            if type(cosine) is D1CosineGap:
+                if cosine.total_positions != value.get("online_positions"):
+                    raise ValueError("D1 cosine gap positions differ from quality population")
+                prefix = f"d1/diagnostic_gap/{cosine.reason}"
+                metrics[f"{prefix}/affected_positions"] = float(cosine.affected_positions)
+                metrics[f"{prefix}/total_positions"] = float(cosine.total_positions)
+                continue
         if type(item) not in (int, float) or not math.isfinite(float(item)):
             raise ValueError(f"D1 quality scalar {field!r} must be finite")
         metrics[f"d1/quality/{evidence.value}/{field}"] = float(item)

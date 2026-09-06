@@ -13,6 +13,8 @@ from typing import Final, cast
 from entropic_substrate.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
     D1ChannelMoments,
+    D1CosineGap,
+    validate_d1_cosine,
 )
 from entropic_substrate.d1_training_step import D1TrainStepResult
 from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
@@ -274,7 +276,7 @@ class D1QualityEvidence:
     target_moments: D1ChannelMoments
     predicted_moments: D1ChannelMoments
     target_predicted_exact_match_count: int
-    mean_pairwise_cosine_distance: float
+    mean_pairwise_cosine_distance: float | D1CosineGap
     pairwise_cosine_semantic: str
     raw_variance_penalty: float
     weighted_variance_penalty: float
@@ -316,9 +318,10 @@ class D1QualityEvidence:
                 raise gap("metric_domain", field, "must be in [0, 1]")
         if tuple(sorted(coverages)) != coverages:
             raise gap("coverage_order", "coverage", "coverage intervals must be nested")
-        _finite(self.mean_pairwise_cosine_distance, "mean_pairwise_cosine_distance")
-        if not 0.0 <= self.mean_pairwise_cosine_distance <= 2.0:
-            raise gap("metric_domain", "mean_pairwise_cosine_distance", "must be in [0, 2]")
+        try:
+            validate_d1_cosine(self.mean_pairwise_cosine_distance, positions=self.online_positions)
+        except (TypeError, ValueError) as error:
+            raise gap("metric_domain", "mean_pairwise_cosine_distance", str(error)) from error
         if self.pairwise_cosine_semantic != PAIRWISE_COSINE_SEMANTIC:
             raise gap("semantic_mismatch", "pairwise_cosine_semantic", "registered meaning changed")
         for field in ("batch_count", "online_positions", "residual_elements"):
@@ -465,13 +468,22 @@ class D1QualityEvidence:
         if name not in D1_SCALAR_METRICS:
             raise gap("unknown_metric", name, "is not a registered scalar quality metric")
         value = getattr(self, name)
+        if type(value) is D1CosineGap:
+            raise gap(value.reason, name, f"undefined at {value.affected_positions} positions")
         if type(value) not in (int, float):  # pragma: no cover - whitelist is pinned above
             raise AssertionError("registered scalar metric has a non-scalar representation")
         return float(value)
 
     @property
     def manifest(self) -> dict[str, object]:
-        return {field: thaw_for_digest(getattr(self, field)) for field in sorted(D1_QUALITY_FIELDS)}
+        return {
+            field: (
+                value.manifest
+                if type(value := getattr(self, field)) is D1CosineGap
+                else thaw_for_digest(value)
+            )
+            for field in sorted(D1_QUALITY_FIELDS)
+        }
 
 
 @dataclass(frozen=True, slots=True)

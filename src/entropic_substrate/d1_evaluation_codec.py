@@ -6,7 +6,7 @@ import json
 from typing import NoReturn, cast
 
 from entropic_substrate.d1_evaluation import D1EvalResult
-from entropic_substrate.d1_evaluation_values import D1ChannelMoments
+from entropic_substrate.d1_evaluation_values import D1ChannelMoments, D1CosineGap, parse_d1_cosine
 
 __all__ = [
     "D1EvaluationCodecError",
@@ -17,6 +17,7 @@ __all__ = [
 ]
 
 _SCHEMA = "d1-evaluation-wire-v2"
+_GAP_SCHEMA = "d1-evaluation-wire-v3"
 _FLOAT_FIELDS = (
     "language_loss",
     "nats_per_byte",
@@ -35,7 +36,6 @@ _FLOAT_FIELDS = (
     "coverage_50",
     "coverage_80",
     "coverage_95",
-    "mean_pairwise_cosine_distance",
     "raw_variance_penalty",
     "weighted_variance_penalty",
     "raw_covariance_penalty",
@@ -55,6 +55,7 @@ _CHANNEL_KEYS = frozenset({*_CHANNEL_VECTOR_FIELDS, *_CHANNEL_FLOAT_FIELDS, *_CH
 _KEYS = frozenset(
     {
         "schema_version",
+        "mean_pairwise_cosine_distance",
         "channels",
         "state_sample_covariance",
         *_FLOAT_FIELDS,
@@ -149,7 +150,14 @@ def d1_evaluation_to_mapping(result: D1EvalResult) -> dict[str, object]:
                 "target": _channel_to_mapping(result.target_moments),
             },
             "residual_mean_vector": list(result.residual_mean_vector),
-            "schema_version": _SCHEMA,
+            "schema_version": (
+                _GAP_SCHEMA
+                if type(result.mean_pairwise_cosine_distance) is D1CosineGap
+                else _SCHEMA
+            ),
+            "mean_pairwise_cosine_distance": result.telemetry_manifest[
+                "mean_pairwise_cosine_distance"
+            ],
             "state_sample_covariance": [list(row) for row in result.state_sample_covariance],
         }
     )
@@ -161,8 +169,11 @@ def d1_evaluation_from_mapping(value: object) -> D1EvalResult:
     root = _mapping(value)
     if frozenset(root) != _KEYS:
         _fail("D1 evaluation keys must be exact")
-    if root["schema_version"] != _SCHEMA:
-        _fail(f"D1 evaluation schema_version must be {_SCHEMA}")
+    expected_schema = (
+        _SCHEMA if type(root["mean_pairwise_cosine_distance"]) is float else _GAP_SCHEMA
+    )
+    if root["schema_version"] != expected_schema:
+        _fail(f"D1 evaluation schema_version must be {expected_schema}")
     channels = _mapping(root["channels"])
     if frozenset(channels) != frozenset({"state", "target", "predicted"}):
         _fail("D1 evaluation channel identities must be exact")
@@ -199,9 +210,8 @@ def d1_evaluation_from_mapping(value: object) -> D1EvalResult:
             state_moments=_channel_from_mapping(channels["state"], field="state"),
             target_moments=_channel_from_mapping(channels["target"], field="target"),
             predicted_moments=_channel_from_mapping(channels["predicted"], field="predicted"),
-            mean_pairwise_cosine_distance=_floating(
+            mean_pairwise_cosine_distance=parse_d1_cosine(
                 root["mean_pairwise_cosine_distance"],
-                field="mean_pairwise_cosine_distance",
             ),
             raw_variance_penalty=_floating(
                 root["raw_variance_penalty"], field="raw_variance_penalty"
