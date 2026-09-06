@@ -8,6 +8,7 @@ their predictor are separate feature owners.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -152,7 +153,12 @@ class CausalStateEncoder(nn.Module):
         self.blocks = nn.ModuleList([build_block(cfg) for _ in range(cfg.n_layers)])
         self.final_norm = AffineFreeRMSNorm(width=self.latent_width)
 
-    def forward(self, observations: EncodedObservations) -> LatentTrajectory:
+    def forward(
+        self,
+        observations: EncodedObservations,
+        *,
+        final_residual: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None = None,
+    ) -> LatentTrajectory:
         """Emit causal states with the same width as the adapted observations."""
         if type(observations) is not EncodedObservations:
             msg = "causal state encoder requires EncodedObservations"
@@ -164,8 +170,23 @@ class CausalStateEncoder(nn.Module):
             )
             raise ValueError(msg)
         states = observations.values
-        for block in self.blocks:
-            states = block(states)
+        for index, block in enumerate(self.blocks):
+            proposed = block(states)
+            if final_residual is not None and index == len(self.blocks) - 1:
+                update = final_residual(states, proposed - states)
+                if update.shape != states.shape or update.device != states.device:
+                    raise ValueError("final residual consumer must preserve shape and device")
+                fp32_promotion = (
+                    states.dtype in (torch.float16, torch.bfloat16)
+                    and update.dtype == torch.float32
+                )
+                if update.dtype != states.dtype and not fp32_promotion:
+                    raise ValueError("final residual dtype must match the state or its FP32 island")
+                if not bool(torch.isfinite(update).all()):
+                    raise ValueError("final residual consumer returned a nonfinite update")
+                states = states + update
+            else:
+                states = proposed
         return LatentTrajectory(
             values=self.final_norm(states), codec_identity=observations.codec_identity
         )
