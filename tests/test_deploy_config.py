@@ -116,6 +116,18 @@ def test_deploy_group_pins_system_metrics_dependencies() -> None:
     assert "pynvml" in deploy_names
 
 
+def test_deployment_and_analysis_are_audited_runtime_capabilities() -> None:
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    assert "boto3" in _dependency_names(groups["deploy"])
+    assert "boto3" not in _dependency_names(groups["dev"])
+    audit = pyproject["tool"]["deptry"]
+    assert set(audit["non_dev_dependency_groups"]) == {"deploy", "analysis"}
+    assert "DEP004" not in audit.get("ignore", [])
+    assert audit["per_rule_ignores"] == {"DEP002": ["dvc", "psutil"]}
+    assert "uv run deptry src notebooks" in (REPO_ROOT / "justfile").read_text()
+
+
 def test_analysis_group_is_dev_only_and_absent_from_deploy() -> None:
     """matplotlib/marimo/plotly render interpretation charts (entropic_substrate.
     analysis, notebooks/) but must never grow the training-pod image: mirrors

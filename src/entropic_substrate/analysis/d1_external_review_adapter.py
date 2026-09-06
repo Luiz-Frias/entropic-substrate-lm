@@ -88,7 +88,8 @@ class D1ReviewSandboxIdentity:
             "no_new_privileges": True,
             "profile_sha256": self.profile_sha256,
             "runtime": _RUNTIME,
-            "secret_delivery": "sandbox-managed-secret-mount",  # pragma: allowlist secret
+            # Delivery-method vocabulary, not a credential; preserve the wire identity.
+            "secret_delivery": "sandbox-managed-secret-mount",  # nosec B105 # pragma: allowlist secret
         }
 
     @property

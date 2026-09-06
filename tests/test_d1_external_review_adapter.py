@@ -48,6 +48,15 @@ _RESPONSE = b'{"provider_response":"opaque"}'
 _REPORT = b"Review outcome: NO_MAJOR_FINDINGS\n"
 
 
+def test_secret_delivery_is_a_label_with_a_narrow_security_annotation() -> None:
+    identity = D1ReviewSandboxIdentity(_IMAGE, _PROFILE, "provider-egress-only")
+    assert identity.manifest["secret_delivery"] == "sandbox-managed-secret-mount"  # pragma: allowlist secret
+    source = Path(review_adapter_module.__file__).read_text()
+    line = next(line for line in source.splitlines() if '"secret_delivery":' in line)
+    assert "# nosec B105" in line
+    assert "pragma: allowlist secret" in line
+
+
 def _request(
     *,
     round_number: int = 1,

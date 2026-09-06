@@ -59,7 +59,7 @@ typecheck:
 # Dependency hygiene + security lint (deptry + bandit, configured in pyproject).
 audit:
     @echo "→ Auditing dependencies and security..."
-    uv run deptry src
+    uv run deptry src notebooks
     uv run bandit -c pyproject.toml -q -r src
 
 # ---------------------------------------------------------------------------

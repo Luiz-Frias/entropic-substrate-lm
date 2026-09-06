@@ -1145,6 +1145,7 @@ analysis = [
     { name = "plotly" },
 ]
 deploy = [
+    { name = "boto3" },
     { name = "dvc", extra = ["s3"] },
     { name = "psutil" },
     { name = "pynvml" },
@@ -1187,6 +1188,7 @@ analysis = [
     { name = "plotly", specifier = ">=5.24.0" },
 ]
 deploy = [
+    { name = "boto3", specifier = ">=1.34.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "pynvml", specifier = ">=12.0.0" },
