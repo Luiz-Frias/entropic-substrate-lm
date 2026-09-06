@@ -6,6 +6,10 @@ import? 'justfile.local'
 default:
     @just --list --unsorted
 
+# Local synthetic smoke only; no scientific gate or Runpod spending authority.
+d-probe *ARGS:
+    uv run python -m entropic_substrate.cli d-probe {{ARGS}}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------

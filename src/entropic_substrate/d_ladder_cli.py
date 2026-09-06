@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 from dataclasses import replace
+from pathlib import Path
 
 from entropic_substrate.experiments.d1_execution import D1AmpPolicy, default_d1_execution_protocol
 from entropic_substrate.experiments.d1_family import build_d1_experiment_family
@@ -94,3 +97,71 @@ def tiny_rung_spec(experiment: str, *, seed: int) -> RungSpec:
             permutation=mapping if experiment == "d5-permuted" else None,
         )
     raise ValueError(f"unknown tiny D-ladder experiment: {experiment}")
+
+
+def add_d_ladder_parser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    """Attach the bounded local tracer command to the repository CLI."""
+    parser = sub.add_parser("d-probe", help="execute a local synthetic D-ladder tiny probe")
+    parser.add_argument("settings", nargs="*", help="optional explicit key=value tiny settings")
+    parser.add_argument("--exp")
+    parser.add_argument("--tiny", choices=("true", "false"))
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--steps", type=int)
+    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument("--resume", type=Path)
+    parser.add_argument("--manifest", type=Path, help="D1's existing validated smoke manifest")
+
+
+def _resolve_probe_options(args: argparse.Namespace) -> None:
+    fields = {
+        "exp": "exp",
+        "tiny": "tiny",
+        "seed": "seed",
+        "steps": "steps",
+        "out": "out_dir",
+        "manifest": "manifest",
+        "resume": "resume",
+    }
+    for item in args.settings:
+        key, separator, value = item.partition("=")
+        if separator != "=" or key not in fields or not value:
+            raise ValueError("probe settings require a known nonempty key=value")
+        field = fields[key]
+        if getattr(args, field) is not None:
+            raise ValueError(f"duplicate or conflicting probe setting: {key}")
+        parsed: str | int | Path = value
+        if key in {"seed", "steps"}:
+            parsed = int(value)
+        elif key in {"out", "manifest", "resume"}:
+            parsed = Path(value)
+        setattr(args, field, parsed)
+    # These are excluded-smoke conveniences, never scientific registration defaults.
+    args.exp = args.exp if args.exp is not None else "d2-g"
+    args.tiny = args.tiny if args.tiny is not None else "true"
+    args.out_dir = args.out_dir if args.out_dir is not None else Path("results/d-probe")
+
+
+def cmd_d_probe(args: argparse.Namespace) -> int:
+    """Run a real tiny model and emit only a smoke receipt."""
+    from entropic_substrate.d_ladder_execution import SmokeRequest, run_local_smoke
+
+    _resolve_probe_options(args)
+    if args.tiny != "true":
+        raise ValueError(
+            "d-probe admits local tiny runs only; scientific runs require registration"
+        )
+    if args.exp.startswith("d1-"):
+        from entropic_substrate.d1_probe_cli import run_d1_probe
+
+        return run_d1_probe(args)
+    if args.manifest is not None:
+        raise ValueError("--manifest on d-probe is reserved for the existing D1 trainer")
+    request = SmokeRequest(
+        tiny_rung_spec(args.exp, seed=42 if args.seed is None else args.seed),
+        max_steps=2 if args.steps is None else args.steps,
+    )
+    result = run_local_smoke(request, args.out_dir, resume=args.resume)
+    print(json.dumps(result, sort_keys=True, allow_nan=False))
+    return 0

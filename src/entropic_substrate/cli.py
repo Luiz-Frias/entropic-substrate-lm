@@ -279,6 +279,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_field_pretrain_parser(sub)
 
+    from entropic_substrate.d_ladder_cli import add_d_ladder_parser
+
+    add_d_ladder_parser(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1065,6 +1069,10 @@ def main(
         "embedding-geometry": cmd_embedding_geometry,
         "field-pretrain": cmd_field_pretrain,
     }
+    if args.command == "d-probe":
+        from entropic_substrate.d_ladder_cli import cmd_d_probe
+
+        return cmd_d_probe(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
