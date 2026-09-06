@@ -121,6 +121,8 @@ def test_deployment_and_analysis_are_audited_runtime_capabilities() -> None:
     groups = pyproject["dependency-groups"]
     assert "boto3" in _dependency_names(groups["deploy"])
     assert "boto3" not in _dependency_names(groups["dev"])
+    assert "scipy" in _dependency_names(groups["deploy"])
+    assert "scipy" in _dependency_names(groups["analysis"])
     audit = pyproject["tool"]["deptry"]
     assert set(audit["non_dev_dependency_groups"]) == {"deploy", "analysis"}
     assert "DEP004" not in audit.get("ignore", [])
