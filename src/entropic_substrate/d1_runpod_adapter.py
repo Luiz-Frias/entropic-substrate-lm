@@ -37,6 +37,7 @@ from entropic_substrate.evidence.resource_provenance import (
     PurchaseOption,
     RunStartProvenance,
 )
+from entropic_substrate.provider_launch import PodLaunchRequest
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
@@ -332,6 +333,32 @@ class RunpodctlD1Adapter:
     def create(self, intent: D1OperatorLaunchIntent) -> D1PodPlacement:
         if type(intent) is not D1OperatorLaunchIntent:
             raise TypeError("RunPod create requires D1OperatorLaunchIntent")
+        return self.create_pod(
+            PodLaunchRequest(
+                intent.plan.logical_run_id,
+                intent.image,
+                intent.resource,
+                intent.terminate_after_seconds,
+                (
+                    "python",
+                    "-m",
+                    "entropic_substrate.d1_trainer_mailbox_command",
+                    "--repo-root",
+                    self._trainer_repo_root,
+                    "--max-mailbox-objects",
+                    str(self._trainer_mailbox_max_objects),
+                    "--maximum-wait-seconds",
+                    str(self._trainer_mailbox_wait.maximum_seconds),
+                    "--poll-interval-seconds",
+                    str(self._trainer_mailbox_wait.poll_interval_seconds),
+                ),
+            )
+        )
+
+    def create_pod(self, intent: PodLaunchRequest) -> D1PodPlacement:
+        """Shared allocation/parser/cleanup implementation behind scientific adapters."""
+        if type(intent) is not PodLaunchRequest:
+            raise TypeError("RunPod allocation requires PodLaunchRequest")
         if intent.resource.provider != "runpod":
             raise ValueError("RunPod adapter requires provider='runpod'")
         if intent.resource.purchase_option is not PurchaseOption.ON_DEMAND:
@@ -341,7 +368,7 @@ class RunpodctlD1Adapter:
         cloud_type = _MARKETS.get(intent.resource.market)
         if cloud_type is None:
             raise ValueError("RunPod market must map to secure or community cloud")
-        subject = intent.plan.logical_run_id
+        subject = intent.logical_run_id
         terminate_after = self._now() + timedelta(seconds=intent.terminate_after_seconds)
         argv = [
             "runpodctl",
@@ -360,23 +387,14 @@ class RunpodctlD1Adapter:
             "--data-center-ids",
             intent.resource.region,
             "--docker-args",
-            " ".join(
-                (
-                    "python",
-                    "-m",
-                    "entropic_substrate.d1_trainer_mailbox_command",
-                    "--repo-root",
-                    self._trainer_repo_root,
-                    "--max-mailbox-objects",
-                    str(self._trainer_mailbox_max_objects),
-                    "--maximum-wait-seconds",
-                    str(self._trainer_mailbox_wait.maximum_seconds),
-                    "--poll-interval-seconds",
-                    str(self._trainer_mailbox_wait.poll_interval_seconds),
-                )
-            ),
+            " ".join(intent.worker_command),
             "--env",
-            self._r2_secret_environment,
+            json.dumps(
+                {**json.loads(self._r2_secret_environment), **dict(intent.environment)},
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
         ]
         argv.extend(
             [
