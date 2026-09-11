@@ -93,6 +93,16 @@ def test_missing_commit_or_blob_and_nonancestor_are_explicit_false_values(
     assert adapter.is_ancestor(_PREREG, _CODE) is False
 
 
+def test_tree_inventory_is_nul_delimited_and_refuses_escaped_paths(tmp_path: Path) -> None:
+    command = ("git", "ls-tree", "-rz", "--name-only", _CODE, "--", "src", "configs")
+    runner = _Runner({command: _result(b"configs/a.yaml\0src/pkg/a.py\0")})
+    adapter = SubprocessD1GitProvenance(repo_root=tmp_path, runner=runner)
+    assert adapter.tree_paths(_CODE, ("src", "configs")) == ("configs/a.yaml", "src/pkg/a.py")
+    runner.responses[command] = _result(b"../outside\0")
+    with pytest.raises((ValueError, D1GitProvenanceAdapterError)):
+        adapter.tree_paths(_CODE, ("src", "configs"))
+
+
 @pytest.mark.parametrize(
     ("call", "args"),
     [

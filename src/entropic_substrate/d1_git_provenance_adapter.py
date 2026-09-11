@@ -117,6 +117,27 @@ class SubprocessD1GitProvenance:
         payload = self.read_file(commit, path)
         return None if payload is None else hashlib.sha256(payload).hexdigest()
 
+    def tree_paths(self, revision: str, prefixes: tuple[str, ...]) -> tuple[str, ...]:
+        """Inventory exact tracked files without checkout or shell path expansion."""
+        identity = _commit(revision)
+        if type(prefixes) is not tuple or not prefixes:
+            raise ValueError("Git tree inventory requires explicit nonempty prefixes")
+        selected = tuple(
+            normalize_d1_relative_artifact_path(path, label="Git tree prefix") for path in prefixes
+        )
+        result = self._run(
+            "tree", ("git", "ls-tree", "-rz", "--name-only", identity, "--", *selected)
+        )
+        if result.returncode != 0 or not result.stdout.endswith(b"\0"):
+            _fail("tree", "Git returned an empty or malformed tree inventory")
+        values = tuple(
+            normalize_d1_relative_artifact_path(path.decode("utf-8"), label="Git tree path")
+            for path in result.stdout[:-1].split(b"\0")
+        )
+        if len(set(values)) != len(values):
+            _fail("tree", "Git returned duplicate tree paths")
+        return values
+
     def read_file(self, revision: str, path: str) -> bytes | None:
         """Read exact committed blob bytes through the bounded shell-free runner."""
         identity = _commit(revision)
