@@ -16,10 +16,8 @@ from entropic_substrate.d1_finalized_cell_custody import (
 )
 from entropic_substrate.d1_numerical_defect import D1TerminalNumericalDefectRecord
 from entropic_substrate.d1_operator_evidence import (
-    D1StagedTrainerRequestReceipt,
+    D1ExportedTrainerHandoff,
     D1TrainerExportReceipt,
-    D1TrainerStartReceipt,
-    d1_runtime_observation_sha256,
     verify_d1_trainer_export,
 )
 from entropic_substrate.d1_operator_ports import (
@@ -37,13 +35,9 @@ from entropic_substrate.d1_operator_values import (
 from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
 from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
 from entropic_substrate.d1_trainer_request_codec import (
-    build_d1_trainer_request,
     d1_trainer_bootstrap_attempt_sha256,
-    d1_trainer_command_sha256,
-    d1_trainer_request_sha256,
-    serialize_d1_trainer_request,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.d1_trainer_stage import stage_and_start_d1_trainer
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
@@ -70,6 +64,7 @@ from entropic_substrate.experiments.d1_launch_attempts import (
 from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan, D1RunPlan
 from entropic_substrate.experiments.d1_primitives import RunClass
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.shared_attempt import AttemptFlow
 
 
 class D1OperatorClock(Protocol):
@@ -285,121 +280,168 @@ class D1SequentialOperatorController:
     def _execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult:
         subject = intent.plan.logical_run_id
         attempt = _identity(intent)
-        auth = self._runpod.verify_authenticated()
-        ledger = self.attempt_ledger.record(attempt, observed_at=self._clock.now_utc())
-        self.attempt_ledger, self._active_attempt = ledger, attempt
-        precreate = self._custody.persist_precreate(intent, ledger, auth)
-        manager = self.process_manager.admit_launch(
-            subject_id=subject,
-            actor=self._operator,
-            artifact=precreate,
-            event_id=f"{subject}:admit",
-        )
-        self.process_manager = manager
-        placement = self._runpod.create(intent)
-        self._active_pod_id = placement.pod_id
-        attempt_sha256 = d1_trainer_bootstrap_attempt_sha256(placement.pod_id, intent)
-        runtime = self._trainer.bootstrap_runtime(placement.pod_id, attempt_sha256)
-        start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
-        self._custody.persist_run_start(start)
-        input_artifact = self._stage_and_start(
-            placement.pod_id, intent.plan, start, runtime, attempt_sha256
-        )
-        manager = manager.start_running(
-            subject_id=subject,
-            actor=self._automation,
-            artifact=input_artifact,
-            event_id=f"{subject}:running:0",
-        )
-        self.process_manager = manager
-        ledger = ledger.transition(
-            attempt,
-            status=D1LaunchAttemptStatus.TRAINER_STARTED,
-            observed_at=start.trainer_started_at,
-        )
-        self._custody.persist_attempt_ledger(ledger)
-        self.attempt_ledger = ledger
-        candidate = self._trainer.await_exported_handoff(placement.pod_id)
-        export = verify_d1_trainer_export(candidate)
-        handoff = export.handoff
-        stopped = handoff.termination
-        if (
-            stopped.logical_run_id,
-            stopped.execution_segment_index,
-        ) != (subject, 0):
-            raise ValueError("trainer handoff differs from the active execution segment")
-        manager = manager.record_trainer_stop(
-            subject_id=subject,
-            actor=self._automation,
-            artifact=export.journal,
-            event_id=f"{subject}:trainer-stop:0",
-        )
-        self.process_manager = manager
-        termination = self._terminate_active_pod(
-            placement.pod_id,
-            start=start,
-            trainer_ended_at=stopped.trainer_ended_at,
-        )
-        billing = self._runpod.billing(placement.pod_id, start=start)
-        finalization = finalize_d1_billing(
-            plan=intent.plan,
-            segment_starts=(start,),
-            segment_terminations=(termination,),
-            provider_billings=(billing,),
-            handoff=handoff,
-            journal_path=candidate.journal_path,
-            expected_journal_state=stopped.journal_state,
-        )
-        failed = isinstance(handoff, D1TrainerFailureHandoff)
-        ledger = ledger.transition(
-            attempt,
-            status=(D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED),
-            observed_at=termination.pod_terminated_at,
-            reason=(handoff.error_message if failed else None),
-        )
-        self._custody.persist_attempt_ledger(ledger)
-        self.attempt_ledger = ledger
-        queue_admissible = not failed and billing.provider_billing_complete
-        defect = _terminal_defect(intent, candidate.journal_path) if failed else None
-        finalized_cell: D1FinalizedCellCustodyRecord | None = None
-        if isinstance(export.checkpoint, ArtifactIdentity) and (not failed or defect is not None):
-            journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-            finalized_cell = attest_d1_finalized_cell_custody(
-                intent=intent,
-                segment_starts=(start,),
-                attempt_ledger=ledger,
-                finalization=finalization,
-                journal=journal,
-                checkpoint=export.checkpoint,
-                quarantined_siblings=_quarantined_siblings(handoff),
-                numerical_defect=defect,
+        placement: D1PodPlacement
+        start: RunStartProvenance
+        manager: D1ProcessManager
+        candidate: D1ExportedTrainerHandoff
+        export: D1TrainerExportReceipt
+        termination: ExecutionSegmentTermination
+        billing: TerminalProviderBillingEvidence
+        ledger: D1LaunchAttemptLedger
+
+        def prepare() -> None:
+            nonlocal ledger, manager
+            auth = self._runpod.verify_authenticated()
+            ledger = self.attempt_ledger.record(attempt, observed_at=self._clock.now_utc())
+            self.attempt_ledger, self._active_attempt = ledger, attempt
+            precreate = self._custody.persist_precreate(intent, ledger, auth)
+            manager = self.process_manager.admit_launch(
+                subject_id=subject,
+                actor=self._operator,
+                artifact=precreate,
+                event_id=f"{subject}:admit",
             )
-            finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
-        else:
-            finalization_artifact = self._custody.persist_finalization(finalization)
-        manager = manager.finalize_operator(
-            subject_id=subject,
-            actor=self._operator,
-            artifact=finalization_artifact,
-            event_id=f"{subject}:operator-finalized",
-        )
-        self.process_manager, self._executing = manager, False
-        self._active_attempt = None
-        if not queue_admissible:
-            self._halted_detail = "terminal trainer or provider-billing evidence gap"
-        return D1OperatorRunResult(
-            manager,
-            ledger,
-            start,
-            placement,
-            export,
-            termination,
-            billing,
-            finalization,
-            finalized_cell,
-            finalization_artifact,
-            queue_admissible,
-        )
+            self.process_manager = manager
+
+        def allocate() -> None:
+            nonlocal placement
+            placement = self._runpod.create(intent)
+            self._active_pod_id = placement.pod_id
+
+        def launch() -> None:
+            nonlocal start, manager, ledger
+            attempt_sha256 = d1_trainer_bootstrap_attempt_sha256(placement.pod_id, intent)
+            runtime = self._trainer.bootstrap_runtime(placement.pod_id, attempt_sha256)
+            start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
+            self._custody.persist_run_start(start)
+            input_artifact = self._stage_and_start(
+                placement.pod_id, intent.plan, start, runtime, attempt_sha256
+            )
+            manager = manager.start_running(
+                subject_id=subject,
+                actor=self._automation,
+                artifact=input_artifact,
+                event_id=f"{subject}:running:0",
+            )
+            self.process_manager = manager
+            ledger = ledger.transition(
+                attempt,
+                status=D1LaunchAttemptStatus.TRAINER_STARTED,
+                observed_at=start.trainer_started_at,
+            )
+            self._custody.persist_attempt_ledger(ledger)
+            self.attempt_ledger = ledger
+
+        def collect() -> None:
+            nonlocal candidate, export, manager
+            candidate = self._trainer.await_exported_handoff(placement.pod_id)
+            export = verify_d1_trainer_export(candidate)
+            handoff = export.handoff
+            stopped = handoff.termination
+            if (
+                stopped.logical_run_id,
+                stopped.execution_segment_index,
+            ) != (subject, 0):
+                raise ValueError("trainer handoff differs from the active execution segment")
+            manager = manager.record_trainer_stop(
+                subject_id=subject,
+                actor=self._automation,
+                artifact=export.journal,
+                event_id=f"{subject}:trainer-stop:0",
+            )
+            self.process_manager = manager
+
+        def terminate() -> None:
+            nonlocal termination
+            stopped = export.handoff.termination
+            termination = self._terminate_active_pod(
+                placement.pod_id,
+                start=start,
+                trainer_ended_at=stopped.trainer_ended_at,
+            )
+
+        def bill() -> None:
+            nonlocal billing
+            billing = self._runpod.billing(placement.pod_id, start=start)
+
+        def finalize() -> D1OperatorRunResult:
+            nonlocal ledger, manager
+            handoff = export.handoff
+            stopped = handoff.termination
+            finalization = finalize_d1_billing(
+                plan=intent.plan,
+                segment_starts=(start,),
+                segment_terminations=(termination,),
+                provider_billings=(billing,),
+                handoff=handoff,
+                journal_path=candidate.journal_path,
+                expected_journal_state=stopped.journal_state,
+            )
+            failed = isinstance(handoff, D1TrainerFailureHandoff)
+            ledger = ledger.transition(
+                attempt,
+                status=(
+                    D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED
+                ),
+                observed_at=termination.pod_terminated_at,
+                reason=(handoff.error_message if failed else None),
+            )
+            self._custody.persist_attempt_ledger(ledger)
+            self.attempt_ledger = ledger
+            queue_admissible = not failed and billing.provider_billing_complete
+            defect = _terminal_defect(intent, candidate.journal_path) if failed else None
+            finalized_cell: D1FinalizedCellCustodyRecord | None = None
+            if isinstance(export.checkpoint, ArtifactIdentity) and (
+                not failed or defect is not None
+            ):
+                journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
+                finalized_cell = attest_d1_finalized_cell_custody(
+                    intent=intent,
+                    segment_starts=(start,),
+                    attempt_ledger=ledger,
+                    finalization=finalization,
+                    journal=journal,
+                    checkpoint=export.checkpoint,
+                    quarantined_siblings=_quarantined_siblings(handoff),
+                    numerical_defect=defect,
+                )
+                finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
+            else:
+                finalization_artifact = self._custody.persist_finalization(finalization)
+            manager = manager.finalize_operator(
+                subject_id=subject,
+                actor=self._operator,
+                artifact=finalization_artifact,
+                event_id=f"{subject}:operator-finalized",
+            )
+            self.process_manager, self._executing = manager, False
+            self._active_attempt = None
+            if not queue_admissible:
+                self._halted_detail = "terminal trainer or provider-billing evidence gap"
+            return D1OperatorRunResult(
+                manager,
+                ledger,
+                start,
+                placement,
+                export,
+                termination,
+                billing,
+                finalization,
+                finalized_cell,
+                finalization_artifact,
+                queue_admissible,
+            )
+
+        return AttemptFlow(
+            prepare,
+            allocate,
+            launch,
+            collect,
+            terminate,
+            bill,
+            finalize,
+            on_failure=lambda error: self._halt(subject, error),
+        ).run()
 
     def execute_resume(
         self,
@@ -450,103 +492,148 @@ class D1SequentialOperatorController:
         attempt: D1LaunchAttemptIdentity,
     ) -> D1OperatorRunResult:
         subject, segment = intent.plan.logical_run_id, intent.execution_segment_index
-        auth = self._runpod.verify_authenticated()
-        precreate = self._custody.persist_precreate(intent, self.attempt_ledger, auth)
-        del precreate
-        placement = self._runpod.create(intent)
-        self._active_pod_id = placement.pod_id
-        attempt_sha256 = d1_trainer_bootstrap_attempt_sha256(placement.pod_id, intent)
-        runtime = self._trainer.bootstrap_runtime(placement.pod_id, attempt_sha256)
-        start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
-        validate_execution_segments((*history.starts, start))
-        self._custody.persist_run_start(start)
-        input_artifact = self._stage_and_start(
-            placement.pod_id, intent.plan, start, runtime, attempt_sha256
-        )
-        manager = self.process_manager.resume(
-            subject_id=subject,
-            actor=self._automation,
-            artifact=input_artifact,
-            event_id=f"{subject}:resume:{segment}",
-        )
-        self.process_manager = manager
-        candidate = self._trainer.await_exported_handoff(placement.pod_id)
-        export = verify_d1_trainer_export(candidate)
-        handoff, stopped = export.handoff, export.handoff.termination
-        if (stopped.logical_run_id, stopped.execution_segment_index) != (subject, segment):
-            raise ValueError("resumed trainer handoff differs from the active segment")
-        manager = manager.record_trainer_stop(
-            subject_id=subject,
-            actor=self._automation,
-            artifact=export.journal,
-            event_id=f"{subject}:trainer-stop:{segment}",
-        )
-        self.process_manager = manager
-        termination = self._terminate_active_pod(
-            placement.pod_id,
-            start=start,
-            trainer_ended_at=stopped.trainer_ended_at,
-        )
-        billing = self._runpod.billing(placement.pod_id, start=start)
-        finalization = finalize_d1_billing(
-            plan=intent.plan,
-            segment_starts=(*history.starts, start),
-            segment_terminations=(*history.terminations, termination),
-            provider_billings=(*history.billings, billing),
-            handoff=handoff,
-            journal_path=candidate.journal_path,
-            expected_journal_state=stopped.journal_state,
-        )
-        failed = isinstance(handoff, D1TrainerFailureHandoff)
-        ledger = self.attempt_ledger.transition(
-            attempt,
-            status=(D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED),
-            observed_at=termination.pod_terminated_at,
-            reason=(handoff.error_message if failed else None),
-        )
-        self._custody.persist_attempt_ledger(ledger)
-        self.attempt_ledger = ledger
-        queue_admissible = not failed and billing.provider_billing_complete
-        defect = _terminal_defect(intent, candidate.journal_path) if failed else None
-        finalized_cell: D1FinalizedCellCustodyRecord | None = None
-        if isinstance(export.checkpoint, ArtifactIdentity) and (not failed or defect is not None):
-            journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-            finalized_cell = attest_d1_finalized_cell_custody(
-                intent=intent,
-                segment_starts=(*history.starts, start),
-                attempt_ledger=ledger,
-                finalization=finalization,
-                journal=journal,
-                checkpoint=export.checkpoint,
-                quarantined_siblings=_quarantined_siblings(handoff),
-                numerical_defect=defect,
+        placement: D1PodPlacement
+        start: RunStartProvenance
+        manager: D1ProcessManager
+        candidate: D1ExportedTrainerHandoff
+        export: D1TrainerExportReceipt
+        termination: ExecutionSegmentTermination
+        billing: TerminalProviderBillingEvidence
+
+        def prepare() -> None:
+            auth = self._runpod.verify_authenticated()
+            precreate = self._custody.persist_precreate(intent, self.attempt_ledger, auth)
+            del precreate
+
+        def allocate() -> None:
+            nonlocal placement
+            placement = self._runpod.create(intent)
+            self._active_pod_id = placement.pod_id
+
+        def launch() -> None:
+            nonlocal start, manager
+            attempt_sha256 = d1_trainer_bootstrap_attempt_sha256(placement.pod_id, intent)
+            runtime = self._trainer.bootstrap_runtime(placement.pod_id, attempt_sha256)
+            start = attest_d1_run_start(intent=intent, placement=placement, runtime=runtime)
+            validate_execution_segments((*history.starts, start))
+            self._custody.persist_run_start(start)
+            input_artifact = self._stage_and_start(
+                placement.pod_id, intent.plan, start, runtime, attempt_sha256
             )
-            artifact = self._custody.persist_finalized_cell(finalized_cell)
-        else:
-            artifact = self._custody.persist_finalization(finalization)
-        manager = manager.finalize_operator(
-            subject_id=subject,
-            actor=self._operator,
-            artifact=artifact,
-            event_id=f"{subject}:operator-finalized",
-        )
-        self.process_manager, self._executing = manager, False
-        self._active_attempt = None
-        if not queue_admissible:
-            self._halted_detail = "terminal trainer or provider-billing evidence gap"
-        return D1OperatorRunResult(
-            manager,
-            ledger,
-            start,
-            placement,
-            export,
-            termination,
-            billing,
-            finalization,
-            finalized_cell,
-            artifact,
-            queue_admissible,
-        )
+            manager = self.process_manager.resume(
+                subject_id=subject,
+                actor=self._automation,
+                artifact=input_artifact,
+                event_id=f"{subject}:resume:{segment}",
+            )
+            self.process_manager = manager
+
+        def collect() -> None:
+            nonlocal candidate, export, manager
+            candidate = self._trainer.await_exported_handoff(placement.pod_id)
+            export = verify_d1_trainer_export(candidate)
+            stopped = export.handoff.termination
+            if (stopped.logical_run_id, stopped.execution_segment_index) != (subject, segment):
+                raise ValueError("resumed trainer handoff differs from the active segment")
+            manager = manager.record_trainer_stop(
+                subject_id=subject,
+                actor=self._automation,
+                artifact=export.journal,
+                event_id=f"{subject}:trainer-stop:{segment}",
+            )
+            self.process_manager = manager
+
+        def terminate() -> None:
+            nonlocal termination
+            stopped = export.handoff.termination
+            termination = self._terminate_active_pod(
+                placement.pod_id,
+                start=start,
+                trainer_ended_at=stopped.trainer_ended_at,
+            )
+
+        def bill() -> None:
+            nonlocal billing
+            billing = self._runpod.billing(placement.pod_id, start=start)
+
+        def finalize() -> D1OperatorRunResult:
+            nonlocal manager
+            handoff = export.handoff
+            stopped = handoff.termination
+            finalization = finalize_d1_billing(
+                plan=intent.plan,
+                segment_starts=(*history.starts, start),
+                segment_terminations=(*history.terminations, termination),
+                provider_billings=(*history.billings, billing),
+                handoff=handoff,
+                journal_path=candidate.journal_path,
+                expected_journal_state=stopped.journal_state,
+            )
+            failed = isinstance(handoff, D1TrainerFailureHandoff)
+            ledger = self.attempt_ledger.transition(
+                attempt,
+                status=(
+                    D1LaunchAttemptStatus.FAILED if failed else D1LaunchAttemptStatus.COMPLETED
+                ),
+                observed_at=termination.pod_terminated_at,
+                reason=(handoff.error_message if failed else None),
+            )
+            self._custody.persist_attempt_ledger(ledger)
+            self.attempt_ledger = ledger
+            queue_admissible = not failed and billing.provider_billing_complete
+            defect = _terminal_defect(intent, candidate.journal_path) if failed else None
+            finalized_cell: D1FinalizedCellCustodyRecord | None = None
+            if isinstance(export.checkpoint, ArtifactIdentity) and (
+                not failed or defect is not None
+            ):
+                journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
+                finalized_cell = attest_d1_finalized_cell_custody(
+                    intent=intent,
+                    segment_starts=(*history.starts, start),
+                    attempt_ledger=ledger,
+                    finalization=finalization,
+                    journal=journal,
+                    checkpoint=export.checkpoint,
+                    quarantined_siblings=_quarantined_siblings(handoff),
+                    numerical_defect=defect,
+                )
+                artifact = self._custody.persist_finalized_cell(finalized_cell)
+            else:
+                artifact = self._custody.persist_finalization(finalization)
+            manager = manager.finalize_operator(
+                subject_id=subject,
+                actor=self._operator,
+                artifact=artifact,
+                event_id=f"{subject}:operator-finalized",
+            )
+            self.process_manager, self._executing = manager, False
+            self._active_attempt = None
+            if not queue_admissible:
+                self._halted_detail = "terminal trainer or provider-billing evidence gap"
+            return D1OperatorRunResult(
+                manager,
+                ledger,
+                start,
+                placement,
+                export,
+                termination,
+                billing,
+                finalization,
+                finalized_cell,
+                artifact,
+                queue_admissible,
+            )
+
+        return AttemptFlow(
+            prepare,
+            allocate,
+            launch,
+            collect,
+            terminate,
+            bill,
+            finalize,
+            on_failure=lambda error: self._halt(subject, error),
+        ).run()
 
     def _stage_and_start(
         self,
@@ -556,60 +643,9 @@ class D1SequentialOperatorController:
         runtime: D1RuntimeObservation,
         attempt_sha256: str,
     ) -> ArtifactIdentity:
-        runtime_sha256 = d1_runtime_observation_sha256(runtime)
-        origin = D1TrainerWallOrigin(
-            runtime.trainer_started_at, runtime.trainer_monotonic_origin_ns
+        return stage_and_start_d1_trainer(
+            self._trainer, pod_id, plan, start, runtime, attempt_sha256
         )
-        request = build_d1_trainer_request(plan, start, origin)
-        request_bytes = serialize_d1_trainer_request(request)
-        request_sha256 = d1_trainer_request_sha256(request)
-        live = request
-        request_identity = type(live), id(live.start), id(live.origin), id(live.locations)
-        staged = self._trainer.stage_inputs(pod_id, request=request)
-        if d1_runtime_observation_sha256(runtime) != runtime_sha256:
-            raise ValueError("trainer runtime changed while staging its request")
-        if type(staged) is not D1StagedTrainerRequestReceipt:
-            raise TypeError("staged trainer request must be factory-attested")
-        staged.require_factory_attested()
-        if (
-            (type(live), id(live.start), id(live.origin), id(live.locations)) != request_identity
-            or serialize_d1_trainer_request(request) != request_bytes
-            or d1_trainer_request_sha256(request) != request_sha256
-            or staged.request is not request
-            or staged.request_sha256 != request_sha256
-            or staged.artifact.content_hash.algorithm != "sha256"
-            or staged.artifact.content_hash.digest != request_sha256
-        ):
-            raise ValueError("staged trainer request differs from controller request")
-        start_snapshot = (
-            pod_id,
-            attempt_sha256,
-            staged.request_sha256,
-            origin.started_at,
-            runtime_sha256,
-            d1_trainer_command_sha256(request),
-        )
-        started = self._trainer.start_trainer(pod_id)
-        if type(started) is not D1TrainerStartReceipt:
-            raise TypeError("trainer start must return a factory-attested receipt")
-        started.require_factory_attested()
-        if (
-            d1_runtime_observation_sha256(runtime) != runtime_sha256
-            or serialize_d1_trainer_request(request) != request_bytes
-            or (
-                started.pod_id,
-                started.attempt_sha256,
-                started.request_sha256,
-                started.trainer_started_at,
-                started.runtime_sha256,
-                started.command_sha256,
-            )
-            != start_snapshot
-            or not started.process_id.strip()
-            or started.process_id.strip() != started.process_id
-        ):
-            raise ValueError("trainer start receipt differs from staged request or runtime")
-        return staged.artifact
 
     def _terminate_active_pod(
         self,
