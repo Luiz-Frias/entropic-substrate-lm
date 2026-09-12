@@ -1,6 +1,95 @@
 # D1 Progress
 
-Last updated: 2026-08-27 after `ab4d7e7`
+Last updated: 2026-09-12 during incremental commit delivery.
+
+## Incremental commit checkpoint
+
+- Branch: `d1-golden-scientific-flywheel`.
+- Delivered checkpoint before this handoff: `6199905`.
+- Delivered range: `addea69..6199905`, **43 local commits**. Every commit passed
+  the normal hooks, including the full unit suite. The recorded added-plus-deleted
+  line counts were audited; the largest commit contains **597 changed lines**.
+- The transport scanner blocker is resolved in `750f7d4` using the existing
+  `execution_segment_id` helper. Runtime verification and the worker command
+  followed in `4befc4e` and `efaa254`; shared attempt/provider contracts and D1
+  fresh/resume adoption are committed in `c04146e` and `1ad659b`.
+- With explicit operator approval, `prek update` refreshed 11 hook release pins
+  in the isolated 22-line commit `cb6bda6`. Rules, exclusions, arguments and stages
+  stayed unchanged. Ruff 0.16.7 accepts the unchanged D1 controller that the old
+  0.14.13 hook rejected. The separately approved `e9589c5` changes only the
+  downloader's executable bit; its contents are identical.
+- The separately approved Markdown alignment is `6199905` (44 changed lines).
+  dprint now matches the existing asterisk-emphasis lint policy, and code spans
+  protect formula and experiment-name literals. Three regression cases pass;
+  deliberately restoring the two hazards makes the matching cases fail.
+- The remaining tail contains 13 new files and three tracked-file changes. It is
+  restored only after committing this handoff; it is not part of the verified
+  code checkpoint. Recoverable snapshots are `ed68d15` (remaining delivery with
+  the approved segment helper) and `61a7a03` (original September 6 delivery).
+  Do not blindly apply either snapshot: newer committed fixes must be preserved.
+- Host orchestration is still incomplete. The saved campaign/operator command
+  surfaces reference the not-yet-implemented `d_ladder_operator.py` and
+  `d_ladder_application.py`. Generic capture/application and later-rung pilot
+  preparation require integration before production end-to-end readiness.
+- No push, merge, release tag, or paid Runpod run was performed.
+
+September 11 focused validation: 50 shared-attempt/provider/D1 fresh-resume tests
+passed. The updated Ruff scan over `src`, `scripts`, and `tests` passed, and
+basedpyright 1.40.1 reported zero errors or warnings over `src` and `scripts`.
+Code review led to runtime enforcement that failure handlers cannot return, plus
+interrupt-cleanup and independent launch-guard tests. These are local software
+checks, not scientific pilot, review, filing, or successor-gate evidence.
+
+The handoff's review-adapter formatting cleanup passed 32 focused tests, and the
+September 11 dependency/security audit passed with existing annotation-parser
+warnings. The complete local host-command lineage and its final integrated/live
+validation remain open; the restored tail is not covered by these passing checks.
+
+## Current implementation checkpoint
+
+The August 27 snapshot below is historical. The approved September 4 plan builds
+all local rung mechanisms first and gates remote successor execution on filed
+predecessor evidence. Implementation is on `d1-golden-scientific-flywheel`; no
+paid probes, publication, confirmatory runs, or scientific verdicts were performed
+by this implementation pass.
+
+Implemented and locally exercised:
+
+- D1 measured-zero gradients, undefined zero-vector cosine, and construction-v4
+  resume separation; strict missing/nonfinite/ownership refusals remain.
+- CPU/GPU tiny catalogs; excluded pilot request, operator fresh/resume, capture,
+  reload, and source-provenance verification.
+- Fully differentiated matrix-free inverse Fisher, including exact-zero inverse
+  tangents and compensated true-residual convergence checks at the fixed budget.
+- D2 L/S/G, D3 horizons/composite and measured parameter matching, D4 causal
+  controls/router, and D5 permutation/independent-training diagnostics.
+- Observable future score probes with canonical targets, context-reset exclusion,
+  fixed checkpoint identities, training-only fits, and separate resource scopes.
+- One tiny/scientific numerical executor, checkpoint/resume and observed source
+  prefix custody; D3 horizon arms reserve the same source-offset population.
+- Rung-specific authorization, Git/DVC-bound capture, fresh analysis, blind packet,
+  filing and predecessor rehydration. D4 fixed-to-learned is a separate gate;
+  D3 can carry a short-horizon state directly to D5 when chunking is retired.
+- RunPod R2 worker `serve`/`inspect`/`publish` entrypoint with actual startup and
+  source-tree verification. Allocation, spending and termination require their
+  approved operator phase.
+- Pilot-based seed sizing and same-population 95% deciding / 3-sigma reporting.
+
+Earlier measured validation checkpoint: `just check` completed with **3598 passed,
+21 deselected** before the later host-integration additions. The dependency and
+security audit passed, and the sequential live-container gate passed 4 tracking/R2,
+3 host-allowlist, and 3 Caddy-auth tests. These results do not validate the unfinished
+restored tail. A same-lineage golden test executes 18 actual tiny scientific cells
+across D2–D5; external review and DVC transport in that test are explicit test doubles,
+not research evidence. Every delivered commit additionally passed its normal hooks.
+
+Remaining: complete host campaign/capture/analysis/review application wiring and
+later-rung pilot preparation, prove the production-shaped host-command lineage,
+and run its final integrated gates. The restored tail is unfinished, not another
+passing implementation slice. Keep subsequent commits at most 599 added-plus-
+deleted lines each. Remote spending/publication remains unapproved.
+
+## Historical August 27 checkpoint
 
 Purpose: durable debrief checkpoint for the current D1 implementation pass, per
 `/Users/luizfrias/.claude/commands/debrief-and-pass.md`.

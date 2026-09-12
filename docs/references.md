@@ -76,6 +76,18 @@ smoothing + ratio-loss mechanism replaces fixed granularity. Note its heavier to
   noise. The E1.5 preregistrations declare their shared-configuration estimand, the
   mid-schedule budget readings, and the E1.5c LR-sensitivity diagnostic against this paper.
 
+## Predictive score-gain diagnostic
+
+[Wang et al. — Information Gain-based Policy Optimization, v2 (2026)](https://arxiv.org/html/2510.14967v2)
+motivates measuring the change in a fixed outcome's predictive score as context
+arrives. **Taken:** same-target before/after log-score comparisons, separate
+observable outcome grounding, and explicit causal visibility. **Not taken:**
+agentic RL, GRPO, reward normalization, or a new D1/D2 training loss. D-series
+score gain uses held-out canonical future bytes through detached, training-fitted
+probes. It is report-only until a later preregistration explicitly says otherwise.
+It does not estimate mutual information, and D1's fixed-covariance Gaussian does
+not reduce its predictive entropy by moving its mean.
+
 ## Datasets
 
 - [enwik8](http://mattmahoney.net/dc/textdata.html) — canonical byte-level benchmark
