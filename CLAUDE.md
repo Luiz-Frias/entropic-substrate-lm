@@ -95,7 +95,7 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
 
 2. **Probe sequentially. Never draw a conclusion from concurrent containers.** The
    podman VM is 4 vCPU / 4 GB. Several MLflow containers booting at once each import
-   the full FastAPI/SQLAlchemy stack and all appear to hang — _including a control_.
+   the full FastAPI/SQLAlchemy stack and all appear to hang — *including a control*.
    This has produced two wrong conclusions already, one of which became a load-bearing
    comment justifying ~110 lines of machinery. One container at a time, always.
 
@@ -104,12 +104,12 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
    the cause; the symptom taxonomy will keep growing otherwise.
 
 4. **Comments record measurements, with the measurement.** This is why a comment here
-   can be _wrong_ rather than merely stale — and a wrong measured claim is a defect to
+   can be *wrong* rather than merely stale — and a wrong measured claim is a defect to
    retract explicitly, in the commit that fixes it, not to quietly overwrite.
 
 5. **TDD is non-negotiable, and guard-teeth prove both arms.** Failing test first. Then
    break the guarded thing and show the test goes RED — a test that cannot fail is not
-   evidence. For a guard, prove it is _load-bearing_: the happy path passing does not
+   evidence. For a guard, prove it is *load-bearing*: the happy path passing does not
    distinguish "the guard worked" from "the hazard never reached it".
 
 6. **Secrets never enter git.** gitleaks runs at pre-commit and pre-push. `gt auth`
@@ -158,7 +158,7 @@ any map; the load-balance loss must stay finite and gradients must reach κ (uni
 `references/holobyte/holobyte.py` demonstrates the failure mode this prevents.
 
 **Data flow:** enwik8 is DVC-tracked in `data/` (pointer `.dvc` files are git's half of the
-contract — `data|models|results/*` are gitignored _except_ `*.dvc`); FineWeb-Edu is
+contract — `data|models|results/*` are gitignored *except* `*.dvc`); FineWeb-Edu is
 streamed, never local. `train.py` writes `results/*.jsonl` (nats/byte, κ trajectories,
 gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via `dvc push`.
 Both are read back through validated readers, because both feed gates: `telemetry.py` is the
