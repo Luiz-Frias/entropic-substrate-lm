@@ -1,6 +1,34 @@
-# D1 Progress
+# Programme Progress
 
-Last updated: 2026-09-12 during incremental commit delivery.
+Last updated: 2026-09-14 during the north-star transition.
+
+## Current direction and deferred old stage
+
+The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
+with a roughly 500M–1B total deployed-model envelope. The new generative path is not built.
+The following September 12 checkpoint remains historical, not current completion status.
+
+The operator chose to preserve the unfinished old D host stage and move to the new design.
+Sol's focused tests passed, but parent review rejected the receipt slice: `run_class` was not
+bound to producer evidence and the expected capture was not bound to the producer's exports.
+The positive fixture was not producer-faithful. No new feature commit was made; runtime HEAD
+at this decision was `256b00b`. Other deferred blockers are the missing host/application
+modules and the invalid `dvc_root` argument to the analysis-input contract.
+
+Recoverable snapshots (restore explicit paths, never apply broadly over newer work):
+
+- `35b208b545bd21e3a9027542e97d3e2d597d64f6`: three tracked old-tail changes and eleven
+  untracked host/operator/capture files; Git also recorded the then-staged receipt in its
+  base/index state.
+- `62b9948f8fdae652e166f862c55e51b0f8e287b5`: the latest receipt implementation and expanded
+  tests, preserved as two untracked paths.
+
+The first commit hook stopped because an untracked CLI test remained visible while prek hid
+its unstaged implementation. After isolating the remainder, the second attempt was interrupted
+before committing the incomplete attestation contract. No hook was bypassed and no commit or
+test process was left running. The worktree was clean before the north-star documentation edit.
+
+## Historical September 12 handoff
 
 ## Incremental commit checkpoint
 

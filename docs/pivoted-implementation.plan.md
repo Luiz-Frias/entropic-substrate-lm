@@ -1,6 +1,14 @@
 # Predictive-State Geometry Pivot — Implementation Marathon
 
-**Status:** approved forward program; D1 must be a complete tracer bullet, not a skeleton.
+**Status:** retained D-series implementation/evidence contract; not the new generator itinerary.
+
+**2026-09-14 transition:** the forward north star is now the
+[codec-separated hierarchical latent predictor](hierarchical-latent-predictor.plan.md).
+Existing D constructions, registrations, exclusions, and gates are preserved, not relabelled.
+The unfinished old host/capture/CLI tail is deliberately deferred in recoverable snapshots
+listed in [PROGRESS.md](../PROGRESS.md). This is not a claim that the D-ladder was completed.
+New sentence-level generation experiments require their own construction and registration
+identities; the historical implementation amendment below does not authorize them.
 
 **Date:** 2026-08-23.
 
