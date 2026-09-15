@@ -69,6 +69,14 @@ checks. RED-first tests and deliberate FP32-promotion/hidden-normalization mutat
 as intended. After restoration, all 31 numeric/solver tests and strict type/lint/security
 checks pass. The learned law and neural codec remain pending.
 
+Step 2b implements the Power Spherical/log-magnitude law, including surface versus Cartesian
+base measures, the -d*rho Jacobian, inactive-radius rejection, RNG replay, and reparameterized
+sampling. Independent Beta-marginal and score-moment oracles validate normalization/Fisher
+scaling; first/second derivative checks cover densities and fixed-noise sampling. Four new
+boundary regressions were RED before correction. Removing the Jacobian changed the expected
+log-density difference from -2.5 to -0.5 and failed its test. Restored result: 47 law/numeric
+tests pass with strict types and lint. Neural encoder/decoder and the spine remain pending.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
