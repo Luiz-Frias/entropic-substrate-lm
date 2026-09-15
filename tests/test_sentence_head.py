@@ -81,6 +81,28 @@ def test_head_is_trainable_through_observable_reparameterized_samples() -> None:
     assert all(p.grad is not None and bool(torch.isfinite(p.grad).all()) for p in head.parameters())
 
 
+@pytest.mark.parametrize("mode", ["sphere", "magnitude"])
+def test_fisher_pullback_matches_observed_local_kl_curvature(mode: str) -> None:
+    torch.manual_seed(52)
+    head = SentenceLawHead(3, LawSpec(4, mode)).double()
+    state = torch.randn(3, dtype=torch.float64)
+    vector = torch.tensor([0.3, -0.4, 0.2], dtype=torch.float64)
+    base = head(state)
+    samples = base.rsample((32768,)).detach()
+    step = 1e-3
+    plus, minus = head(state + step * vector), head(state - step * vector)
+    # Symmetric perturbations cancel the noisy first-order score term.
+    curvature = (
+        2 * base.log_prob(samples) - plus.log_prob(samples) - minus.log_prob(samples)
+    ) / step**2
+    action = fisher_action(
+        lambda x: head.features_with_parameters(x, head.metric_parameters()), state, vector
+    )
+    expected = (vector * action).sum()
+    standard_error = curvature.std() / math.sqrt(curvature.numel())
+    assert abs(curvature.mean() - expected) < 6 * standard_error + 1e-4
+
+
 def test_density_parameters_own_an_fp32_island() -> None:
     head = SentenceLawHead(4, LawSpec(8, "magnitude"))
     with torch.autocast("cpu", dtype=torch.bfloat16):
@@ -107,6 +129,10 @@ def test_invalid_head_width_is_rejected(width: int) -> None:
 
 def test_malformed_state_and_parameter_roster_fail_loudly() -> None:
     head = SentenceLawHead(4, LawSpec(8, "sphere"))
+    with pytest.raises(ValueError, match="width"):
+        head.parameters_with_values(torch.tensor(1.0), head.metric_parameters())
+    with pytest.raises(TypeError, match="floating"):
+        head.parameters_with_values(torch.ones(4, dtype=torch.int64), head.metric_parameters())
     with pytest.raises(ValueError, match="width"):
         head(torch.ones(2, 5))
     with pytest.raises(ValueError, match="parameter"):

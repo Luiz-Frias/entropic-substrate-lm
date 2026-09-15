@@ -118,6 +118,19 @@ active Gaussian log-radius precision. Twelve RED-first tests now pass; removing 
 directional factor made both independent weighted-metric oracles fail, then it was restored.
 The head reads rather than replaces raw carriers. Consumer integration and rollout follow.
 
+Step 3c adds the law-correct final-site consumer, reusing the matrix-free differentiated
+solver with explicit functional parameters. Its spherical branch transforms tangent motion
+and preserves the proposal's radial component. Dense value/derivative oracles cover the 2x2
+interface/carrier matrix; spherical derivatives are tested through the actual unit retraction.
+Detached-metric mutations lose parameter influence. Zero-residual mixed derivatives remain
+live, failed solves clear previous diagnostics, and no isotropic fallback exists.
+
+Runpod preflight measured balance USD 22.3809008535 and zero current hourly spend; no pods
+existed. Runpodctl was updated and verified as 2.14.0-dd55bcf. This build and the v2 API lack
+the scheduled-termination field assumed by the old adapter. The operator explicitly approved
+a separate host watchdog plus controller deadline for tiny probes only; host connectivity
+loss remains a disclosed limitation. No scientific-run exception or GPU allocation is implied.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is
