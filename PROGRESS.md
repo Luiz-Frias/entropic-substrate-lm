@@ -131,6 +131,13 @@ the scheduled-termination field assumed by the old adapter. The operator explici
 a separate host watchdog plus controller deadline for tiny probes only; host connectivity
 loss remains a disclosed limitation. No scientific-run exception or GPU allocation is implied.
 
+Step 3d composes completed-sentence encoding, sentence-clock prediction, prior sampling,
+and local byte readout. Thirteen causal/model tests pass, including observable-loss gradient
+reachability with auxiliary supervision absent and the encoder frozen. Prefix changes cannot
+alter prior states or the sampled latent. An injected spherical overwrite fails both
+magnitude-interface construction tests, then restoration returns them to green. Ended
+documents cannot be silently treated as continuation prompts. Rollout/recovery remain pending.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is

@@ -78,6 +78,7 @@ def test_isotropic_substitution_reproduces_original_proposal(carrier: str) -> No
         current, proposed = coordinate_map(current).direction, coordinate_map(proposed).direction
     consumer = SentenceConsumer(SentenceLawHead(4, LawSpec(8, "sphere")), carrier, "isotropic")
     torch.testing.assert_close(consumer(current, proposed), proposed, atol=0, rtol=0)
+    assert consumer.diagnostics is not None
     assert consumer.diagnostics.iterations.tolist() == [0, 0]
 
 
