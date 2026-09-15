@@ -175,19 +175,27 @@ reduce per-parameter device synchronization is deferred pending an actual GPU pr
 
 ### Next implementation seam (not completed)
 
-Connect the trainable law head to the final spine block. Its exact Fisher feature map is
-`concat(sqrt(law.fisher_factor) * mean_direction, log_radius_mean / sigma)` for magnitude
-mode, omitting the radius term for sphere mode. The existing JVP/VJP and differentiated CG
-kernel can operate on this feature map; do not pass an unweighted directional mean. Supply
-functional parameters to preserve mixed derivatives at zero residuals, and keep validation
-outside vmapped feature functions. For spherical carriers restrict the action to the tangent
-space and preserve the proposal's radial component before retraction.
+The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
+and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
+100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
+future weight 0.3). Observed objectives were 5.1925793 → 0.2889636 during reconstruction
+and 6.7724171 → 0.4944233 during prediction; these are different training objectives,
+not comparable language-likelihood measurements. Unscripted rollout emitted `C.` and
+document-end. This is a memorized engineering fixture, not generation-quality evidence.
 
-Then integrate next-absolute-sentence targets (not D-series displacements), sampled latent
-generation, local byte decoding, emitted-text re-encoding, and shadow prediction records.
-Prompt sentences close with sentence-end, not document-end. Add phase-bound checkpoint/RNG
-recovery, optimizer ownership/gradient evidence, diagnostics, H registrations and flywheel
-adapters. None of this integration is claimed complete by the component tests above.
+Step 4c adds a counter-seeded, split-bound document sampler. Its versioned equal-history
+length buckets preserve uniform target-sentence marginals and exact byte spans. Ten
+RED-first tests cover replay, source pairing across codec permutations, model-RNG isolation,
+empty/forged source rejection, and causal framing. Including the target span in history
+fails its causality guard; the mutation was restored. Snapshot cursors bind source/config.
+
+Next: phase-bound disk checkpoint/optimizer/RNG/source-cursor/rollout recovery; preservation,
+marginal scoring and span-aware probe diagnostics; explicit H registrations and stage
+adapters; complete shared custody/analysis/review/filing integration. Then the authorized
+6,000-step CUDA/bf16 tiny probes with the approved host-watchdog exception, verified artifact
+recovery, termination and billing. No pod has been allocated. CodeRabbit's included-use
+limit was reached on the optimizer-contract follow-up; its quoted $0 credit-mode approval
+is pending. Normal hooks remain mandatory and unchanged; no paid review is authorized.
 
 ## Current direction and deferred old stage
 
