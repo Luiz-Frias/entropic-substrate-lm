@@ -16,7 +16,7 @@ from entropic_substrate.sentence_prediction.codec import CodecSpec, NeuralSenten
 from entropic_substrate.sentence_prediction.consumer import ConsumerMode, SentenceConsumer
 from entropic_substrate.sentence_prediction.head import SentenceLawHead
 from entropic_substrate.sentence_prediction.law import DirectionalMagnitudeLaw, LawSpec
-from entropic_substrate.sentence_prediction.numerics import apply_interface
+from entropic_substrate.sentence_prediction.numerics import apply_interface, checked_coordinates
 from entropic_substrate.sentence_prediction.spine import SentenceSpine, SpineSpec
 
 
@@ -91,6 +91,14 @@ class SentencePredictor(nn.Module):
     def predict(self, history: torch.Tensor) -> SentencePrediction:
         """Predict from observations alone; neither targets nor local prefixes enter."""
         sentences = self.encode_history(history)
+        return self.predict_latents(sentences)
+
+    def predict_latents(self, sentences: torch.Tensor) -> SentencePrediction:
+        """Use already encoded operative history, preserving checkpointed feedback."""
+        if self.codec.law_spec.mode == "sphere" and sentences.numel():
+            coordinates = checked_coordinates(sentences)
+            if bool((coordinates.log_radius.abs() > 1e-5).any()):
+                raise ValueError("spherical sentence interface requires unit operative states")
         consumer = SentenceConsumer(
             self.head, self.spine.spec.carrier, self.consumer_mode, self.solver
         )

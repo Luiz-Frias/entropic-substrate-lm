@@ -138,6 +138,14 @@ alter prior states or the sampled latent. An injected spherical overwrite fails 
 magnitude-interface construction tests, then restoration returns them to green. Ended
 documents cannot be silently treated as continuation prompts. Rollout/recovery remain pending.
 
+Step 3e adds bytewise rollout with canonical emitted bytes, encoded pending prefixes, sampled
+latents, operative context, archived shadow predictions, and exact token/score traces. Fifteen
+tests pass, including all four preservation combinations with Fisher under bf16 autocast,
+mid-sentence RNG replay, invalid UTF-8/empty/length/context outcomes, and inverse-codec feedback.
+Replacing emitted-text feedback with the imagined latent fails its reconstruction guard.
+Disk checkpoint/RNG serialization and actual trained free-running generation remain pending;
+scripted boundary fixtures establish wiring, not generation quality.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is
