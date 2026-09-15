@@ -36,6 +36,26 @@ RED-first preparation/adapter tests and a source-ID-based split mutation were ob
 after restoring content-based assignment, 92 focused and legacy-data tests pass. Strict typing,
 lint, and scoped security checks pass. Persisted capture and the model remain pending.
 
+Step 1d adds an atomic, externally hash-bound source capture. Its versioned reader binds the
+preparation source and dependency versions, replays all candidates, and compares the derived
+split/span/rejection summary. Unknown versions, absent policy fields, duplicate JSON keys,
+symlinks, occupied outputs, and forged summaries are refused. The new suite was RED before
+implementation; disabling the summary replay comparison made the rehashed-forgery test fail.
+All 104 focused/source-regression tests pass after restoration. Full package gates follow.
+These are prepared-source artifacts, not scientific capture or successor authority.
+
+Deferred snapshots are protected by local branches (not restored or published):
+`codex/deferred-d-host-tail-20260914` and `codex/deferred-d-receipt-20260914`.
+
+Data-package gates passed: `just check` (3,721 unit tests), `just test-all`, and `just audit`.
+Live-service tests skipped without a running stack; this is not live-container validation.
+CodeRabbit returned nine findings describing six distinct suggestions. Test annotations were
+corrected; three extra blank/invalid-provider-row cases verify existing SourceDocument
+validation (107 focused/regression tests pass). The shared-loader refactor is deferred to
+keep historical loading isolated; both paths already use the same pinned revision. The full
+Python patch-version reader pin is intentional until compatibility is validated. No scientific
+or remote gate has advanced. The learned codec/model is the next implementation package.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

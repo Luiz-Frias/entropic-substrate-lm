@@ -59,7 +59,7 @@ def test_oversize_sentence_rejects_whole_document_without_truncation() -> None:
 
 
 @pytest.mark.parametrize("limit", [0, -1, True, 1.5])
-def test_invalid_limit_is_not_a_runtime_default(limit: int) -> None:
+def test_invalid_limit_is_not_a_runtime_default(limit: int | float) -> None:
     with pytest.raises(ValueError):
         SegmentationPolicy(max_sentence_bytes=limit)
 

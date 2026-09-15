@@ -1,6 +1,7 @@
 """Bounded document admission; aliases never become independent split samples."""
 
 import sys
+from collections.abc import Iterator
 from dataclasses import replace
 from itertools import count
 from types import SimpleNamespace
@@ -22,9 +23,12 @@ def document(number: int, text: str | None = None) -> SourceDocument:
     return SourceDocument(f"doc-{number}", text or f"Sentence {number}.", "fixture-v1")
 
 
-def spec(**kwargs) -> PreparationSpec:
+def spec(*, segmentation: SegmentationPolicy | None = None) -> PreparationSpec:
     return PreparationSpec(
-        candidate_limit=10, admitted_byte_limit=1000, revision="fixture-v1", **kwargs
+        candidate_limit=10,
+        admitted_byte_limit=1000,
+        revision="fixture-v1",
+        segmentation=segmentation if segmentation is not None else SegmentationPolicy(),
     )
 
 
@@ -60,7 +64,7 @@ def test_preparation_refuses_mixed_source_revision() -> None:
 def test_candidate_limit_bounds_even_an_infinite_duplicate_stream() -> None:
     consumed: list[int] = []
 
-    def stream():
+    def stream() -> Iterator[SourceDocument]:
         for index in count():
             consumed.append(index)
             yield document(index, "Identical.")
@@ -113,7 +117,7 @@ def test_identity_binds_source_order_and_preparation_policy() -> None:
 @pytest.mark.parametrize(
     "change", [{"candidate_limit": 0}, {"admitted_byte_limit": True}, {"revision": ""}]
 )
-def test_preparation_spec_refuses_missing_or_invalid_limits(change) -> None:
+def test_preparation_spec_refuses_missing_or_invalid_limits(change: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         replace(spec(), **change)
 
@@ -122,18 +126,20 @@ def test_preparation_spec_refuses_missing_or_invalid_limits(change) -> None:
     "change",
     [{"validation_buckets": 0}, {"test_buckets": True}, {"test_buckets": 10000}, {"seed": -1}],
 )
-def test_split_policy_refuses_invalid_partition(change) -> None:
+def test_split_policy_refuses_invalid_partition(change: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         replace(SplitPolicy(), **change)
 
 
-def test_fineweb_document_adapter_is_bounded_pinned_and_unflattened(monkeypatch) -> None:
+def test_fineweb_document_adapter_is_bounded_pinned_and_unflattened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from entropic_substrate.data import fineweb
 
     seen: dict[str, object] = {}
     consumed: list[int] = []
 
-    def fake_load(repo, **kwargs):
+    def fake_load(repo: str, **kwargs: object) -> Iterator[dict[str, str]]:
         seen.update(repo=repo, **kwargs)
         for index in range(3):
             consumed.append(index)
@@ -149,8 +155,19 @@ def test_fineweb_document_adapter_is_bounded_pinned_and_unflattened(monkeypatch)
     assert seen["streaming"] is True
 
 
-@pytest.mark.parametrize("row", [{"text": "No ID."}, {"id": "id", "text": 5}])
-def test_fineweb_adapter_refuses_invented_ids_or_text_coercion(monkeypatch, row) -> None:
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"text": "No ID."},
+        {"id": "id", "text": 5},
+        {"id": "id", "text": ""},
+        {"id": "id", "text": "  "},
+        {"id": " ", "text": "Text."},
+    ],
+)
+def test_fineweb_adapter_refuses_invented_ids_or_text_coercion(
+    monkeypatch: pytest.MonkeyPatch, row: dict[str, object]
+) -> None:
     from entropic_substrate.data import fineweb
 
     monkeypatch.setitem(
