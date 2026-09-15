@@ -62,6 +62,13 @@ forged candidate identities, unexamined suffixes, and boolean/integer summary co
 All 20 capture tests pass; disabling the suffix guard admitted a forged suffix and made its
 test fail, then the guard was restored. Production behavior is unchanged by this test slice.
 
+Step 2a adds stable directional/log-magnitude views without positive-value floors. The FP32
+magnitude carrier is returned unchanged; exact zero directions carry an explicit gap/mask,
+not an invented spherical point. FP64 functional views support vmap and first/second derivative
+checks. RED-first tests and deliberate FP32-promotion/hidden-normalization mutations failed
+as intended. After restoration, all 31 numeric/solver tests and strict type/lint/security
+checks pass. The learned law and neural codec remain pending.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
