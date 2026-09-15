@@ -20,6 +20,14 @@ The full gate passed with 3,670 tests before the final review-added case. CodeRa
 findings described that same interior-guard coverage gap; it was verified and addressed.
 Segmentation, source capture, and the model remain pending; this is not H0 completion.
 
+Step 1b adds pySBD 0.3.4 and exact-coverage segmentation. Leading/trailing whitespace is
+accounted for; missing non-whitespace, overlaps, changed text, and engine-version mismatches
+fail loudly. An oversize sentence produces a typed whole-document rejection, not truncation.
+The suite was RED before the adapter existed; malformed engine objects received their own
+RED-before-GREEN regression. Disabling the non-whitespace-gap guard made its test fail.
+All 56 boundary/segmentation tests pass with strict types, lint, dependency and security checks.
+Source selection/capture and the model remain pending.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

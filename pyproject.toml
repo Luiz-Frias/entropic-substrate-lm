@@ -13,6 +13,8 @@ dependencies = [
   "datasets>=3.6.0",
   "tiktoken>=0.8.0",
   "pyyaml>=6.0.2",
+  # Sentence-span identity binds the exact offline boundary engine version.
+  "pysbd==0.3.4",
   "loguru>=0.7.3",
   # HTTP tracking client for run metrics (entropic_substrate.sinks). The full
   # MLflow server distribution is isolated in Containerfile.mlflow; keeping it
