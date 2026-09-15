@@ -159,6 +159,14 @@ gradients while rollout disables them; a matched no-grad replay measured zero di
 The in-flight commit was interrupted, its process group verified gone, and the reference
 execution mode corrected without widening tolerances before rerunning the normal gates.
 
+Step 4b adds phase-owned AdamW transactions. Missing/nonfinite gradients, unowned participation,
+wrong optimizer ownership, clipping defects, and norm reconciliation fail with structured
+context. Measured-zero gradients proceed through AdamW (the test observes weight decay and
+moment-step advancement), while frozen/warm-up-inactive roles carry explicit reasons. Nine
+RED-first transaction tests pass alongside thirteen objective tests. Disabling ownership
+validation reaches the forbidden forward callback and fails the guard, then restoration
+returns it to green. This does not yet provide persisted training or scientific custody.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is
