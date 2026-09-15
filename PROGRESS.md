@@ -98,6 +98,13 @@ They are covered; all 82 codec/law/numeric tests pass. The first codec commit at
 code gates but gitlint rejected an 84-character message line; the message was shortened, with
 no hook changes or bypass.
 
+Step 3a adds the sentence-clock spine with a zero-byte BOS state and independently selected
+spherical/magnitude carriers. Sublayers and initializations are shared across carrier modes;
+only the final block accepts a consumer intervention. Context, dtype, shape, and unit-carrier
+contracts are validated. The new tests were RED before implementation; an injected final
+normalization broke exact raw-carrier preservation as intended. All 98 spine/codec/law/numeric
+tests pass with strict type/lint/security checks. Fisher integration and rollout remain pending.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
