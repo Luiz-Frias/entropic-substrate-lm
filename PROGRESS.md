@@ -226,6 +226,13 @@ source. Deliberately trusting that substituted corpus made its test fail; the re
 and reader reopen the hash-bound source capture. Journals alone grant no scientific authority;
 checkpoint seals and the top-level execution command remain the next wiring boundary.
 
+Step 6d joins journals/checkpoints into bounded, consecutive ancestry seals. Seven tests cover
+warm-up → prediction → resumed prediction, skipped/unsealed work, artifact tampering,
+optimizer drift, and RNG-neutral inspection. Removing the measurement join admitted a
+different valid checkpoint and failed the swap guard. Static construction/group inventories
+are instantiated on meta tensors; full tensor/optimizer admission still uses the checkpoint
+reader at resume. A seal is identity evidence, not a scientific verdict or spending token.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

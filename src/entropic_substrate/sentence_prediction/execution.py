@@ -137,7 +137,14 @@ class SentenceExecution:
         self.sampler = self._sampler("train", self.profile.spine.context_sentences)
 
     def resume(
-        self, root: Path, name: str, expected: ContentHash, *, phase: SentencePhase, max_bytes: int
+        self,
+        root: Path,
+        name: str,
+        expected: ContentHash,
+        *,
+        phase: SentencePhase,
+        max_bytes: int,
+        measurement: ContentHash | None = None,
     ) -> None:
         """Restore only into a fresh engine; rejected attempts cannot continue training."""
         if (
@@ -160,6 +167,7 @@ class SentenceExecution:
             phase=phase,
             run_identity=self.profile.identity,
             max_bytes=max_bytes,
+            expected_measurement=measurement,
         )
         self.model, self.optimizer, self.sampler, self.step = (
             restored.model,

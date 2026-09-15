@@ -64,7 +64,7 @@ def _reader_identity() -> str:
     )
 
 
-def _binding(
+def checkpoint_binding(
     model: SentencePredictor,
     optimizer: torch.optim.Optimizer,
     sampler: SentenceSampler,
@@ -184,7 +184,7 @@ def save_checkpoint(
         raise ValueError("checkpoint byte limit must be positive")
     if type(step) is not int or step < 0 or sampler.cursor != step:
         raise ValueError("checkpoint step and source cursor disagree")
-    binding = _binding(model, optimizer, sampler, phase, run_identity)
+    binding = checkpoint_binding(model, optimizer, sampler, phase, run_identity)
     _validate_optimizer_state(optimizer, step)
     weights = _validate_weights(model, model.state_dict())
     payload = {
@@ -208,20 +208,13 @@ def save_checkpoint(
     return publish_d1_atomic_bytes(root, name, encoded, label="H training checkpoint")
 
 
-def load_checkpoint(
+def _checkpoint_payload(
     root: Path,
     name: str,
     expected: ContentHash,
-    model: SentencePredictor,
-    optimizer: torch.optim.Optimizer,
-    sampler: SentenceSampler,
     *,
-    phase: SentencePhase,
-    run_identity: str,
     max_bytes: int,
-    expected_measurement: ContentHash | None = None,
-) -> RestoredSentenceState:
-    """Validate into separate objects; caller replaces live state only on success."""
+) -> dict[str, object]:
     if expected.algorithm != "sha256":
         raise ValueError("checkpoint requires an external SHA-256 identity")
     _, payload, digest = read_d1_artifact_bytes(
@@ -243,9 +236,38 @@ def load_checkpoint(
     )
     if row["schema"] != "h-training-checkpoint-v2" or row["reader"] != _reader_identity():
         raise ValueError("checkpoint version or reader identity is incompatible")
+    return row
+
+
+def checkpoint_metadata(
+    root: Path, name: str, expected: ContentHash, *, max_bytes: int
+) -> dict[str, object]:
+    """Read verified identities only; full tensor/optimizer admission is load_checkpoint."""
+    row = _checkpoint_payload(root, name, expected, max_bytes=max_bytes)
+    return {
+        key: row[key]
+        for key in ("schema", "reader", "binding", "step", "source", "training", "measurement")
+    }
+
+
+def load_checkpoint(
+    root: Path,
+    name: str,
+    expected: ContentHash,
+    model: SentencePredictor,
+    optimizer: torch.optim.Optimizer,
+    sampler: SentenceSampler,
+    *,
+    phase: SentencePhase,
+    run_identity: str,
+    max_bytes: int,
+    expected_measurement: ContentHash | None = None,
+) -> RestoredSentenceState:
+    """Validate into separate objects; caller replaces live state only on success."""
+    row = _checkpoint_payload(root, name, expected, max_bytes=max_bytes)
     if row["measurement"] != _measurement_digest(expected_measurement):
         raise ValueError("checkpoint measurement identity differs from expected evidence")
-    binding = _binding(model, optimizer, sampler, phase, run_identity)
+    binding = checkpoint_binding(model, optimizer, sampler, phase, run_identity)
     if row["binding"] != binding:
         raise ValueError("checkpoint construction identity differs from expected run")
     step, training = row["step"], row["training"]
@@ -261,7 +283,7 @@ def load_checkpoint(
     new_sampler.restore(row["source"])
     if new_sampler.cursor != step:
         raise ValueError("checkpoint source cursor differs from optimizer step")
-    if _binding(new_model, new_optimizer, new_sampler, phase, run_identity) != binding:
+    if checkpoint_binding(new_model, new_optimizer, new_sampler, phase, run_identity) != binding:
         raise ValueError("restored optimizer contract differs from expected binding")
     _validate_optimizer_state(new_optimizer, step)
     rollout = rollout_from_payload(row["rollout"], new_model, new_sampler.codec)
