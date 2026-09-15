@@ -190,6 +190,14 @@ were observed admitted before the fix and rejected afterward. Reader/source/cons
 identities are bound, outputs cannot overwrite existing artifacts, and loading validates into
 separate model/optimizer objects before restoring RNG. CUDA and remote custody remain pending.
 
+Step 5a implements importance-weighted log-marginal estimates with frozen encoder proposals,
+retained decoder/prior/proposal log scores, ESS, relative likelihood MCSE, and fixed-prefix
+sample-count sensitivity. Boundary scores and source-byte counts remain distinct. Fourteen
+RED-first tests cover an exact uniform-decoder oracle, both effective laws, target/prior
+separation, chunked scoring, and typed zero-weight gaps. A mismatched batch broadcast was
+reproduced and blocked. Removing the importance correction fails its guard. These are
+finite-sample estimates, not certified pointwise bounds or oracle reconstruction scores.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
