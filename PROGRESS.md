@@ -219,6 +219,13 @@ layer will require this binding for journal custody. Eleven checkpoint tests pas
 measurement mismatch refusal and explicit rejection of v1 through its original-reader path;
 historical bytes are not rewritten or implicitly migrated.
 
+Step 6c adds immutable, bounded JSON journal shards with source replay, exact field schemas,
+gradient/absence reconciliation, objective arithmetic, exposure counts, and resource meaning
+checks. Thirteen tests pass, including rehashed malformed JSON and substituted in-memory
+source. Deliberately trusting that substituted corpus made its test fail; the restored writer
+and reader reopen the hash-bound source capture. Journals alone grant no scientific authority;
+checkpoint seals and the top-level execution command remain the next wiring boundary.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

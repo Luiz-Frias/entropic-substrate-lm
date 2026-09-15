@@ -61,6 +61,7 @@ class SentenceExecution:
 
     def __init__(self, profile: HProfile, source_root: Path, *, max_source_bytes: int) -> None:
         self.profile = profile
+        self.source_root, self.max_source_bytes = source_root, max_source_bytes
         self.corpus = read_prepared_corpus(
             source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
         )
