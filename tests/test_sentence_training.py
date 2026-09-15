@@ -139,6 +139,34 @@ def test_inactive_role_cannot_receive_an_unowned_gradient() -> None:
     assert not optimizer.state
 
 
+def test_exact_owner_sgd_cannot_impersonate_the_adamw_construction() -> None:
+    model = tiny_model()
+    optimizer = torch.optim.SGD(model.codec.parameters(), lr=0.1)
+    with pytest.raises(SentenceTrainingDefect, match="optimizer_contract"):
+        apply_sentence_step(
+            model, optimizer, "codec_warmup", lambda: torch.tensor(0.0), clip_norm=1.0
+        )
+
+
+@pytest.mark.parametrize("mutation", ["decay_vectors", "swap_parameters", "maximize"])
+def test_optimizer_group_mutations_are_refused(mutation: str) -> None:
+    model = tiny_model()
+    optimizer = build_sentence_optimizer(
+        model, "codec_warmup", learning_rate=1e-3, weight_decay=0.1
+    )
+    if mutation == "decay_vectors":
+        optimizer.param_groups[1]["weight_decay"] = 0.1
+    elif mutation == "maximize":
+        optimizer.param_groups[0]["maximize"] = True
+    else:
+        first, second = optimizer.param_groups
+        first["params"][0], second["params"][0] = second["params"][0], first["params"][0]
+    with pytest.raises(SentenceTrainingDefect, match="optimizer_contract"):
+        apply_sentence_step(
+            model, optimizer, "codec_warmup", lambda: torch.tensor(0.0), clip_norm=1.0
+        )
+
+
 def test_phase_and_optimizer_hyperparameters_cannot_be_inferred() -> None:
     model = tiny_model()
     with pytest.raises(ValueError, match="phase"):

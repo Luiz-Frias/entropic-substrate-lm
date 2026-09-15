@@ -167,6 +167,12 @@ RED-first transaction tests pass alongside thirteen objective tests. Disabling o
 validation reaches the forbidden forward callback and fails the guard, then restoration
 returns it to green. This does not yet provide persisted training or scientific custody.
 
+Training review found that ownership alone admitted exact-owner SGD and modified AdamW
+groups. Four RED-first regressions reproduce that gap; the transaction now requires AdamW,
+matrix/vector partitioning, and the builder's moment/rate/decay policies. Schedule changes
+must update the explicit optimizer contract, not silently mutate one group. A suggestion to
+reduce per-parameter device synchronization is deferred pending an actual GPU profile.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is

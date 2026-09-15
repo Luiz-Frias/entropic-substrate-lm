@@ -84,7 +84,23 @@ def build_sentence_optimizer(
         lr=learning_rate,
         betas=betas,
         eps=epsilon,
+        weight_decay=weight_decay,
     )
+
+
+def _require_adamw_contract(optimizer: torch.optim.Optimizer, phase: SentencePhase) -> None:
+    """Match the builder's grouping and update policy, not merely parameter IDs."""
+    if type(optimizer) is not torch.optim.AdamW or len(optimizer.param_groups) != 2:
+        raise SentenceTrainingDefect("optimizer_contract", phase)
+    for index, group in enumerate(optimizer.param_groups):
+        if any((p.ndim >= 2) != (index == 0) for p in group["params"]):
+            raise SentenceTrainingDefect("optimizer_contract", phase)
+        decay = optimizer.defaults["weight_decay"] if index == 0 else 0.0
+        if group["weight_decay"] != decay or group["maximize"] or group["differentiable"]:
+            raise SentenceTrainingDefect("optimizer_contract", phase)
+        for key in ("lr", "betas", "eps"):
+            if group[key] != optimizer.defaults[key]:
+                raise SentenceTrainingDefect("optimizer_contract", phase)
 
 
 def apply_sentence_step(
@@ -108,6 +124,7 @@ def apply_sentence_step(
     owned = [p for group in optimizer.param_groups for p in group["params"]]
     if len(owned) != len(expected) or {id(p) for p in owned} != {id(p) for p in expected}:
         raise SentenceTrainingDefect("optimizer_ownership", phase)
+    _require_adamw_contract(optimizer, phase)
     model.train()
     model.zero_grad(set_to_none=True)
     loss = objective()
