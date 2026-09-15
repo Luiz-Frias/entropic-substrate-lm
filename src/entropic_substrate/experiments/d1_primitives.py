@@ -18,7 +18,10 @@ from types import MappingProxyType
 from typing import Final
 
 _SHA256_LENGTH: Final[int] = 64
-CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v3"
+# v4 admits measured-zero gradients and typed undefined zero-vector cosine.
+# Construction digests therefore prevent resuming an old scientific epoch with
+# the new producer semantics; historical payloads remain read-only admissible.
+CONSTRUCTION_SCHEMA: Final[str] = "d1-construction-v4"
 FAMILY_SCHEMA: Final[str] = "d1-family-v2"
 AGGREGATION_SCHEMA: Final[str] = "d1-aggregation-v3"
 EXECUTION_SCHEMA: Final[str] = "d1-execution-v3"
@@ -58,16 +61,29 @@ def require_positive_finite(value: float, *, label: str) -> None:
         raise ValueError(msg)
 
 
-def canonical_digest(manifest: Mapping[str, object]) -> str:
-    """Return the SHA-256 of canonical recursively key-sorted JSON."""
-    payload = json.dumps(
-        dict(manifest),
+def thaw_for_digest(value: object) -> object:
+    """Convert frozen JSON mappings and tuples back to canonical JSON containers."""
+    if isinstance(value, Mapping):
+        return {key: thaw_for_digest(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [thaw_for_digest(item) for item in value]
+    return value
+
+
+def canonical_json(value: object) -> str:
+    """Serialize finite JSON with recursive thawing and stable key order."""
+    return json.dumps(
+        thaw_for_digest(value),
         allow_nan=False,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+    )
+
+
+def canonical_digest(manifest: Mapping[str, object]) -> str:
+    """Return the SHA-256 of canonical recursively key-sorted JSON."""
+    return hashlib.sha256(canonical_json(manifest).encode("utf-8")).hexdigest()
 
 
 D1_ENCODER_INITIALIZATION_NAME: Final[str] = "d1-seeded-normal-v1"

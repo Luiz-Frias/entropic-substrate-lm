@@ -9,9 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import cast
+from typing import NoReturn, SupportsIndex, cast
+
+from entropic_substrate.factory_attestation import FactoryAttestation
 
 __all__ = [
+    "D1_NO_MAJOR_OUTCOME",
+    "D1_NO_MAJOR_PROMPT_DIRECTIVE",
     "D1MajorFindingDisposition",
     "D1MajorFindingStatus",
     "D1ParsedReviewReport",
@@ -20,6 +24,7 @@ __all__ = [
     "adjudicate_d1_review",
     "parse_d1_major_findings",
     "parse_d1_review_execution_receipt",
+    "validate_d1_review_outcome_prompt",
 ]
 
 _RECEIPT_FIELDS = frozenset(
@@ -38,7 +43,12 @@ _RECEIPT_FIELDS = frozenset(
 )
 _MAJOR_HEADING = re.compile(r"(?m)^#{1,6}\s+(MAJOR-[1-9][0-9]*)(?:\s|[-:\u2014])")
 _MAJOR_TOKEN = re.compile(r"\bMAJOR-[0-9]+\b")
-_NO_MAJOR = "NO_MAJOR_FINDINGS"
+_MAJOR_ID = re.compile(r"MAJOR-[1-9][0-9]*")
+D1_NO_MAJOR_OUTCOME = "Review outcome: NO_MAJOR_FINDINGS"
+D1_NO_MAJOR_PROMPT_DIRECTIVE = (
+    "If and only if there are no MAJOR findings, emit exactly this standalone line: "
+    f"{D1_NO_MAJOR_OUTCOME}"
+)
 
 
 def _sha(value: str, label: str) -> None:
@@ -141,26 +151,52 @@ class D1ParsedReviewReport:
 
     def __post_init__(self) -> None:
         _sha(self.report_sha256, "D1 parsed review report")
+        if type(self.major_finding_ids) is not tuple or any(
+            type(item) is not str or _MAJOR_ID.fullmatch(item) is None
+            for item in self.major_finding_ids
+        ):
+            raise ValueError("D1 parsed review finding IDs must be canonical MAJOR-N values")
+        if len(set(self.major_finding_ids)) != len(self.major_finding_ids):
+            raise ValueError("D1 parsed review finding IDs must be unique")
 
 
-def parse_d1_major_findings(payload: bytes) -> D1ParsedReviewReport:
+def validate_d1_review_outcome_prompt(text: str) -> None:
+    """Require one exact prompt instruction for the empty-finding outcome."""
+    if type(text) is not str or text.splitlines().count(D1_NO_MAJOR_PROMPT_DIRECTIVE) != 1:
+        raise ValueError("D1 reviewer prompt must register the no-MAJOR outcome exactly once")
+
+
+def parse_d1_major_findings(
+    payload: bytes,
+    *,
+    reviewer_prompt: bytes,
+) -> D1ParsedReviewReport:
     """Extract stable heading IDs and reject silent or contradictory absence."""
     if type(payload) is not bytes or not payload:
         raise ValueError("D1 reviewer report must be nonempty bytes")
+    if type(reviewer_prompt) is not bytes or not reviewer_prompt:
+        raise ValueError("D1 reviewer prompt must be nonempty bytes")
     try:
         text = payload.decode("utf-8")
+        prompt_text = reviewer_prompt.decode("utf-8")
     except UnicodeDecodeError as error:
-        raise ValueError("D1 reviewer report must be UTF-8") from error
+        raise ValueError("D1 reviewer report and prompt must be UTF-8") from error
+    validate_d1_review_outcome_prompt(prompt_text)
     headings = tuple(_MAJOR_HEADING.findall(text))
     if len(set(headings)) != len(headings):
         raise ValueError("D1 reviewer report has a duplicate MAJOR heading")
     references = set(_MAJOR_TOKEN.findall(text))
     if references != set(headings):
         raise ValueError("every D1 MAJOR reference requires one canonical heading")
-    no_major = _NO_MAJOR in text
-    if headings and no_major:
+    outcome_count = text.splitlines().count(D1_NO_MAJOR_OUTCOME)
+    marker_present = "NO_MAJOR_FINDINGS" in text
+    if marker_present and outcome_count == 0:
+        raise ValueError("NO_MAJOR_FINDINGS must appear in the standalone outcome declaration")
+    if outcome_count > 1:
+        raise ValueError("D1 no-MAJOR outcome must appear exactly once")
+    if headings and outcome_count:
         raise ValueError("NO_MAJOR_FINDINGS contradicts a MAJOR heading")
-    if not headings and not no_major:
+    if not headings and outcome_count != 1:
         raise ValueError("D1 report without findings requires explicit NO_MAJOR_FINDINGS")
     return D1ParsedReviewReport(hashlib.sha256(payload).hexdigest(), headings)
 
@@ -198,26 +234,143 @@ class D1MajorFindingDisposition:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True, init=False)
 class D1ReviewAdjudicationSurface:
     report_sha256: str
+    execution_receipt_sha256: str
+    review_request_sha256: str
+    review_packet_sha256: str
     major_finding_ids: tuple[str, ...]
     dispositions: Mapping[str, D1MajorFindingDisposition]
     open_major_finding_ids: tuple[str, ...]
     status: str
     operator_record_sha256: str
 
+    def __init__(self, *_: object, **__: object) -> None:
+        raise TypeError("D1ReviewAdjudicationSurface is factory-attested")
+
+    def require_factory_attested(self) -> None:
+        if not _ADJUDICATION_ATTESTATION.registered(self):
+            raise TypeError("D1 review adjudication is not factory-attested")
+        _validate_adjudication_surface(self)
+        if not _ADJUDICATION_ATTESTATION.contains(self):
+            raise TypeError("D1 review adjudication evidence changed after minting")
+
+    def __copy__(self) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
+
+    def __deepcopy__(self, memo: object) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
+
+    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+        raise TypeError("D1ReviewAdjudicationSurface cannot be copied")
+
     @property
     def manifest(self) -> dict[str, object]:
         return {
             "dispositions": [self.dispositions[item].manifest for item in self.major_finding_ids],
+            "execution_receipt_sha256": self.execution_receipt_sha256,
             "major_finding_ids": list(self.major_finding_ids),
             "open_major_finding_ids": list(self.open_major_finding_ids),
             "operator_record_sha256": self.operator_record_sha256,
             "report_sha256": self.report_sha256,
+            "review_packet_sha256": self.review_packet_sha256,
+            "review_request_sha256": self.review_request_sha256,
             "schema_version": "d1-review-adjudication-v1",
             "status": self.status,
         }
+
+
+def _adjudication_fingerprint(surface: D1ReviewAdjudicationSurface) -> str:
+    payload = json.dumps(
+        surface.manifest,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+_ADJUDICATION_ATTESTATION = FactoryAttestation[
+    D1ReviewAdjudicationSurface,
+    str,
+](_adjudication_fingerprint)
+
+
+def _derive_status(
+    major_finding_ids: tuple[str, ...],
+    dispositions: Mapping[str, D1MajorFindingDisposition],
+) -> tuple[tuple[str, ...], str]:
+    open_ids = tuple(
+        finding_id
+        for finding_id in major_finding_ids
+        if dispositions[finding_id].status is D1MajorFindingStatus.OPEN
+    )
+    status = "NOT_REQUIRED" if not major_finding_ids else "OPEN" if open_ids else "RESOLVED"
+    return open_ids, status
+
+
+def _validate_adjudication_surface(surface: D1ReviewAdjudicationSurface) -> None:
+    _sha(surface.report_sha256, "D1 adjudication report")
+    _sha(surface.execution_receipt_sha256, "D1 adjudication execution receipt")
+    _sha(surface.review_request_sha256, "D1 adjudication review request")
+    _sha(surface.review_packet_sha256, "D1 adjudication review packet")
+    _sha(surface.operator_record_sha256, "D1 adjudication operator record")
+    if (
+        type(surface.major_finding_ids) is not tuple
+        or len(set(surface.major_finding_ids)) != len(surface.major_finding_ids)
+        or any(_MAJOR_ID.fullmatch(item) is None for item in surface.major_finding_ids)
+    ):
+        raise ValueError("D1 adjudication MAJOR IDs must be canonical and unique")
+    if type(cast(object, surface.dispositions)) is not MappingProxyType:
+        raise TypeError("D1 adjudication dispositions must be a read-only mapping")
+    by_id = dict(surface.dispositions)
+    if set(by_id) != set(surface.major_finding_ids) or any(
+        type(item) is not D1MajorFindingDisposition or item.finding_id != finding_id
+        for finding_id, item in by_id.items()
+    ):
+        raise ValueError("D1 adjudication dispositions differ from MAJOR IDs")
+    for disposition in by_id.values():
+        D1MajorFindingDisposition(
+            disposition.finding_id,
+            disposition.status,
+            disposition.rationale,
+            disposition.evidence_sha256,
+        )
+    expected_open, expected_status = _derive_status(
+        surface.major_finding_ids,
+        surface.dispositions,
+    )
+    if surface.open_major_finding_ids != expected_open or surface.status != expected_status:
+        raise ValueError("D1 adjudication status differs from dispositions")
+
+
+def _mint_adjudication_surface(
+    *,
+    report_sha256: str,
+    execution_receipt_sha256: str,
+    review_request_sha256: str,
+    review_packet_sha256: str,
+    major_finding_ids: tuple[str, ...],
+    dispositions: Mapping[str, D1MajorFindingDisposition],
+    open_major_finding_ids: tuple[str, ...],
+    status: str,
+    operator_record_sha256: str,
+) -> D1ReviewAdjudicationSurface:
+    surface = object.__new__(D1ReviewAdjudicationSurface)
+    object.__setattr__(surface, "report_sha256", report_sha256)
+    object.__setattr__(surface, "execution_receipt_sha256", execution_receipt_sha256)
+    object.__setattr__(surface, "review_request_sha256", review_request_sha256)
+    object.__setattr__(surface, "review_packet_sha256", review_packet_sha256)
+    object.__setattr__(surface, "major_finding_ids", major_finding_ids)
+    object.__setattr__(surface, "dispositions", MappingProxyType(dict(dispositions)))
+    object.__setattr__(surface, "open_major_finding_ids", open_major_finding_ids)
+    object.__setattr__(surface, "status", status)
+    object.__setattr__(surface, "operator_record_sha256", operator_record_sha256)
+    _validate_adjudication_surface(surface)
+    _ADJUDICATION_ATTESTATION.register(surface)
+    return surface
 
 
 def adjudicate_d1_review(
@@ -225,6 +378,9 @@ def adjudicate_d1_review(
     report: D1ParsedReviewReport,
     dispositions: tuple[D1MajorFindingDisposition, ...],
     operator_record_sha256: str,
+    execution_receipt_sha256: str,
+    review_request_sha256: str,
+    review_packet_sha256: str,
 ) -> D1ReviewAdjudicationSurface:
     """Account for every parsed finding without conferring successor authority."""
     if type(report) is not D1ParsedReviewReport or type(dispositions) is not tuple:
@@ -233,17 +389,18 @@ def adjudicate_d1_review(
     if len(by_id) != len(dispositions) or set(by_id) != set(report.major_finding_ids):
         raise ValueError("D1 adjudication dispositions must exactly cover parsed MAJOR IDs")
     _sha(operator_record_sha256, "D1 adjudication operator record")
-    open_ids = tuple(
-        finding_id
-        for finding_id in report.major_finding_ids
-        if by_id[finding_id].status is D1MajorFindingStatus.OPEN
-    )
-    status = "NOT_REQUIRED" if not report.major_finding_ids else "OPEN" if open_ids else "RESOLVED"
-    return D1ReviewAdjudicationSurface(
-        report.report_sha256,
-        report.major_finding_ids,
-        MappingProxyType(by_id),
-        open_ids,
-        status,
-        operator_record_sha256,
+    _sha(execution_receipt_sha256, "D1 adjudication execution receipt")
+    _sha(review_request_sha256, "D1 adjudication review request")
+    _sha(review_packet_sha256, "D1 adjudication review packet")
+    open_ids, status = _derive_status(report.major_finding_ids, by_id)
+    return _mint_adjudication_surface(
+        report_sha256=report.report_sha256,
+        execution_receipt_sha256=execution_receipt_sha256,
+        review_request_sha256=review_request_sha256,
+        review_packet_sha256=review_packet_sha256,
+        major_finding_ids=report.major_finding_ids,
+        dispositions=by_id,
+        open_major_finding_ids=open_ids,
+        status=status,
+        operator_record_sha256=operator_record_sha256,
     )

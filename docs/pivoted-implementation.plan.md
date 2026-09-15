@@ -1,6 +1,14 @@
 # Predictive-State Geometry Pivot — Implementation Marathon
 
-**Status:** approved forward program; D1 is a complete tracer bullet, not a skeleton.
+**Status:** retained D-series implementation/evidence contract; not the new generator itinerary.
+
+**2026-09-14 transition:** the forward north star is now the
+[codec-separated hierarchical latent predictor](hierarchical-latent-predictor.plan.md).
+Existing D constructions, registrations, exclusions, and gates are preserved, not relabelled.
+The unfinished old host/capture/CLI tail is deliberately deferred in recoverable snapshots
+listed in [PROGRESS.md](../PROGRESS.md). This is not a claim that the D-ladder was completed.
+New sentence-level generation experiments require their own construction and registration
+identities; the historical implementation amendment below does not authorize them.
 
 **Date:** 2026-08-23.
 
@@ -15,6 +23,69 @@
 **Lead:** Luiz Frias.
 
 **Schedule:** verdict-gated; no completion date is inferred.
+
+## Implementation amendment — 2026-09-04
+
+Operator-approved delivery order: implement D1 repairs and all D2–D5 mechanisms
+with local tiny tests first; then execute the real scientific flywheel serially
+through the eligible rungs. This supersedes any reading below that gates writing
+successor code on a predecessor verdict. Remote successor probes and confirmatory
+execution remain gated. Test-only gate fixtures cannot authorize a paid run.
+
+- Each commit contains at most **599 added-plus-deleted lines**, including tests,
+  documentation, and schema changes. RED tests precede production changes.
+- Enwik8 remains the fixed-configuration regime. Each rung starts fresh paired
+  seeds with the eligible predecessor construction, not pretrained checkpoints.
+- Multiplicity-controlled 95% inference decides; a predeclared marginal 3-sigma
+  analysis of the same sealed observations is report-only. Seed sizing targets
+  90% projected power per primary contrast from excluded, representative pilots
+  and a conservative variance bound. Tiny results cannot supply pilot variance.
+- Probe, pilot, and confirmatory spending each require a separate phase quote.
+  Source-byte observations, target-encoder exposure, and probe resources remain
+  separate measured scopes. Publication remains an explicit operator action.
+- D1 distinguishes missing/nonfinite gradients and ownership defects from finite
+  measured zero gradients and registered collapse/grounding outcomes. A zero
+  gradient does not skip a successful AdamW/EMA transaction. Zero-vector cosine
+  is an explicit undefined diagnostic, never an invented numerical value.
+- D2 uses one final-block inverse-Fisher residual intervention, fully
+  differentiated through the metric and matrix-free solve. The initial damping
+  is 1.0, iteration limit 32, relative tolerance 1e-5, absolute tolerance 1e-8.
+  A failed solve is a defect; no Euclidean fallback is authorized.
+  Recompute the metric at the current state; do not retain metrics or autograd
+  graphs across steps. Older cache work items below do not authorize such reuse.
+- Predictive score gain is an evaluation-only observable-byte probe, motivated
+  by [IGPO v2](https://arxiv.org/html/2510.14967v2), not an RL training objective.
+  Compare the same future byte at positions strictly after both scored states,
+  with explicit remaining horizons, frozen checkpoint/probe identity, training-
+  only probe fitting, held-out scoring, and uniform/shuffled-state controls.
+  Diagnostic lags are {2,4,16,64}; fitting defaults are 65,536 training positions,
+  200 AdamW updates, batch 256, learning rate 1e-3, weight decay 1e-4, seed 42;
+  evaluation uses 8,192 positions. Tiny reductions are declared explicitly.
+- Score gain cannot decide D1/D2. Any deciding D3/D4 use must be preregistered.
+  Fixed-covariance Gaussian NLL improvement is not decreasing Gaussian entropy.
+- D3 retains fixed-variance Gaussian horizons {1,4,16,64} plus the equal-weight
+  composite; D4 starts at fixed W=8; D5 ends at bijective byte permutations.
+  Alternate-codec and post-D5 topology work named below is deferred and outside
+  this delivery contract.
+- Reuse the D1 transport, resource and custody boundaries. Scientific rosters,
+  exclusions, contrasts, and successor policies remain rung-specific. Preserve
+  D1's strict four-arm validator behind its own adapter.
+
+Implementation completion and scientific completion are distinct. Passing local
+golden tests does not constitute an excluded remote pilot, a confirmatory run,
+fresh analysis, independent review, or a filed scientific successor decision.
+
+### Local implementation handoff — 2026-09-12
+
+[PROGRESS.md](../PROGRESS.md) records the delivered commit checkpoint and validation
+scope. Local D1 repairs, D2–D5 scientific mechanisms, predictive score probes,
+worker transport, and shared D1 fresh/resume phase ordering are committed. The
+host campaign/operator/capture integration remains an unfinished tail: its public
+dispatch still needs `d_ladder_operator.py` and `d_ladder_application.py`, followed
+by a production-shaped host-command golden lineage and integrated validation.
+Do not treat the worker command or test-double-backed local flywheel as proof
+that this host path is ready. Existing E-series verdicts remain historical; no
+new scientific successor gate or remote spending authorization is implied.
 
 ## Program thesis
 

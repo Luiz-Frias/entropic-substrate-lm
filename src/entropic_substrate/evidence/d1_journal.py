@@ -541,14 +541,25 @@ def _checkpoint_state(history: _History, prefix_sha256: str) -> JournalCheckpoin
     )
 
 
+def read_journal_bytes(
+    payload: bytes,
+    *,
+    journal_path: str | Path,
+) -> tuple[D1JournalEvent, ...]:
+    """Validate one already-snapshotted authoritative journal payload."""
+    if type(payload) is not bytes:
+        raise TypeError("journal payload must be bytes")
+    history, _ = _replay(payload, journal_path=Path(journal_path))
+    return history.events
+
+
 def read_journal(path: str | Path) -> tuple[D1JournalEvent, ...]:
     """Read and validate every canonical record in an authoritative prefix."""
     try:
         data = Path(path).read_bytes()
     except OSError as exc:
         raise _error("journal_io", "path", f"cannot read journal: {exc}") from exc
-    history, _ = _replay(data, journal_path=Path(path))
-    return history.events
+    return read_journal_bytes(data, journal_path=path)
 
 
 def _fsync_parent(path: Path) -> None:
@@ -852,6 +863,13 @@ class AuthoritativeRunJournal:
     @property
     def tail_quarantine(self) -> JournalTailQuarantineReceipt | None:
         return self._tail_quarantine
+
+    @property
+    def latest_checkpoint_sha256(self) -> str | None:
+        for event in reversed(self._history.events):
+            if event.event_kind is JournalEventKind.CHECKPOINT:
+                return cast(str, event.payload["checkpoint_sha256"])
+        return None
 
     def append(self, event: D1JournalEvent) -> JournalCheckpointState:
         if self._closed:

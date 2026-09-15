@@ -1,17 +1,49 @@
-# Architecture — Predictive-State Geometry Pivot
+# Architecture — Codec-Separated Hierarchical Latent Prediction
 
-**Status:** authoritative forward architecture for the D1–D5 pivot.
+**Status:** approved forward north star; sentence-first generative design is not yet implemented.
 
-**Pivot date:** 2026-08-23.
+**North-star update:** 2026-09-14. The retained D-series design dates to 2026-08-23.
 
-**Linear program:** `Predictive-State Geometry Pivot`, under the Entropic Substrate
-initiative.
+**Prior Linear program:** `Predictive-State Geometry Pivot`, under the Entropic Substrate
+initiative. This documentation change does not update external project status.
 
-**Historical boundary:** the E-series preregistrations, captures, reviews, and verdicts remain
-the binding record for those experiments. This document changes the forward architecture; it
-does not reinterpret a filed result.
+**Historical boundary:** E-series evidence and existing D-series construction and registration
+identities remain bound to their original experiments. Nothing below upgrades their readiness
+or reinterprets a filed result.
 
 ## North star
+
+Build a codec-separated hierarchical latent predictor: a boundary encoder constructs
+continuous sentence/chunk representations, the main spine predicts the next representation
+in that sequence, and a local decoder generates text from predicted latents. The main
+computational clock is the chunk sequence, not necessarily one step per byte or surface token.
+Start with sentence boundaries; paragraph and document-context scales are controlled research
+stages, not assumed semantic improvements. Latent slots/tensors may preserve detail beyond a
+single vector; coarsening does not imply lossless compression.
+
+Target roughly 500M total deployed parameters, with an upper design envelope of 1B. Count
+encoder, spine, and decoder together; report training-only teachers separately. Fisher-based
+dynamics remain a candidate mechanism whose signed predictive value and off-target effects
+must be measured. The full forward contract and open choices are in
+[the hierarchical predictor itinerary](hierarchical-latent-predictor.plan.md).
+
+## Horizon
+
+First complete one causal sentence-level generation tracer with checkpoint/recovery and the
+full reviewed scientific flywheel. Then retain or retire mechanisms through sealed paired
+comparisons before increasing temporal resolution, changing backbone/codec, or scaling toward
+the deployment envelope. Final success requires reproducible generation, appropriate held-out
+quality and resource evidence, and filed support for the retained mechanisms—not merely a
+latent-prediction loss or a working byte-level model. The itinerary is not a preregistration
+or a remote-spending authorization.
+
+## Retained D-series design boundary
+
+All remaining sections preserve the earlier byte-clock D-series architecture for provenance
+and component reuse. Their D1–D5 gates apply only to those constructions. They do not describe
+the new sentence-level generator or authorize its execution.
+
+### D-series north star (2026-08-23)
 
 > The hidden state stays latent. Future laws determine which latent displacements matter, and
 > geometry is consumed as an operator on latent dynamics—not substituted for latent state.
@@ -26,7 +58,7 @@ The internal implementation term is **predictive semimetric**. “Predictive man
 a research hypothesis until measured rank, regularity, stability, and codec-equivariance
 support the stronger word.
 
-## Horizon
+### D-series completion contract
 
 The pivot is done enough when D1–D5 have each completed the full scientific lifecycle:
 

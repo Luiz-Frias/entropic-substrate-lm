@@ -12,8 +12,15 @@ from typing import NoReturn, cast
 from entropic_substrate.analysis.d1_factorial import (
     D1AnalysisCell,
     D1FactorialAnalysis,
+    d1_cell_endpoint,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_contract import D1DecisionContract, D1RegisteredEndpoint
+from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap
+from entropic_substrate.evidence.d1_telemetry_values import (
+    D1_REPORT_ONLY_METRICS,
+    D1_SCALAR_METRICS,
+)
+from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
@@ -26,6 +33,7 @@ __all__ = [
     "D1ConditionStatus",
     "D1RegisteredCondition",
     "D1ThresholdOperator",
+    "classify_d1_condition_status",
     "evaluate_d1_clauses",
     "parse_d1_clause_policy",
 ]
@@ -160,6 +168,8 @@ def _condition(
         metric, estimator, window = item["metric"], item["estimator"], item["smoothing_window"]
         if type(metric) is not str or not metric or estimator != "last_k_mean":
             _fail("endpoint", path, "requires metric and estimator='last_k_mean'")
+        if metric not in D1_SCALAR_METRICS or metric in D1_REPORT_ONLY_METRICS:
+            _fail("endpoint", path, "metric must be a registered deciding scalar")
         if type(window) is not int or window < 1 or item["contrast_id"] is not None:
             _fail("endpoint", path, "requires positive smoothing_window and null contrast_id")
         return D1RegisteredCondition(
@@ -178,6 +188,9 @@ def _condition(
         or any(item[field] is not None for field in ("metric", "estimator", "smoothing_window"))
     ):
         _fail("contrast_id", path, "must name one registered contrast and no endpoint fields")
+    contrast_metric = contract.contrast_rules[contrast_id].endpoint.metric
+    if contrast_metric not in D1_SCALAR_METRICS or contrast_metric in D1_REPORT_ONLY_METRICS:
+        _fail("contrast_id", path, "contrast endpoint must use a registered deciding scalar")
     return D1RegisteredCondition(source, operator, threshold, None, None, None, contrast_id)
 
 
@@ -202,6 +215,13 @@ def parse_d1_clause_policy(contract: D1DecisionContract) -> D1ClausePolicy:
         _fail("candidate_arms", "analysis_policy.candidate_arms", str(error))
     if len(set(arms)) != len(arms):
         _fail("candidate_arms", "analysis_policy.candidate_arms", "must be unique")
+    expected_arms = tuple(D1Arm(value) for value in D1_STABILIZATION_ARM_IDS)
+    if arms != expected_arms:
+        _fail(
+            "candidate_arms",
+            "analysis_policy.candidate_arms",
+            f"must equal canonical stabilization sequence {D1_STABILIZATION_ARM_IDS}",
+        )
     raw_clauses = root["clauses"]
     if not isinstance(raw_clauses, Mapping) or set(raw_clauses) != set(contract.clause_ids):
         _fail("clauses", "analysis_policy.clauses", "must bind every registered clause")
@@ -247,19 +267,16 @@ def _endpoint(
     for cell in cells:
         if cell.arm is not arm:
             continue
-        points = cell.metrics.get(metric)
-        if points is None or len(points) < smoothing_window:
-            _fail(
-                "endpoint",
-                f"{arm.value}.{metric}",
-                "registered series is absent or short",
-            )
-        tail = points[-smoothing_window:]
-        values.append(math.fsum(point.value for point in tail) / smoothing_window)
+        point = d1_cell_endpoint(
+            cell, D1RegisteredEndpoint(metric, "last_k_mean", smoothing_window)
+        )
+        if type(point) is D1EndpointGap:
+            return None
+        values.append(cast(float, point))
     return None if not values else math.fsum(values) / len(values)
 
 
-def _status(
+def classify_d1_condition_status(
     operator: D1ThresholdOperator,
     threshold: float,
     lower: float | None,
@@ -314,7 +331,12 @@ def _evaluate_condition(
         upper = None if contrast is None else contrast.interval_upper
     return D1ConditionResult(
         condition=condition,
-        status=_status(condition.operator, condition.threshold, lower, upper),
+        status=classify_d1_condition_status(
+            condition.operator,
+            condition.threshold,
+            lower,
+            upper,
+        ),
         observed_point=point,
         observed_lower=lower,
         observed_upper=upper,
@@ -331,6 +353,19 @@ def evaluate_d1_clauses(
     """Evaluate every condition and retain all co-equal clause riders."""
     if type(policy) is not D1ClausePolicy or type(decision_contract) is not D1DecisionContract:
         raise TypeError("D1 clause evaluation requires typed policy and decision contract")
+    observed = {(cell.arm, cell.seed) for cell in cells}
+    if len(observed) != len(cells):
+        _fail("cell_population", "cells", "contains duplicate arm-by-seed identities")
+    if factorial is None:
+        if cells:
+            _fail("cell_population", "cells", "finite cells require factorial analysis")
+    else:
+        expected = {(arm, seed) for seed in factorial.included_seeds for arm in D1Arm}
+        if observed != expected:
+            _fail("cell_population", "cells", "does not equal the factorial survivor grid")
+        supplied = {(cell.arm, cell.seed): cell for cell in cells}
+        if supplied != dict(factorial.cell_commitment):
+            _fail("cell_population", "cells", "does not equal the factorial cell commitment")
     by_arm: dict[D1Arm, Mapping[str, D1ArmClauseResult]] = {}
     for arm in policy.candidate_arms:
         clauses: dict[str, D1ArmClauseResult] = {}

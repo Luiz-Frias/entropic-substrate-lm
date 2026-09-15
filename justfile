@@ -6,6 +6,10 @@ import? 'justfile.local'
 default:
     @just --list --unsorted
 
+# Local synthetic smoke only; no scientific gate or Runpod spending authority.
+d-probe *ARGS:
+    uv run python -m entropic_substrate.cli d-probe {{ARGS}}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------
@@ -59,7 +63,7 @@ typecheck:
 # Dependency hygiene + security lint (deptry + bandit, configured in pyproject).
 audit:
     @echo "→ Auditing dependencies and security..."
-    uv run deptry src
+    uv run deptry src notebooks
     uv run bandit -c pyproject.toml -q -r src
 
 # ---------------------------------------------------------------------------

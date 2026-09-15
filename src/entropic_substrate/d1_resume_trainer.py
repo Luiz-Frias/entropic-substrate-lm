@@ -4,19 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
+import entropic_substrate.d1_segment_engine as segment_engine
 from entropic_substrate.d1_dual_failure import (
     D1PrimarySecondaryFailure,
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
-from entropic_substrate.d1_evaluation import D1EvalResult, D1Evaluator
+from entropic_substrate.d1_evaluation import D1EvalResult
 from entropic_substrate.d1_observability import D1JournalObserver, ObservedD1Journal
 from entropic_substrate.d1_resource_activation import (
-    D1ActiveResourceMeter,
     D1ResourceActivationFactory,
 )
 from entropic_substrate.d1_resume_runtime import (
@@ -31,12 +29,10 @@ from entropic_substrate.d1_trainer_handoff import (
     capture_d1_trainer_termination,
 )
 from entropic_substrate.d1_trainer_runtime import (
-    D1FreshComponents,
     D1TrainerClock,
     D1TrainerWallOrigin,
     SystemD1TrainerClock,
 )
-from entropic_substrate.d1_training_step import apply_d1_training_step
 from entropic_substrate.evidence.d1_journal import JournalTailQuarantineReceipt
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
@@ -47,16 +43,14 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_ledger import (
     ResourceLedger,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.evidence.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
+)
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
 from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.predictive_state.checkpoint_envelope import build_d1_checkpoint
 from entropic_substrate.predictive_state.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
-    save_atomic,
 )
 
 __all__ = [
@@ -65,6 +59,16 @@ __all__ = [
     "D1ResumeRunLocations",
     "run_d1_resume",
 ]
+
+
+def _require_lower_sha256(value: str, *, label: str) -> None:
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or value != value.lower()
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +83,81 @@ class D1ResumeRunCompletion:
     segment_data_order_batches_attested: int
     tail_quarantine: JournalTailQuarantineReceipt | None
     operator_finalization_required: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.termination) is not D1TrainerTermination:
+            raise TypeError("D1 resume completion requires trainer termination")
+        if self.successful_step < 1:
+            raise ValueError("D1 resume completion successful_step must be positive")
+        if self.journal_state.successful_step != self.successful_step:
+            raise ValueError("D1 resume completion journal cursor differs")
+        if self.termination.model_successful_step != self.successful_step:
+            raise ValueError("D1 resume completion model and durable cursors differ")
+        ledger = self.termination.resource_ledger_state
+        if ledger.last_training_step != self.successful_step:
+            raise ValueError("D1 resume completion resource ledger cursor differs")
+        if type(self.final_checkpoint) is not D1CheckpointArtifactReceipt:
+            raise TypeError("D1 resume completion requires checkpoint receipt")
+        if type(self.final_evaluation) is not D1EvalResult:
+            raise TypeError("D1 resume completion requires final evaluation")
+        if type(self.final_resource_work) is not ResourceWorkSnapshot:
+            raise TypeError("D1 resume completion requires final resource work")
+        work = self.final_resource_work
+        if (
+            work.logical_run_id != self.termination.logical_run_id
+            or work.execution_segment_index != self.termination.execution_segment_index
+            or work.training_step != self.successful_step
+            or self.termination.trainer_ended_at < work.observed_at
+        ):
+            raise ValueError("D1 resume completion resource snapshot cursor differs")
+        for field in (
+            "committed_quality_source_bytes",
+            "committed_quality_model_tokens",
+            "online_train_token_positions",
+            "target_train_token_positions",
+            "baseline_calibration_positions",
+            "eval_positions",
+        ):
+            if getattr(work, field) != getattr(ledger, field):
+                raise ValueError(f"D1 resume completion resource evidence differs at {field}")
+        start = self.run_start_provenance
+        if type(start) is not RunStartProvenance:
+            raise TypeError("D1 resume completion requires run-start provenance")
+        if (
+            start.segment_start_mode is not SegmentStartMode.RESUME
+            or start.execution_segment_index < 1
+            or (
+                start.logical_run_id,
+                start.execution_segment_index,
+                start.execution_segment_id,
+            )
+            != (
+                self.termination.logical_run_id,
+                self.termination.execution_segment_index,
+                self.termination.execution_segment_id,
+            )
+            or self.termination.trainer_ended_at < start.trainer_started_at
+        ):
+            raise ValueError("D1 resume completion segment identity differs")
+        _require_lower_sha256(self.resumed_from_sha256, label="resumed_from_sha256")
+        if start.resume_checkpoint_sha256 != self.resumed_from_sha256:
+            raise ValueError("D1 resume completion checkpoint lineage differs")
+        _require_lower_sha256(
+            self.segment_data_order_sha256,
+            label="segment_data_order_sha256",
+        )
+        if (
+            type(self.segment_data_order_batches_attested) is not int
+            or self.segment_data_order_batches_attested < 1
+        ):
+            raise ValueError("D1 resume completion must attest a data-order batch")
+        if (
+            self.tail_quarantine is not None
+            and type(self.tail_quarantine) is not JournalTailQuarantineReceipt
+        ):
+            raise TypeError("D1 resume completion tail quarantine is invalid")
+        if self.operator_finalization_required is not True:
+            raise ValueError("D1 resumed trainer cannot finalize provider billing or RUN_END")
 
     @property
     def successful_step(self) -> int:
@@ -123,78 +202,6 @@ def _event(
     )
 
 
-def _evaluate(
-    components: D1FreshComponents,
-    journal: ObservedD1Journal,
-    clock: D1TrainerClock,
-    meter: D1ActiveResourceMeter,
-    step: int,
-) -> tuple[D1EvalResult, ResourceWorkSnapshot]:
-    with meter.measure(ResourcePhase.EVAL):
-        result = D1Evaluator().evaluate(system=components.system, sampler=components.eval_sampler)
-    batching = components.plan.profile.draft.execution_protocol.batching
-    target_positions = (
-        result.batch_count * batching.batch_size * (batching.sequence_length + batching.horizon)
-    )
-    meter.record_positions(
-        ResourcePhase.EVAL,
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-    )
-    work = components.resource_ledger.record_eval(
-        online_positions=result.online_positions,
-        target_positions=target_positions,
-        training_step=step,
-        observed_at=clock.utc_now(),
-        monotonic_ns=clock.monotonic_ns(),
-    )
-    journal.append(
-        _event(
-            components.plan,
-            journal,
-            JournalEventKind.EVAL,
-            step,
-            {
-                "eval_index": work.eval_index,
-                "quality": result.telemetry_manifest,
-                "resource_work": resource_snapshot_to_mapping(work),
-            },
-        )
-    )
-    return result, work
-
-
-def _save_checkpoint(
-    components: D1FreshComponents,
-    journal: ObservedD1Journal,
-    path: Path,
-    baseline: D1BaselineCalibrationAttestation,
-    step: int,
-    best_nats: float,
-) -> D1CheckpointArtifactReceipt:
-    state = build_d1_checkpoint(
-        system=components.system,
-        optimizer=components.optimizer.optimizer,
-        sampler=components.train_sampler,
-        run=components.plan.run,
-        protocol=components.plan.profile.draft.execution_protocol,
-        successful_step=step,
-        baseline_calibration=baseline,
-        resource_ledger=components.resource_ledger.current_state(),
-        journal_state=journal.state,
-        lifecycle={
-            "schema_version": "d1-trainer-lifecycle-v1",
-            "state": "running",
-            "completion_reason": None,
-            "abort_reason": None,
-        },
-        best_nats_per_byte=best_nats,
-    )
-    receipt = save_atomic(path, state)
-    journal.append_checkpoint(receipt.sha256)
-    return receipt
-
-
 def _trainer_failure(
     plan: D1RunPlan,
     journal: ObservedD1Journal,
@@ -202,6 +209,7 @@ def _trainer_failure(
     start: RunStartProvenance,
     clock: D1TrainerClock,
     step: int,
+    model_step: int,
     error: Exception,
     checkpoint_sha256: str | None,
 ) -> tuple[D1TrainerFailureHandoff, BaseException]:
@@ -215,7 +223,11 @@ def _trainer_failure(
             D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
             meter_error,
         )
-        failure_cause = D1PrimarySecondaryFailure(error, meter_error)
+        failure_cause = D1PrimarySecondaryFailure(
+            error,
+            meter_error,
+            secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+        )
     journal_cursor = journal.state
     resource_state = ledger.current_state()
     error_message = str(error) or repr(error)
@@ -226,6 +238,7 @@ def _trainer_failure(
         "execution_segment_index": start.execution_segment_index,
         "journal_cursor": journal_cursor.manifest,
         "logical_run_id": start.logical_run_id,
+        "model_successful_step": model_step,
         "operator_finalization_required": True,
         "resource_ledger_state": resource_state.manifest,
         "rollback_claimed": False,
@@ -242,19 +255,27 @@ def _trainer_failure(
     )
     if numerical_defect is not None:
         payload["numerical_defect"] = numerical_defect.manifest
-    journal.append(
-        _event(
-            plan,
-            journal,
-            JournalEventKind.TRAINER_ABORTED,
-            step,
-            payload,
+    try:
+        journal.append(
+            _event(
+                plan,
+                journal,
+                JournalEventKind.TRAINER_ABORTED,
+                step,
+                payload,
+            )
         )
-    )
+    except Exception as append_error:
+        raise D1PrimarySecondaryFailure(
+            failure_cause,
+            append_error,
+            secondary_stage=D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
+        ) from error
     termination = capture_d1_trainer_termination(
         start=start,
         trainer_ended_at=trainer_ended_at,
         successful_step=step,
+        model_successful_step=model_step,
         journal_state=journal.state,
         resource_ledger_state=resource_state,
     )
@@ -277,6 +298,7 @@ def run_d1_resume(
     observer: D1JournalObserver,
     clock: D1TrainerClock | None = None,
     resource_activation_factory: D1ResourceActivationFactory | None = None,
+    checkpoint_sync: segment_engine.D1CheckpointSyncPort | None = None,
 ) -> D1ResumeRunCompletion:
     """Record the segment, restore exact state, and stop before billing finalization."""
     active_clock = clock or SystemD1TrainerClock()
@@ -291,116 +313,55 @@ def run_d1_resume(
         resource_activation_factory=resource_activation_factory,
     )
     step = admission.successful_step
+    model_step = step
     ledger = admission.resource_ledger
     latest_checkpoint_sha256 = admission.checkpoint_receipt.sha256
     with admission.journal as journal, admission.resource_activation:
         try:
             restored = restore_d1_resume_runtime(admission)
             components = restored.components
-            best_nats = restored.best_nats_per_byte
-            protocol = plan.profile.draft.execution_protocol
-            final_eval: D1EvalResult | None = None
-            final_work: ResourceWorkSnapshot | None = None
-            final_receipt: D1CheckpointArtifactReceipt | None = None
-            while step < protocol.optimization.max_steps:
-                batch = components.train_sampler.predictive_batch(protocol.batching.horizon)
-                online, target = (
-                    batch.online_observations.numel(),
-                    batch.target_encoder_context.numel(),
-                )
-                try:
-                    with admission.resource_activation.meter.measure(ResourcePhase.TRAIN):
-                        result = apply_d1_training_step(
-                            system=components.system,
-                            optimizer_bundle=components.optimizer,
-                            batch=batch,
-                            spec=protocol.optimization,
-                            successful_step=step,
-                        )
-                except BaseException:
-                    ledger.record_train_attempt(
-                        online_positions=online,
-                        target_positions=target,
-                        quality_source_byte_exposures=online,
-                        committed=False,
-                    )
-                    raise
-                admission.resource_activation.meter.record_positions(
-                    ResourcePhase.TRAIN,
-                    online_positions=online,
-                    target_positions=target,
-                )
-                step = result.successful_step
-                ledger.record_train_attempt(
-                    online_positions=online,
-                    target_positions=target,
-                    quality_source_byte_exposures=online,
-                    committed=True,
-                )
-                order = components.train_sampler.data_order_digest()
-                if order is None:
-                    raise RuntimeError("D1 resumed segment has no data-order attestation")
-                journal.append(
-                    _event(
-                        plan,
-                        journal,
-                        JournalEventKind.TRAIN,
-                        step,
-                        {
-                            "data_order": {"batches_attested": order[1], "sha256": order[0]},
-                            "execution_segment": run_start_to_mapping(start),
-                            "scheduled_log_boundary": step % protocol.evaluation.log_interval == 0,
-                            "train": result.manifest,
-                        },
-                    )
-                )
-                terminal = step == protocol.optimization.max_steps
-                if step % protocol.evaluation.eval_interval == 0 or terminal:
-                    final_eval, final_work = _evaluate(
-                        components,
-                        journal,
-                        active_clock,
-                        admission.resource_activation.meter,
-                        step,
-                    )
-                    best_nats = min(best_nats, final_eval.nats_per_byte)
-                    scheduled = protocol.evaluation.save_interval > 0 and (
-                        step % protocol.evaluation.save_interval == 0
-                    )
-                    if scheduled or terminal:
-                        final_receipt = _save_checkpoint(
-                            components,
-                            journal,
-                            locations.checkpoint_path,
-                            restored.baseline,
-                            step,
-                            best_nats,
-                        )
-                        latest_checkpoint_sha256 = final_receipt.sha256
-            if final_eval is None or final_work is None or final_receipt is None:
-                raise RuntimeError("D1 resumed terminal boundary lacks evaluation/checkpoint")
-            order = components.train_sampler.data_order_digest()
-            if order is None:
-                raise RuntimeError("D1 resumed segment lacks data-order evidence")
+            training = segment_engine.run_d1_training_segment(
+                components=components,
+                journal=journal,
+                clock=active_clock,
+                meter=admission.resource_activation.meter,
+                baseline=restored.baseline,
+                journal_path=locations.journal_path,
+                checkpoint_path=locations.checkpoint_path,
+                checkpoint_sync=checkpoint_sync,
+                successful_step=step,
+                best_nats_per_byte=restored.best_nats_per_byte,
+            )
+            step = training.successful_step
+            model_step = training.successful_step
+            latest_checkpoint_sha256 = training.final_checkpoint.sha256
             termination = capture_d1_trainer_termination(
                 start=start,
                 trainer_ended_at=active_clock.utc_now(),
                 successful_step=step,
+                model_successful_step=model_step,
                 journal_state=journal.state,
                 resource_ledger_state=ledger.current_state(),
             )
             return D1ResumeRunCompletion(
                 termination=termination,
-                final_checkpoint=final_receipt,
-                final_evaluation=final_eval,
-                final_resource_work=final_work,
+                final_checkpoint=training.final_checkpoint,
+                final_evaluation=training.final_evaluation,
+                final_resource_work=training.final_resource_work,
                 resumed_from_sha256=admission.checkpoint_receipt.sha256,
                 run_start_provenance=start,
-                segment_data_order_sha256=order[0],
-                segment_data_order_batches_attested=order[1],
+                segment_data_order_sha256=training.data_order_sha256,
+                segment_data_order_batches_attested=training.data_order_batches_attested,
                 tail_quarantine=journal.tail_quarantine,
             )
-        except Exception as error:
+        except Exception as caught:
+            if isinstance(caught, segment_engine.D1TrainingInterrupted):
+                step = caught.durable_successful_step
+                model_step = caught.model_successful_step
+                latest_checkpoint_sha256 = caught.latest_checkpoint_sha256
+                error = caught.primary
+            else:
+                error = caught
             handoff, failure_cause = _trainer_failure(
                 plan,
                 journal,
@@ -408,6 +369,7 @@ def run_d1_resume(
                 start,
                 active_clock,
                 step,
+                model_step,
                 error,
                 latest_checkpoint_sha256,
             )

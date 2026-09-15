@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
+import pickle
+from copy import copy, deepcopy
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 import d1_launch_admission_fixtures as launch_fixtures
-from d1_billing_finalizer_fixtures import provider_bill
+from d1_billing_finalizer_fixtures import partial_provider_bill, provider_bill
 from d1_trainer_fixtures import micro_plan
+from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
 from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
 from entropic_substrate.d1_operator_controller import (
     D1OperatorQueueHalt,
@@ -19,9 +23,16 @@ from entropic_substrate.d1_operator_controller import (
 )
 from entropic_substrate.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
-    D1TrainerInputEnvelope,
+    D1StagedTrainerRequestReceipt,
+    D1TrainerStartReceipt,
+    attest_d1_staged_trainer_request,
+    attest_d1_trainer_start,
+    d1_runtime_observation_sha256,
 )
-from entropic_substrate.d1_operator_ports import D1RunPodAuthReceipt
+from entropic_substrate.d1_operator_ports import (
+    D1PodDeletionAcknowledgedError,
+    D1RunPodAuthReceipt,
+)
 from entropic_substrate.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
@@ -29,6 +40,15 @@ from entropic_substrate.d1_operator_values import (
     D1OperatorLaunchIntent,
     D1PodPlacement,
     D1RuntimeObservation,
+)
+from entropic_substrate.d1_trainer_process_contracts import D1TrainerStartReport
+from entropic_substrate.d1_trainer_request_codec import (
+    D1TrainerRequest,
+    build_d1_trainer_request,
+    d1_trainer_bootstrap_attempt_sha256,
+    d1_trainer_command_sha256,
+    d1_trainer_request_sha256,
+    serialize_d1_trainer_request,
 )
 from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.data.build import build_corpus
@@ -168,6 +188,31 @@ def _manager(tmp_path: Path) -> D1ProcessManager:
     )
 
 
+def test_trainer_step_receipts_are_factory_attested_and_noncopyable(tmp_path: Path) -> None:
+    case = _case(tmp_path)
+    trainer = _Trainer(D1ExportedTrainerHandoff(case.handoff, case.journal_path), [], case.start)
+    runtime = trainer.bootstrap_runtime("pod-123", "a" * 64)
+    request = build_d1_trainer_request(
+        case.intent.plan,
+        case.start,
+        D1TrainerWallOrigin(runtime.trainer_started_at, runtime.trainer_monotonic_origin_ns),
+    )
+    with pytest.raises(ValueError, match="request digest"):
+        attest_d1_staged_trainer_request(request=request, artifact=_artifact(9, "stage"))
+    staged = trainer.stage_inputs("pod-123", request=request)
+    started = trainer.start_trainer("pod-123")
+    for receipt in (staged, started):
+        receipt.require_factory_attested()
+        for copier in (copy, deepcopy, pickle.dumps):
+            with pytest.raises(TypeError, match="cannot be copied"):
+                copier(receipt)
+        with pytest.raises(TypeError, match="factory-attested"):
+            replace(receipt)
+    for receipt_type in (D1StagedTrainerRequestReceipt, D1TrainerStartReceipt):
+        with pytest.raises(TypeError, match="factory-attested"):
+            receipt_type()
+
+
 def _identity(events: list[str], label: str) -> ArtifactIdentity:
     events.append(label)
     return ArtifactIdentity(f"operator/{label}.json", ContentHash("sha256", f"{len(events):064x}"))
@@ -176,6 +221,7 @@ def _identity(events: list[str], label: str) -> ArtifactIdentity:
 @dataclass
 class _Custody:
     events: list[str]
+    fail_finalized_cell: bool = False
 
     def persist_precreate(self, intent: object, ledger: object, auth: object) -> ArtifactIdentity:
         del intent, ledger, auth
@@ -193,6 +239,16 @@ class _Custody:
         del finalization
         return _identity(self.events, "persist_finalization")
 
+    def persist_finalized_cell(self, record: D1FinalizedCellCustodyRecord) -> ArtifactIdentity:
+        record.require_factory_attested()
+        self.events.append("persist_finalized_cell")
+        if self.fail_finalized_cell:
+            raise RuntimeError("simulated finalized-cell custody failure")
+        return ArtifactIdentity(
+            "operator/finalized-cell.json",
+            ContentHash("sha256", record.record_digest),
+        )
+
     def persist_problem(self, subject_id: str, detail: str) -> ArtifactIdentity:
         del subject_id, detail
         return _identity(self.events, "persist_problem")
@@ -203,7 +259,11 @@ class _Provider:
     start: object
     events: list[str]
     placement_drift: bool = False
+    acknowledge_then_fail: bool = False
+    acknowledged_pod_id: str | None = None
+    partial_billing: bool = False
     cancel_count: int = 0
+    delete_count: int = 0
 
     def verify_authenticated(self) -> D1RunPodAuthReceipt:
         self.events.append("authenticate")
@@ -227,24 +287,16 @@ class _Provider:
             start.pod_created_at,
         )
 
-    def runtime(self, pod_id: str) -> D1RuntimeObservation:
-        self.events.append("runtime")
-        start = self.start
-        return D1RuntimeObservation(
-            pod_id,
-            start.trainer_started_at,
-            start.cuda_version,
-            start.driver_version,
-            start.pytorch_version,
-            start.compiler_enabled,
-            start.compiler_version,
-        )
-
     def terminate(self, pod_id: str, *, start: object, trainer_ended_at: datetime):
         from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
 
-        del pod_id
         self.events.append("terminate")
+        self.delete_count += 1
+        if self.acknowledge_then_fail:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=self.acknowledged_pod_id or pod_id,
+                detail="post-delete termination evidence is invalid",
+            )
         return ExecutionSegmentTermination(
             start.logical_run_id,
             start.execution_segment_index,
@@ -256,12 +308,13 @@ class _Provider:
     def billing(self, pod_id: str, *, start: object):
         del pod_id
         self.events.append("billing")
-        return provider_bill(start)
+        return partial_provider_bill(start) if self.partial_billing else provider_bill(start)
 
     def cancel(self, pod_id: str) -> datetime:
         del pod_id
         self.events.append("cancel")
         self.cancel_count += 1
+        self.delete_count += 1
         return self.start.trainer_started_at + timedelta(seconds=1)
 
 
@@ -269,11 +322,107 @@ class _Provider:
 class _Trainer:
     candidate: D1ExportedTrainerHandoff
     events: list[str]
+    start: object
+    stage_drift: str | None = None
+    start_drift: str | None = None
+    bootstrap_attempt_sha256: str | None = field(default=None, init=False)
+    staged_request: D1TrainerRequest | None = field(default=None, init=False)
+    runtime: D1RuntimeObservation | None = field(default=None, init=False)
 
-    def stage_inputs(self, pod_id: str, envelope: D1TrainerInputEnvelope) -> ArtifactIdentity:
+    def bootstrap_runtime(self, pod_id: str, attempt_sha256: str) -> D1RuntimeObservation:
+        self.events.append("runtime")
+        self.bootstrap_attempt_sha256 = attempt_sha256
+        start = self.start
+        self.runtime = D1RuntimeObservation(
+            pod_id,
+            start.trainer_started_at,
+            start.cuda_version,
+            start.driver_version,
+            start.pytorch_version,
+            start.compiler_enabled,
+            start.compiler_version,
+            10_000,
+        )
+        return self.runtime
+
+    def stage_inputs(
+        self, pod_id: str, *, request: D1TrainerRequest
+    ) -> D1StagedTrainerRequestReceipt:
         del pod_id
-        assert envelope.canonical_json
-        return _identity(self.events, "stage_inputs")
+        self.staged_request = request
+        payload = serialize_d1_trainer_request(request)
+        assert b'"schema_version":"d1-trainer-command-request-v1"' in payload
+        mutation = {
+            "plan": (request.plan, "logical_run_id", "mutated-run"),
+            "start": (request.start, "provider_sku", "mutated-sku"),
+            "origin": (request.origin, "monotonic_ns", 11_000),
+            "locations": (request.locations, "checkpoint_path", "runs/other.pt"),
+            "runtime_version": (self.runtime, "pytorch_version", "stage-mutated"),
+        }.get(self.stage_drift)
+        if mutation is not None:
+            object.__setattr__(*mutation)
+        request_sha256 = d1_trainer_request_sha256(request)
+        content_hash = (
+            ContentHash("md5", "0" * 32)
+            if self.stage_drift == "artifact_algorithm"
+            else ContentHash(
+                "sha256", "0" * 64 if self.stage_drift == "artifact_digest" else request_sha256
+            )
+        )
+        self.events.append("stage_inputs")
+        receipt = attest_d1_staged_trainer_request(
+            request=request,
+            artifact=ArtifactIdentity("operator/stage_inputs.json", content_hash),
+        )
+        if self.stage_drift == "digest":
+            object.__setattr__(receipt, "request_sha256", "0" * 64)
+        return receipt
+
+    def start_trainer(self, pod_id: str) -> D1TrainerStartReceipt:
+        self.events.append("start_trainer")
+        if self.start_drift == "raise":
+            raise RuntimeError("trainer start failed")
+        if self.start_drift == "none":
+            return cast(D1TrainerStartReceipt, None)
+        assert self.staged_request is not None and self.runtime is not None
+        if self.start_drift == "runtime_time":
+            mutated_time = self.runtime.trainer_started_at + timedelta(seconds=1)
+            object.__setattr__(self.runtime, "trainer_started_at", mutated_time)
+        elif self.start_drift == "runtime_version":
+            object.__setattr__(self.runtime, "pytorch_version", "mutated-version")
+        if self.start_drift == "raw_report":
+            return cast(D1TrainerStartReceipt, object.__new__(D1TrainerStartReport))
+        return attest_d1_trainer_start(
+            pod_id="other-pod" if self.start_drift == "pod" else pod_id,
+            attempt_sha256=(
+                "0" * 64
+                if self.start_drift == "attempt"
+                else self.bootstrap_attempt_sha256 or "0" * 64
+            ),
+            request_sha256=(
+                "0" * 64
+                if self.start_drift == "request"
+                else d1_trainer_request_sha256(self.staged_request)
+            ),
+            trainer_started_at=(
+                self.runtime.trainer_started_at + timedelta(seconds=1)
+                if self.start_drift == "time"
+                else self.runtime.trainer_started_at
+            ),
+            runtime_sha256=(
+                "0" * 64
+                if self.start_drift == "runtime_digest"
+                else d1_runtime_observation_sha256(self.runtime)
+            ),
+            process_id={"process": " ", "process_padded": " trainer "}.get(
+                self.start_drift, "trainer-123"
+            ),
+            command_sha256=(
+                "0" * 64
+                if self.start_drift == "command"
+                else d1_trainer_command_sha256(self.staged_request)
+            ),
+        )
 
     def await_exported_handoff(self, pod_id: str) -> D1ExportedTrainerHandoff:
         del pod_id
@@ -289,19 +438,41 @@ class _Clock:
         return self.value
 
 
-def _controller(tmp_path: Path, case: _Case, events: list[str], *, drift: bool = False):
+def _controller(
+    tmp_path: Path,
+    case: _Case,
+    events: list[str],
+    *,
+    drift: bool = False,
+    custody_failure: bool = False,
+    stage_drift: str | None = None,
+    start_drift: str | None = None,
+    acknowledge_then_fail: bool = False,
+    acknowledged_pod_id: str | None = None,
+    partial_billing: bool = False,
+) -> tuple[D1SequentialOperatorController, _Provider]:
     provider = _Provider(
         case.start,
         events,
         placement_drift=drift,
+        acknowledge_then_fail=acknowledge_then_fail,
+        acknowledged_pod_id=acknowledged_pod_id,
+        partial_billing=partial_billing,
+    )
+    trainer = _Trainer(
+        D1ExportedTrainerHandoff(case.handoff, case.journal_path),
+        events,
+        case.start,
+        stage_drift=stage_drift,
+        start_drift=start_drift,
     )
     controller = D1SequentialOperatorController(
         design=case.design,
         process_manager=_manager(tmp_path),
         attempt_ledger=D1LaunchAttemptLedger(),
         runpod=provider,
-        trainer=_Trainer(D1ExportedTrainerHandoff(case.handoff, case.journal_path), events),
-        custody=_Custody(events),
+        trainer=trainer,
+        custody=_Custody(events, fail_finalized_cell=custody_failure),
         operator=ActorIdentity("operator", "operator-session", ActorRole.OPERATOR),
         automation=ActorIdentity("automation", "automation-session", ActorRole.AUTOMATION),
         clock=_Clock(launch_fixtures.STARTED_AT - timedelta(hours=1)),
@@ -315,6 +486,7 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     case = _case(tmp_path)
     events: list[str] = []
     controller, _ = _controller(tmp_path, case, events)
+    trainer = cast(_Trainer, controller._trainer)
 
     result = controller.execute_fresh(case.intent)
 
@@ -325,17 +497,97 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
         "runtime",
         "persist_run_start",
         "stage_inputs",
+        "start_trainer",
         "persist_attempt_ledger",
         "await_handoff",
         "terminate",
         "billing",
-        "persist_finalization",
         "persist_attempt_ledger",
+        "persist_finalized_cell",
     ]
     assert result.process_manager.state is D1ProcessState.OPERATOR_FINALIZED
     assert result.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.COMPLETED
+    assert result.finalized_cell is not None
+    result.finalized_cell.require_factory_attested()
+    assert result.finalized_cell.attempt_ledger == result.attempt_ledger
+    assert result.finalized_cell.checkpoint == result.export.checkpoint
+    assert result.finalized_cell_artifact.content_hash.digest == result.finalized_cell.record_digest
+    assert result.process_manager.events[-1].artifacts == (result.finalized_cell_artifact,)
     assert read_journal(case.journal_path)[-1].event_kind is JournalEventKind.RUN_END
     assert result.queue_admissible is True
+    assert trainer.bootstrap_attempt_sha256 == d1_trainer_bootstrap_attempt_sha256(
+        "pod-123", case.intent
+    )
+
+
+def test_partial_billing_preserves_quality_but_latches_paid_campaign_queue(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, _ = _controller(tmp_path, case, events, partial_billing=True)
+
+    result = controller.execute_fresh(case.intent)
+
+    assert result.billing.provider_billing_complete is False
+    assert result.billing.quality_evidence_admissible is True
+    assert result.queue_admissible is False
+    assert result.finalized_cell is not None
+    assert result.finalized_cell.billing_posture == "missing_cost"
+    assert "persist_finalized_cell" in events
+    assert "persist_finalization" not in events
+    with pytest.raises(D1OperatorQueueHalt, match="provider-billing evidence gap"):
+        controller.execute_fresh(case.intent)
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "stage:plan stage:start stage:origin stage:locations stage:digest "
+        "stage:artifact_algorithm stage:artifact_digest stage:runtime_version start:pod start:request start:time "
+        "start:runtime_digest start:runtime_time start:runtime_version start:attempt start:command "
+        "start:process start:process_padded start:raw_report start:none start:raise"
+    ).split(),
+)
+def test_fresh_refuses_stage_or_start_receipt_drift(tmp_path: Path, drift: str) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    stage_drift, start_drift = (
+        (drift.split(":", 1)[1], None) if drift.startswith("stage:") else (None, drift[6:])
+    )
+    controller, _ = _controller(
+        tmp_path, case, events, stage_drift=stage_drift, start_drift=start_drift
+    )
+    with pytest.raises(D1OperatorQueueHalt, match="trainer"):
+        controller.execute_fresh(case.intent)
+    assert "cancel" in events
+    assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
+    if stage_drift is not None:
+        assert "start_trainer" not in events
+    assert all(event.event_kind.value != "running" for event in controller.process_manager.events)
+    assert all(
+        event.status is not D1LaunchAttemptStatus.TRAINER_STARTED
+        for event in controller.attempt_ledger.events
+    )
+
+
+def test_fresh_finalized_cell_custody_failure_never_records_operator_finalized(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, _ = _controller(tmp_path, case, events, custody_failure=True)
+
+    with pytest.raises(D1OperatorQueueHalt, match="custody failure"):
+        controller.execute_fresh(case.intent)
+
+    assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.COMPLETED
+    assert controller.process_manager.state is D1ProcessState.PROBLEM
+    assert "persist_finalized_cell" in events
+    assert all(
+        event.event_kind.value != "operator_finalized"
+        for event in controller.process_manager.events
+    )
 
 
 def test_resource_drift_cancels_pod_halts_queue_and_never_starts_next_arm(
@@ -362,4 +614,51 @@ def test_resource_drift_cancels_pod_halts_queue_and_never_starts_next_arm(
     assert controller.attempt_ledger.events[-1].status is D1LaunchAttemptStatus.FAILED
     with pytest.raises(D1OperatorQueueHalt, match="halted"):
         controller.execute_fresh(case.intent)
+    assert provider.cancel_count == 1
+
+
+def test_acknowledged_termination_failure_never_deletes_active_pod_twice(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, provider = _controller(
+        tmp_path,
+        case,
+        events,
+        acknowledge_then_fail=True,
+    )
+
+    with pytest.raises(D1OperatorQueueHalt, match="post-delete termination evidence"):
+        controller.execute_fresh(case.intent)
+
+    assert events.count("terminate") == 1
+    assert "cancel" not in events
+    assert provider.delete_count == 1
+    assert provider.cancel_count == 0
+    assert controller.process_manager.state is D1ProcessState.PROBLEM
+    with pytest.raises(D1OperatorQueueHalt, match="halted"):
+        controller.execute_fresh(case.intent)
+    assert provider.delete_count == 1
+
+
+def test_foreign_deletion_acknowledgement_keeps_and_cleans_active_pod_custody(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, provider = _controller(
+        tmp_path,
+        case,
+        events,
+        acknowledge_then_fail=True,
+        acknowledged_pod_id="foreign-pod",
+    )
+
+    with pytest.raises(D1OperatorQueueHalt, match="acknowledgement differs"):
+        controller.execute_fresh(case.intent)
+
+    assert events.count("terminate") == 1
+    assert events.count("cancel") == 1
+    assert provider.delete_count == 2
     assert provider.cancel_count == 1

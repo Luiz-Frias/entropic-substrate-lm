@@ -10,7 +10,8 @@ from typing import cast
 import pytest
 import torch
 
-import entropic_substrate.d1_fresh_trainer as trainer_module
+import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.telemetry as telemetry_api
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -78,6 +79,16 @@ def test_four_arm_fresh_run_has_exact_evidence_order_and_final_receipt(
     assert set(final_payload) == {"eval_index", "quality", "resource_work"}
     assert final_payload["eval_index"] == completion.final_resource_work.eval_index
     assert final_payload["quality"] == completion.final_evaluation.telemetry_manifest
+    journal, _ = output_paths(tmp_path, arm)
+    readback = telemetry_api.read_d1_run_evidence(journal, allow_incomplete=True)
+    observed = readback.evals[-1].quality
+    assert readback.status.value == "partial"
+    assert readback.evals[-1].eval_index == completion.final_resource_work.eval_index
+    assert (observed.state_moments, observed.target_moments, observed.predicted_moments) == (
+        completion.final_evaluation.state_moments,
+        completion.final_evaluation.target_moments,
+        completion.final_evaluation.predicted_moments,
+    )
     assert final_payload["resource_work"] == resource_snapshot_to_mapping(
         completion.final_resource_work
     )
@@ -116,7 +127,7 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
 ) -> None:
     plan = micro_plan(D1Arm.BOTH)
     journal, checkpoint = output_paths(tmp_path, D1Arm.BOTH)
-    real_step = trainer_module.apply_d1_training_step
+    real_step = segment_engine.apply_d1_training_step
     calls = 0
 
     def fail_step(**kwargs: object) -> object:
@@ -126,7 +137,7 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
             raise RuntimeError("deliberate train defect")
         return real_step(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1FreshRunFailure, match="deliberate train defect") as captured:
         run_d1_fresh(
             plan=plan,
@@ -152,13 +163,14 @@ def test_failed_step_returns_nonterminal_typed_handoff_and_chains_original(
         sorted(payload)
         == (
             "error_message error_type execution_segment_id execution_segment_index journal_cursor "
-            "logical_run_id operator_finalization_required resource_ledger_state rollback_claimed "
-            "secondary_failure trainer_ended_at"
+            "logical_run_id model_successful_step operator_finalization_required "
+            "resource_ledger_state rollback_claimed secondary_failure trainer_ended_at"
         ).split()
     )
     assert payload["error_type"] == "RuntimeError"
     assert payload["error_message"] == "deliberate train defect"
     assert payload["logical_run_id"] == plan.logical_run_id
+    assert payload["model_successful_step"] == 1
     assert payload["execution_segment_index"] == 0
     assert payload["execution_segment_id"] == f"{plan.logical_run_id}:segment:0"
     prefix = b"".join(canonical_event_line(event) for event in events[:-1])

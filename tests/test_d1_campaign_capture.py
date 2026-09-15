@@ -13,6 +13,7 @@ from entropic_substrate.d1_campaign_capture import (
     D1CampaignCaptureService,
     D1CapturedCampaign,
     D1HeterogeneousCaptureAdapter,
+    D1PreparedCampaignCapture,
 )
 from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
 from entropic_substrate.evidence.d1_capture_bundle import (
@@ -77,15 +78,25 @@ class _Receipt:
 
 
 @dataclass
+class _Preparation:
+    aggregate: _Aggregate
+
+
+@dataclass
 class _Capture:
     events: list[str]
     receipt: _Receipt | None = None
     material: D1CampaignCaptureMaterial | None = None
+    preparation: _Preparation | None = None
 
-    def capture(self, material: D1CampaignCaptureMaterial) -> D1HeterogeneousCaptureReceipt:
-        self.events.append("capture")
+    def prepare(self, material: D1CampaignCaptureMaterial) -> _Preparation:
+        self.events.append("capture_prepare")
         self.material = material
-        receipt = self.receipt or _Receipt(_Aggregate(material.roster))
+        return self.preparation or _Preparation(_Aggregate(material.roster))
+
+    def finalize(self, preparation: _Preparation) -> D1HeterogeneousCaptureReceipt:
+        self.events.append("capture_finalize")
+        receipt = self.receipt or _Receipt(preparation.aggregate)
         return cast(D1HeterogeneousCaptureReceipt, receipt)
 
 
@@ -98,14 +109,21 @@ def test_capture_derives_roster_delegates_dvc_then_advances_lifecycle(tmp_path: 
     events: list[str] = []
     capture = _Capture(events)
 
-    result = D1CampaignCaptureService(
+    service = D1CampaignCaptureService(
         assembler=_Assembler(events),
         capture=capture,
         automation=_automation(),
-    ).capture(campaign)
+    )
+    prepared = service.prepare(campaign)
+
+    assert type(prepared) is D1PreparedCampaignCapture
+    assert events == ["prepare", "capture_prepare"]
+    assert before.state is D1ProcessState.OPERATOR_FINALIZED
+    assert prepared.process_manager is before
+    result = service.finalize(prepared)
 
     assert type(result) is D1CapturedCampaign
-    assert events == ["prepare", "capture"]
+    assert events == ["prepare", "capture_prepare", "capture_finalize"]
     assert capture.material is not None
     roster = capture.material.roster
     assert tuple(item.logical_run_id for item in roster.expected_confirmatory) == tuple(
@@ -114,7 +132,6 @@ def test_capture_derives_roster_delegates_dvc_then_advances_lifecycle(tmp_path: 
     assert (
         roster.preregistration_commit == campaign.matrix.launches[0].plan.run.preregistration.commit
     )
-    assert before.state is D1ProcessState.OPERATOR_FINALIZED
     assert result.process_manager.state is D1ProcessState.CAPTURED
     assert result.capture.aggregate.roster == roster
 
@@ -145,17 +162,46 @@ def test_wrong_assembled_or_returned_roster_never_records_captured_state(
         D1CampaignCaptureService(
             assembler=_Assembler(events), capture=capture, automation=_automation()
         ).capture(campaign)
-    assert events == ["prepare", "capture"]
+    assert events == ["prepare", "capture_prepare", "capture_finalize"]
+    assert manager.state is D1ProcessState.OPERATOR_FINALIZED
+
+
+@pytest.mark.parametrize("mutation", ["campaign", "lifecycle"])
+def test_finalize_rejects_campaign_or_lifecycle_identity_drift_before_capture(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    campaign, manager = _completed(tmp_path)
+    events: list[str] = []
+    service = D1CampaignCaptureService(
+        assembler=_Assembler(events), capture=_Capture(events), automation=_automation()
+    )
+    prepared = service.prepare(campaign)
+    changed = (
+        replace(prepared, campaign=replace(campaign, design_digest="0" * 64))
+        if mutation == "campaign"
+        else replace(prepared, lifecycle_prefix="0" * 64)
+    )
+
+    with pytest.raises(ValueError, match="identity"):
+        service.finalize(changed)
+
+    assert events == ["prepare", "capture_prepare"]
     assert manager.state is D1ProcessState.OPERATOR_FINALIZED
 
 
 def test_capture_adapter_delegates_all_heterogeneous_lanes() -> None:
     calls: dict[str, object] = {}
     receipt = cast(D1HeterogeneousCaptureReceipt, object())
+    preparation = object()
 
     class _Service:
-        def capture_heterogeneous(self, **kwargs: object) -> D1HeterogeneousCaptureReceipt:
+        def prepare_heterogeneous(self, **kwargs: object) -> object:
             calls.update(kwargs)
+            return preparation
+
+        def finalize_heterogeneous(self, value: object) -> D1HeterogeneousCaptureReceipt:
+            assert value is preparation
             return receipt
 
     design, _, _ = _campaign()
@@ -173,7 +219,8 @@ def test_capture_adapter_delegates_all_heterogeneous_lanes() -> None:
         (cast(D1AttemptEvidence, object()),),
     )
 
-    assert D1HeterogeneousCaptureAdapter(cast(object, _Service())).capture(material) is receipt
+    adapter = D1HeterogeneousCaptureAdapter(cast(object, _Service()))
+    assert adapter.finalize(adapter.prepare(material)) is receipt
     assert calls == {
         "roster": roster,
         "complete_inputs": material.complete_inputs,

@@ -23,6 +23,7 @@ __all__ = [
     "D1LaunchProfile",
     "D1LaunchScale",
     "d1_configs_dir",
+    "load_d1_execution_catalog",
     "load_d1_profile",
     "load_d1_profile_catalog",
 ]
@@ -47,28 +48,36 @@ def load_d1_profile(
     payload = read_d1_profile_mapping(Path(path))
     overlay = read_d1_profile_mapping(Path(tiny_overlay_path))
     require_d1_exact_keys(overlay, _OVERLAY_KEYS, label="D1 tiny overlay")
-    if overlay["kind"] != "d1-tiny-overlay":
-        msg = "D1 tiny overlay requires kind='d1-tiny-overlay'"
+    scales = {"d1-tiny-overlay": D1LaunchScale.TINY, "d1-gpu-tiny-overlay": D1LaunchScale.GPU_TINY}
+    kind = overlay["kind"]
+    if type(kind) is not str or kind not in scales:
+        msg = "D1 tiny overlay requires kind='d1-tiny-overlay' or 'd1-gpu-tiny-overlay'"
         raise ValueError(msg)
     merged = merge_dicts(
         payload,
         {key: overlay[key] for key in _OVERLAY_KEYS if key != "kind"},
     )
-    return parse_d1_profile_payload(merged, scale=D1LaunchScale.TINY)
+    return parse_d1_profile_payload(merged, scale=scales[kind])
 
 
 def load_d1_profile_catalog(
     *,
     paths: Iterable[str | Path] | None = None,
     tiny: bool = False,
+    tiny_target: str = "host_cpu",
 ) -> tuple[D1LaunchProfile, ...]:
     """Load exactly one matched profile for every registered D1 arm."""
+    if tiny_target not in {"host_cpu", "remote_gpu"}:
+        raise ValueError("D1 tiny_target must be host_cpu or remote_gpu")
+    if tiny_target == "remote_gpu" and not tiny:
+        raise ValueError("D1 remote_gpu target requires tiny=True")
     selected = (
         tuple(Path(path) for path in paths)
         if paths is not None
         else tuple(d1_configs_dir() / f"{name}.yaml" for name in _PROFILE_ORDER)
     )
-    overlay = d1_configs_dir() / "d1-tiny.yaml" if tiny else None
+    overlay_name = "d1-tiny.yaml" if tiny_target == "host_cpu" else "d1-gpu-tiny.yaml"
+    overlay = d1_configs_dir() / overlay_name if tiny else None
     profiles = tuple(load_d1_profile(path, tiny_overlay_path=overlay) for path in selected)
     by_name = {profile.name: profile for profile in profiles}
     if len(profiles) != len(D1Arm) or set(by_name) != set(_PROFILE_ORDER):
@@ -85,3 +94,12 @@ def load_d1_profile_catalog(
         msg = "D1 launch profiles must share one TrainConfig identity"
         raise ValueError(msg)
     return ordered
+
+
+def load_d1_execution_catalog() -> tuple[D1LaunchProfile, ...]:
+    """One ordered full/CPU-tiny/GPU-tiny roster for every execution entrypoint."""
+    return (
+        *load_d1_profile_catalog(),
+        *load_d1_profile_catalog(tiny=True),
+        *load_d1_profile_catalog(tiny=True, tiny_target="remote_gpu"),
+    )

@@ -10,16 +10,12 @@ import pytest
 
 from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
 from entropic_substrate.analysis.d1_external_analysis_codec import (
-    D1ExternalAnalysisRequestEnvelope,
     D1ExternalAnalysisRequestEnvelopeV2,
-    D1ExternalAnalysisResponseEnvelope,
     D1ExternalAnalysisWorkerResponseV2,
     build_d1_external_analysis_request_v2,
     decode_d1_external_analysis_request_v2,
     decode_d1_external_analysis_worker_response_v2,
-    encode_d1_external_analysis_request,
     encode_d1_external_analysis_request_v2,
-    encode_d1_external_analysis_response,
     encode_d1_external_analysis_worker_response_v2,
 )
 from entropic_substrate.analysis.d1_external_analysis_control import (
@@ -123,8 +119,12 @@ def test_v2_request_decoder_rejects_hash_base64_digest_and_canonical_drift(
 
 def test_v2_decoder_explicitly_rejects_legacy_v1_request(tmp_path: Path) -> None:
     _, evidence = _request_v2(tmp_path)
-    legacy = encode_d1_external_analysis_request(
-        D1ExternalAnalysisRequestEnvelope("1" * 64, "2" * 64)
+    legacy = _canonical(
+        {
+            "analysis_request_digest": "1" * 64,
+            "isolation_request_digest": "2" * 64,
+            "schema_version": "d1-external-analysis-request-v1",
+        }
     )
     with pytest.raises(ValueError, match="v2"):
         decode_d1_external_analysis_request_v2(legacy, preregistration_evidence=evidence)
@@ -161,8 +161,13 @@ def test_worker_response_v2_rejects_noncanonical_hashes(
 
 
 def test_v2_decoder_explicitly_rejects_legacy_v1_response() -> None:
-    legacy = encode_d1_external_analysis_response(
-        D1ExternalAnalysisResponseEnvelope("1" * 64, "2" * 64, "3" * 64)
+    legacy = _canonical(
+        {
+            "analysis_request_digest": "1" * 64,
+            "analysis_sha256": "3" * 64,
+            "isolation_request_digest": "2" * 64,
+            "schema_version": "d1-external-analysis-response-v1",
+        }
     )
     with pytest.raises(ValueError, match="v2"):
         decode_d1_external_analysis_worker_response_v2(legacy)
@@ -175,6 +180,9 @@ def test_v2_decoder_explicitly_rejects_legacy_v1_response() -> None:
         b'{"analysis_request_digest":NaN}',
         b" {}",
         b"[]",
+        b"{}",
+        b'{"schema_version":"d1-external-analysis-request-v2","unexpected":true}',
+        b"\xff",
     ],
 )
 def test_v2_transport_rejects_duplicate_nonfinite_noncanonical_or_nonobject_bytes(
@@ -183,3 +191,20 @@ def test_v2_transport_rejects_duplicate_nonfinite_noncanonical_or_nonobject_byte
     _, evidence = _request_v2(tmp_path)
     with pytest.raises(ValueError):
         decode_d1_external_analysis_request_v2(payload, preregistration_evidence=evidence)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"{}",
+        b'{"schema_version":"d1-external-analysis-response-v2","schema_version":"x"}',
+        b'{"schema_version":"d1-external-analysis-response-v2","unexpected":true}',
+        b" {}",
+        b"\xff",
+    ],
+)
+def test_v2_worker_response_rejects_missing_duplicate_unknown_or_noncanonical_bytes(
+    payload: bytes,
+) -> None:
+    with pytest.raises(ValueError):
+        decode_d1_external_analysis_worker_response_v2(payload)

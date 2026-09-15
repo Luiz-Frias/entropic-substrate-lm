@@ -37,10 +37,10 @@ _MANIFEST_KEYS: Final = frozenset({"command", "payload", "schema_version"})
 class D1CliCommand(StrEnum):
     RUN_FRESH = "d1-run-fresh"
     RUN_RESUME = "d1-run-resume"
-    FINALIZE = "d1-finalize"
-    CAPTURE = "d1-capture"
+    CAMPAIGN_RUN = "d1-campaign-run"
+    CAPTURE_PREPARE = "d1-capture-prepare"
+    CAPTURE_FINALIZE = "d1-capture-finalize"
     INSPECT = "d1-inspect"
-    FILE_GATE = "d1-file-gate"
 
 
 class D1CliExitCode(IntEnum):

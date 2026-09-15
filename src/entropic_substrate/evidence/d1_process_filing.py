@@ -153,12 +153,18 @@ class D1FiledProcess(D1ProcessManager):
         strategies = (
             outcome.eligible_strategies if isinstance(outcome, FiledGateAuthorization) else ()
         )
+        arms = outcome.eligible_arms if isinstance(outcome, FiledGateAuthorization) else ()
+        if arms != evidence.eligible_arms:
+            raise reject_transition(
+                "gate_arms", self.state, "filed evidence and gate outcome arm frontiers differ"
+            )
         event = self._event(
             kind,
             actor,
             (artifact, evidence.narrative, evidence.machine),
             event_id,
             gate=authorization,
+            arms=arms,
             strategies=strategies,
         )
         return self._commit(event)

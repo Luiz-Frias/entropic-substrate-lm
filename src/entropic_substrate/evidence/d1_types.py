@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
+from entropic_substrate.evidence.d1_statistical_gaps import D1EstimateGap
 from entropic_substrate.evidence.lifecycle import (
     ContentHash,
     LifecycleContractError,
@@ -15,16 +16,19 @@ from entropic_substrate.evidence.lifecycle import (
 
 D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v2"
 D1_ARM_IDS: Final[tuple[str, ...]] = ("none", "sg", "ac", "both")
+D1_STABILIZATION_ARM_IDS: Final[tuple[str, ...]] = ("sg", "ac", "both")
+D1_OPAQUE_ARM_ALIAS_IDS: Final[tuple[str, ...]] = ("A", "B", "C", "D")
 
 ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "schema_version",
         "rung",
+        "feasible_arms",
         "preregistration",
         "registered_constants",
         "arms",
         "contrasts",
-        "clauses",
+        "clauses_by_arm",
         "integrity",
         "exclusions",
         "inputs",
@@ -134,10 +138,10 @@ class D1Contrast:
     contrast_kind: str
     terms: tuple[D1ContrastTerm, ...]
     endpoint: D1Endpoint
-    estimate: float
+    estimate: float | None
     sample_sd: float | None
-    interval_lower: float
-    interval_upper: float
+    interval_lower: float | None
+    interval_upper: float | None
     confidence_level: float
     multiplicity: str
     margins: Mapping[str, float]
@@ -147,6 +151,7 @@ class D1Contrast:
     decision_vocabulary: str
     decision: str
     evidence_hash: ContentHash
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True)
@@ -179,9 +184,23 @@ class D1InputIdentity:
 
 
 @dataclass(frozen=True)
+class D1ReviewFindingDisposition:
+    finding_id: str
+    status: str
+    rationale: str
+    evidence_sha256: str | None
+
+
+@dataclass(frozen=True)
 class D1ReviewAdjudication:
     status: str
     major_findings: tuple[str, ...]
+    dispositions: Mapping[str, D1ReviewFindingDisposition]
+    execution_receipt_sha256: str
+    operator_record_sha256: str
+    report_sha256: str
+    review_packet_sha256: str
+    review_request_sha256: str
 
 
 @dataclass(frozen=True)
@@ -193,12 +212,14 @@ class D1Review:
 @dataclass(frozen=True)
 class D1Successor:
     authorization: SuccessorAuthorization
+    eligible_arms: tuple[str, ...]
     eligible_strategies: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class FiledGateAuthorization:
     rung: str
+    eligible_arms: tuple[str, ...]
     eligible_strategies: tuple[str, ...]
 
 

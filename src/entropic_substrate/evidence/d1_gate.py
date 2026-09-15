@@ -23,9 +23,12 @@ def decide_filed_verdict(filing: ValidatedD1Filing, /) -> FiledGateOutcome:
         case SuccessorAuthorization.AUTHORIZED:
             return FiledGateAuthorization(
                 rung=verdict.rung,
+                eligible_arms=verdict.successor.eligible_arms,
                 eligible_strategies=verdict.successor.eligible_strategies,
             )
         case SuccessorAuthorization.VALID_NEGATIVE:
             return FiledGateValidNegative(rung=verdict.rung, verdict=verdict.verdict)
         case SuccessorAuthorization.RETIRED:
             return FiledGateRetirement(rung=verdict.rung)
+        case SuccessorAuthorization.INCONCLUSIVE | SuccessorAuthorization.COMPLETE:
+            raise ValueError("historical D1 filing cannot carry a later-ladder successor posture")

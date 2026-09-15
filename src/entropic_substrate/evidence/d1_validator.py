@@ -26,12 +26,14 @@ from entropic_substrate.evidence.d1_parsing import (
     status,
     string,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import parse_estimate_gap
 from entropic_substrate.evidence.d1_types import (
     CLAUSE_NAMES,
     CONTRAST_DECISIONS,
     CONTRAST_KINDS,
     CONTRAST_VOCABULARY,
     D1_ARM_IDS,
+    D1_STABILIZATION_ARM_IDS,
     D1_VERDICT_SCHEMA_VERSION,
     EVIDENCE_CLASSES,
     ROOT_FIELDS,
@@ -64,8 +66,9 @@ class ValidatedD1Verdict:
     preregistration: PreregistrationIdentity
     registered_constants: Mapping[str, JsonValue]
     arms: tuple[D1ArmEvidence, ...]
+    feasible_arms: tuple[str, ...]
     contrasts: tuple[D1Contrast, ...]
-    clauses: Mapping[str, D1Clause]
+    clauses_by_arm: Mapping[str, Mapping[str, D1Clause]]
     integrity: D1Integrity
     exclusions: tuple[tuple[str, str, ContentHash], ...]
     inputs: tuple[D1InputIdentity, ...]
@@ -81,7 +84,7 @@ class ValidatedD1Verdict:
     ) -> ValidatedD1Verdict:
         root = object_exact(payload, path="$", fields=ROOT_FIELDS)
         schema_version = string(root["schema_version"], path="schema_version")
-        if schema_version != D1_VERDICT_SCHEMA_VERSION:
+        if schema_version not in {D1_VERDICT_SCHEMA_VERSION, "d1-verdict/v3"}:
             raise error(
                 "unsupported_schema_version",
                 "schema_version",
@@ -97,8 +100,40 @@ class ValidatedD1Verdict:
         )
         constants = registered_constants(root["registered_constants"])
         arms = _parse_arms(root["arms"], decision_contract.family_identity)
-        contrasts = _parse_contrasts(root["contrasts"])
-        clauses = _parse_clauses(root["clauses"])
+        raw_feasible = root["feasible_arms"]
+        if not isinstance(raw_feasible, list) or any(
+            not isinstance(item, str) or item not in D1_STABILIZATION_ARM_IDS
+            for item in raw_feasible
+        ):
+            raise error(
+                "invalid_feasible_arms",
+                "feasible_arms",
+                "must be a list of canonical D1 arms",
+            )
+        feasible_arms = tuple(raw_feasible)
+        if len(set(feasible_arms)) != len(feasible_arms):
+            raise error("invalid_feasible_arms", "feasible_arms", "must be unique")
+        canonical_feasible_arms = tuple(
+            arm_id for arm_id in D1_STABILIZATION_ARM_IDS if arm_id in feasible_arms
+        )
+        if feasible_arms != canonical_feasible_arms:
+            raise error(
+                "invalid_feasible_arms",
+                "feasible_arms",
+                f"must preserve canonical order {D1_STABILIZATION_ARM_IDS}",
+            )
+        contrasts = _parse_contrasts(
+            root["contrasts"], allow_gaps=schema_version == "d1-verdict/v3"
+        )
+        if schema_version == "d1-verdict/v3" and not any(
+            row.unavailable is not None for row in contrasts
+        ):
+            raise error(
+                "missing_unavailable_estimate",
+                "contrasts",
+                "v3 requires a typed undefined estimate",
+            )
+        clauses_by_arm = _parse_clauses_by_arm(root["clauses_by_arm"])
         integrity = _parse_integrity(root["integrity"])
         exclusions = _parse_exclusions(root["exclusions"])
         inputs = _parse_inputs(root["inputs"])
@@ -122,8 +157,9 @@ class ValidatedD1Verdict:
             contract=decision_contract,
             constants=constants,
             arms=arms,
+            feasible_arms=feasible_arms,
             contrasts=contrasts,
-            clauses=clauses,
+            clauses_by_arm=clauses_by_arm,
             integrity=integrity,
             exclusions=exclusions,
             review=review,
@@ -138,8 +174,9 @@ class ValidatedD1Verdict:
             preregistration=preregistration,
             registered_constants=constants,
             arms=arms,
+            feasible_arms=feasible_arms,
             contrasts=contrasts,
-            clauses=clauses,
+            clauses_by_arm=clauses_by_arm,
             integrity=integrity,
             exclusions=exclusions,
             inputs=inputs,
@@ -220,7 +257,7 @@ def _parse_arms(value: object, family_identity: D1FamilyIdentity) -> tuple[D1Arm
     return tuple(parsed)
 
 
-def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
+def _parse_contrasts(value: object, *, allow_gaps: bool = False) -> tuple[D1Contrast, ...]:
     if not isinstance(value, list) or not value:
         raise error("invalid_contrasts", "contrasts", "must be a nonempty list")
     parsed: list[D1Contrast] = []
@@ -248,7 +285,11 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
     )
     for index, raw_contrast in enumerate(value):
         path = f"contrasts[{index}]"
-        contrast = object_exact(raw_contrast, path=path, fields=fields)
+        missing = allow_gaps and isinstance(raw_contrast, Mapping) and "unavailable" in raw_contrast
+        contrast = object_exact(
+            raw_contrast, path=path, fields=fields | ({"unavailable"} if missing else set())
+        )
+        unavailable = parse_estimate_gap(contrast["unavailable"]) if missing else None
         contrast_id = string(contrast["contrast_id"], path=f"{path}.contrast_id")
         if contrast_id in identifiers:
             raise error(
@@ -271,13 +312,23 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 endpoint_data["smoothing_window"], path=f"{path}.endpoint.smoothing_window"
             ),
         )
-        estimate = finite_number(contrast["estimate"], path=f"{path}.estimate")
+        estimate = (
+            number_or_none(contrast["estimate"], path=f"{path}.estimate")
+            if missing
+            else finite_number(contrast["estimate"], path=f"{path}.estimate")
+        )
         sample_sd = number_or_none(contrast["sample_sd"], path=f"{path}.sample_sd")
         if sample_sd is not None and sample_sd < 0:
             raise error("invalid_sample_sd", f"{path}.sample_sd", "must be nonnegative")
-        lower = finite_number(contrast["interval_lower"], path=f"{path}.interval_lower")
-        upper = finite_number(contrast["interval_upper"], path=f"{path}.interval_upper")
-        if lower > upper:
+        lower = number_or_none(contrast["interval_lower"], path=f"{path}.interval_lower")
+        upper = number_or_none(contrast["interval_upper"], path=f"{path}.interval_upper")
+        if (lower is None) != (upper is None):
+            raise error(
+                "incomplete_interval",
+                path,
+                "interval bounds must both be finite or both be null",
+            )
+        if lower is not None and upper is not None and lower > upper:
             raise error("reversed_interval", path, "interval_lower must not exceed interval_upper")
         confidence = finite_number(contrast["confidence_level"], path=f"{path}.confidence_level")
         if not 0.0 < confidence < 1.0:
@@ -297,17 +348,51 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         n = positive_int(contrast["n"], path=f"{path}.n")
         raw_df = contrast["df"]
         if n == 1:
-            if sample_sd is not None or raw_df is not None:
+            if (
+                sample_sd is not None
+                or raw_df is not None
+                or lower is not None
+                or upper is not None
+            ):
                 raise error(
                     "inapplicable_sample_statistics",
                     path,
-                    "n=1 requires sample_sd and df to be explicit null",
+                    "n=1 requires sample_sd, df, and interval bounds to be explicit null",
                 )
             df: int | None = None
         else:
-            if sample_sd is None:
-                raise error("missing_sample_sd", f"{path}.sample_sd", "n>1 requires sample SD")
+            if not missing and (sample_sd is None or lower is None or upper is None):
+                raise error(
+                    "missing_sample_statistics",
+                    path,
+                    "n>1 requires sample SD and finite interval bounds",
+                )
             df = positive_int(raw_df, path=f"{path}.df")
+        if unavailable is not None:
+            if (
+                any(item is not None for item in (estimate, sample_sd, lower, upper))
+                or endpoint.metric != "mean_pairwise_cosine_distance"
+            ):
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined cosine cannot contain inferred statistics",
+                )
+            if not {cell.arm for cell in unavailable.cells} <= {term.arm_id for term in terms}:
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined cells must belong to contrast terms",
+                )
+            if len({cell.seed for cell in unavailable.cells}) > n or any(
+                len(cell.endpoint.evaluations) > endpoint.smoothing_window
+                for cell in unavailable.cells
+            ):
+                raise error(
+                    "invalid_unavailable_estimate",
+                    path,
+                    "undefined witness exceeds registered population/window",
+                )
         evidence_class = string(contrast["evidence_class"], path=f"{path}.evidence_class")
         if evidence_class not in EVIDENCE_CLASSES:
             raise error(
@@ -323,6 +408,18 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
         decision = string(contrast["decision"], path=f"{path}.decision")
         if decision not in CONTRAST_DECISIONS:
             raise error("invalid_contrast_decision", f"{path}.decision", "unknown decision")
+        if lower is None:
+            expected_decision = (
+                "INTERACTION_INCONCLUSIVE"
+                if contrast_kind == "FACTORIAL_INTERACTION"
+                else "INCONCLUSIVE"
+            )
+            if decision != expected_decision:
+                raise error(
+                    "inapplicable_contrast_decision",
+                    f"{path}.decision",
+                    "null interval requires the registered inconclusive decision",
+                )
         parsed.append(
             D1Contrast(
                 contrast_id=contrast_id,
@@ -342,6 +439,7 @@ def _parse_contrasts(value: object) -> tuple[D1Contrast, ...]:
                 decision_vocabulary=vocabulary,
                 decision=decision,
                 evidence_hash=hash_value(contrast["evidence_hash"], path=f"{path}.evidence_hash"),
+                unavailable=unavailable,
             )
         )
     return tuple(parsed)
@@ -385,27 +483,45 @@ def _parse_terms(value: object, *, path: str, contrast_kind: str) -> tuple[D1Con
     return tuple(terms)
 
 
-def _parse_clauses(value: object) -> Mapping[str, D1Clause]:
-    clauses = object_exact(value, path="clauses", fields=CLAUSE_NAMES)
+def _parse_clauses(value: object, *, path: str) -> Mapping[str, D1Clause]:
+    clauses = object_exact(value, path=path, fields=CLAUSE_NAMES)
     fields = frozenset(
         {"registered_rule", "decision_vocabulary", "threshold", "margin", "status", "evidence_hash"}
     )
     parsed: dict[str, D1Clause] = {}
     for name in sorted(CLAUSE_NAMES):
-        clause = object_exact(clauses[name], path=f"clauses.{name}", fields=fields)
+        clause_path = f"{path}.{name}"
+        clause = object_exact(clauses[name], path=clause_path, fields=fields)
         parsed[name] = D1Clause(
             registered_rule=string(
-                clause["registered_rule"], path=f"clauses.{name}.registered_rule"
+                clause["registered_rule"], path=f"{clause_path}.registered_rule"
             ),
             decision_vocabulary=string(
-                clause["decision_vocabulary"], path=f"clauses.{name}.decision_vocabulary"
+                clause["decision_vocabulary"], path=f"{clause_path}.decision_vocabulary"
             ),
-            threshold=number_or_none(clause["threshold"], path=f"clauses.{name}.threshold"),
-            margin=number_or_none(clause["margin"], path=f"clauses.{name}.margin"),
-            status=status(clause["status"], path=f"clauses.{name}.status"),
-            evidence_hash=hash_value(clause["evidence_hash"], path=f"clauses.{name}.evidence_hash"),
+            threshold=number_or_none(clause["threshold"], path=f"{clause_path}.threshold"),
+            margin=number_or_none(clause["margin"], path=f"{clause_path}.margin"),
+            status=status(clause["status"], path=f"{clause_path}.status"),
+            evidence_hash=hash_value(clause["evidence_hash"], path=f"{clause_path}.evidence_hash"),
         )
     return MappingProxyType(parsed)
+
+
+def _parse_clauses_by_arm(value: object) -> Mapping[str, Mapping[str, D1Clause]]:
+    by_arm = object_exact(
+        value,
+        path="clauses_by_arm",
+        fields=frozenset(D1_STABILIZATION_ARM_IDS),
+    )
+    return MappingProxyType(
+        {
+            arm_id: _parse_clauses(
+                by_arm[arm_id],
+                path=f"clauses_by_arm.{arm_id}",
+            )
+            for arm_id in D1_STABILIZATION_ARM_IDS
+        }
+    )
 
 
 def _parse_integrity(value: object) -> D1Integrity:
@@ -515,16 +631,19 @@ def _parse_successor(value: object) -> D1Successor:
     successor = object_exact(
         value,
         path="successor",
-        fields=frozenset({"authorization", "eligible_strategies"}),
+        fields=frozenset({"authorization", "eligible_arms", "eligible_strategies"}),
     )
     raw_authorization = string(successor["authorization"], path="successor.authorization")
+    allowed = {"AUTHORIZED", "VALID_NEGATIVE", "RETIRED"}
     try:
+        if raw_authorization not in allowed:
+            raise ValueError("posture is not part of the historical D1 schema")
         authorization = SuccessorAuthorization(raw_authorization)
     except ValueError as exc:
         raise error(
             "invalid_successor_authorization",
             "successor.authorization",
-            f"must be one of {[item.value for item in SuccessorAuthorization]}",
+            f"must be one of {sorted(allowed)}",
         ) from exc
     strategies = successor["eligible_strategies"]
     if not isinstance(strategies, list) or any(
@@ -535,4 +654,17 @@ def _parse_successor(value: object) -> D1Successor:
             "successor.eligible_strategies",
             "must be a list of nonempty strategy identifiers",
         )
-    return D1Successor(authorization=authorization, eligible_strategies=tuple(strategies))
+    arms = successor["eligible_arms"]
+    if not isinstance(arms, list) or any(
+        not isinstance(arm, str) or arm not in D1_STABILIZATION_ARM_IDS for arm in arms
+    ):
+        raise error(
+            "invalid_eligible_arms",
+            "successor.eligible_arms",
+            "must be a list of canonical stabilization-arm identifiers",
+        )
+    return D1Successor(
+        authorization=authorization,
+        eligible_arms=tuple(arms),
+        eligible_strategies=tuple(strategies),
+    )

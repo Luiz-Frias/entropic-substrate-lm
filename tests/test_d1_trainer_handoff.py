@@ -8,6 +8,10 @@ from datetime import timedelta
 import pytest
 
 from d1_trainer_fixtures import STARTED_AT, micro_plan, run_start
+from entropic_substrate.d1_dual_failure import (
+    D1SecondaryFailureEvidence,
+    D1SecondaryFailureStage,
+)
 from entropic_substrate.d1_trainer_handoff import (
     D1TrainerFailureHandoff,
     capture_d1_trainer_termination,
@@ -55,6 +59,7 @@ def test_termination_carries_exact_segment_journal_and_ledger_identity() -> None
         start=start,
         trainer_ended_at=ended,
         successful_step=1,
+        model_successful_step=1,
         journal_state=journal,
         resource_ledger_state=ledger,
     )
@@ -63,6 +68,8 @@ def test_termination_carries_exact_segment_journal_and_ledger_identity() -> None
     assert termination.execution_segment_index == 0
     assert termination.execution_segment_id == f"{plan.logical_run_id}:segment:0"
     assert termination.trainer_ended_at == ended
+    assert termination.model_successful_step == 1
+    assert termination.schema_version == "d1-trainer-termination-v2"
     assert termination.journal_state is journal
     assert termination.resource_ledger_state is ledger
     assert termination.manifest["journal_state"] == journal.manifest
@@ -76,12 +83,14 @@ def test_termination_refuses_clock_identity_and_cursor_drift() -> None:
         {"journal_state": replace(journal, logical_run_id="wrong")},
         {"resource_ledger_state": replace(ledger, execution_segment_index=1)},
         {"successful_step": 0},
+        {"model_successful_step": 3},
     )
     for overrides in candidates:
         values = {
             "start": start,
             "trainer_ended_at": STARTED_AT + timedelta(seconds=1),
             "successful_step": 1,
+            "model_successful_step": 1,
             "journal_state": journal,
             "resource_ledger_state": ledger,
             **overrides,
@@ -96,6 +105,7 @@ def test_failure_handoff_attests_the_durable_trainer_event() -> None:
         start=start,
         trainer_ended_at=STARTED_AT + timedelta(seconds=1),
         successful_step=1,
+        model_successful_step=1,
         journal_state=journal,
         resource_ledger_state=ledger,
     )
@@ -108,3 +118,39 @@ def test_failure_handoff_attests_the_durable_trainer_event() -> None:
     assert handoff.operator_finalization_required is True
     assert handoff.error_type == "RuntimeError"
     assert handoff.error_message == "boom"
+
+
+def test_termination_refuses_eval_ledger_ahead_of_durable_journal() -> None:
+    _, start, journal, ledger = _states()
+    with pytest.raises(ValueError, match="durable successful_step"):
+        capture_d1_trainer_termination(
+            start=start,
+            trainer_ended_at=STARTED_AT + timedelta(seconds=1),
+            successful_step=1,
+            model_successful_step=2,
+            journal_state=journal,
+            resource_ledger_state=replace(ledger, last_training_step=2),
+        )
+
+
+def test_failure_handoff_refuses_abort_append_as_durable_secondary() -> None:
+    _, start, journal, ledger = _states()
+    termination = capture_d1_trainer_termination(
+        start=start,
+        trainer_ended_at=STARTED_AT + timedelta(seconds=1),
+        successful_step=1,
+        model_successful_step=1,
+        journal_state=journal,
+        resource_ledger_state=ledger,
+    )
+    secondary = D1SecondaryFailureEvidence.from_error(
+        D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
+        RuntimeError("abort append failed"),
+    )
+
+    with pytest.raises(ValueError, match="durable TRAINER_ABORTED"):
+        D1TrainerFailureHandoff.from_error(
+            termination,
+            RuntimeError("primary trainer failure"),
+            secondary_failure=secondary,
+        )

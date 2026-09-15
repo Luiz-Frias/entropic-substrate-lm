@@ -94,7 +94,7 @@ def test_each_command_dispatches_exactly_once_to_its_injected_service(
 def test_exit_codes_distinguish_gap_invalid_evidence_and_defect(
     tmp_path: Path, failure: Exception, code: int, status: str
 ) -> None:
-    command = D1CliCommand.FINALIZE
+    command = D1CliCommand.CAPTURE_FINALIZE
     service = _RecordingService(command.value, failure=failure)
     application, _ = _application(replacement=(command, service))
 
@@ -170,7 +170,7 @@ def test_unavailable_service_remains_a_gap_even_with_legacy_ungated_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("ENTROPIC_ALLOW_UNGATED", "1")
-    command = D1CliCommand.FILE_GATE
+    command = D1CliCommand.CAMPAIGN_RUN
     unavailable = D1CliServiceUnavailable("validated filing service is not installed")
     application, _ = _application(replacement=(command, unavailable))
 

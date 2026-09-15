@@ -11,16 +11,19 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from itertools import pairwise
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import D1CosineGap
 from entropic_substrate.evidence.d1_contract import (
     D1DecisionContract,
     D1RegisteredContrast,
     D1RegisteredEndpoint,
 )
+from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap, D1EstimateGap, D1GapCell
 from entropic_substrate.evidence.d1_types import D1ContrastTerm
 from entropic_substrate.experiments.d1_primitives import D1Arm
 from entropic_substrate.experiments.d1_registered_design import (
@@ -30,10 +33,12 @@ from entropic_substrate.experiments.d1_registered_design import (
 
 __all__ = [
     "D1AnalysisCell",
+    "D1AppliedExclusion",
     "D1ContrastEstimate",
     "D1EndpointSummary",
     "D1FactorialAnalysis",
     "D1FactorialEffect",
+    "D1FactorialExclusionAuthority",
     "D1MetricPoint",
     "compute_d1_factorial",
     "d1_factorial_effect_terms",
@@ -65,6 +70,7 @@ _FACTORIAL_TERMS: Final[dict[str, tuple[tuple[D1Arm, float], ...]]] = {
         (D1Arm.BOTH, 1.0),
     ),
 }
+_EXCLUSION_AUTHORITY_TOKEN: Final = object()
 
 
 def d1_factorial_effect_terms() -> Mapping[str, tuple[tuple[D1Arm, float], ...]]:
@@ -88,6 +94,23 @@ class D1MetricPoint:
 
 
 @dataclass(frozen=True, slots=True)
+class D1DiagnosticGapPoint:
+    """An explicitly undefined diagnostic at a retained evaluation cursor."""
+
+    step: int
+    eval_index: int
+    gap: D1CosineGap
+
+    def __post_init__(self) -> None:
+        if type(self.step) is not int or self.step < 0:
+            raise ValueError("D1 diagnostic gap step must be nonnegative")
+        if type(self.eval_index) is not int or self.eval_index < 0:
+            raise ValueError("D1 diagnostic gap eval_index must be nonnegative")
+        if type(self.gap) is not D1CosineGap:
+            raise TypeError("D1 diagnostic gap requires D1CosineGap")
+
+
+@dataclass(frozen=True, slots=True)
 class D1AnalysisCell:
     """Finite metric series for one arm in one paired seed block."""
 
@@ -95,6 +118,7 @@ class D1AnalysisCell:
     seed: int
     pairing_id: str
     metrics: Mapping[str, tuple[D1MetricPoint, ...]]
+    diagnostic_gaps: Mapping[str, tuple[D1DiagnosticGapPoint, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if type(self.arm) is not D1Arm:
@@ -118,6 +142,152 @@ class D1AnalysisCell:
         if not frozen:
             raise ValueError("D1 analysis cell requires at least one metric")
         object.__setattr__(self, "metrics", MappingProxyType(frozen))
+        gaps = dict(self.diagnostic_gaps)
+        for metric, points in gaps.items():
+            if metric != "mean_pairwise_cosine_distance":
+                raise ValueError("D1 diagnostic gap must refer to cosine")
+            if (
+                type(points) is not tuple
+                or not points
+                or any(type(point) is not D1DiagnosticGapPoint for point in points)
+            ):
+                raise TypeError("D1 diagnostic gaps require a nonempty tuple of gap points")
+            if any(
+                current.step <= previous.step or current.eval_index <= previous.eval_index
+                for previous, current in pairwise(points)
+            ):
+                raise ValueError("D1 diagnostic gap cursors must strictly increase")
+            known = {(point.step, point.eval_index) for point in frozen.get(metric, ())}
+            if known & {(point.step, point.eval_index) for point in points}:
+                raise ValueError("D1 metric cursor cannot be both measured and undefined")
+            combined = sorted((*frozen.get(metric, ()), *points), key=lambda point: point.step)
+            if any(
+                current.step <= previous.step or current.eval_index <= previous.eval_index
+                for previous, current in pairwise(combined)
+            ):
+                raise ValueError("D1 combined measured/gap cursors must strictly increase")
+        object.__setattr__(self, "diagnostic_gaps", MappingProxyType(gaps))
+
+
+@dataclass(frozen=True, slots=True)
+class D1AppliedExclusion:
+    """One evidence-backed whole-seed-block exclusion applied before arithmetic."""
+
+    seed: int
+    pairing_id: str
+    member_run_ids: tuple[str, ...]
+    reason_id: str
+    evidence_paths: tuple[str, ...]
+    evidence_digest: str
+
+    def __post_init__(self) -> None:
+        if type(self.seed) is not int or self.seed < 0:
+            raise ValueError("D1 applied exclusion seed must be a nonnegative integer")
+        if (
+            type(self.pairing_id) is not str
+            or not self.pairing_id
+            or self.pairing_id.strip() != self.pairing_id
+        ):
+            raise ValueError("D1 applied exclusion pairing_id must be nonempty and trimmed")
+        if (
+            type(self.member_run_ids) is not tuple
+            or len(self.member_run_ids) != len(D1Arm)
+            or len(set(self.member_run_ids)) != len(D1Arm)
+            or any(
+                type(value) is not str or not value or value.strip() != value
+                for value in self.member_run_ids
+            )
+        ):
+            raise ValueError("D1 applied exclusion requires four unique member run IDs")
+        if (
+            type(self.reason_id) is not str
+            or not self.reason_id
+            or self.reason_id.strip() != self.reason_id
+        ):
+            raise ValueError("D1 applied exclusion reason_id must be nonempty and trimmed")
+        if type(self.evidence_paths) is not tuple or not self.evidence_paths:
+            raise ValueError("D1 applied exclusion requires at least one evidence path")
+        if len(set(self.evidence_paths)) != len(self.evidence_paths):
+            raise ValueError("D1 applied exclusion evidence paths must be unique")
+        for value in self.evidence_paths:
+            if type(value) is not str or not value or value.strip() != value:
+                raise ValueError("D1 applied exclusion evidence path must be nonempty and trimmed")
+            path = PurePosixPath(value)
+            if (
+                path.is_absolute()
+                or "\\" in value
+                or path.as_posix() != value
+                or ".." in path.parts
+            ):
+                raise ValueError("D1 applied exclusion evidence path must be repository-relative")
+        if (
+            type(self.evidence_digest) is not str
+            or len(self.evidence_digest) != 64
+            or self.evidence_digest != self.evidence_digest.lower()
+            or any(value not in "0123456789abcdef" for value in self.evidence_digest)
+        ):
+            raise ValueError(
+                "D1 applied exclusion evidence_digest must be 64 lowercase hexadecimal"
+            )
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "evidence_digest": self.evidence_digest,
+            "evidence_paths": list(self.evidence_paths),
+            "member_run_ids": list(self.member_run_ids),
+            "pairing_id": self.pairing_id,
+            "reason_id": self.reason_id,
+            "seed": self.seed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class D1FactorialExclusionAuthority:
+    """Admission-owned capability binding exclusions to one capture and design."""
+
+    design_digest: str
+    decision_contract_digest: str
+    capture_digest: str
+    exclusions: tuple[D1AppliedExclusion, ...]
+    _attestation: InitVar[object | None] = None
+
+    def __post_init__(self, _attestation: object | None) -> None:
+        if _attestation is not _EXCLUSION_AUTHORITY_TOKEN:
+            raise TypeError("D1 factorial exclusion authority is factory-only")
+        for label, digest in (
+            ("design_digest", self.design_digest),
+            ("decision_contract_digest", self.decision_contract_digest),
+            ("capture_digest", self.capture_digest),
+        ):
+            if (
+                type(digest) is not str
+                or len(digest) != 64
+                or digest != digest.lower()
+                or any(value not in "0123456789abcdef" for value in digest)
+            ):
+                raise ValueError(f"D1 factorial authority {label} must be 64 lowercase hexadecimal")
+        if type(self.exclusions) is not tuple or any(
+            type(value) is not D1AppliedExclusion for value in self.exclusions
+        ):
+            raise TypeError("D1 factorial authority exclusions must be an immutable typed tuple")
+
+
+def seal_d1_factorial_exclusion_authority(
+    *,
+    design_digest: str,
+    decision_contract_digest: str,
+    capture_digest: str,
+    exclusions: tuple[D1AppliedExclusion, ...],
+) -> D1FactorialExclusionAuthority:
+    """Seal exclusions only after an admission boundary has validated them."""
+    return D1FactorialExclusionAuthority(
+        design_digest=design_digest,
+        decision_contract_digest=decision_contract_digest,
+        capture_digest=capture_digest,
+        exclusions=exclusions,
+        _attestation=_EXCLUSION_AUTHORITY_TOKEN,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,15 +295,15 @@ class D1EndpointSummary:
     metric: str
     estimator: str
     smoothing_window: int
-    values_by_arm: Mapping[D1Arm, tuple[float, ...]]
+    values_by_arm: Mapping[D1Arm, tuple[float | D1EndpointGap, ...]]
     evidence_class: str = _EVIDENCE_CLASS
 
 
 @dataclass(frozen=True, slots=True)
 class D1ContrastEstimate:
     contrast_id: str
-    paired_estimates: tuple[float, ...]
-    estimate: float
+    paired_estimates: tuple[float | None, ...]
+    estimate: float | None
     sample_sd: float | None
     standard_error: float | None
     interval_lower: float | None
@@ -144,23 +314,26 @@ class D1ContrastEstimate:
     df: int | None
     t_critical: float | None
     evidence_class: str = _EVIDENCE_CLASS
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class D1FactorialEffect:
     effect_id: str
     terms: tuple[tuple[D1Arm, float], ...]
-    paired_estimates: tuple[float, ...]
-    estimate: float
+    paired_estimates: tuple[float | None, ...]
+    estimate: float | None
     n: int
     deciding: bool = False
     evidence_class: str = _EVIDENCE_CLASS
+    unavailable: D1EstimateGap | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class D1FactorialAnalysis:
     included_seeds: tuple[int, ...]
     excluded_seeds: tuple[int, ...]
+    cell_commitment: Mapping[tuple[D1Arm, int], D1AnalysisCell] = field(repr=False)
     endpoint: D1EndpointSummary
     registered_contrasts: Mapping[str, D1ContrastEstimate]
     factorial_effects: Mapping[str, D1FactorialEffect]
@@ -227,24 +400,34 @@ def _student_t_quantile(probability: float, df: int) -> float:
     return (lower + upper) / 2.0
 
 
-def _endpoint_value(cell: D1AnalysisCell, endpoint: D1RegisteredEndpoint) -> float:
+def d1_cell_endpoint(cell: D1AnalysisCell, endpoint: D1RegisteredEndpoint) -> float | D1EndpointGap:
     if endpoint.estimator != "last_k_mean":
         raise ValueError(f"unsupported registered endpoint estimator {endpoint.estimator!r}")
-    try:
-        points = cell.metrics[endpoint.metric]
-    except KeyError as error:
-        raise ValueError(f"D1 analysis cell lacks registered metric {endpoint.metric!r}") from error
+    points = sorted(
+        (*cell.metrics.get(endpoint.metric, ()), *cell.diagnostic_gaps.get(endpoint.metric, ())),
+        key=lambda point: point.step,
+    )
     if len(points) < endpoint.smoothing_window:
         raise ValueError("D1 metric series is shorter than the registered smoothing window")
     tail = points[-endpoint.smoothing_window :]
-    return math.fsum(point.value for point in tail) / endpoint.smoothing_window
+    gaps = tuple(
+        (point.step, point.eval_index, point.gap)
+        for point in tail
+        if type(point) is D1DiagnosticGapPoint
+    )
+    if gaps:
+        return D1EndpointGap(gaps)
+    return (
+        math.fsum(point.value for point in tail if type(point) is D1MetricPoint)
+        / endpoint.smoothing_window
+    )
 
 
 def _contrast_values(
     terms: tuple[D1ContrastTerm, ...] | tuple[tuple[D1Arm, float], ...],
-    endpoints: Mapping[tuple[D1Arm, int], float],
+    endpoints: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
     seeds: tuple[int, ...],
-) -> tuple[float, ...]:
+) -> tuple[float | None, ...]:
     normalized: list[tuple[D1Arm, float]] = []
     for term in terms:
         if type(term) is D1ContrastTerm:
@@ -252,8 +435,53 @@ def _contrast_values(
         else:
             normalized.append(cast(tuple[D1Arm, float], term))
     return tuple(
-        math.fsum(coefficient * endpoints[(arm, seed)] for arm, coefficient in normalized)
+        None
+        if any(type(endpoints[(arm, seed)]) is D1EndpointGap for arm, _ in normalized)
+        else math.fsum(
+            coefficient * cast(float, endpoints[(arm, seed)]) for arm, coefficient in normalized
+        )
         for seed in seeds
+    )
+
+
+def _missing_endpoints(
+    arms: tuple[D1Arm, ...],
+    values: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
+    seeds: tuple[int, ...],
+) -> D1EstimateGap | None:
+    cells = tuple(
+        D1GapCell(arm.value, seed, value)
+        for seed in seeds
+        for arm in arms
+        if type(value := values[(arm, seed)]) is D1EndpointGap
+    )
+    return D1EstimateGap(cells) if cells else None
+
+
+def _registered_estimate(
+    rule: D1RegisteredContrast,
+    values: Mapping[tuple[D1Arm, int], float | D1EndpointGap],
+    seeds: tuple[int, ...],
+) -> D1ContrastEstimate:
+    pairs = _contrast_values(rule.terms, values, seeds)
+    missing = _missing_endpoints(tuple(D1Arm(term.arm_id) for term in rule.terms), values, seeds)
+    if missing is None:
+        return _estimate(rule, cast(tuple[float, ...], pairs))
+    n = len(seeds)
+    return D1ContrastEstimate(
+        rule.contrast_id,
+        pairs,
+        None,
+        None,
+        None,
+        None,
+        None,
+        rule.confidence_level,
+        rule.multiplicity,
+        n,
+        None if rule.df_rule == "NOT_APPLICABLE" else n - 1,
+        None,
+        unavailable=missing,
     )
 
 
@@ -302,10 +530,20 @@ def _estimate(rule: D1RegisteredContrast, values: tuple[float, ...]) -> D1Contra
 
 
 def _admit_cells(
-    design: D1RegisteredDesign, cells: tuple[D1AnalysisCell, ...]
+    design: D1RegisteredDesign,
+    cells: tuple[D1AnalysisCell, ...],
+    exclusions: tuple[D1AppliedExclusion, ...],
 ) -> tuple[Mapping[tuple[D1Arm, int], D1AnalysisCell], tuple[int, ...], tuple[int, ...]]:
     if type(cells) is not tuple:
         raise TypeError("D1 analysis cells must be an immutable tuple")
+    if type(exclusions) is not tuple:
+        raise TypeError("D1 applied exclusions must be an immutable tuple")
+    if any(type(item) is not D1AppliedExclusion for item in exclusions):
+        raise TypeError("D1 applied exclusions must contain D1AppliedExclusion values")
+    if len({item.seed for item in exclusions}) != len(exclusions) or len(
+        {item.pairing_id for item in exclusions}
+    ) != len(exclusions):
+        raise ValueError("D1 seed or pairing block may be excluded at most once")
     by_cell: dict[tuple[D1Arm, int], D1AnalysisCell] = {}
     for cell in cells:
         if type(cell) is not D1AnalysisCell:
@@ -316,10 +554,25 @@ def _admit_cells(
         by_cell[key] = cell
     registered = set(design.registered_seeds)
     observed_seeds = {seed for _, seed in by_cell}
+    excluded_seeds = {item.seed for item in exclusions}
+    unregistered_exclusions = excluded_seeds - registered
+    if unregistered_exclusions:
+        raise ValueError(
+            f"D1 applied exclusion contains unregistered seed: {sorted(unregistered_exclusions)}"
+        )
     unregistered_seeds = observed_seeds - registered
     if unregistered_seeds:
         raise ValueError(f"D1 analysis contains unregistered seeds: {sorted(unregistered_seeds)}")
-    included = tuple(seed for seed in design.registered_seeds if seed in observed_seeds)
+    overlap = observed_seeds & excluded_seeds
+    if overlap:
+        raise ValueError(f"D1 excluded seed also has observed cells: {sorted(overlap)}")
+    unexplained_missing = registered - observed_seeds - excluded_seeds
+    if unexplained_missing:
+        raise ValueError(
+            "D1 missing registered seed block lacks an applied exclusion: "
+            f"{sorted(unexplained_missing)}"
+        )
+    included = tuple(seed for seed in design.registered_seeds if seed not in excluded_seeds)
     if not included:
         raise ValueError("D1 factorial analysis has no finite seed block")
     expected = {(arm, seed) for seed in included for arm in _ALL_ARMS}
@@ -333,7 +586,7 @@ def _admit_cells(
         pairing_ids = {by_cell[(arm, seed)].pairing_id for arm in _ALL_ARMS}
         if len(pairing_ids) != 1:
             raise ValueError(f"D1 seed {seed} arms do not share one pairing_id")
-    excluded = tuple(seed for seed in design.registered_seeds if seed not in observed_seeds)
+    excluded = tuple(seed for seed in design.registered_seeds if seed in excluded_seeds)
     return MappingProxyType(by_cell), included, excluded
 
 
@@ -350,27 +603,34 @@ def compute_d1_factorial(
     design: D1RegisteredDesign,
     decision_contract: D1DecisionContract,
     cells: tuple[D1AnalysisCell, ...],
+    exclusion_authority: D1FactorialExclusionAuthority,
 ) -> D1FactorialAnalysis:
     """Compute registered contrasts and report-only 2x2 factorial effects."""
     if type(design) is not D1RegisteredDesign or type(decision_contract) is not D1DecisionContract:
         raise TypeError("D1 factorial analysis requires registered design and decision contract")
     if decision_contract_digest(decision_contract) != design.decision_contract_digest:
         raise ValueError("D1 decision contract differs from the registered design")
-    admitted, included_seeds, excluded_seeds = _admit_cells(design, cells)
+    if type(exclusion_authority) is not D1FactorialExclusionAuthority:
+        raise TypeError("D1 factorial analysis requires an exclusion authority")
+    if (
+        exclusion_authority.design_digest != design.design_digest
+        or exclusion_authority.decision_contract_digest != design.decision_contract_digest
+    ):
+        raise ValueError("D1 factorial exclusion authority differs from the registered design")
+    admitted, included_seeds, excluded_seeds = _admit_cells(
+        design, cells, exclusion_authority.exclusions
+    )
     _validate_sample_rules(decision_contract, len(included_seeds))
     endpoints = tuple(rule.endpoint for rule in decision_contract.contrast_rules.values())
     if any(endpoint != endpoints[0] for endpoint in endpoints[1:]):
         raise ValueError("D1 factorial effects require one shared registered endpoint")
     endpoint = endpoints[0]
-    values = {key: _endpoint_value(cell, endpoint) for key, cell in admitted.items()}
+    values = {key: d1_cell_endpoint(cell, endpoint) for key, cell in admitted.items()}
     by_arm = MappingProxyType(
         {arm: tuple(values[(arm, seed)] for seed in included_seeds) for arm in _ALL_ARMS}
     )
     contrast_results = {
-        contrast_id: _estimate(
-            rule,
-            _contrast_values(rule.terms, values, included_seeds),
-        )
+        contrast_id: _registered_estimate(rule, values, included_seeds)
         for contrast_id, rule in decision_contract.contrast_rules.items()
     }
     effects = {
@@ -378,14 +638,18 @@ def compute_d1_factorial(
             effect_id=effect_id,
             terms=terms,
             paired_estimates=(paired := _contrast_values(terms, values, included_seeds)),
-            estimate=math.fsum(paired) / len(paired),
+            estimate=None
+            if any(value is None for value in paired)
+            else math.fsum(cast(tuple[float, ...], paired)) / len(paired),
             n=len(paired),
+            unavailable=_missing_endpoints(tuple(arm for arm, _ in terms), values, included_seeds),
         )
         for effect_id, terms in _FACTORIAL_TERMS.items()
     }
     return D1FactorialAnalysis(
         included_seeds=included_seeds,
         excluded_seeds=excluded_seeds,
+        cell_commitment=admitted,
         endpoint=D1EndpointSummary(
             metric=endpoint.metric,
             estimator=endpoint.estimator,

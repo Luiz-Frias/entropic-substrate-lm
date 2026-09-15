@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.evidence.d1_journal import read_journal
+from entropic_substrate.d1_training_step import D1TrainStepResult
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
+from entropic_substrate.evidence.d1_journal import read_journal, read_journal_bytes
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
@@ -35,15 +38,24 @@ from entropic_substrate.evidence.d1_telemetry_values import (
     D1TailQuarantineKind,
     gap,
 )
+from entropic_substrate.evidence.d1_terminal_defect_query import (
+    validate_d1_terminal_defect_event,
+)
 from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     validate_execution_segments,
 )
 from entropic_substrate.evidence.resource_work import validate_resource_work_series
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.experiments.d1_family import strategies_for_arm
+from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
-__all__ = ["final_d1_eval_metric", "read_d1_eval_series", "read_d1_run_evidence"]
+__all__ = [
+    "final_d1_eval_metric",
+    "read_d1_eval_series",
+    "read_d1_run_evidence",
+    "read_d1_run_evidence_bytes",
+]
 
 
 def _tail_quarantine(event: D1JournalEvent) -> D1TailQuarantineEvidence:
@@ -166,7 +178,7 @@ def _status(events: tuple[D1JournalEvent, ...], *, allow_incomplete: bool) -> D1
     return status
 
 
-def read_d1_run_evidence(
+def _read_d1_run_evidence(
     path: str | Path,
     *,
     expected_logical_run_id: str | None = None,
@@ -174,13 +186,18 @@ def read_d1_run_evidence(
     expected_run_class: RunClass | None = None,
     expected_plan_digest: str | None = None,
     allow_incomplete: bool = False,
+    journal_payload: bytes | None = None,
 ) -> D1RunEvidence:
     """Admit one D1 journal; incomplete states require explicit opt-in."""
     from entropic_substrate.data.batching import DATA_ORDER_DIGEST_BATCHES
 
     target = Path(path)
     try:
-        events = read_journal(target)
+        events = (
+            read_journal(target)
+            if journal_payload is None
+            else read_journal_bytes(journal_payload, journal_path=target)
+        )
     except D1JournalError as error:
         raise gap(f"journal_{error.code}", error.path, str(error)) from error
     start_event = events[0]
@@ -191,12 +208,26 @@ def read_d1_run_evidence(
         expected_family_digest=expected_family_digest,
         expected_run_class=expected_run_class,
     )
-    _plan, plan_digest, first_segment = parse_run_start_event(start_event)
+    plan, plan_digest, first_segment = parse_run_start_event(start_event)
+    try:
+        target_update = strategies_for_arm(D1Arm(plan["arm"]))[0]
+    except (TypeError, ValueError) as error:
+        raise gap("plan_arm", "run_start.plan.arm", "is not a registered D1 arm") from error
     if expected_plan_digest is not None:
         require_sha256(expected_plan_digest, path="expected_plan_digest")
         if plan_digest != expected_plan_digest:
             raise gap("identity_mismatch", "plan_digest", "differs from the requested plan")
     status = _status(events, allow_incomplete=allow_incomplete)
+    trainer_aborts = tuple(
+        event for event in events if event.event_kind is JournalEventKind.TRAINER_ABORTED
+    )
+    if len(trainer_aborts) > 1:
+        raise gap(
+            "trainer_abort_count",
+            "event_kind",
+            "run contains more than one TRAINER_ABORTED event",
+        )
+    trainer_abort_event = trainer_aborts[0] if trainer_aborts else None
     terminal = (
         events[-1]
         if events[-1].event_kind in {JournalEventKind.RUN_END, JournalEventKind.RUN_ABORT}
@@ -205,6 +236,7 @@ def read_d1_run_evidence(
     body = events[1:-1] if terminal is not None else events[1:]
     baselines: list[D1JournalEvent] = []
     evaluations: list[D1EvalEvidence] = []
+    train_steps: list[D1TrainStepResult] = []
     checkpoints: list[tuple[int, str]] = []
     segments = [first_segment]
     tail_quarantine: list[D1TailQuarantineEvidence] = []
@@ -217,7 +249,11 @@ def read_d1_run_evidence(
             parse_baseline_event(event)
             baselines.append(event)
         elif kind is JournalEventKind.TRAIN:
-            digest, count = parse_train_event(event)
+            digest, count, result = parse_train_event(
+                event,
+                expected_target_update=target_update,
+            )
+            train_steps.append(result)
             prior = order_state.get(current_segment)
             expected_count = 1 if prior is None else min(prior[1] + 1, DATA_ORDER_DIGEST_BATCHES)
             if count != expected_count or (
@@ -229,6 +265,8 @@ def read_d1_run_evidence(
             evidence = parse_eval_event(event, len(evaluations))
             if evidence.step <= last_eval_step:
                 raise gap("eval_step", "eval.successful_step", "must be strictly increasing")
+            if evaluations and evidence.quality.latent_width != evaluations[0].quality.latent_width:
+                raise gap("vector_width", "eval.quality", "latent width changed across evaluations")
             segment = segments[current_segment]
             if evidence.resource_work.execution_segment_index != current_segment:
                 raise gap("resource_segment", "eval.resource_work", "differs from active segment")
@@ -294,7 +332,7 @@ def read_d1_run_evidence(
     if not isinstance(frozen_plan, Mapping):  # pragma: no cover - parsed above
         raise AssertionError("validated plan lost its mapping representation")
     data_order = tuple((index, *order_state[index]) for index in sorted(order_state))
-    return D1RunEvidence(
+    run = D1RunEvidence(
         path=target,
         status=status,
         identity=identity,
@@ -303,10 +341,69 @@ def read_d1_run_evidence(
         segments=tuple(segments),
         baseline=baselines[0] if baselines else None,
         evals=tuple(evaluations),
+        train_steps=tuple(train_steps),
         data_order_segments=data_order,
         checkpoint_receipts=tuple(checkpoints),
         tail_quarantine_evidence=tuple(tail_quarantine),
+        trainer_abort=None,
         terminal=terminal,
+    )
+    if trainer_abort_event is not None:
+        raw_defect = trainer_abort_event.payload.get("numerical_defect")
+        defect = (
+            None
+            if raw_defect is None
+            else validate_d1_terminal_defect_event(run, trainer_abort_event)
+        )
+        run = replace(
+            run,
+            trainer_abort=D1TrainerAbortEvidence(trainer_abort_event, defect),
+        )
+    return run
+
+
+def read_d1_run_evidence(
+    path: str | Path,
+    *,
+    expected_logical_run_id: str | None = None,
+    expected_family_digest: str | None = None,
+    expected_run_class: RunClass | None = None,
+    expected_plan_digest: str | None = None,
+    allow_incomplete: bool = False,
+) -> D1RunEvidence:
+    """Admit one D1 journal from bytes read by the authoritative reader."""
+    return _read_d1_run_evidence(
+        path,
+        expected_logical_run_id=expected_logical_run_id,
+        expected_family_digest=expected_family_digest,
+        expected_run_class=expected_run_class,
+        expected_plan_digest=expected_plan_digest,
+        allow_incomplete=allow_incomplete,
+        journal_payload=None,
+    )
+
+
+def read_d1_run_evidence_bytes(
+    payload: bytes,
+    *,
+    journal_path: str | Path,
+    expected_logical_run_id: str | None = None,
+    expected_family_digest: str | None = None,
+    expected_run_class: RunClass | None = None,
+    expected_plan_digest: str | None = None,
+    allow_incomplete: bool = False,
+) -> D1RunEvidence:
+    """Admit exact journal bytes already captured by a trusted snapshot adapter."""
+    if type(payload) is not bytes:
+        raise TypeError("D1 journal snapshot payload must be bytes")
+    return _read_d1_run_evidence(
+        journal_path,
+        expected_logical_run_id=expected_logical_run_id,
+        expected_family_digest=expected_family_digest,
+        expected_run_class=expected_run_class,
+        expected_plan_digest=expected_plan_digest,
+        allow_incomplete=allow_incomplete,
+        journal_payload=payload,
     )
 
 

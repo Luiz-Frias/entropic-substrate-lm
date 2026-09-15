@@ -7,8 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
-import entropic_substrate.d1_resume_trainer as resume_module
+import entropic_substrate.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
     ORIGIN_NS,
@@ -91,7 +90,7 @@ def test_fresh_terminal_defect_is_nested_without_nonfinite_json(
 ) -> None:
     plan = micro_plan(D1Arm.BOTH)
     journal, checkpoint = output_paths(tmp_path, D1Arm.BOTH)
-    real_eval = fresh_module._record_evaluation  # pyright: ignore[reportPrivateUsage]
+    real_eval = segment_engine.record_d1_segment_evaluation
     calls = 0
 
     def fail_terminal(**kwargs: object):
@@ -101,7 +100,7 @@ def test_fresh_terminal_defect_is_nested_without_nonfinite_json(
             raise _typed_error(float("inf"))
         return real_eval(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(fresh_module, "_record_evaluation", fail_terminal)
+    monkeypatch.setattr(segment_engine, "record_d1_segment_evaluation", fail_terminal)
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,
@@ -129,7 +128,7 @@ def test_intermediate_nonfinite_error_does_not_claim_terminal_defect(
 ) -> None:
     plan = micro_plan(D1Arm.NONE)
     journal, checkpoint = output_paths(tmp_path, D1Arm.NONE)
-    real_eval = fresh_module._record_evaluation  # pyright: ignore[reportPrivateUsage]
+    real_eval = segment_engine.record_d1_segment_evaluation
     calls = 0
 
     def fail_intermediate(**kwargs: object):
@@ -139,7 +138,7 @@ def test_intermediate_nonfinite_error_does_not_claim_terminal_defect(
             raise _typed_error()
         return real_eval(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(fresh_module, "_record_evaluation", fail_intermediate)
+    monkeypatch.setattr(segment_engine, "record_d1_segment_evaluation", fail_intermediate)
     with pytest.raises(D1FreshRunFailure):
         run_d1_fresh(
             plan=plan,
@@ -159,7 +158,7 @@ def test_resumed_terminal_defect_binds_admission_checkpoint_and_segment(
     def fail_terminal(*_args: object, **_kwargs: object) -> None:
         raise _typed_error(float("-inf"))
 
-    monkeypatch.setattr(resume_module, "_evaluate", fail_terminal)
+    monkeypatch.setattr(segment_engine, "record_d1_segment_evaluation", fail_terminal)
     with pytest.raises(D1ResumeRunFailure):
         run_d1_resume(
             plan=case.plan,

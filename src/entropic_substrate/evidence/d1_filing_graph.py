@@ -7,7 +7,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import NoReturn
 
-from entropic_substrate.evidence.d1_capture_bundle import D1CaptureBundle, D1ValidatedRunCapture
+from entropic_substrate.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+    D1ValidatedTerminalDefect,
+)
+from entropic_substrate.evidence.d1_capture_bundle import D1ValidatedRunCapture
+from entropic_substrate.evidence.d1_capture_roster import (
+    D1PairExclusion,
+    D1PairExclusionReason,
+)
+from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_filing import D1DetachedFiling, D1FilingManifest
 from entropic_substrate.evidence.d1_filing_edges import verify_filing_edges
 from entropic_substrate.evidence.d1_filing_receipts import (
@@ -31,6 +40,9 @@ class D1RecomputedIntegrity:
     pairing_verified: bool
     data_order_verified: bool
     completion_verified: bool
+    exclusions_verified: bool
+    effective_sample_size: int
+    applied_exclusions: tuple[tuple[D1PairExclusion, str, str], ...] | None
     evidence_digest: str
 
     @property
@@ -41,52 +53,197 @@ class D1RecomputedIntegrity:
                 self.pairing_verified,
                 self.data_order_verified,
                 self.completion_verified,
+                self.exclusions_verified,
             )
         )
 
 
-def recompute_capture_integrity(bundle: D1CaptureBundle, /) -> D1RecomputedIntegrity:
+def _derive_pair_exclusions(
+    capture: D1HeterogeneousCaptureAggregate,
+) -> tuple[D1PairExclusion, ...]:
+    defect_pairs = sorted({item.expected.pairing_id for item in capture.terminal_defects})
+    return capture.roster.validate_pair_exclusions(
+        tuple(
+            D1PairExclusion(
+                pairing_id=pairing_id,
+                member_run_ids=tuple(
+                    item.logical_run_id
+                    for item in capture.roster.expected_confirmatory
+                    if item.pairing_id == pairing_id
+                ),
+                reason=D1PairExclusionReason.NONFINITE_FINAL_LOSS,
+                evidence_paths=tuple(
+                    sorted(
+                        item.capture_input.journal.normalized_path
+                        for item in capture.terminal_defects
+                        if item.expected.pairing_id == pairing_id
+                    )
+                ),
+            )
+            for pairing_id in defect_pairs
+        )
+    )
+
+
+def _derive_registered_exclusions(
+    capture: D1HeterogeneousCaptureAggregate,
+    decision_contract: D1DecisionContract,
+    claims: tuple[D1PairExclusion, ...],
+) -> tuple[tuple[D1PairExclusion, str, str], ...] | None:
+    defects_by_pair: dict[str, list[D1ValidatedTerminalDefect]] = {}
+    for defect in capture.terminal_defects:
+        defects_by_pair.setdefault(defect.expected.pairing_id, []).append(defect)
+    applied: list[tuple[D1PairExclusion, str, str]] = []
+    for claim in claims:
+        defects = defects_by_pair[claim.pairing_id]
+        reason_ids: list[str] = []
+        for defect in defects:
+            matches = tuple(
+                rule.reason_id
+                for rule in decision_contract.exclusion_rules
+                if rule.measurement == defect.record.metric_name
+                and rule.predicate == "NONFINITE"
+                and rule.scope == "WHOLE_SEED_BLOCK"
+            )
+            if len(matches) != 1:
+                return None
+            reason_ids.append(matches[0])
+        if len(set(reason_ids)) != 1:
+            return None
+        applied.append(
+            (
+                claim,
+                reason_ids[0],
+                canonical_digest(
+                    {
+                        "defects": [
+                            item.manifest
+                            for item in sorted(
+                                defects, key=lambda value: value.expected.logical_run_id
+                            )
+                        ]
+                    }
+                ),
+            )
+        )
+    return tuple(applied)
+
+
+def _contract_matches_capture(
+    capture: D1HeterogeneousCaptureAggregate,
+    decision_contract: D1DecisionContract,
+) -> bool:
+    raw_seeds = decision_contract.registered_constants.get("seeds")
+    roster_seeds = {item.seed for item in capture.roster.expected_confirmatory}
+    return (
+        decision_contract.family_identity.family_digest == capture.roster.family_digest
+        and type(raw_seeds) is tuple
+        and all(type(seed) is int for seed in raw_seeds)
+        and set(raw_seeds) == roster_seeds
+        and len(raw_seeds) == len(roster_seeds)
+        and all(
+            item.construction_digest
+            == decision_contract.family_identity.arm_construction_digests[item.arm.value]
+            for item in capture.roster.expected_confirmatory
+        )
+    )
+
+
+def _pairing_facts(
+    capture: D1HeterogeneousCaptureAggregate,
+) -> tuple[dict[str, set[str]], bool, bool]:
+    expected_by_pair = {
+        pairing_id: {
+            item.logical_run_id
+            for item in capture.roster.expected_confirmatory
+            if item.pairing_id == pairing_id
+        }
+        for pairing_id in capture.roster.pairing_ids
+    }
+    observed_by_pair: dict[str, list[D1ValidatedRunCapture | D1ValidatedTerminalDefect]] = {}
+    for item in (*capture.complete_runs, *capture.terminal_defects):
+        observed_by_pair.setdefault(item.expected.pairing_id, []).append(item)
+    pairing_verified = all(
+        len(block) == len(D1Arm)
+        and {item.expected.arm for item in block} == set(D1Arm)
+        and {item.expected.logical_run_id for item in block} == expected_by_pair[pairing_id]
+        for pairing_id, block in observed_by_pair.items()
+    ) and set(observed_by_pair) == set(expected_by_pair)
+    data_order_verified = all(
+        len({item.data_order_segments for item in block}) == 1
+        for block in observed_by_pair.values()
+    )
+    return expected_by_pair, pairing_verified, data_order_verified
+
+
+def recompute_capture_integrity(
+    capture: D1HeterogeneousCaptureAggregate,
+    decision_contract: D1DecisionContract,
+    /,
+) -> D1RecomputedIntegrity:
     """Derive integrity from typed capture evidence, never verdict booleans."""
 
-    if type(bundle) is not D1CaptureBundle:
-        raise TypeError("D1 integrity recomputation requires a D1CaptureBundle")
-    expected = bundle.roster.expected_run_ids
-    observed = frozenset(item.expected.logical_run_id for item in bundle.confirmatory)
-    roster_complete = (
-        bundle.set_proof.expected_logical_run_ids
-        == bundle.set_proof.terminal_journal_run_ids
-        == bundle.set_proof.checkpoint_receipt_run_ids
-        == bundle.set_proof.capture_input_run_ids
-        == expected
-        == observed
+    if (
+        type(capture) is not D1HeterogeneousCaptureAggregate
+        or type(decision_contract) is not D1DecisionContract
+    ):
+        raise TypeError(
+            "D1 integrity recomputation requires a heterogeneous capture aggregate and contract"
+        )
+    expected = capture.roster.expected_run_ids
+    complete_ids = frozenset(item.expected.logical_run_id for item in capture.complete_runs)
+    defect_ids = frozenset(item.expected.logical_run_id for item in capture.terminal_defects)
+    proof = capture.partition_proof
+    roster_complete = _contract_matches_capture(capture, decision_contract) and (
+        proof.expected_logical_run_ids == expected
+        and proof.complete_run_ids == complete_ids
+        and proof.terminal_defect_run_ids == defect_ids
+        and not complete_ids & defect_ids
+        and complete_ids | defect_ids == expected
     )
-    by_pair: dict[str, list[D1ValidatedRunCapture]] = {}
-    for capture in bundle.confirmatory:
-        by_pair.setdefault(capture.expected.pairing_id, []).append(capture)
-    pairing_verified = all(
-        len(block) == len(D1Arm) and {item.expected.arm for item in block} == set(D1Arm)
-        for block in by_pair.values()
-    ) and set(by_pair) == set(bundle.roster.pairing_ids)
-    data_order_verified = all(
-        len({item.data_order_segments for item in block}) == 1 for block in by_pair.values()
-    )
+    expected_by_pair, pairing_verified, data_order_verified = _pairing_facts(capture)
     completion_verified = all(
-        item.terminal_step > 0 and bool(item.checkpoint_receipts) for item in bundle.confirmatory
+        item.terminal_step > 0 and bool(item.checkpoint_receipts) for item in capture.complete_runs
+    )
+    derived_exclusions = _derive_pair_exclusions(capture)
+    applied_exclusions = _derive_registered_exclusions(
+        capture, decision_contract, derived_exclusions
+    )
+    exclusions_verified = (
+        derived_exclusions == capture.pair_exclusions and applied_exclusions is not None
+    )
+    defect_pairs = {item.expected.pairing_id for item in capture.terminal_defects}
+    effective_sample_size = sum(
+        pairing_id not in defect_pairs and expected_run_ids <= complete_ids
+        for pairing_id, expected_run_ids in expected_by_pair.items()
     )
     facts = {
-        "capture_manifest_digest": bundle.manifest_digest,
+        "capture_manifest_digest": capture.manifest_digest,
         "completion_verified": completion_verified,
         "data_order_verified": data_order_verified,
-        "pair_exclusions": [item.manifest for item in bundle.pair_exclusions],
+        "effective_sample_size": effective_sample_size,
+        "exclusions_verified": exclusions_verified,
+        "applied_exclusions": [
+            {
+                "evidence_digest": evidence_digest,
+                "pairing_id": claim.pairing_id,
+                "reason_id": reason_id,
+            }
+            for claim, reason_id, evidence_digest in applied_exclusions or ()
+        ],
         "pairing_verified": pairing_verified,
+        "partition_proof": capture.partition_proof.manifest,
         "roster_complete": roster_complete,
-        "schema_version": "d1-recomputed-integrity-v1",
+        "schema_version": "d1-recomputed-integrity-v2",
     }
     return D1RecomputedIntegrity(
         roster_complete=roster_complete,
         pairing_verified=pairing_verified,
         data_order_verified=data_order_verified,
         completion_verified=completion_verified,
+        exclusions_verified=exclusions_verified,
+        effective_sample_size=effective_sample_size,
+        applied_exclusions=applied_exclusions,
         evidence_digest=canonical_digest(facts),
     )
 
@@ -138,6 +295,7 @@ class ValidatedD1Filing:
             review_packet=self.manifest.artifacts["review_packet"].artifact_identity(),
             open_major_findings=self.verdict.review.open_major_findings,
             successor_authorization=self.verdict.successor.authorization,
+            eligible_arms=self.verdict.successor.eligible_arms,
             eligible_strategies=self.verdict.successor.eligible_strategies,
         )
 
@@ -170,9 +328,11 @@ def _read_payloads(
     return payloads
 
 
-def _verify_machine_inputs(detached: D1DetachedFiling, bundle: D1CaptureBundle) -> None:
+def _verify_machine_inputs(
+    detached: D1DetachedFiling, capture: D1HeterogeneousCaptureAggregate
+) -> None:
     expected = {
-        item.normalized_path: (item.md5, item.sha256) for item in bundle.dvc_handoff.artifacts
+        item.normalized_path: (item.md5, item.sha256) for item in capture.dvc_handoff.artifacts
     }
     actual: dict[str, tuple[str, str]] = {}
     for index, item in enumerate(detached.verdict.inputs):
@@ -192,14 +352,20 @@ def _verify_machine_inputs(detached: D1DetachedFiling, bundle: D1CaptureBundle) 
         )
 
 
-def _verify_exclusions(detached: D1DetachedFiling, bundle: D1CaptureBundle) -> None:
+def _verify_exclusions(
+    detached: D1DetachedFiling,
+    integrity: D1RecomputedIntegrity,
+) -> None:
+    applied = integrity.applied_exclusions
+    if applied is None:
+        _fail("exclusions", "capture.terminal_defects", "lack one registered exclusion rule")
     expected = {
         (
-            item.pairing_id,
-            item.reason.value,
-            canonical_digest(item.manifest),
+            claim.pairing_id,
+            reason_id,
+            evidence_digest,
         )
-        for item in bundle.pair_exclusions
+        for claim, reason_id, evidence_digest in applied
     }
     actual = {
         (subject, reason, evidence_hash.digest)
@@ -212,28 +378,28 @@ def _verify_exclusions(detached: D1DetachedFiling, bundle: D1CaptureBundle) -> N
 
 def _verify_capture_semantics(
     detached: D1DetachedFiling,
-    bundle: D1CaptureBundle,
+    capture: D1HeterogeneousCaptureAggregate,
     payloads: Mapping[str, bytes],
     integrity: D1RecomputedIntegrity,
 ) -> None:
-    if payloads["raw_capture_manifest"] != _canonical_json(bundle.manifest):
+    if payloads["raw_capture_manifest"] != _canonical_json(capture.manifest):
         _fail(
             "capture_manifest",
             "raw_capture_manifest",
             "file bytes must equal the factory-attested capture manifest",
         )
-    if not bundle.dvc_handoff.analysis_ready:
+    if not capture.dvc_handoff.analysis_ready:
         _gap("raw_capture_manifest", "dvc_handoff.analysis_ready", "bound DVC pointer objects")
     prereg = detached.verdict.preregistration
-    roster = bundle.roster
+    roster = capture.roster
     if (
         prereg.path != roster.preregistration_path
         or prereg.commit != roster.preregistration_commit
         or prereg.family_digest != roster.family_digest
     ):
         _fail("capture_preregistration", "capture.roster", "differs from machine preregistration")
-    _verify_machine_inputs(detached, bundle)
-    _verify_exclusions(detached, bundle)
+    _verify_machine_inputs(detached, capture)
+    _verify_exclusions(detached, integrity)
     claimed = detached.verdict.integrity
     facts = (
         claimed.roster_complete,
@@ -254,14 +420,14 @@ def _verify_capture_semantics(
         or claimed.evidence_hash.digest != integrity.evidence_digest
     ):
         _fail("integrity", "machine_verdict.integrity", "differs from recomputed capture facts")
-    observed_n = len(bundle.roster.pairing_ids) - len(bundle.pair_exclusions)
+    observed_n = integrity.effective_sample_size
     if any(contrast.n != observed_n for contrast in detached.verdict.contrasts):
         _fail("sample_size", "machine_verdict.contrasts", "n differs from nonexcluded pairs")
 
 
 def verify_d1_filing(
     detached: D1DetachedFiling,
-    capture: D1CaptureBundle,
+    capture: D1HeterogeneousCaptureAggregate,
     revisions: D1FilingRevisions,
     artifacts: D1FilingArtifactPort,
     git: D1FilingGitPort,
@@ -269,12 +435,17 @@ def verify_d1_filing(
 ) -> ValidatedD1Filing:
     """Verify the full evidence graph without recomputing the scientific verdict."""
 
-    if type(detached) is not D1DetachedFiling or type(capture) is not D1CaptureBundle:
-        raise TypeError("D1 graph verification requires detached filing and capture bundle values")
+    if (
+        type(detached) is not D1DetachedFiling
+        or type(capture) is not D1HeterogeneousCaptureAggregate
+    ):
+        raise TypeError(
+            "D1 graph verification requires detached filing and heterogeneous capture values"
+        )
     if type(revisions) is not D1FilingRevisions:
         raise TypeError("D1 graph verification requires typed filing revisions")
     payloads = _read_payloads(detached, artifacts)
-    integrity = recompute_capture_integrity(capture)
+    integrity = recompute_capture_integrity(capture, detached.decision_contract)
     _verify_capture_semantics(detached, capture, payloads, integrity)
     edges = verify_filing_edges(detached.verdict, detached.manifest, revisions, payloads, git)
     graph_digest = canonical_digest(
@@ -282,7 +453,7 @@ def verify_d1_filing(
             "capture_manifest_digest": capture.manifest_digest,
             "edge_digest": edges.digest,
             "integrity_digest": integrity.evidence_digest,
-            "schema_version": "d1-verified-filing-graph-v1",
+            "schema_version": "d1-verified-filing-graph-v2",
         }
     )
     return ValidatedD1Filing(

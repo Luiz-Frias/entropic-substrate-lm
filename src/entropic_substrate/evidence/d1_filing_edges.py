@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import pairwise
 from types import MappingProxyType
+from typing import NoReturn, cast
 
+from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+    D1AnalysisExecutionReceipt,
+)
+from entropic_substrate.analysis.d1_machine_analysis_codec import (
+    D1MachineAnalysisCodecError,
+    decode_d1_machine_analysis_declaration,
+)
 from entropic_substrate.evidence.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,
@@ -23,14 +32,21 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     parse_analysis_receipt,
     parse_review_receipt,
 )
-from entropic_substrate.evidence.d1_types import D1_ARM_IDS
+from entropic_substrate.evidence.d1_review_adjudication import parse_d1_major_findings
+from entropic_substrate.evidence.d1_types import (
+    D1_ARM_IDS,
+    D1_OPAQUE_ARM_ALIAS_IDS,
+    D1_STABILIZATION_ARM_IDS,
+)
 from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
+from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 
 @dataclass(frozen=True, slots=True)
 class D1VerifiedFilingEdges:
     alias_mapping: Mapping[str, str]
+    feasible_arms: tuple[str, ...]
     review_model_id: str
     review_provider: str
     review_round: int
@@ -41,7 +57,20 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _fail(code: str, path: str, detail: str) -> None:
+def _canonical_bytes(value: object, *, path: str) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError, RecursionError) as error:
+        _fail("analysis_binding", path, f"must be finite canonical JSON: {error}")
+
+
+def _fail(code: str, path: str, detail: str) -> NoReturn:
     raise D1FilingGraphError(code=code, path=path, detail=detail)
 
 
@@ -127,8 +156,74 @@ def _verify_git(
             )
 
 
-def _verify_analysis(payloads: Mapping[str, bytes]) -> None:
+def _verify_analysis_reader(
+    receipt_manifest: Mapping[str, object], payloads: Mapping[str, bytes]
+) -> None:
+    try:
+        reader_value: object = json.loads(payloads["analysis_reader"])
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        _fail("analysis_reader", "analysis_reader", f"must be UTF-8 JSON: {error}")
+    if type(reader_value) is not dict:
+        _fail("analysis_reader", "analysis_reader", "must be an object")
+    reader = cast(dict[str, object], reader_value)
+    expected_fields = {
+        "analysis_code_digest",
+        "complete_reader",
+        "modules",
+        "schema_version",
+        "terminal_defect_reader",
+    }
+    if set(reader) != expected_fields or reader.get("schema_version") != (
+        "d1-reader-source-manifest-v1"
+    ):
+        _fail("analysis_reader", "analysis_reader", "schema or fields differ")
+    if _canonical_bytes(reader, path="analysis_reader") != payloads["analysis_reader"]:
+        _fail("analysis_reader", "analysis_reader", "bytes must be canonical JSON")
+    modules = reader["modules"]
+    if type(modules) is not list:
+        _fail("analysis_reader", "analysis_reader.modules", "must be an array")
+    by_identity: dict[str, str] = {}
+    for index, raw in enumerate(cast(list[object], modules)):
+        if type(raw) is not dict or set(raw) != {"identity", "path", "sha256"}:
+            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "fields differ")
+        row = cast(dict[str, object], raw)
+        identity, digest = row["identity"], row["sha256"]
+        if type(identity) is not str or type(digest) is not str or identity in by_identity:
+            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "identity differs")
+        by_identity[identity] = digest
+    implementation = receipt_manifest["implementation"]
+    if type(implementation) is not dict:
+        _fail("analysis_reader", "analysis_receipt.implementation", "must be an object")
+    implementation = cast(dict[str, object], implementation)
+    if implementation.get("analysis_code_digest") != reader["analysis_code_digest"]:
+        _fail("analysis_reader", "analysis_receipt.implementation", "code digest differs")
+    readers = implementation.get("readers")
+    if type(readers) is not dict or set(readers) != {"complete", "terminal_defect"}:
+        _fail("analysis_reader", "analysis_receipt.implementation.readers", "fields differ")
+    readers = cast(dict[str, object], readers)
+    expected = {
+        "complete": reader["complete_reader"],
+        "terminal_defect": reader["terminal_defect_reader"],
+    }
+    for role, identity in expected.items():
+        entry = readers[role]
+        if type(entry) is not dict:
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "must be an object")
+        entry = cast(dict[str, object], entry)
+        if set(entry) != {"identity", "sha256"} or entry.get("identity") != identity:
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "identity differs")
+        module_identity = cast(str, identity).rpartition(".")[0]
+        if entry.get("sha256") != by_identity.get(module_identity):
+            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "digest differs")
+
+
+def _verify_analysis(
+    payloads: Mapping[str, bytes],
+) -> tuple[Mapping[str, object], D1AnalysisExecutionReceipt]:
     receipt = parse_analysis_receipt(payloads["analysis_receipt"])
+    filing = receipt.filing_bindings
+    if filing is None:  # pragma: no cover - parser requires filing eligibility
+        raise AssertionError("filing-eligible analysis receipt lost its bindings")
     expected = {
         "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
         "preregistration_sha256": _sha(payloads["preregistration"]),
@@ -137,22 +232,163 @@ def _verify_analysis(payloads: Mapping[str, bytes]) -> None:
         "output_sha256": _sha(payloads["blinded_analysis"]),
     }
     for field, value in expected.items():
-        if getattr(receipt, field) != value:
+        if getattr(filing, field) != value:
             _fail("analysis_binding", f"analysis_receipt.{field}", "digest differs")
+    try:
+        analysis = decode_d1_machine_analysis_declaration(payloads["blinded_analysis"]).manifest
+    except D1MachineAnalysisCodecError as error:
+        _fail("analysis_schema", "blinded_analysis", str(error))
+    receipt_manifest = receipt.manifest
+    if receipt_manifest["analysis_digest"] != _sha(payloads["blinded_analysis"]):
+        _fail("analysis_binding", "analysis_receipt.analysis_digest", "digest differs")
+    if receipt_manifest["alias_commitment"] != _sha(payloads["alias_commitment"]):
+        _fail("analysis_binding", "analysis_receipt.alias_commitment", "digest differs")
+    if receipt_manifest["bindings"] != analysis["bindings"]:
+        _fail("analysis_binding", "analysis_receipt.bindings", "analysis differs")
+    if (
+        _canonical_bytes(receipt_manifest["isolation"], path="analysis_receipt.isolation")
+        != payloads["analysis_isolation_attestation"]
+    ):
+        _fail("analysis_isolation", "analysis_receipt.isolation", "filed bytes differ")
+    _verify_analysis_reader(receipt_manifest, payloads)
+    return analysis, receipt
 
 
-def _verify_aliases(payloads: Mapping[str, bytes]) -> Mapping[str, str]:
+def _verify_aliases(
+    payloads: Mapping[str, bytes],
+    *,
+    analysis: Mapping[str, object],
+    analysis_receipt: D1AnalysisExecutionReceipt,
+) -> Mapping[str, str]:
     commitment = parse_alias_commitment(payloads["alias_commitment"])
     reveal = parse_alias_reveal(payloads["alias_reveal"])
+    try:
+        packet = json.loads(payloads["review_packet"])
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+        _fail("review_packet", "review_packet", f"must be UTF-8 JSON: {error}")
+    if type(packet) is not dict or packet.get("schema_version") != ("d1-blind-review-packet-v1"):
+        _fail("review_packet", "review_packet", "schema is unsupported")
+    try:
+        canonical_packet = json.dumps(
+            packet,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError, RecursionError) as error:
+        _fail("review_packet", "review_packet", f"must be finite canonical JSON: {error}")
+    if canonical_packet != payloads["review_packet"]:
+        _fail("review_packet", "review_packet", "bytes must use canonical JSON")
+    receipt_manifest = analysis_receipt.manifest
+    implementation = cast(dict[str, object], receipt_manifest["implementation"])
+    expected_analysis_lineage = {
+        "analysis": analysis,
+        "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
+        "bindings": receipt_manifest["bindings"],
+        "validated_readers": implementation["readers"],
+    }
+    for field, expected in expected_analysis_lineage.items():
+        if packet.get(field) != expected:
+            _fail(
+                "review_packet_analysis",
+                f"review_packet.{field}",
+                "differs from the filed analysis execution",
+            )
+    if packet.get("alias_commitment") != _sha(payloads["alias_commitment"]):
+        _fail(
+            "review_packet_alias",
+            "review_packet.alias_commitment",
+            "reviewed packet differs from the filed alias commitment",
+        )
     if commitment.reveal_sha256 != _sha(payloads["alias_reveal"]):
         _fail("alias_commitment", "alias_reveal", "does not open the pre-review commitment")
     if (
-        len(reveal.mapping) != len(D1_ARM_IDS)
+        frozenset(reveal.mapping) != frozenset(D1_OPAQUE_ARM_ALIAS_IDS)
         or len(set(reveal.mapping)) != len(D1_ARM_IDS)
         or set(reveal.mapping.values()) != set(D1_ARM_IDS)
     ):
-        _fail("alias_bijection", "alias_reveal.mapping", "must be a four-arm bijection")
+        _fail(
+            "alias_bijection",
+            "alias_reveal.mapping",
+            "must map exact opaque A/B/C/D keys bijectively to the four D1 arms",
+        )
     return reveal.mapping
+
+
+def _derived_clause_status(clause: Mapping[str, object]) -> str:
+    conditions = cast(list[dict[str, object]], clause["conditions"])
+    statuses = {condition["status"] for condition in conditions}
+    if "FAIL" in statuses:
+        return "FAIL"
+    if statuses == {"PASS"}:
+        return "PASS"
+    return "INCONCLUSIVE"
+
+
+def _verify_feasible_frontier(
+    verdict: ValidatedD1Verdict,
+    analysis: Mapping[str, object],
+    alias_mapping: Mapping[str, str],
+    payloads: Mapping[str, bytes],
+) -> tuple[str, ...]:
+    if analysis["alias_commitment"] != _sha(payloads["alias_commitment"]):
+        _fail("analysis_frontier", "blinded_analysis.alias_commitment", "digest differs")
+    precedence = cast(list[str], analysis["clause_precedence"])
+    if tuple(precedence) != verdict.clause_precedence:
+        _fail(
+            "analysis_frontier",
+            "blinded_analysis.clause_precedence",
+            "differs from the registered machine verdict",
+        )
+    clauses = cast(dict[str, dict[str, dict[str, object]]], analysis["clauses_by_alias"])
+    clause_arms = {alias_mapping[alias] for alias in clauses}
+    if clause_arms != set(D1_STABILIZATION_ARM_IDS):
+        _fail(
+            "analysis_frontier",
+            "blinded_analysis.clauses_by_alias",
+            "de-aliased clause candidates must equal the canonical stabilization arms",
+        )
+    derived_by_alias: dict[str, dict[str, str]] = {}
+    for alias, by_clause in clauses.items():
+        arm_id = alias_mapping[alias]
+        derived_by_alias[alias] = {}
+        for clause_id in precedence:
+            clause = by_clause[clause_id]
+            derived = _derived_clause_status(clause)
+            if clause["status"] != derived:
+                _fail(
+                    "analysis_frontier",
+                    f"blinded_analysis.clauses_by_alias.{alias}.{clause_id}.status",
+                    "must derive from condition statuses",
+                )
+            if verdict.clauses_by_arm[arm_id][clause_id].status != derived:
+                _fail(
+                    "analysis_frontier",
+                    f"machine_verdict.clauses_by_arm.{arm_id}.{clause_id}.status",
+                    "differs from the blinded analysis",
+                )
+            derived_by_alias[alias][clause_id] = derived
+    recomputed = {
+        alias
+        for alias, by_clause in derived_by_alias.items()
+        if all(by_clause[clause_id] == "PASS" for clause_id in precedence)
+    }
+    declared = cast(list[str], analysis["feasible_aliases"])
+    if len(set(declared)) != len(declared) or set(declared) != recomputed:
+        _fail("analysis_frontier", "blinded_analysis.feasible_aliases", "differs from clauses")
+    real = {alias_mapping[alias] for alias in declared}
+    if not real <= set(D1_STABILIZATION_ARM_IDS):
+        _fail("analysis_frontier", "alias_reveal.mapping", "frontier is not stabilization-only")
+    frontier = tuple(arm for arm in D1_STABILIZATION_ARM_IDS if arm in real)
+    if verdict.feasible_arms != frontier:
+        _fail("analysis_frontier", "machine_verdict.feasible_arms", "differs from analysis")
+    expected_successor = (
+        frontier if verdict.successor.authorization is SuccessorAuthorization.AUTHORIZED else ()
+    )
+    if verdict.successor.eligible_arms != expected_successor:
+        _fail("analysis_frontier", "machine_verdict.successor.eligible_arms", "differs")
+    return frontier
 
 
 def _verify_review(
@@ -167,8 +403,24 @@ def _verify_review(
     for field, value in expected.items():
         if getattr(receipt, field) != value:
             _fail("review_binding", f"review_receipt.{field}", "digest differs")
-    if receipt.major_finding_ids != verdict.review.adjudication.major_findings:
-        _fail("review_adjudication", "review_receipt.major_finding_ids", "MAJOR ids differ")
+    try:
+        report = parse_d1_major_findings(
+            payloads["reviewer_report"],
+            reviewer_prompt=payloads["reviewer_prompt"],
+        )
+    except ValueError as error:
+        _fail("review_report", "reviewer_report", str(error))
+    adjudication = verdict.review.adjudication
+    identities = {
+        "execution_receipt_sha256": _sha(payloads["reviewer_execution_receipt"]),
+        "report_sha256": report.report_sha256,
+        "review_packet_sha256": receipt.packet_sha256,
+        "review_request_sha256": receipt.request_digest,
+    }
+    if any(getattr(adjudication, field) != value for field, value in identities.items()):
+        _fail("review_adjudication", "machine_verdict.review", "execution identity differs")
+    if report.major_finding_ids != adjudication.major_findings:
+        _fail("review_adjudication", "reviewer_report", "MAJOR ids differ")
     return receipt.model_id, receipt.provider, receipt.round
 
 
@@ -194,21 +446,28 @@ def verify_filing_edges(
         raise TypeError("D1 filing edges require typed revisions")
     _verify_payloads(manifest, payloads)
     _verify_git(verdict, manifest, revisions, payloads, git)
-    _verify_analysis(payloads)
-    alias_mapping = _verify_aliases(payloads)
+    analysis, analysis_receipt = _verify_analysis(payloads)
+    alias_mapping = _verify_aliases(
+        payloads,
+        analysis=analysis,
+        analysis_receipt=analysis_receipt,
+    )
+    feasible_arms = _verify_feasible_frontier(verdict, analysis, alias_mapping, payloads)
     model_id, provider, round_number = _verify_review(verdict, payloads)
     _verify_narrative(payloads)
     digest = canonical_digest(
         {
             "alias_mapping": dict(alias_mapping),
+            "feasible_arms": list(feasible_arms),
             "artifact_sha256": {role: _sha(payload) for role, payload in payloads.items()},
             "revisions": list(revisions.ordered),
             "review": {"model_id": model_id, "provider": provider, "round": round_number},
-            "schema_version": "d1-verified-filing-edges-v1",
+            "schema_version": "d1-verified-filing-edges-v2",
         }
     )
     return D1VerifiedFilingEdges(
         alias_mapping=MappingProxyType(dict(alias_mapping)),
+        feasible_arms=feasible_arms,
         review_model_id=model_id,
         review_provider=provider,
         review_round=round_number,

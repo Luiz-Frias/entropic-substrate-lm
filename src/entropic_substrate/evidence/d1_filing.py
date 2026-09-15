@@ -195,6 +195,7 @@ class D1DetachedFiling:
 
     verdict: ValidatedD1Verdict
     manifest: D1FilingManifest
+    decision_contract: D1DecisionContract
     artifact_root_verified: bool
 
 
@@ -230,5 +231,6 @@ def validate_d1_filing_manifest(
     return D1DetachedFiling(
         verdict=verdict,
         manifest=manifest,
+        decision_contract=decision_contract,
         artifact_root_verified=artifact_root is not None,
     )

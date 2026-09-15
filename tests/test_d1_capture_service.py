@@ -16,8 +16,14 @@ from entropic_substrate.evidence.d1_capture_artifacts import (
 )
 from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
 from entropic_substrate.evidence.d1_capture_filesystem import LocalD1EvidenceExportSource
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_service import D1CaptureService
+from entropic_substrate.evidence.d1_capture_ports import (
+    D1CaptureTransportError,
+    D1GitPointerCommitEvidence,
+)
+from entropic_substrate.evidence.d1_capture_service import (
+    D1CapturePreparationStatus,
+    D1CaptureService,
+)
 
 from .d1_capture_fixtures import capture_family
 
@@ -102,13 +108,29 @@ class _Cloud:
 class _Git:
     events: list[str]
     commit: str | None = "abcdef1"
+    pointer_sha256_override: str | None = None
+    object_id_override: str | None = None
     observed_sha256: str | None = field(default=None, init=False)
 
-    def committed_revision(self, *, pointer_path: Path, pointer_sha256: str) -> str | None:
+    def committed_pointer(
+        self,
+        *,
+        pointer_path: Path,
+        pointer_bytes: bytes,
+        pointer_sha256: str,
+        object_id: str,
+    ) -> D1GitPointerCommitEvidence | None:
         self.events.append("git")
-        assert pointer_sha256 == hashlib.sha256(pointer_path.read_bytes()).hexdigest()
+        assert pointer_sha256 == hashlib.sha256(pointer_bytes).hexdigest()
         self.observed_sha256 = pointer_sha256
-        return self.commit
+        if self.commit is None:
+            return None
+        return D1GitPointerCommitEvidence(
+            self.commit,
+            _POINTER_PATH,
+            self.pointer_sha256_override or pointer_sha256,
+            self.object_id_override or object_id,
+        )
 
 
 def _service(
@@ -118,6 +140,8 @@ def _service(
     dvc_fail_at: str | None = None,
     cloud_present: bool = True,
     git_commit: str | None = "abcdef1",
+    git_pointer_sha256: str | None = None,
+    git_object_id: str | None = None,
     pointer_target: str = "captured",
 ):
     events: list[str] = []
@@ -129,7 +153,7 @@ def _service(
             evidence_source=_ExportSource(source_root, events),
             dvc=_Dvc(repo_root, events, dvc_fail_at, pointer_target),
             cloud=_Cloud(events, cloud_present),
-            git=_Git(events, git_commit),
+            git=_Git(events, git_commit, git_pointer_sha256, git_object_id),
         ),
         events,
         repo_root,
@@ -141,7 +165,12 @@ def test_service_binds_filesystem_dvc_cloud_and_git_identity_in_order(tmp_path: 
     inputs = tuple(_capture_pointer(item) for item in raw_inputs)
     service, events, repo_root = _service(tmp_path, source_root)
 
-    receipt = service.capture(roster=roster, capture_inputs=inputs)
+    preparation = service.prepare(roster=roster, capture_inputs=inputs)
+
+    assert preparation.status is D1CapturePreparationStatus.COMMIT_REQUIRED
+    assert events == ["export", "dvc_add", "dvc_push", "cloud"]
+    assert preparation.pointer_bytes == (repo_root / _POINTER_PATH).read_bytes()
+    receipt = service.finalize(preparation)
 
     assert events == ["export", "dvc_add", "dvc_push", "cloud", "git"]
     assert receipt.pointer.pointer_path == _POINTER_PATH
@@ -156,6 +185,29 @@ def test_service_binds_filesystem_dvc_cloud_and_git_identity_in_order(tmp_path: 
         _OBJECT_ID
     }
     assert len(list((repo_root / _CAPTURE_PATH).rglob("*"))) == 12
+
+
+@pytest.mark.parametrize("mutation", ["pointer_bytes", "commit_hash", "object_id"])
+def test_finalize_rejects_pointer_or_commit_evidence_substitution(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    roster, raw_inputs, source_root = capture_family(tmp_path)
+    inputs = tuple(_capture_pointer(item) for item in raw_inputs)
+    service, events, repo_root = _service(
+        tmp_path,
+        source_root,
+        git_pointer_sha256="0" * 64 if mutation == "commit_hash" else None,
+        git_object_id="0" * 32 + ".dir" if mutation == "object_id" else None,
+    )
+    preparation = service.prepare(roster=roster, capture_inputs=inputs)
+    if mutation == "pointer_bytes":
+        (repo_root / _POINTER_PATH).write_bytes(preparation.pointer_bytes + b"\n")
+
+    with pytest.raises(D1CaptureTransportError):
+        service.finalize(preparation)
+
+    assert events[-1] == ("cloud" if mutation == "pointer_bytes" else "git")
 
 
 @pytest.mark.parametrize(

@@ -4,63 +4,75 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from collections.abc import Callable
+from datetime import datetime, timedelta
+from pathlib import PurePosixPath
 from typing import NoReturn, cast
 
+from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.d1_operator_ports import (
+    D1CommandResult,
     D1CommandRunner,
     D1OperatorTransportError,
+    D1PodDeletionAcknowledgedError,
     D1RunPodAuthReceipt,
 )
 from entropic_substrate.d1_operator_values import (
-    D1A100FormFactor,
     D1OperatorLaunchIntent,
     D1PodPlacement,
-    D1RuntimeObservation,
+    require_d1_pod_id,
 )
+from entropic_substrate.d1_runpod_billing_parser import (
+    RunpodBillingSchemaError,
+    parse_runpodctl_billing_observation,
+)
+from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
 from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
     ExecutionSegmentTermination,
-    ProviderBilling,
+    ProviderBillingObservation,
+    ProviderBillingPending,
+    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.evidence.resource_provenance import (
-    BillingUnit,
-    EvidenceGap,
-    Money,
     PurchaseOption,
     RunStartProvenance,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.provider_launch import PodLaunchRequest
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
+_GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")
+_FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_SECRET_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
+_RUNPODCTL_VERSION = "runpodctl 2.11.0-0592468"
+_POD_REQUIRED = frozenset("id name desiredStatus imageName gpuCount createdAt machine".split())
+_MARKETS = {"secure-cloud": "SECURE", "community-cloud": "COMMUNITY"}
 
 
 def _error(operation: str, subject: str, detail: str, cause: Exception | None = None) -> NoReturn:
+    del cause
     error = D1OperatorTransportError(operation=operation, subject=subject, detail=detail)
-    if cause is None:
-        raise error
-    raise error from cause
+    raise error from None
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate provider JSON key {key!r}")
+            raise ValueError("provider JSON repeats a key")
         result[key] = value
     return result
 
 
 def _nonfinite(value: str) -> NoReturn:
-    raise ValueError(f"non-finite provider JSON constant {value!r}")
+    del value
+    raise ValueError("provider JSON contains a non-finite constant")
 
 
 def _decode(raw: str, *, operation: str, subject: str) -> dict[str, object]:
     try:
         value: object = json.loads(raw, object_pairs_hook=_pairs, parse_constant=_nonfinite)
-    except (json.JSONDecodeError, ValueError) as error:
-        _error(operation, subject, f"provider response is invalid JSON: {error}", error)
+    except (json.JSONDecodeError, ValueError):
+        _error(operation, subject, "provider response is invalid JSON")
     if type(value) is not dict:
         _error(operation, subject, "provider response must be a JSON object")
     return cast(dict[str, object], value)
@@ -72,16 +84,18 @@ def _exact(value: dict[str, object], keys: set[str], *, operation: str, subject:
 
 
 def _text(value: object, *, label: str) -> str:
-    if type(value) is not str or not value.strip():
+    if type(value) is not str or not value or value.strip() != value:
         raise ValueError(f"{label} must be a nonempty string")
     return value
 
 
 def _timestamp(value: object, *, label: str) -> datetime:
     text = _text(value, label=label)
-    if _TIMESTAMP.fullmatch(text) is None:
-        raise ValueError(f"{label} must be a canonical UTC Z timestamp")
-    return datetime.fromisoformat(text[:-1] + "+00:00")
+    if _TIMESTAMP.fullmatch(text) is not None:
+        return datetime.fromisoformat(text[:-1] + "+00:00")
+    if _GO_TIMESTAMP.fullmatch(text) is not None:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S.%f %z UTC")
+    raise ValueError(f"{label} must be a supported RunPod UTC timestamp")
 
 
 def _integer(value: object, *, label: str) -> int:
@@ -93,10 +107,198 @@ def _integer(value: object, *, label: str) -> int:
 class RunpodctlD1Adapter:
     """Use configured runpodctl auth; no credential value crosses this API."""
 
-    def __init__(self, *, runner: D1CommandRunner) -> None:
-        if not hasattr(runner, "run"):
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], datetime],
+        registry_auth_id: str,
+        network_volume_id: str,
+        network_volume_mount_path: str,
+        trainer_mailbox_wait_seconds: float,
+        trainer_mailbox_poll_seconds: float,
+        trainer_mailbox_max_objects: int,
+        trainer_repo_root: str,
+        r2_access_key_secret_name: str,
+        r2_private_key_secret_name: str,
+        runner: D1CommandRunner | None = None,
+        command_timeout_seconds: float | None = None,
+        max_output_bytes: int | None = None,
+    ) -> None:
+        if runner is None:
+            if command_timeout_seconds is None or max_output_bytes is None:
+                raise ValueError("RunPod default runner requires explicit process bounds")
+            selected: D1CommandRunner = BoundedSubprocessD1CommandRunner(
+                timeout_seconds=command_timeout_seconds,
+                max_output_bytes=max_output_bytes,
+            )
+        else:
+            if command_timeout_seconds is not None or max_output_bytes is not None:
+                raise ValueError("injected RunPod runner cannot also declare process bounds")
+            selected = runner
+        if not hasattr(selected, "run") or not callable(clock):
             raise TypeError("RunPod adapter requires a command runner")
-        self._runner = runner
+        mount = PurePosixPath(_text(network_volume_mount_path, label="network volume mount"))
+        if not mount.is_absolute() or ".." in mount.parts or mount.as_posix() != str(mount):
+            raise ValueError("RunPod network volume mount must be a normalized absolute POSIX path")
+        if any(character.isspace() for character in str(mount)):
+            raise ValueError("RunPod network volume mount must not contain whitespace")
+        wait = D1TrainerMailboxWaitPolicy(
+            trainer_mailbox_wait_seconds,
+            trainer_mailbox_poll_seconds,
+        )
+        repo_root = PurePosixPath(_text(trainer_repo_root, label="trainer repo root"))
+        if (
+            not repo_root.is_absolute()
+            or ".." in repo_root.parts
+            or repo_root.as_posix() != str(repo_root)
+            or any(character.isspace() for character in str(repo_root))
+        ):
+            raise ValueError("RunPod trainer repo root must be a safe absolute POSIX path")
+        if type(trainer_mailbox_max_objects) is not int or trainer_mailbox_max_objects < 1:
+            raise ValueError("RunPod trainer mailbox object bound must be positive")
+        access_secret = _text(r2_access_key_secret_name, label="R2 access secret name")
+        private_secret = _text(r2_private_key_secret_name, label="R2 private secret name")
+        if (
+            _SECRET_NAME.fullmatch(access_secret) is None
+            or _SECRET_NAME.fullmatch(private_secret) is None
+            or access_secret == private_secret
+        ):
+            raise ValueError("RunPod R2 secret reference names are unsafe or duplicated")
+        self._runner, self._clock = selected, clock
+        self._registry_auth_id = _text(registry_auth_id, label="registry auth id")
+        self._network_volume_id = _text(network_volume_id, label="network volume id")
+        self._network_volume_mount_path = str(mount)
+        self._trainer_mailbox_wait = wait
+        self._trainer_mailbox_max_objects = trainer_mailbox_max_objects
+        self._trainer_repo_root = str(repo_root)
+        self._r2_secret_environment = json.dumps(
+            {
+                "AWS_ACCESS_KEY_ID": f"{{{{ RUNPOD_SECRET_{access_secret} }}}}",
+                "AWS_SECRET_ACCESS_KEY": f"{{{{ RUNPOD_SECRET_{private_secret} }}}}",
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    def _now(self) -> datetime:
+        value = self._clock()
+        if type(value) is not datetime or value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("RunPod control clock must return an exact UTC datetime")
+        return value
+
+    @staticmethod
+    def _coded_failure(stderr: str) -> tuple[str, int | None, str | None, bool] | None:
+        lines = [line for line in stderr.splitlines() if line.strip()]
+        if not lines:
+            return None
+        try:
+            value: object = json.loads(
+                lines[-1],
+                object_pairs_hook=_pairs,
+                parse_constant=_nonfinite,
+            )
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if type(value) is not dict:
+            return None
+        root = cast(dict[str, object], value)
+        if not {"error", "code"} <= set(root) or set(root) - {"error", "code", "status", "id"}:
+            return None
+        code, message, status, resource_id = (
+            root.get("code"),
+            root.get("error"),
+            root.get("status"),
+            root.get("id"),
+        )
+        if (
+            type(code) is not str
+            or _FAILURE_CODE.fullmatch(code) is None
+            or type(message) is not str
+            or (status is not None and type(status) is not int)
+        ):
+            return None
+        unsafe_resource_id = False
+        if resource_id is not None:
+            try:
+                resource_id = require_d1_pod_id(resource_id)
+            except (TypeError, ValueError):
+                resource_id, unsafe_resource_id = None, True
+        return code, status, resource_id, unsafe_resource_id
+
+    @staticmethod
+    def _failure_detail(code: str, status: int | None) -> str:
+        suffix = "" if status is None else f" status={status}"
+        return f"runpodctl failed code={code}{suffix}"
+
+    def _execute(
+        self,
+        operation: str,
+        subject: str,
+        argv: tuple[str, ...],
+        *,
+        stdin: str | None = None,
+    ) -> D1CommandResult:
+        try:
+            return self._runner.run(argv, cwd=None, stdin=stdin)
+        except Exception:
+            _error(operation, subject, "command execution failed")
+
+    def _invoke(
+        self,
+        operation: str,
+        subject: str,
+        argv: tuple[str, ...],
+        *,
+        stdin: str | None = None,
+    ) -> D1CommandResult:
+        result = self._execute(operation, subject, argv, stdin=stdin)
+        if result.returncode != 0:
+            failure = self._coded_failure(result.stderr)
+            if failure is None:
+                _error(operation, subject, "runpodctl failure payload is malformed")
+            code, status, _, _ = failure
+            _error(operation, subject, self._failure_detail(code, status))
+        return result
+
+    def _delete_attempt(self, pod_id: str, *, operation: str) -> tuple[str, int | None] | None:
+        pod_id = require_d1_pod_id(pod_id)
+        result = self._execute(
+            operation,
+            pod_id,
+            ("runpodctl", "pod", "delete", pod_id, "--output", "json"),
+        )
+        if result.returncode != 0:
+            failure = self._coded_failure(result.stderr)
+            if failure is None:
+                return "uncoded_failure", None
+            code, status, _, _ = failure
+            return code, status
+        payload = _decode(result.stdout, operation=operation, subject=pod_id)
+        _exact(payload, {"deleted", "id"}, operation=operation, subject=pod_id)
+        if payload["deleted"] is not True or payload["id"] != pod_id:
+            _error(operation, pod_id, "termination response identity or schema differs")
+        return None
+
+    def _cleanup_and_raise(self, subject: str, resource_id: str, primary: str) -> NoReturn:
+        try:
+            cleanup = self._delete_attempt(resource_id, operation="cleanup_pod")
+        except D1OperatorTransportError:
+            cleanup = ("uncoded_failure", None)
+        if cleanup is None:
+            _error(
+                "create_pod",
+                subject,
+                f"{primary}; resource_id={resource_id}; cleanup=deleted",
+            )
+        cleanup_code, cleanup_status = cleanup
+        status = "" if cleanup_status is None else f" cleanup_status={cleanup_status}"
+        _error(
+            "create_pod",
+            subject,
+            f"{primary}; COST LEAK: resource_id={resource_id} may still be billing; "
+            f"cleanup_code={cleanup_code}{status}",
+        )
 
     def _run(
         self,
@@ -106,149 +308,214 @@ class RunpodctlD1Adapter:
         *,
         stdin: str | None = None,
     ) -> dict[str, object]:
-        try:
-            result = self._runner.run(argv, cwd=None, stdin=stdin)
-        except Exception as error:
-            _error(operation, subject, str(error) or repr(error), error)
+        result = self._invoke(operation, subject, argv, stdin=stdin)
         return _decode(result.stdout, operation=operation, subject=subject)
 
     def verify_authenticated(self) -> D1RunPodAuthReceipt:
         operation = "authenticate"
+        version = self._invoke(
+            operation,
+            "configured-session",
+            ("runpodctl", "version"),
+        )
+        if version.stdout.removesuffix("\n") != _RUNPODCTL_VERSION:
+            _error(operation, "configured-session", "unsupported runpodctl version")
         payload = self._run(
             operation,
             "configured-session",
-            ("runpodctl", "config", "current", "--output", "json"),
+            ("runpodctl", "user", "--output", "json"),
         )
-        _exact(
-            payload,
-            {"account_id", "authenticated", "schema_version"},
-            operation=operation,
-            subject="configured-session",
-        )
-        if payload["schema_version"] != "d1-runpod-auth-v1":
-            _error(operation, "configured-session", "unsupported authentication schema")
-        if payload["authenticated"] is not True:
-            _error(operation, "configured-session", "runpodctl is not authenticated")
         try:
-            return D1RunPodAuthReceipt(_text(payload["account_id"], label="account_id"))
-        except (TypeError, ValueError) as error:
-            _error(operation, "configured-session", str(error), error)
+            return D1RunPodAuthReceipt(_text(payload.get("id"), label="account id"))
+        except (TypeError, ValueError):
+            _error(operation, "configured-session", "RunPod user identity is invalid")
 
     def create(self, intent: D1OperatorLaunchIntent) -> D1PodPlacement:
         if type(intent) is not D1OperatorLaunchIntent:
             raise TypeError("RunPod create requires D1OperatorLaunchIntent")
+        return self.create_pod(
+            PodLaunchRequest(
+                intent.plan.logical_run_id,
+                intent.image,
+                intent.resource,
+                intent.terminate_after_seconds,
+                (
+                    "python",
+                    "-m",
+                    "entropic_substrate.d1_trainer_mailbox_command",
+                    "--repo-root",
+                    self._trainer_repo_root,
+                    "--max-mailbox-objects",
+                    str(self._trainer_mailbox_max_objects),
+                    "--maximum-wait-seconds",
+                    str(self._trainer_mailbox_wait.maximum_seconds),
+                    "--poll-interval-seconds",
+                    str(self._trainer_mailbox_wait.poll_interval_seconds),
+                ),
+            )
+        )
+
+    def create_pod(self, intent: PodLaunchRequest) -> D1PodPlacement:
+        """Shared allocation/parser/cleanup implementation behind scientific adapters."""
+        if type(intent) is not PodLaunchRequest:
+            raise TypeError("RunPod allocation requires PodLaunchRequest")
         if intent.resource.provider != "runpod":
             raise ValueError("RunPod adapter requires provider='runpod'")
-        subject = intent.plan.logical_run_id
-        request = {
-            "gpu_count": intent.resource.accelerator_count,
-            "gpu_type_id": intent.resource.provider_gpu_type_id,
-            "image": intent.image.reference,
-            "logical_run_id": subject,
-            "market": intent.resource.market,
-            "provider_sku": intent.resource.provider_sku,
-            "purchase_option": intent.resource.purchase_option.value,
-            "region": intent.resource.region,
-            "schema_version": "d1-runpod-create-request-v1",
-            "segment_index": intent.execution_segment_index,
-            "terminate_after_seconds": intent.terminate_after_seconds,
-        }
-        payload = self._run(
-            "create_pod",
+        if intent.resource.purchase_option is not PurchaseOption.ON_DEMAND:
+            raise ValueError("RunPod adapter requires ON_DEMAND purchase option")
+        if intent.resource.provider_sku != intent.resource.provider_gpu_type_id:
+            raise ValueError("RunPod provider_sku must equal the measurable gpuTypeId")
+        cloud_type = _MARKETS.get(intent.resource.market)
+        if cloud_type is None:
+            raise ValueError("RunPod market must map to secure or community cloud")
+        subject = intent.logical_run_id
+        terminate_after = self._now() + timedelta(seconds=intent.terminate_after_seconds)
+        argv = [
+            "runpodctl",
+            "pod",
+            "create",
+            "--name",
             subject,
-            ("runpodctl", "create", "pod", "--spec", "-", "--output", "json"),
-            stdin=json.dumps(request, allow_nan=False, separators=(",", ":"), sort_keys=True),
+            "--image",
+            intent.image.reference,
+            "--gpu-id",
+            intent.resource.provider_gpu_type_id,
+            "--gpu-count",
+            str(intent.resource.accelerator_count),
+            "--cloud-type",
+            cloud_type,
+            "--data-center-ids",
+            intent.resource.region,
+            "--docker-args",
+            " ".join(intent.worker_command),
+            "--env",
+            json.dumps(
+                {**json.loads(self._r2_secret_environment), **dict(intent.environment)},
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        ]
+        argv.extend(
+            [
+                "--ssh",
+                "--registry-auth-id",
+                self._registry_auth_id,
+                "--network-volume-id",
+                self._network_volume_id,
+                "--volume-mount-path",
+                self._network_volume_mount_path,
+                "--terminate-after",
+                terminate_after.isoformat().replace("+00:00", "Z"),
+                "--output",
+                "json",
+            ]
         )
-        keys = {
-            "accelerator_count",
-            "accelerator_form_factor",
-            "accelerator_model",
-            "market",
-            "pod_created_at",
-            "pod_id",
-            "provider",
-            "provider_sku",
-            "purchase_option",
-            "region",
-            "schema_version",
-        }
-        _exact(payload, keys, operation="create_pod", subject=subject)
-        if payload["schema_version"] != "d1-runpod-create-v1":
-            _error("create_pod", subject, "unsupported create response schema")
         try:
+            result = self._execute("create_pod", subject, tuple(argv))
+        except D1OperatorTransportError:
+            _error(
+                "create_pod",
+                subject,
+                "create command outcome is unknown; allocation state is unknown; COST RISK: "
+                "reconcile by logical run name; automatic cleanup impossible",
+            )
+        if result.returncode != 0:
+            failure = self._coded_failure(result.stderr)
+            if failure is None:
+                _error(
+                    "create_pod",
+                    subject,
+                    "runpodctl failure payload is malformed; COST RISK: allocation state is "
+                    "unknown; reconcile by logical run name; automatic cleanup impossible",
+                )
+            code, status, resource_id, unsafe_resource_id = failure
+            primary = self._failure_detail(code, status)
+            if unsafe_resource_id:
+                _error(
+                    "create_pod",
+                    subject,
+                    f"{primary}; COST LEAK: provider returned an unsafe pod id; cleanup impossible",
+                )
+            if resource_id is not None:
+                self._cleanup_and_raise(subject, resource_id, primary)
+            _error(
+                "create_pod",
+                subject,
+                f"{primary}; COST RISK: allocation state is unknown; reconcile by logical "
+                "run name; automatic cleanup impossible",
+            )
+        try:
+            payload = _decode(result.stdout, operation="create_pod", subject=subject)
+        except D1OperatorTransportError:
+            _error(
+                "create_pod",
+                subject,
+                "COST LEAK: provider reported success without a usable pod response; "
+                "cleanup impossible",
+            )
+        try:
+            resource_id = require_d1_pod_id(payload.get("id"))
+        except (TypeError, ValueError):
+            _error(
+                "create_pod",
+                subject,
+                "COST LEAK: provider reported success without a safe pod id; cleanup impossible",
+            )
+        try:
+            if not _POD_REQUIRED <= set(payload):
+                raise ValueError("pod response fields differ from the pinned runpodctl schema")
+            machine = payload["machine"]
+            if type(machine) is not dict or machine.get("dataCenterId") != intent.resource.region:
+                raise ValueError("pod region differs from request")
+            observed_gpu = machine.get("gpuId")
+            if observed_gpu != intent.resource.provider_gpu_type_id:
+                raise ValueError("pod GPU differs from request")
+            if machine.get("secureCloud") is not (cloud_type == "SECURE"):
+                raise ValueError("pod cloud market differs from request")
+            if payload["desiredStatus"] != "RUNNING":
+                raise ValueError("pod desiredStatus is not RUNNING")
+            if payload["imageName"] != intent.image.reference:
+                raise ValueError("pod image differs from request")
+            if payload["gpuCount"] != intent.resource.accelerator_count:
+                raise ValueError("pod accelerator count differs from request")
+            if payload["name"] != subject:
+                raise ValueError("pod name differs from request")
+            # The on-demand mutation and this adapter's provider identity are
+            # command constraints; GPU/count/region/cloud/timestamp are response facts.
             return D1PodPlacement(
-                pod_id=_text(payload["pod_id"], label="pod_id"),
-                accelerator_form_factor=D1A100FormFactor(payload["accelerator_form_factor"]),
-                accelerator_model=_text(payload["accelerator_model"], label="accelerator_model"),
-                accelerator_count=_integer(payload["accelerator_count"], label="accelerator_count"),
-                provider=_text(payload["provider"], label="provider"),
-                provider_sku=_text(payload["provider_sku"], label="provider_sku"),
-                region=_text(payload["region"], label="region"),
-                market=_text(payload["market"], label="market"),
-                purchase_option=PurchaseOption(payload["purchase_option"]),
-                pod_created_at=_timestamp(payload["pod_created_at"], label="pod_created_at"),
+                pod_id=resource_id,
+                accelerator_form_factor=intent.resource.accelerator_form_factor,
+                accelerator_model=_text(observed_gpu, label="GPU type"),
+                accelerator_count=_integer(payload["gpuCount"], label="GPU count"),
+                provider=intent.resource.provider,
+                provider_sku=_text(observed_gpu, label="GPU type"),
+                region=intent.resource.region,
+                market=intent.resource.market,
+                purchase_option=intent.resource.purchase_option,
+                pod_created_at=_timestamp(payload["createdAt"], label="pod createdAt"),
             )
         except (TypeError, ValueError) as error:
-            _error("create_pod", subject, f"invalid placement: {error}", error)
-
-    def runtime(self, pod_id: str) -> D1RuntimeObservation:
-        pod = _text(pod_id, label="pod_id")
-        operation = "inspect_runtime"
-        payload = self._run(
-            operation,
-            pod,
-            ("runpodctl", "get", "pod", pod, "--output", "json"),
-        )
-        keys = {
-            "compiler_enabled",
-            "compiler_version",
-            "cuda_version",
-            "driver_version",
-            "pod_id",
-            "pytorch_version",
-            "schema_version",
-            "trainer_started_at",
-        }
-        _exact(payload, keys, operation=operation, subject=pod)
-        if payload["schema_version"] != "d1-runpod-runtime-v1":
-            _error(operation, pod, "unsupported runtime response schema")
-        if payload["pod_id"] != pod:
-            _error(operation, pod, "runtime pod identity differs from the request")
-        try:
-            return D1RuntimeObservation(
-                pod_id=pod,
-                trainer_started_at=_timestamp(
-                    payload["trainer_started_at"], label="trainer_started_at"
-                ),
-                cuda_version=_text(payload["cuda_version"], label="cuda_version"),
-                driver_version=_text(payload["driver_version"], label="driver_version"),
-                pytorch_version=_text(payload["pytorch_version"], label="pytorch_version"),
-                compiler_enabled=cast(bool, payload["compiler_enabled"]),
-                compiler_version=_text(payload["compiler_version"], label="compiler_version"),
-            )
-        except (TypeError, ValueError) as error:
-            _error(operation, pod, f"invalid runtime observation: {error}", error)
+            self._cleanup_and_raise(subject, resource_id, str(error))
 
     def cancel(self, pod_id: str) -> datetime:
-        pod = _text(pod_id, label="pod_id")
+        pod = require_d1_pod_id(pod_id)
         operation = "terminate_pod"
-        payload = self._run(
-            operation,
-            pod,
-            ("runpodctl", "remove", "pod", pod, "--output", "json"),
-        )
-        _exact(
-            payload,
-            {"pod_id", "pod_terminated_at", "schema_version"},
-            operation=operation,
-            subject=pod,
-        )
-        if payload["schema_version"] != "d1-runpod-termination-v1" or payload["pod_id"] != pod:
-            _error(operation, pod, "termination response identity or schema differs")
         try:
-            return _timestamp(payload["pod_terminated_at"], label="pod_terminated_at")
-        except (TypeError, ValueError) as error:
-            _error(operation, pod, f"invalid termination evidence: {error}", error)
+            self._now()
+        except Exception:
+            raise ValueError("RunPod pre-delete clock is not valid UTC") from None
+        failure = self._delete_attempt(pod, operation=operation)
+        if failure is not None:
+            code, status = failure
+            _error(operation, pod, self._failure_detail(code, status))
+        try:
+            return self._now()
+        except Exception:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=pod,
+                detail="post-delete UTC measurement is invalid; do not retry deletion",
+            ) from None
 
     def terminate(
         self,
@@ -257,74 +524,74 @@ class RunpodctlD1Adapter:
         start: RunStartProvenance,
         trainer_ended_at: datetime,
     ) -> ExecutionSegmentTermination:
+        pod = require_d1_pod_id(pod_id)
         if type(start) is not RunStartProvenance:
             raise TypeError("RunPod termination requires RunStartProvenance")
+        if (
+            type(trainer_ended_at) is not datetime
+            or trainer_ended_at.tzinfo is None
+            or trainer_ended_at.utcoffset() != timedelta(0)
+        ):
+            raise ValueError("trainer_ended_at must be an exact UTC datetime")
+        pod_terminated_at = self.cancel(pod)
         try:
             return ExecutionSegmentTermination(
                 start.logical_run_id,
                 start.execution_segment_index,
                 start.execution_segment_id,
                 trainer_ended_at,
-                self.cancel(pod_id),
+                pod_terminated_at,
             )
-        except (TypeError, ValueError) as error:
-            _error("terminate_pod", pod_id, f"invalid termination evidence: {error}", error)
+        except Exception:
+            raise D1PodDeletionAcknowledgedError(
+                pod_id=pod,
+                detail="termination evidence is invalid after deletion; do not retry deletion",
+            ) from None
 
-    def billing(self, pod_id: str, *, start: RunStartProvenance) -> ProviderBilling | BillingGap:
-        pod = _text(pod_id, label="pod_id")
+    def observe_billing(
+        self, pod_id: str, *, start: RunStartProvenance
+    ) -> ProviderBillingObservation:
+        pod = require_d1_pod_id(pod_id)
         if type(start) is not RunStartProvenance:
             raise TypeError("RunPod billing requires RunStartProvenance")
         operation = "provider_billing"
-        payload = self._run(
+        result = self._invoke(
             operation,
             pod,
-            ("runpodctl", "billing", "pod", pod, "--output", "json"),
+            (
+                "runpodctl",
+                "billing",
+                "pods",
+                "--pod-id",
+                pod,
+                "--bucket-size",
+                "hour",
+                "--grouping",
+                "podId",
+                "--output",
+                "json",
+            ),
         )
-        if payload.get("pod_id") != pod or payload.get("schema_version") != "d1-runpod-billing-v1":
-            _error(operation, pod, "billing response identity or schema differs")
-        if payload.get("kind") == "billing_gap":
-            _exact(
-                payload,
-                {"kind", "pod_id", "reason", "schema_version"},
-                operation=operation,
-                subject=pod,
-            )
-            reason = _text(payload["reason"], label="billing gap reason")
-            return BillingGap(
-                start.logical_run_id,
-                start.execution_segment_index,
-                start.execution_segment_id,
-                EvidenceGap("provider_billed_duration_seconds", reason),
-                EvidenceGap("provider_billed_amount", reason),
-                EvidenceGap("provider_billing_unit", reason),
-                EvidenceGap("provider_billing_record_id", reason),
-            )
-        keys = {
-            "billed_amount",
-            "billed_duration_seconds",
-            "billing_record_id",
-            "billing_unit",
-            "kind",
-            "pod_id",
-            "schema_version",
-        }
-        _exact(payload, keys, operation=operation, subject=pod)
-        if payload["kind"] != "provider_billing":
-            _error(operation, pod, "unsupported billing response kind")
         try:
-            money = cast(dict[str, object], payload["billed_amount"])
-            return ProviderBilling(
-                start.logical_run_id,
-                start.execution_segment_index,
-                start.execution_segment_id,
-                Decimal(_text(payload["billed_duration_seconds"], label="duration")),
-                Money(
-                    Decimal(_text(money["amount"], label="billing amount")),
-                    _text(money["currency"], label="billing currency"),
-                ),
-                BillingUnit(payload["billing_unit"]),
-                _text(payload["billing_record_id"], label="billing_record_id"),
-                EvidenceClass.PROVIDER_BILLED,
+            checked_at = self._now()
+        except Exception:
+            _error(operation, pod, "RunPod control clock is invalid")
+        try:
+            return parse_runpodctl_billing_observation(
+                result.stdout,
+                pod_id=pod,
+                start=start,
+                checked_at=checked_at,
             )
-        except (InvalidOperation, KeyError, TypeError, ValueError) as error:
+        except RunpodBillingSchemaError as error:
             _error(operation, pod, f"invalid provider billing: {error}", error)
+
+    def billing(self, pod_id: str, *, start: RunStartProvenance) -> TerminalProviderBillingEvidence:
+        observed = self.observe_billing(pod_id, start=start)
+        if type(observed) is ProviderBillingPending:
+            _error(
+                "provider_billing",
+                require_d1_pod_id(pod_id),
+                "provider billing is pending; explicit settlement is required",
+            )
+        return cast(TerminalProviderBillingEvidence, observed)

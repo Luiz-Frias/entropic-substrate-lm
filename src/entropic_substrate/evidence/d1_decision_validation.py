@@ -2,21 +2,43 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from types import MappingProxyType
 
 from entropic_substrate.evidence.d1_contract import D1DecisionContract, constants_match
-from entropic_substrate.evidence.d1_parsing import error, object_exact, string
+from entropic_substrate.evidence.d1_parsing import (
+    error,
+    object_exact,
+    sha256_digest,
+    string,
+)
 from entropic_substrate.evidence.d1_types import (
+    D1_STABILIZATION_ARM_IDS,
     D1ArmEvidence,
     D1Clause,
     D1Contrast,
     D1Integrity,
     D1Review,
     D1ReviewAdjudication,
+    D1ReviewFindingDisposition,
     D1Successor,
     JsonValue,
 )
-from entropic_substrate.evidence.lifecycle import ContentHash
+from entropic_substrate.evidence.lifecycle import ContentHash, SuccessorAuthorization
+
+_MAJOR_ID = re.compile(r"MAJOR-[1-9][0-9]*")
+
+
+def _finding_ids(value: object, *, path: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or _MAJOR_ID.fullmatch(item) is None for item in value
+    ):
+        raise error("invalid_major_findings", path, "must be canonical MAJOR-N identifiers")
+    result = tuple(value)
+    if len(set(result)) != len(result):
+        raise error("invalid_major_findings", path, "must be unique")
+    return result
 
 
 def parse_review(value: object) -> D1Review:
@@ -25,20 +47,31 @@ def parse_review(value: object) -> D1Review:
         path="review",
         fields=frozenset({"open_major_findings", "adjudication"}),
     )
-    findings = review["open_major_findings"]
-    if not isinstance(findings, list) or any(
-        not isinstance(item, str) or not item for item in findings
-    ):
-        raise error(
-            "invalid_major_findings",
-            "review.open_major_findings",
-            "must be a list of nonempty identifiers, including [] when none are open",
-        )
+    open_findings = _finding_ids(review["open_major_findings"], path="review.open_major_findings")
     adjudication = object_exact(
         review["adjudication"],
         path="review.adjudication",
-        fields=frozenset({"status", "major_findings"}),
+        fields=frozenset(
+            {
+                "dispositions",
+                "execution_receipt_sha256",
+                "major_finding_ids",
+                "open_major_finding_ids",
+                "operator_record_sha256",
+                "report_sha256",
+                "review_packet_sha256",
+                "review_request_sha256",
+                "schema_version",
+                "status",
+            }
+        ),
     )
+    if adjudication["schema_version"] != "d1-review-adjudication-v1":
+        raise error(
+            "invalid_adjudication_schema",
+            "review.adjudication.schema_version",
+            "must be d1-review-adjudication-v1",
+        )
     adjudication_status = string(adjudication["status"], path="review.adjudication.status")
     if adjudication_status not in {"OPEN", "RESOLVED", "NOT_REQUIRED"}:
         raise error(
@@ -46,42 +79,93 @@ def parse_review(value: object) -> D1Review:
             "review.adjudication.status",
             "must be OPEN, RESOLVED, or NOT_REQUIRED",
         )
-    major_findings = adjudication["major_findings"]
-    if not isinstance(major_findings, list) or any(
-        not isinstance(item, str) or not item for item in major_findings
-    ):
+    major_findings = _finding_ids(
+        adjudication["major_finding_ids"], path="review.adjudication.major_finding_ids"
+    )
+    declared_open = _finding_ids(
+        adjudication["open_major_finding_ids"],
+        path="review.adjudication.open_major_finding_ids",
+    )
+    raw_dispositions = adjudication["dispositions"]
+    if not isinstance(raw_dispositions, list):
         raise error(
             "invalid_adjudication",
-            "review.adjudication.major_findings",
-            "must be a list of nonempty identifiers",
+            "review.adjudication.dispositions",
+            "must be a list",
         )
-    open_findings = tuple(findings)
-    adjudicated_findings = tuple(major_findings)
-    if adjudication_status == "OPEN" and (
-        not open_findings or set(open_findings) != set(adjudicated_findings)
+    dispositions: dict[str, D1ReviewFindingDisposition] = {}
+    for index, raw in enumerate(raw_dispositions):
+        path = f"review.adjudication.dispositions[{index}]"
+        item = object_exact(
+            raw,
+            path=path,
+            fields=frozenset({"evidence_sha256", "finding_id", "rationale", "status"}),
+        )
+        finding_id = string(item["finding_id"], path=f"{path}.finding_id")
+        if _MAJOR_ID.fullmatch(finding_id) is None or finding_id in dispositions:
+            raise error(
+                "invalid_adjudication", f"{path}.finding_id", "must be canonical and unique"
+            )
+        finding_status = string(item["status"], path=f"{path}.status")
+        if finding_status not in {"OPEN", "RESOLVED"}:
+            raise error("invalid_adjudication", f"{path}.status", "must be OPEN or RESOLVED")
+        evidence = item["evidence_sha256"]
+        evidence_sha256 = (
+            None if evidence is None else sha256_digest(evidence, path=f"{path}.evidence_sha256")
+        )
+        if finding_status == "RESOLVED" and evidence_sha256 is None:
+            raise error("invalid_adjudication", path, "resolved MAJOR requires evidence SHA-256")
+        rationale = string(item["rationale"], path=f"{path}.rationale")
+        dispositions[finding_id] = D1ReviewFindingDisposition(
+            finding_id, finding_status, rationale, evidence_sha256
+        )
+    if tuple(dispositions) != major_findings:
+        raise error(
+            "inconsistent_adjudication",
+            "review.adjudication.dispositions",
+            "must exactly cover MAJOR findings in order",
+        )
+    expected_open = tuple(
+        finding_id for finding_id, item in dispositions.items() if item.status == "OPEN"
+    )
+    expected_status = (
+        "NOT_REQUIRED" if not major_findings else "OPEN" if expected_open else "RESOLVED"
+    )
+    if (
+        declared_open != expected_open
+        or open_findings != expected_open
+        or adjudication_status != expected_status
     ):
         raise error(
             "inconsistent_adjudication",
             "review.adjudication",
-            "OPEN adjudication must list exactly the open MAJOR findings",
-        )
-    if adjudication_status == "RESOLVED" and (open_findings or not adjudicated_findings):
-        raise error(
-            "inconsistent_adjudication",
-            "review.adjudication",
-            "RESOLVED adjudication requires no open MAJOR and at least one resolved MAJOR",
-        )
-    if adjudication_status == "NOT_REQUIRED" and (open_findings or adjudicated_findings):
-        raise error(
-            "inconsistent_adjudication",
-            "review.adjudication",
-            "NOT_REQUIRED adjudication requires no MAJOR findings",
+            "status and open findings must derive exactly from dispositions",
         )
     return D1Review(
         open_major_findings=open_findings,
         adjudication=D1ReviewAdjudication(
             status=adjudication_status,
-            major_findings=adjudicated_findings,
+            major_findings=major_findings,
+            dispositions=MappingProxyType(dispositions),
+            execution_receipt_sha256=sha256_digest(
+                adjudication["execution_receipt_sha256"],
+                path="review.adjudication.execution_receipt_sha256",
+            ),
+            operator_record_sha256=sha256_digest(
+                adjudication["operator_record_sha256"],
+                path="review.adjudication.operator_record_sha256",
+            ),
+            report_sha256=sha256_digest(
+                adjudication["report_sha256"], path="review.adjudication.report_sha256"
+            ),
+            review_packet_sha256=sha256_digest(
+                adjudication["review_packet_sha256"],
+                path="review.adjudication.review_packet_sha256",
+            ),
+            review_request_sha256=sha256_digest(
+                adjudication["review_request_sha256"],
+                path="review.adjudication.review_request_sha256",
+            ),
         ),
     )
 
@@ -158,8 +242,9 @@ def validate_decision_contract(
     contract: D1DecisionContract,
     constants: Mapping[str, JsonValue],
     arms: tuple[D1ArmEvidence, ...],
+    feasible_arms: tuple[str, ...],
     contrasts: tuple[D1Contrast, ...],
-    clauses: Mapping[str, D1Clause],
+    clauses_by_arm: Mapping[str, Mapping[str, D1Clause]],
     integrity: D1Integrity,
     exclusions: tuple[tuple[str, str, ContentHash], ...],
     review: D1Review,
@@ -176,6 +261,12 @@ def validate_decision_contract(
         )
     if {arm.arm_id for arm in arms} != set(contract.arm_ids):
         raise error("arm_set_mismatch", "arms", "must exactly match the registered arm set")
+    if set(clauses_by_arm) != set(D1_STABILIZATION_ARM_IDS):
+        raise error(
+            "clause_arm_set_mismatch",
+            "clauses_by_arm",
+            "must exactly match the D1 stabilization arms",
+        )
     if {contrast.contrast_id for contrast in contrasts} != set(contract.contrast_ids):
         raise error(
             "contrast_set_mismatch",
@@ -184,23 +275,37 @@ def validate_decision_contract(
         )
     for contrast in contrasts:
         _validate_registered_contrast(contract, contrast)
-    if set(clauses) != set(contract.clause_ids):
-        raise error(
-            "clause_set_mismatch", "clauses", "must exactly match the registered clause set"
-        )
-    for clause_id, clause in clauses.items():
-        registered = contract.clause_rules[clause_id]
-        if (
-            clause.registered_rule != registered.registered_rule
-            or clause.decision_vocabulary != registered.decision_vocabulary
-            or clause.threshold != registered.threshold
-            or clause.margin != registered.margin
-        ):
+    for arm_id, clauses in clauses_by_arm.items():
+        if set(clauses) != set(contract.clause_ids):
             raise error(
-                "registered_clause_mismatch",
-                f"clauses.{clause_id}",
-                "clause rule, vocabulary, threshold, and margin must match registration",
+                "clause_set_mismatch",
+                f"clauses_by_arm.{arm_id}",
+                "must exactly match the registered clause set",
             )
+        for clause_id, clause in clauses.items():
+            registered = contract.clause_rules[clause_id]
+            if (
+                clause.registered_rule != registered.registered_rule
+                or clause.decision_vocabulary != registered.decision_vocabulary
+                or clause.threshold != registered.threshold
+                or clause.margin != registered.margin
+            ):
+                raise error(
+                    "registered_clause_mismatch",
+                    f"clauses_by_arm.{arm_id}.{clause_id}",
+                    "clause rule, vocabulary, threshold, and margin must match registration",
+                )
+    expected_feasible = tuple(
+        arm_id
+        for arm_id in D1_STABILIZATION_ARM_IDS
+        if all(clause.status == "PASS" for clause in clauses_by_arm[arm_id].values())
+    )
+    if feasible_arms != expected_feasible:
+        raise error(
+            "feasible_arm_mismatch",
+            "feasible_arms",
+            "must equal every stabilization arm whose registered clauses all pass",
+        )
     if clause_precedence != contract.clause_precedence:
         raise error(
             "registered_clause_precedence_mismatch",
@@ -231,14 +336,38 @@ def validate_decision_contract(
             "successor.authorization",
             "does not match the registered decision-table rule",
         )
-    if {name: clause.status for name, clause in clauses.items()} != dict(
-        rule.required_clause_statuses
-    ):
+    matching_arms = tuple(
+        arm_id
+        for arm_id in D1_STABILIZATION_ARM_IDS
+        if {name: clause.status for name, clause in clauses_by_arm[arm_id].items()}
+        == dict(rule.required_clause_statuses)
+    )
+    if not matching_arms:
         raise error(
             "decision_clause_mismatch",
-            "clauses",
-            "do not satisfy the registered decision-table clause statuses",
+            "clauses_by_arm",
+            "no stabilization arm satisfies the registered decision-table clause statuses",
         )
+    if successor.authorization is not SuccessorAuthorization.AUTHORIZED:
+        for candidate in contract.decision_rules.values():
+            candidate_matches = any(
+                {name: clause.status for name, clause in clauses_by_arm[arm_id].items()}
+                == dict(candidate.required_clause_statuses)
+                for arm_id in D1_STABILIZATION_ARM_IDS
+            )
+            integrity_ready = not candidate.require_integrity_pass or integrity.status == "PASS"
+            review_ready = not candidate.require_review_clearance or not review.open_major_findings
+            if (
+                candidate.successor_authorization is SuccessorAuthorization.AUTHORIZED
+                and candidate_matches
+                and integrity_ready
+                and review_ready
+            ):
+                raise error(
+                    "decision_authorization_downgrade",
+                    "verdict",
+                    "cannot downgrade while a registered authorized arm is ready",
+                )
     if rule.require_integrity_pass and integrity.status != "PASS":
         raise error(
             "decision_integrity_mismatch",
@@ -256,4 +385,21 @@ def validate_decision_contract(
             "decision_strategy_mismatch",
             "successor.eligible_strategies",
             "strategy list does not match the registered successor mapping",
+        )
+    expected_eligible_arms = (
+        feasible_arms if successor.authorization is SuccessorAuthorization.AUTHORIZED else ()
+    )
+    if successor.eligible_arms != expected_eligible_arms:
+        raise error(
+            "decision_eligible_arm_mismatch",
+            "successor.eligible_arms",
+            "must carry the complete feasible frontier only when authorization is granted",
+        )
+    if successor.authorization is SuccessorAuthorization.AUTHORIZED and (
+        not feasible_arms or set(matching_arms) != set(feasible_arms)
+    ):
+        raise error(
+            "decision_feasible_arm_mismatch",
+            "feasible_arms",
+            "authorized decision statuses must identify the complete feasible frontier",
         )

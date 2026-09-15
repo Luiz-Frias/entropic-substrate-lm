@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
 
 from entropic_substrate.experiments.d1_primitives import (
     EvidenceClass,
@@ -12,6 +13,19 @@ from entropic_substrate.experiments.d1_primitives import (
     require_sha256,
 )
 
+__all__ = [
+    "D1_TELEMETRY_SCHEMA_VERSION",
+    "CodeIdentity",
+    "ContainerIdentity",
+    "DataIdentity",
+    "DataOrderAttestation",
+    "EvidenceEnvelope",
+    "ExecutionIdentity",
+    "PreregistrationIdentity",
+]
+
+D1_TELEMETRY_SCHEMA_VERSION: Final[int] = 3
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceEnvelope:
@@ -20,7 +34,7 @@ class EvidenceEnvelope:
     schema_version: str
     required_classes: frozenset[EvidenceClass]
     checkpoint_schema_version: int = 1
-    telemetry_schema_version: int = 1
+    telemetry_schema_version: int = D1_TELEMETRY_SCHEMA_VERSION
     dvc_capture_required: bool = True
 
     def __post_init__(self) -> None:
@@ -31,8 +45,11 @@ class EvidenceEnvelope:
         if type(self.checkpoint_schema_version) is not int or self.checkpoint_schema_version < 1:
             msg = "checkpoint_schema_version must be a positive integer"
             raise ValueError(msg)
-        if type(self.telemetry_schema_version) is not int or self.telemetry_schema_version < 1:
-            msg = "telemetry_schema_version must be a positive integer"
+        if (
+            type(self.telemetry_schema_version) is not int
+            or self.telemetry_schema_version != D1_TELEMETRY_SCHEMA_VERSION
+        ):
+            msg = f"telemetry_schema_version must be {D1_TELEMETRY_SCHEMA_VERSION}"
             raise ValueError(msg)
         if self.dvc_capture_required is not True:
             msg = "D1 evidence requires DVC capture"

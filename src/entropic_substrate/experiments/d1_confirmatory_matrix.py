@@ -22,7 +22,7 @@ from entropic_substrate.experiments.d1_primitives import (
 )
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 
-D1_CONFIRMATORY_MATRIX_SCHEMA: Final = "d1-confirmatory-matrix-v1"
+D1_CONFIRMATORY_MATRIX_SCHEMA: Final = "d1-confirmatory-matrix-v2"
 _MATRIX_ATTESTATION: Final = object()
 
 
@@ -108,6 +108,7 @@ class D1ConfirmatoryMatrix:
     decision_contract_digest: str
     registered_seeds: tuple[int, ...]
     launches: tuple[D1ConfirmatoryLaunch, ...]
+    terminal_defect_run_ids: tuple[str, ...]
     _attestation: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -134,6 +135,7 @@ class D1ConfirmatoryMatrix:
             "registered_design_digest": self.registered_design_digest,
             "registered_seeds": list(self.registered_seeds),
             "schema_version": D1_CONFIRMATORY_MATRIX_SCHEMA,
+            "terminal_defect_run_ids": list(self.terminal_defect_run_ids),
         }
 
     @property
@@ -276,12 +278,14 @@ def _attempt_identity(
 def _matrix(
     design: D1RegisteredDesign,
     ordered: tuple[D1ConfirmatoryLaunch, ...],
+    terminal_defect_run_ids: tuple[str, ...],
 ) -> D1ConfirmatoryMatrix:
     return D1ConfirmatoryMatrix(
         registered_design_digest=design.design_digest,
         decision_contract_digest=design.decision_contract_digest,
         registered_seeds=design.registered_seeds,
         launches=ordered,
+        terminal_defect_run_ids=terminal_defect_run_ids,
         _attestation=_MATRIX_ATTESTATION,
     )
 
@@ -292,6 +296,7 @@ def attest_d1_confirmatory_matrix(
     launches: tuple[D1ConfirmatoryLaunch, ...],
     git: D1GitProvenancePort,
     ledger: D1LaunchAttemptLedger,
+    terminal_defect_run_ids: tuple[str, ...] = (),
 ) -> D1ConfirmatoryMatrix:
     """Attest a post-wave matrix without creating another optional look."""
     if type(design) is not D1RegisteredDesign or type(ledger) is not D1LaunchAttemptLedger:
@@ -299,6 +304,11 @@ def attest_d1_confirmatory_matrix(
     if type(launches) is not tuple:
         raise TypeError("D1 matrix launches must be an immutable tuple")
     ordered = _validate_roster_and_pairing(design, launches)
+    ordered_ids = tuple(launch.plan.logical_run_id for launch in ordered)
+    if type(terminal_defect_run_ids) is not tuple or terminal_defect_run_ids != tuple(
+        run_id for run_id in ordered_ids if run_id in terminal_defect_run_ids
+    ):
+        raise ValueError("D1 terminal-defect run IDs must be a canonical matrix subset")
     _validate_git(design, ordered, git)
     expected = {_attempt_identity(design, launch).optional_stopping_digest for launch in ordered}
     observed = {event.identity.optional_stopping_digest for event in ledger.events}
@@ -311,15 +321,20 @@ def attest_d1_confirmatory_matrix(
             for event in ledger.events
             if event.identity.optional_stopping_digest == identity.optional_stopping_digest
         )
+        terminal_status = (
+            D1LaunchAttemptStatus.FAILED
+            if launch.plan.logical_run_id in terminal_defect_run_ids
+            else D1LaunchAttemptStatus.COMPLETED
+        )
         if tuple(event.status for event in history) != (
             D1LaunchAttemptStatus.RECORDED,
             D1LaunchAttemptStatus.TRAINER_STARTED,
-            D1LaunchAttemptStatus.COMPLETED,
+            terminal_status,
         ):
             raise ValueError("D1 matrix requires one completed controller attempt per cell")
         if history[1].observed_at != launch.start.trainer_started_at:
             raise ValueError("D1 matrix trainer-start differs from the attempt ledger")
-    return _matrix(design, ordered)
+    return _matrix(design, ordered, terminal_defect_run_ids)
 
 
 def admit_d1_confirmatory_matrix(
@@ -348,4 +363,4 @@ def admit_d1_confirmatory_matrix(
             status=D1LaunchAttemptStatus.TRAINER_STARTED,
             observed_at=launch.start.trainer_started_at,
         )
-    return D1ConfirmatoryMatrixAdmission(matrix=_matrix(design, ordered), ledger=extended)
+    return D1ConfirmatoryMatrixAdmission(matrix=_matrix(design, ordered, ()), ledger=extended)

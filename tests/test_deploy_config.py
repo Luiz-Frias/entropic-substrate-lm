@@ -81,6 +81,24 @@ def test_runpod_dependency_layer_is_frozen_and_includes_deploy_tools() -> None:
     assert 'pip install --no-cache-dir "uv' not in containerfile
 
 
+def test_runpod_image_contains_only_committed_dvc_remote_topology() -> None:
+    """The pod must discover R2 through the same credential-free DVC config as Git."""
+    containerfile = (REPO_ROOT / "Containerfile").read_text(encoding="utf-8")
+    dvc_config = (REPO_ROOT / ".dvc/config").read_text(encoding="utf-8")
+    active_instructions = {
+        line.strip()
+        for line in containerfile.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert "COPY .dvc/config ./.dvc/config" in active_instructions
+    assert "remote = r2-entropic-substrate-lm" in dvc_config
+    assert "url = s3://entropic-substrate-lm" in dvc_config
+    assert "endpointurl = https://" in dvc_config
+    for forbidden in ("access_key_id", "secret_access_key", "credentialpath"):
+        assert forbidden not in dvc_config.lower()
+
+
 def test_deploy_group_pins_system_metrics_dependencies() -> None:
     """MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING (entropic_substrate.sinks) is
     mlflow-native, but mlflow-skinny does NOT declare psutil or pynvml as a
@@ -96,6 +114,20 @@ def test_deploy_group_pins_system_metrics_dependencies() -> None:
 
     assert "psutil" in deploy_names
     assert "pynvml" in deploy_names
+
+
+def test_deployment_and_analysis_are_audited_runtime_capabilities() -> None:
+    pyproject = _pyproject()
+    groups = pyproject["dependency-groups"]
+    assert "boto3" in _dependency_names(groups["deploy"])
+    assert "boto3" not in _dependency_names(groups["dev"])
+    assert "scipy" in _dependency_names(groups["deploy"])
+    assert "scipy" in _dependency_names(groups["analysis"])
+    audit = pyproject["tool"]["deptry"]
+    assert set(audit["non_dev_dependency_groups"]) == {"deploy", "analysis"}
+    assert "DEP004" not in audit.get("ignore", [])
+    assert audit["per_rule_ignores"] == {"DEP002": ["dvc", "psutil"]}
+    assert "uv run deptry src notebooks" in (REPO_ROOT / "justfile").read_text()
 
 
 def test_analysis_group_is_dev_only_and_absent_from_deploy() -> None:

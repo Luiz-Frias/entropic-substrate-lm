@@ -6,6 +6,7 @@ import hashlib
 import os
 import stat
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, cast
 
@@ -31,6 +32,7 @@ from entropic_substrate.evidence.d1_capture_ports import (
     D1DvcCommandPort,
     D1DvcPointerIdentity,
     D1EvidenceExportSourcePort,
+    D1GitPointerCommitEvidence,
     D1GitPointerStatusVerifierPort,
 )
 from entropic_substrate.evidence.d1_capture_roster import (
@@ -39,10 +41,22 @@ from entropic_substrate.evidence.d1_capture_roster import (
 )
 from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
 
-__all__ = ["D1CaptureReceipt", "D1CaptureService", "D1HeterogeneousCaptureReceipt"]
+__all__ = [
+    "D1CapturePreparation",
+    "D1CapturePreparationStatus",
+    "D1CaptureReceipt",
+    "D1CaptureService",
+    "D1HeterogeneousCapturePreparation",
+    "D1HeterogeneousCaptureReceipt",
+    "read_d1_dvc_pointer",
+]
 
 _CAPTURE_RELATIVE: Final = Path("results/captured")
 _POINTER_RELATIVE: Final = Path("results/captured.dvc")
+
+
+class D1CapturePreparationStatus(StrEnum):
+    COMMIT_REQUIRED = "commit_required"
 
 
 def _error(code: str, path: str, detail: str) -> D1CaptureTransportError:
@@ -57,6 +71,47 @@ def _commit(value: str) -> None:
         or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError("pointer_commit must be a 7-to-64-character lowercase Git identity")
+
+
+def _validate_pointer_bytes(pointer: D1DvcPointerIdentity, payload: bytes) -> None:
+    if type(payload) is not bytes or not payload:
+        raise ValueError("DVC pointer bytes must be nonempty")
+    if hashlib.sha256(payload).hexdigest() != pointer.pointer_sha256:
+        raise ValueError("DVC pointer bytes differ from their identity")
+
+
+@dataclass(frozen=True, slots=True)
+class D1CapturePreparation:
+    bundle: D1CaptureBundle
+    pointer: D1DvcPointerIdentity
+    pointer_bytes: bytes
+    status: D1CapturePreparationStatus = D1CapturePreparationStatus.COMMIT_REQUIRED
+
+    def __post_init__(self) -> None:
+        if type(self.bundle) is not D1CaptureBundle:
+            raise TypeError("capture preparation requires D1CaptureBundle")
+        if type(self.pointer) is not D1DvcPointerIdentity:
+            raise TypeError("capture preparation requires D1DvcPointerIdentity")
+        _validate_pointer_bytes(self.pointer, self.pointer_bytes)
+        if self.status is not D1CapturePreparationStatus.COMMIT_REQUIRED:
+            raise ValueError("capture preparation must require a pointer commit")
+
+
+@dataclass(frozen=True, slots=True)
+class D1HeterogeneousCapturePreparation:
+    aggregate: D1HeterogeneousCaptureAggregate
+    pointer: D1DvcPointerIdentity
+    pointer_bytes: bytes
+    status: D1CapturePreparationStatus = D1CapturePreparationStatus.COMMIT_REQUIRED
+
+    def __post_init__(self) -> None:
+        if type(self.aggregate) is not D1HeterogeneousCaptureAggregate:
+            raise TypeError("heterogeneous preparation requires D1 capture aggregate")
+        if type(self.pointer) is not D1DvcPointerIdentity:
+            raise TypeError("heterogeneous preparation requires D1DvcPointerIdentity")
+        _validate_pointer_bytes(self.pointer, self.pointer_bytes)
+        if self.status is not D1CapturePreparationStatus.COMMIT_REQUIRED:
+            raise ValueError("heterogeneous preparation must require a pointer commit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,8 +192,40 @@ class D1HeterogeneousCaptureReceipt:
         }
 
 
-def _read_pointer(repo_root: Path) -> D1DvcPointerIdentity:
-    pointer = repo_root / _POINTER_RELATIVE
+def _relative_repo_path(repo_root: Path, value: Path, *, label: str) -> Path:
+    root = Path(os.path.abspath(repo_root))
+    target = Path(os.path.abspath(value))
+    if root.is_symlink() or not root.is_dir():
+        raise _error("pointer_path", str(root), "repository root must be a real directory")
+    try:
+        relative = target.relative_to(root)
+    except ValueError as error:
+        raise _error("pointer_path", str(target), f"{label} is outside the repository") from error
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink():
+            raise _error("pointer_path", relative.as_posix(), f"{label} traverses a symlink")
+    return relative
+
+
+def read_d1_dvc_pointer(
+    *,
+    repo_root: Path,
+    tracked_path: Path,
+    pointer_path: Path,
+) -> tuple[D1DvcPointerIdentity, bytes]:
+    """Read one exact DVC pointer for an arbitrary repository-local tracked path."""
+    tracked_relative = _relative_repo_path(repo_root, tracked_path, label="tracked path")
+    pointer_relative = _relative_repo_path(repo_root, pointer_path, label="pointer path")
+    expected_pointer = tracked_relative.with_name(f"{tracked_relative.name}.dvc")
+    if pointer_relative != expected_pointer:
+        raise _error(
+            "pointer_path",
+            pointer_relative.as_posix(),
+            "pointer path must be the tracked path plus .dvc",
+        )
+    pointer = Path(os.path.abspath(repo_root)) / pointer_relative
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(pointer, flags)
@@ -153,18 +240,29 @@ def _read_pointer(repo_root: Path) -> D1DvcPointerIdentity:
         if not isinstance(outs, list) or len(outs) != 1 or not isinstance(outs[0], dict):
             raise ValueError("DVC pointer must contain exactly one output mapping")
         output = cast(dict[object, object], outs[0])
-        if output.get("path") != _CAPTURE_RELATIVE.name:
-            raise ValueError("DVC pointer output path differs from results/captured")
+        if output.get("path") != tracked_relative.name:
+            raise ValueError("DVC pointer output path differs from its tracked path")
         object_id = output.get("md5")
         if type(object_id) is not str:
             raise ValueError("DVC pointer output requires an md5 object identity")
-        return D1DvcPointerIdentity(
-            pointer_path=_POINTER_RELATIVE.as_posix(),
-            pointer_sha256=hashlib.sha256(payload_bytes).hexdigest(),
-            object_id=object_id,
+        return (
+            D1DvcPointerIdentity(
+                pointer_path=pointer_relative.as_posix(),
+                pointer_sha256=hashlib.sha256(payload_bytes).hexdigest(),
+                object_id=object_id,
+            ),
+            payload_bytes,
         )
     except (OSError, ValueError, yaml.YAMLError) as error:
-        raise _error("pointer_identity", _POINTER_RELATIVE.as_posix(), str(error)) from error
+        raise _error("pointer_identity", pointer_relative.as_posix(), str(error)) from error
+
+
+def _read_pointer(repo_root: Path) -> tuple[D1DvcPointerIdentity, bytes]:
+    return read_d1_dvc_pointer(
+        repo_root=repo_root,
+        tracked_path=repo_root / _CAPTURE_RELATIVE,
+        pointer_path=repo_root / _POINTER_RELATIVE,
+    )
 
 
 def _bind_input(capture: D1CaptureInput, by_path: dict[str, D1ArtifactIdentity]) -> D1CaptureInput:
@@ -299,14 +397,14 @@ class D1CaptureService:
             )
         return capture_root
 
-    def _durable_identity(self, capture_root: Path) -> tuple[D1DvcPointerIdentity, str]:
+    def _prepare_identity(self, capture_root: Path) -> tuple[D1DvcPointerIdentity, bytes]:
         pointer_path = self._repo_root / _POINTER_RELATIVE
         try:
             self._dvc.add(tracked_path=capture_root, pointer_path=pointer_path)
             self._dvc.push(pointer_path=pointer_path)
         except Exception as error:
             raise _error("dvc_failure", _POINTER_RELATIVE.as_posix(), str(error)) from error
-        pointer = _read_pointer(self._repo_root)
+        pointer, pointer_bytes = _read_pointer(self._repo_root)
         try:
             cloud_present = self._cloud.object_is_present(
                 pointer_path=pointer_path,
@@ -318,29 +416,52 @@ class D1CaptureService:
             raise _error(
                 "cloud_mismatch", pointer.pointer_path, "remote object presence was not proven"
             )
+        return pointer, pointer_bytes
+
+    def _finalize_identity(self, pointer: D1DvcPointerIdentity, pointer_bytes: bytes) -> str:
+        pointer_path = self._repo_root / _POINTER_RELATIVE
+        observed, observed_bytes = _read_pointer(self._repo_root)
+        if observed != pointer or observed_bytes != pointer_bytes:
+            raise _error(
+                "pointer_changed",
+                pointer.pointer_path,
+                "DVC pointer bytes changed after COMMIT_REQUIRED",
+            )
         try:
-            commit = self._git.committed_revision(
+            evidence = self._git.committed_pointer(
                 pointer_path=pointer_path,
+                pointer_bytes=pointer_bytes,
                 pointer_sha256=pointer.pointer_sha256,
+                object_id=pointer.object_id,
             )
         except Exception as error:
             raise _error("pointer_uncommitted", pointer.pointer_path, str(error)) from error
-        if commit is None:
+        if evidence is None:
             raise _error(
                 "pointer_uncommitted",
                 pointer.pointer_path,
                 "exact DVC pointer bytes are not present in the verified Git revision",
             )
-        return pointer, commit
+        if type(evidence) is not D1GitPointerCommitEvidence or (
+            evidence.pointer_path,
+            evidence.pointer_sha256,
+            evidence.object_id,
+        ) != (pointer.pointer_path, pointer.pointer_sha256, pointer.object_id):
+            raise _error(
+                "pointer_commit_mismatch",
+                pointer.pointer_path,
+                "Git evidence differs from verified pointer bytes or object identity",
+            )
+        return evidence.commit
 
-    def capture(
+    def prepare(
         self,
         *,
         roster: D1LaunchRoster,
         capture_inputs: tuple[D1CaptureInput, ...],
         attempt_evidence: tuple[D1AttemptEvidence, ...] = (),
         pair_exclusions: tuple[D1PairExclusion, ...] = (),
-    ) -> D1CaptureReceipt:
+    ) -> D1CapturePreparation:
         if type(roster) is not D1LaunchRoster or type(capture_inputs) is not tuple:
             raise TypeError("D1 capture requires a nominal roster and capture-input tuple")
         input_ids = [item.logical_run_id for item in capture_inputs]
@@ -364,21 +485,48 @@ class D1CaptureService:
             )
         except Exception as error:
             raise _error("local_admission", _CAPTURE_RELATIVE.as_posix(), str(error)) from error
-        pointer, commit = self._durable_identity(capture_root)
-        return D1CaptureReceipt(
+        pointer, pointer_bytes = self._prepare_identity(capture_root)
+        return D1CapturePreparation(
             bundle=_bind_bundle(bundle, pointer),
             pointer=pointer,
+            pointer_bytes=pointer_bytes,
+        )
+
+    def finalize(self, preparation: D1CapturePreparation) -> D1CaptureReceipt:
+        if type(preparation) is not D1CapturePreparation:
+            raise TypeError("capture finalize requires D1CapturePreparation")
+        commit = self._finalize_identity(preparation.pointer, preparation.pointer_bytes)
+        return D1CaptureReceipt(
+            bundle=preparation.bundle,
+            pointer=preparation.pointer,
             pointer_commit=commit,
         )
 
-    def capture_heterogeneous(
+    def capture(
+        self,
+        *,
+        roster: D1LaunchRoster,
+        capture_inputs: tuple[D1CaptureInput, ...],
+        attempt_evidence: tuple[D1AttemptEvidence, ...] = (),
+        pair_exclusions: tuple[D1PairExclusion, ...] = (),
+    ) -> D1CaptureReceipt:
+        return self.finalize(
+            self.prepare(
+                roster=roster,
+                capture_inputs=capture_inputs,
+                attempt_evidence=attempt_evidence,
+                pair_exclusions=pair_exclusions,
+            )
+        )
+
+    def prepare_heterogeneous(
         self,
         *,
         roster: D1LaunchRoster,
         complete_inputs: tuple[D1CaptureInput, ...],
         terminal_defect_inputs: tuple[D1TerminalDefectInput, ...],
         attempt_evidence: tuple[D1AttemptEvidence, ...] = (),
-    ) -> D1HeterogeneousCaptureReceipt:
+    ) -> D1HeterogeneousCapturePreparation:
         """Capture an exact roster partition and expose no loose defect lane."""
         if type(roster) is not D1LaunchRoster:
             raise TypeError("heterogeneous capture roster must be D1LaunchRoster")
@@ -413,9 +561,38 @@ class D1CaptureService:
             )
         except Exception as error:
             raise _error("local_admission", _CAPTURE_RELATIVE.as_posix(), str(error)) from error
-        pointer, commit = self._durable_identity(capture_root)
-        return D1HeterogeneousCaptureReceipt(
+        pointer, pointer_bytes = self._prepare_identity(capture_root)
+        return D1HeterogeneousCapturePreparation(
             aggregate=_bind_aggregate(aggregate, pointer),
             pointer=pointer,
+            pointer_bytes=pointer_bytes,
+        )
+
+    def finalize_heterogeneous(
+        self, preparation: D1HeterogeneousCapturePreparation
+    ) -> D1HeterogeneousCaptureReceipt:
+        if type(preparation) is not D1HeterogeneousCapturePreparation:
+            raise TypeError("heterogeneous finalize requires its preparation")
+        commit = self._finalize_identity(preparation.pointer, preparation.pointer_bytes)
+        return D1HeterogeneousCaptureReceipt(
+            aggregate=preparation.aggregate,
+            pointer=preparation.pointer,
             pointer_commit=commit,
+        )
+
+    def capture_heterogeneous(
+        self,
+        *,
+        roster: D1LaunchRoster,
+        complete_inputs: tuple[D1CaptureInput, ...],
+        terminal_defect_inputs: tuple[D1TerminalDefectInput, ...],
+        attempt_evidence: tuple[D1AttemptEvidence, ...] = (),
+    ) -> D1HeterogeneousCaptureReceipt:
+        return self.finalize_heterogeneous(
+            self.prepare_heterogeneous(
+                roster=roster,
+                complete_inputs=complete_inputs,
+                terminal_defect_inputs=terminal_defect_inputs,
+                attempt_evidence=attempt_evidence,
+            )
         )

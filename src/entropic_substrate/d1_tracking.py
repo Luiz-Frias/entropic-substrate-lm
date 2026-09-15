@@ -6,7 +6,9 @@ import math
 from collections.abc import Mapping
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import D1CosineGap, parse_d1_cosine
 from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
+from entropic_substrate.evidence.d1_telemetry_values import D1_REPORT_ONLY_METRICS
 from entropic_substrate.evidence.resource_provenance import EvidenceGap, RunStartProvenance
 from entropic_substrate.evidence.resource_work import CostReading, ScalarReading
 from entropic_substrate.evidence.resource_work_codec import resource_snapshot_from_mapping
@@ -48,7 +50,25 @@ _QUALITY_EVIDENCE: Final[Mapping[str, EvidenceClass]] = {
     "weighted_variance_penalty": EvidenceClass.DERIVED_FROM_MEASURED,
     "raw_covariance_penalty": EvidenceClass.DERIVED_FROM_MEASURED,
     "weighted_covariance_penalty": EvidenceClass.DERIVED_FROM_MEASURED,
+    "state_rms_l2_norm": EvidenceClass.DERIVED_FROM_MEASURED,
+    "target_effective_rank": EvidenceClass.DERIVED_FROM_MEASURED,
+    "target_numerical_rank": EvidenceClass.DERIVED_FROM_MEASURED,
+    "target_rms_l2_norm": EvidenceClass.DERIVED_FROM_MEASURED,
+    "predicted_effective_rank": EvidenceClass.DERIVED_FROM_MEASURED,
+    "predicted_numerical_rank": EvidenceClass.DERIVED_FROM_MEASURED,
+    "predicted_rms_l2_norm": EvidenceClass.DERIVED_FROM_MEASURED,
+    "residual_mean_l2_norm": EvidenceClass.DERIVED_FROM_MEASURED,
+    "target_predicted_exact_match_count": EvidenceClass.MEASURED,
+    "target_predicted_exact_match_fraction": EvidenceClass.DERIVED_FROM_MEASURED,
 }
+_EXPECTED_REPORT_ONLY_EVIDENCE = dict.fromkeys(
+    D1_REPORT_ONLY_METRICS, EvidenceClass.DERIVED_FROM_MEASURED
+)
+_EXPECTED_REPORT_ONLY_EVIDENCE["target_predicted_exact_match_count"] = EvidenceClass.MEASURED
+if {name: _QUALITY_EVIDENCE.get(name) for name in D1_REPORT_ONLY_METRICS} != (
+    _EXPECTED_REPORT_ONLY_EVIDENCE
+):  # pragma: no cover - import invariant
+    raise RuntimeError("D1 tracking report-only evidence classes differ from the contract")
 _REQUIRED_RESOURCE_COUNTERS: Final = (
     "trainer_wall_seconds",
     "committed_quality_source_bytes",
@@ -170,7 +190,7 @@ def d1_tracking_descriptor(
     }
     return TrackingRunDescriptor(
         run_name=plan.logical_run_id,
-        tiny=profile.scale is D1LaunchScale.TINY,
+        tiny=profile.scale in (D1LaunchScale.TINY, D1LaunchScale.GPU_TINY),
         params=params,
         tags=tags,
         config_hash=config_key,
@@ -185,6 +205,15 @@ def _quality_metrics(value: object) -> dict[str, float]:
         if field not in value:
             continue
         item = value[field]
+        if field == "mean_pairwise_cosine_distance":
+            cosine = parse_d1_cosine(item)
+            if type(cosine) is D1CosineGap:
+                if cosine.total_positions != value.get("online_positions"):
+                    raise ValueError("D1 cosine gap positions differ from quality population")
+                prefix = f"d1/diagnostic_gap/{cosine.reason}"
+                metrics[f"{prefix}/affected_positions"] = float(cosine.affected_positions)
+                metrics[f"{prefix}/total_positions"] = float(cosine.total_positions)
+                continue
         if type(item) not in (int, float) or not math.isfinite(float(item)):
             raise ValueError(f"D1 quality scalar {field!r} must be finite")
         metrics[f"d1/quality/{evidence.value}/{field}"] = float(item)
