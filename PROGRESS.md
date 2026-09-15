@@ -175,6 +175,13 @@ reduce per-parameter device synchronization is deferred pending an actual GPU pr
 
 ### Next implementation seam (not completed)
 
+Step 4d adds versioned Torch RNG and primitive/tensor rollout recovery payloads. Fifteen
+RED-first tests cover pending-byte replay, safe weights-only serialization, all rollout
+outcomes, codec/trace/score/shape validation, and exact operative-context agreement. Removing
+the operative-slot guard admitted a shadow substitution and failed its test. Invalid RNG
+bytes are checked on isolated generators before changing global state. CUDA replay remains
+unverified until the authorized GPU probe; disk model/optimizer custody is the next slice.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
