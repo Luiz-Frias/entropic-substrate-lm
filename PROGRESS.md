@@ -77,6 +77,12 @@ boundary regressions were RED before correction. Removing the Jacobian changed t
 log-density difference from -2.5 to -0.5 and failed its test. Restored result: 47 law/numeric
 tests pass with strict types and lint. Neural encoder/decoder and the spine remain pending.
 
+Law review follow-up: two distinct suggestions (three findings) identified numeric identity
+canonicalization and radius-tensor branch coverage; both are addressed. A separate synthetic
+reproducer showed log-magnitude underflow returning zero samples. The new RED-first regression
+now requires a numerical sampling defect, including component underflow, with no floor or
+resampling fallback. Equal scales 1 and 1.0 share an identity. All 51 law/numeric tests pass.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

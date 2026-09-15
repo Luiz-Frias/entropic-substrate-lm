@@ -190,3 +190,33 @@ def test_sampling_derivatives_match_fixed_noise_finite_differences() -> None:
 
     assert torch.autograd.gradcheck(draw, (vector,))
     assert torch.autograd.gradgradcheck(draw, (vector,))
+
+
+def test_sample_underflow_is_a_numerical_defect_not_a_zero_latent() -> None:
+    law = DirectionalMagnitudeLaw(
+        LawSpec(2, "magnitude"), torch.tensor([1.0, 0.0]), torch.tensor(-1000.0)
+    )
+    with pytest.raises(FisherNumericalError, match="sample_underflow"):
+        law.rsample()
+
+
+def test_equal_numeric_scales_share_one_law_identity() -> None:
+    assert (
+        LawSpec(2, "magnitude", log_radius_std=1).identity
+        == LawSpec(2, "magnitude", log_radius_std=1.0).identity
+    )
+    assert (
+        LawSpec(2, "sphere", log_radius_std=1).identity
+        == LawSpec(2, "sphere", log_radius_std=2).identity
+    )
+
+
+@pytest.mark.parametrize(
+    "radius,message",
+    [(torch.ones(2), "aligned"), (torch.tensor(1.0, dtype=torch.float64), "dtype/device")],
+)
+def test_radius_tensor_shape_and_precision_are_validated(
+    radius: torch.Tensor, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        DirectionalMagnitudeLaw(LawSpec(2, "magnitude"), torch.tensor([1.0, 0.0]), radius)

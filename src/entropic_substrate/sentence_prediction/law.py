@@ -70,7 +70,9 @@ class LawSpec:
                 str(self.width),
                 self.mode,
                 str(self.mean_resultant),
-                str(self.log_radius_std) if self.mode == "magnitude" else "radius-marginalized",
+                str(float(self.log_radius_std))
+                if self.mode == "magnitude"
+                else "radius-marginalized",
             )
         )
 
@@ -157,7 +159,10 @@ class DirectionalMagnitudeLaw:
             if self.log_radius_mean is not None:
                 noise = torch.randn(shape, dtype=self.direction.dtype, device=self.direction.device)
                 rho = self.log_radius_mean + self.spec.log_radius_std * noise
-                value = rho.exp().unsqueeze(-1) * value
+                scaled = rho.exp().unsqueeze(-1) * value
+                if bool(((value != 0) & (scaled == 0)).any()):
+                    raise FisherNumericalError("sample_underflow", "log-magnitude scaling")
+                value = scaled
             finite_tensor(value, "latent_sample")
             return value
 
