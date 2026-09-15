@@ -105,6 +105,27 @@ contracts are validated. The new tests were RED before implementation; an inject
 normalization broke exact raw-carrier preservation as intended. All 98 spine/codec/law/numeric
 tests pass with strict type/lint/security checks. Fisher integration and rollout remain pending.
 
+The long codec follow-up review completed with seven findings covering four suggestions.
+Test helper annotations and reverse freeze-state restoration are now covered. The independent
+initialization comment is retained: it describes code behavior already measured by its paired
+layer test, not an unmeasured performance claim. All 98 neural/numeric tests remain green.
+
+### Next implementation seam (not completed)
+
+Connect a trainable law head to the final spine block. Its exact Fisher feature map is
+`concat(sqrt(law.fisher_factor) * mean_direction, log_radius_mean / sigma)` for magnitude
+mode, omitting the radius term for sphere mode. The existing JVP/VJP and differentiated CG
+kernel can operate on this feature map; do not pass an unweighted directional mean. Supply
+functional parameters to preserve mixed derivatives at zero residuals, and keep validation
+outside vmapped feature functions. For spherical carriers restrict the action to the tangent
+space and preserve the proposal's radial component before retraction.
+
+Then integrate next-absolute-sentence targets (not D-series displacements), sampled latent
+generation, local byte decoding, emitted-text re-encoding, and shadow prediction records.
+Prompt sentences close with sentence-end, not document-end. Add phase-bound checkpoint/RNG
+recovery, optimizer ownership/gradient evidence, diagnostics, H registrations and flywheel
+adapters. None of this integration is claimed complete by the component tests above.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

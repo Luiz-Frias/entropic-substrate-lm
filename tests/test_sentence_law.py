@@ -230,9 +230,13 @@ def test_partial_radial_underflow_is_not_hidden_by_a_surviving_component(
     assert float(radius) > 0
     assert float((radius * direction)[0]) > 0
     assert float((radius * direction)[1]) == 0
-    monkeypatch.setattr(torch.distributions.Beta, "sample", lambda self, shape: torch.ones(shape))
 
-    def fixed_noise(shape, **kwargs):
+    def fixed_beta(self: torch.distributions.Beta, shape: tuple[int, ...]) -> torch.Tensor:
+        return torch.ones(shape)
+
+    monkeypatch.setattr(torch.distributions.Beta, "sample", fixed_beta)
+
+    def fixed_noise(shape: tuple[int, ...], **kwargs: object) -> torch.Tensor:
         return torch.tensor([0.0, 1.0], **kwargs) if shape == (2,) else torch.zeros(shape, **kwargs)
 
     monkeypatch.setattr(torch, "randn", fixed_noise)

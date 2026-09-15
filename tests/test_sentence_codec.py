@@ -150,6 +150,9 @@ def test_codec_state_roundtrip_preserves_encoder_freezing() -> None:
     assert not restored.encoder.training
     assert all(not p.requires_grad for p in restored.encoder.parameters())
     assert all(p.requires_grad for p in restored.decoder.parameters())
+    restored.load_state_dict(codec().state_dict())
+    assert restored.encoder.training
+    assert all(p.requires_grad for p in restored.encoder.parameters())
 
 
 def test_non_tensor_batches_are_rejected_explicitly() -> None:
@@ -161,7 +164,7 @@ def test_codec_normalization_owns_its_fp32_island(monkeypatch: pytest.MonkeyPatc
     original = torch.nn.functional.layer_norm
     seen: list[tuple[torch.dtype, bool]] = []
 
-    def observe(values: torch.Tensor, *args, **kwargs):
+    def observe(values: torch.Tensor, *args: object, **kwargs: object) -> torch.Tensor:
         seen.append((values.dtype, torch.is_autocast_enabled("cpu")))
         return original(values, *args, **kwargs)
 
