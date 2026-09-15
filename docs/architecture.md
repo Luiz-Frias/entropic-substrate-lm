@@ -2,7 +2,7 @@
 
 **Status:** approved forward north star; sentence-first generative design is not yet implemented.
 
-**North-star update:** 2026-09-14. The retained D-series design dates to 2026-08-23.
+**North-star update:** 2026-09-15. The retained D-series design dates to 2026-08-23.
 
 **Prior Linear program:** `Predictive-State Geometry Pivot`, under the Entropic Substrate
 initiative. This documentation change does not update external project status.
@@ -24,8 +24,14 @@ single vector; coarsening does not imply lossless compression.
 Target roughly 500M total deployed parameters, with an upper design envelope of 1B. Count
 encoder, spine, and decoder together; report training-only teachers separately. Fisher-based
 dynamics remain a candidate mechanism whose signed predictive value and off-target effects
-must be measured. The full forward contract and open choices are in
+must be measured. The approved implementation contract is in
 [the hierarchical predictor itinerary](hierarchical-latent-predictor.plan.md).
+
+Sentence-vector normalization and spine-carrier normalization are independent 2×2 axes.
+The magnitude-preserving control must retain its carrier without a final UnitNorm or RMS
+overwrite. No probability-floor/square-root state substitution is permitted. The effective
+directional/log-magnitude law induces an update operator, never an alphabet-sized carrier.
+H1 tests preservation with isotropic dynamics before H2 supervision and H3 Fisher consumption.
 
 ## Horizon
 

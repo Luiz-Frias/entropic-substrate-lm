@@ -23,6 +23,13 @@ off-target disturbance, information preservation, and measured resources separat
 Codec separation is an architectural contract; codec equivariance and a meaningful
 predictive manifold remain hypotheses to test, not assumptions.
 
+The approved construction tests sentence-vector normalization and spine normalization as
+independent 2×2 axes. A magnitude-preserving carrier must not contain a hidden final UnitNorm
+or RMS overwrite. No probability-floor/square-root substitution is permitted in the main
+latent path. The law is directional plus log-magnitude, with unused magnitude integrated out
+for the spherical interface; its Fisher pullback shapes updates rather than becoming state.
+Normalization, density, and Fisher math establish their own FP32 computation islands.
+
 The forward contract is `docs/hierarchical-latent-predictor.plan.md`, linked from
 `docs/architecture.md`. Existing E-series evidence and D-series construction/registration
 identities keep their original scope. The old D-ladder is retained as mechanistic groundwork,
@@ -38,8 +45,8 @@ is testable. A passing forward call or teacher-forced reconstruction alone is no
 
 The programme is complete only when a model within the declared deployment envelope has
 reproducible generation and held-out evaluation, and each retained mechanism has its own
-controlled evidence. The provisional itinerary tests sentence-signal utility, geometry,
-temporal hierarchy, sampling/rollout policy, backbone/codec dependence, and finally scale.
+controlled evidence. The approved H0–H5 itinerary tests the complete tracer, preservation/codec
+fidelity, predictive value, geometry, interface/scale transfer, and approximately 500M deployment.
 Stages may narrow or retire mechanisms; the final model need not contain every proposed one.
 
 Each scientific stage requires excluded pilots, a committed preregistration, a pilot-powered

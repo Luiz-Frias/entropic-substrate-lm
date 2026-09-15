@@ -1,6 +1,15 @@
 # Programme Progress
 
-Last updated: 2026-09-14 during the north-star transition.
+Last updated: 2026-09-15 during preservation-gated implementation.
+
+## Approved H-program implementation
+
+The starting checkout is `feature/codec-separated-sentence-predictor` at `6ecf0cb`, clean.
+The approved H0–H5 contract now makes sentence and spine normalization independent axes,
+with magnitude-preserving controls and no probability-floor state substitution. Local
+implementation is authorized; remote spending, publication, and confirmation are not.
+The baseline `just check` passed: 3,635 unit tests, 21 deselected, strict types and lint clean.
+This is engineering evidence only. No H-model, remote probe, or H scientific verdict exists yet.
 
 ## Current direction and deferred old stage
 
