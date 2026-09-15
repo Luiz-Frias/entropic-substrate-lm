@@ -198,6 +198,13 @@ separation, chunked scoring, and typed zero-weight gaps. A mismatched batch broa
 reproduced and blocked. Removing the importance correction fails its guard. These are
 finite-sample estimates, not certified pointwise bounds or oracle reconstruction scores.
 
+Step 5b adds complete H numerical profiles with explicit optimization, sampling/evaluation
+schedule, source digest, precision, byte permutation and all construction switches. Twenty-five
+RED-first tests cover round-trip identities, every nested missing-field boundary, CUDA/bf16
+remote tiny admission, retained 6,000-step budgets, and H1/H2 mechanism separation. Bypassing
+required-field checks silently supplied a missing spine default and failed the guard; it was
+restored. Profiles describe requests only and grant no spending or scientific authority.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
