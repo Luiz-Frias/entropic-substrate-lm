@@ -11,6 +11,15 @@ implementation is authorized; remote spending, publication, and confirmation are
 The baseline `just check` passed: 3,635 unit tests, 21 deselected, strict types and lint clean.
 This is engineering evidence only. No H-model, remote probe, or H scientific verdict exists yet.
 
+Step 1a now implements immutable UTF-8 source documents, exact byte spans, and a reversible
+sentence/document envelope with byte-only permutations and separate BOS/PAD input symbols.
+RED-before-GREEN: the new suite first failed because the namespace did not exist. Final
+focused result: 36 tests pass; removing the terminal and interior document-end guards each
+produced the expected failing malformed-envelope test, then both guards were restored.
+The full gate passed with 3,670 tests before the final review-added case. CodeRabbit's two
+findings described that same interior-guard coverage gap; it was verified and addressed.
+Segmentation, source capture, and the model remain pending; this is not H0 completion.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
