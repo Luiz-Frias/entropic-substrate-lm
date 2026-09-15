@@ -7,7 +7,9 @@ Last updated: 2026-09-15 during preservation-gated implementation.
 The starting checkout is `feature/codec-separated-sentence-predictor` at `6ecf0cb`, clean.
 The approved H0–H5 contract now makes sentence and spine normalization independent axes,
 with magnitude-preserving controls and no probability-floor state substitution. Local
-implementation is authorized; remote spending, publication, and confirmation are not.
+implementation is authorized. On September 15 the operator additionally authorized
+6,000-step Runpod tiny engineering probes with termination afterward. Publication,
+excluded scientific pilots, and confirmation retain separate approval boundaries.
 The baseline `just check` passed: 3,635 unit tests, 21 deselected, strict types and lint clean.
 This is engineering evidence only. No H-model, remote probe, or H scientific verdict exists yet.
 
@@ -110,9 +112,15 @@ Test helper annotations and reverse freeze-state restoration are now covered. Th
 initialization comment is retained: it describes code behavior already measured by its paired
 layer test, not an unmeasured performance claim. All 98 neural/numeric tests remain green.
 
+Step 3b connects a trainable future-law head with no dormant magnitude parameters in the
+spherical interface. The functional feature map includes the directional Fisher factor and
+active Gaussian log-radius precision. Twelve RED-first tests now pass; removing the
+directional factor made both independent weighted-metric oracles fail, then it was restored.
+The head reads rather than replaces raw carriers. Consumer integration and rollout follow.
+
 ### Next implementation seam (not completed)
 
-Connect a trainable law head to the final spine block. Its exact Fisher feature map is
+Connect the trainable law head to the final spine block. Its exact Fisher feature map is
 `concat(sqrt(law.fisher_factor) * mean_direction, log_radius_mean / sigma)` for magnitude
 mode, omitting the radius term for sphere mode. The existing JVP/VJP and differentiated CG
 kernel can operate on this feature map; do not pass an unweighted directional mean. Supply
