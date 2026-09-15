@@ -28,6 +28,14 @@ RED-before-GREEN regression. Disabling the non-whitespace-gap guard made its tes
 All 56 boundary/segmentation tests pass with strict types, lint, dependency and security checks.
 Source selection/capture and the model remain pending.
 
+Step 1c adds bounded document selection, exact-content deduplication, content-stable
+train/validation/test splits, and a new FineWeb document iterator at the existing revision.
+Provider text is not coerced or joined with an EOT string. Conflicting source IDs fail;
+duplicates, oversize sentences, and byte-budget stops retain their candidate evidence.
+RED-first preparation/adapter tests and a source-ID-based split mutation were observed failing;
+after restoring content-based assignment, 92 focused and legacy-data tests pass. Strict typing,
+lint, and scoped security checks pass. Persisted capture and the model remain pending.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
