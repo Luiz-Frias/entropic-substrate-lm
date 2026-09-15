@@ -10,7 +10,10 @@ from typing import NoReturn, cast
 
 from entropic_substrate.analysis.d1_clause_policy import (
     D1ClausePolicy,
+    D1ConditionSource,
+    D1ConditionStatus,
     D1RegisteredCondition,
+    classify_d1_condition_status,
     parse_d1_clause_policy,
 )
 from entropic_substrate.analysis.d1_external_analysis_control import (
@@ -25,6 +28,11 @@ from entropic_substrate.evidence.d1_contract import (
     D1DecisionContract,
     D1RegisteredContrast,
     D1RegisteredEndpoint,
+)
+from entropic_substrate.evidence.d1_statistical_gaps import (
+    D1EstimateGap,
+    D1GapCell,
+    parse_endpoint_gap,
 )
 from entropic_substrate.evidence.d1_types import D1ContrastTerm
 from entropic_substrate.experiments.d1_primitives import D1Arm
@@ -184,6 +192,29 @@ def _bind_contrasts(
         }
         for name, value in required.items():
             _require_exact(row[name], value, f"contrast[{index}].{name}")
+        _bind_unavailable(root, row, included)
+
+
+def _bind_unavailable(
+    root: dict[str, object], row: dict[str, object], included: tuple[int, ...]
+) -> None:
+    endpoint = _mapping(root["endpoint"], "endpoint")
+    values = _mapping(endpoint["values_by_alias"], "endpoint values")
+    terms = tuple(_mapping(term, "term") for term in _rows(row["terms"], "terms"))
+    missing = tuple(
+        D1GapCell(alias, seed, parse_endpoint_gap(value))
+        for index, seed in enumerate(included)
+        for term in terms
+        if isinstance(
+            value := _rows(values[alias := cast(str, term["arm_alias"])], "arm values")[index], dict
+        )
+    )
+    expected = (
+        D1EstimateGap(missing).manifest({cell.arm: cell.arm for cell in missing})
+        if missing
+        else None
+    )
+    _require_exact(row.get("unavailable"), expected, "undefined estimate witnesses")
 
 
 def _bind_effects(
@@ -204,6 +235,7 @@ def _bind_effects(
         _require_exact(row["effect_alias"], f"F{index + 1:02d}", f"effect[{index}].alias")
         _require_exact(row["terms"], expected_terms, f"effect[{index}].terms")
         _require_exact(row["n"], len(included), f"effect[{index}].n")
+        _bind_unavailable(root, row, included)
 
 
 def _expected_condition(
@@ -223,6 +255,75 @@ def _expected_condition(
     }
 
 
+def _expected_observation(
+    *,
+    values: dict[str, object],
+    condition: D1RegisteredCondition,
+    contrast_aliases: Mapping[str, str],
+    contrasts: Mapping[str, dict[str, object]],
+) -> tuple[float | None, float | None, float | None]:
+    point = (
+        None
+        if values["observed_point"] is None
+        else float(cast(int | float, values["observed_point"]))
+    )
+    lower = (
+        None
+        if values["observed_lower"] is None
+        else float(cast(int | float, values["observed_lower"]))
+    )
+    upper = (
+        None
+        if values["observed_upper"] is None
+        else float(cast(int | float, values["observed_upper"]))
+    )
+    if condition.source is D1ConditionSource.ARM_ENDPOINT_MEAN:
+        if point != lower or point != upper:
+            _fail("machine analysis observed endpoint point and bounds must be identical")
+        return point, point, point
+    contrast_id = condition.contrast_id
+    if contrast_id is None:
+        _fail("registered contrast condition lacks a contrast identity")
+    row = contrasts[contrast_aliases[contrast_id]]
+    return (
+        None if row["estimate"] is None else float(cast(int | float, row["estimate"])),
+        None if row["interval_lower"] is None else float(cast(int | float, row["interval_lower"])),
+        None if row["interval_upper"] is None else float(cast(int | float, row["interval_upper"])),
+    )
+
+
+def _bind_condition_result(
+    values: dict[str, object],
+    *,
+    label: str,
+    condition: D1RegisteredCondition,
+    contrast_aliases: Mapping[str, str],
+    contrasts: Mapping[str, dict[str, object]],
+) -> D1ConditionStatus:
+    point, lower, upper = _expected_observation(
+        values=values,
+        condition=condition,
+        contrast_aliases=contrast_aliases,
+        contrasts=contrasts,
+    )
+    _require_exact(values["observed_point"], point, f"{label}.observed_point")
+    _require_exact(values["observed_lower"], lower, f"{label}.observed_lower")
+    _require_exact(values["observed_upper"], upper, f"{label}.observed_upper")
+    result = classify_d1_condition_status(
+        condition.operator,
+        condition.threshold,
+        lower,
+        upper,
+    )
+    _require_exact(values["status"], result.value, f"{label}.status")
+    _require_exact(
+        values["evidence_class"],
+        "DERIVED_FROM_MEASURED",
+        f"{label}.evidence_class",
+    )
+    return result
+
+
 def _bind_clauses(
     root: dict[str, object],
     expected: D1ExternalAnalysisInputControl,
@@ -237,8 +338,15 @@ def _bind_clauses(
     contrast_aliases = {
         name: f"C{index:02d}" for index, name in enumerate(contract.contrast_ids, start=1)
     }
+    contrasts: dict[str, dict[str, object]] = {}
+    for raw in _rows(root["contrasts"], "contrasts"):
+        row = _mapping(raw, "contrast")
+        contrasts[cast(str, row["contrast_alias"])] = row
+    feasible_expected: list[str] = []
     for arm in policy.candidate_arms:
-        clauses = _mapping(by_alias[_alias(expected, arm)], "candidate clauses")
+        arm_alias = _alias(expected, arm)
+        clauses = _mapping(by_alias[arm_alias], "candidate clauses")
+        arm_statuses: list[D1ConditionStatus] = []
         for clause_id in contract.clause_precedence:
             result = _mapping(clauses[clause_id], f"clause {clause_id}")
             actual = _rows(result["conditions"], f"clause {clause_id} conditions")
@@ -248,6 +356,7 @@ def _bind_clauses(
             ]
             if len(actual) != len(registered):
                 _fail("machine analysis condition count differs from registered policy")
+            statuses: list[D1ConditionStatus] = []
             for condition_index, (row, construction) in enumerate(
                 zip(actual, registered, strict=True)
             ):
@@ -258,10 +367,36 @@ def _bind_clauses(
                         value,
                         f"condition[{condition_index}].{name}",
                     )
-    feasible = cast(list[str], root["feasible_aliases"])
-    expected_order = [alias for alias in candidate_aliases if alias in set(feasible)]
-    if feasible != expected_order:
-        _fail("machine analysis feasible clause aliases differ from candidate order")
+                statuses.append(
+                    _bind_condition_result(
+                        values,
+                        label=f"clause {clause_id} condition[{condition_index}]",
+                        condition=policy.conditions[clause_id][arm][condition_index],
+                        contrast_aliases=contrast_aliases,
+                        contrasts=contrasts,
+                    )
+                )
+            clause_status = (
+                D1ConditionStatus.FAIL
+                if D1ConditionStatus.FAIL in statuses
+                else D1ConditionStatus.PASS
+                if set(statuses) == {D1ConditionStatus.PASS}
+                else D1ConditionStatus.INCONCLUSIVE
+            )
+            _require_exact(result["status"], clause_status.value, f"clause {clause_id}.status")
+            _require_exact(
+                result["evidence_class"],
+                "DERIVED_FROM_MEASURED",
+                f"clause {clause_id}.evidence_class",
+            )
+            arm_statuses.append(clause_status)
+        if set(arm_statuses) == {D1ConditionStatus.PASS}:
+            feasible_expected.append(arm_alias)
+    _require_exact(
+        root["feasible_aliases"],
+        feasible_expected,
+        "feasible clause aliases",
+    )
 
 
 def _bind_contract(

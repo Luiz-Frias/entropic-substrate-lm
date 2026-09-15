@@ -16,6 +16,7 @@ from entropic_substrate.evidence.d1_journal_values import (
     JournalEventKind,
     canonical_event_line,
 )
+from entropic_substrate.evidence.d1_telemetry_values import D1_REPORT_ONLY_METRICS
 from entropic_substrate.evidence.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
@@ -185,6 +186,16 @@ def _event(resource: ResourceWorkSnapshot | None = None) -> D1JournalEvent:
                 "bits_per_byte": 1.780853665290424,
                 "future_nll": 0.625,
                 "effective_rank": 7.75,
+                "state_rms_l2_norm": 1.25,
+                "target_effective_rank": 1.95,
+                "target_numerical_rank": 2,
+                "target_rms_l2_norm": 0.61,
+                "predicted_effective_rank": 1.9,
+                "predicted_numerical_rank": 2,
+                "predicted_rms_l2_norm": 0.55,
+                "residual_mean_l2_norm": 0.02,
+                "target_predicted_exact_match_count": 0,
+                "target_predicted_exact_match_fraction": 0.0,
                 "state_variance": [0.2, 0.3],
                 "state_covariance_eigenvalues": [0.1, 0.4],
                 "state_sample_covariance": [[1.0, 0.0], [0.0, 1.0]],
@@ -265,6 +276,15 @@ def test_d1_extractor_projects_only_evidence_qualified_scalars_at_successful_ste
     metrics = client._runs[mirror.run_id].data.metrics
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
     assert metrics["d1/quality/derived_from_measured/bits_per_byte"] == 1.780853665290424
+    assert metrics["d1/quality/derived_from_measured/target_rms_l2_norm"] == 0.61
+    assert metrics["d1/quality/measured/target_predicted_exact_match_count"] == 0.0
+    expected_report_only = {
+        f"d1/quality/{'measured' if name.endswith('_count') else 'derived_from_measured'}/{name}"
+        for name in D1_REPORT_ONLY_METRICS
+    }
+    assert {key for key in metrics if key.rsplit("/", 1)[-1] in D1_REPORT_ONLY_METRICS} == (
+        expected_report_only
+    )
     assert metrics["d1/resource/measured/trainer_wall_seconds"] == 123.45678901234567
     assert metrics["d1/resource/model_estimate/cumulative_train_flops"] == 1.25e15
     assert metrics["d1/resource/rate_estimate/rate_estimated_cost_usd"] == 0.042

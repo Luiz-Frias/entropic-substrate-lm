@@ -1143,11 +1143,14 @@ analysis = [
     { name = "marimo" },
     { name = "matplotlib" },
     { name = "plotly" },
+    { name = "scipy" },
 ]
 deploy = [
+    { name = "boto3" },
     { name = "dvc", extra = ["s3"] },
     { name = "psutil" },
     { name = "pynvml" },
+    { name = "scipy" },
 ]
 dev = [
     { name = "alembic" },
@@ -1166,6 +1169,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "scipy" },
     { name = "sqlalchemy" },
 ]
 
@@ -1185,11 +1189,14 @@ analysis = [
     { name = "marimo", specifier = ">=0.23.16" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "plotly", specifier = ">=5.24.0" },
+    { name = "scipy", specifier = ">=1.15.0" },
 ]
 deploy = [
+    { name = "boto3", specifier = ">=1.34.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "pynvml", specifier = ">=12.0.0" },
+    { name = "scipy", specifier = ">=1.15.0" },
 ]
 dev = [
     { name = "alembic", specifier = "!=1.10.0,<2" },
@@ -1208,6 +1215,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "ruff", specifier = ">=0.11.0" },
+    { name = "scipy", specifier = ">=1.15.0" },
     { name = "sqlalchemy", specifier = ">=1.4.0,<3" },
 ]
 

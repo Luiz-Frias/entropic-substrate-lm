@@ -28,11 +28,13 @@ from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
 
 __all__ = [
     "D1FreshComponents",
+    "D1ModelRuntime",
     "D1TrainerClock",
     "D1TrainerWallOrigin",
     "SystemD1TrainerClock",
     "build_d1_fresh_components",
     "create_d1_resource_ledger",
+    "materialize_d1_model_runtime",
     "resolve_d1_device",
 ]
 
@@ -156,8 +158,67 @@ def _seed_from_plan(seed: int) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class D1ModelRuntime:
+    """Segment-independent model, optimizer, corpus, and sampler runtime."""
+
+    device: torch.device
+    corpus: Corpus
+    system: D1PredictiveSystem
+    optimizer: D1OptimizerBundle
+    train_sampler: SequenceSampler
+    eval_sampler: SequenceSampler
+
+
+def materialize_d1_model_runtime(plan: D1RunPlan) -> D1ModelRuntime:
+    """Construct the one model runtime used by fresh and resumed D1 segments."""
+    if not isinstance(cast(object, plan), D1RunPlan):
+        raise TypeError("D1 model materialization requires a typed D1RunPlan")
+    train = plan.train
+    data = plan.profile.data
+    protocol = plan.profile.draft.execution_protocol
+    if train.seed != plan.seed:
+        raise ValueError("D1 run-plan seed did not reach the training adapter")
+    device = resolve_d1_device(train.device)
+    _seed_from_plan(plan.seed)
+    corpus = build_corpus(data, "byte")
+    if corpus.meta.vocab_size != plan.profile.draft.codec.cardinality:
+        raise ValueError("D1 corpus alphabet differs from the registered observation codec")
+    if not math.isclose(corpus.meta.bytes_per_token, 1.0, rel_tol=0.0, abs_tol=0.0):
+        raise ValueError("D1 model runtime requires exactly one source byte per model token")
+    system = D1PredictiveSystem.from_family(
+        plan.profile.family,
+        plan.profile.arm,
+        initializer=SeededD1BranchInitializer(seed=plan.seed),
+    ).to(device)
+    optimizer = build_d1_optimizer(system, protocol.optimization)
+    batching = protocol.batching
+    return D1ModelRuntime(
+        device=device,
+        corpus=corpus,
+        system=system,
+        optimizer=optimizer,
+        train_sampler=SequenceSampler(
+            corpus.train,
+            batch_size=batching.batch_size,
+            seq_len=batching.sequence_length,
+            train=True,
+            seed=plan.seed,
+            device=device,
+        ),
+        eval_sampler=SequenceSampler(
+            corpus.val,
+            batch_size=batching.batch_size,
+            seq_len=batching.sequence_length,
+            train=False,
+            seed=plan.seed,
+            device=device,
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class D1FreshComponents:
-    """Materialized fresh-run adapters sharing one validated D1 plan."""
+    """Materialized segment adapters sharing one validated D1 plan."""
 
     plan: D1RunPlan
     device: torch.device
@@ -184,48 +245,14 @@ def build_d1_fresh_components(
     _validate_fresh_identity(plan=plan, start=start, origin=origin)
     if resource_ledger.start != start:
         raise ValueError("D1 resource ledger does not belong to the admitted run start")
-    train = plan.train
-    data = plan.profile.data
-    protocol = plan.profile.draft.execution_protocol
-    if train.seed != plan.seed:
-        raise ValueError("D1 run-plan seed did not reach the training adapter")
-    device = resolve_d1_device(train.device)
-    _seed_from_plan(plan.seed)
-    corpus = build_corpus(data, "byte")
-    if corpus.meta.vocab_size != plan.profile.draft.codec.cardinality:
-        raise ValueError("D1 corpus alphabet differs from the registered observation codec")
-    system = D1PredictiveSystem.from_family(
-        plan.profile.family,
-        plan.profile.arm,
-        initializer=SeededD1BranchInitializer(seed=plan.seed),
-    ).to(device)
-    optimizer = build_d1_optimizer(system, protocol.optimization)
-    batching = protocol.batching
-    train_sampler = SequenceSampler(
-        corpus.train,
-        batch_size=batching.batch_size,
-        seq_len=batching.sequence_length,
-        train=True,
-        seed=plan.seed,
-        device=device,
-    )
-    eval_sampler = SequenceSampler(
-        corpus.val,
-        batch_size=batching.batch_size,
-        seq_len=batching.sequence_length,
-        train=False,
-        seed=plan.seed,
-        device=device,
-    )
-    if not math.isclose(corpus.meta.bytes_per_token, 1.0, rel_tol=0.0, abs_tol=0.0):
-        raise ValueError("D1 fresh byte trainer requires exactly one source byte per model token")
+    runtime = materialize_d1_model_runtime(plan)
     return D1FreshComponents(
         plan=plan,
-        device=device,
-        corpus=corpus,
-        system=system,
-        optimizer=optimizer,
-        train_sampler=train_sampler,
-        eval_sampler=eval_sampler,
+        device=runtime.device,
+        corpus=runtime.corpus,
+        system=runtime.system,
+        optimizer=runtime.optimizer,
+        train_sampler=runtime.train_sampler,
+        eval_sampler=runtime.eval_sampler,
         resource_ledger=resource_ledger,
     )

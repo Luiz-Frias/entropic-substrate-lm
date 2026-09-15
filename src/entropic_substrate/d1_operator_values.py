@@ -28,6 +28,7 @@ from entropic_substrate.experiments.d1_primitives import (
 
 _OCI_DIGEST: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FULL_COMMIT: Final = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_POD_ID: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _PLATFORM: Final = "linux/amd64"
 
 
@@ -48,6 +49,13 @@ def _commit(value: str) -> None:
 def _utc(value: datetime, *, label: str) -> None:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() != timedelta(0):
         raise ValueError(f"{label} must be a UTC timestamp")
+
+
+def require_d1_pod_id(value: object) -> str:
+    """Return one provider resource identity safe for argv and durable errors."""
+    if type(value) is not str or _POD_ID.fullmatch(value) is None:
+        raise ValueError("pod id is not safe for lifecycle reconciliation")
+    return value
 
 
 def _plain_path(value: object, *, label: str) -> Path:
@@ -267,7 +275,7 @@ class D1PodPlacement:
     pod_created_at: datetime
 
     def __post_init__(self) -> None:
-        require_nonempty_string(self.pod_id, label="pod_id")
+        require_d1_pod_id(self.pod_id)
         D1A100ResourceRequest(
             self.accelerator_form_factor,
             self.accelerator_model,
@@ -305,9 +313,10 @@ class D1RuntimeObservation:
     pytorch_version: str
     compiler_enabled: bool
     compiler_version: str
+    trainer_monotonic_origin_ns: int
 
     def __post_init__(self) -> None:
-        require_nonempty_string(self.pod_id, label="runtime pod_id")
+        require_d1_pod_id(self.pod_id)
         _utc(self.trainer_started_at, label="trainer_started_at")
         for label, value in (
             ("cuda_version", self.cuda_version),
@@ -320,6 +329,11 @@ class D1RuntimeObservation:
             raise TypeError("compiler_enabled must be bool")
         if not self.compiler_enabled and self.compiler_version != "disabled":
             raise ValueError("disabled compiler requires compiler_version='disabled'")
+        if (
+            type(self.trainer_monotonic_origin_ns) is not int
+            or self.trainer_monotonic_origin_ns < 0
+        ):
+            raise ValueError("trainer_monotonic_origin_ns must be nonnegative")
 
 
 def attest_d1_run_start(
@@ -328,7 +342,7 @@ def attest_d1_run_start(
     placement: D1PodPlacement,
     runtime: D1RuntimeObservation,
 ) -> RunStartProvenance:
-    """Join requested and measured facts only when the provider matched exactly."""
+    """Join requested placement and trainer facts only when they match exactly."""
     if type(intent) is not D1OperatorLaunchIntent:
         raise TypeError("run-start attestation requires D1OperatorLaunchIntent")
     if type(placement) is not D1PodPlacement or type(runtime) is not D1RuntimeObservation:

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
 from typing import NoReturn, cast
 
+from entropic_substrate.d1_command_runner import SubprocessD1CommandRunner
 from entropic_substrate.d1_operator_ports import (
     D1CommandRunner,
     D1OperatorTransportError,
@@ -58,10 +60,11 @@ def _metadata(path: Path, *, subject: str) -> str:
 class DockerBuildCloudD1Adapter:
     """Push one commit-tagged image and resolve its immutable OCI digest."""
 
-    def __init__(self, *, runner: D1CommandRunner) -> None:
-        if not hasattr(runner, "run"):
+    def __init__(self, *, runner: D1CommandRunner | None = None) -> None:
+        selected = SubprocessD1CommandRunner() if runner is None else runner
+        if not hasattr(selected, "run"):
             raise TypeError("Docker Build Cloud adapter requires a command runner")
-        self._runner = runner
+        self._runner = selected
 
     def build_and_push(self, request: D1ImageBuildRequest) -> D1ImmutableImage:
         if type(request) is not D1ImageBuildRequest:
@@ -91,9 +94,17 @@ class DockerBuildCloudD1Adapter:
                 ".",
             )
             try:
-                self._runner.run(argv, cwd=request.context, stdin=None)
+                result = self._runner.run(argv, cwd=request.context, stdin=None)
             except Exception as error:
                 _error(subject, str(error) or repr(error), error)
+            if result.returncode != 0:
+                stdout_sha = hashlib.sha256(result.stdout.encode()).hexdigest()
+                stderr_sha = hashlib.sha256(result.stderr.encode()).hexdigest()
+                _error(
+                    subject,
+                    f"command failed with exit {result.returncode}; "
+                    f"stdout_sha256={stdout_sha}; stderr_sha256={stderr_sha}",
+                )
             digest = _metadata(metadata, subject=subject)
         try:
             return D1ImmutableImage(

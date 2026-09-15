@@ -14,10 +14,13 @@ from d1_launch_admission_fixtures import (
     contract,
     family,
 )
+from entropic_substrate.analysis.d1_capture import D1AppliedExclusion
 from entropic_substrate.analysis.d1_factorial import (
     D1AnalysisCell,
+    D1FactorialExclusionAuthority,
     D1MetricPoint,
     compute_d1_factorial,
+    seal_d1_factorial_exclusion_authority,
 )
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.experiments.d1_primitives import D1Arm
@@ -93,11 +96,51 @@ def _cells() -> tuple[D1AnalysisCell, ...]:
     return tuple(cells)
 
 
+def _whole_pair_exclusion(seed: int) -> D1AppliedExclusion:
+    return D1AppliedExclusion(
+        seed=seed,
+        pairing_id=f"pair-{seed}",
+        member_run_ids=tuple(f"d1-{arm.value}-s{seed}" for arm in D1Arm),
+        reason_id="nonfinite-final-loss",
+        evidence_paths=(f"results/captured/d1-both-s{seed}.jsonl",),
+        evidence_digest="a" * 64,
+    )
+
+
+def _authority(
+    design: D1RegisteredDesign,
+    exclusions: tuple[D1AppliedExclusion, ...] = (),
+) -> D1FactorialExclusionAuthority:
+    return seal_d1_factorial_exclusion_authority(
+        design_digest=design.design_digest,
+        decision_contract_digest=design.decision_contract_digest,
+        capture_digest="f" * 64,
+        exclusions=exclusions,
+    )
+
+
+def test_factorial_exclusion_authority_is_factory_only() -> None:
+    design = _design()
+    with pytest.raises(TypeError, match="factory-only"):
+        D1FactorialExclusionAuthority(
+            design_digest=design.design_digest,
+            decision_contract_digest=design.decision_contract_digest,
+            capture_digest="f" * 64,
+            exclusions=(),
+        )
+    authority = _authority(design)
+    with pytest.raises(TypeError, match="factory-only"):
+        replace(authority, capture_digest="e" * 64)
+
+
 def test_registered_contrasts_use_seed_blocks_not_eval_rows() -> None:
+    decision = contract()
+    design = _design(decision)
     result = compute_d1_factorial(
-        design=_design(),
-        decision_contract=contract(),
+        design=design,
+        decision_contract=decision,
         cells=_cells(),
+        exclusion_authority=_authority(design),
     )
 
     sg = result.registered_contrasts["sg-main"]
@@ -122,22 +165,36 @@ def test_registered_contrasts_use_seed_blocks_not_eval_rows() -> None:
 
 def test_roster_must_be_the_exact_complete_paired_four_arm_matrix() -> None:
     cells = _cells()
+    decision = contract()
+    design = _design(decision)
+    authority = _authority(design)
     with pytest.raises(ValueError, match="missing registered cells"):
-        compute_d1_factorial(design=_design(), decision_contract=contract(), cells=cells[:-1])
+        compute_d1_factorial(
+            design=design,
+            decision_contract=decision,
+            cells=cells[:-1],
+            exclusion_authority=authority,
+        )
     with pytest.raises(ValueError, match="duplicate cell"):
         compute_d1_factorial(
-            design=_design(), decision_contract=contract(), cells=(*cells, cells[0])
+            design=design,
+            decision_contract=decision,
+            cells=(*cells, cells[0]),
+            exclusion_authority=authority,
         )
     mismatched = replace(cells[1], pairing_id="wrong-pair")
     with pytest.raises(ValueError, match="pairing_id"):
         compute_d1_factorial(
-            design=_design(),
-            decision_contract=contract(),
+            design=design,
+            decision_contract=decision,
             cells=(cells[0], mismatched, *cells[2:]),
+            exclusion_authority=authority,
         )
 
 
 def test_registered_endpoint_and_sample_size_rules_fail_loudly() -> None:
+    decision = contract()
+    design = _design(decision)
     broken_cells = list(_cells())
     broken_cells[0] = replace(
         broken_cells[0],
@@ -145,9 +202,10 @@ def test_registered_endpoint_and_sample_size_rules_fail_loudly() -> None:
     )
     with pytest.raises(ValueError, match="smoothing window"):
         compute_d1_factorial(
-            design=_design(),
-            decision_contract=contract(),
+            design=design,
+            decision_contract=decision,
             cells=tuple(broken_cells),
+            exclusion_authority=_authority(design),
         )
 
     wrong_n = contract()
@@ -156,7 +214,12 @@ def test_registered_endpoint_and_sample_size_rules_fail_loudly() -> None:
     }
     wrong_n = _with_contrast_rules(wrong_n, wrong_rules)
     with pytest.raises(ValueError, match="registered n"):
-        compute_d1_factorial(design=_design(wrong_n), decision_contract=wrong_n, cells=_cells())
+        compute_d1_factorial(
+            design=_design(wrong_n),
+            decision_contract=wrong_n,
+            cells=_cells(),
+            exclusion_authority=_authority(_design(wrong_n)),
+        )
 
 
 def test_unknown_estimator_and_nonfinite_extracted_value_are_refused() -> None:
@@ -166,8 +229,14 @@ def test_unknown_estimator_and_nonfinite_extracted_value_are_refused() -> None:
         for name, rule in unknown.contrast_rules.items()
     }
     unknown = _with_contrast_rules(unknown, rules)
+    unknown_design = _design(unknown)
     with pytest.raises(ValueError, match="unsupported registered endpoint estimator"):
-        compute_d1_factorial(design=_design(unknown), decision_contract=unknown, cells=_cells())
+        compute_d1_factorial(
+            design=unknown_design,
+            decision_contract=unknown,
+            cells=_cells(),
+            exclusion_authority=_authority(unknown_design),
+        )
 
     with pytest.raises(ValueError, match="finite"):
         D1MetricPoint(step=1, eval_index=0, value=float("nan"))
@@ -181,12 +250,95 @@ def test_registered_nonexcluded_n_accepts_only_complete_surviving_seed_blocks() 
     }
     decision = _with_contrast_rules(decision, rules)
 
+    design = _design(decision)
+    surviving_cells = _cells()[:-4]
+    with pytest.raises(
+        ValueError, match="missing registered seed block lacks an applied exclusion"
+    ):
+        compute_d1_factorial(
+            design=design,
+            decision_contract=decision,
+            cells=surviving_cells,
+            exclusion_authority=_authority(design),
+        )
+
     result = compute_d1_factorial(
-        design=_design(decision),
+        design=design,
         decision_contract=decision,
-        cells=_cells()[:-4],
+        cells=surviving_cells,
+        exclusion_authority=_authority(design, (_whole_pair_exclusion(SEEDS[-1]),)),
     )
 
     assert result.included_seeds == SEEDS[:-1]
     assert result.excluded_seeds == SEEDS[-1:]
     assert all(value.n == 3 and value.df == 2 for value in result.registered_contrasts.values())
+
+
+def test_exclusions_must_identify_exactly_missing_registered_seed_blocks() -> None:
+    cells = _cells()
+    design = _design()
+    with pytest.raises(ValueError, match="unregistered seed"):
+        compute_d1_factorial(
+            design=design,
+            decision_contract=contract(),
+            cells=cells,
+            exclusion_authority=_authority(design, (_whole_pair_exclusion(999),)),
+        )
+    with pytest.raises(ValueError, match="also has observed cells"):
+        compute_d1_factorial(
+            design=design,
+            decision_contract=contract(),
+            cells=cells[:-1],
+            exclusion_authority=_authority(design, (_whole_pair_exclusion(SEEDS[-1]),)),
+        )
+    with pytest.raises(ValueError, match="at most once"):
+        compute_d1_factorial(
+            design=design,
+            decision_contract=contract(),
+            cells=cells[:-4],
+            exclusion_authority=_authority(
+                design,
+                (
+                    _whole_pair_exclusion(SEEDS[-1]),
+                    _whole_pair_exclusion(SEEDS[-1]),
+                ),
+            ),
+        )
+    first = _whole_pair_exclusion(SEEDS[-2])
+    duplicate_pairing = replace(_whole_pair_exclusion(SEEDS[-1]), pairing_id=first.pairing_id)
+    with pytest.raises(ValueError, match="at most once"):
+        compute_d1_factorial(
+            design=design,
+            decision_contract=contract(),
+            cells=cells[:-8],
+            exclusion_authority=_authority(design, (first, duplicate_pairing)),
+        )
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"seed": True}, "seed must be a nonnegative integer"),
+        ({"member_run_ids": ("only-one",)}, "four unique member run IDs"),
+        ({"member_run_ids": ("one", "one", "three", "four")}, "four unique member run IDs"),
+        ({"member_run_ids": ("one", "two", " ", "four")}, "four unique member run IDs"),
+        ({"pairing_id": " pair-109"}, "pairing_id must be nonempty and trimmed"),
+        ({"reason_id": ""}, "reason_id must be nonempty"),
+        ({"reason_id": " nonfinite-final-loss"}, "reason_id must be nonempty and trimmed"),
+        ({"evidence_paths": ()}, "at least one evidence path"),
+        (
+            {"evidence_paths": ("results/a.jsonl", "results/a.jsonl")},
+            "evidence paths must be unique",
+        ),
+        ({"evidence_paths": ("../outside.jsonl",)}, "must be repository-relative"),
+        ({"evidence_paths": ("/tmp/outside.jsonl",)}, "must be repository-relative"),
+        ({"evidence_paths": (r"results\\outside.jsonl",)}, "must be repository-relative"),
+        ({"evidence_paths": (" results/a.jsonl",)}, "path must be nonempty and trimmed"),
+        ({"evidence_digest": "A" * 64}, "64 lowercase hexadecimal"),
+    ],
+)
+def test_applied_exclusion_value_rejects_ambiguous_shapes(
+    changes: dict[str, object], message: str
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=message):
+        replace(_whole_pair_exclusion(SEEDS[-1]), **changes)

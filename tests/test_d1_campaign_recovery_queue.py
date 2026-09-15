@@ -20,7 +20,10 @@ from entropic_substrate.d1_campaign_recovery_queue import D1RecoverableCampaignQ
 from entropic_substrate.d1_operator_controller import D1OperatorRunResult
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
 from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.experiments.d1_launch_attempts import (
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
 
 from .test_d1_campaign_queue import FakeGit, _results
 from .test_d1_campaign_recovery import _prefix
@@ -35,6 +38,7 @@ class _RecoveryController:
     calls: list[str]
     process_manager: D1ProcessManager
     attempt_ledger: D1LaunchAttemptLedger
+    closed: bool = False
 
     def execute_fresh(self, intent):  # type: ignore[no-untyped-def]
         self.calls.append(intent.plan.logical_run_id)
@@ -42,6 +46,9 @@ class _RecoveryController:
         self.process_manager = result.process_manager
         self.attempt_ledger = result.attempt_ledger
         return result
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @dataclass
@@ -125,6 +132,81 @@ def test_recovery_executes_only_suffix_and_cas_saves_each_finalized_cell(
         item.process_state is D1ProcessState.OPERATOR_FINALIZED for item, _ in repository.saves
     )
     assert completed.process_manager == suffix[-1].process_manager
+
+
+def test_recovery_preserves_defect_partition_from_checkpoint_prefix(tmp_path: Path) -> None:
+    design, intents, recovery, suffix = _ready(tmp_path, 2)
+    checkpoint = recovery.checkpoint
+    cell = checkpoint.completed_cells[1]
+    defect_id = cell.logical_run_id
+    events = tuple(
+        replace(
+            event,
+            status=D1LaunchAttemptStatus.FAILED,
+            reason="terminal numerical defect",
+        )
+        if event.identity.logical_run_id == defect_id
+        and event.status is D1LaunchAttemptStatus.COMPLETED
+        else event
+        for event in checkpoint.attempt_ledger.events
+    )
+    ledger = D1LaunchAttemptLedger(events)
+    failed_checkpoint = replace(
+        checkpoint,
+        completed_cells=(
+            checkpoint.completed_cells[0],
+            replace(
+                cell,
+                terminal_outcome="numerical_defect",
+                ledger_digest_after=ledger.ledger_digest,
+            ),
+        ),
+        attempt_ledger=ledger,
+    )
+    failed_recovery = hydrate_d1_campaign_recovery(
+        design=design,
+        intents=intents,
+        checkpoint=failed_checkpoint,
+        process_manager=recovery.process_manager,
+    )
+    assert type(failed_recovery) is D1HydratedCampaignRecovery
+    changed_suffix = tuple(
+        replace(
+            result,
+            attempt_ledger=D1LaunchAttemptLedger(
+                tuple(
+                    replace(
+                        event,
+                        status=D1LaunchAttemptStatus.FAILED,
+                        reason="terminal numerical defect",
+                    )
+                    if event.identity.logical_run_id == defect_id
+                    and event.status is D1LaunchAttemptStatus.COMPLETED
+                    else event
+                    for event in result.attempt_ledger.events
+                )
+            ),
+        )
+        for result in suffix
+    )
+    controller = _RecoveryController(
+        changed_suffix,
+        [],
+        failed_recovery.process_manager,
+        failed_recovery.attempt_ledger,
+    )
+    repository, generation = _generation(tmp_path, failed_checkpoint)
+
+    completed = D1RecoverableCampaignQueue(
+        design=design,
+        intents=intents,
+        controller=controller,
+        git=FakeGit(),
+        repository=repository,
+    ).run(failed_recovery, generation=generation)
+
+    assert completed.matrix.terminal_defect_run_ids == (defect_id,)
+    assert completed.recovered_prefix_count == 2
 
 
 def test_hard_halt_returns_queue_halt_before_controller_or_save(tmp_path: Path) -> None:

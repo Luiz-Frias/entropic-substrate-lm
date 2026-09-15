@@ -11,6 +11,7 @@ from pathlib import PurePosixPath
 from typing import Protocol
 
 from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
+from entropic_substrate.evidence.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
@@ -25,7 +26,7 @@ __all__ = [
     "prepare_d1_blind_aliases",
 ]
 
-_ALIASES = ("A", "B", "C", "D")
+_ALIASES = D1_OPAQUE_ARM_ALIAS_IDS
 _SALT_BYTES = 32
 
 

@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import NoReturn, cast
 
 from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_provenance_codec import (
     run_start_from_mapping,
@@ -24,7 +25,7 @@ from entropic_substrate.experiments.d1_launch_attempts import (
 )
 from entropic_substrate.experiments.d1_primitives import D1Arm, require_sha256
 
-_SCHEMA = "d1-campaign-checkpoint-v1"
+_SCHEMA = "d1-campaign-checkpoint-v2"
 _ROOT_KEYS = frozenset(
     {
         "attempt_ledger",
@@ -50,8 +51,11 @@ _CELL_KEYS = frozenset(
         "plan_digest",
         "seed",
         "start",
+        "terminal_outcome",
+        "finalized_cell_artifact",
     }
 )
+_ARTIFACT_KEYS = frozenset({"path", "sha256"})
 _LIFECYCLE_KEYS = frozenset({"active_subject", "event_count", "prefix_sha256", "process_state"})
 
 
@@ -94,6 +98,8 @@ class D1CampaignCompletedCell:
     ledger_digest_after: str
     lifecycle_prefix_after: str
     lifecycle_event_count_after: int
+    terminal_outcome: str
+    finalized_cell_artifact: ArtifactIdentity
 
     def __post_init__(self) -> None:
         _integer(self.index, label="completed cell index")
@@ -116,6 +122,13 @@ class D1CampaignCompletedCell:
             raise ValueError("completed campaign cell must begin with fresh segment zero")
         if self.lifecycle_event_count_after < 1:
             raise ValueError("completed cell lifecycle event count must be positive")
+        if self.terminal_outcome not in {"completed", "numerical_defect"}:
+            raise ValueError("completed cell terminal_outcome is unsupported")
+        if (
+            type(self.finalized_cell_artifact) is not ArtifactIdentity
+            or self.finalized_cell_artifact.content_hash.algorithm != "sha256"
+        ):
+            raise TypeError("completed cell requires SHA-256 finalized-cell artifact")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -130,6 +143,11 @@ class D1CampaignCompletedCell:
             "plan_digest": self.plan_digest,
             "seed": self.seed,
             "start": run_start_to_mapping(self.start),
+            "terminal_outcome": self.terminal_outcome,
+            "finalized_cell_artifact": {
+                "path": self.finalized_cell_artifact.path,
+                "sha256": self.finalized_cell_artifact.content_hash.digest,
+            },
         }
 
 
@@ -181,10 +199,15 @@ class D1CampaignCheckpoint:
                 for event in self.attempt_ledger.events
                 if event.identity.logical_run_id == cell.logical_run_id
             )
+            terminal_status = (
+                D1LaunchAttemptStatus.FAILED
+                if cell.terminal_outcome == "numerical_defect"
+                else D1LaunchAttemptStatus.COMPLETED
+            )
             if tuple(event.status for event in history) != (
                 D1LaunchAttemptStatus.RECORDED,
                 D1LaunchAttemptStatus.TRAINER_STARTED,
-                D1LaunchAttemptStatus.COMPLETED,
+                terminal_status,
             ):
                 raise ValueError("completed cell lacks one terminal completed attempt history")
             identity = history[0].identity
@@ -288,6 +311,8 @@ def _exact(value: Mapping[str, object], keys: frozenset[str], *, label: str) -> 
 def _cell(value: object) -> D1CampaignCompletedCell:
     item = _mapping(value, label="completed cell")
     _exact(item, _CELL_KEYS, label="completed cell")
+    artifact = _mapping(item["finalized_cell_artifact"], label="finalized cell artifact")
+    _exact(artifact, _ARTIFACT_KEYS, label="finalized cell artifact")
     try:
         return D1CampaignCompletedCell(
             _integer(item["index"], label="completed cell index"),
@@ -300,6 +325,14 @@ def _cell(value: object) -> D1CampaignCompletedCell:
             _sha(item["ledger_digest_after"], label="ledger_digest_after"),
             _sha(item["lifecycle_prefix_after"], label="lifecycle_prefix_after"),
             _integer(item["lifecycle_event_count_after"], label="lifecycle event count"),
+            _text(item["terminal_outcome"], label="terminal_outcome"),
+            ArtifactIdentity(
+                _text(artifact["path"], label="finalized cell artifact path"),
+                ContentHash(
+                    "sha256",
+                    _sha(artifact["sha256"], label="finalized cell artifact sha256"),
+                ),
+            ),
         )
     except (TypeError, ValueError) as error:
         _fail(f"completed cell is invalid: {error}", error)

@@ -10,9 +10,14 @@ from types import MappingProxyType
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_clause_policy import D1ClauseAnalysis
-from entropic_substrate.analysis.d1_diagnostics import D1ReportRunDiagnostic
+from entropic_substrate.analysis.d1_diagnostics import (
+    D1DiagnosticPolicy,
+    D1ReportRunDiagnostic,
+    parse_d1_diagnostic_policy,
+)
 from entropic_substrate.analysis.d1_factorial import D1FactorialAnalysis
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
+from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap
 from entropic_substrate.experiments.d1_primitives import D1Arm, require_sha256
 from entropic_substrate.experiments.d1_registered_design import (
     D1RegisteredDesign,
@@ -26,7 +31,8 @@ __all__ = [
     "build_d1_aliased_machine_analysis",
 ]
 
-_SCHEMA = "d1-aliased-machine-analysis-v1"
+_SCHEMA = "d1-aliased-machine-analysis-v2"
+_GAP_SCHEMA = "d1-aliased-machine-analysis-v3"
 
 
 class D1AliasError(ValueError):
@@ -101,6 +107,15 @@ def _contrast_manifest(
         result = factorial.registered_contrasts[contrast_id]
         rows.append(
             {
+                **(
+                    {
+                        "unavailable": result.unavailable.manifest(
+                            {arm.value: alias for arm, alias in aliases.aliases.items()}
+                        )
+                    }
+                    if result.unavailable is not None
+                    else {}
+                ),
                 "confidence_level": result.confidence_level,
                 "contrast_alias": contrast_aliases[contrast_id],
                 "df": result.df,
@@ -133,6 +148,15 @@ def _effect_manifest(
 ) -> list[dict[str, object]]:
     return [
         {
+            **(
+                {
+                    "unavailable": effect.unavailable.manifest(
+                        {arm.value: alias for arm, alias in aliases.aliases.items()}
+                    )
+                }
+                if effect.unavailable is not None
+                else {}
+            ),
             "deciding": effect.deciding,
             "effect_alias": f"F{index:02d}",
             "estimate": effect.estimate,
@@ -198,6 +222,7 @@ def _clauses_manifest(
 def _diagnostic_manifest(
     value: D1ReportRunDiagnostic,
     aliases: D1ArmAliasMap,
+    policy: D1DiagnosticPolicy,
 ) -> dict[str, object]:
     target = value.quality_target
     return {
@@ -210,11 +235,14 @@ def _diagnostic_manifest(
         "quality_target": {
             "eval_index": target.eval_index,
             "evidence_class": target.evidence_class,
+            "metric": policy.target_metric,
             "metric_value": target.metric_value,
             "model_tokens": target.model_tokens,
+            "operator": policy.target_operator.value,
             "reached": target.reached,
             "source_bytes": target.source_bytes,
             "step": target.step,
+            "threshold": policy.target_threshold,
             "trainer_wall_seconds": target.trainer_wall_seconds,
         },
         "seed": value.seed,
@@ -276,6 +304,7 @@ def build_d1_aliased_machine_analysis(
         contrast_id: f"C{index:02d}"
         for index, contrast_id in enumerate(decision_contract.contrast_ids, start=1)
     }
+    diagnostic_policy = parse_d1_diagnostic_policy(decision_contract)
     endpoint = None
     contrasts: list[dict[str, object]] = []
     effects: list[dict[str, object]] = []
@@ -288,7 +317,10 @@ def build_d1_aliased_machine_analysis(
             "metric": factorial.endpoint.metric,
             "smoothing_window": factorial.endpoint.smoothing_window,
             "values_by_alias": {
-                aliases.for_arm(arm): list(values)
+                aliases.for_arm(arm): [
+                    value.manifest if isinstance(value, D1EndpointGap) else value
+                    for value in values
+                ]
                 for arm, values in factorial.endpoint.values_by_arm.items()
             },
         }
@@ -306,7 +338,9 @@ def build_d1_aliased_machine_analysis(
         "clauses_by_alias": _clauses_manifest(clauses, aliases, contrast_aliases),
         "clause_precedence": list(clauses.clause_precedence),
         "contrasts": contrasts,
-        "diagnostics": [_diagnostic_manifest(item, aliases) for item in diagnostics],
+        "diagnostics": [
+            _diagnostic_manifest(item, aliases, diagnostic_policy) for item in diagnostics
+        ],
         "endpoint": endpoint,
         "excluded_seeds": excluded,
         "exclusions": [
@@ -320,6 +354,13 @@ def build_d1_aliased_machine_analysis(
         "factorial_effects": effects,
         "feasible_aliases": [aliases.for_arm(arm) for arm in clauses.feasible_arms],
         "included_seeds": included,
-        "schema_version": _SCHEMA,
+        "schema_version": _GAP_SCHEMA
+        if factorial is not None
+        and any(
+            isinstance(value, D1EndpointGap)
+            for values in factorial.endpoint.values_by_arm.values()
+            for value in values
+        )
+        else _SCHEMA,
     }
     return D1AliasedMachineAnalysis.from_manifest(manifest)

@@ -10,6 +10,7 @@ from entropic_substrate.evidence.lifecycle import (
     ArtifactIdentity,
     ContentHash,
     FiledVerdictEvidence,
+    LifecycleContractError,
     LifecycleEvent,
     LifecycleEventKind,
     LifecycleRecord,
@@ -80,8 +81,12 @@ def _evidence(
     authorization: SuccessorAuthorization = SuccessorAuthorization.AUTHORIZED,
     *,
     open_major_findings: tuple[str, ...] = (),
+    eligible_arms: tuple[str, ...] | None = None,
     eligible_strategies: tuple[str, ...] | None = None,
 ) -> FiledVerdictEvidence:
+    arms = eligible_arms
+    if arms is None:
+        arms = ("sg", "ac", "both") if authorization is SuccessorAuthorization.AUTHORIZED else ()
     strategies = eligible_strategies
     if strategies is None:
         strategies = ("d2-pullback",) if authorization is SuccessorAuthorization.AUTHORIZED else ()
@@ -91,6 +96,7 @@ def _evidence(
         review_packet=_artifact("review", 22),
         open_major_findings=open_major_findings,
         successor_authorization=authorization,
+        eligible_arms=arms,
         eligible_strategies=strategies,
     )
 
@@ -171,6 +177,9 @@ def test_lineage_factory_hash_and_event_identity_guards_hold() -> None:
 
 
 def test_filed_decision_and_role_guards_are_load_bearing() -> None:
+    filed = _to_filed()
+    assert filed.events[-1].filed_verdict is not None
+    assert filed.events[-1].filed_verdict.eligible_arms == ("sg", "ac", "both")
     with pytest.raises(LifecycleTransitionError, match="open MAJOR"):
         transition(
             _to_filed(evidence=_evidence(open_major_findings=("MAJOR-1",))),
@@ -180,6 +189,28 @@ def test_filed_decision_and_role_guards_are_load_bearing() -> None:
         transition(
             _to_filed(evidence=_evidence(eligible_strategies=())),
             _event(LifecycleEventKind.AUTHORIZE_SUCCESSOR, 19, ActorRole.OPERATOR),
+        )
+    with pytest.raises(LifecycleTransitionError, match="eligible successor arm"):
+        transition(
+            _to_filed(evidence=_evidence(eligible_arms=())),
+            _event(LifecycleEventKind.AUTHORIZE_SUCCESSOR, 29, ActorRole.OPERATOR),
+        )
+    with pytest.raises(LifecycleContractError) as invalid_arm:
+        _evidence(eligible_arms=(1,))  # type: ignore[arg-type]
+    assert invalid_arm.value.code == "invalid_successor_arm"
+    with pytest.raises(LifecycleContractError) as invalid_strategy:
+        _evidence(eligible_strategies=(1,))  # type: ignore[arg-type]
+    assert invalid_strategy.value.code == "invalid_successor_strategy"
+    with pytest.raises(LifecycleTransitionError, match="eligible successor arms"):
+        transition(
+            _to_filed(
+                SuccessorAuthorization.VALID_NEGATIVE,
+                evidence=_evidence(
+                    SuccessorAuthorization.VALID_NEGATIVE,
+                    eligible_arms=("sg",),
+                ),
+            ),
+            _event(LifecycleEventKind.RECORD_VALID_NEGATIVE, 28, ActorRole.OPERATOR),
         )
     assert (
         transition(

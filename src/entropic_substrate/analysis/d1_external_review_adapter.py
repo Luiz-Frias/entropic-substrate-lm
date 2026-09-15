@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess  # nosec B404 -- fixed sandbox argv; shell is explicitly disabled
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +17,11 @@ from typing import Protocol, cast
 from entropic_substrate.analysis.d1_review_execution import (
     D1CloudReviewRequest,
     D1CloudReviewResponse,
+)
+from entropic_substrate.d1_command_runner import (
+    D1BoundedProcessError,
+    D1BoundedProcessResult,
+    D1BoundedProcessRunner,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 
@@ -83,7 +88,8 @@ class D1ReviewSandboxIdentity:
             "no_new_privileges": True,
             "profile_sha256": self.profile_sha256,
             "runtime": _RUNTIME,
-            "secret_delivery": "sandbox-managed-secret-mount",  # pragma: allowlist secret
+            # Delivery-method vocabulary, not a credential; preserve the wire identity.
+            "secret_delivery": "sandbox-managed-secret-mount",  # nosec B105 # pragma: allowlist secret
         }
 
     @property
@@ -100,17 +106,10 @@ class D1ExternalReviewError(RuntimeError):
         super().__init__(f"D1 external review {code}: {detail}; context={dict(context)}")
 
 
-def _exception_hash(value: object, label: str, attempt_id: str) -> str:
+def _exception_hash(value: object) -> str | None:
     if value is None:
         return _sha(b"")
-    if type(value) is not bytes:
-        raise D1ExternalReviewError(
-            "subprocess_failure",
-            f"exception {label} must be bytes",
-            attempt_id=attempt_id,
-            output_type=type(value).__name__,
-        )
-    return _sha(value)
+    return _sha(value) if type(value) is bytes else None
 
 
 class _ProcessResult(Protocol):
@@ -120,6 +119,75 @@ class _ProcessResult(Protocol):
 
 
 type _Runner = Callable[..., _ProcessResult]
+
+
+class D1BoundedSubprocessRunner:
+    """Review-specific error translation over the shared bounded runner."""
+
+    def __init__(
+        self,
+        *,
+        attempt_id: str,
+        timeout_seconds: float = _TIMEOUT_SECONDS,
+        max_output_bytes: int = _MAX_OUTPUT_BYTES,
+    ) -> None:
+        if type(attempt_id) is not str or _SAFE_ATTEMPT_ID.fullmatch(attempt_id) is None:
+            raise ValueError("D1 bounded review runner requires a safe attempt_id")
+        self._attempt_id = attempt_id
+        self._timeout_seconds = float(timeout_seconds)
+        self._runner = D1BoundedProcessRunner(
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+        )
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        cwd: object,
+        input: object,
+        env: object,
+    ) -> D1BoundedProcessResult:
+        try:
+            return self._runner.run(
+                argv,
+                cwd=cast(Path, cwd),
+                input=cast(bytes, input),
+                env=cast(Mapping[str, str], env),
+            )
+        except D1BoundedProcessError as error:
+            raise D1ExternalReviewError(
+                error.code,
+                "bounded subprocess terminated",
+                attempt_id=self._attempt_id,
+                stdout_sha256=error.stdout_sha256,
+                stderr_sha256=error.stderr_sha256,
+                output_bytes=error.output_bytes,
+                process_group_swept=int(error.process_group_swept),
+                process_reaped=int(error.process_reaped),
+            ) from error
+
+    def __call__(self, argv: list[str], **kwargs: object) -> D1BoundedProcessResult:
+        required = {
+            "capture_output": True,
+            "check": False,
+            "shell": False,
+            "close_fds": True,
+            "start_new_session": True,
+        }
+        if any(kwargs.get(name) is not value for name, value in required.items()):
+            raise TypeError("D1 bounded review runner control flags differ")
+        accepted = frozenset(required) | {"cwd", "input", "env", "timeout"}
+        if frozenset(kwargs) != accepted:
+            raise TypeError("D1 bounded review runner keyword arguments differ")
+        if kwargs.get("timeout") != self._timeout_seconds:
+            raise TypeError("D1 bounded review runner timeout differs")
+        return self.run(
+            tuple(argv),
+            cwd=kwargs.get("cwd"),
+            input=kwargs.get("input"),
+            env=kwargs.get("env"),
+        )
 
 
 def _work_dir(value: str | os.PathLike[str]) -> Path:
@@ -133,26 +201,31 @@ def _strict_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate field {key!r}")
+            raise ValueError("duplicate field")
         result[key] = value
     return result
 
 
 def _reject_constant(value: str) -> object:
-    raise ValueError(f"nonfinite JSON constant {value}")
+    del value
+    raise ValueError("nonfinite JSON constant")
 
 
 def _parse_result(payload: bytes) -> Mapping[str, object]:
     if not payload or len(payload) > _MAX_OUTPUT_BYTES:
         raise ValueError("worker stdout must be nonempty and within the output limit")
+    value: object | None = None
+    parse_failed = False
     try:
         value = json.loads(
             payload,
             object_pairs_hook=_strict_pairs,
             parse_constant=_reject_constant,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        raise ValueError("worker stdout must be strict UTF-8 JSON") from error
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
+        parse_failed = True
+    if parse_failed:
+        raise ValueError("worker stdout must be strict UTF-8 JSON")
     if type(value) is not dict:
         raise ValueError("worker result must have an object root")
     result = cast(dict[str, object], value)
@@ -197,7 +270,17 @@ class D1ExternalReviewSubprocessAdapter:
             raise ValueError("D1 external review attempt_id must be a safe opaque identifier")
         self._sandbox = sandbox
         self._attempt_id = attempt_id
-        self._runner = runner if runner is not None else cast(_Runner, subprocess.run)
+        self._consume_lock = threading.Lock()
+        self._consumed = False
+        self._runner_is_internal = runner is None
+        self._runner = (
+            runner
+            if runner is not None
+            else cast(
+                _Runner,
+                D1BoundedSubprocessRunner(attempt_id=attempt_id),
+            )
+        )
 
     @property
     def argv(self) -> list[str]:
@@ -228,6 +311,7 @@ class D1ExternalReviewSubprocessAdapter:
         )
 
     def _invoke(self, request: D1CloudReviewRequest) -> _ProcessResult:
+        failure: D1ExternalReviewError | None = None
         try:
             return self._runner(  # nosec B603 -- fixed argv and shell=False are contract-tested
                 self.argv,
@@ -241,22 +325,46 @@ class D1ExternalReviewSubprocessAdapter:
                 close_fds=True,
                 start_new_session=True,
             )
+        except D1ExternalReviewError as error:
+            if self._runner_is_internal:
+                raise
+            failure = self._normalize_runner_failure(error)
         except Exception as error:
-            raise D1ExternalReviewError(
+            failure = self._normalize_runner_failure(error)
+        raise failure
+
+    def _normalize_runner_failure(self, error: Exception) -> D1ExternalReviewError:
+        stdout = getattr(error, "stdout", None)
+        stderr = getattr(error, "stderr", None)
+        stdout_sha256 = _exception_hash(stdout)
+        stderr_sha256 = _exception_hash(stderr)
+        if stdout_sha256 is None or stderr_sha256 is None:
+            return D1ExternalReviewError(
                 "subprocess_failure",
-                type(error).__name__,
+                "exception output type is invalid",
                 attempt_id=self._attempt_id,
-                stdout_sha256=_exception_hash(
-                    getattr(error, "stdout", None), "stdout", self._attempt_id
-                ),
-                stderr_sha256=_exception_hash(
-                    getattr(error, "stderr", None), "stderr", self._attempt_id
-                ),
-            ) from error
+                stdout_type=type(stdout).__name__,
+                stderr_type=type(stderr).__name__,
+            )
+        return D1ExternalReviewError(
+            "subprocess_failure",
+            type(error).__name__,
+            attempt_id=self._attempt_id,
+            stdout_sha256=stdout_sha256,
+            stderr_sha256=stderr_sha256,
+        )
 
     def review(self, request: D1CloudReviewRequest) -> D1CloudReviewResponse:
         if type(request) is not D1CloudReviewRequest:
             raise TypeError("D1 external review adapter requires D1CloudReviewRequest")
+        with self._consume_lock:
+            if self._consumed:
+                raise D1ExternalReviewError(
+                    "attempt_consumed",
+                    "review attempt is single-use",
+                    attempt_id=self._attempt_id,
+                )
+            self._consumed = True
         result = self._invoke(request)
         if type(result.returncode) is not int:
             raise D1ExternalReviewError(
@@ -282,6 +390,10 @@ class D1ExternalReviewSubprocessAdapter:
             raise D1ExternalReviewError(
                 "stderr_output", "successful worker emitted stderr", **exit_context
             )
+        wire: Mapping[str, object] | None = None
+        provider_response: bytes | None = None
+        report: bytes | None = None
+        protocol_failure: D1ExternalReviewError | None = None
         try:
             wire = _parse_result(result.stdout)
             provider_response = _decode(wire["provider_response_base64"], "provider response")
@@ -297,7 +409,11 @@ class D1ExternalReviewSubprocessAdapter:
                 code = "payload_digest"
             else:
                 code = "protocol_identity"
-            raise D1ExternalReviewError(code, str(error), **exit_context) from error
+            protocol_failure = D1ExternalReviewError(code, str(error), **exit_context)
+        if protocol_failure is not None:
+            raise protocol_failure
+        if wire is None or provider_response is None or report is None:
+            raise AssertionError("D1 external review protocol admission lost its values")
         envelope = _canonical(
             {
                 "attempt": {

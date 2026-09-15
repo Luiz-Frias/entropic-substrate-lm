@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import pickle
+from dataclasses import replace
 
 import pytest
 
 from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
     D1MajorFindingDisposition,
     D1MajorFindingStatus,
+    D1ParsedReviewReport,
+    D1ReviewAdjudicationSurface,
     adjudicate_d1_review,
     parse_d1_major_findings,
     parse_d1_review_execution_receipt,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def _prompt() -> bytes:
+    return f"Registered review instructions\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode()
 
 
 def _receipt(**overrides: object) -> bytes:
@@ -46,28 +57,63 @@ def test_v2_execution_receipt_preserves_raw_response_report_and_retry_lineage() 
 def test_major_parser_requires_heading_ids_and_accounts_for_every_reference() -> None:
     report = b"""# D1 review\n\n## MAJOR-1 - Capture mismatch\nDetails.\n\n## MAJOR-3 - Reader drift\nMAJOR-1 remains relevant.\n"""
 
-    parsed = parse_d1_major_findings(report)
+    parsed = parse_d1_major_findings(report, reviewer_prompt=_prompt())
 
     assert parsed.major_finding_ids == ("MAJOR-1", "MAJOR-3")
     assert parsed.report_sha256
     with pytest.raises(ValueError, match="heading"):
-        parse_d1_major_findings(b"# Review\nMAJOR-2 appears only in prose.\n")
+        parse_d1_major_findings(
+            b"# Review\nMAJOR-2 appears only in prose.\n", reviewer_prompt=_prompt()
+        )
     with pytest.raises(ValueError, match="duplicate"):
-        parse_d1_major_findings(b"## MAJOR-1 A\n## MAJOR-1 B\n")
+        parse_d1_major_findings(b"## MAJOR-1 A\n## MAJOR-1 B\n", reviewer_prompt=_prompt())
 
 
 def test_no_major_marker_is_explicit_and_cannot_contradict_a_finding() -> None:
-    parsed = parse_d1_major_findings(b"# Review\n\nReview outcome: NO_MAJOR_FINDINGS\n")
+    parsed = parse_d1_major_findings(
+        f"# Review\n\n{D1_NO_MAJOR_OUTCOME}\n".encode(), reviewer_prompt=_prompt()
+    )
     assert parsed.major_finding_ids == ()
 
     with pytest.raises(ValueError, match="NO_MAJOR_FINDINGS"):
-        parse_d1_major_findings(b"# Review without a finding marker\n")
+        parse_d1_major_findings(b"# Review without a finding marker\n", reviewer_prompt=_prompt())
     with pytest.raises(ValueError, match="contradicts"):
-        parse_d1_major_findings(b"Review outcome: NO_MAJOR_FINDINGS\n## MAJOR-1 Contradiction\n")
+        parse_d1_major_findings(
+            f"{D1_NO_MAJOR_OUTCOME}\n## MAJOR-1 Contradiction\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+
+
+def test_no_major_outcome_requires_registered_prompt_and_standalone_line() -> None:
+    report = f"{D1_NO_MAJOR_OUTCOME}\n".encode()
+    with pytest.raises(ValueError, match="reviewer prompt"):
+        parse_d1_major_findings(report, reviewer_prompt=b"Unregistered prompt\n")
+    with pytest.raises(ValueError, match="standalone"):
+        parse_d1_major_findings(
+            f"Narrative mentions {D1_NO_MAJOR_OUTCOME} but declares nothing.\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+    with pytest.raises(ValueError, match="exactly once"):
+        parse_d1_major_findings(
+            f"{D1_NO_MAJOR_OUTCOME}\n{D1_NO_MAJOR_OUTCOME}\n".encode(),
+            reviewer_prompt=_prompt(),
+        )
+
+
+def test_parsed_report_constructor_rejects_unknown_and_duplicate_finding_ids() -> None:
+    with pytest.raises(ValueError, match="canonical"):
+        D1ParsedReviewReport("a" * 64, ("MAJOR-0",))
+    with pytest.raises(ValueError, match="canonical"):
+        D1ParsedReviewReport("a" * 64, ("UNKNOWN-1",))
+    with pytest.raises(ValueError, match="unique"):
+        D1ParsedReviewReport("a" * 64, ("MAJOR-1", "MAJOR-1"))
 
 
 def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> None:
-    parsed = parse_d1_major_findings(b"## MAJOR-1 Capture mismatch\n## MAJOR-2 Reader drift\n")
+    parsed = parse_d1_major_findings(
+        b"## MAJOR-1 Capture mismatch\n## MAJOR-2 Reader drift\n",
+        reviewer_prompt=_prompt(),
+    )
     surface = adjudicate_d1_review(
         report=parsed,
         dispositions=(
@@ -85,6 +131,9 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
             ),
         ),
         operator_record_sha256="b" * 64,
+        execution_receipt_sha256="d" * 64,
+        review_request_sha256="e" * 64,
+        review_packet_sha256="f" * 64,
     )
 
     assert surface.status == "OPEN"
@@ -92,6 +141,10 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
     manifest = surface.manifest
     assert "successor_authorization" not in manifest
     assert "eligible_strategies" not in manifest
+    resolved = surface.dispositions["MAJOR-1"]
+    object.__setattr__(resolved, "evidence_sha256", None)
+    with pytest.raises(ValueError, match="resolved D1 MAJOR"):
+        surface.require_factory_attested()
     with pytest.raises(ValueError, match="exactly cover"):
         adjudicate_d1_review(
             report=parsed,
@@ -101,16 +154,45 @@ def test_adjudication_exactly_covers_major_ids_and_has_no_successor_gate() -> No
                 ),
             ),
             operator_record_sha256="b" * 64,
+            execution_receipt_sha256="d" * 64,
+            review_request_sha256="e" * 64,
+            review_packet_sha256="f" * 64,
         )
 
 
 def test_empty_report_adjudication_is_not_required() -> None:
-    report = parse_d1_major_findings(b"Review outcome: NO_MAJOR_FINDINGS\n")
+    report = parse_d1_major_findings(f"{D1_NO_MAJOR_OUTCOME}\n".encode(), reviewer_prompt=_prompt())
     surface = adjudicate_d1_review(
         report=report,
         dispositions=(),
         operator_record_sha256="c" * 64,
+        execution_receipt_sha256="d" * 64,
+        review_request_sha256="e" * 64,
+        review_packet_sha256="f" * 64,
     )
+    surface.require_factory_attested()
+    with pytest.raises(TypeError, match="not factory-attested"):
+        object.__new__(D1ReviewAdjudicationSurface).require_factory_attested()
+    with pytest.raises(TypeError, match="factory-attested"):
+        type(surface)(
+            surface.report_sha256,
+            surface.major_finding_ids,
+            surface.dispositions,
+            surface.open_major_finding_ids,
+            surface.status,
+            surface.operator_record_sha256,
+        )
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(surface)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.deepcopy(surface)
+    with pytest.raises(TypeError, match="cannot be copied"):
+        pickle.dumps(surface)
+    with pytest.raises(TypeError, match="factory-attested"):
+        replace(surface, status="RESOLVED")
+    object.__setattr__(surface, "operator_record_sha256", "d" * 64)
+    with pytest.raises(TypeError, match="evidence changed"):
+        surface.require_factory_attested()
 
     assert surface.status == "NOT_REQUIRED"
     assert surface.open_major_finding_ids == ()

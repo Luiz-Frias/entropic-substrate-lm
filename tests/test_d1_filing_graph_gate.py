@@ -11,11 +11,19 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
+from entropic_substrate.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+    build_d1_capture_aggregate,
+)
+from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
 from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
 from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
 from entropic_substrate.evidence.d1_contract import D1DecisionContract
 from entropic_substrate.evidence.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
+    D1DetachedFiling,
     canonical_machine_verdict_bytes,
     validate_d1_filing_manifest,
 )
@@ -29,9 +37,19 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     D1FilingRevisions,
 )
 from entropic_substrate.evidence.d1_gate import decide_filed_verdict
-from entropic_substrate.evidence.d1_types import D1FamilyIdentity, FiledGateAuthorization
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
+from entropic_substrate.evidence.d1_types import (
+    D1FamilyIdentity,
+    D1VerdictValidationError,
+    FiledGateAuthorization,
+    FiledGateValidNegative,
+)
 
+from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .d1_capture_fixtures import capture_family
+from .test_d1_aliased_analysis import _packet
 
 pytestmark = pytest.mark.unit
 
@@ -65,53 +83,130 @@ class FakeGit:
         return (ancestor, descendant) in self.ancestors
 
 
-def _bind_capture(item: D1CaptureInput, *, bound: bool) -> D1CaptureInput:
-    if not bound:
-        return item
-
-    def bind(artifact):
-        return replace(
+def _bind_artifact(artifact: D1ArtifactIdentity, *, bound: bool = True) -> D1ArtifactIdentity:
+    return (
+        replace(
             artifact,
             dvc=artifact.dvc.bind(pointer_sha256="b" * 64, object_id=artifact.md5),
         )
+        if bound
+        else artifact
+    )
+
+
+def _bind_capture(item: D1CaptureInput, *, bound: bool) -> D1CaptureInput:
 
     return replace(
         item,
-        journal=bind(item.journal),
-        checkpoint=bind(item.checkpoint),
-        billing_sidecars=tuple(bind(value) for value in item.billing_sidecars),
+        journal=_bind_artifact(item.journal, bound=bound),
+        checkpoint=_bind_artifact(item.checkpoint, bound=bound),
+        billing_sidecars=tuple(
+            _bind_artifact(value, bound=bound) for value in item.billing_sidecars
+        ),
     )
 
 
-def _one_seed_contract(bundle) -> D1DecisionContract:
+def _capture_contract(aggregate: D1HeterogeneousCaptureAggregate) -> D1DecisionContract:
     identity = D1FamilyIdentity(
-        family_digest=bundle.roster.family_digest,
+        family_digest=aggregate.roster.family_digest,
         arm_construction_digests={
-            item.expected.arm.value: item.expected.construction_digest
-            for item in bundle.confirmatory
+            item.arm.value: item.construction_digest
+            for item in aggregate.roster.expected_confirmatory
         },
     )
     base = decision_contract()
-    contrast_rules = {
-        name: replace(rule, registered_n=1, df_rule="NOT_APPLICABLE")
-        for name, rule in base.contrast_rules.items()
-    }
+    seeds = tuple(sorted({item.seed for item in aggregate.roster.expected_confirmatory}))
+    effective_n = len(aggregate.roster.pairing_ids) - len(aggregate.pair_exclusions)
+    contrast_rules = (
+        {
+            name: replace(rule, registered_n=1, df_rule="NOT_APPLICABLE")
+            for name, rule in base.contrast_rules.items()
+        }
+        if effective_n == 1
+        else {
+            name: replace(
+                rule,
+                n_rule="NONEXCLUDED_SEED_COUNT",
+                registered_n=None,
+                df_rule="N_MINUS_ONE",
+            )
+            for name, rule in base.contrast_rules.items()
+        }
+    )
     return replace(
         base,
         family_identity=identity,
-        registered_constants={"seeds": [7], "primary": {"alpha": 0.025}},
+        registered_constants={"seeds": list(seeds), "primary": {"alpha": 0.025}},
         contrast_rules=contrast_rules,
+        exclusion_rules=(replace(base.exclusion_rules[0], measurement="nats_per_byte"),),
     )
 
 
-def _case(tmp_path: Path, mutation: str | None = None):
-    roster, inputs, capture_root = capture_family(tmp_path)
-    bound = mutation != "dvc_gap"
-    inputs = tuple(_bind_capture(item, bound=bound) for item in inputs)
-    bundle = build_d1_capture_bundle(capture_root, roster=roster, capture_inputs=inputs)
-    contract = _one_seed_contract(bundle)
-    machine = machine_verdict()
-    machine["registered_constants"] = {"seeds": [7], "primary": {"alpha": 0.025}}
+def _case(
+    tmp_path: Path,
+    mutation: str | None = None,
+    *,
+    mixed: bool = False,
+    verdict_name: str | None = None,
+) -> tuple[
+    D1DetachedFiling,
+    D1HeterogeneousCaptureAggregate,
+    D1FilingRevisions,
+    RootPort,
+    FakeGit,
+]:
+    if mixed:
+        roster, complete, defects, attempts, capture_root = heterogeneous_family(
+            tmp_path, seeds=(7, 8, 9)
+        )
+        complete = tuple(_bind_capture(item, bound=True) for item in complete)
+        defects = tuple(
+            replace(
+                item,
+                journal=_bind_artifact(item.journal, bound=mutation != "defect_dvc_gap"),
+                supporting_artifacts=tuple(
+                    _bind_artifact(artifact) for artifact in item.supporting_artifacts
+                ),
+            )
+            for item in defects
+        )
+        attempts = tuple(
+            replace(
+                item,
+                artifacts=tuple(_bind_artifact(artifact) for artifact in item.artifacts),
+            )
+            for item in attempts
+        )
+        aggregate = build_d1_capture_aggregate(
+            capture_root,
+            roster=roster,
+            complete_inputs=complete,
+            terminal_defect_inputs=defects,
+            attempt_evidence=attempts,
+        )
+    else:
+        roster, inputs, capture_root = capture_family(tmp_path)
+        bound = mutation != "dvc_gap"
+        inputs = tuple(_bind_capture(item, bound=bound) for item in inputs)
+        aggregate = build_d1_capture_aggregate(
+            capture_root,
+            roster=roster,
+            complete_inputs=inputs,
+            terminal_defect_inputs=(),
+        )
+    contract = _capture_contract(aggregate)
+    seeds = sorted({item.seed for item in aggregate.roster.expected_confirmatory})
+    if mutation == "exclusion_rule":
+        contract = replace(
+            contract,
+            registered_constants={"seeds": seeds, "primary": {"alpha": 0.025}},
+            exclusion_rules=(
+                replace(contract.exclusion_rules[0], measurement="unregistered_metric"),
+            ),
+        )
+    integrity = recompute_capture_integrity(aggregate, contract)
+    machine = machine_verdict() if verdict_name is None else machine_verdict(verdict=verdict_name)
+    machine["registered_constants"] = {"seeds": seeds, "primary": {"alpha": 0.025}}
     machine["preregistration"] = {
         "commit": roster.preregistration_commit,
         "family_digest": roster.family_digest,
@@ -119,38 +214,136 @@ def _case(tmp_path: Path, mutation: str | None = None):
     }
     machine["arms"] = [
         {
-            "arm_id": item.expected.arm.value,
-            "construction_digest": item.expected.construction_digest,
+            "arm_id": arm_id,
+            "construction_digest": contract.family_identity.arm_construction_digests[arm_id],
         }
-        for item in bundle.confirmatory
+        for arm_id in contract.arm_ids
     ]
     for contrast in machine["contrasts"]:  # type: ignore[union-attr]
-        contrast["n"] = 1
-        contrast["df"] = None
-        contrast["sample_sd"] = None
-    machine["inputs"] = [
+        contrast["n"] = integrity.effective_sample_size
+        contrast["df"] = (
+            None if integrity.effective_sample_size == 1 else integrity.effective_sample_size - 1
+        )
+        if integrity.effective_sample_size == 1:
+            contrast["sample_sd"] = None
+            contrast["interval_lower"] = None
+            contrast["interval_upper"] = None
+        if mutation == "sample_size":
+            contrast["n"] = integrity.effective_sample_size + 1
+            contrast["df"] = integrity.effective_sample_size
+    input_rows = [
         {"md5": item.md5, "path": item.normalized_path, "sha256": item.sha256}
-        for item in bundle.dvc_handoff.artifacts
+        for item in aggregate.dvc_handoff.artifacts
     ]
+    if mutation == "defect_input_gap":
+        defect_path = aggregate.terminal_defects[0].capture_input.journal.normalized_path
+        input_rows = [item for item in input_rows if item["path"] != defect_path]
+    elif mutation == "attempt_input_gap":
+        attempt_path = aggregate.attempts[0].artifacts[0].normalized_path
+        input_rows = [item for item in input_rows if item["path"] != attempt_path]
+    machine["inputs"] = input_rows
     if mutation == "input_gap":
         del machine["inputs"][0]["sha256"]  # type: ignore[index]
-    integrity = recompute_capture_integrity(bundle)
+    exclusion_rows: list[dict[str, object]] = [
+        {
+            "subject": claim.pairing_id,
+            "reason": reason_id,
+            "evidence_hash": {"algorithm": "sha256", "digest": evidence_digest},
+        }
+        for claim, reason_id, evidence_digest in integrity.applied_exclusions or ()
+    ]
+    if mutation == "exclusion_missing":
+        exclusion_rows.clear()
+    elif mutation == "exclusion_subject":
+        exclusion_rows[0]["subject"] = "wrong-pair"
+    elif mutation == "exclusion_reason":
+        exclusion_rows[0]["reason"] = "wrong-reason"
+    elif mutation == "exclusion_hash":
+        exclusion_rows[0]["evidence_hash"] = {
+            "algorithm": "sha256",
+            "digest": "0" * 64,
+        }
+    machine["exclusions"] = exclusion_rows
     machine["integrity"]["evidence_hash"] = {  # type: ignore[index]
         "algorithm": "sha256",
         "digest": "0" * 64 if mutation == "integrity" else integrity.evidence_digest,
     }
     prereg = b"registered design bytes\n"
-    capture = _json(bundle.manifest)
-    analysis = b'{"decision":"aliased"}'
-    reader = b"def read_capture(): ...\n"
-    isolation = b'{"session":"fresh","network":"disabled"}'
+    capture = _json(aggregate.manifest)
+    reader_manifest = {
+        "analysis_code_digest": "9" * 64,
+        "complete_reader": "reader.module.complete",
+        "modules": [
+            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
+        ],
+        "schema_version": "d1-reader-source-manifest-v1",
+        "terminal_defect_reader": "reader.module.defect",
+    }
+    reader = _json(reader_manifest)
+    isolation_manifest = {
+        "execution_evidence": {"analysis_sha256": "6" * 64},
+        "executor_kind": "external_enforced",
+        "filesystem_read_only": True,
+        "live_tracking_blocked": True,
+        "mechanism": "container-network-none",
+        "network_disabled": True,
+        "request_digest": "5" * 64,
+    }
+    isolation = _json(isolation_manifest)
+    reveal_mapping = {"A": "none", "B": "sg", "C": "ac", "D": "both"}
+    if mutation == "analysis_alias_domain":
+        reveal_mapping = {"A": "none", "X": "sg", "C": "ac", "D": "both"}
+    elif mutation == "analysis_reveal":
+        reveal_mapping.update({"A": "sg", "B": "none"})
     reveal = _json(
         {
-            "mapping": {"A": "none", "B": "sg", "C": "ac", "D": "both"},
+            "mapping": reveal_mapping,
             "nonce": "sealed",
             "schema_version": "d1-alias-reveal-v1",
         }
     )
+    commitment = _json({"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"})
+    future_threshold = 0.0 if machine["feasible_arms"] else 30.0
+    analysis_manifest = _packet(future_threshold=future_threshold).manifest
+    analysis_manifest["alias_commitment"] = _sha(commitment)
+    if not machine["feasible_arms"]:
+        for alias, arm_id in reveal_mapping.items():
+            if arm_id == "none":
+                continue
+            for clause_id, machine_clause in machine["clauses_by_arm"][arm_id].items():  # type: ignore[index]
+                clause = analysis_manifest["clauses_by_alias"][alias][clause_id]  # type: ignore[index]
+                clause["status"] = machine_clause["status"]
+                for condition in clause["conditions"]:
+                    condition["status"] = machine_clause["status"]
+    if mutation == "analysis_feasible":
+        analysis_manifest["feasible_aliases"].pop(0)  # type: ignore[union-attr]
+    elif mutation == "analysis_clause":
+        analysis_manifest["clauses_by_alias"]["B"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+    elif mutation == "analysis_machine_frontier":
+        analysis_manifest["feasible_aliases"] = ["D"]
+        for alias in ("B", "C"):
+            analysis_manifest["clauses_by_alias"][alias]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+    elif mutation in {
+        "analysis_clause_population",
+        "analysis_clause_derivation",
+        "analysis_machine_clause_status",
+    }:
+        if mutation == "analysis_clause_population":
+            analysis_manifest["clauses_by_alias"].pop("B")  # type: ignore[union-attr]
+        elif mutation == "analysis_clause_derivation":
+            analysis_manifest["clauses_by_alias"]["B"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+        else:
+            language = analysis_manifest["clauses_by_alias"]["B"]["language"]  # type: ignore[index]
+            language["status"] = "FAIL"
+            for condition in language["conditions"]:
+                condition["status"] = "FAIL"
+        analysis_manifest["feasible_aliases"].remove("B")  # type: ignore[union-attr]
+        machine["clauses_by_arm"]["sg"]["noncollapse"]["status"] = "FAIL"  # type: ignore[index]
+        machine["feasible_arms"] = ["ac", "both"]
+        machine["successor"]["eligible_arms"] = ["ac", "both"]  # type: ignore[index]
+    elif mutation == "analysis_precedence":
+        analysis_manifest["clause_precedence"].reverse()  # type: ignore[union-attr]
+    analysis = _json(analysis_manifest)
     payloads = {role: role.encode() for role in REQUIRED_D1_FILING_ARTIFACTS}
     payloads.update(
         {
@@ -160,36 +353,95 @@ def _case(tmp_path: Path, mutation: str | None = None):
             "analysis_reader": reader,
             "analysis_isolation_attestation": isolation,
             "alias_reveal": reveal,
-            "alias_commitment": _json(
-                {"reveal_sha256": _sha(reveal), "schema_version": "d1-alias-commitment-v1"}
+            "alias_commitment": commitment,
+            "review_packet": _json(
+                {
+                    "alias_commitment": _sha(commitment),
+                    "schema_version": "d1-blind-review-packet-v1",
+                }
             ),
-            "review_packet": b"packet",
-            "reviewer_prompt": b"prompt",
-            "reviewer_report": b"report",
+            "reviewer_prompt": f"Prompt\n{D1_NO_MAJOR_PROMPT_DIRECTIVE}\n".encode(),
+            "reviewer_report": b"Review outcome: NO_MAJOR_FINDINGS\n",
         }
     )
     payloads["analysis_receipt"] = _json(
         {
-            "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
-            "isolation_attestation_sha256": _sha(isolation),
-            "output_sha256": _sha(analysis),
-            "preregistration_sha256": _sha(prereg),
-            "reader_sha256": _sha(reader),
-            "schema_version": "d1-analysis-receipt-v1",
+            "alias_commitment": analysis_manifest["alias_commitment"],
+            "analysis_digest": _sha(analysis),
+            "bindings": analysis_manifest["bindings"],
+            "filing_bindings": {
+                "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
+                "isolation_attestation_sha256": _sha(isolation),
+                "output_sha256": _sha(analysis),
+                "preregistration_sha256": _sha(prereg),
+                "reader_sha256": _sha(reader),
+            },
+            "filing_eligible": True,
+            "implementation": {
+                "analysis_code_digest": reader_manifest["analysis_code_digest"],
+                "readers": {
+                    "complete": {
+                        "identity": "reader.module.complete",
+                        "sha256": "7" * 64,
+                    },
+                    "terminal_defect": {
+                        "identity": "reader.module.defect",
+                        "sha256": "7" * 64,
+                    },
+                },
+            },
+            "inputs": [{"sha256": "8" * 64}],
+            "isolation": isolation_manifest,
+            "schema_version": "d1-analysis-execution-receipt-v1",
         }
     )
+    review_packet = json.loads(payloads["review_packet"])
+    review_packet.update(
+        {
+            "analysis": analysis_manifest,
+            "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
+            "bindings": analysis_manifest["bindings"],
+            "validated_readers": {
+                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
+                "terminal_defect": {
+                    "identity": "reader.module.defect",
+                    "sha256": "7" * 64,
+                },
+            },
+        }
+    )
+    payloads["review_packet"] = _json(review_packet)
     payloads["reviewer_execution_receipt"] = _json(
         {
-            "major_finding_ids": [],
             "model_id": "review-model",
             "packet_sha256": _sha(payloads["review_packet"]),
             "prompt_sha256": _sha(payloads["reviewer_prompt"]),
             "provider": "review-provider",
             "report_sha256": _sha(payloads["reviewer_report"]),
+            "request_digest": "a" * 64,
+            "response_sha256": "b" * 64,
+            "retry_lineage": [],
             "round": 1,
-            "schema_version": "d1-review-receipt-v1",
+            "schema_version": "d1-review-execution-receipt-v2",
         }
     )
+    adjudication = machine["review"]["adjudication"]  # type: ignore[index]
+    adjudication.update(  # type: ignore[union-attr]
+        {
+            "execution_receipt_sha256": _sha(payloads["reviewer_execution_receipt"]),
+            "report_sha256": _sha(payloads["reviewer_report"]),
+            "review_packet_sha256": _sha(payloads["review_packet"]),
+            "review_request_sha256": "a" * 64,
+        }
+    )
+    adjudication_mutations = {
+        "adjudication_receipt": "execution_receipt_sha256",
+        "adjudication_report": "report_sha256",
+        "adjudication_packet": "review_packet_sha256",
+        "adjudication_request": "review_request_sha256",
+    }
+    if mutation in adjudication_mutations:
+        adjudication[adjudication_mutations[mutation]] = "0" * 64  # type: ignore[index]
     machine_bytes = canonical_machine_verdict_bytes(machine)
     payloads["machine_verdict"] = machine_bytes
     payloads["narrative"] = (
@@ -239,16 +491,140 @@ def _case(tmp_path: Path, mutation: str | None = None):
     for revision, roles in stage_roles.items():
         for role in roles:
             git.files[(revision, detached.manifest.artifacts[role].path)] = payloads[role]
-    return detached, bundle, revisions, RootPort(filing_root), git
+    return detached, aggregate, revisions, RootPort(filing_root), git
 
 
 def test_only_semantically_verified_graph_authorizes_pure_gate(tmp_path: Path) -> None:
-    detached, bundle, revisions, artifacts, git = _case(tmp_path)
-    filing = verify_d1_filing(detached, bundle, revisions, artifacts, git)
+    detached, aggregate, revisions, artifacts, git = _case(tmp_path)
+    filing = verify_d1_filing(detached, aggregate, revisions, artifacts, git)
 
-    assert isinstance(decide_filed_verdict(filing), FiledGateAuthorization)
+    outcome = decide_filed_verdict(filing)
+    assert isinstance(outcome, FiledGateAuthorization)
+    assert outcome.eligible_arms == ("sg", "ac", "both")
+    assert filing.to_filed_evidence().eligible_arms == outcome.eligible_arms
     with pytest.raises(TypeError, match="semantic evidence graph"):
         decide_filed_verdict(detached)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["analysis_feasible", "analysis_clause", "analysis_machine_frontier", "analysis_reveal"],
+)
+def test_filing_graph_independently_binds_the_dealiased_feasible_frontier(
+    tmp_path: Path, mutation: str
+) -> None:
+    with pytest.raises(D1FilingGraphError, match="frontier"):
+        verify_d1_filing(*_case(tmp_path, mutation))
+
+
+def test_valid_negative_graph_retains_an_empty_non_authorized_frontier(tmp_path: Path) -> None:
+    filing = verify_d1_filing(*_case(tmp_path, verdict_name="VALID_NEGATIVE"))
+
+    assert filing.detached.verdict.feasible_arms == ()
+    assert filing.detached.verdict.successor.eligible_arms == ()
+    assert type(decide_filed_verdict(filing)) is FiledGateValidNegative
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("analysis_alias_domain", "bijection"),
+        ("analysis_clause_population", "clauses_by_alias"),
+        ("analysis_clause_derivation", "derive"),
+        ("analysis_machine_clause_status", "clauses_by_arm"),
+        ("analysis_precedence", "clause_precedence"),
+    ],
+)
+def test_filing_graph_requires_a_total_derived_registered_clause_frontier(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    with pytest.raises(D1FilingGraphError, match=message):
+        verify_d1_filing(*_case(tmp_path, mutation))
+
+
+def test_mixed_filing_binds_registered_exclusion_and_effective_sample_size(
+    tmp_path: Path,
+) -> None:
+    detached, aggregate, revisions, artifacts, git = _case(tmp_path, mixed=True)
+
+    filing = verify_d1_filing(detached, aggregate, revisions, artifacts, git)
+
+    assert filing.integrity.effective_sample_size == 2
+    assert filing.integrity.applied_exclusions is not None
+    claim, reason_id, evidence_digest = filing.integrity.applied_exclusions[0]
+    assert detached.verdict.exclusions[0][0] == claim.pairing_id
+    assert reason_id == "nonfinite-final-loss"
+    assert detached.verdict.exclusions[0][2].digest == evidence_digest
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "adjudication_receipt",
+        "adjudication_report",
+        "adjudication_packet",
+        "adjudication_request",
+    ],
+)
+def test_filing_rejects_adjudication_execution_identity_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    with pytest.raises(D1FilingGraphError, match="review_adjudication"):
+        verify_d1_filing(*_case(tmp_path, mutation))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error", "message"),
+    [
+        ("exclusion_missing", D1FilingGraphError, "exclusions"),
+        ("exclusion_subject", D1FilingGraphError, "exclusions"),
+        ("exclusion_reason", D1VerdictValidationError, "exclusion reason"),
+        ("exclusion_hash", D1FilingGraphError, "exclusions"),
+        ("exclusion_rule", D1FilingGraphError, "exclusions"),
+    ],
+)
+def test_mixed_filing_rejects_exclusion_semantic_drift(
+    tmp_path: Path,
+    mutation: str,
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error, match=message):
+        verify_d1_filing(*_case(tmp_path, mutation, mixed=True))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error", "message"),
+    [
+        ("defect_input_gap", D1FilingGraphError, "capture manifest"),
+        ("attempt_input_gap", D1FilingGraphError, "capture manifest"),
+        ("defect_dvc_gap", D1EvidenceGapError, "DVC"),
+        ("sample_size", D1FilingGraphError, "sample_size"),
+    ],
+)
+def test_mixed_filing_rejects_custody_and_sample_size_drift(
+    tmp_path: Path,
+    mutation: str,
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error, match=message):
+        verify_d1_filing(*_case(tmp_path, mutation, mixed=True))
+
+
+def test_filing_verification_refuses_legacy_complete_bundle(tmp_path: Path) -> None:
+    filing_root = tmp_path / "filing"
+    filing_root.mkdir()
+    detached, _, revisions, artifacts, git = _case(filing_root)
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    roster, inputs, root = capture_family(legacy_root)
+    bundle = build_d1_capture_bundle(root, roster=roster, capture_inputs=inputs)
+    with pytest.raises(TypeError, match="heterogeneous capture"):
+        verify_d1_filing(  # type: ignore[arg-type]
+            detached, bundle, revisions, artifacts, git
+        )
 
 
 @pytest.mark.parametrize(

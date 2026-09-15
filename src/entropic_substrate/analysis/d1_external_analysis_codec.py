@@ -26,34 +26,17 @@ from entropic_substrate.experiments.d1_registration_codec import (
 )
 
 __all__ = [
-    "D1ExternalAnalysisRequestEnvelope",
     "D1ExternalAnalysisRequestEnvelopeV2",
-    "D1ExternalAnalysisResponseEnvelope",
     "D1ExternalAnalysisWorkerResponseV2",
     "build_d1_external_analysis_request_v2",
-    "decode_d1_external_analysis_request",
     "decode_d1_external_analysis_request_v2",
-    "decode_d1_external_analysis_response",
     "decode_d1_external_analysis_worker_response_v2",
-    "encode_d1_external_analysis_request",
     "encode_d1_external_analysis_request_v2",
-    "encode_d1_external_analysis_response",
     "encode_d1_external_analysis_worker_response_v2",
 ]
 
-_REQUEST_SCHEMA: Final = "d1-external-analysis-request-v1"
-_RESPONSE_SCHEMA: Final = "d1-external-analysis-response-v1"
-_REQUEST_FIELDS: Final = frozenset(
-    {"analysis_request_digest", "isolation_request_digest", "schema_version"}
-)
-_RESPONSE_FIELDS: Final = frozenset(
-    {
-        "analysis_request_digest",
-        "analysis_sha256",
-        "isolation_request_digest",
-        "schema_version",
-    }
-)
+_REJECTED_REQUEST_SCHEMA_V1: Final = "d1-external-analysis-request-v1"
+_REJECTED_RESPONSE_SCHEMA_V1: Final = "d1-external-analysis-response-v1"
 _REQUEST_SCHEMA_V2: Final = "d1-external-analysis-request-v2"
 _WORKER_RESPONSE_SCHEMA_V2: Final = "d1-external-analysis-response-v2"
 _REQUEST_FIELDS_V2: Final = frozenset(
@@ -132,49 +115,6 @@ def _decode(payload: bytes, *, fields: frozenset[str], schema: str) -> dict[str,
     if _canonical(manifest) != payload:
         raise ValueError("D1 external analysis envelope must use canonical JSON bytes")
     return manifest
-
-
-@dataclass(frozen=True, slots=True)
-class D1ExternalAnalysisRequestEnvelope:
-    """Legacy v1 digest-only request retained for the current Docker adapter."""
-
-    analysis_request_digest: str
-    isolation_request_digest: str
-
-    def __post_init__(self) -> None:
-        _sha256(self.analysis_request_digest, label="analysis_request_digest")
-        _sha256(self.isolation_request_digest, label="isolation_request_digest")
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "analysis_request_digest": self.analysis_request_digest,
-            "isolation_request_digest": self.isolation_request_digest,
-            "schema_version": _REQUEST_SCHEMA,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class D1ExternalAnalysisResponseEnvelope:
-    """Legacy v1 worker response retained for the current Docker adapter."""
-
-    analysis_request_digest: str
-    isolation_request_digest: str
-    analysis_sha256: str
-
-    def __post_init__(self) -> None:
-        _sha256(self.analysis_request_digest, label="analysis_request_digest")
-        _sha256(self.isolation_request_digest, label="isolation_request_digest")
-        _sha256(self.analysis_sha256, label="analysis_sha256")
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "analysis_request_digest": self.analysis_request_digest,
-            "analysis_sha256": self.analysis_sha256,
-            "isolation_request_digest": self.isolation_request_digest,
-            "schema_version": _RESPONSE_SCHEMA,
-        }
 
 
 def _analysis_request_digest(
@@ -259,43 +199,6 @@ class D1ExternalAnalysisWorkerResponseV2:
         }
 
 
-def encode_d1_external_analysis_request(value: D1ExternalAnalysisRequestEnvelope) -> bytes:
-    if type(value) is not D1ExternalAnalysisRequestEnvelope:
-        raise TypeError("D1 external analysis request codec requires its nominal value")
-    return _canonical(value.manifest)
-
-
-def decode_d1_external_analysis_request(payload: bytes) -> D1ExternalAnalysisRequestEnvelope:
-    manifest = _decode(payload, fields=_REQUEST_FIELDS, schema=_REQUEST_SCHEMA)
-    return D1ExternalAnalysisRequestEnvelope(
-        analysis_request_digest=_sha256(
-            manifest["analysis_request_digest"], label="analysis_request_digest"
-        ),
-        isolation_request_digest=_sha256(
-            manifest["isolation_request_digest"], label="isolation_request_digest"
-        ),
-    )
-
-
-def encode_d1_external_analysis_response(value: D1ExternalAnalysisResponseEnvelope) -> bytes:
-    if type(value) is not D1ExternalAnalysisResponseEnvelope:
-        raise TypeError("D1 external analysis response codec requires its nominal value")
-    return _canonical(value.manifest)
-
-
-def decode_d1_external_analysis_response(payload: bytes) -> D1ExternalAnalysisResponseEnvelope:
-    manifest = _decode(payload, fields=_RESPONSE_FIELDS, schema=_RESPONSE_SCHEMA)
-    return D1ExternalAnalysisResponseEnvelope(
-        analysis_request_digest=_sha256(
-            manifest["analysis_request_digest"], label="analysis_request_digest"
-        ),
-        isolation_request_digest=_sha256(
-            manifest["isolation_request_digest"], label="isolation_request_digest"
-        ),
-        analysis_sha256=_sha256(manifest["analysis_sha256"], label="analysis_sha256"),
-    )
-
-
 def _decode_v2(
     payload: bytes,
     *,
@@ -358,7 +261,7 @@ def decode_d1_external_analysis_request_v2(
         payload,
         fields=_REQUEST_FIELDS_V2,
         schema=_REQUEST_SCHEMA_V2,
-        legacy_schema=_REQUEST_SCHEMA,
+        legacy_schema=_REJECTED_REQUEST_SCHEMA_V1,
     )
     input_bytes = _base64_input(manifest["input_manifest_base64"])
     input_sha256 = _sha256(manifest["input_manifest_sha256"], label="input_manifest_sha256")
@@ -396,7 +299,7 @@ def decode_d1_external_analysis_worker_response_v2(
         payload,
         fields=_WORKER_RESPONSE_FIELDS_V2,
         schema=_WORKER_RESPONSE_SCHEMA_V2,
-        legacy_schema=_RESPONSE_SCHEMA,
+        legacy_schema=_REJECTED_RESPONSE_SCHEMA_V1,
     )
     return D1ExternalAnalysisWorkerResponseV2(
         analysis_request_digest=_sha256(

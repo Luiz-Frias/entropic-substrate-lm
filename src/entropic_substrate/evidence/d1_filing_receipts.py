@@ -8,6 +8,15 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol, cast
 
+from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+    D1AnalysisExecutionReceipt,
+    parse_d1_analysis_execution_receipt,
+)
+from entropic_substrate.evidence.d1_review_adjudication import (
+    D1ReviewExecutionReceiptV2,
+    parse_d1_review_execution_receipt,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class D1EvidenceGap:
@@ -92,15 +101,6 @@ class D1FilingRevisions:
 
 
 @dataclass(frozen=True, slots=True)
-class D1AnalysisReceipt:
-    capture_manifest_sha256: str
-    preregistration_sha256: str
-    reader_sha256: str
-    isolation_attestation_sha256: str
-    output_sha256: str
-
-
-@dataclass(frozen=True, slots=True)
 class D1AliasCommitment:
     reveal_sha256: str
 
@@ -111,17 +111,6 @@ class D1AliasReveal:
     nonce: str
 
 
-@dataclass(frozen=True, slots=True)
-class D1ReviewReceipt:
-    packet_sha256: str
-    prompt_sha256: str
-    report_sha256: str
-    model_id: str
-    provider: str
-    round: int
-    major_finding_ids: tuple[str, ...]
-
-
 def _gap(role: str, field: str) -> D1EvidenceGapError:
     measurements = {
         "reader_sha256": "the exact analysis reader file digest",
@@ -129,7 +118,9 @@ def _gap(role: str, field: str) -> D1EvidenceGapError:
         "model_id": "the reviewer model identity",
         "provider": "the reviewer provider identity",
         "round": "the reviewer execution round",
-        "major_finding_ids": "the report MAJOR finding identifiers",
+        "request_digest": "the exact cloud-review request digest",
+        "response_sha256": "the exact raw reviewer response digest",
+        "retry_lineage": "the validated ordered retry receipt lineage",
     }
     return D1EvidenceGapError(
         D1EvidenceGap(role, field, measurements.get(field, f"the exact {field} measurement"))
@@ -177,34 +168,23 @@ def _sha256(value: object, *, path: str) -> str:
     return text
 
 
-def parse_analysis_receipt(payload: bytes) -> D1AnalysisReceipt:
+def parse_analysis_receipt(payload: bytes) -> D1AnalysisExecutionReceipt:
     role = "analysis_receipt"
-    fields = frozenset(
-        {
-            "schema_version",
-            "capture_manifest_sha256",
-            "preregistration_sha256",
-            "reader_sha256",
-            "isolation_attestation_sha256",
-            "output_sha256",
-        }
-    )
-    data = _document(payload, role=role, fields=fields)
-    _schema(data, "d1-analysis-receipt-v1", role=role)
-    return D1AnalysisReceipt(
-        capture_manifest_sha256=_sha256(
-            data["capture_manifest_sha256"], path=f"{role}.capture_manifest_sha256"
-        ),
-        preregistration_sha256=_sha256(
-            data["preregistration_sha256"], path=f"{role}.preregistration_sha256"
-        ),
-        reader_sha256=_sha256(data["reader_sha256"], path=f"{role}.reader_sha256"),
-        isolation_attestation_sha256=_sha256(
-            data["isolation_attestation_sha256"],
-            path=f"{role}.isolation_attestation_sha256",
-        ),
-        output_sha256=_sha256(data["output_sha256"], path=f"{role}.output_sha256"),
-    )
+    try:
+        receipt = parse_d1_analysis_execution_receipt(payload)
+    except (TypeError, ValueError) as error:
+        raise D1FilingGraphError(
+            code="invalid_analysis_receipt",
+            path=role,
+            detail=f"analysis execution receipt was refused: {error}",
+        ) from error
+    if receipt.manifest["filing_eligible"] is not True or receipt.filing_bindings is None:
+        raise D1FilingGraphError(
+            code="filing_ineligible",
+            path=role,
+            detail="analysis execution receipt lacks verified filing bindings",
+        )
+    return receipt
 
 
 def parse_alias_commitment(payload: bytes) -> D1AliasCommitment:
@@ -231,44 +211,46 @@ def parse_alias_reveal(payload: bytes) -> D1AliasReveal:
     )
 
 
-def parse_review_receipt(payload: bytes) -> D1ReviewReceipt:
+def parse_review_receipt(payload: bytes) -> D1ReviewExecutionReceiptV2:
     role = "reviewer_execution_receipt"
     fields = frozenset(
         {
-            "schema_version",
+            "model_id",
             "packet_sha256",
             "prompt_sha256",
-            "report_sha256",
-            "model_id",
             "provider",
+            "report_sha256",
+            "request_digest",
+            "response_sha256",
+            "retry_lineage",
             "round",
-            "major_finding_ids",
+            "schema_version",
         }
     )
-    data = _document(payload, role=role, fields=fields)
-    _schema(data, "d1-review-receipt-v1", role=role)
-    round_number = data["round"]
-    if type(round_number) is not int or round_number < 1:
+    try:
+        raw = json.loads(payload)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise D1FilingGraphError(
-            code="invalid_round", path=f"{role}.round", detail="must be positive"
-        )
-    findings = data["major_finding_ids"]
-    if not isinstance(findings, list) or any(
-        type(item) is not str or not item for item in findings
+            code="invalid_json", path=role, detail="must be UTF-8 JSON"
+        ) from error
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != (
+        "d1-review-execution-receipt-v2"
     ):
         raise D1FilingGraphError(
-            code="invalid_findings", path=f"{role}.major_finding_ids", detail="must be strings"
+            code="schema_version",
+            path=f"{role}.schema_version",
+            detail="expected d1-review-execution-receipt-v2",
         )
-    if len(findings) != len(set(findings)):
+    if set(raw) - fields:
         raise D1FilingGraphError(
-            code="duplicate_findings", path=f"{role}.major_finding_ids", detail="must be unique"
+            code="schema_fields",
+            path=role,
+            detail="v2 receipt must not mix fields from another schema",
         )
-    return D1ReviewReceipt(
-        packet_sha256=_sha256(data["packet_sha256"], path=f"{role}.packet_sha256"),
-        prompt_sha256=_sha256(data["prompt_sha256"], path=f"{role}.prompt_sha256"),
-        report_sha256=_sha256(data["report_sha256"], path=f"{role}.report_sha256"),
-        model_id=_text(data["model_id"], path=f"{role}.model_id"),
-        provider=_text(data["provider"], path=f"{role}.provider"),
-        round=round_number,
-        major_finding_ids=tuple(findings),
-    )
+    _document(payload, role=role, fields=fields)
+    try:
+        return parse_d1_review_execution_receipt(payload)
+    except ValueError as error:
+        raise D1FilingGraphError(
+            code="invalid_review_receipt", path=role, detail=str(error)
+        ) from error

@@ -12,7 +12,11 @@ from entropic_substrate.d1_campaign_checkpoint import (
 from entropic_substrate.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointReceipt,
 )
-from entropic_substrate.d1_campaign_queue import D1CampaignQueueHalt, D1CompletedCampaign
+from entropic_substrate.d1_campaign_queue import (
+    D1CampaignQueueHalt,
+    D1CompletedCampaign,
+    validate_d1_campaign_ledger_extension,
+)
 from entropic_substrate.d1_campaign_recovery import (
     D1CampaignRecoveryHalt,
     D1HydratedCampaignRecovery,
@@ -27,13 +31,9 @@ from entropic_substrate.experiments.d1_confirmatory_matrix import (
     D1GitProvenancePort,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
+from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
 from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest
+from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
 
 
@@ -51,8 +51,11 @@ class D1CampaignCheckpointRepositoryPort(Protocol):
 
 
 class D1RecoveryAttemptControllerPort(Protocol):
-    process_manager: D1ProcessManager
-    attempt_ledger: D1LaunchAttemptLedger
+    @property
+    def process_manager(self) -> D1ProcessManager: ...
+
+    @property
+    def attempt_ledger(self) -> D1LaunchAttemptLedger: ...
 
     def execute_fresh(self, intent: D1OperatorLaunchIntent) -> D1OperatorRunResult: ...
 
@@ -137,6 +140,12 @@ class D1RecoverableCampaignQueue:
                 ledger.ledger_digest,
                 manager.history.prefix.prefix_sha256,
                 len(manager.events),
+                (
+                    "numerical_defect"
+                    if result.terminal_numerical_defect is not None
+                    else "completed"
+                ),
+                result.finalized_cell_artifact,
             )
             try:
                 checkpoint = D1CampaignCheckpoint(
@@ -180,36 +189,15 @@ class D1RecoverableCampaignQueue:
         ledger: D1LaunchAttemptLedger,
         manager: D1ProcessManager,
     ) -> None:
-        if type(result) is not D1OperatorRunResult or not result.queue_admissible:
-            raise ValueError("controller result is not a queue-admissible D1 result")
+        if type(result) is not D1OperatorRunResult or not result.campaign_continuable:
+            raise ValueError("controller result is not a campaign-continuable D1 result")
         if (
             result.start.logical_run_id != intent.plan.logical_run_id
             or result.start.execution_segment_index != 0
         ):
             raise ValueError("controller result differs from recovered intent")
         validate_d1_campaign_start(intent, result.start)
-        prior_events = ledger.events
-        extension = result.attempt_ledger.events[len(prior_events) :]
-        expected_identity = D1LaunchAttemptIdentity(
-            RunClass.CONFIRMATORY,
-            intent.plan.profile.family.family_digest,
-            intent.plan.profile.arm,
-            intent.plan.seed,
-            intent.plan.logical_run_id,
-            intent.registered_design_digest,
-        )
-        if (
-            result.attempt_ledger.events[: len(prior_events)] != prior_events
-            or len(extension) != 3
-            or tuple(event.status for event in extension)
-            != (
-                D1LaunchAttemptStatus.RECORDED,
-                D1LaunchAttemptStatus.TRAINER_STARTED,
-                D1LaunchAttemptStatus.COMPLETED,
-            )
-            or any(event.identity != expected_identity for event in extension)
-        ):
-            raise ValueError("controller attempt ledger does not extend hydrated authority")
+        validate_d1_campaign_ledger_extension(result, intent, ledger)
         observed = result.process_manager
         if (
             type(observed) is not D1ProcessManager
@@ -234,6 +222,18 @@ class D1RecoverableCampaignQueue:
             launches=tuple(launches),
             git=self._git,
             ledger=ledger,
+            terminal_defect_run_ids=(
+                *(
+                    cell.logical_run_id
+                    for cell in recovery.checkpoint.completed_cells
+                    if cell.terminal_outcome == "numerical_defect"
+                ),
+                *(
+                    result.start.logical_run_id
+                    for result in results
+                    if result.terminal_numerical_defect is not None
+                ),
+            ),
         )
         return D1CompletedCampaign.from_attested(
             design_digest=self._design.design_digest,

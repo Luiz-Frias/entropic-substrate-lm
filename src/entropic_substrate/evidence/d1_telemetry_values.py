@@ -10,6 +10,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final, cast
 
+from entropic_substrate.d1_evaluation_values import (
+    TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
+    D1ChannelMoments,
+    D1CosineGap,
+    validate_d1_cosine,
+)
+from entropic_substrate.d1_training_step import D1TrainStepResult
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
@@ -18,8 +26,10 @@ from entropic_substrate.evidence.d1_journal_values import (
 from entropic_substrate.evidence.resource_provenance import RunStartProvenance
 from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.experiments.d1_primitives import canonical_digest, thaw_for_digest
 
 __all__ = [
+    "D1_REPORT_ONLY_METRICS",
     "D1EvalEvidence",
     "D1QualityEvidence",
     "D1RunEvidence",
@@ -47,14 +57,33 @@ D1_QUALITY_FIELDS: Final = frozenset(
         "online_positions",
         "pairwise_cosine_semantic",
         "perplexity",
+        "predicted_covariance_eigenvalues",
+        "predicted_effective_rank",
+        "predicted_mean",
+        "predicted_numerical_rank",
+        "predicted_rms_l2_norm",
+        "predicted_variance",
         "raw_covariance_penalty",
         "raw_variance_penalty",
         "residual_elements",
         "residual_mean",
+        "residual_mean_l2_norm",
+        "residual_mean_vector",
         "residual_rms",
         "residual_variance",
         "state_covariance_eigenvalues",
+        "state_mean",
+        "state_rms_l2_norm",
         "state_variance",
+        "target_covariance_eigenvalues",
+        "target_effective_rank",
+        "target_mean",
+        "target_numerical_rank",
+        "target_predicted_exact_match_count",
+        "target_predicted_exact_match_fraction",
+        "target_predicted_exact_match_semantic",
+        "target_rms_l2_norm",
+        "target_variance",
         "weighted_covariance_penalty",
         "weighted_variance_penalty",
         "zero_baseline_improvement",
@@ -63,9 +92,24 @@ D1_QUALITY_FIELDS: Final = frozenset(
 )
 D1_SCALAR_METRICS: Final = D1_QUALITY_FIELDS - {
     "pairwise_cosine_semantic",
+    "predicted_covariance_eigenvalues",
+    "predicted_mean",
+    "predicted_variance",
+    "residual_mean_vector",
     "state_covariance_eigenvalues",
+    "state_mean",
     "state_variance",
+    "target_covariance_eigenvalues",
+    "target_mean",
+    "target_predicted_exact_match_semantic",
+    "target_variance",
 }
+D1_REPORT_ONLY_METRICS: Final = frozenset(
+    "state_rms_l2_norm target_effective_rank target_numerical_rank target_rms_l2_norm "
+    "predicted_effective_rank predicted_numerical_rank predicted_rms_l2_norm "
+    "residual_mean_l2_norm target_predicted_exact_match_count "
+    "target_predicted_exact_match_fraction".split()
+)
 
 
 class D1TelemetryGap(ValueError):
@@ -178,6 +222,21 @@ class D1TailQuarantineEvidence:
             last_tail_event_sequence,
         )
 
+    @property
+    def authority_manifest(self) -> dict[str, object]:
+        return {
+            "artifact_byte_count": self.artifact_byte_count,
+            "artifact_file_name": self.artifact_file_name,
+            "artifact_sha256": self.artifact_sha256,
+            "first_tail_event_sequence": self.first_tail_event_sequence,
+            "kind": self.kind.value,
+            "last_tail_event_sequence": self.last_tail_event_sequence,
+            "manifest": thaw_for_digest(self.manifest),
+            "retained_prefix_byte_count": self.retained_prefix_byte_count,
+            "retained_prefix_sha256": self.retained_prefix_sha256,
+            "tail_event_count": self.tail_event_count,
+        }
+
 
 def _finite(value: float, field: str) -> None:
     if type(value) is not float or not math.isfinite(value):
@@ -188,6 +247,10 @@ def _nonnegative(value: float, field: str) -> None:
     _finite(value, field)
     if value < 0.0:
         raise gap("metric_domain", field, "must be nonnegative")
+
+
+def _close(left: float, right: float) -> bool:
+    return math.isclose(left, right, rel_tol=1e-5, abs_tol=1e-6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,11 +272,11 @@ class D1QualityEvidence:
     coverage_50: float
     coverage_80: float
     coverage_95: float
-    state_variance: tuple[float, ...]
-    state_covariance_eigenvalues: tuple[float, ...]
-    effective_rank: float
-    numerical_rank: int
-    mean_pairwise_cosine_distance: float
+    state_moments: D1ChannelMoments
+    target_moments: D1ChannelMoments
+    predicted_moments: D1ChannelMoments
+    target_predicted_exact_match_count: int
+    mean_pairwise_cosine_distance: float | D1CosineGap
     pairwise_cosine_semantic: str
     raw_variance_penalty: float
     weighted_variance_penalty: float
@@ -224,6 +287,9 @@ class D1QualityEvidence:
     residual_elements: int
 
     def __post_init__(self) -> None:
+        channels = (self.state_moments, self.target_moments, self.predicted_moments)
+        if any(type(channel) is not D1ChannelMoments for channel in channels):
+            raise gap("invalid_channel", "channels", "must be D1ChannelMoments")
         for field in (
             "language_loss",
             "nats_per_byte",
@@ -252,31 +318,38 @@ class D1QualityEvidence:
                 raise gap("metric_domain", field, "must be in [0, 1]")
         if tuple(sorted(coverages)) != coverages:
             raise gap("coverage_order", "coverage", "coverage intervals must be nested")
-        _finite(self.mean_pairwise_cosine_distance, "mean_pairwise_cosine_distance")
-        if not 0.0 <= self.mean_pairwise_cosine_distance <= 2.0:
-            raise gap("metric_domain", "mean_pairwise_cosine_distance", "must be in [0, 2]")
+        try:
+            validate_d1_cosine(self.mean_pairwise_cosine_distance, positions=self.online_positions)
+        except (TypeError, ValueError) as error:
+            raise gap("metric_domain", "mean_pairwise_cosine_distance", str(error)) from error
         if self.pairwise_cosine_semantic != PAIRWISE_COSINE_SEMANTIC:
             raise gap("semantic_mismatch", "pairwise_cosine_semantic", "registered meaning changed")
         for field in ("batch_count", "online_positions", "residual_elements"):
             if type(getattr(self, field)) is not int or getattr(self, field) < 1:
                 raise gap("invalid_count", field, "must be a positive integer")
-        width = len(self.state_variance)
-        if width < 1 or len(self.state_covariance_eigenvalues) != width:
-            raise gap("vector_width", "state_statistics", "vectors must share one positive width")
-        for field, values in (
-            ("state_variance", self.state_variance),
-            ("state_covariance_eigenvalues", self.state_covariance_eigenvalues),
-        ):
-            for value in values:
-                _nonnegative(value, field)
-        if tuple(sorted(self.state_covariance_eigenvalues)) != self.state_covariance_eigenvalues:
-            raise gap("eigenvalue_order", "state_covariance_eigenvalues", "must be ascending")
-        if type(self.numerical_rank) is not int or not 0 <= self.numerical_rank <= width:
-            raise gap("rank_domain", "numerical_rank", "must be in [0, latent_width]")
-        if self.effective_rank > float(width):
-            raise gap("rank_domain", "effective_rank", "must not exceed latent_width")
+        width = self.state_moments.width
+        if any(channel.width != width for channel in channels[1:]):
+            raise gap("vector_width", "channels", "must share one latent width")
         if self.residual_elements != self.online_positions * width:
             raise gap("position_width", "residual_elements", "must equal positions times width")
+        if (
+            type(self.target_predicted_exact_match_count) is not int
+            or not 0 <= self.target_predicted_exact_match_count <= self.residual_elements
+        ):
+            raise gap("invalid_count", "target_predicted_exact_match_count", "is out of range")
+        for channel in channels:
+            expected_square_norm = sum(value * value for value in channel.mean) + (
+                (self.online_positions - 1) / self.online_positions
+            ) * sum(channel.variance)
+            if not _close(channel.rms_l2_norm * channel.rms_l2_norm, expected_square_norm):
+                raise gap("metric_identity", "channel.rms_l2_norm", "differs from moments")
+        if not _close(self.residual_mean, sum(self.residual_mean_vector) / width):
+            raise gap("metric_identity", "residual_mean", "differs from channel means")
+        if not _close(
+            self.residual_variance,
+            self.residual_rms * self.residual_rms - self.residual_mean * self.residual_mean,
+        ):
+            raise gap("metric_identity", "residual_variance", "differs from RMS and mean")
         identities = (
             (self.nats_per_byte, self.language_loss, "nats_per_byte"),
             (self.bits_per_byte, self.language_loss / math.log(2.0), "bits_per_byte"),
@@ -298,15 +371,119 @@ class D1QualityEvidence:
 
     @property
     def latent_width(self) -> int:
-        return len(self.state_variance)
+        return self.state_moments.width
+
+    @property
+    def state_mean(self) -> tuple[float, ...]:
+        return self.state_moments.mean
+
+    @property
+    def state_variance(self) -> tuple[float, ...]:
+        return self.state_moments.variance
+
+    @property
+    def state_covariance_eigenvalues(self) -> tuple[float, ...]:
+        return self.state_moments.covariance_eigenvalues
+
+    @property
+    def effective_rank(self) -> float:
+        return self.state_moments.effective_rank
+
+    @property
+    def numerical_rank(self) -> int:
+        return self.state_moments.numerical_rank
+
+    @property
+    def state_rms_l2_norm(self) -> float:
+        return self.state_moments.rms_l2_norm
+
+    @property
+    def target_mean(self) -> tuple[float, ...]:
+        return self.target_moments.mean
+
+    @property
+    def target_variance(self) -> tuple[float, ...]:
+        return self.target_moments.variance
+
+    @property
+    def target_covariance_eigenvalues(self) -> tuple[float, ...]:
+        return self.target_moments.covariance_eigenvalues
+
+    @property
+    def target_effective_rank(self) -> float:
+        return self.target_moments.effective_rank
+
+    @property
+    def target_numerical_rank(self) -> int:
+        return self.target_moments.numerical_rank
+
+    @property
+    def target_rms_l2_norm(self) -> float:
+        return self.target_moments.rms_l2_norm
+
+    @property
+    def predicted_mean(self) -> tuple[float, ...]:
+        return self.predicted_moments.mean
+
+    @property
+    def predicted_variance(self) -> tuple[float, ...]:
+        return self.predicted_moments.variance
+
+    @property
+    def predicted_covariance_eigenvalues(self) -> tuple[float, ...]:
+        return self.predicted_moments.covariance_eigenvalues
+
+    @property
+    def predicted_effective_rank(self) -> float:
+        return self.predicted_moments.effective_rank
+
+    @property
+    def predicted_numerical_rank(self) -> int:
+        return self.predicted_moments.numerical_rank
+
+    @property
+    def predicted_rms_l2_norm(self) -> float:
+        return self.predicted_moments.rms_l2_norm
+
+    @property
+    def residual_mean_vector(self) -> tuple[float, ...]:
+        return tuple(
+            target - predicted
+            for target, predicted in zip(self.target_mean, self.predicted_mean, strict=True)
+        )
+
+    @property
+    def residual_mean_l2_norm(self) -> float:
+        return math.sqrt(sum(value * value for value in self.residual_mean_vector))
+
+    @property
+    def target_predicted_exact_match_fraction(self) -> float:
+        return self.target_predicted_exact_match_count / self.residual_elements
+
+    @property
+    def target_predicted_exact_match_semantic(self) -> str:
+        return TARGET_PREDICTED_EXACT_MATCH_SEMANTIC
 
     def scalar_metric(self, name: str) -> float:
         if name not in D1_SCALAR_METRICS:
             raise gap("unknown_metric", name, "is not a registered scalar quality metric")
         value = getattr(self, name)
+        if type(value) is D1CosineGap:
+            raise gap(value.reason, name, f"undefined at {value.affected_positions} positions")
         if type(value) not in (int, float):  # pragma: no cover - whitelist is pinned above
             raise AssertionError("registered scalar metric has a non-scalar representation")
         return float(value)
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            field: (
+                value.manifest
+                if type(value := getattr(self, field)) is D1CosineGap
+                else thaw_for_digest(value)
+            )
+            for field in sorted(D1_QUALITY_FIELDS)
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +494,15 @@ class D1EvalEvidence:
     eval_index: int
     quality: D1QualityEvidence
     resource_work: ResourceWorkSnapshot
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {
+            "eval_index": self.eval_index,
+            "quality": self.quality.manifest,
+            "resource_work": self.resource_work.manifest,
+            "step": self.step,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,9 +517,11 @@ class D1RunEvidence:
     segments: tuple[RunStartProvenance, ...]
     baseline: D1JournalEvent | None
     evals: tuple[D1EvalEvidence, ...]
+    train_steps: tuple[D1TrainStepResult, ...]
     data_order_segments: tuple[tuple[int, str, int], ...]
     checkpoint_receipts: tuple[tuple[int, str], ...]
     tail_quarantine_evidence: tuple[D1TailQuarantineEvidence, ...]
+    trainer_abort: D1TrainerAbortEvidence | None
     terminal: D1JournalEvent | None
 
     @property
@@ -353,3 +541,46 @@ class D1RunEvidence:
             for segment in self.segments[1:]
             if segment.resume_checkpoint_sha256 is not None
         )
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        identity = self.identity
+        return {
+            "baseline": None if self.baseline is None else self.baseline.manifest,
+            "checkpoint_receipts": [
+                {"sha256": digest, "successful_step": step}
+                for step, digest in self.checkpoint_receipts
+            ],
+            "data_order_segments": [
+                {
+                    "batch_count": batches,
+                    "data_order_digest": digest,
+                    "execution_segment_index": segment,
+                }
+                for segment, digest, batches in self.data_order_segments
+            ],
+            "evals": [item.manifest for item in self.evals],
+            "identity": {
+                "aggregation_digest": identity.aggregation_digest,
+                "construction_digest": identity.construction_digest,
+                "execution_digest": identity.execution_digest,
+                "family_digest": identity.family_digest,
+                "logical_run_id": identity.logical_run_id,
+                "run_class": identity.run_class.value,
+            },
+            "path": str(self.path),
+            "plan_digest": self.plan_digest,
+            "plan_manifest": thaw_for_digest(self.plan_manifest),
+            "segments": [segment.manifest for segment in self.segments],
+            "status": self.status.value,
+            "tail_quarantine_evidence": [
+                item.authority_manifest for item in self.tail_quarantine_evidence
+            ],
+            "trainer_abort": (None if self.trainer_abort is None else self.trainer_abort.manifest),
+            "terminal": None if self.terminal is None else self.terminal.manifest,
+            "train_steps": [item.manifest for item in self.train_steps],
+        }
+
+    @property
+    def authority_digest(self) -> str:
+        return canonical_digest(self.manifest)

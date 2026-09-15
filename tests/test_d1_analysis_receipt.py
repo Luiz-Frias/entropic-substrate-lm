@@ -8,6 +8,7 @@ import pytest
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_execution_receipt import (
+    D1AnalysisFilingBindings,
     D1AnalysisImplementationIdentity,
     D1AnalysisRunnerRequest,
     D1ExecutorKind,
@@ -16,6 +17,9 @@ from entropic_substrate.analysis.d1_execution_receipt import (
     D1IsolationExecutionEvidence,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
+)
+from entropic_substrate.analysis.d1_external_analysis_control import (
+    D1ReaderSourceManifestControl,
 )
 from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
@@ -57,14 +61,29 @@ def _admitted():
     )
 
 
-def _implementation() -> D1AnalysisImplementationIdentity:
+def _implementation(
+    reader_source: D1ReaderSourceManifestControl | None = None,
+) -> D1AnalysisImplementationIdentity:
+    module_digests = (
+        {}
+        if reader_source is None
+        else {entry.identity: entry.sha256 for entry in reader_source.modules}
+    )
     return D1AnalysisImplementationIdentity(
         code_commit="1" * 40,
         repository_digest="2" * 64,
-        analysis_code_digest="3" * 64,
+        analysis_code_digest=(
+            "3" * 64 if reader_source is None else reader_source.analysis_code_digest
+        ),
         image_digest="sha256:" + "4" * 64,
-        complete_reader_digest="5" * 64,
-        defect_reader_digest="6" * 64,
+        complete_reader_digest=module_digests.get(
+            getattr(reader_source, "complete_reader", "").rpartition(".")[0],
+            "5" * 64,
+        ),
+        defect_reader_digest=module_digests.get(
+            getattr(reader_source, "terminal_defect_reader", "").rpartition(".")[0],
+            "6" * 64,
+        ),
     )
 
 
@@ -98,6 +117,7 @@ def test_in_process_fake_satisfies_port_but_cannot_issue_filing_eligible_receipt
 
     assert result.isolation.executor_kind is D1ExecutorKind.TEST_FAKE
     assert receipt.manifest["filing_eligible"] is False
+    assert receipt.manifest["filing_bindings"] is None
     assert receipt.manifest["isolation"]["mechanism"] == "in-process-contract-fake"  # type: ignore[index]
     assert receipt.manifest["inputs"] == [  # exact MD5 and SHA survive
         {
@@ -182,4 +202,15 @@ def test_receipt_rejects_alias_or_analysis_binding_drift() -> None:
             aliases=replace(_aliases(), sealed_commitment="9" * 64),
             implementation=_implementation(),
             isolation=isolation,
+        )
+
+
+def test_filing_bindings_require_exact_sha256_values() -> None:
+    with pytest.raises(ValueError, match="reader_sha256"):
+        D1AnalysisFilingBindings(
+            capture_manifest_sha256="1" * 64,
+            preregistration_sha256="2" * 64,
+            reader_sha256="not-a-digest",
+            isolation_attestation_sha256="4" * 64,
+            output_sha256="5" * 64,
         )

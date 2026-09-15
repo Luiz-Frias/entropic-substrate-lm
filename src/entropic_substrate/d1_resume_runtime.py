@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -17,7 +16,6 @@ from entropic_substrate.d1_observability import (
     D1JournalObserver,
     ObservedD1Journal,
 )
-from entropic_substrate.d1_optimizer import D1OptimizerBundle, build_d1_optimizer
 from entropic_substrate.d1_resource_activation import (
     D1ResourceActivation,
     D1ResourceActivationFactory,
@@ -26,10 +24,8 @@ from entropic_substrate.d1_resource_activation import (
 from entropic_substrate.d1_trainer_runtime import (
     D1FreshComponents,
     D1TrainerWallOrigin,
-    resolve_d1_device,
+    materialize_d1_model_runtime,
 )
-from entropic_substrate.data.batching import Corpus, SequenceSampler
-from entropic_substrate.data.build import build_corpus
 from entropic_substrate.evidence.d1_journal_values import (
     FrozenJson,
     JournalCheckpointState,
@@ -53,8 +49,6 @@ from entropic_substrate.predictive_state.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
     load_checkpoint_candidate,
 )
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
 
 __all__ = [
     "D1RestoredResume",
@@ -111,16 +105,6 @@ class D1RestoredResume:
     baseline: D1BaselineCalibrationAttestation
     successful_step: int
     best_nats_per_byte: float
-
-
-@dataclass(frozen=True, slots=True)
-class _UnrestoredRuntime:
-    device: torch.device
-    corpus: Corpus
-    system: D1PredictiveSystem
-    optimizer: D1OptimizerBundle
-    train_sampler: SequenceSampler
-    eval_sampler: SequenceSampler
 
 
 def _validate_start(
@@ -254,51 +238,6 @@ def open_d1_resume(
     return admission
 
 
-def _materialize(plan: D1RunPlan) -> _UnrestoredRuntime:
-    train, data = plan.train, plan.profile.data
-    protocol = plan.profile.draft.execution_protocol
-    random.seed(plan.seed)
-    np.random.seed(plan.seed % (2**32))
-    torch.manual_seed(plan.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(plan.seed)
-    device = resolve_d1_device(train.device)
-    corpus = build_corpus(data, "byte")
-    if corpus.meta.vocab_size != plan.profile.draft.codec.cardinality:
-        raise ValueError("D1 resume corpus alphabet differs from the observation codec")
-    if not math.isclose(corpus.meta.bytes_per_token, 1.0, rel_tol=0.0, abs_tol=0.0):
-        raise ValueError("D1 resume requires exactly one source byte per model token")
-    system = D1PredictiveSystem.from_family(
-        plan.profile.family,
-        plan.profile.arm,
-        initializer=SeededD1BranchInitializer(seed=plan.seed),
-    ).to(device)
-    optimizer = build_d1_optimizer(system, protocol.optimization)
-    batching = protocol.batching
-    return _UnrestoredRuntime(
-        device,
-        corpus,
-        system,
-        optimizer,
-        SequenceSampler(
-            corpus.train,
-            batching.batch_size,
-            batching.sequence_length,
-            train=True,
-            seed=plan.seed,
-            device=device,
-        ),
-        SequenceSampler(
-            corpus.val,
-            batching.batch_size,
-            batching.sequence_length,
-            train=False,
-            seed=plan.seed,
-            device=device,
-        ),
-    )
-
-
 def _baseline(value: object) -> D1BaselineCalibrationAttestation:
     return D1BaselineCalibrationAttestation(
         **cast(dict[str, object], value)  # type: ignore[arg-type]
@@ -355,7 +294,7 @@ def restore_d1_resume_runtime(
     """Materialize only after segment evidence, then fully validate and restore state."""
     if type(admission) is not D1ResumeAdmission:
         raise TypeError("D1 resume restoration requires D1ResumeAdmission")
-    runtime = _materialize(admission.plan)
+    runtime = materialize_d1_model_runtime(admission.plan)
     state = validate_d1_checkpoint(
         admission.checkpoint,
         system=runtime.system,

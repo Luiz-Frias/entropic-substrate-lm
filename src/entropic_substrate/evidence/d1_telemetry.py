@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from entropic_substrate.d1_numerical_defect import D1TerminalNumericalDefectRecord
+from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
 from entropic_substrate.evidence.d1_telemetry_query import (
     final_d1_eval_metric,
     read_d1_eval_series,
     read_d1_run_evidence,
+    read_d1_run_evidence_bytes,
 )
 from entropic_substrate.evidence.d1_telemetry_values import (
     D1EvalEvidence,
@@ -27,9 +29,11 @@ __all__ = [
     "D1RunEvidence",
     "D1RunStatus",
     "D1TelemetryGap",
+    "D1TrainerAbortEvidence",
     "final_d1_eval_metric",
     "read_d1_eval_series",
     "read_d1_run_evidence",
+    "read_d1_run_evidence_bytes",
     "read_d1_terminal_defect",
 ]
 

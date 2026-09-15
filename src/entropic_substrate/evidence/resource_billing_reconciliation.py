@@ -10,6 +10,9 @@ from entropic_substrate.evidence.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
     ProviderBilling,
+    ProviderBillingPartial,
+    ProviderBillingPending,
+    TerminalProviderBillingEvidence,
     canonical_decimal,
     require_canonical_decimal,
     validate_segment_identity,
@@ -199,15 +202,14 @@ class SegmentBillingReconciliation:
 @dataclass(frozen=True, slots=True)
 class SegmentBillingMissingCost:
     rate_estimate: TerminalRateEstimate
-    billing_gap: BillingGap
+    provider_evidence: ProviderBillingPartial | BillingGap
 
     def __post_init__(self) -> None:
-        if (
-            type(self.rate_estimate) is not TerminalRateEstimate
-            or type(self.billing_gap) is not BillingGap
-        ):
-            raise TypeError("missing-cost outcome requires estimate and BillingGap")
-        if self.rate_estimate.execution_segment_id != self.billing_gap.execution_segment_id:
+        if type(self.rate_estimate) is not TerminalRateEstimate or type(
+            self.provider_evidence
+        ) not in (ProviderBillingPartial, BillingGap):
+            raise TypeError("missing-cost outcome requires terminal incomplete provider evidence")
+        if self.rate_estimate.execution_segment_id != self.provider_evidence.execution_segment_id:
             raise ValueError("missing-cost segment identities differ")
 
     @property
@@ -225,7 +227,7 @@ class SegmentBillingMissingCost:
     @property
     def manifest(self) -> dict[str, object]:
         return {
-            "billing_gap": self.billing_gap.manifest,
+            "provider_evidence": self.provider_evidence.manifest,
             "kind": "missing_cost",
             "rate_estimate": self.rate_estimate.manifest,
         }
@@ -237,18 +239,23 @@ SegmentBillingOutcome = SegmentBillingReconciliation | SegmentBillingMissingCost
 def reconcile_segment_billing(
     start: RunStartProvenance,
     termination: ExecutionSegmentTermination,
-    provider: ProviderBilling | BillingGap,
+    provider: TerminalProviderBillingEvidence | ProviderBillingPending,
 ) -> SegmentBillingOutcome:
     estimate = estimate_terminal_rate(start, termination)
-    if type(provider) not in (ProviderBilling, BillingGap):
-        raise TypeError("provider billing must be ProviderBilling or BillingGap")
+    if type(provider) is ProviderBillingPending:
+        raise ValueError("pending provider billing cannot enter terminal reconciliation")
+    if type(provider) not in (ProviderBilling, ProviderBillingPartial, BillingGap):
+        raise TypeError("provider billing must be terminal nominal evidence")
     if (provider.logical_run_id, provider.execution_segment_id) != (
         start.logical_run_id,
         start.execution_segment_id,
     ):
         raise ValueError("provider/start segment identity mismatch")
-    if type(provider) is BillingGap:
-        return SegmentBillingMissingCost(estimate, provider)
+    if type(provider) in (ProviderBillingPartial, BillingGap):
+        return SegmentBillingMissingCost(
+            estimate,
+            cast(ProviderBillingPartial | BillingGap, provider),
+        )
     billed = cast(ProviderBilling, provider)
     if billed.billed_amount.currency != estimate.amount.currency:
         raise ValueError("provider and estimate currency mismatch; FX inference is forbidden")
@@ -333,7 +340,7 @@ def _money_sum(values: tuple[Money, ...]) -> Money:
 def reconcile_logical_billing(
     starts: tuple[RunStartProvenance, ...],
     terminations: tuple[ExecutionSegmentTermination, ...],
-    provider_billings: tuple[ProviderBilling | BillingGap, ...],
+    provider_billings: tuple[TerminalProviderBillingEvidence, ...],
 ) -> LogicalBillingOutcome:
     validate_execution_segments(starts)
     if type(terminations) is not tuple or type(provider_billings) is not tuple:

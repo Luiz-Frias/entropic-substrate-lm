@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final, cast
 
+from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
 from entropic_substrate.evidence.lifecycle import (
     ActorIdentity,
     ActorRole,
@@ -17,7 +18,7 @@ from entropic_substrate.evidence.lifecycle import (
     SuccessorAuthorization,
 )
 
-D1_LIFECYCLE_EVENT_SCHEMA: Final = "d1-lifecycle-event/v1"
+D1_LIFECYCLE_EVENT_SCHEMA: Final = "d1-lifecycle-event/v2"
 _EVENT_FIELDS: Final = frozenset(
     {
         "schema_version",
@@ -30,6 +31,7 @@ _EVENT_FIELDS: Final = frozenset(
         "artifacts",
         "problem_kind",
         "gate_authorization",
+        "eligible_arms",
         "eligible_strategies",
     }
 )
@@ -162,6 +164,7 @@ class D1LifecycleEvent:
     subject_id: str | None = None
     problem_kind: D1ProblemKind | None = None
     gate_authorization: SuccessorAuthorization | None = None
+    eligible_arms: tuple[str, ...] = ()
     eligible_strategies: tuple[str, ...] = ()
     rung: str = "d1"
 
@@ -207,7 +210,11 @@ class D1LifecycleEvent:
     def _validate_gate(self) -> None:
         expected = _GATE_OUTCOME.get(self.event_kind)
         if expected is None:
-            if self.gate_authorization is not None or self.eligible_strategies:
+            if (
+                self.gate_authorization is not None
+                or self.eligible_arms
+                or self.eligible_strategies
+            ):
                 raise _error(
                     "unexpected_gate", "gate_authorization", "only gate events carry outcome"
                 )
@@ -215,8 +222,16 @@ class D1LifecycleEvent:
         if self.gate_authorization is not expected:
             raise _error("invalid_gate_outcome", "gate_authorization", f"must be {expected.value}")
         strategies = self.eligible_strategies
+        arms = self.eligible_arms
+        if type(arms) is not tuple or any(
+            type(item) is not str or not item or item.strip() != item for item in arms
+        ):
+            raise _error("invalid_gate_arm", "eligible_arms", "must be trimmed identifiers")
+        canonical_arms = tuple(arm for arm in D1_STABILIZATION_ARM_IDS if arm in arms)
+        if arms != canonical_arms:
+            raise _error("invalid_gate_arm", "eligible_arms", "must be unique canonical arms")
         if type(strategies) is not tuple or any(
-            not item or item.strip() != item for item in strategies
+            type(item) is not str or not item or item.strip() != item for item in strategies
         ):
             raise _error(
                 "invalid_gate_strategy", "eligible_strategies", "must be trimmed identifiers"
@@ -227,12 +242,16 @@ class D1LifecycleEvent:
             raise _error(
                 "invalid_gate_strategy", "eligible_strategies", "AUTHORIZED requires a strategy"
             )
+        if expected is SuccessorAuthorization.AUTHORIZED and not arms:
+            raise _error("invalid_gate_arm", "eligible_arms", "AUTHORIZED requires an arm")
         if expected is not SuccessorAuthorization.AUTHORIZED and strategies:
             raise _error(
                 "invalid_gate_strategy",
                 "eligible_strategies",
                 f"{expected.value} forbids strategies",
             )
+        if expected is not SuccessorAuthorization.AUTHORIZED and arms:
+            raise _error("invalid_gate_arm", "eligible_arms", f"{expected.value} forbids arms")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -262,6 +281,7 @@ class D1LifecycleEvent:
             "gate_authorization": (
                 None if self.gate_authorization is None else self.gate_authorization.value
             ),
+            "eligible_arms": list(self.eligible_arms),
             "eligible_strategies": list(self.eligible_strategies),
         }
 
@@ -377,6 +397,13 @@ def parse_lifecycle_event_line(line: bytes) -> D1LifecycleEvent:
         _trimmed(item, path=f"eligible_strategies[{index}]")
         for index, item in enumerate(cast(Sequence[object], strategy_values))
     )
+    arm_values = data["eligible_arms"]
+    if type(arm_values) is not list:
+        raise _error("invalid_type", "eligible_arms", "must be a JSON array")
+    arms = tuple(
+        _trimmed(item, path=f"eligible_arms[{index}]")
+        for index, item in enumerate(cast(Sequence[object], arm_values))
+    )
     subject_value = data["subject_id"]
     subject = None if subject_value is None else _trimmed(subject_value, path="subject_id")
     event = D1LifecycleEvent(
@@ -389,6 +416,7 @@ def parse_lifecycle_event_line(line: bytes) -> D1LifecycleEvent:
         subject_id=subject,
         problem_kind=problem,
         gate_authorization=gate,
+        eligible_arms=arms,
         eligible_strategies=strategies,
     )
     if canonical_lifecycle_event_line(event) != line:

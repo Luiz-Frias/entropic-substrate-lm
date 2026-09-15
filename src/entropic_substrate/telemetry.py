@@ -48,9 +48,11 @@ from entropic_substrate.evidence.d1_telemetry import (
     D1RunEvidence,
     D1RunStatus,
     D1TelemetryGap,
+    D1TrainerAbortEvidence,
     final_d1_eval_metric,
     read_d1_eval_series,
     read_d1_run_evidence,
+    read_d1_run_evidence_bytes,
 )
 from entropic_substrate.evidence.d1_terminal_defect_query import (
     validate_d1_terminal_defect,
@@ -64,6 +66,7 @@ __all__ = [
     "D1RunEvidence",
     "D1RunStatus",
     "D1TelemetryGap",
+    "D1TrainerAbortEvidence",
     "EvalRecord",
     "KappaReadout",
     "TelemetryGap",
@@ -76,6 +79,7 @@ __all__ = [
     "max_kappa_spread",
     "read_d1_eval_series",
     "read_d1_run_evidence",
+    "read_d1_run_evidence_bytes",
     "read_d1_terminal_defect",
     "read_eval_series",
     "read_final_kappa",
