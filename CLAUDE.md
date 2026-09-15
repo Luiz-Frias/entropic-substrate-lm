@@ -135,7 +135,8 @@ personal (`justfile.local`, gitignored) because they need an API key.
 ## Historical E-series architecture
 
 The components below describe retained E-series implementations. The current forward
-architecture is the codec-separated predictor above; its generative path is not yet built.
+architecture is the codec-separated predictor above. Its local generative path is implemented;
+complete flywheel integration and remote validation remain open.
 
 Three swappable components under a standard decoder-only transformer, selected per
 experiment by `configs/*.yaml` (init × block × norm) — `docs/architecture.md` is the

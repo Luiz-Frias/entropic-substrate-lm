@@ -175,7 +175,9 @@ def test_save_refuses_uncommitted_cursor_and_occupied_or_small_outputs(tmp_path:
         )
 
 
-@pytest.mark.parametrize("mutation", ["precision", "parameter_order", "version", "reader"])
+@pytest.mark.parametrize(
+    "mutation", ["precision", "parameter_order", "version", "reader", "legacy"]
+)
 def test_rehashed_incompatible_payload_is_rejected(tmp_path: Path, mutation: str) -> None:
     model, optimizer, source = setup_run()
     step(model, optimizer, source)
@@ -205,12 +207,15 @@ def test_rehashed_incompatible_payload_is_rejected(tmp_path: Path, mutation: str
             if states[group[i]]["exp_avg"].shape == states[group[j]]["exp_avg"].shape
         )
         group[first], group[second] = group[second], group[first]
+    elif mutation == "legacy":
+        payload["schema"] = "h-training-checkpoint-v1"
+        payload.pop("measurement")
     else:
         payload["schema" if mutation == "version" else "reader"] = "unknown"
     torch.save(payload, tmp_path / "forged.pt")
     digest = ContentHash("sha256", sha256((tmp_path / "forged.pt").read_bytes()).hexdigest())
     before = torch.get_rng_state()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="original reader" if mutation == "legacy" else None):
         load_checkpoint(
             tmp_path,
             "forged.pt",
@@ -263,3 +268,45 @@ def test_small_and_occupied_outputs_preserve_existing_artifacts(tmp_path: Path) 
             run_identity=RUN_ID,
             max_bytes=LIMIT,
         )
+
+
+def test_checkpoint_requires_the_same_external_measurement_identity(tmp_path: Path) -> None:
+    model, optimizer, source = setup_run()
+    measurement = ContentHash("sha256", content_identity(("actual-step-journal",)))
+    checkpoint = save_checkpoint(
+        tmp_path,
+        "bound.pt",
+        model,
+        optimizer,
+        source,
+        phase="prediction",
+        step=0,
+        run_identity=RUN_ID,
+        measurement=measurement,
+        max_bytes=LIMIT,
+    )
+    with pytest.raises(ValueError, match="measurement"):
+        load_checkpoint(
+            tmp_path,
+            "bound.pt",
+            checkpoint.content_hash,
+            model,
+            optimizer,
+            source,
+            phase="prediction",
+            run_identity=RUN_ID,
+            max_bytes=LIMIT,
+        )
+    restored = load_checkpoint(
+        tmp_path,
+        "bound.pt",
+        checkpoint.content_hash,
+        model,
+        optimizer,
+        source,
+        phase="prediction",
+        run_identity=RUN_ID,
+        expected_measurement=measurement,
+        max_bytes=LIMIT,
+    )
+    assert restored.step == 0

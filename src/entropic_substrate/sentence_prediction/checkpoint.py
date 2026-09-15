@@ -35,6 +35,14 @@ def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":"))
 
 
+def _measurement_digest(value: ContentHash | None) -> str | None:
+    if value is None:
+        return None
+    if type(value) is not ContentHash or value.algorithm != "sha256":
+        raise ValueError("checkpoint measurement requires a SHA-256 identity")
+    return value.digest
+
+
 def _reader_identity() -> str:
     package = Path(__file__).parent
     paths = [
@@ -169,6 +177,7 @@ def save_checkpoint(
     run_identity: str,
     max_bytes: int,
     rollout: SentenceRollout | None = None,
+    measurement: ContentHash | None = None,
 ) -> ArtifactIdentity:
     """Publish only a completed optimizer/source cursor, with no overwrite."""
     if type(max_bytes) is not int or max_bytes < 1:
@@ -179,7 +188,8 @@ def save_checkpoint(
     _validate_optimizer_state(optimizer, step)
     weights = _validate_weights(model, model.state_dict())
     payload = {
-        "schema": "h-training-checkpoint-v1",
+        "schema": "h-training-checkpoint-v2",
+        "measurement": _measurement_digest(measurement),
         "reader": _reader_identity(),
         "binding": binding,
         "step": step,
@@ -209,6 +219,7 @@ def load_checkpoint(
     phase: SentencePhase,
     run_identity: str,
     max_bytes: int,
+    expected_measurement: ContentHash | None = None,
 ) -> RestoredSentenceState:
     """Validate into separate objects; caller replaces live state only on success."""
     if expected.algorithm != "sha256":
@@ -224,12 +235,16 @@ def load_checkpoint(
                 raise ValueError("expanded checkpoint exceeds byte limit")
     except BadZipFile as error:
         raise ValueError("checkpoint is not the declared Torch archive format") from error
+    saved: object = torch.load(BytesIO(payload), map_location="cpu", weights_only=True)
+    if type(saved) is dict and saved.get("schema") == "h-training-checkpoint-v1":
+        raise ValueError("checkpoint v1 requires its original reader; no implicit migration")
     row = recovery_record(
-        torch.load(BytesIO(payload), map_location="cpu", weights_only=True),
-        "schema reader binding step source training model optimizer rng rollout",
+        saved, "schema reader binding step source training model optimizer rng rollout measurement"
     )
-    if row["schema"] != "h-training-checkpoint-v1" or row["reader"] != _reader_identity():
+    if row["schema"] != "h-training-checkpoint-v2" or row["reader"] != _reader_identity():
         raise ValueError("checkpoint version or reader identity is incompatible")
+    if row["measurement"] != _measurement_digest(expected_measurement):
+        raise ValueError("checkpoint measurement identity differs from expected evidence")
     binding = _binding(model, optimizer, sampler, phase, run_identity)
     if row["binding"] != binding:
         raise ValueError("checkpoint construction identity differs from expected run")

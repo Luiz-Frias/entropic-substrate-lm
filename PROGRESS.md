@@ -213,6 +213,12 @@ The execution fixture uses a declared test-only split policy; production never f
 to training data for evaluation. Artifact journaling, CLI orchestration, and remote custody
 remain next; this engine neither allocates pods nor grants scientific authority.
 
+Step 6b introduces H checkpoint v2 with an optional measurement digest for standalone state
+caches and a required expected digest when loading a measurement-bound checkpoint. The seal
+layer will require this binding for journal custody. Eleven checkpoint tests pass, including
+measurement mismatch refusal and explicit rejection of v1 through its original-reader path;
+historical bytes are not rewritten or implicitly migrated.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
@@ -238,7 +244,8 @@ is pending. Normal hooks remain mandatory and unchanged; no paid review is autho
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,
-with a roughly 500M–1B total deployed-model envelope. The new generative path is not built.
+with a roughly 500M–1B total deployed-model envelope. The local generative path is implemented;
+complete flywheel integration and remote validation remain open.
 The following September 12 checkpoint remains historical, not current completion status.
 
 The operator chose to preserve the unfinished old D host stage and move to the new design.
