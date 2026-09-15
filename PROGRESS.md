@@ -83,6 +83,21 @@ reproducer showed log-magnitude underflow returning zero samples. The new RED-fi
 now requires a numerical sampling defect, including component underflow, with no floor or
 resampling fallback. Equal scales 1 and 1.0 share an identity. All 51 law/numeric tests pass.
 
+Step 2c adds the learned bidirectional sentence encoder and local causal byte decoder, with
+raw pooled vectors and independently initialized layers. Encoder freezing survives train()
+and state reload. Norm views own FP32 islands; the decoder has no raw-history bypass.
+RED-first tests caught cloned initializations, lost freeze state, and inherited normalization
+precision before correction. Removing latent conditioning failed its influence test. All 75
+codec/law/numeric tests pass. A 60-step synthetic reconstruction smoke reduced measured CE
+from 5.9338164 to 0.0090350; this is reconstruction, not next-sentence prediction evidence.
+The sentence-clock spine, generation loop, and full H0 lineage are still pending.
+
+Codec review requested three additional boundary-test groups (six duplicate findings): invalid
+freeze payloads, independent encoder/decoder divisibility, and partial radial underflow.
+They are covered; all 82 codec/law/numeric tests pass. The first codec commit attempt passed
+code gates but gitlint rejected an 84-character message line; the message was shortened, with
+no hook changes or bypass.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

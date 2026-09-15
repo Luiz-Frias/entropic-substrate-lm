@@ -220,3 +220,22 @@ def test_radius_tensor_shape_and_precision_are_validated(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         DirectionalMagnitudeLaw(LawSpec(2, "magnitude"), torch.tensor([1.0, 0.0]), radius)
+
+
+def test_partial_radial_underflow_is_not_hidden_by_a_surviving_component(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    direction = torch.tensor([1.0, 1e-8])
+    radius = torch.tensor(-90.0).exp()
+    assert float(radius) > 0
+    assert float((radius * direction)[0]) > 0
+    assert float((radius * direction)[1]) == 0
+    monkeypatch.setattr(torch.distributions.Beta, "sample", lambda self, shape: torch.ones(shape))
+
+    def fixed_noise(shape, **kwargs):
+        return torch.tensor([0.0, 1.0], **kwargs) if shape == (2,) else torch.zeros(shape, **kwargs)
+
+    monkeypatch.setattr(torch, "randn", fixed_noise)
+    law = DirectionalMagnitudeLaw(LawSpec(2, "magnitude"), direction, torch.tensor(-90.0))
+    with pytest.raises(FisherNumericalError, match="sample_underflow"):
+        law.rsample()
