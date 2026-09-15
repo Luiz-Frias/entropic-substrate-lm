@@ -88,7 +88,7 @@ def build_sentence_optimizer(
     )
 
 
-def _require_adamw_contract(optimizer: torch.optim.Optimizer, phase: SentencePhase) -> None:
+def require_sentence_adamw_contract(optimizer: torch.optim.Optimizer, phase: SentencePhase) -> None:
     """Match the builder's grouping and update policy, not merely parameter IDs."""
     if type(optimizer) is not torch.optim.AdamW or len(optimizer.param_groups) != 2:
         raise SentenceTrainingDefect("optimizer_contract", phase)
@@ -124,7 +124,7 @@ def apply_sentence_step(
     owned = [p for group in optimizer.param_groups for p in group["params"]]
     if len(owned) != len(expected) or {id(p) for p in owned} != {id(p) for p in expected}:
         raise SentenceTrainingDefect("optimizer_ownership", phase)
-    _require_adamw_contract(optimizer, phase)
+    require_sentence_adamw_contract(optimizer, phase)
     model.train()
     model.zero_grad(set_to_none=True)
     loss = objective()

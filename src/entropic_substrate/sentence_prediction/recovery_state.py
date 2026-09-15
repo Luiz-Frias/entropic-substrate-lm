@@ -14,7 +14,7 @@ from entropic_substrate.sentence_prediction.rollout import (
 )
 
 
-def _record(value: object, keys: str) -> dict[str, object]:
+def recovery_record(value: object, keys: str) -> dict[str, object]:
     if type(value) is not dict or set(value) != set(keys.split()):
         raise ValueError("recovery payload fields differ from the versioned schema")
     return cast(dict[str, object], value)
@@ -32,7 +32,7 @@ def capture_rng() -> dict[str, object]:
 
 
 def restore_rng(value: object) -> None:
-    row = _record(value, "schema cpu cuda")
+    row = recovery_record(value, "schema cpu cuda")
     cuda = row["cuda"]
     expected_cuda = torch.cuda.device_count() if torch.cuda.is_initialized() else 0
     if row["schema"] != "h-torch-rng-v1" or type(cuda) is not tuple or len(cuda) != expected_cuda:
@@ -85,7 +85,7 @@ def rollout_from_payload(
     """
     if value is None:
         return None
-    row = _record(
+    row = recovery_record(
         value,
         "schema codec_identity history context pending sample emissions observations log_scores status",
     )
@@ -127,7 +127,7 @@ def rollout_from_payload(
     restored: list[SentenceEmission] = []
     trace: list[int] = []
     for index, item in enumerate(emissions):
-        entry = _record(item, "source terminal shadow operative")
+        entry = recovery_record(item, "source terminal shadow operative")
         terminal = entry["terminal"]
         if (
             type(terminal) is not int

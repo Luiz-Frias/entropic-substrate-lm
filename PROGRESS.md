@@ -182,6 +182,14 @@ the operative-slot guard admitted a shadow substitution and failed its test. Inv
 bytes are checked on isolated generators before changing global state. CUDA replay remains
 unverified until the authorized GPU probe; disk model/optimizer custody is the next slice.
 
+Step 4e adds immutable, externally SHA-256-bound disk checkpoints for model, AdamW moments,
+phase/cursor, Torch RNG, and rollout state. Nine RED-first tests reproduce the next training
+transaction exactly and replay pending generation. Admission validates saved tensor precision
+and parameter ordering before Torch can cast/remap moments; rehashed dtype/order mutations
+were observed admitted before the fix and rejected afterward. Reader/source/construction
+identities are bound, outputs cannot overwrite existing artifacts, and loading validates into
+separate model/optimizer objects before restoring RNG. CUDA and remote custody remain pending.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
