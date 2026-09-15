@@ -56,6 +56,12 @@ keep historical loading isolated; both paths already use the same pinned revisio
 Python patch-version reader pin is intentional until compatibility is validated. No scientific
 or remote gate has advanced. The learned codec/model is the next implementation package.
 
+The follow-up capture review's duplicate finding requested direct coverage of remaining
+rejection branches. Added tests cover non-SHA hashes, reader byte limits, nonfinite JSON,
+forged candidate identities, unexamined suffixes, and boolean/integer summary confusion.
+All 20 capture tests pass; disabling the suffix guard admitted a forged suffix and made its
+test fail, then the guard was restored. Production behavior is unchanged by this test slice.
+
 ## Current direction and deferred old stage
 
 The approved destination is the [codec-separated hierarchical latent predictor](docs/hierarchical-latent-predictor.plan.md): sentence-first next-latent-sequence generation,

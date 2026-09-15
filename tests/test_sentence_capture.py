@@ -121,3 +121,74 @@ def test_capture_refuses_symlinked_artifacts(tmp_path: Path) -> None:
     (alternate / "prepared-corpus.json").symlink_to(root / "prepared-corpus.json")
     with pytest.raises(ValueError):
         read_prepared_corpus(alternate, artifact.content_hash, max_bytes=10000)
+
+
+def test_reader_refuses_non_sha256_identity_before_file_access(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="SHA-256"):
+        read_prepared_corpus(tmp_path, ContentHash("md5", "0" * 32), max_bytes=10000)
+
+
+def test_reader_byte_limit_is_independent_of_writer_limit(tmp_path: Path) -> None:
+    artifact = write_prepared_corpus(tmp_path, corpus(), max_bytes=10000)
+    with pytest.raises(ValueError, match="byte limit"):
+        read_prepared_corpus(tmp_path, artifact.content_hash, max_bytes=10)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_reader_refuses_nonfinite_json_constants(tmp_path: Path, constant: str) -> None:
+    encoded = f'{{"value":{constant}}}'.encode()
+    (tmp_path / "prepared-corpus.json").write_bytes(encoded)
+    with pytest.raises(ValueError, match="nonfinite JSON"):
+        read_prepared_corpus(
+            tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
+        )
+
+
+def test_rehashed_candidate_identity_must_still_match_its_bytes(tmp_path: Path) -> None:
+    write_prepared_corpus(tmp_path, corpus(), max_bytes=10000)
+    path = tmp_path / "prepared-corpus.json"
+    payload = json.loads(path.read_bytes())
+    payload["candidates"][0]["identity"] = "forged"
+    encoded = json.dumps(payload).encode()
+    path.write_bytes(encoded)
+    with pytest.raises(ValueError, match="candidate identity"):
+        read_prepared_corpus(
+            tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
+        )
+
+
+def test_valid_prefix_summary_cannot_hide_an_unexamined_suffix(tmp_path: Path) -> None:
+    complete = corpus()
+    prefix = prepare_documents(complete.candidates, replace(complete.spec, candidate_limit=1))
+    write_prepared_corpus(tmp_path, prefix, max_bytes=10000)
+    path = tmp_path / "prepared-corpus.json"
+    payload = json.loads(path.read_bytes())
+    extra = complete.candidates[1]
+    payload["candidates"].append(
+        {
+            "source_id": extra.source_id,
+            "text": extra.text,
+            "revision": extra.revision,
+            "identity": extra.identity,
+        }
+    )
+    encoded = json.dumps(payload).encode()
+    path.write_bytes(encoded)
+    with pytest.raises(ValueError, match="unexamined candidate suffix"):
+        read_prepared_corpus(
+            tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
+        )
+
+
+def test_summary_booleans_cannot_impersonate_integer_offsets(tmp_path: Path) -> None:
+    write_prepared_corpus(tmp_path, corpus(), max_bytes=10000)
+    path = tmp_path / "prepared-corpus.json"
+    payload = json.loads(path.read_bytes())
+    assert payload["summary"]["records"][0]["spans"][0][0] == 0
+    payload["summary"]["records"][0]["spans"][0][0] = False
+    encoded = json.dumps(payload).encode()
+    path.write_bytes(encoded)
+    with pytest.raises(ValueError, match="independent replay"):
+        read_prepared_corpus(
+            tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
+        )
