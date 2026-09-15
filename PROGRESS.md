@@ -205,6 +205,14 @@ remote tiny admission, retained 6,000-step budgets, and H1/H2 mechanism separati
 required-field checks silently supplied a missing spine default and failed the guard; it was
 restored. Profiles describe requests only and grant no spending or scientific authority.
 
+Step 6a connects the numerical execution engine: source admission, measured parameter
+inventories, explicit warm-up/freeze transition, training, RNG-isolated held-out scoring,
+and exact checkpoint continuation. Ten RED-first tests include empty held-out rejection,
+post-update meter failure, retained zero-direction gaps, and rejected-resume halting.
+The execution fixture uses a declared test-only split policy; production never falls back
+to training data for evaluation. Artifact journaling, CLI orchestration, and remote custody
+remain next; this engine neither allocates pods nor grants scientific authority.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
