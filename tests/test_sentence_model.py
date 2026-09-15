@@ -124,6 +124,13 @@ def test_ended_document_and_context_overflow_are_not_silently_reinterpreted() ->
 
 def test_nonfinite_and_malformed_history_are_refused() -> None:
     model = tiny_model()
+    model.predict(history())
+    with pytest.raises(ValueError, match="terminal boundary"):
+        model.predict(torch.tensor([[[65, 46]]]))
+    with pytest.raises(ValueError, match="control symbol"):
+        model.predict(torch.tensor([[[Bytes.bos, 46, Bytes.sentence_end]]]))
+    with pytest.raises(ValueError, match="padding"):
+        model.predict(torch.tensor([[[65, Bytes.pad, Bytes.sentence_end]]]))
     with pytest.raises(ValueError, match="history"):
         model.predict(torch.ones(1, 3, dtype=torch.int64))
     with pytest.raises(TypeError, match="int64"):

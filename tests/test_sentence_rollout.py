@@ -105,6 +105,10 @@ def test_inverse_codec_precedes_utf8_validation_and_feedback(
     state = advance_rollout(model, advance_rollout(model, state, codec), codec)
     assert state.history == (b"A",)
     assert state.emissions[0].source == b"A"
+    recoded = model.codec.encoder(torch.tensor([[codec.permutation[65], 256]]))
+    canonical = model.codec.encoder(torch.tensor([[65, 256]]))
+    torch.testing.assert_close(state.emissions[0].operative, recoded)
+    assert not torch.allclose(state.emissions[0].operative, canonical)
     with pytest.raises(ValueError, match="codec"):
         advance_rollout(model, state, SentenceByteCodec())
 
@@ -152,6 +156,24 @@ def test_rollout_preserves_axes_with_fisher_under_autocast(
     assert state.status == "active"
     assert state.context.dtype == torch.float32
     assert state.emissions[0].shadow.dtype == torch.float32
+    if interface == "sphere":
+        torch.testing.assert_close(
+            state.context.norm(dim=-1), torch.ones(1, 2), atol=1e-5, rtol=1e-5
+        )
+        torch.testing.assert_close(
+            state.emissions[0].shadow.norm(dim=-1), torch.ones(1), atol=1e-5, rtol=1e-5
+        )
+    else:
+        assert not torch.allclose(state.context.norm(dim=-1), torch.ones(1, 2))
+        with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+            raw = model.codec.encoder(torch.tensor([[65, 256]]))
+        torch.testing.assert_close(state.emissions[0].operative, raw)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        predicted = model.predict_latents(state.context).states
+    if carrier == "sphere":
+        torch.testing.assert_close(predicted.norm(dim=-1), torch.ones(1, 3), atol=1e-5, rtol=1e-5)
+    else:
+        assert not torch.allclose(predicted.norm(dim=-1), torch.ones(1, 3))
 
 
 def test_spherical_feedback_cannot_accept_an_unnormalized_carrier() -> None:

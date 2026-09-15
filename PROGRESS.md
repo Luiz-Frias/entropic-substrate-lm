@@ -146,6 +146,19 @@ Replacing emitted-text feedback with the imagined latent fails its reconstructio
 Disk checkpoint/RNG serialization and actual trained free-running generation remain pending;
 scripted boundary fixtures establish wiring, not generation quality.
 
+Step 4a separates original-sentence stochastic reconstruction from prior-sampled predictor
+training. The optional future loss scores detached absolute target samples per latent
+dimension; disabling it skips target-encoder exposure while preserving language gradients.
+Boundary-inclusive decoder CE, target bytes, history bytes, and encoder exposures are named
+separately. Thirteen RED-first objective tests pass; removing prefix padding protection leaks
+the short row's terminal control and fails its guard. Review follow-up adds explicit recoded
+operative-feedback, malformed framing, and bf16 geometry checks. Full-model bf16/FP32 equality
+is not asserted: low-precision neural sublayers are intentionally distinct from FP32 islands.
+The added raw-feedback reference initially differed by 0.0006430149 because it enabled
+gradients while rollout disables them; a matched no-grad replay measured zero difference.
+The in-flight commit was interrupted, its process group verified gone, and the reference
+execution mode corrected without widening tolerances before rerunning the normal gates.
+
 ### Next implementation seam (not completed)
 
 Connect the trainable law head to the final spine block. Its exact Fisher feature map is

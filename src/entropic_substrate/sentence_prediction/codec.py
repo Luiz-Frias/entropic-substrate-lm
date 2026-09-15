@@ -76,6 +76,14 @@ def _tokens(tokens: torch.Tensor, limit: int, *, complete: bool) -> torch.Tensor
     return padding
 
 
+def teacher_forcing_prefix(complete: torch.Tensor, limit: int) -> torch.Tensor:
+    """Shift validated labels, masking boundaries out of shorter padded prefixes."""
+    padding = _tokens(complete, limit, complete=True)
+    start = torch.full_like(complete[:, :1], SentenceByteCodec.bos)
+    prefix = torch.cat((start, complete[:, :-1]), dim=1)
+    return prefix.masked_fill(padding, SentenceByteCodec.pad)
+
+
 class _FloatNorm(nn.LayerNorm):
     def __init__(self, width: int) -> None:
         super().__init__(width)
