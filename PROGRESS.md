@@ -419,6 +419,15 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+`4e99a9f` commits the public worker command and its nine focused command/completion
+tests (466 added lines); normal hooks passed without any scanner suppression.
+The H1 preservation-block adapter now validates the complete paired 2x2 numerical
+roster, permits only sentence-interface/spine-carrier differences, and exposes
+neutral main-effect/interaction coefficients and required codec-sharing groups.
+It grants no registration or launch authority and does not attest actual artifact
+sharing, parameter matching, power or measurements. H scientific readers and
+analysis/review/filing/gate adapters remain unfinished; D readers were not widened.
+
 The worker-command annotation request is obsolete: its credential-forwarding
 test now compares against one canonical dummy fixture instead of duplicating a
 secret-shaped assertion literal. No annotation, baseline or scanner change was
