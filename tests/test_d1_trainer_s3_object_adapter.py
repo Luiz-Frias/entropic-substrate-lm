@@ -34,8 +34,10 @@ class _Body:
     payload: bytes
     truncate: bool = False
     closed: bool = False
+    reads: list[int] = field(default_factory=list)
 
     def read(self, amount: int) -> bytes:
+        self.reads.append(amount)
         value = self.payload[:-1] if self.truncate else self.payload
         return value[:amount]
 
@@ -113,6 +115,49 @@ def _adapter(client: _S3Client, *, max_objects: int = 64):
         bucket=_BUCKET,
         max_objects=max_objects,
     )
+
+
+def test_explicit_byte_cap_refuses_before_body_read_or_publication() -> None:
+    client = _S3Client(values={_KEY: _PAYLOAD}, metadata={_KEY: _SHA})
+    adapter = Boto3D1TrainerMailboxObjectAdapter(
+        client=client, bucket=_BUCKET, max_objects=64, max_object_bytes=1
+    )
+    with pytest.raises(D1TrainerS3ObjectError, match="byte_limit"):
+        adapter.read(_KEY)
+    assert client.last_body is not None and client.last_body.closed
+    assert client.last_body.reads == []
+    with pytest.raises(D1TrainerS3ObjectError, match="byte_limit"):
+        adapter.publish(_KEY + "-new", _PAYLOAD, expected_sha256=_SHA)
+    assert client.puts == []
+    assert _KEY + "-new" not in client.values
+
+
+def test_exact_byte_cap_accepts_verified_readback() -> None:
+    client = _S3Client()
+    adapter = Boto3D1TrainerMailboxObjectAdapter(
+        client=client, bucket=_BUCKET, max_objects=64, max_object_bytes=len(_PAYLOAD)
+    )
+    assert adapter.publish(_KEY, _PAYLOAD, expected_sha256=_SHA).size_bytes == len(_PAYLOAD)
+    assert adapter.read(_KEY).payload == _PAYLOAD
+
+
+@pytest.mark.parametrize("limit", [0, -1, True])
+def test_invalid_object_byte_cap_is_not_a_default(limit: object) -> None:
+    with pytest.raises(ValueError, match="byte"):
+        Boto3D1TrainerMailboxObjectAdapter(
+            client=_S3Client(), bucket=_BUCKET, max_objects=64, max_object_bytes=limit
+        )
+
+
+def test_bad_metadata_still_closes_the_received_body() -> None:
+    class BadMetadata(_S3Client):
+        def get_object(self, **kwargs: object) -> dict[str, object]:
+            return super().get_object(**kwargs) | {"Metadata": None}
+
+    client = BadMetadata(values={_KEY: _PAYLOAD}, metadata={_KEY: _SHA})
+    with pytest.raises(D1TrainerS3ObjectError, match="metadata_invalid"):
+        _adapter(client).read(_KEY)
+    assert client.last_body is not None and client.last_body.closed
 
 
 def test_publish_uses_conditional_put_then_verified_readback() -> None:

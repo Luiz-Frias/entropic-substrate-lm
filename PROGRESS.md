@@ -364,6 +364,13 @@ Forty-four focused tests pass, including every guarded construction-drift branch
 the default-dtype check failed its guard test. Native GPU precision remains to be measured
 on the authorized probes; the local runtime check is not a substitute for that validation.
 
+Step 11a adds an explicit optional byte cap to the existing immutable S3 object adapter;
+H workers will require a cap, while existing callers retain their prior contract. Oversized
+reads close the stream before consuming a body, and oversized uploads never reach the
+provider. Malformed metadata also closes its response body. Read/write cap mutations failed
+their guards; the combined adapter/runtime-precision suite passed 39 tests. The remaining
+precision-control branches requested in review are now covered as well.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

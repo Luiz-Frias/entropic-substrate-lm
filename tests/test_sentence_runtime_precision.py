@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import NoReturn
 
 import pytest
@@ -28,7 +29,10 @@ def test_precision_admission_is_read_only_and_accepts_explicit_disable(
     assert before == (torch.get_default_dtype(), torch.get_float32_matmul_precision())
 
 
-@pytest.mark.parametrize("setting", ["dtype", "matmul", "tf32_env", "nvidia_env"])
+@pytest.mark.parametrize(
+    "setting",
+    ["dtype", "matmul", "tf32_env", "nvidia_env", "effective_tf32", "generic", "cuda_matmul"],
+)
 def test_precision_guard_refuses_ambient_changes(
     monkeypatch: pytest.MonkeyPatch, setting: str
 ) -> None:
@@ -38,8 +42,18 @@ def test_precision_guard_refuses_ambient_changes(
         monkeypatch.setattr(torch, "get_float32_matmul_precision", lambda: "high")
     elif setting == "tf32_env":
         monkeypatch.setenv("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", "1")
-    else:
+    elif setting == "nvidia_env":
         monkeypatch.setenv("NVIDIA_TF32_OVERRIDE", "1")
+    else:
+        matmul = SimpleNamespace(fp32_precision="none", allow_tf32=False)
+        backends = SimpleNamespace(fp32_precision="none", cuda=SimpleNamespace(matmul=matmul))
+        if setting == "effective_tf32":
+            matmul.allow_tf32 = True
+        elif setting == "generic":
+            backends.fp32_precision = "tf32"
+        else:
+            matmul.fp32_precision = "tf32"
+        monkeypatch.setattr(torch, "backends", backends)
     with pytest.raises(ValueError, match="precision"):
         require_execution_precision()
 
