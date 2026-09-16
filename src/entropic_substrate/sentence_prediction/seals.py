@@ -40,6 +40,7 @@ class SealedStep:
     checkpoint: ArtifactIdentity
     journal: ArtifactIdentity
     chain_length: int
+    seal_hashes: tuple[str, ...] = ()
 
 
 def _profile_binding(profile: HProfile, phase: SentencePhase, sampler: SentenceSampler) -> str:
@@ -99,6 +100,7 @@ def read_seal(
     )
     nodes: list[tuple[SealedStep, int]] = []
     seen: set[str] = set()
+    chain_hashes: list[str] = []
     cursor: ArtifactIdentity | None = artifact
     while cursor is not None:
         if (
@@ -107,6 +109,7 @@ def read_seal(
         ):
             raise ValueError("seal chain is cyclic or exceeds its step budget")
         seen.add(cursor.content_hash.digest)
+        chain_hashes.append(cursor.content_hash.digest)
         row = recovery_record(
             read_json(root, cursor, max_bytes=max_bytes),
             "schema run_identity phase step checkpoint journal",
@@ -174,7 +177,9 @@ def read_seal(
         _continuation(previous, node.phase, start, profile)
         previous = node
     final = nodes[0][0]
-    return SealedStep(final.phase, final.step, final.checkpoint, final.journal, len(nodes))
+    return SealedStep(
+        final.phase, final.step, final.checkpoint, final.journal, len(nodes), tuple(chain_hashes)
+    )
 
 
 def seal_step(

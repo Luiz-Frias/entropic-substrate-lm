@@ -233,6 +233,13 @@ different valid checkpoint and failed the swap guard. Static construction/group 
 are instantiated on meta tensors; full tensor/optimizer admission still uses the checkpoint
 reader at resume. A seal is identity evidence, not a scientific verdict or spending token.
 
+Step 6e adds the probe training driver over real source, phase execution, journal seals and
+held-out evaluation. Seven integration tests cover full budgets, pause/resume, retained
+failures, scientific/successor refusal, empty-evaluation rejection and idempotent completed
+replay without reinitialization. Removing the evaluation-presence guard failed its test.
+Returned references are portable and stable. This status is training-complete only: generation,
+diagnostic capture, fresh analysis/review/filing and remote workload validation remain open.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
