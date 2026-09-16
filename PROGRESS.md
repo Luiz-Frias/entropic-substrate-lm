@@ -342,6 +342,11 @@ producing worker remains the transport/controller's responsibility. Four native/
 tests pass, including idempotent success recovery, request/runtime/timing refusal and separate
 records for repeated failures. Substituting custody for native admission failed the pass-receipt
 guard. This is verification evidence only, never scientific successor authority.
+Review hardening admits the complete receipt payload before its final atomic publication.
+The rejected-receipt fixture initially left an unusable success marker; it now leaves only
+failure evidence and permits a clean retry. Three native tests cover the corrected order,
+capture/run binding forgeries and post-verification byte mutations. Removing payload
+admission failed the success-marker guard.
 
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
@@ -357,7 +362,7 @@ RED-first tests cover replay, source pairing across codec permutations, model-RN
 empty/forged source rejection, and causal framing. Including the target span in history
 fails its causality guard; the mutation was restored. Snapshot cursors bind source/config.
 
-Next: native-runtime verification receipts and worker/controller wiring; preservation/fidelity measurements;
+Next: solver/preservation telemetry and worker/controller wiring; preservation/fidelity measurements;
 explicit H registrations and stage adapters; complete shared DVC/R2 custody, remote worker/
 controller and analysis/review/filing integration. Then the authorized
 6,000-step CUDA/bf16 tiny probes with the approved host-watchdog exception, verified artifact

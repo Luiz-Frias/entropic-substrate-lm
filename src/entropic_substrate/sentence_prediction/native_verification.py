@@ -46,9 +46,8 @@ def _runtime(value: object, device: object) -> None:
             raise ValueError("native verification accelerator must be measured")
 
 
-def read_native_verification(
-    root: Path,
-    receipt: ArtifactIdentity,
+def _admit_verification(
+    value: object,
     capture_root: Path,
     capture: ArtifactIdentity,
     *,
@@ -58,14 +57,10 @@ def read_native_verification(
     max_total_bytes: int,
     max_artifacts: int,
 ) -> dict[str, object]:
-    """Admit a bound executor receipt and recheck custody; do not rerun native admission.
-
-    This is not independent proof against a malicious executor. The controller
-    must authenticate the producing execution through its source/transport contract.
-    """
+    """Shared pre-publication and reader admission for a complete receipt payload."""
     _request(expected_request)
     row = recovery_record(
-        read_json(root, receipt, max_bytes=max_bytes),
+        value,
         "schema status scientific_authority verification_scope request_sha256 capture run_identity runtime verified_at wall_seconds",
     )
     if (
@@ -102,6 +97,35 @@ def read_native_verification(
     if type(stamp) is not str or datetime.fromisoformat(stamp).utcoffset() != UTC.utcoffset(None):
         raise ValueError("native verification timestamp must be UTC")
     return row
+
+
+def read_native_verification(
+    root: Path,
+    receipt: ArtifactIdentity,
+    capture_root: Path,
+    capture: ArtifactIdentity,
+    *,
+    expected_request: ContentHash,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+) -> dict[str, object]:
+    """Admit a bound executor receipt and recheck custody, without native rerun.
+
+    This is not independent proof against a malicious executor. The controller
+    must authenticate the producing execution through its source/transport contract.
+    """
+    return _admit_verification(
+        read_json(root, receipt, max_bytes=max_bytes),
+        capture_root,
+        capture,
+        expected_request=expected_request,
+        max_bytes=max_bytes,
+        max_source_bytes=max_source_bytes,
+        max_total_bytes=max_total_bytes,
+        max_artifacts=max_artifacts,
+    )
 
 
 def verify_native_capture(
@@ -155,27 +179,20 @@ def verify_native_capture(
             "accelerator": accelerator,
         }
         _runtime(runtime, device)
-        receipt = write_json(
-            output,
-            name,
-            {
-                "schema": "h-native-verification-v1",
-                "status": "native_reader_passed",
-                "scientific_authority": "none",
-                "verification_scope": SCOPE,
-                "request_sha256": request_id.digest,
-                "capture": artifact_reference(captured, capture),
-                "run_identity": manifest["run_identity"],
-                "runtime": runtime,
-                "verified_at": datetime.now(UTC).isoformat(),
-                "wall_seconds": time.perf_counter() - started,
-            },
-            max_bytes=max_bytes,
-        )
-        read_native_verification(
-            output, receipt, captured, capture, expected_request=request_id, **limits
-        )
-        return receipt
+        payload = {
+            "schema": "h-native-verification-v1",
+            "status": "native_reader_passed",
+            "scientific_authority": "none",
+            "verification_scope": SCOPE,
+            "request_sha256": request_id.digest,
+            "capture": artifact_reference(captured, capture),
+            "run_identity": manifest["run_identity"],
+            "runtime": runtime,
+            "verified_at": datetime.now(UTC).isoformat(),
+            "wall_seconds": time.perf_counter() - started,
+        }
+        _admit_verification(payload, captured, capture, expected_request=request_id, **limits)
+        return write_json(output, name, payload, max_bytes=max_bytes)
     except Exception as error:
         try:
             write_json(
