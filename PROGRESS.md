@@ -410,9 +410,12 @@ new workspace. Remote provider/bootstrap/controller execution remains unstarted.
 Step 11g adds host completion admission over the recovered snapshot and bound native receipt.
 It checks the request, declared runtime/provider identity, full step budget and captured
 training/generation/diagnostic lineage while explicitly not claiming a host CUDA rerun.
-The real local worker round-trip passes, and missing verification bytes or a rehashed wrong
+The real local worker round-trip admits six successful optimizer steps, and missing verification bytes or a rehashed wrong
 request are rejected. Removing the terminal request join failed its guard. The coordinator's
 missing-native-receipt rejection now has a specific message and failure-marker assertion.
+Review follow-up covers remote runtime identity as a metadata contract, not a real GPU run.
+Rejected completion retains byte-custody evidence for inspection without admitting completion.
+Removing the pod-identity comparison failed the remote metadata guard test.
 
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and

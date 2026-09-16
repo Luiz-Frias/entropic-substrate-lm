@@ -3,6 +3,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from entropic_substrate.d1_operator_values import require_d1_pod_id
 from entropic_substrate.d1_trainer_mailbox_contracts import (
@@ -19,6 +20,33 @@ from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, 
 from entropic_substrate.sentence_prediction.worker_snapshot import materialize_worker_snapshot
 
 
+def admit_worker_runtime(
+    value: object, request: ProbeRequest, expected_pod_id: str | None
+) -> dict[str, object]:
+    """Compare reported runtime identity to the caller's independently owned allocation."""
+    if type(value) is not dict:
+        raise ValueError("worker completion requires runtime provenance")
+    runtime = cast(dict[str, object], value)
+    if request.profile.run_class == "local_tiny":
+        if (
+            expected_pod_id is not None
+            or runtime.get("kind") != "local_tiny"
+            or runtime.get("pod_id") is not None
+        ):
+            raise ValueError("local completion cannot claim a provider allocation")
+    else:
+        require_d1_pod_id(expected_pod_id)
+        if (
+            runtime.get("kind") != "remote_tiny"
+            or runtime.get("pod_id") != expected_pod_id
+            or runtime.get("source_attestation") != "exact_git_tree_match"
+            or runtime.get("code_commit") != request.code_commit
+            or runtime.get("requested_image") != request.image
+        ):
+            raise ValueError("worker runtime differs from the allocated construction")
+    return runtime
+
+
 def receive_worker_completion(
     objects: D1TrainerMailboxObjectPort,
     request: ProbeRequest,
@@ -32,6 +60,8 @@ def receive_worker_completion(
 
     Admission trusts the authenticated executor's native receipt and rechecks
     its exact capture bytes; it neither reruns CUDA nor files a scientific verdict.
+    Rejected completion may retain a byte-verified snapshot for investigation.
+    Only this function's successful return admits completion; snapshot.json does not.
     """
     if (
         type(max_marker_bytes) is not int
@@ -85,26 +115,7 @@ def receive_worker_completion(
         != request.profile.schedule.warmup_steps + request.profile.schedule.steps
     ):
         raise ValueError("worker result does not establish the complete requested workload")
-    runtime = result["runtime"]
-    if type(runtime) is not dict:
-        raise ValueError("worker completion requires runtime provenance")
-    if request.profile.run_class == "local_tiny":
-        if (
-            expected_pod_id is not None
-            or runtime.get("kind") != "local_tiny"
-            or runtime.get("pod_id") is not None
-        ):
-            raise ValueError("local completion cannot claim a provider allocation")
-    else:
-        require_d1_pod_id(expected_pod_id)
-        if (
-            runtime.get("kind") != "remote_tiny"
-            or runtime.get("pod_id") != expected_pod_id
-            or runtime.get("source_attestation") != "exact_git_tree_match"
-            or runtime.get("code_commit") != request.code_commit
-            or runtime.get("requested_image") != request.image
-        ):
-            raise ValueError("worker runtime differs from the allocated construction")
+    runtime = admit_worker_runtime(result["runtime"], request, expected_pod_id)
     captured = worker_artifact(result["capture"], "capture")
     verified = worker_artifact(result["verification"], "verification")
     maximum = request.limits.max_object_bytes
