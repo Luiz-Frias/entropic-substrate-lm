@@ -272,6 +272,11 @@ Generation receipt v2 binds resumed parent prefixes; v1 requires its original re
 closed-inventory mutation failed its guard. Capture grants no scientific authority and has
 not yet been DVC-published or exercised on Runpod.
 
+Step 7e exposes `h-capture-model` and `h-inspect-model` through strict manifests and just
+recipes. Public-command tests cover capture followed by relocated numerical inspection,
+unsafe-root refusal and invalid-budget refusal. The returned status is model-trace capture,
+not scientific completion; DVC transport and the scientific flywheel remain open.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

@@ -23,6 +23,12 @@ h-generate-probe *ARGS:
 h-inspect-generation *ARGS:
     uv run python -m entropic_substrate.cli h-inspect-generation {{ ARGS }}
 
+h-capture-model *ARGS:
+    uv run python -m entropic_substrate.cli h-capture-model {{ ARGS }}
+
+h-inspect-model *ARGS:
+    uv run python -m entropic_substrate.cli h-inspect-model {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------
