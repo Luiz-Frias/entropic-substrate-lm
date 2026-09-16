@@ -119,13 +119,16 @@ def _load(
     execution: SentenceExecution,
     limit: int,
 ) -> tuple[dict[str, object], SentenceRollout, object]:
+    raw = read_json(root, artifact, max_bytes=limit)
+    if raw.get("schema") == "h-generation-receipt-v1":
+        raise ValueError("generation v1 requires its original reader; no implicit migration")
     receipt = recovery_record(
-        read_json(root, artifact, max_bytes=limit),
-        "schema run_identity scientific_authority training snapshot status summary wall_seconds cuda_seconds",
+        raw,
+        "schema run_identity scientific_authority training snapshot status summary wall_seconds cuda_seconds parent_receipt",
     )
     reference = artifact_reference(root, training)
     if (
-        receipt["schema"] != "h-generation-receipt-v1"
+        receipt["schema"] != "h-generation-receipt-v2"
         or receipt["run_identity"] != execution.profile.identity
         or receipt["training"] != reference
         or receipt["scientific_authority"] != "none"
@@ -156,6 +159,25 @@ def _load(
     )
     if receipt["status"] != expected_status:
         raise ValueError("generation status differs from its observed outcome")
+    if receipt["parent_receipt"] is not None:
+        parent = read_json(root, artifact_from_mapping(receipt["parent_receipt"]), max_bytes=limit)
+        if (
+            parent.get("schema") != "h-generation-receipt-v2"
+            or parent.get("run_identity") != execution.profile.identity
+            or parent.get("training") != reference
+            or parent.get("status") != "paused"
+        ):
+            raise ValueError("generation parent does not belong to this resumable lineage")
+        summary = recovery_record(
+            parent.get("summary"), "outcome sentences observations pending log_scores prompt"
+        )
+        observations = summary["observations"]
+        if (
+            type(observations) is not list
+            or not len(observations) < len(state.observations)
+            or tuple(observations) != state.observations[: len(observations)]
+        ):
+            raise ValueError("generation resume does not extend the previous observation prefix")
     return receipt, state, saved["rng"]
 
 
@@ -313,7 +335,8 @@ def run_probe_generation(
         root,
         prefix + "-generation.json",
         {
-            "schema": "h-generation-receipt-v1",
+            "schema": "h-generation-receipt-v2",
+            "parent_receipt": None if resume is None else artifact_reference(root, resume),
             "run_identity": profile.identity,
             "scientific_authority": "none",
             "training": artifact_reference(root, training),

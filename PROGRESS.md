@@ -265,6 +265,13 @@ tests reject rehashed source/weight/summary/count/meaning/timing forgeries. Remo
 reconciliation failed its guard. The training driver invokes this reader before admitting
 completion and during resume/inspection; no oracle score can be relabelled predictive.
 
+Step 7d adds portable model-trace capture with measured file/byte budgets, immutable copies,
+closed referenced inventories and source relocation. Four capture tests cover copied replay,
+budget/occupancy refusal, missing checkpoints, unlisted files and retained generation history.
+Generation receipt v2 binds resumed parent prefixes; v1 requires its original reader. The
+closed-inventory mutation failed its guard. Capture grants no scientific authority and has
+not yet been DVC-published or exercised on Runpod.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
