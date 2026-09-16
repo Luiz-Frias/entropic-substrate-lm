@@ -417,6 +417,20 @@ Review follow-up covers remote runtime identity as a metadata contract, not a re
 Rejected completion retains byte-custody evidence for inspection without admitting completion.
 Removing the pod-identity comparison failed the remote metadata guard test.
 
+### Local validation checkpoint — 2026-09-16
+
+At `e524635`, `just test-all` passed 4,196 tests with 10 skips. The sequential live
+container gate then passed 4 main integration, 3 allowlist and 3 authentication tests;
+no project test containers remained afterward. Every implementation commit in this
+continuation passed normal hooks and stayed below 600 added-plus-deleted lines.
+
+This is not H0 scientific completion or remote-probe readiness. The local worker/evidence
+path is connected, but deployment/bootstrap, provider/controller/watchdog composition,
+formal H-stage analysis/review/filing adapters and remaining preservation/fidelity work
+are still open. No Runpod has been allocated. Native R2 secret-reference names have been
+requested from Luiz; credential values must not be shared in chat or committed. Check in
+before allocation with the exact 6K roster, phase split, quote and teardown policy.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
