@@ -240,6 +240,13 @@ replay without reinitialization. Removing the evaluation-presence guard failed i
 Returned references are portable and stable. This status is training-complete only: generation,
 diagnostic capture, fresh analysis/review/filing and remote workload validation remain open.
 
+Step 6f exposes `h-train-probe` and `h-inspect-training` through the project CLI and just
+recipes. Four public-command tests exercise real training, inspection, pause/resume, source
+confinement, unknown-field refusal and off-grid pause rejection. Twenty-two CLI/deployment/
+publishing tests pass. The current just formatter normalized interpolation whitespace only;
+the existing deployment and publishing guards were unchanged. No command claims full probe
+completion from training alone, and no hook configuration was modified.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

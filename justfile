@@ -8,7 +8,14 @@ default:
 
 # Local synthetic smoke only; no scientific gate or Runpod spending authority.
 d-probe *ARGS:
-    uv run python -m entropic_substrate.cli d-probe {{ARGS}}
+    uv run python -m entropic_substrate.cli d-probe {{ ARGS }}
+
+# H numerical training only; full probe/scientific completion is a separate gate.
+h-train-probe *ARGS:
+    uv run python -m entropic_substrate.cli h-train-probe {{ ARGS }}
+
+h-inspect-training *ARGS:
+    uv run python -m entropic_substrate.cli h-inspect-training {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Environment setup
@@ -114,16 +121,16 @@ download-data:
 # Valid exp values: e0-byte, e0-bpe, e1-fisher, e1-random, e2, e3,
 # e3-anchor, e3-vantage (anchored arms are execution-gated on the E3 readout)
 train exp="tiny" *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli train --exp {{exp}} {{ARGS}}
+    PYTHONPATH=src uv run python -m entropic_substrate.cli train --exp {{ exp }} {{ ARGS }}
 
 # Gated ladder E1 → E2 → E3 (stops with DECISION-NEEDED before the anchored
 # arms / E4). `just ladder --tiny` = CPU smoke of the whole ladder in minutes.
 ladder *ARGS:
-    PYTHONPATH=src uv run --no-sync bash scripts/run_ladder.sh {{ARGS}}
+    PYTHONPATH=src uv run --no-sync bash scripts/run_ladder.sh {{ ARGS }}
 
 # Evaluate a checkpoint, e.g.: just eval ckpt=models/e3-latest.pt
 eval ckpt *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli eval --ckpt {{ckpt}} {{ARGS}}
+    PYTHONPATH=src uv run python -m entropic_substrate.cli eval --ckpt {{ ckpt }} {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Container
@@ -144,8 +151,8 @@ eval ckpt *ARGS:
 
 # Build the training container image locally (defaults to linux/amd64 for GPU pods)
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
-    @echo "→ Building container image {{tag}} for {{platform}}..."
-    podman build --platform {{platform}} -t {{tag}} -f Containerfile .
+    @echo "→ Building container image {{ tag }} for {{ platform }}..."
+    podman build --platform {{ platform }} -t {{ tag }} -f Containerfile .
 
 # Build on a native amd64 Docker Build Cloud builder and push straight to GHCR
 # (the image never transits the local uplink; the context upload respects
@@ -153,7 +160,7 @@ container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
 # Docker Hub login (`docker login`) and the cloud-capable buildx from
 # docker/buildx-desktop; the OSS Homebrew buildx lacks the `cloud` driver.
 container-publish tag="ghcr.io/luiz-frias/entropic-substrate-lm:latest" builder="cloud-luizffrias-small-lang-model":
-    docker buildx build --builder {{builder}} --platform linux/amd64 -f Containerfile -t {{tag}} --push .
+    docker buildx build --builder {{ builder }} --platform linux/amd64 -f Containerfile -t {{ tag }} --push .
 
 # LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
 # native arm64, real R2 artifacts), run the integration suite against it,

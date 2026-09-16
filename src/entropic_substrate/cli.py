@@ -287,6 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_score_gain_parser(sub)
 
+    from entropic_substrate.sentence_prediction.cli import add_sentence_parsers
+
+    add_sentence_parsers(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1081,6 +1085,10 @@ def main(
         from entropic_substrate.d_ladder_probe_cli import cmd_score_gain
 
         return cmd_score_gain(args)
+    if args.command in ("h-train-probe", "h-inspect-training"):
+        from entropic_substrate.sentence_prediction.cli import cmd_sentence
+
+        return cmd_sentence(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
