@@ -172,4 +172,6 @@ def test_training_driver_retains_evaluation_gap_classification(
         )
     failure = json.loads(next(output.glob("*-failure.json")).read_text())
     assert failure["status"] == "scientific_gap"
+    assert failure["error_type"] == "UndefinedDirection"
+    assert failure["error_code"] == "undefined_zero_norm"
     assert failure["last_evaluation"]["affected_positions"] == 2

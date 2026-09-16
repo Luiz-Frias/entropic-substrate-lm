@@ -21,7 +21,7 @@ from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, parse_probe_request
 
 
-def _publish(
+def publish_verified_object(
     objects: D1TrainerMailboxObjectPort, key: str, payload: bytes
 ) -> D1TrainerMailboxObjectIdentity:
     expected = D1TrainerMailboxObjectIdentity(
@@ -64,12 +64,12 @@ def publish_probe_request(
         if total > limits.max_total_bytes:
             raise ValueError("worker input total byte budget exceeded")
     for artifact in request.inputs:
-        _publish(
+        publish_verified_object(
             objects,
             f"{request.prefix}/inputs/{artifact.path}",
             _input(root, artifact, limits.max_object_bytes),
         )
-    return _publish(objects, f"{request.prefix}/request.json", payload)
+    return publish_verified_object(objects, f"{request.prefix}/request.json", payload)
 
 
 def materialize_probe_request(

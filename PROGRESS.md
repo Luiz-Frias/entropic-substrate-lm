@@ -392,6 +392,13 @@ into a second workspace and resumed to its full budget, observer failure and cha
 refusal. Removing the materialized-request join failed its guard. Workload completion remains
 an engineering status, not generation-quality support or a scientific successor gate.
 
+Step 11e publishes explicit output snapshots with byte/object caps and marker-last ordering.
+Recovered snapshots check request identity, namespace, per-file hashes and exact measured
+inventory before emitting a local marker. Six snapshot tests pass; removing total-byte
+reconciliation failed its guard. The worker pause fixture now declares its request before
+publication, and failure tests assert defect versus scientific-gap fields. Snapshots remain
+byte-custody evidence only; terminal worker orchestration is the next connection.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

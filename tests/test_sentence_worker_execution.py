@@ -1,5 +1,6 @@
 """One materialized request traverses actual training and observer stages."""
 
+import json
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
@@ -23,7 +24,7 @@ from entropic_substrate.sentence_prediction.worker_transport import (
 pytestmark = pytest.mark.unit
 
 
-def prepared(root: Path) -> tuple[ProbeRequest, Path]:
+def prepared(root: Path, *, pause: tuple[str, int] | None = None) -> tuple[ProbeRequest, Path]:
     template = model(root)
     source = ArtifactIdentity(
         "source/prepared-corpus.json", ContentHash("sha256", template.profile.source_digest)
@@ -40,6 +41,7 @@ def prepared(root: Path) -> tuple[ProbeRequest, Path]:
         None,
         None,
     )
+    request = replace(request, pause=pause)
     store = _ObjectStore()
     marker = publish_probe_request(store, request, root)
     worker = root / "worker"
@@ -65,10 +67,7 @@ def test_worker_runs_one_lineage_through_native_verification(tmp_path: Path) -> 
 
 
 def test_worker_pause_stops_before_generation_or_diagnostics(tmp_path: Path) -> None:
-    request, root = prepared(tmp_path)
-    paused = replace(request, pause=("prediction", 2))
-    # Replace only this test's not-yet-executed request marker.
-    (root / "request.json").write_bytes(paused.payload)
+    paused, root = prepared(tmp_path, pause=("prediction", 2))
     result = execute_probe_request(paused, root)
     assert result["status"] == "paused"
     assert result["successful_optimizer_steps"] == 4
@@ -116,7 +115,9 @@ def test_checkpoint_observer_failure_cannot_be_reported_complete(tmp_path: Path)
 
     with pytest.raises(RuntimeError, match="transport unavailable"):
         execute_probe_request(request, root, on_checkpoint=fail)
-    assert list((root / "run").glob("*-failure.json"))
+    failure = json.loads(next((root / "run").glob("*-failure.json")).read_text())
+    assert failure["status"] == "execution_defect"
+    assert failure["error_type"] == failure["error_code"] == "RuntimeError"
     assert not (root / "capture").exists()
 
 
