@@ -13,6 +13,7 @@ from entropic_substrate.d1_artifact_snapshot import (
 )
 from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.sentence_prediction.generation import read_generation, run_probe_generation
 from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json
 from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
 from entropic_substrate.sentence_prediction.profile import HProfile
@@ -24,6 +25,8 @@ def add_sentence_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser
     for name, description in (
         ("h-train-probe", "execute a file-bound H engineering training probe"),
         ("h-inspect-training", "verify an H training receipt without running training"),
+        ("h-generate-probe", "generate from an H probe's sealed trained model"),
+        ("h-inspect-generation", "verify generation feedback and lineage"),
     ):
         parser = sub.add_parser(name, help=description)
         parser.add_argument("--root", type=Path, required=True)
@@ -53,12 +56,20 @@ def cmd_sentence(args: argparse.Namespace) -> int:
             ArtifactIdentity(args.manifest, ContentHash("sha256", digest)),
             max_bytes=1_048_576,
         )
-        inspect = args.command == "h-inspect-training"
-        fields = "schema profile source_root output_root max_source_bytes max_artifact_bytes " + (
-            "receipt" if inspect else "resume pause_after"
+        inspect = args.command.startswith("h-inspect-")
+        generation = args.command in ("h-generate-probe", "h-inspect-generation")
+        fields = (
+            "schema profile source_root output_root max_source_bytes max_artifact_bytes "
+            + ("training " if generation else "")
+            + ("receipt" if inspect else "resume pause_after")
         )
         row = recovery_record(raw, fields)
-        expected = "h-probe-inspect-command-v1" if inspect else "h-probe-train-command-v1"
+        expected = {
+            "h-train-probe": "h-probe-train-command-v1",
+            "h-inspect-training": "h-probe-inspect-command-v1",
+            "h-generate-probe": "h-probe-generate-command-v1",
+            "h-inspect-generation": "h-probe-inspect-generation-command-v1",
+        }[args.command]
         if row["schema"] != expected:
             raise ValueError("unsupported H command schema")
         source_limit, artifact_limit = (
@@ -69,7 +80,38 @@ def cmd_sentence(args: argparse.Namespace) -> int:
             read_json(root, artifact_from_mapping(row["profile"]), max_bytes=artifact_limit)
         )
         source, output = _directory(root, row["source_root"]), _directory(root, row["output_root"])
-        if inspect:
+        if generation:
+            training = artifact_from_mapping(row["training"])
+            if inspect:
+                result = read_generation(
+                    output,
+                    artifact_from_mapping(row["receipt"]),
+                    training,
+                    profile,
+                    source,
+                    max_source_bytes=source_limit,
+                    max_artifact_bytes=artifact_limit,
+                )
+            else:
+                count = None if row["pause_after"] is None else _positive(row["pause_after"])
+                resume = None if row["resume"] is None else artifact_from_mapping(row["resume"])
+                stage = "execution"
+                generated = run_probe_generation(
+                    output,
+                    training,
+                    profile,
+                    source,
+                    max_source_bytes=source_limit,
+                    max_artifact_bytes=artifact_limit,
+                    resume=resume,
+                    pause_after=count,
+                )
+                result = {
+                    "status": generated.status,
+                    "scientific_authority": "none",
+                    "receipt": artifact_reference(output, generated.receipt),
+                }
+        elif inspect:
             result = read_training_progress(
                 output,
                 artifact_from_mapping(row["receipt"]),

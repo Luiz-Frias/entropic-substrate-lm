@@ -112,3 +112,53 @@ def test_pause_at_an_unsealed_step_is_not_silently_ignored(
     assert main(["h-train-probe", "--root", str(tmp_path), "--manifest", "bad-pause.json"]) == 2
     assert json.loads(capsys.readouterr().out)["status"] == "invalid_request"
     assert not list((tmp_path / "run").iterdir())
+
+
+def test_public_generation_pause_resume_and_inspection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_sentence_generation import trained
+    from tests.test_sentence_rollout import scripted_tokens
+
+    template, output, training = trained(tmp_path)
+    profile = write_json(tmp_path, "profile.json", template.profile.manifest, max_bytes=1_000_000)
+    command = {
+        "schema": "h-probe-generate-command-v1",
+        "profile": artifact_reference(tmp_path, profile),
+        "source_root": "source",
+        "output_root": "run",
+        "max_source_bytes": 1_000_000,
+        "max_artifact_bytes": 10_000_000,
+        "training": artifact_reference(output, training),
+        "resume": None,
+        "pause_after": 1,
+    }
+    scripted_tokens(monkeypatch, [65, 46, 257])
+    write_json(tmp_path, "generate.json", command, max_bytes=1_000_000)
+    assert main(["h-generate-probe", "--root", str(tmp_path), "--manifest", "generate.json"]) == 0
+    paused = json.loads(capsys.readouterr().out)
+    assert paused["status"] == "paused"
+    command.update(resume=paused["receipt"], pause_after=None)
+    write_json(tmp_path, "resume-generation.json", command, max_bytes=1_000_000)
+    assert (
+        main(["h-generate-probe", "--root", str(tmp_path), "--manifest", "resume-generation.json"])
+        == 0
+    )
+    complete = json.loads(capsys.readouterr().out)
+    assert complete["status"] == "generation_complete"
+    inspect = {key: value for key, value in command.items() if key not in ("resume", "pause_after")}
+    inspect.update(schema="h-probe-inspect-generation-command-v1", receipt=complete["receipt"])
+    write_json(tmp_path, "inspect-generation.json", inspect, max_bytes=1_000_000)
+    assert (
+        main(
+            [
+                "h-inspect-generation",
+                "--root",
+                str(tmp_path),
+                "--manifest",
+                "inspect-generation.json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["summary"]["sentences"] == ["A."]

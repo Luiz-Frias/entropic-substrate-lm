@@ -17,6 +17,12 @@ h-train-probe *ARGS:
 h-inspect-training *ARGS:
     uv run python -m entropic_substrate.cli h-inspect-training {{ ARGS }}
 
+h-generate-probe *ARGS:
+    uv run python -m entropic_substrate.cli h-generate-probe {{ ARGS }}
+
+h-inspect-generation *ARGS:
+    uv run python -m entropic_substrate.cli h-inspect-generation {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------

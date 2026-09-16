@@ -1085,7 +1085,12 @@ def main(
         from entropic_substrate.d_ladder_probe_cli import cmd_score_gain
 
         return cmd_score_gain(args)
-    if args.command in ("h-train-probe", "h-inspect-training"):
+    if args.command in (
+        "h-train-probe",
+        "h-inspect-training",
+        "h-generate-probe",
+        "h-inspect-generation",
+    ):
         from entropic_substrate.sentence_prediction.cli import cmd_sentence
 
         return cmd_sentence(args)

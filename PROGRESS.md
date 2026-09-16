@@ -254,6 +254,11 @@ Removing the prompt-history guard admitted a forged prompt and failed its test. 
 uses the declared precision for initial and emitted encoding; inspect leaves caller RNG
 unchanged. Generation-complete records an outcome or sentence budget, not semantic quality.
 
+Step 7b exposes `h-generate-probe` and `h-inspect-generation` through the shared manifest CLI
+and just recipes. The public-command lineage now covers trained checkpoint → generation →
+mid-sentence pause → resume → independent inspection. Five command tests pass. Generation
+requires a training-complete receipt and never grants scientific authority.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
