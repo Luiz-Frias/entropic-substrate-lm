@@ -85,3 +85,51 @@ def test_rehashed_manifest_cannot_change_inventory_or_request(tmp_path: Path, fi
     with pytest.raises(ValueError, match=r"identity|inventory"):
         materialize_worker_snapshot(objects, value, forged, target, max_marker_bytes=1_000_000)
     assert not list(target.iterdir())
+
+
+def test_distinct_snapshots_share_immutable_outputs_but_cannot_replace_them(tmp_path: Path) -> None:
+    (tmp_path / "run").mkdir()
+    path = tmp_path / "run/checkpoint.pt"
+    path.write_bytes(b"original")
+    value, objects = request(), _ObjectStore()
+    first = publish_worker_snapshot(objects, value, tmp_path, ("run/checkpoint.pt",), name="first")
+    second = publish_worker_snapshot(
+        objects, value, tmp_path, ("run/checkpoint.pt",), name="second"
+    )
+    path.write_bytes(b"replacement")
+    with pytest.raises(ValueError, match="immutable"):
+        publish_worker_snapshot(objects, value, tmp_path, ("run/checkpoint.pt",), name="changed")
+    assert f"{value.prefix}/snapshots/changed.json" not in objects.values
+    for index, marker in enumerate((first, second)):
+        target = tmp_path / f"host-{index}"
+        target.mkdir()
+        materialize_worker_snapshot(objects, value, marker, target, max_marker_bytes=1_000_000)
+        assert (target / "run/checkpoint.pt").read_bytes() == b"original"
+
+
+def test_late_corruption_retains_unadmitted_partial_files_and_requires_new_workspace(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "run").mkdir()
+    for name in ("a", "b"):
+        (tmp_path / f"run/{name}.pt").write_bytes(name.encode())
+    value, objects = request(), _ObjectStore()
+    marker = publish_worker_snapshot(
+        objects, value, tmp_path, ("run/a.pt", "run/b.pt"), name="pair"
+    )
+    key = f"{value.prefix}/outputs/run/b.pt"
+    original = objects.values[key]
+    objects.values[key] = b"corrupt"
+    partial = tmp_path / "partial"
+    partial.mkdir()
+    with pytest.raises(ValueError, match="identity"):
+        materialize_worker_snapshot(objects, value, marker, partial, max_marker_bytes=1_000_000)
+    assert (partial / "run/a.pt").read_bytes() == b"a"
+    assert not (partial / "snapshot.json").exists()
+    objects.values[key] = original
+    with pytest.raises(ValueError, match="empty"):
+        materialize_worker_snapshot(objects, value, marker, partial, max_marker_bytes=1_000_000)
+    complete = tmp_path / "complete"
+    complete.mkdir()
+    materialize_worker_snapshot(objects, value, marker, complete, max_marker_bytes=1_000_000)
+    assert (complete / "snapshot.json").is_file()

@@ -72,14 +72,13 @@ def publish_probe_request(
     return publish_verified_object(objects, f"{request.prefix}/request.json", payload)
 
 
-def materialize_probe_request(
+def read_published_probe_request(
     objects: D1TrainerMailboxObjectPort,
     marker: D1TrainerMailboxObjectIdentity,
-    root: Path,
     *,
     max_request_bytes: int,
 ) -> ProbeRequest:
-    """Use an empty owned workspace; a partial transfer has no local request marker."""
+    """Admit the canonical request marker before acting on its input graph."""
     if (
         type(max_request_bytes) is not int
         or max_request_bytes < 1
@@ -92,6 +91,18 @@ def materialize_probe_request(
     request = parse_probe_request(received.payload, max_bytes=max_request_bytes)
     if marker.key != f"{request.prefix}/request.json" or marker.sha256 != request.digest:
         raise ValueError("worker request prefix or content identity mismatch")
+    return request
+
+
+def materialize_probe_request(
+    objects: D1TrainerMailboxObjectPort,
+    marker: D1TrainerMailboxObjectIdentity,
+    root: Path,
+    *,
+    max_request_bytes: int,
+) -> ProbeRequest:
+    """Use an empty owned workspace; a partial transfer has no local request marker."""
+    request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
     limits = request.limits
     if marker.size_bytes > limits.max_object_bytes or len(request.inputs) + 1 > limits.max_objects:
         raise ValueError("worker materialization exceeds object budget")
@@ -114,5 +125,5 @@ def materialize_probe_request(
         if result.identity.size_bytes > limits.max_object_bytes or total > limits.max_total_bytes:
             raise ValueError("worker input materialization byte budget exceeded")
         publish_d1_atomic_bytes(target, artifact.path, result.payload, label="worker input")
-    publish_d1_atomic_bytes(target, "request.json", received.payload, label="worker request marker")
+    publish_d1_atomic_bytes(target, "request.json", request.payload, label="worker request marker")
     return request

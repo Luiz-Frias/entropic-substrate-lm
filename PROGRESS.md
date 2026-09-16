@@ -399,6 +399,14 @@ reconciliation failed its guard. The worker pause fixture now declares its reque
 publication, and failure tests assert defect versus scientific-gap fields. Snapshots remain
 byte-custody evidence only; terminal worker orchestration is the next connection.
 
+Step 11f publishes native-input start, admitted checkpoint, paused, complete and failure
+events around the same worker path. Completion requires matching training, generation,
+diagnostics, capture and native verification before its terminal marker. Evidence-delivery
+failure is explicit (`snapshot: null`), never completion. The missing-native-receipt mutation
+failed the completion guard. Snapshot contract tests retain immutable paths across snapshot
+names and preserve unadmitted partial recovery files without a ready marker; retries use a
+new workspace. Remote provider/bootstrap/controller execution remains unstarted.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

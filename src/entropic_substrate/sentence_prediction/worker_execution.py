@@ -67,6 +67,7 @@ def execute_probe_request(
     *,
     repo_root: Path | None = None,
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
+    on_start: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
 
@@ -86,6 +87,8 @@ def execute_probe_request(
     read_prepared_corpus(
         source, ContentHash("sha256", profile.source_digest), max_bytes=limits.max_object_bytes
     )
+    if on_start is not None:
+        on_start(runtime)
     resume = (
         None
         if request.resume is None

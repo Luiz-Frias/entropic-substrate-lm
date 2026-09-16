@@ -42,7 +42,11 @@ def publish_worker_snapshot(
     *,
     name: str,
 ) -> D1TrainerMailboxObjectIdentity:
-    """Snapshot explicit producer files; the marker itself grants no completion claim."""
+    """Snapshot explicit producer files; the marker grants no completion claim.
+
+    Output paths are immutable across snapshots within one request. A changed
+    path is a producer defect, not a new version silently hidden by snapshot names.
+    """
     if type(name) is not str or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", name) is None:
         raise ValueError("worker snapshot name is unsafe")
     if type(paths) is not tuple or not paths or len(set(paths)) != len(paths):
@@ -99,7 +103,11 @@ def materialize_worker_snapshot(
     *,
     max_marker_bytes: int,
 ) -> dict[str, object]:
-    """Refuse incomplete/mismatched byte sets; native readers remain a separate step."""
+    """Refuse incomplete/mismatched byte sets; native readers remain separate.
+
+    A late failure retains unadmitted partial files without snapshot.json. Recovery
+    uses a new empty workspace; this function never deletes forensic partial data.
+    """
     if (
         type(max_marker_bytes) is not int
         or max_marker_bytes < 1
