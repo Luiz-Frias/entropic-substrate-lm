@@ -135,6 +135,10 @@ def read_seal(
             max_bytes=max_bytes,
             max_source_bytes=max_source_bytes,
         )
+        if measured["schema"] != "h-journal-shard-v2":
+            raise ValueError(
+                "current restart seals require journal v2; use the original reader for v1"
+            )
         if measured["phase"] != phase or measured["end_step"] != step:
             raise ValueError("seal and journal endpoints disagree")
         meta = checkpoint_metadata(

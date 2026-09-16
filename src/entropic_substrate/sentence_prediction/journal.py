@@ -19,6 +19,7 @@ from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
 from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
 from entropic_substrate.sentence_prediction.corpus import PreparedCorpus
 from entropic_substrate.sentence_prediction.execution import SentenceExecution, batch_coordinates
+from entropic_substrate.sentence_prediction.mechanism_evidence import admit_mechanism
 from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.recovery_state import recovery_record
 from entropic_substrate.sentence_prediction.sampling import SamplingSpec, SentenceSampler
@@ -85,13 +86,14 @@ def _validate(payload: object, profile: HProfile, corpus: PreparedCorpus) -> dic
         "schema run_identity run_class scientific_authority phase start_step end_step parent rows",
     )
     if (
-        journal["schema"] != "h-journal-shard-v1"
+        journal["schema"] not in ("h-journal-shard-v1", "h-journal-shard-v2")
         or journal["run_identity"] != profile.identity
         or journal["run_class"] != profile.run_class
         or journal["scientific_authority"] != "none"
     ):
         raise ValueError("journal construction or authority differs from profile")
     phase, start, end, rows = (journal[k] for k in ("phase", "start_step", "end_step", "rows"))
+    mechanism = journal["schema"] == "h-journal-shard-v2"
     if (
         phase not in ("codec_warmup", "prediction")
         or type(start) is not int
@@ -119,10 +121,11 @@ def _validate(payload: object, profile: HProfile, corpus: PreparedCorpus) -> dic
     for index, value in enumerate(cast(list[object], rows), start):
         row = recovery_record(
             value,
-            "schema run_identity phase step source_batch source_examples status objective aggregate_norm gradients meaning decoder_ce future_nll_per_dimension source_bytes boundary_symbols history_bytes encoder_bytes wall_seconds cuda_seconds cuda_peak_bytes peak_scope",
+            "schema run_identity phase step source_batch source_examples status objective aggregate_norm gradients meaning decoder_ce future_nll_per_dimension source_bytes boundary_symbols history_bytes encoder_bytes wall_seconds cuda_seconds cuda_peak_bytes peak_scope"
+            + (" mechanism" if mechanism else ""),
         )
         if (
-            row["schema"] != "h-training-step-v1"
+            row["schema"] != ("h-training-step-v2" if mechanism else "h-training-step-v1")
             or row["run_identity"] != profile.identity
             or row["phase"] != phase
             or type(row["step"]) is not int
@@ -131,6 +134,14 @@ def _validate(payload: object, profile: HProfile, corpus: PreparedCorpus) -> dic
         ):
             raise ValueError("journal rows must be consecutive committed steps of this run")
         batch = sampler.next_batch()
+        if mechanism:
+            admit_mechanism(
+                row["mechanism"],
+                profile,
+                phase=phase,
+                batch=len(batch.examples),
+                history=len(batch.examples[0].history),
+            )
         if row["source_batch"] != batch.identity or json.dumps(
             row["source_examples"], sort_keys=True
         ) != json.dumps(batch_coordinates(batch), sort_keys=True):
@@ -224,7 +235,7 @@ def write_journal(
     if not rows or engine.failed:
         raise ValueError("restart journals require successful training rows")
     payload = {
-        "schema": "h-journal-shard-v1",
+        "schema": "h-journal-shard-v2",
         "run_identity": engine.profile.identity,
         "run_class": engine.profile.run_class,
         "scientific_authority": "none",

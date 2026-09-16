@@ -4,6 +4,7 @@ import math
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import cast
 
 import torch
 
@@ -18,6 +19,7 @@ from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
 from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
 from entropic_substrate.sentence_prediction.checkpoint import load_checkpoint
 from entropic_substrate.sentence_prediction.corpus import CorpusSplit
+from entropic_substrate.sentence_prediction.mechanism_evidence import collect_mechanism
 from entropic_substrate.sentence_prediction.model import SentencePredictor
 from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
 from entropic_substrate.sentence_prediction.objective import (
@@ -33,6 +35,7 @@ from entropic_substrate.sentence_prediction.sampling import (
     SentenceSampler,
 )
 from entropic_substrate.sentence_prediction.scoring import importance_evaluate
+from entropic_substrate.sentence_prediction.spine import CarrierBlock
 from entropic_substrate.sentence_prediction.training import (
     SentencePhase,
     apply_sentence_step,
@@ -192,7 +195,7 @@ class SentenceExecution:
             raise ValueError("failed attempt must recover before continuing")
         batch = self.sampler.next_batch()
         row: dict[str, object] = {
-            "schema": "h-training-step-v1",
+            "schema": "h-training-step-v2",
             "run_identity": self.profile.identity,
             "phase": self.phase,
             "step": self.step + 1,
@@ -205,6 +208,15 @@ class SentenceExecution:
 
         def objective() -> torch.Tensor:
             nonlocal measured
+            if (
+                self.model.consumer_mode != self.profile.consumer
+                or self.model.solver != self.profile.solver
+                or self.model.spine.spec != self.profile.spine
+                or self.model.codec.spec != self.profile.codec
+                or self.model.codec.law_spec != self.profile.law
+                or self.model.head.spec != self.profile.law
+            ):
+                raise ValueError("live construction differs from the declared profile")
             with torch.autocast(
                 self.device.type, dtype=torch.bfloat16, enabled=self.profile.precision == "bf16"
             ):
@@ -218,6 +230,14 @@ class SentenceExecution:
                         future_weight=self.profile.optimization.future_weight,
                     )
                 )
+            row["mechanism"] = collect_mechanism(
+                measured.readout,
+                self.profile,
+                phase=self.phase,
+                zero_views=[
+                    cast(CarrierBlock, block).zero_views for block in self.model.spine.blocks
+                ],
+            )
             return measured.total
 
         started = time.perf_counter_ns()

@@ -348,6 +348,14 @@ failure evidence and permits a clean retry. Three native tests cover the correct
 capture/run binding forgeries and post-verification byte mutations. Removing payload
 admission failed the success-marker guard.
 
+Step 10a records compact pre-update solver convergence/action summaries, state/sample norms,
+precision and zero-view counts in training-step/journal v2. Both Fisher and analytical
+isotropic consumers retain evidence; codec warm-up is explicitly inactive. Missing active
+readout/solver evidence and live-construction drift fail before the optimizer transaction.
+Legacy journals remain readable but cannot authorize current restart seals. Thirty-eight
+focused mechanism/journal/execution/seal tests pass, including zero norms and FP64 reduction
+roundoff. Removing journal mechanism admission failed the forged-measurement guard.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
@@ -362,7 +370,7 @@ RED-first tests cover replay, source pairing across codec permutations, model-RN
 empty/forged source rejection, and causal framing. Including the target span in history
 fails its causality guard; the mutation was restored. Snapshot cursors bind source/config.
 
-Next: solver/preservation telemetry and worker/controller wiring; preservation/fidelity measurements;
+Next: worker/controller wiring and preservation/fidelity measurements;
 explicit H registrations and stage adapters; complete shared DVC/R2 custody, remote worker/
 controller and analysis/review/filing integration. Then the authorized
 6,000-step CUDA/bf16 tiny probes with the approved host-watchdog exception, verified artifact

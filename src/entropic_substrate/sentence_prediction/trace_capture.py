@@ -24,6 +24,7 @@ _SCHEMAS = frozenset(
         "h-probe-training-progress-v1",
         "h-checkpoint-seal-v1",
         "h-journal-shard-v1",
+        "h-journal-shard-v2",
         "h-predictive-evaluation-v1",
         "h-generation-receipt-v1",
         "h-generation-receipt-v2",
