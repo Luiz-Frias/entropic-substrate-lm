@@ -16,8 +16,7 @@ pytestmark = pytest.mark.unit
 type Samples = tuple[SentenceExecution, SpanStateSet, SpanStateSet]
 
 
-@pytest.fixture
-def samples(tmp_path: Path) -> Samples:
+def probe_samples(tmp_path: Path) -> Samples:
     run = model(tmp_path)
     train = collect_span_states(
         run, "checkpoint", split="train", count=8, lags=(2, 4, 16, 64), seed=42
@@ -26,6 +25,11 @@ def samples(tmp_path: Path) -> Samples:
         run, "checkpoint", split="validation", count=8, lags=(2, 4, 16, 64), seed=42
     )
     return run, train, heldout
+
+
+@pytest.fixture
+def samples(tmp_path: Path) -> Samples:
+    return probe_samples(tmp_path)
 
 
 def config() -> ProbeConfig:
@@ -87,8 +91,12 @@ def test_fitting_cannot_use_heldout_and_scoring_cannot_use_train(samples: Sample
     probe = fit_span_probe(train, config(), control="observed")
     with pytest.raises(ValueError, match="held-out"):
         score_span_probe(probe, train)
-    forged = replace(heldout, positions=train.positions)
-    with pytest.raises(ValueError, match=r"horizons|overlap"):
+    positions = (
+        replace(heldout.positions[0], document_id=train.positions[0].document_id),
+        *heldout.positions[1:],
+    )
+    forged = replace(heldout, positions=positions)
+    with pytest.raises(ValueError, match="documents overlap"):
         score_span_probe(probe, forged)
 
 

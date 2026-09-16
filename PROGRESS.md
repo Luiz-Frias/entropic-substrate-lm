@@ -303,6 +303,15 @@ held-out-label test; the guard was restored. Disk capture and execution integrat
 Review exposed cross-side assignments when horizons overlap. The reproducing test failed
 before the correction; permutations now preserve both horizon and before/after event side.
 
+Step 8d captures both frozen probes, detached selected states, fitting configuration,
+source coordinates, permutations and individual score pairs in a bounded report-only artifact.
+Its reader verifies lineage bindings and fitting-state identities, then recomputes held-out
+scores and summaries (declared FP32 replay tolerance: absolute 1e-5, relative 1e-6).
+Twelve artifact tests cover rehashed forgeries, missing config, byte budgets and overwrite
+refusal; disabling numerical reconciliation failed the forged-summary test. The nine probe
+tests also pass, including the isolated document-overlap guard requested in review.
+The adapter joining these tensors to an actual sealed checkpoint remains the next boundary.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

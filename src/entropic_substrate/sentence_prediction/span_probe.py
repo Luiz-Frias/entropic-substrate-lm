@@ -177,6 +177,28 @@ class FrozenSpanProbe:
     def state_dict(self) -> dict[str, Tensor]:
         return {"weight": self._weight.clone(), "bias": self._bias.clone()}
 
+    def verify_training(self, train: SpanStateSet) -> None:
+        """Join a frozen artifact to the exact selected fitting tensors and policy."""
+        self.verify()
+        content = validate_span_states(train)
+        manifest = self.manifest
+        if (
+            train.split != "train"
+            or content != manifest.training_content_digest
+            or train.positions != manifest.training_positions
+            or (train.checkpoint_id, train.codec_id, train.source_digest)
+            != (manifest.checkpoint_id, manifest.codec_id, manifest.source_digest)
+            or train.before.shape[1] != manifest.width
+        ):
+            raise ValueError("probe training binding mismatch")
+        _envelope(train, manifest.config, manifest.config.train_positions)
+        horizons = torch.cat((train.before_horizons, train.after_horizons))
+        expected = _permutation(
+            horizons, (manifest.config.seed + 1) % 2**63, manifest.control == "shuffled"
+        )
+        if tuple(expected.tolist()) != manifest.training_permutation:
+            raise ValueError("probe training permutation differs from fitting policy")
+
     def log_probabilities(self, states: Tensor, horizons: Tensor) -> Tensor:
         self.verify()
         with torch.no_grad(), torch.autocast("cpu", enabled=False):
