@@ -91,6 +91,7 @@ def cmd_source(args: argparse.Namespace) -> int:
                     _integer(row["validation_buckets"]),
                     _integer(row["test_buckets"]),
                 ),
+                dataset_name=name,
             )
             if any(output.iterdir()):
                 raise ValueError("source preparation requires an empty owned output directory")

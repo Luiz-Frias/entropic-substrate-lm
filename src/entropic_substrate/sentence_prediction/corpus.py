@@ -74,6 +74,7 @@ class PreparationSpec:
     revision: str
     segmentation: SegmentationPolicy = field(default_factory=SegmentationPolicy)
     splits: SplitPolicy = field(default_factory=SplitPolicy)
+    dataset_name: str | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -82,6 +83,12 @@ class PreparationSpec:
             raise ValueError("preparation limits must be positive integers")
         if type(self.revision) is not str or not self.revision.strip():
             raise ValueError("source revision must be explicit and nonblank")
+        if self.dataset_name is not None and (
+            type(self.dataset_name) is not str
+            or not self.dataset_name.strip()
+            or self.dataset_name != self.dataset_name.strip()
+        ):
+            raise ValueError("declared dataset name must be a canonical nonblank string")
         if (
             type(self.segmentation) is not SegmentationPolicy
             or type(self.splits) is not SplitPolicy
@@ -92,12 +99,17 @@ class PreparationSpec:
     def identity(self) -> str:
         return content_identity(
             (
-                "sentence-preparation-v1",
+                "sentence-preparation-v2",
                 str(self.candidate_limit),
                 str(self.admitted_byte_limit),
                 self.revision,
                 self.segmentation.identity,
                 self.splits.identity,
+                *(
+                    ("dataset-declared", self.dataset_name)
+                    if self.dataset_name is not None
+                    else ("dataset-not-declared",)
+                ),
             )
         )
 

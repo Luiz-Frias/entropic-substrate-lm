@@ -287,6 +287,13 @@ documents remain explicit source evidence, not an assertion of model readiness.
 `path`/`sha256` identity), and `max_artifact_bytes`. Inspection verifies the source
 hash and reader, then replays preparation without contacting the provider.
 
+New source captures use `h-source-capture-v2`: dataset configuration participates
+in preparation/corpus identity even for empty results. Synthetic or programmatic
+sources without a declared provider configuration serialize explicit `null`; the
+FineWeb command always supplies the selected name. V1 evidence remains unchanged
+and requires its original reader; no automatic migration or cross-reader resume
+is permitted. Preparation tests reproduce the former empty-configuration collision.
+
 ## Research provenance
 
 - [Frozen-head audit](e1-5c-head-audit-findings.md): exploratory numerical preservation evidence,

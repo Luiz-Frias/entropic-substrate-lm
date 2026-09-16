@@ -83,11 +83,14 @@ def test_capture_refuses_rehashed_incompatible_or_forged_payload(
         read_prepared_corpus(tmp_path, tampered, max_bytes=10000)
 
 
-def test_missing_policy_field_is_not_filled_from_a_runtime_default(tmp_path: Path) -> None:
+@pytest.mark.parametrize("field", ["max_sentence_bytes", "dataset_name"])
+def test_missing_policy_field_is_not_filled_from_a_runtime_default(
+    tmp_path: Path, field: str
+) -> None:
     write_prepared_corpus(tmp_path, corpus(), max_bytes=10000)
     path = tmp_path / "prepared-corpus.json"
     payload = json.loads(path.read_bytes())
-    del payload["spec"]["max_sentence_bytes"]
+    del payload["spec"][field]
     encoded = json.dumps(payload).encode()
     path.write_bytes(encoded)
     with pytest.raises(ValueError, match="fields"):
@@ -189,6 +192,40 @@ def test_summary_booleans_cannot_impersonate_integer_offsets(tmp_path: Path) -> 
     encoded = json.dumps(payload).encode()
     path.write_bytes(encoded)
     with pytest.raises(ValueError, match="independent replay"):
+        read_prepared_corpus(
+            tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
+        )
+
+
+def test_declared_dataset_roundtrips_and_changes_empty_corpus_identity(tmp_path: Path) -> None:
+    first = replace(corpus().spec, dataset_name="sample-10BT")
+    second = replace(first, dataset_name="sample-100BT")
+    prepared = prepare_documents([], first)
+    assert prepared.identity != prepare_documents([], second).identity
+    artifact = write_prepared_corpus(tmp_path, prepared, max_bytes=10000)
+    assert read_prepared_corpus(tmp_path, artifact.content_hash, max_bytes=10000).spec == first
+    payload = json.loads((tmp_path / "prepared-corpus.json").read_bytes())
+    assert payload["format_version"] == "h-source-capture-v2"
+    assert payload["spec"]["dataset_name"] == "sample-10BT"
+
+
+@pytest.mark.parametrize("name", ["", "  ", " sample", 42, False])
+def test_declared_dataset_name_cannot_be_blank_or_coerced(name: object) -> None:
+    with pytest.raises(ValueError, match="dataset"):
+        replace(corpus().spec, dataset_name=name)
+
+
+def test_legacy_capture_requires_original_reader_without_invented_provenance(
+    tmp_path: Path,
+) -> None:
+    write_prepared_corpus(tmp_path, corpus(), max_bytes=10000)
+    target = tmp_path / "prepared-corpus.json"
+    payload = json.loads(target.read_bytes())
+    payload["format_version"] = "h-source-capture-v1"
+    payload["spec"].pop("dataset_name", None)
+    encoded = json.dumps(payload).encode()
+    target.write_bytes(encoded)
+    with pytest.raises(ValueError, match="original reader"):
         read_prepared_corpus(
             tmp_path, ContentHash("sha256", hashlib.sha256(encoded).hexdigest()), max_bytes=10000
         )

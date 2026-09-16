@@ -20,7 +20,7 @@ from entropic_substrate.sentence_prediction.corpus import (
 from entropic_substrate.sentence_prediction.records import SourceDocument, content_identity
 from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
 
-_VERSION = "h-source-capture-v1"
+_VERSION = "h-source-capture-v2"
 _FILENAME = "prepared-corpus.json"
 _READER_MODULES = (
     "sentence_prediction",
@@ -44,7 +44,7 @@ def _reader_identity() -> str:
         _, _, digest = read_d1_artifact_bytes(source.parent, source.name, label="H source reader")
         digests.append(f"{name}:{digest}")
     return content_identity(
-        ("h-source-reader-v1", python_version(), metadata.version("pysbd"), *digests)
+        ("h-source-reader-v2", python_version(), metadata.version("pysbd"), *digests)
     )
 
 
@@ -103,6 +103,7 @@ def write_prepared_corpus(
             "candidate_limit": spec.candidate_limit,
             "admitted_byte_limit": spec.admitted_byte_limit,
             "revision": spec.revision,
+            "dataset_name": spec.dataset_name,
             "max_sentence_bytes": spec.segmentation.max_sentence_bytes,
             "engine_version": spec.segmentation.engine_version,
             "split_seed": spec.splits.seed,
@@ -160,8 +161,9 @@ def _reject_constant(value: str) -> object:
 def read_prepared_corpus(root: Path, expected: ContentHash, *, max_bytes: int) -> PreparedCorpus:
     """Verify external digest and reader identity, then recompute every admission.
 
-    Only v1 is supported. Unknown construction/reader versions fail explicitly;
-    missing fields never acquire runtime defaults. No old E/D reader is widened.
+    V2 retains declared dataset provenance even for empty captures. V1 requires
+    its original reader; historical bytes never acquire invented provenance.
+    Unknown versions fail explicitly. No old E/D reader is widened.
     """
     if type(expected) is not ContentHash or expected.algorithm != "sha256":
         raise ValueError("source capture requires an expected SHA-256 digest")
@@ -176,6 +178,8 @@ def read_prepared_corpus(root: Path, expected: ContentHash, *, max_bytes: int) -
         json.loads(encoded, object_pairs_hook=_pairs, parse_constant=_reject_constant),
         {"format_version", "reader_id", "corpus_id", "spec", "candidates", "summary"},
     )
+    if payload["format_version"] == "h-source-capture-v1":
+        raise ValueError("legacy source capture requires its original reader; no migration")
     if payload["format_version"] != _VERSION:
         raise ValueError("unsupported source capture format version")
     if payload["reader_id"] != _reader_identity():
@@ -186,6 +190,7 @@ def read_prepared_corpus(root: Path, expected: ContentHash, *, max_bytes: int) -
             "candidate_limit",
             "admitted_byte_limit",
             "revision",
+            "dataset_name",
             "max_sentence_bytes",
             "engine_version",
             "split_seed",
@@ -199,6 +204,7 @@ def read_prepared_corpus(root: Path, expected: ContentHash, *, max_bytes: int) -
         candidate_limit=_integer(values["candidate_limit"]),
         admitted_byte_limit=_integer(values["admitted_byte_limit"]),
         revision=_text(values["revision"]),
+        dataset_name=None if values["dataset_name"] is None else _text(values["dataset_name"]),
         segmentation=SegmentationPolicy(_integer(values["max_sentence_bytes"])),
         splits=SplitPolicy(
             _integer(values["split_seed"]),

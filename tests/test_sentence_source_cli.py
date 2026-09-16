@@ -125,6 +125,25 @@ def test_empty_source_is_retained_as_empty_not_model_ready(
     assert result["scientific_authority"] == "none"
 
 
+def test_empty_dataset_configurations_retain_distinct_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stream = Mock(side_effect=lambda **_: iter(()))
+    monkeypatch.setattr("entropic_substrate.data.fineweb.stream_fineweb_documents", stream)
+    identities = []
+    for name in ("sample-10BT", "sample-100BT"):
+        output = tmp_path / name
+        output.mkdir()
+        command = manifest() | {"dataset_name": name, "output_root": name}
+        filename = f"{name}.json"
+        write_json(tmp_path, filename, command, max_bytes=10_000)
+        assert main(["h-prepare-source", "--root", str(tmp_path), "--manifest", filename]) == 0
+        result = json.loads(capsys.readouterr().out)
+        identities.append((result["source"]["sha256"], result["corpus_identity"]))
+    assert identities[0][0] != identities[1][0]
+    assert identities[0][1] != identities[1][1]
+
+
 def test_existing_source_is_not_overwritten_or_downloaded_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
