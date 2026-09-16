@@ -22,8 +22,7 @@ LIMITS = {
 }
 
 
-@pytest.fixture
-def captured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, ArtifactIdentity]:
+def build_capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, ArtifactIdentity]:
     template, output, training = trained(tmp_path)
     scripted_tokens(monkeypatch, [65, 257])
     generated = run_probe_generation(
@@ -40,6 +39,11 @@ def captured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Art
         output, training, generated.receipt, template.profile, template.source_root, root, **LIMITS
     )
     return root, artifact
+
+
+@pytest.fixture
+def captured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, ArtifactIdentity]:
+    return build_capture(tmp_path, monkeypatch)
 
 
 def test_custody_does_not_call_native_admission_or_weaken_it(

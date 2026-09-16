@@ -336,6 +336,13 @@ shared inventory validator. `h-inspect-custody` reports native validation as not
 hash comparison admitted a same-size tensor mutation and failed its guard. This enables
 host-side transfer verification without pretending that a CPU host restored CUDA RNG state.
 
+Step 9b binds native-reader success to a verification request and exact capture. Host receipt
+admission rechecks byte custody without rerunning native admission; authentication of the
+producing worker remains the transport/controller's responsibility. Four native/custody
+tests pass, including idempotent success recovery, request/runtime/timing refusal and separate
+records for repeated failures. Substituting custody for native admission failed the pass-receipt
+guard. This is verification evidence only, never scientific successor authority.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
