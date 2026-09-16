@@ -247,6 +247,13 @@ publishing tests pass. The current just formatter normalized interpolation white
 the existing deployment and publishing guards were unchanged. No command claims full probe
 completion from training alone, and no hook configuration was modified.
 
+Step 7a adds generation snapshots tied to the completed training receipt, without duplicating
+trained weights. Nine tests cover two-sentence output, unscripted mid-sentence RNG replay,
+invalid UTF-8 retention, prompt/RNG/summary forgery rejection and forensic-only defect capture.
+Removing the prompt-history guard admitted a forged prompt and failed its test. Generation
+uses the declared precision for initial and emitted encoding; inspect leaves caller RNG
+unchanged. Generation-complete records an outcome or sentence budget, not semantic quality.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
