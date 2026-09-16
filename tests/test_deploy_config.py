@@ -340,3 +340,10 @@ def test_baked_model_copies_carry_a_matching_containerignore_negation() -> None:
             f"Containerfile COPYs {path!r} but .containerignore has no "
             f"'!{path}' negation — `models/` excludes it from the build context"
         )
+
+
+def test_training_image_invokes_the_pinned_uv_copy_not_a_path_shadow() -> None:
+    containerfile = (Path(__file__).resolve().parents[1] / "Containerfile").read_text()
+    assert "RUN /bin/uv export --frozen" in containerfile
+    assert "&& /bin/uv pip install --system" in containerfile
+    assert "RUN /bin/uv pip install --system --no-cache --no-deps ." in containerfile

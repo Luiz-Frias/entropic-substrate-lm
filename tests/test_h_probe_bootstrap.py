@@ -3,6 +3,8 @@
 import hashlib
 import importlib.util
 import json
+import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -164,11 +166,28 @@ def test_git_subprocess_guards_reap_the_owned_process(
     mode: str,
 ) -> None:
     real = subprocess.Popen
-    processes = []
+    processes: list[subprocess.Popen[bytes]] = []
 
-    def launch(*args, **kwargs):
+    def launch(
+        _args: tuple[str, ...],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        stdin: int,
+        stdout: int,
+        stderr: int,
+        start_new_session: bool,
+    ) -> subprocess.Popen[bytes]:
         code = "import time; time.sleep(30)" if mode == "timeout" else "print('x' * 10000)"
-        process = real((sys.executable, "-c", code), **kwargs)
+        process = real(
+            (sys.executable, "-c", code),
+            cwd=cwd,
+            env=env,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=start_new_session,
+        )
         processes.append(process)
         return process
 
@@ -192,7 +211,7 @@ def test_failed_atomic_readiness_publication_keeps_marker_absent(
     root.mkdir()
     original = bootstrap.os.link
 
-    def link(source, destination):
+    def link(source: Path, destination: Path) -> None:
         if Path(destination).name == "source-ready.json":
             raise OSError("simulated readiness publication failure")
         return original(source, destination)
@@ -202,3 +221,33 @@ def test_failed_atomic_readiness_publication_keeps_marker_absent(
         run(root, artifact)
     assert not (root / "source-ready.json").exists()
     assert not list(root.glob(".h-bootstrap-*"))
+
+
+@pytest.mark.parametrize("boundary", ["foreign_owner", "group_writable", "world_writable"])
+def test_bootstrap_enforces_workspace_ownership_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str
+) -> None:
+    artifact = bundle(tmp_path)
+    root = tmp_path / "bootstrap"
+    root.mkdir()
+    if boundary == "foreign_owner":
+        foreign = root.stat().st_uid + 1
+        monkeypatch.setattr(bootstrap.os, "geteuid", lambda: foreign)
+    else:
+        root.chmod(0o775 if boundary == "group_writable" else 0o757)
+    with pytest.raises(ValueError, match="owned"):
+        run(root, artifact)
+    assert not tuple(root.iterdir())
+
+
+def test_internal_workspaces_remain_private_under_shared_umask(tmp_path: Path) -> None:
+    artifact = bundle(tmp_path)
+    root = tmp_path / "bootstrap"
+    root.mkdir(mode=0o755)
+    original = os.umask(0o002)
+    try:
+        run(root, artifact)
+    finally:
+        os.umask(original)
+    assert stat.S_IMODE((root / "source").stat().st_mode) == 0o700
+    assert stat.S_IMODE((root / "proof.git").stat().st_mode) == 0o700

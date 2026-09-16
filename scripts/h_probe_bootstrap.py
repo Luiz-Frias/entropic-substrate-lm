@@ -152,6 +152,9 @@ def materialize_source(
     ):
         raise ValueError("bootstrap requires immutable commit and SHA-256 identities")
     root = _directory(root)
+    root_info = root.stat()
+    if root_info.st_uid != os.geteuid() or root_info.st_mode & 0o022:
+        raise ValueError("bootstrap requires an owned directory without shared write permissions")
     if any(root.iterdir()):
         raise ValueError("bootstrap requires an empty owned directory")
     _directory(bundle.parent)
@@ -172,8 +175,9 @@ def materialize_source(
             raise RuntimeError("bootstrap extraction deadline exceeded")
         return _git(cwd, args, timeout=remaining, max_bytes=bound)
 
-    git(root, "clone", "--bare", "--no-local", "--quiet", "--", "code.bundle", "proof.git")
     proof = root / "proof.git"
+    proof.mkdir(mode=0o700)
+    git(root, "clone", "--bare", "--no-local", "--quiet", "--", "code.bundle", "proof.git")
     if git(proof, "cat-file", "-t", commit) != b"commit\n":
         raise ValueError("bootstrap identity does not name a commit")
     inventory = git(proof, "ls-tree", "-rzl", "--full-tree", commit, "--", *PREFIXES)
@@ -205,7 +209,7 @@ def materialize_source(
     if len(paths) != len(entries) or not REQUIRED <= paths:
         raise ValueError("bootstrap runtime is duplicate or lacks required H inputs")
     source = root / "source"
-    source.mkdir()
+    source.mkdir(mode=0o700)
     hashes: dict[str, str] = {}
     for mode, blob, size, relative in entries:
         payload = git(proof, "cat-file", "blob", blob, bound=size + 1)

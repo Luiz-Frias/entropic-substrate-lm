@@ -299,7 +299,9 @@ is permitted. Preparation tests reproduce the former empty-configuration collisi
 `python scripts/h_probe_bootstrap.py` materializes a locally delivered Git bundle
 before the H package is installed. Required arguments are `--bundle`, `--root`,
 `--commit`, `--sha256`, `--max-bundle-bytes`, `--max-source-bytes`, `--max-files`,
-and `--timeout-seconds`. The root must be an existing empty owned directory.
+and `--timeout-seconds`. The root must be an existing empty directory owned by
+the effective user, without group/world write permissions. Internal source and
+Git-proof directories use mode 0700 independently of the ambient umask.
 The script uses only the standard library and Git. It verifies the bundle hash,
 reads committed blobs without checkout hooks/filters, and bounds the runtime
 inventory, subprocess output, and extraction deadline. Symlinks are refused.
@@ -310,6 +312,12 @@ no training or scientific authority. A failed attempt retains partial evidence
 without a ready marker; retries use a new empty root. R2 fetching, pinned dependency
 installation, worker start, controller supervision, and provider termination are
 separate composition steps, not outcomes established by this command alone.
+
+The pinned image contains both a PATH-selected `/usr/local/bin/uv` and the
+Containerfile's copied `/bin/uv`; they are distinct binaries. Deployment uses
+the latter explicitly. Offline inspection on 2026-09-16 measured `/bin/uv`
+version 0.11.6 and a successful frozen current-lock export with pySBD present
+and Torch pruned. This verifies export, not dependency installation or GPU use.
 
 ## Research provenance
 
