@@ -6,7 +6,7 @@ from its verified training lineage; callers cannot obtain scientific authority h
 """
 
 import math
-from collections.abc import Callable
+from collections.abc import Buffer, Callable
 from dataclasses import asdict, dataclass, fields, replace
 from inspect import signature
 from io import BytesIO
@@ -58,6 +58,32 @@ def _construct[T](factory: Callable[..., T], raw: object) -> T:
     return factory(**recovery_record(raw, " ".join(signature(factory).parameters)))
 
 
+class _LimitedBuffer(BytesIO):
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        _limit(limit)
+        self.limit = limit
+        self.overflowed = False
+
+    def write(self, data: Buffer, /) -> int:
+        if self.tell() + memoryview(data).nbytes > self.limit:
+            self.overflowed = True
+            raise ValueError("probe serialization exceeds byte limit")
+        return super().write(data)
+
+
+def _serialize(value: object, limit: int) -> bytes:
+    with _LimitedBuffer(limit) as stream:
+        try:
+            torch.save(value, stream)
+        except Exception as error:
+            # The Torch ZIP finalizer can replace the original write exception.
+            if stream.overflowed:
+                raise ValueError("probe serialization exceeds byte limit") from error
+            raise
+        return stream.getvalue()
+
+
 def capture_span_probes(
     root: Path,
     name: str,
@@ -77,10 +103,25 @@ def capture_span_probes(
         heldout.source_digest,
     ):
         raise ValueError("probe capture binding mismatch")
+    # Minimum tensor payload from the actual selected arrays and fixed head shapes.
+    # Metadata/ZIP overhead is separately bounded by the serialization stream.
+    tensor_bytes = sum(
+        t.numel() * t.element_size()
+        for states in (train, heldout)
+        for t in (
+            states.before,
+            states.after,
+            states.before_horizons,
+            states.after_horizons,
+            states.labels,
+        )
+    )
+    head_bytes = 2 * 256 * (train.before.shape[1] + 2) * torch.float32.itemsize
+    if tensor_bytes + head_bytes > max_bytes:
+        raise ValueError("probe tensor payload exceeds byte limit before fitting")
     probes = tuple(fit_span_probe(train, config, control=c) for c in ("observed", "shuffled"))
     reports = tuple(score_span_probe(probe, heldout) for probe in probes)
-    stream = BytesIO()
-    torch.save(
+    payload = _serialize(
         {
             "schema": "h-span-probes-v1",
             "scientific_authority": "none",
@@ -92,11 +133,8 @@ def capture_span_probes(
             ),
             "reports": tuple(asdict(report) for report in reports),
         },
-        stream,
+        max_bytes,
     )
-    payload = stream.getvalue()
-    if len(payload) > max_bytes:
-        raise ValueError("probe artifact exceeds byte limit")
     return publish_d1_atomic_bytes(root, name, payload, label="frozen span probes")
 
 

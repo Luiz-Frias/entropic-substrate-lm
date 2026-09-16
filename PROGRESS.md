@@ -311,6 +311,9 @@ Twelve artifact tests cover rehashed forgeries, missing config, byte budgets and
 refusal; disabling numerical reconciliation failed the forged-summary test. The nine probe
 tests also pass, including the isolated document-overlap guard requested in review.
 The adapter joining these tensors to an actual sealed checkpoint remains the next boundary.
+Review hardening checks the selected tensor/head byte floor before fitting and uses a
+size-limited serialization stream. Fifteen artifact tests now pass; disabling the stream
+limit failed the overflow guard. Forgery tests pin their specific rejection messages.
 
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and

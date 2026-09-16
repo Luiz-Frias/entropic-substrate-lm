@@ -61,9 +61,20 @@ def test_reader_rejects_another_lineage(tmp_path: Path, samples: Samples, field:
 
 
 @pytest.mark.parametrize(
-    "mutation", ["summary", "weight", "label", "training", "config", "permutation", "duration"]
+    ("mutation", "error"),
+    [
+        ("summary", "numerical report"),
+        ("weight", "identity mismatch"),
+        ("label", "differs from replay"),
+        ("training", "training binding"),
+        ("config", "versioned schema"),
+        ("permutation", "coordinate differs"),
+        ("duration", "nonnegative"),
+    ],
 )
-def test_rehashed_forgery_is_not_admitted(tmp_path: Path, samples: Samples, mutation: str) -> None:
+def test_rehashed_forgery_is_not_admitted(
+    tmp_path: Path, samples: Samples, mutation: str, error: str
+) -> None:
     _, train, heldout = samples
     artifact = capture_span_probes(tmp_path, "probe.pt", train, heldout, config(), max_bytes=LIMIT)
     value = torch.load(Path(artifact.path), weights_only=True)
@@ -84,7 +95,7 @@ def test_rehashed_forgery_is_not_admitted(tmp_path: Path, samples: Samples, muta
     stream = BytesIO()
     torch.save(value, stream)
     forged = publish_d1_atomic_bytes(tmp_path, "forged.pt", stream.getvalue(), label="test forgery")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=error):
         read_span_probes(
             tmp_path,
             forged,
@@ -111,3 +122,40 @@ def test_capture_refuses_invalid_budget_and_unmatched_inputs(
             config(),
             max_bytes=LIMIT,
         )
+
+
+def test_too_small_budget_refuses_before_fitting(
+    tmp_path: Path, samples: Samples, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.sentence_prediction import span_probe_artifacts as artifacts
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("fitting started despite impossible byte budget")
+
+    monkeypatch.setattr(artifacts, "fit_span_probe", forbidden)
+    _, train, heldout = samples
+    with pytest.raises(ValueError, match="byte"):
+        capture_span_probes(tmp_path, "too-small.pt", train, heldout, config(), max_bytes=1)
+
+
+def test_serialization_limit_keeps_partial_output_unpublished(
+    tmp_path: Path, samples: Samples
+) -> None:
+    _, train, heldout = samples
+    artifact = capture_span_probes(
+        tmp_path, "complete.pt", train, heldout, config(), max_bytes=LIMIT
+    )
+    limit = Path(artifact.path).stat().st_size - 1000
+    with pytest.raises(ValueError, match="byte"):
+        capture_span_probes(tmp_path, "partial.pt", train, heldout, config(), max_bytes=limit)
+    assert not (tmp_path / "partial.pt").exists()
+
+
+def test_output_buffer_never_accepts_bytes_past_its_limit() -> None:
+    from entropic_substrate.sentence_prediction.span_probe_artifacts import _LimitedBuffer
+
+    with _LimitedBuffer(4) as stream:
+        assert stream.write(b"1234") == 4
+        with pytest.raises(ValueError, match="byte"):
+            stream.write(b"5")
+        assert stream.getvalue() == b"1234"
