@@ -292,6 +292,17 @@ collection preserves model mode and Torch RNG; fitting/capture of probes is the 
 The approved line-specific B311 annotation documents the non-security statistical RNG;
 scoped Bandit and all 22 span collection/score tests pass without changing security hooks.
 
+Step 8c fits frozen CPU-FP32 linear probes on detached training states, conditioned on
+log1p remaining source-byte horizon. This fixed-capacity development feature map is bound
+in the probe identity, not a claim of complete latent-information recovery. Observed and
+horizon-matched shuffled controls record their permutations; reports retain same-byte score
+pairs, uniform controls, prediction quality, source identities and separate fit/score time.
+Nine tests cover deterministic isolation, zero states, artifact/split/coordinate refusal,
+known-signal learning and weight mutation. Disabling the training-split guard failed its
+held-out-label test; the guard was restored. Disk capture and execution integration remain next.
+Review exposed cross-side assignments when horizons overlap. The reproducing test failed
+before the correction; permutations now preserve both horizon and before/after event side.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
