@@ -385,6 +385,13 @@ transport tests pass, covering tampering, budget refusal, missing readback, name
 duplicate JSON fields and noncanonical requests. Removing the local input hash check failed
 its guard. This layer does not claim native data/model admission or authorize allocation.
 
+Step 11d connects materialized worker requests to real training, generation, span diagnostics,
+capture and native verification. The training driver exposes only durable, admitted checkpoint
+receipts to its transport callback. Four worker tests pass, including a paused lineage moved
+into a second workspace and resumed to its full budget, observer failure and changed-request
+refusal. Removing the materialized-request join failed its guard. Workload completion remains
+an engineering status, not generation-quality support or a scientific successor gate.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

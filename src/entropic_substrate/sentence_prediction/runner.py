@@ -160,6 +160,7 @@ def run_probe_training(
     max_artifact_bytes: int,
     resume: ArtifactIdentity | None = None,
     stop_after_seal: Callable[[str, int], bool] | None = None,
+    on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
 
@@ -283,7 +284,7 @@ def run_probe_training(
                 max_bytes=max_artifact_bytes,
             )
             previous_receipt = receipt
-            if complete or stopped:
+            if complete or stopped or on_checkpoint is not None:
                 read_training_progress(
                     root,
                     receipt,
@@ -292,6 +293,9 @@ def run_probe_training(
                     max_source_bytes=max_source_bytes,
                     max_artifact_bytes=max_artifact_bytes,
                 )
+            if on_checkpoint is not None:
+                on_checkpoint(artifact_from_mapping(artifact_reference(root, receipt)))
+            if complete or stopped:
                 return _progress(
                     root, "training_complete" if complete else "paused", last_seal, receipt
                 )
