@@ -265,6 +265,28 @@ old D host tail remains a recoverable deferred snapshot, not implicitly restored
 Approval authorizes implementation, not GPU spending, publication, or confirmation. Quotes
 and approvals remain separate for probes, pilots, confirmation, evaluation, and publishing.
 
+## Source preparation command
+
+`python -m entropic_substrate.cli h-prepare-source --root ROOT --manifest FILE`
+prepares and independently replays one bounded FineWeb source capture. Run it in
+the intended reader runtime; the command does not relax Python/segmentation identity
+checks or grant training authority. `ROOT` and its declared output directory must
+already exist; the output directory must be empty. No corpus download occurs in
+the unit tests, which substitute provider rows while retaining real preparation.
+
+The manifest requires exactly `schema: h-prepare-source-command-v1`, `dataset_name`,
+`revision` (the existing `FINEWEB_REVISION`), `output_root`, `max_artifact_bytes`,
+`candidate_limit`, `admitted_byte_limit`, `max_sentence_bytes`,
+`segmentation_version` (0.3.4), `split_seed`, `validation_buckets`, and `test_buckets`.
+No omitted policy field is filled from a runtime default. Candidate/admitted-byte
+limits do not claim to bound provider network traffic. Empty corpora and rejected
+documents remain explicit source evidence, not an assertion of model readiness.
+
+`h-inspect-source` uses the same root/manifest options with exactly
+`schema: h-inspect-source-command-v1`, `source_root`, `source` (the returned
+`path`/`sha256` identity), and `max_artifact_bytes`. Inspection verifies the source
+hash and reader, then replays preparation without contacting the provider.
+
 ## Research provenance
 
 - [Frozen-head audit](e1-5c-head-audit-findings.md): exploratory numerical preservation evidence,

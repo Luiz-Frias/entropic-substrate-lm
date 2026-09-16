@@ -299,6 +299,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_span_parsers(sub)
 
+    from entropic_substrate.sentence_prediction.source_cli import add_source_parsers
+
+    add_source_parsers(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1110,6 +1114,10 @@ def main(
         from entropic_substrate.sentence_prediction.span_cli import cmd_span
 
         return cmd_span(args)
+    if args.command in ("h-prepare-source", "h-inspect-source"):
+        from entropic_substrate.sentence_prediction.source_cli import cmd_source
+
+        return cmd_source(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
