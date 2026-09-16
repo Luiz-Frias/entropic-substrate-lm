@@ -315,6 +315,14 @@ Review hardening checks the selected tensor/head byte floor before fitting and u
 size-limited serialization stream. Fifteen artifact tests now pass; disabling the stream
 limit failed the overflow guard. Forgery tests pin their specific rejection messages.
 
+Step 8e restores the actual sealed model before collecting span states, captures both probes,
+and joins the diagnostic receipt to its training/checkpoint/source identities. The reader
+replays source spans, canonical targets, window exposure and frozen scores without claiming
+a second model forward pass. Seven lineage tests pass; removing the checkpoint join failed
+the forged-checkpoint test. Population shortages retain typed diagnostic-gap evidence;
+zero-direction failures retain affected counts. Collection and probe costs remain separate.
+The combined lineage/collection/artifact suite passed 26 tests. CLI/capture integration remains next.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

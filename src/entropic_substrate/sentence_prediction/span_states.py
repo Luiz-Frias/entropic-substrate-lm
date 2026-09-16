@@ -46,6 +46,19 @@ class _Candidate:
     lag: int
 
 
+class SpanPopulationGap(ValueError):
+    """The captured source cannot supply the declared diagnostic lag population."""
+
+    code = "insufficient_span_probe_population"
+
+    def __init__(self, requested: dict[int, int], available: dict[int, int]) -> None:
+        self.requested = requested.copy()
+        self.available = available.copy()
+        super().__init__(
+            f"insufficient causal span positions: requested={requested}, available={available}"
+        )
+
+
 @torch.no_grad()
 def collect_span_states(
     execution: SentenceExecution,
@@ -113,8 +126,8 @@ def collect_span_states(
                     if slot < quotas[index]:
                         reservoirs[index][slot] = candidate
     if any(len(rows) != quota for rows, quota in zip(reservoirs, quotas, strict=True)):
-        raise ValueError(
-            f"insufficient causal span positions by lag: {dict(zip(lags, seen, strict=True))}"
+        raise SpanPopulationGap(
+            dict(zip(lags, quotas, strict=True)), dict(zip(lags, seen, strict=True))
         )
     selected = sorted(
         (item for rows in reservoirs for item in rows), key=lambda c: (c.document, c.event, c.lag)

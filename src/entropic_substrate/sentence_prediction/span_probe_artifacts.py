@@ -173,7 +173,7 @@ def _probe(raw: object, train: SpanStateSet) -> FrozenSpanProbe:
     return probe
 
 
-def _equal(expected: object, saved: object) -> None:
+def reconcile_span_evidence(expected: object, saved: object) -> None:
     """Replay tolerance covers FP32 CPU arithmetic, not changed labels or policies."""
     if type(expected) is float:
         if (
@@ -186,7 +186,7 @@ def _equal(expected: object, saved: object) -> None:
         if type(saved) is not dict or expected.keys() != saved.keys():
             raise ValueError("probe report fields differ from replay")
         for key in expected:
-            _equal(expected[key], saved[key])
+            reconcile_span_evidence(expected[key], saved[key])
     elif isinstance(expected, (tuple, list)):
         if (
             not isinstance(saved, (tuple, list))
@@ -195,7 +195,7 @@ def _equal(expected: object, saved: object) -> None:
         ):
             raise ValueError("probe report population differs from replay")
         for left, right in zip(expected, saved, strict=True):
-            _equal(left, right)
+            reconcile_span_evidence(left, right)
     elif type(expected) is not type(saved) or expected != saved:
         raise ValueError("probe report identity or coordinate differs from replay")
 
@@ -256,6 +256,6 @@ def read_span_probes(
         report_row = recovery_record(saved, " ".join(f.name for f in fields(SpanProbeReport)))
         measured = score_span_probe(probe, heldout)
         report = replace(measured, score_seconds=_duration(report_row["score_seconds"]))
-        _equal(asdict(report), saved)
+        reconcile_span_evidence(asdict(report), saved)
         reports.append(report)
     return SpanProbeBundle(train, heldout, probes, tuple(reports))
