@@ -407,6 +407,13 @@ failed the completion guard. Snapshot contract tests retain immutable paths acro
 names and preserve unadmitted partial recovery files without a ready marker; retries use a
 new workspace. Remote provider/bootstrap/controller execution remains unstarted.
 
+Step 11g adds host completion admission over the recovered snapshot and bound native receipt.
+It checks the request, declared runtime/provider identity, full step budget and captured
+training/generation/diagnostic lineage while explicitly not claiming a host CUDA rerun.
+The real local worker round-trip passes, and missing verification bytes or a rehashed wrong
+request are rejected. Removing the terminal request join failed its guard. The coordinator's
+missing-native-receipt rejection now has a specific message and failure-marker assertion.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

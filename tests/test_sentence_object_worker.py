@@ -75,9 +75,11 @@ def test_missing_native_receipt_cannot_be_published_as_complete(
     monkeypatch.setattr(object_worker, "execute_probe_request", broken)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="native verification receipts"):
         run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
     assert f"{request.prefix}/complete.json" not in objects.values
+    failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
+    assert failure["status"] == "execution_defect" and failure["error_type"] == "ValueError"
 
 
 def test_snapshot_budget_failure_is_an_explicit_partial_terminal_result(tmp_path: Path) -> None:

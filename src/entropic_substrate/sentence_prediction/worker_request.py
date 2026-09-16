@@ -16,6 +16,17 @@ from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.recovery_state import recovery_record
 
 
+def worker_artifact(value: object, section: str) -> ArtifactIdentity:
+    """Admit a flat result reference in one declared worker output section."""
+    if section not in ("run", "capture", "verification", "worker"):
+        raise ValueError("unknown worker result section")
+    artifact = artifact_from_mapping(value)
+    name = PurePosixPath(artifact.path).name
+    if artifact.path != f"{section}/{name}" or PurePosixPath(name).suffix not in (".json", ".pt"):
+        raise ValueError("worker result artifact belongs to another section")
+    return ArtifactIdentity(name, artifact.content_hash)
+
+
 @dataclass(frozen=True, slots=True)
 class TransferLimits:
     max_object_bytes: int

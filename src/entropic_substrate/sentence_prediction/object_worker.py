@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import asdict
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
 from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
@@ -17,7 +17,7 @@ from entropic_substrate.sentence_prediction.recovery_state import recovery_recor
 from entropic_substrate.sentence_prediction.runner import read_training_progress
 from entropic_substrate.sentence_prediction.span_states import SpanPopulationGap
 from entropic_substrate.sentence_prediction.worker_execution import execute_probe_request
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
+from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, worker_artifact
 from entropic_substrate.sentence_prediction.worker_snapshot import publish_worker_snapshot
 from entropic_substrate.sentence_prediction.worker_transport import (
     materialize_probe_request,
@@ -63,14 +63,6 @@ def _event(
     return publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
 
 
-def _section(value: object, section: str) -> ArtifactIdentity:
-    artifact = artifact_from_mapping(value)
-    name = PurePosixPath(artifact.path).name
-    if artifact.path != f"{section}/{name}":
-        raise ValueError("worker result artifact belongs to another section")
-    return ArtifactIdentity(name, artifact.content_hash)
-
-
 def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str, object]:
     row = recovery_record(
         value,
@@ -92,7 +84,7 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
     ):
         raise ValueError("worker result duration is invalid")
     maximum = request.limits.max_object_bytes
-    training = _section(row["training"], "run")
+    training = worker_artifact(row["training"], "run")
     report = read_training_progress(
         root / "run",
         training,
@@ -114,9 +106,11 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
         return row
     if row["status"] != "probe_workload_complete" or report["status"] != "training_complete":
         raise ValueError("worker completion lacks complete training")
+    if any(row[key] is None for key in ("generation", "diagnostics", "capture", "verification")):
+        raise ValueError("worker completion requires observer and native verification receipts")
     captured, verified = (
-        _section(row["capture"], "capture"),
-        _section(row["verification"], "verification"),
+        worker_artifact(row["capture"], "capture"),
+        worker_artifact(row["verification"], "verification"),
     )
     read_native_verification(
         root / "verification",
@@ -135,8 +129,9 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
         raise ValueError("worker capture must declare its diagnostic roots")
     if (
         artifact_from_mapping(manifest["training"]) != training
-        or artifact_from_mapping(manifest["generation"]) != _section(row["generation"], "run")
-        or _section(row["diagnostics"], "run")
+        or artifact_from_mapping(manifest["generation"])
+        != worker_artifact(row["generation"], "run")
+        or worker_artifact(row["diagnostics"], "run")
         not in tuple(artifact_from_mapping(a) for a in diagnostics)
     ):
         raise ValueError("worker result is not the verified capture lineage")
