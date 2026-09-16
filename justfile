@@ -38,6 +38,9 @@ h-diagnose-spans *ARGS:
 h-inspect-spans *ARGS:
     uv run python -m entropic_substrate.cli h-inspect-spans {{ ARGS }}
 
+h-worker *ARGS:
+    uv run python -m entropic_substrate.sentence_prediction.worker_command {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------

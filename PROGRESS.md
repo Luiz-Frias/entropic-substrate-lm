@@ -419,6 +419,57 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+The worker-command annotation request is obsolete: its credential-forwarding
+test now compares against one canonical dummy fixture instead of duplicating a
+secret-shaped assertion literal. No annotation, baseline or scanner change was
+made. Deliberately forwarding the wrong credential makes that test fail; the
+mutation was restored. Image publication remains a separate pending decision.
+
+The pending R2 bootstrap slice passes 40 local bootstrap/transport tests, but
+offline inspection found that image `b88de2f7...` has neither `/app/.dvc/config`
+nor boto3. Its pre-install client assembly therefore fails before authentication;
+it is not a runnable remote bootstrap on that image. No real credentials were
+used in this inspection and no R2 objects or Runpods were created. Publication of
+one refreshed immutable project image has been proposed to Luiz as the simpler
+production route; keeping the old digest would require a separate prerequisite
+installer. The R2 slice is preserved uncommitted pending that deployment choice.
+
+`2a8a7e2` adds the stdlib-only bound-source bootstrap (496 added lines), and
+`9f54d16` enforces workspace ownership/private internals and explicit pinned uv
+selection (94 changed lines). Both passed normal hooks; 36 focused bootstrap and
+deployment tests passed. Source extraction also passed offline inside the pinned
+project image; host/native readiness records matched byte-for-byte for the same
+five-file Git fixture. All owned inspection containers were removed afterward.
+
+The image's PATH selects `/usr/local/bin/uv`, a different binary from the copied
+`/bin/uv`. The former's version check was stopped after exceeding 30 seconds under
+local x86 emulation. The latter reported 0.11.6 and successfully exported the
+current frozen deploy graph offline with pySBD included and Torch pruned. This
+does not establish why the first binary stalled or validate dependency installation.
+Bootstrap still needs R2 fetch, installation and worker-start composition; no
+Runpod was allocated. The worker-command scanner hold is resolved as noted above.
+
+`29bd163` adds manifest-bound source preparation/inspection (327 added lines).
+`2cbb5fb` closes the reproduced empty-dataset provenance collision (96 changed
+lines): v2 captures bind dataset configuration; v1 requires its original reader.
+Both commits passed normal hooks; the provenance follow-up review was clean.
+The source/capture/corpus focused suite passed 76 tests before the additional
+missing-dataset-field case; that added case passed in the full unit hook.
+
+Offline local inspection of the pinned amd64 project image
+`sha256:b88de2f7224b3a40fef1b0fbc2ac78589822c28645fe1aba5503318e5ba599f1`
+measured Python 3.12.3 and Torch distribution 2.13.0+cu126. pySBD and the H source
+package are absent. Bootstrap must supply bound source/dependencies; prepare
+source captures in that runtime rather than weakening reader compatibility.
+This was CPU-only inspection, not CUDA/bf16 validation or a Runpod allocation.
+
+The `h-worker` command now composes bounded R2 publication, worker execution and
+host-side completion admission. Seven focused tests pass, including a real local
+model lineage; disabling the local/remote scope guard makes its test fail. Invalid
+transport limits fail before client creation. Review tightened credential-guard
+isolation; raw exception logging was declined to avoid leaking provider details.
+This slice does not add pod allocation, deployment bootstrap or scientific authority.
+
 At `e524635`, `just test-all` passed 4,196 tests with 10 skips. The sequential live
 container gate then passed 4 main integration, 3 allowlist and 3 authentication tests;
 no project test containers remained afterward. Every implementation commit in this
