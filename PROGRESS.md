@@ -371,6 +371,13 @@ provider. Malformed metadata also closes its response body. Read/write cap mutat
 their guards; the combined adapter/runtime-precision suite passed 39 tests. The remaining
 precision-control branches requested in review are now covered as well.
 
+Step 11b defines canonical H worker requests with explicit source inputs, transfer caps,
+probe fitting configuration and pause/resume intent. Remote H0 requires an immutable project
+image and bound source proof; requests themselves grant neither spending nor scientific
+authority. Later remote rungs remain refused pending their gate adapters. Nine request tests
+pass; removing the source/profile join failed its guard. Input transport and worker execution
+are the next wiring boundary.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
