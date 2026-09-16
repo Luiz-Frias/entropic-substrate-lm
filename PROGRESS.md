@@ -378,6 +378,13 @@ authority. Later remote rungs remain refused pending their gate adapters. Nine r
 pass; removing the source/profile join failed its guard. Input transport and worker execution
 are the next wiring boundary.
 
+Step 11c transfers byte-verified H inputs through the shared immutable object port, with
+whole-input preflight and request-marker-last ordering. Materialization requires an empty
+workspace and publishes its local marker only after every input passes. Fifteen request/
+transport tests pass, covering tampering, budget refusal, missing readback, namespace drift,
+duplicate JSON fields and noncanonical requests. Removing the local input hash check failed
+its guard. This layer does not claim native data/model admission or authorize allocation.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

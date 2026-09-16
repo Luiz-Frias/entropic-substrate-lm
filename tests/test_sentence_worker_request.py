@@ -43,6 +43,12 @@ def test_full_request_roundtrip_and_non_authority() -> None:
     assert value.manifest["scientific_authority"] == "none"
     assert value.manifest["spending_authority"] == "none"
     assert replace(value, nonce="2" * 64).digest != value.digest
+    duplicate = b'{"nonce":"' + value.nonce.encode() + b'",' + value.payload[1:]
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_probe_request(duplicate, max_bytes=1_000_000)
+    for noncanonical in (b" " + value.payload, json.dumps(value.manifest).encode()):
+        with pytest.raises(ValueError, match="canonical"):
+            parse_probe_request(noncanonical, max_bytes=1_000_000)
 
 
 @pytest.mark.parametrize("path", ["../escape", "/absolute", "run/unrequested.pt", "other/data"])
