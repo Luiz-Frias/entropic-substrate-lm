@@ -283,6 +283,15 @@ cover identity/span/target refusal and preserve the historical adjacent-byte rea
 Disabling the binding guard failed all five mismatch tests. Summaries identify source
 positions as nested observations, never independent model replicates or mutual information.
 
+Step 8b adds bounded lag-stratified state collection from the hash-bound source capture.
+Sentence windows/reset offsets, canonical targets, event coordinates and both horizons are
+recorded; model inputs contain only completed spans. Four tests cover direct-prefix causal
+agreement, deterministic selection, split isolation and insufficient-lag refusal. Substituting
+an after-state for the before-state failed the direct-prefix guard. States are detached and
+collection preserves model mode and Torch RNG; fitting/capture of probes is the next seam.
+The approved line-specific B311 annotation documents the non-security statistical RNG;
+scoped Bandit and all 22 span collection/score tests pass without changing security hooks.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
