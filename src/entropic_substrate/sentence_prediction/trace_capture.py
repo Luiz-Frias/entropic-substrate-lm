@@ -29,6 +29,7 @@ _SCHEMAS = frozenset(
         "h-generation-receipt-v1",
         "h-generation-receipt-v2",
         "h-probe-training-failure-v1",
+        "h-probe-training-failure-v2",
         "h-generation-failure-v1",
         "h-span-diagnostics-v1",
         "h-span-diagnostics-failure-v1",

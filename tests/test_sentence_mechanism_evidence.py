@@ -94,12 +94,32 @@ def test_missing_active_diagnostics_refuse_before_optimizer_transaction(
     assert run.failed and run.step == 0 and not run.optimizer.state
 
 
-def test_live_consumer_drift_is_not_labelled_as_the_registered_arm(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "component", ["none", "consumer", "solver", "spine", "codec", "law", "head"]
+)
+def test_live_consumer_drift_is_not_labelled_as_the_registered_arm(
+    tmp_path: Path, component: str
+) -> None:
     run = engine(tmp_path)
     run.advance()
     run.advance()
     run.begin_prediction()
-    run.model.consumer_mode = "isotropic"
+    if component == "none":
+        assert run.advance()["status"] == "committed"
+        assert not run.failed and run.step == 1
+        return
+    if component == "consumer":
+        run.model.consumer_mode = "isotropic"
+    elif component == "solver":
+        run.model.solver = replace(run.model.solver, damping=2)
+    elif component == "spine":
+        run.model.spine.spec = replace(run.model.spine.spec, context_sentences=5)
+    elif component == "codec":
+        run.model.codec.spec = replace(run.model.codec.spec, max_sentence_bytes=65)
+    elif component == "law":
+        run.model.codec.law_spec = replace(run.model.codec.law_spec, log_radius_std=0.2)
+    else:
+        run.model.head.spec = replace(run.model.head.spec, log_radius_std=0.2)
     with pytest.raises(ValueError, match="construction"):
         run.advance()
     assert run.failed and run.step == 0

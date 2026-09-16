@@ -29,6 +29,7 @@ from entropic_substrate.sentence_prediction.objective import (
 )
 from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.rollout import SentenceRollout
+from entropic_substrate.sentence_prediction.runtime_precision import require_execution_precision
 from entropic_substrate.sentence_prediction.sampling import (
     SamplingSpec,
     SentenceBatch,
@@ -63,6 +64,7 @@ class SentenceExecution:
     """
 
     def __init__(self, profile: HProfile, source_root: Path, *, max_source_bytes: int) -> None:
+        require_execution_precision()
         self.profile = profile
         self.source_root, self.max_source_bytes = source_root, max_source_bytes
         self.corpus = read_prepared_corpus(
@@ -101,6 +103,7 @@ class SentenceExecution:
             if self.timer is None or self.memory is None:
                 raise ValueError("CUDA execution lacks measured resource adapters")
         self.last_attempt: dict[str, object] | None = None
+        self.last_evaluation: dict[str, object] | None = None
         self.failed = False
         self.rollout: SentenceRollout | None = None
 
@@ -208,6 +211,7 @@ class SentenceExecution:
 
         def objective() -> torch.Tensor:
             nonlocal measured
+            require_execution_precision()
             if (
                 self.model.consumer_mode != self.profile.consumer
                 or self.model.solver != self.profile.solver
@@ -303,18 +307,32 @@ class SentenceExecution:
             raise ValueError("failed execution must recover before evaluation")
         if self.phase != "prediction":
             raise ValueError("predictive evaluation requires the frozen prediction phase")
-        self.validation_sampler.restore(self.validation_sampler.snapshot() | {"cursor": 0})
         training = self.model.training
         devices = [0] if self.device.type == "cuda" else []
         examples: list[dict[str, object]] = []
         started = time.perf_counter_ns()
-        ticket = None if self.timer is None else self.timer.start(ResourcePhase.EVAL)
+        ticket = None
+        attempt: dict[str, object] = {
+            "schema": "h-evaluation-attempt-v1",
+            "status": "started",
+            "run_identity": self.profile.identity,
+            "step": self.step,
+            "examples": examples,
+            "current_source_batch": None,
+            "current_source_examples": None,
+        }
+        self.last_evaluation = attempt
         try:
+            require_execution_precision()
+            self.validation_sampler.restore(self.validation_sampler.snapshot() | {"cursor": 0})
+            ticket = None if self.timer is None else self.timer.start(ResourcePhase.EVAL)
             self.model.eval()
             with torch.random.fork_rng(devices=devices):
                 torch.manual_seed(self.profile.seed)
                 for _ in range(self.profile.schedule.evaluation_batches):
                     batch = self.validation_sampler.next_batch()
+                    attempt["current_source_batch"] = batch.identity
+                    attempt["current_source_examples"] = batch_coordinates(batch)
                     with torch.autocast(
                         self.device.type,
                         dtype=torch.bfloat16,
@@ -350,11 +368,40 @@ class SentenceExecution:
                             "proposal_log_prob": log_rows(scores.proposal_log_prob),
                         }
                     )
+            attempt["status"] = "complete"
+        except Exception as error:
+            self.failed = True
+            attempt.update(
+                status="scientific_gap"
+                if isinstance(error, UndefinedDirection)
+                else "execution_defect",
+                error_type=type(error).__name__,
+                error_code=getattr(error, "code", type(error).__name__),
+                detail=str(error),
+            )
+            if isinstance(error, UndefinedDirection):
+                attempt["affected_positions"] = error.positions
+            raise
         finally:
             self.model.train(training)
-            cuda_seconds = (
-                None if self.timer is None else self.timer.stop(ticket, ResourcePhase.EVAL)
-            )
+            try:
+                cuda_seconds = (
+                    None
+                    if self.timer is None or ticket is None
+                    else self.timer.stop(ticket, ResourcePhase.EVAL)
+                )
+                attempt["cuda_seconds"] = cuda_seconds
+            except Exception as error:
+                self.failed = True
+                attempt.update(
+                    prior_status=attempt["status"],
+                    status="execution_defect",
+                    resource_error=str(error),
+                    resource_error_type=type(error).__name__,
+                )
+                raise
+            finally:
+                attempt["wall_seconds"] = (time.perf_counter_ns() - started) / 1e9
         return {
             "schema": "h-predictive-evaluation-v1",
             "meaning": "importance_weighted_log_marginal_estimate",

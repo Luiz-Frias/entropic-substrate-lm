@@ -356,6 +356,14 @@ Legacy journals remain readable but cannot authorize current restart seals. Thir
 focused mechanism/journal/execution/seal tests pass, including zero norms and FP64 reduction
 roundoff. Removing journal mechanism admission failed the forged-measurement guard.
 
+Step 10b refuses ambient precision changes and TF32 overrides without mutating runtime
+settings. Initialization is now inside the failure-recording boundary; evaluation records
+its current source context and halts on sampling/scoring/timing defects, while zero-direction
+gaps retain their scientific classification. Failure v2 binds its profile and run class.
+Forty-four focused tests pass, including every guarded construction-drift branch. Removing
+the default-dtype check failed its guard test. Native GPU precision remains to be measured
+on the authorized probes; the local runtime check is not a substitute for that validation.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,

@@ -12,6 +12,7 @@ from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.sentence_prediction.evaluation_records import read_evaluation
 from entropic_substrate.sentence_prediction.execution import SentenceExecution
 from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
+from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
 from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.recovery_state import recovery_record
 from entropic_substrate.sentence_prediction.seals import read_seal, resume_seal, seal_step
@@ -194,10 +195,11 @@ def run_probe_training(
             return _progress(root, "training_complete", last_seal, resume)
         profile_artifact = artifact_from_mapping(previous["profile"])
         evaluations = cast(list[dict[str, object]], previous["evaluations"]).copy()
-    execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
+    execution: SentenceExecution | None = None
     prefix = uuid4().hex
     pending: list[dict[str, object]] = []
     try:
+        execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
         if last_seal is not None:
             resume_seal(root, last_seal, execution, max_bytes=max_artifact_bytes)
         while True:
@@ -298,12 +300,21 @@ def run_probe_training(
             root,
             f"{prefix}-failure.json",
             {
-                "schema": "h-probe-training-failure-v1",
+                "schema": "h-probe-training-failure-v2",
                 "run_identity": profile.identity,
-                "phase": execution.phase,
-                "step": execution.step,
+                "run_class": profile.run_class,
+                "scientific_authority": "none",
+                "profile": artifact_reference(root, profile_artifact),
+                "status": "scientific_gap"
+                if isinstance(error, UndefinedDirection)
+                else "execution_defect",
+                "error_type": type(error).__name__,
+                "error_code": getattr(error, "code", type(error).__name__),
+                "phase": "initialization" if execution is None else execution.phase,
+                "step": 0 if execution is None else execution.step,
                 "error": str(error),
-                "last_attempt": execution.last_attempt,
+                "last_attempt": None if execution is None else execution.last_attempt,
+                "last_evaluation": None if execution is None else execution.last_evaluation,
                 "unsealed_rows": pending,
                 "last_seal": None if last_seal is None else artifact_reference(root, last_seal),
                 "last_receipt": None
