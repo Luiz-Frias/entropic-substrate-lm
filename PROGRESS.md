@@ -419,6 +419,18 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+Luiz approved publishing one refreshed project image using the existing Docker
+cloud builder. Runpod allocation still requires the promised prelaunch check-in.
+The old-image R2 bootstrap alternative is excluded from the image; publication
+uses an isolated context exported from a tested commit plus the DVC-verified
+historical field-weight asset. No working-tree secrets enter that context.
+
+H statistical declarations now have their own strict schema entry point, sharing
+validation arithmetic but not D namespace admission. Original bytes and all
+scientific choices remain bound; missing effects/margins/endpoints, tiny classes
+and cross-namespace declarations are rejected. This is design parsing, not H run
+admission, scientific capture, seed sizing from tiny data, or launch authority.
+
 `4e99a9f` commits the public worker command and its nine focused command/completion
 tests (466 added lines); normal hooks passed without any scanner suppression.
 The H1 preservation-block adapter now validates the complete paired 2x2 numerical

@@ -1,4 +1,4 @@
-"""Hash-bound statistical specifications and captured D1 pilot preparation.
+"""Namespace-bound D/H statistical declarations and captured D1 pilot preparation.
 
 This module produces proposals, not experiment authorization. A D2-D5 capture
 adapter must exist before those rungs can supply pilot variance; local smoke
@@ -137,7 +137,30 @@ def _contrast(value: object, arms: set[str]) -> StatisticalContrast:
 
 
 def read_statistical_design(payload: bytes, *, expected_sha256: str) -> StatisticalDesign:
-    """Read the exact prespecified bytes; absent scientific choices are errors."""
+    """Read D declarations only; preserve the historical namespace contract."""
+    return _read_statistical_design(
+        payload, expected_sha256=expected_sha256, schema="d-ladder-statistical-design-v1"
+    )
+
+
+def read_h_statistical_design(payload: bytes, *, expected_sha256: str) -> StatisticalDesign:
+    """Read H declarations without defaults, evidence admission or launch authority.
+
+    Rung adapters still bind constructions, admissible metrics, captured outcomes
+    and source exposure. This reader neither rewrites D bytes nor sizes from smoke.
+    """
+    return _read_statistical_design(
+        payload, expected_sha256=expected_sha256, schema="h-ladder-statistical-design-v1"
+    )
+
+
+def _read_statistical_design(
+    payload: bytes,
+    *,
+    expected_sha256: str,
+    schema: Literal["d-ladder-statistical-design-v1", "h-ladder-statistical-design-v1"],
+) -> StatisticalDesign:
+    """Shared arithmetic contract; public readers choose one exact namespace."""
     if type(payload) is not bytes:
         raise TypeError("statistical specification must be bytes")
     _digest(expected_sha256)
@@ -147,7 +170,7 @@ def read_statistical_design(payload: bytes, *, expected_sha256: str) -> Statisti
         json.loads(payload, object_pairs_hook=_unique_object),
         "schema run_class family_digest construction_digests seeds contrasts registered_design_digest",
     )
-    if value["schema"] != "d-ladder-statistical-design-v1":
+    if value["schema"] != schema:
         raise ValueError("unsupported statistical specification schema")
     if value["run_class"] not in ("pilot", "confirmatory"):
         raise ValueError("statistical inputs must be pilot or confirmatory, never smoke")

@@ -109,7 +109,9 @@ def test_incomplete_or_confounded_block_is_rejected(mutation: str) -> None:
         H1PreservationBlock(tuple(values))
 
 
-@pytest.mark.parametrize("mutation", ["authority", "missing", "foreign_schema", "extra"])
+@pytest.mark.parametrize(
+    "mutation", ["authority", "missing", "foreign_schema", "extra", "non_list", "short_list"]
+)
 def test_manifest_does_not_invent_policy_or_accept_authority_claims(mutation: str) -> None:
     value = H1PreservationBlock(profiles()).manifest
     if mutation == "authority":
@@ -118,6 +120,10 @@ def test_manifest_does_not_invent_policy_or_accept_authority_claims(mutation: st
         del value["scientific_authority"]
     elif mutation == "foreign_schema":
         value["schema"] = "d-ladder-statistical-design-v1"
+    elif mutation == "non_list":
+        value["profiles"] = None
+    elif mutation == "short_list":
+        value["profiles"] = []
     else:
         value["epsilon"] = 0.01
     with pytest.raises(ValueError):
@@ -147,3 +153,8 @@ def test_block_owns_revalidated_profiles_not_caller_aliases() -> None:
 def test_empty_or_untyped_block_cannot_become_a_design(value: object) -> None:
     with pytest.raises(ValueError, match="H1"):
         H1PreservationBlock(value)
+
+
+def test_block_rejects_non_profile_members_even_with_four_cells() -> None:
+    with pytest.raises(TypeError, match="profiles"):
+        H1PreservationBlock((None, None, None, None))
