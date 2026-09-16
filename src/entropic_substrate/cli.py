@@ -1102,7 +1102,7 @@ def main(
         from entropic_substrate.sentence_prediction.cli import cmd_sentence
 
         return cmd_sentence(args)
-    if args.command in ("h-capture-model", "h-inspect-model"):
+    if args.command in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
         from entropic_substrate.sentence_prediction.capture_cli import cmd_capture
 
         return cmd_capture(args)

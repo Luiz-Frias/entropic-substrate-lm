@@ -330,6 +330,12 @@ configuration refusal and all three diagnostic failure classes. Removing pre-cop
 admission failed the forged-exposure guard. Probe receipts remain observer evidence, not
 scientific authority; no GPU allocation or remote publication occurred.
 
+Step 9a separates portable byte custody from native model/source/RNG admission through one
+shared inventory validator. `h-inspect-custody` reports native validation as not performed;
+`h-inspect-model` retains all native checks. Seven custody/capture tests pass. Disabling the
+hash comparison admitted a same-size tensor mutation and failed its guard. This enables
+host-side transfer verification without pretending that a CPU host restored CUDA RNG state.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
@@ -344,7 +350,7 @@ RED-first tests cover replay, source pairing across codec permutations, model-RN
 empty/forged source rejection, and causal framing. Including the target span in history
 fails its causality guard; the mutation was restored. Snapshot cursors bind source/config.
 
-Next: CPU-side inspection of CUDA generation traces; preservation/fidelity measurements;
+Next: native-runtime verification receipts and worker/controller wiring; preservation/fidelity measurements;
 explicit H registrations and stage adapters; complete shared DVC/R2 custody, remote worker/
 controller and analysis/review/filing integration. Then the authorized
 6,000-step CUDA/bf16 tiny probes with the approved host-watchdog exception, verified artifact

@@ -1,5 +1,6 @@
 """Portable, closed artifact graph for a model trace; not a scientific verdict."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from entropic_substrate.d1_artifact_snapshot import (
@@ -200,7 +201,17 @@ def capture_model_trace(
     )
 
 
-def read_model_trace(
+@dataclass(frozen=True)
+class _TraceInventory:
+    manifest: dict[str, object]
+    profile: HProfile
+    training: ArtifactIdentity
+    generation: ArtifactIdentity
+    diagnostics: tuple[ArtifactIdentity, ...]
+    artifacts: dict[str, ArtifactIdentity]
+
+
+def _trace_inventory(
     root: Path,
     artifact: ArtifactIdentity,
     *,
@@ -208,8 +219,8 @@ def read_model_trace(
     max_source_bytes: int,
     max_total_bytes: int,
     max_artifacts: int,
-) -> dict[str, object]:
-    """Verify the full copied closure and replay the numerical readers."""
+) -> _TraceInventory:
+    """Verify only the immutable byte graph; do not deserialize model state."""
     _limits(max_bytes, max_source_bytes, max_total_bytes, max_artifacts)
     raw = read_json(root, artifact, max_bytes=max_bytes)
     version = raw.get("schema")
@@ -282,6 +293,60 @@ def read_model_trace(
             actual_paths.add(path.relative_to(root).as_posix())
     if actual_paths != expected_paths:
         raise ValueError("capture contains unlisted files or missing artifacts")
+    return _TraceInventory(manifest, profile, training, generation, diagnostic_refs, collected)
+
+
+def inspect_model_custody(
+    root: Path,
+    artifact: ArtifactIdentity,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+) -> dict[str, object]:
+    """Portable byte custody only; native admission remains a separate required check."""
+    inventory = _trace_inventory(
+        root,
+        artifact,
+        max_bytes=max_bytes,
+        max_source_bytes=max_source_bytes,
+        max_total_bytes=max_total_bytes,
+        max_artifacts=max_artifacts,
+    )
+    return {
+        "schema": "h-model-custody-inspection-v1",
+        "status": "byte_custody_verified",
+        "native_validation": "not_performed",
+        "scientific_authority": "none",
+        "capture": artifact_reference(root, artifact),
+        "run_identity": inventory.profile.identity,
+        "declared_training_device": inventory.profile.device,
+        "counts_scope": "referenced_artifacts_excluding_capture_manifest",
+        "file_count": inventory.manifest["file_count"],
+        "total_bytes": inventory.manifest["total_bytes"],
+    }
+
+
+def read_model_trace(
+    root: Path,
+    artifact: ArtifactIdentity,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+) -> dict[str, object]:
+    """Verify byte custody and run native model/source/RNG/numerical admission."""
+    inventory = _trace_inventory(
+        root,
+        artifact,
+        max_bytes=max_bytes,
+        max_source_bytes=max_source_bytes,
+        max_total_bytes=max_total_bytes,
+        max_artifacts=max_artifacts,
+    )
+    profile, training, generation = inventory.profile, inventory.training, inventory.generation
     train = read_training_progress(
         root,
         training,
@@ -301,7 +366,7 @@ def read_model_trace(
     )
     if train["status"] != "training_complete" or gen["status"] != "generation_complete":
         raise ValueError("capture does not contain a completed model trace")
-    for diagnostic in diagnostic_refs:
+    for diagnostic in inventory.diagnostics:
         read_span_diagnostics(
             root,
             diagnostic,
@@ -311,7 +376,7 @@ def read_model_trace(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_bytes,
         )
-    for item in collected.values():
+    for item in inventory.artifacts.values():
         if item.path.endswith(".json") and item != generation:
             payload = read_json(root, item, max_bytes=max_bytes)
             if payload.get("schema") == "h-generation-receipt-v2":
@@ -324,4 +389,4 @@ def read_model_trace(
                     max_source_bytes=max_source_bytes,
                     max_artifact_bytes=max_bytes,
                 )
-    return manifest
+    return inventory.manifest

@@ -29,6 +29,9 @@ h-capture-model *ARGS:
 h-inspect-model *ARGS:
     uv run python -m entropic_substrate.cli h-inspect-model {{ ARGS }}
 
+h-inspect-custody *ARGS:
+    uv run python -m entropic_substrate.cli h-inspect-custody {{ ARGS }}
+
 h-diagnose-spans *ARGS:
     uv run python -m entropic_substrate.cli h-diagnose-spans {{ ARGS }}
 

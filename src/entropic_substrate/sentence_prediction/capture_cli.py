@@ -18,12 +18,13 @@ from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.recovery_state import recovery_record
 from entropic_substrate.sentence_prediction.trace_capture import (
     capture_model_trace,
+    inspect_model_custody,
     read_model_trace,
 )
 
 
 def add_capture_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
-    for name in ("h-capture-model", "h-inspect-model"):
+    for name in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
         parser = sub.add_parser(
             name, help="capture or verify an H model trace without granting scientific authority"
         )
@@ -48,10 +49,11 @@ def cmd_capture(args: argparse.Namespace) -> int:
             ArtifactIdentity(args.manifest, ContentHash("sha256", digest)),
             max_bytes=1_048_576,
         )
-        inspect = args.command == "h-inspect-model"
+        custody = args.command == "h-inspect-custody"
+        inspect = custody or args.command == "h-inspect-model"
         version = value.get("schema")
         if version not in (
-            ("h-model-inspect-command-v1",)
+            (("h-custody-inspect-command-v1" if custody else "h-model-inspect-command-v1"),)
             if inspect
             else ("h-model-capture-command-v1", "h-model-capture-command-v2")
         ):
@@ -74,7 +76,8 @@ def cmd_capture(args: argparse.Namespace) -> int:
                 raise ValueError("capture budgets must be positive integers")
             limits[name] = count
         if inspect:
-            result = read_model_trace(
+            reader = inspect_model_custody if custody else read_model_trace
+            result = reader(
                 _directory(root, row["capture_root"]),
                 artifact_from_mapping(row["capture"]),
                 **limits,
