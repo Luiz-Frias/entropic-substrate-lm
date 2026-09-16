@@ -9,6 +9,7 @@ from uuid import uuid4
 from entropic_substrate.d1_artifact_snapshot import normalize_d1_artifact_root
 from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.sentence_prediction.evaluation_records import read_evaluation
 from entropic_substrate.sentence_prediction.execution import SentenceExecution
 from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
 from entropic_substrate.sentence_prediction.profile import HProfile
@@ -34,40 +35,6 @@ def _progress(
         artifact_from_mapping(artifact_reference(root, seal)),
         artifact_from_mapping(artifact_reference(root, receipt)),
     )
-
-
-def _evaluation_layout(value: object, profile: HProfile, step: int) -> None:
-    row = recovery_record(
-        value, "schema meaning run_identity step examples wall_seconds cuda_seconds checkpoint_seal"
-    )
-    if (
-        row["schema"] != "h-predictive-evaluation-v1"
-        or row["meaning"] != "importance_weighted_log_marginal_estimate"
-        or row["run_identity"] != profile.identity
-        or type(row["step"]) is not int
-        or row["step"] != step
-    ):
-        raise ValueError("evaluation identity or meaning differs from the requested point")
-    examples = row["examples"]
-    if type(examples) is not list or len(examples) != profile.schedule.evaluation_batches:
-        raise ValueError("evaluation lacks its declared example batches")
-    for example in examples:
-        batch = recovery_record(
-            example,
-            "source_batch source_examples source_bytes boundary_symbols by_sample_count log_weights decoder_log_prob prior_log_prob proposal_log_prob",
-        )
-        for name in ("source_examples", "source_bytes", "boundary_symbols"):
-            values = batch[name]
-            if not isinstance(values, (list, tuple)) or len(values) != profile.schedule.batch_size:
-                raise ValueError("evaluation example count differs from its profile")
-        for name in ("log_weights", "decoder_log_prob", "prior_log_prob", "proposal_log_prob"):
-            values = batch[name]
-            if (
-                type(values) is not list
-                or len(values) != profile.schedule.importance_samples[-1]
-                or any(type(v) is not list or len(v) != profile.schedule.batch_size for v in values)
-            ):
-                raise ValueError("evaluation sample matrix differs from its envelope")
 
 
 def read_training_progress(
@@ -130,10 +97,14 @@ def read_training_progress(
         step = entry["step"]
         if type(step) is not int:
             raise ValueError("evaluation step must be integer")
-        evaluation = read_json(
-            root, artifact_from_mapping(entry["artifact"]), max_bytes=max_artifact_bytes
+        evaluation = read_evaluation(
+            root,
+            artifact_from_mapping(entry["artifact"]),
+            profile,
+            source_root,
+            max_bytes=max_artifact_bytes,
+            max_source_bytes=max_source_bytes,
         )
-        _evaluation_layout(evaluation, profile, step)
         point = artifact_from_mapping(evaluation.get("checkpoint_seal"))
         if point.content_hash.digest not in seal.seal_hashes:
             raise ValueError("evaluation belongs to another checkpoint lineage")
@@ -260,12 +231,19 @@ def run_probe_training(
             if evaluate:
                 report = execution.evaluate()
                 report["checkpoint_seal"] = artifact_reference(root, last_seal)
-                _evaluation_layout(report, profile, execution.step)
                 evaluation = write_json(
                     root,
                     f"{prefix}-{execution.step:08d}-evaluation.json",
                     report,
                     max_bytes=max_artifact_bytes,
+                )
+                read_evaluation(
+                    root,
+                    evaluation,
+                    profile,
+                    source_root,
+                    max_bytes=max_artifact_bytes,
+                    max_source_bytes=max_source_bytes,
                 )
                 evaluations.append(
                     {"step": execution.step, "artifact": artifact_reference(root, evaluation)}

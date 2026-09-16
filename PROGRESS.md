@@ -259,6 +259,12 @@ and just recipes. The public-command lineage now covers trained checkpoint → g
 mid-sentence pause → resume → independent inspection. Five command tests pass. Generation
 requires a training-complete receipt and never grants scientific authority.
 
+Step 7c replaces shape-only evaluation admission with independent source replay and numerical
+reconstruction of importance weights, ESS, relative MCSE and sample-prefix summaries. Nine
+tests reject rehashed source/weight/summary/count/meaning/timing forgeries. Removing summary
+reconciliation failed its guard. The training driver invokes this reader before admitting
+completion and during resume/inspection; no oracle score can be relabelled predictive.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
