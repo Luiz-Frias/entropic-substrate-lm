@@ -7,6 +7,9 @@ import pytest
 from tests.test_ladder_registration import sealed, specification
 
 from entropic_substrate.analysis.ladder_registration import (
+    StatisticalEvaluation,
+    StatisticalRun,
+    paired_contrasts,
     read_h_statistical_design,
     read_statistical_design,
 )
@@ -32,6 +35,7 @@ def test_h_design_binds_original_bytes_and_retains_explicit_scientific_choices()
     payload, digest = sealed(h_specification())
     design = read_h_statistical_design(payload, expected_sha256=digest)
     assert design.source_sha256 == hashlib.sha256(payload).hexdigest()
+    assert design.namespace == "H"
     assert design.run_class == "pilot" and design.registered_design_digest is None
     assert design.seeds == (7, 8)
     assert design.contrasts[0].hypothesis.units == "fixture units"
@@ -71,6 +75,16 @@ def test_h_tiny_declarations_cannot_become_scientific_inputs(run_class: str) -> 
 
 
 def test_h_confirmation_requires_registration_and_pilot_cannot_claim_it() -> None:
+    payload, digest = sealed(
+        h_specification()
+        | {
+            "run_class": "confirmatory",
+            "registered_design_digest": "7" * 64,
+        }
+    )
+    design = read_h_statistical_design(payload, expected_sha256=digest)
+    assert design.source_sha256 == digest and design.registered_design_digest == "7" * 64
+    assert design.namespace == "H" and design.run_class == "confirmatory"
     for update in ({"run_class": "confirmatory"}, {"registered_design_digest": "7" * 64}):
         payload, digest = sealed(h_specification() | update)
         with pytest.raises(ValueError):
@@ -91,3 +105,30 @@ def test_h_nonfinite_effect_is_rejected() -> None:
     payload = json.dumps(value).encode()
     with pytest.raises(ValueError):
         read_h_statistical_design(payload, expected_sha256=hashlib.sha256(payload).hexdigest())
+
+
+def test_h_design_cannot_enter_d_source_order_pairing() -> None:
+    payload, digest = sealed(h_specification())
+    design = read_h_statistical_design(payload, expected_sha256=digest)
+    runs = tuple(
+        StatisticalRun(
+            arm,
+            seed,
+            "pilot",
+            design.family_digest,
+            construction,
+            tuple(
+                StatisticalEvaluation(step, 8, (("registered_fixture_measure", 0.1),))
+                for step in (1, 2)
+            ),
+        )
+        for arm, construction in design.construction_digests
+        for seed in design.seeds
+    )
+    with pytest.raises(ValueError, match=r"H.*adapter"):
+        paired_contrasts(runs, design)
+
+
+def test_d_namespace_remains_explicit_after_parsing() -> None:
+    payload, digest = sealed(specification())
+    assert read_statistical_design(payload, expected_sha256=digest).namespace == "D"

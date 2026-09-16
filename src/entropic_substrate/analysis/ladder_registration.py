@@ -51,6 +51,7 @@ class StatisticalDesign:
     seeds: tuple[int, ...]
     registered_design_digest: str | None
     contrasts: tuple[StatisticalContrast, ...]
+    namespace: Literal["D", "H"] = "D"
 
 
 def _object(value: object, fields: str | None = None) -> dict[str, object]:
@@ -201,6 +202,7 @@ def _read_statistical_design(
         seeds,
         registered,
         contrasts,
+        namespace="D" if schema == "d-ladder-statistical-design-v1" else "H",
     )
 
 
@@ -266,7 +268,9 @@ def _validate_paired_order(runs: tuple[StatisticalRun, ...]) -> None:
 def paired_contrasts(
     runs: tuple[StatisticalRun, ...], design: StatisticalDesign
 ) -> tuple[PilotContrast, ...]:
-    """Apply sealed weights/endpoint rules after the source adapter admits bytes."""
+    """Apply D source-order and endpoint rules after its adapter admits bytes."""
+    if design.namespace != "D":
+        raise ValueError("H designs require an explicit H observation/source-order adapter")
     constructions = dict(design.construction_digests)
     cells: dict[tuple[str, int], StatisticalRun] = {}
     for run in runs:
@@ -331,6 +335,8 @@ def paired_contrasts(
 def _d1_runs(
     runs: tuple[D1RunEvidence, ...], design: StatisticalDesign
 ) -> tuple[StatisticalRun, ...]:
+    if design.namespace != "D":
+        raise ValueError("H designs require an H source adapter, not D1 telemetry")
     metrics = tuple(sorted({item.metric for item in design.contrasts}))
     return tuple(
         StatisticalRun(
