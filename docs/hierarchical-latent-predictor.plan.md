@@ -294,6 +294,23 @@ FineWeb command always supplies the selected name. V1 evidence remains unchanged
 and requires its original reader; no automatic migration or cross-reader resume
 is permitted. Preparation tests reproduce the former empty-configuration collision.
 
+## Source bootstrap boundary
+
+`python scripts/h_probe_bootstrap.py` materializes a locally delivered Git bundle
+before the H package is installed. Required arguments are `--bundle`, `--root`,
+`--commit`, `--sha256`, `--max-bundle-bytes`, `--max-source-bytes`, `--max-files`,
+and `--timeout-seconds`. The root must be an existing empty owned directory.
+The script uses only the standard library and Git. It verifies the bundle hash,
+reads committed blobs without checkout hooks/filters, and bounds the runtime
+inventory, subprocess output, and extraction deadline. Symlinks are refused.
+
+The extracted `source/` inventory matches the native worker verifier's source
+prefixes. `source-ready.json` is published atomically after extraction; it grants
+no training or scientific authority. A failed attempt retains partial evidence
+without a ready marker; retries use a new empty root. R2 fetching, pinned dependency
+installation, worker start, controller supervision, and provider termination are
+separate composition steps, not outcomes established by this command alone.
+
 ## Research provenance
 
 - [Frozen-head audit](e1-5c-head-audit-findings.md): exploratory numerical preservation evidence,
