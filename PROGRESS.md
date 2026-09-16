@@ -277,6 +277,12 @@ recipes. Public-command tests cover capture followed by relocated numerical insp
 unsafe-root refusal and invalid-budget refusal. The returned status is model-trace capture,
 not scientific completion; DVC transport and the scientific flywheel remain open.
 
+Step 8a introduces span-aware score-gain evidence with sentence-event and source-byte
+coordinates, same-future-target binding, and explicit remaining horizons. Eighteen tests
+cover identity/span/target refusal and preserve the historical adjacent-byte reader unchanged.
+Disabling the binding guard failed all five mismatch tests. Summaries identify source
+positions as nested observations, never independent model replicates or mutual information.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
