@@ -323,6 +323,13 @@ the forged-checkpoint test. Population shortages retain typed diagnostic-gap evi
 zero-direction failures retain affected counts. Collection and probe costs remain separate.
 The combined lineage/collection/artifact suite passed 26 tests. CLI/capture integration remains next.
 
+Step 8f exposes `h-diagnose-spans` / `h-inspect-spans` and includes diagnostic roots in
+model-capture v2, with explicit v1 read dispatch. Eleven focused command/capture tests pass,
+including a single trained → probed → generated → relocated-capture lineage, malformed
+configuration refusal and all three diagnostic failure classes. Removing pre-copy diagnostic
+admission failed the forged-exposure guard. Probe receipts remain observer evidence, not
+scientific authority; no GPU allocation or remote publication occurred.
+
 The law head, consumer, absolute future targets, sampled decoding, emitted-text feedback,
 and phase-owned transactions are now connected. A synthetic CPU smoke ran 100 warm-up and
 100 prediction updates (width-8 fixture, seed 42, AdamW lr 0.001, decay 0.01, clip 1,
@@ -337,13 +344,13 @@ RED-first tests cover replay, source pairing across codec permutations, model-RN
 empty/forged source rejection, and causal framing. Including the target span in history
 fails its causality guard; the mutation was restored. Snapshot cursors bind source/config.
 
-Next: phase-bound disk checkpoint/optimizer/RNG/source-cursor/rollout recovery; preservation,
-marginal scoring and span-aware probe diagnostics; explicit H registrations and stage
-adapters; complete shared custody/analysis/review/filing integration. Then the authorized
+Next: CPU-side inspection of CUDA generation traces; preservation/fidelity measurements;
+explicit H registrations and stage adapters; complete shared DVC/R2 custody, remote worker/
+controller and analysis/review/filing integration. Then the authorized
 6,000-step CUDA/bf16 tiny probes with the approved host-watchdog exception, verified artifact
-recovery, termination and billing. No pod has been allocated. CodeRabbit's included-use
-limit was reached on the optimizer-contract follow-up; its quoted $0 credit-mode approval
-is pending. Normal hooks remain mandatory and unchanged; no paid review is authorized.
+recovery, termination and billing. Check in with Luiz before allocation, with the exact roster,
+phase split and quote. No pod has been allocated. Ordinary CodeRabbit reviews have resumed;
+credit mode remains disabled. Normal hooks remain mandatory and unchanged.
 
 ## Current direction and deferred old stage
 

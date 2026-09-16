@@ -1,11 +1,14 @@
 """Portable capture contains the referenced model trace, not caller summaries."""
 
+import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 from tests.test_sentence_generation import trained
 from tests.test_sentence_rollout import scripted_tokens
 
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.sentence_prediction.generation import run_probe_generation
 from entropic_substrate.sentence_prediction.trace_capture import (
     capture_model_trace,
@@ -15,8 +18,9 @@ from entropic_substrate.sentence_prediction.trace_capture import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("version", [1, 2])
 def test_portable_capture_rehydrates_a_complete_model_trace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
     template, output, training = trained(tmp_path)
     scripted_tokens(monkeypatch, [65, 257])
@@ -42,6 +46,15 @@ def test_portable_capture_rehydrates_a_complete_model_trace(
         max_total_bytes=50_000_000,
         max_artifacts=100,
     )
+    if version == 1:
+        # Test-only v1 wire fixture: no diagnostic roots existed in that format.
+        path = Path(artifact.path)
+        payload = json.loads(path.read_text())
+        payload["schema"] = "h-model-trace-capture-v1"
+        del payload["diagnostic_roots"]
+        data = json.dumps(payload, sort_keys=True).encode()
+        path.write_bytes(data)
+        artifact = ArtifactIdentity(str(path), ContentHash("sha256", sha256(data).hexdigest()))
     captured = read_model_trace(
         destination,
         artifact,

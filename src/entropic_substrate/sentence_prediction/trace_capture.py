@@ -15,6 +15,7 @@ from entropic_substrate.sentence_prediction.journal import artifact_reference, r
 from entropic_substrate.sentence_prediction.profile import HProfile
 from entropic_substrate.sentence_prediction.recovery_state import recovery_record
 from entropic_substrate.sentence_prediction.runner import read_training_progress
+from entropic_substrate.sentence_prediction.span_diagnostics import read_span_diagnostics
 
 _SCHEMAS = frozenset(
     (
@@ -27,6 +28,8 @@ _SCHEMAS = frozenset(
         "h-generation-receipt-v2",
         "h-probe-training-failure-v1",
         "h-generation-failure-v1",
+        "h-span-diagnostics-v1",
+        "h-span-diagnostics-failure-v1",
     )
 )
 
@@ -101,6 +104,7 @@ def capture_model_trace(
     max_total_bytes: int,
     max_artifacts: int,
     forensic_roots: tuple[ArtifactIdentity, ...] = (),
+    diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
 ) -> ArtifactIdentity:
     """Copy verified bytes unchanged; publish the capture manifest last.
 
@@ -132,9 +136,21 @@ def capture_model_trace(
     )
     if generated["status"] != "generation_complete":
         raise ValueError("model trace capture requires a complete generation outcome")
+    if type(diagnostic_roots) is not tuple or len(set(diagnostic_roots)) != len(diagnostic_roots):
+        raise ValueError("diagnostic roots must be an explicit unique tuple")
+    for diagnostic in diagnostic_roots:
+        read_span_diagnostics(
+            root,
+            diagnostic,
+            training,
+            profile,
+            source_root,
+            max_source_bytes=max_source_bytes,
+            max_artifact_bytes=max_bytes,
+        )
     collected, total = _collect(
         root,
-        (training, generation, *forensic_roots),
+        (training, generation, *forensic_roots, *diagnostic_roots),
         profile,
         max_bytes=max_bytes,
         max_artifacts=max_artifacts,
@@ -165,7 +181,7 @@ def capture_model_trace(
         target,
         "capture.json",
         {
-            "schema": "h-model-trace-capture-v1",
+            "schema": "h-model-trace-capture-v2",
             "kind": "model_trace",
             "scientific_authority": "none",
             "run_identity": profile.identity,
@@ -175,6 +191,7 @@ def capture_model_trace(
             "generation": artifact_reference(root, generation),
             "source": artifact_reference(target, source),
             "forensic_roots": [artifact_reference(root, item) for item in forensic_roots],
+            "diagnostic_roots": [artifact_reference(root, item) for item in diagnostic_roots],
             "artifacts": references,
             "file_count": len(references),
             "total_bytes": total,
@@ -194,15 +211,16 @@ def read_model_trace(
 ) -> dict[str, object]:
     """Verify the full copied closure and replay the numerical readers."""
     _limits(max_bytes, max_source_bytes, max_total_bytes, max_artifacts)
+    raw = read_json(root, artifact, max_bytes=max_bytes)
+    version = raw.get("schema")
+    if version not in ("h-model-trace-capture-v1", "h-model-trace-capture-v2"):
+        raise ValueError("unknown model capture reader version")
     manifest = recovery_record(
-        read_json(root, artifact, max_bytes=max_bytes),
-        "schema kind scientific_authority run_identity run_class profile training generation source forensic_roots artifacts file_count total_bytes",
+        raw,
+        "schema kind scientific_authority run_identity run_class profile training generation source forensic_roots artifacts file_count total_bytes"
+        + (" diagnostic_roots" if version == "h-model-trace-capture-v2" else ""),
     )
-    if (
-        manifest["schema"] != "h-model-trace-capture-v1"
-        or manifest["kind"] != "model_trace"
-        or manifest["scientific_authority"] != "none"
-    ):
+    if manifest["kind"] != "model_trace" or manifest["scientific_authority"] != "none":
         raise ValueError("unknown capture scope or scientific authority")
     profile = HProfile.from_manifest(
         read_json(root, artifact_from_mapping(manifest["profile"]), max_bytes=max_bytes)
@@ -221,9 +239,15 @@ def read_model_trace(
     extra = manifest["forensic_roots"]
     if type(extra) is not list:
         raise ValueError("capture forensic roots must be explicit")
+    diagnostics = manifest["diagnostic_roots"] if version == "h-model-trace-capture-v2" else []
+    if type(diagnostics) is not list:
+        raise ValueError("capture diagnostic roots must be explicit")
+    diagnostic_refs = tuple(artifact_from_mapping(item) for item in diagnostics)
+    if len(set(diagnostic_refs)) != len(diagnostic_refs):
+        raise ValueError("capture diagnostic roots must be unique")
     collected, total = _collect(
         root,
-        (training, generation, *(artifact_from_mapping(item) for item in extra)),
+        (training, generation, *(artifact_from_mapping(item) for item in extra), *diagnostic_refs),
         profile,
         max_bytes=max_bytes,
         max_artifacts=max_artifacts,
@@ -277,6 +301,16 @@ def read_model_trace(
     )
     if train["status"] != "training_complete" or gen["status"] != "generation_complete":
         raise ValueError("capture does not contain a completed model trace")
+    for diagnostic in diagnostic_refs:
+        read_span_diagnostics(
+            root,
+            diagnostic,
+            training,
+            profile,
+            root / "source",
+            max_source_bytes=max_source_bytes,
+            max_artifact_bytes=max_bytes,
+        )
     for item in collected.values():
         if item.path.endswith(".json") and item != generation:
             payload = read_json(root, item, max_bytes=max_bytes)

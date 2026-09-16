@@ -152,3 +152,36 @@ def test_outer_receipt_preserves_the_registered_replay_tolerance(lineage: Lineag
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
     )
+
+
+@pytest.mark.parametrize("zero", [True, False])
+def test_failure_receipts_distinguish_zero_geometry_from_defects(
+    lineage: Lineage, monkeypatch: pytest.MonkeyPatch, zero: bool
+) -> None:
+    from entropic_substrate.sentence_prediction import span_diagnostics
+    from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
+
+    error = UndefinedDirection(3) if zero else RuntimeError("injected observer defect")
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(span_diagnostics, "collect_span_states", fail)
+    profile, source, root, training = lineage
+    with pytest.raises(type(error), match=r"undefined_zero_norm|injected observer defect"):
+        run_span_diagnostics(
+            root,
+            training,
+            profile,
+            source,
+            config(),
+            max_source_bytes=1_000_000,
+            max_artifact_bytes=LIMIT,
+        )
+    failure = json.loads(next(root.glob("*-span-failure.json")).read_text())
+    assert failure["status"] == ("scientific_gap" if zero else "diagnostic_defect")
+    assert failure["error_type"] == type(error).__name__
+    assert failure["error_code"] == ("undefined_zero_norm" if zero else "RuntimeError")
+    if zero:
+        assert failure["affected_positions"] == 3
+    assert not list(root.glob("*-span-diagnostics.json"))

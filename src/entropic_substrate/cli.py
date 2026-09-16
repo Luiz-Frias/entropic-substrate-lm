@@ -295,6 +295,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_capture_parsers(sub)
 
+    from entropic_substrate.sentence_prediction.span_cli import add_span_parsers
+
+    add_span_parsers(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1102,6 +1106,10 @@ def main(
         from entropic_substrate.sentence_prediction.capture_cli import cmd_capture
 
         return cmd_capture(args)
+    if args.command in ("h-diagnose-spans", "h-inspect-spans"):
+        from entropic_substrate.sentence_prediction.span_cli import cmd_span
+
+        return cmd_span(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:

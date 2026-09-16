@@ -49,18 +49,24 @@ def cmd_capture(args: argparse.Namespace) -> int:
             max_bytes=1_048_576,
         )
         inspect = args.command == "h-inspect-model"
+        version = value.get("schema")
+        if version not in (
+            ("h-model-inspect-command-v1",)
+            if inspect
+            else ("h-model-capture-command-v1", "h-model-capture-command-v2")
+        ):
+            raise ValueError("unknown capture command schema")
+        diagnostics_enabled = version == "h-model-capture-command-v2"
         names = (
             "capture_root capture"
             if inspect
             else "profile source_root output_root destination training generation forensic_roots"
         )
+        if diagnostics_enabled:
+            names += " diagnostic_roots"
         row = recovery_record(
             value, "schema max_source_bytes max_bytes max_total_bytes max_artifacts " + names
         )
-        if row["schema"] != (
-            "h-model-inspect-command-v1" if inspect else "h-model-capture-command-v1"
-        ):
-            raise ValueError("unknown capture command schema")
         limits: dict[str, int] = {}
         for name in ("max_source_bytes", "max_bytes", "max_total_bytes", "max_artifacts"):
             count = row[name]
@@ -82,6 +88,9 @@ def cmd_capture(args: argparse.Namespace) -> int:
             extra = row["forensic_roots"]
             if type(extra) is not list:
                 raise ValueError("forensic roots must be an explicit array")
+            diagnostics = row["diagnostic_roots"] if diagnostics_enabled else []
+            if type(diagnostics) is not list:
+                raise ValueError("diagnostic roots must be an explicit array")
             destination = _directory(root, row["destination"])
             captured = capture_model_trace(
                 _directory(root, row["output_root"]),
@@ -91,6 +100,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
                 _directory(root, row["source_root"]),
                 destination,
                 forensic_roots=tuple(artifact_from_mapping(item) for item in extra),
+                diagnostic_roots=tuple(artifact_from_mapping(item) for item in diagnostics),
                 **limits,
             )
             read_model_trace(destination, captured, **limits)
