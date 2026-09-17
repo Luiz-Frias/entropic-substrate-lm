@@ -22,6 +22,12 @@ Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.
 
+For H-probe template preparation, Luiz confirmed the Runpod secret-reference names
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` on 2026-09-17. These are names, not
+credential values. The H object worker reads its endpoint from committed DVC topology;
+it does not require the separate `R2_API_KEY` or `MLFLOW_S3_ENDPOINT_URL` references.
+Template creation and the pre-allocation check-in remain pending.
+
 ## Historical E-series deployment
 
 The following commands and sizing discussion retain their historical E-series scope.

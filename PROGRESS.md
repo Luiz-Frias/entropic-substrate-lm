@@ -419,6 +419,13 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+The watchdog policy core now separates attributed allocation, deadline cleanup,
+deletion acknowledgement, confirmed absence and inventory gaps. Its 14 focused
+tests pass; deliberately adopting a name-only candidate failed the safety guard.
+A list-endpoint gap does not prevent cleanup through an attributed ID, but cannot
+yield a fully verified termination receipt. This is the policy loop, not yet the
+separate-process supervisor or complete controller command; no pod was allocated.
+
 Host control custody now enforces per-role OS locks in a private directory, binds
 the exact launch manifest, refuses duplicate event publication and invalidates
 released writers. A separate Python process proves exclusion and later acquisition.
