@@ -21,6 +21,21 @@ from entropic_substrate.sentence_prediction.worker_command import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("field", ["operation", "code", "cause_type"])
+def test_unknown_storage_diagnostic_fields_never_escape_allowlist(field: str) -> None:
+    from entropic_substrate.d1_trainer_s3_object_adapter import D1TrainerS3ObjectError
+
+    error = D1TrainerS3ObjectError(
+        operation="private-value" if field == "operation" else "read",
+        code="private-value" if field == "code" else "provider_failure",
+    )
+    if field == "cause_type":
+        error.__cause__ = type("private-value", (Exception,), {})("private-message")
+    diagnostic = error.safe_diagnostic()
+    assert diagnostic[field] == "unrecognized"
+    assert "private" not in json.dumps(diagnostic)
+
+
 @pytest.mark.parametrize(
     ("cause", "provider_code", "http_status", "cause_type"),
     [
