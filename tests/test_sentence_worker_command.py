@@ -8,7 +8,9 @@ from unittest.mock import Mock
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 from tests.test_d1_trainer_object_transport import _ObjectStore
+from tests.test_d1_trainer_s3_object_adapter import _S3Client
 from tests.test_sentence_worker_execution import prepared
 
 from entropic_substrate.sentence_prediction.worker_command import (
@@ -17,6 +19,137 @@ from entropic_substrate.sentence_prediction.worker_command import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    ("cause", "provider_code", "http_status", "cause_type"),
+    [
+        (
+            ClientError(
+                {
+                    "Error": {"Code": "AccessDenied", "Message": "private-value"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "GetObject",
+            ),
+            "AccessDenied",
+            403,
+            "ClientError",
+        ),
+        (
+            ClientError(
+                {
+                    "Error": {"Code": "SignatureDoesNotMatch"},
+                    "ResponseMetadata": {"HTTPStatusCode": 403},
+                },
+                "GetObject",
+            ),
+            "SignatureDoesNotMatch",
+            403,
+            "ClientError",
+        ),
+        (
+            ClientError(
+                {"Error": {"Code": "private-value"}, "ResponseMetadata": {"HTTPStatusCode": True}},
+                "GetObject",
+            ),
+            "unrecognized",
+            None,
+            "ClientError",
+        ),
+        (
+            EndpointConnectionError(endpoint_url="https://private-value.invalid"),
+            None,
+            None,
+            "EndpointConnectionError",
+        ),
+    ],
+)
+def test_request_failure_retains_only_allowlisted_storage_diagnostics(
+    tmp_path: Path,
+    cause: Exception,
+    provider_code: str | None,
+    http_status: int | None,
+    cause_type: str,
+) -> None:
+    from entropic_substrate.d1_trainer_s3_object_adapter import Boto3D1TrainerMailboxObjectAdapter
+
+    client = _S3Client(fail_get=cause)
+    objects = Boto3D1TrainerMailboxObjectAdapter(
+        client=client, bucket="test-bucket", max_objects=10
+    )
+    output, error = StringIO(), StringIO()
+    workspace = tmp_path / "not-created"
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--workspace-root",
+            str(workspace),
+            "--max-object-bytes",
+            "1000",
+            "--max-objects",
+            "10",
+            "--request-key",
+            "request.json",
+            "--request-sha256",
+            "a" * 64,
+            "--request-size",
+            "10",
+        ],
+        environ={},
+        objects=objects,
+        stdout=output,
+        stderr=error,
+    )
+    assert status == 2 and not output.getvalue() and not workspace.exists()
+    record = json.loads(error.getvalue())
+    assert record["stage"] == "request_fetch"
+    assert record["object_error"] == {
+        "operation": "read",
+        "code": "provider_failure",
+        "cause_type": cause_type,
+        "provider_code": provider_code,
+        "http_status": http_status,
+    }
+    assert "private-value" not in error.getvalue()
+
+
+@pytest.mark.parametrize("name", ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+def test_unresolved_secret_reference_is_refused_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    factory = Mock()
+    monkeypatch.setattr(boto3, "client", factory)
+    credentials = {"AWS_ACCESS_KEY_ID": "test-id", "AWS_SECRET_ACCESS_KEY": "test-value"}
+    credentials[name] = "{{ RUNPOD_SECRET_test_private_name }}"
+    output, error = StringIO(), StringIO()
+    status = run_worker_command(
+        [
+            "publish",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "1000",
+            "--max-objects",
+            "10",
+            "--artifact-root",
+            str(tmp_path),
+            "--request-file",
+            "missing.json",
+        ],
+        environ=credentials,
+        stdout=output,
+        stderr=error,
+    )
+    assert status == 2
+    assert json.loads(error.getvalue())["credential_error"] == "unresolved_reference"
+    assert json.loads(error.getvalue())["stage"] == "object_client"
+    assert "test_private_name" not in error.getvalue()
+    factory.assert_not_called()
 
 
 def test_public_worker_commands_publish_execute_and_receive(tmp_path: Path) -> None:

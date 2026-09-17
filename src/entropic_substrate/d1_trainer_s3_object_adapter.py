@@ -38,6 +38,75 @@ class D1TrainerS3ObjectError(RuntimeError):
         self.code = code
         super().__init__(f"D1 trainer S3 object {operation}: {code}")
 
+    def safe_diagnostic(self) -> dict[str, str | int | None]:
+        """Allowlisted facts only: never messages, URLs, keys, headers or request IDs."""
+        cause = self.__cause__
+        provider_code, status = (
+            _provider_code(cause) if isinstance(cause, Exception) else (None, None)
+        )
+        codes = {
+            "AccessDenied",
+            "InvalidAccessKeyId",
+            "SignatureDoesNotMatch",
+            "ExpiredToken",
+            "InvalidToken",
+            "RequestTimeTooSkewed",
+            "AuthorizationHeaderMalformed",
+            "InvalidArgument",
+            "NoSuchBucket",
+            "NoSuchKey",
+            "NotFound",
+            "SlowDown",
+            "InternalError",
+            "ServiceUnavailable",
+            "400",
+            "403",
+            "404",
+            "500",
+            "503",
+        }
+        local_codes = {
+            "metadata_invalid",
+            "response_invalid",
+            "provider_failure",
+            "byte_limit",
+            "body_read",
+            "object_bytes",
+            "identity_invalid",
+            "payload_hash",
+            "immutable_collision",
+            "readback_mismatch",
+            "head_failure",
+            "head_identity",
+            "row_invalid",
+            "object_limit",
+            "continuation_invalid",
+        }
+        cause_name = type(cause).__name__ if cause is not None else None
+        cause_names = {
+            "ClientError",
+            "EndpointConnectionError",
+            "ConnectTimeoutError",
+            "ReadTimeoutError",
+            "SSLError",
+            "ConnectionClosedError",
+            "ProxyConnectionError",
+            "ParamValidationError",
+        }
+        return {
+            "operation": self.operation
+            if self.operation in {"read", "publish", "list"}
+            else "unrecognized",
+            "code": self.code if self.code in local_codes else "unrecognized",
+            "cause_type": cause_name
+            if cause_name in cause_names or cause is None
+            else "unrecognized",
+            "provider_code": provider_code
+            if provider_code in codes or provider_code is None
+            else "unrecognized",
+            "http_status": status if type(status) is int and 100 <= status <= 599 else None,
+        }
+
 
 def _error(operation: str, code: str) -> D1TrainerS3ObjectError:
     return D1TrainerS3ObjectError(operation=operation, code=code)

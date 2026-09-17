@@ -19,6 +19,7 @@ from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjec
 from entropic_substrate.d1_trainer_s3_object_adapter import (
     Boto3D1TrainerMailboxObjectAdapter,
     D1S3ClientPort,
+    D1TrainerS3ObjectError,
 )
 from entropic_substrate.sentence_prediction.object_worker import run_object_worker
 from entropic_substrate.sentence_prediction.worker_completion import receive_worker_completion
@@ -27,6 +28,10 @@ from entropic_substrate.sentence_prediction.worker_transport import (
     publish_probe_request,
     read_published_probe_request,
 )
+
+
+class UnresolvedWorkerCredentials(ValueError):
+    """A provider reference reached the process without secret substitution."""
 
 
 def build_worker_objects(
@@ -41,6 +46,10 @@ def build_worker_objects(
     access, private = environ.get("AWS_ACCESS_KEY_ID"), environ.get("AWS_SECRET_ACCESS_KEY")
     if type(access) is not str or not access or type(private) is not str or not private:
         raise ValueError("worker object credentials are missing")
+    if any(
+        value.strip().startswith("{{") and "RUNPOD_SECRET_" in value for value in (access, private)
+    ):
+        raise UnresolvedWorkerCredentials("worker credentials contain unresolved references")
     topology = load_d1_dvc_s3_remote(repo_root)
     client = boto3.client(
         "s3",
@@ -101,10 +110,12 @@ def run_worker_command(
     stderr: TextIO = sys.stderr,
 ) -> int:
     """Run one operation; report structured errors without credential/provider details."""
+    stage = "arguments"
     try:
         args = _parser().parse_args(list(argv))
         if args.max_object_bytes < 1 or args.max_objects < 1:
             raise ValueError("worker command limits must be positive")
+        stage = "object_client"
         selected = (
             objects
             if objects is not None
@@ -116,15 +127,18 @@ def run_worker_command(
             )
         )
         if args.command == "run":
+            stage = "request_fetch"
             marker = D1TrainerMailboxObjectIdentity(
                 args.request_key, args.request_size, args.request_sha256
             )
             request = read_published_probe_request(
                 selected, marker, max_request_bytes=args.max_object_bytes
             )
+            stage = "request_admission"
             _scope(request, args.local_tiny, args.max_object_bytes, args.max_objects)
             if not args.local_tiny:
                 require_d1_pod_id(environ.get("RUNPOD_POD_ID"))
+            stage = "worker_execution"
             result = run_object_worker(
                 selected,
                 marker,
@@ -138,6 +152,7 @@ def run_worker_command(
                 "object": asdict(result),
             }
         else:
+            stage = "request_file"
             _, payload, _ = read_d1_artifact_bytes(
                 args.artifact_root,
                 args.request_file,
@@ -146,6 +161,7 @@ def run_worker_command(
             )
             request = parse_probe_request(payload, max_bytes=args.max_object_bytes)
             if args.command == "publish":
+                stage = "request_publish"
                 if (
                     request.limits.max_object_bytes > args.max_object_bytes
                     or request.limits.max_objects > args.max_objects
@@ -158,6 +174,7 @@ def run_worker_command(
                     "object": asdict(result),
                 }
             else:
+                stage = "completion_receive"
                 _scope(request, args.local_tiny, args.max_object_bytes, args.max_objects)
                 terminal = D1TrainerMailboxObjectIdentity(
                     args.terminal_key, args.terminal_size, args.terminal_sha256
@@ -180,6 +197,17 @@ def run_worker_command(
                     "code": "worker_command_refused",
                     "error_type": type(error).__name__,
                     "scientific_authority": "none",
+                    "stage": stage,
+                    **(
+                        {"object_error": error.safe_diagnostic()}
+                        if isinstance(error, D1TrainerS3ObjectError)
+                        else {}
+                    ),
+                    **(
+                        {"credential_error": "unresolved_reference"}
+                        if isinstance(error, UnresolvedWorkerCredentials)
+                        else {}
+                    ),
                 },
                 sort_keys=True,
             )
