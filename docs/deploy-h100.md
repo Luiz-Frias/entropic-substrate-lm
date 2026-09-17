@@ -5,14 +5,17 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-79a4be2.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-b576df4.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:bd41ff94266a51550c9b013bf963676b7f46b763087e383a385b0afeb67b8b42
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:a66674fb5a46b75735f2a7f668e75f18d034ad40364e49f34f257e84b3ca08dc
 ```
 
-Runtime source matches commit `79a4be270baca3bce077bad89d8937201c0e6b96` exactly.
+Runtime source matches commit `b576df47444c5f4c3591c8737472bb39136576b9` exactly.
+Native validation includes the bounded-source cleanup and Git-isolation repairs.
+Requests must bind their code commit and bundle to this publication, not a later
+host-only controller commit. Earlier publication captures remain historical evidence.
 The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
 present. These are CPU-side packaging/provenance checks, not CUDA training,
 scientific confirmation, or successor eligibility. The 6K probes still require

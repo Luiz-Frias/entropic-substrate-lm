@@ -419,6 +419,14 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+The host controller now composes allocation, terminal collection and watchdog join,
+retaining workload and termination verification separately. Eighteen controller
+tests pass; disabling termination admission fails four mutation cases. Emergency
+cleanup remains an explicit failed-controller observation, never a success fallback.
+The refreshed `b576df4` image passed native tree/source verification and its eight-file
+publication capture was pushed through DVC. CLI composition and remote execution
+remain pending; no Runpod GPU was allocated by this work.
+
 Git-isolation repair `7ba2788` passed the normal path-only commit hooks. Bundle
 cloning and provenance reads remove inherited Git context, and fixture repositories
 cannot consume a hook-owned index. Forty focused tests include an unchanged foreign
