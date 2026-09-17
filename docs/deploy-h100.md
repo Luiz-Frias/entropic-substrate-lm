@@ -5,21 +5,22 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-b576df4.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-9a6300a.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:a66674fb5a46b75735f2a7f668e75f18d034ad40364e49f34f257e84b3ca08dc
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:12ed163429a1de87566788956573b0fe7f0e4d7230487f65b46debc6afce4986
 ```
 
-Runtime source matches commit `b576df47444c5f4c3591c8737472bb39136576b9` exactly.
-Native validation includes the bounded-source cleanup and Git-isolation repairs.
+Runtime source matches commit `9a6300a20eddd3cbe5c00f01abc1ee25f5c0b128` exactly.
+Native validation includes source replay and allowlisted S3 failure diagnostics.
 Requests must bind their code commit and bundle to this publication, not a later
 host-only controller commit. Earlier publication captures remain historical evidence.
 The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
 present. These are CPU-side packaging/provenance checks, not CUDA training,
-scientific confirmation, or successor eligibility. The 6K probes still require
-the promised prelaunch check-in. Do not substitute `latest` for this digest.
+scientific confirmation, or successor eligibility. Paid 6K validation is authorized,
+but completion requires the worker's verified artifacts. Do not substitute `latest`
+for this digest.
 
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
@@ -29,7 +30,13 @@ For H-probe template preparation, Luiz confirmed the Runpod secret-reference nam
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` on 2026-09-17. These are names, not
 credential values. The H object worker reads its endpoint from committed DVC topology;
 it does not require the separate `R2_API_KEY` or `MLFLOW_S3_ENDPOINT_URL` references.
-Template creation and the pre-allocation check-in remain pending.
+RETRACTION (2026-09-17): supplied names did not establish that account secrets existed.
+An authenticated metadata query returned zero stored secrets; pod `8raqb0mtr6alzz`
+received literal references and failed before training. Its termination was verified.
+With explicit approval, both named secrets were then created from locally verified
+R2 credentials and their metadata read back. Values were not printed or captured.
+Verify secret-name existence separately from template-reference spelling before launch.
+The current v2 OpenAPI exposes `/v2/account/secrets`; the connected tool subset does not.
 
 ## Historical E-series deployment
 
