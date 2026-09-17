@@ -1,5 +1,31 @@
 # Deploy — H100 on RunPod / Vast.ai
 
+## Current H-series image
+
+The refreshed project image was built and published using Docker Build Cloud's
+`cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
+record is `publication.json` inside the DVC-backed publication capture, referenced
+by [the capture pointer](../results/h-image-publication-79a4be2.dvc). Git stores this
+human-readable pin and the pointer, not a second copy of the generated evidence.
+
+```text
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:bd41ff94266a51550c9b013bf963676b7f46b763087e383a385b0afeb67b8b42
+```
+
+Runtime source matches commit `79a4be270baca3bce077bad89d8937201c0e6b96` exactly.
+The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
+present. These are CPU-side packaging/provenance checks, not CUDA training,
+scientific confirmation, or successor eligibility. The 6K probes still require
+the promised prelaunch check-in. Do not substitute `latest` for this digest.
+
+Publication capture used a fresh task-private DVC site cache through
+`DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
+or modified. Use a private cache for subsequent capture work too.
+
+## Historical E-series deployment
+
+The following commands and sizing discussion retain their historical E-series scope.
+
 The `Containerfile` builds a single image (base: `pytorch/pytorch:2.13.0-cuda12.6-cudnn9-runtime`,
 CUDA 12.6 covers H100 / sm_90). Everything below assumes the image is pushed to a registry both
 platforms can pull from (GHCR or Docker Hub).

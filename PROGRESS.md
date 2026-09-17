@@ -419,6 +419,15 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+The refreshed image is published from tested runtime revision `79a4be2` on the
+approved Docker cloud builder. `docs/deploy-h100.md` records its amd64 digest;
+the canonical machine-readable publication record is DVC-backed. Exact Git-source verification,
+worker import and dependency/topology checks passed inside the pulled image.
+This is not CUDA/6K validation; no Runpod was allocated. The existing world-writable
+DVC site cache was left untouched; publication custody used a fresh private override.
+The unused R2 bootstrap extension is recoverable at `results/deferred-h-r2.LmrgGj/`
+(patch plus unchanged test, with hashes and base revision in its README).
+
 Luiz approved publishing one refreshed project image using the existing Docker
 cloud builder. Runpod allocation still requires the promised prelaunch check-in.
 The old-image R2 bootstrap alternative is excluded from the image; publication
