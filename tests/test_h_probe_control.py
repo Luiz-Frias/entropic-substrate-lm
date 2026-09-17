@@ -3,12 +3,15 @@
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from tests.test_h_probe_launch import launch
 
 from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
+from entropic_substrate.d1_operator_ports import D1CommandResult
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.h_probe_control import own_probe_role, read_probe_control
 
 pytestmark = pytest.mark.unit
@@ -62,7 +65,9 @@ def test_second_launch_cannot_adopt_the_same_control_directory(tmp_path: Path) -
             pytest.fail("foreign launch adopted")
 
 
-@pytest.mark.parametrize("kind", ["public_root", "root_link", "lock_link", "lock_public"])
+@pytest.mark.parametrize(
+    "kind", ["public_root", "root_link", "lock_link", "lock_public", "init_lock_link"]
+)
 def test_unsafe_control_paths_fail_without_repairing_them(tmp_path: Path, kind: str) -> None:
     directory = root(tmp_path)
     if kind == "public_root":
@@ -72,8 +77,8 @@ def test_unsafe_control_paths_fail_without_repairing_them(tmp_path: Path, kind: 
         alias.symlink_to(directory, target_is_directory=True)
         directory = alias
     else:
-        target = directory / "controller.lock"
-        if kind == "lock_link":
+        target = directory / ("launch.lock" if kind == "init_lock_link" else "controller.lock")
+        if kind in ("lock_link", "init_lock_link"):
             target.symlink_to(tmp_path / "not-created")
         else:
             target.write_text("")
@@ -155,3 +160,89 @@ def test_replaced_manifest_invalidates_existing_control_records(tmp_path: Path) 
             read_probe_control(directory, spec, "controller", "create-intent", max_bytes=10_000)
         with pytest.raises(ValueError, match="another launch"):
             controller.write("allocation", {}, max_bytes=10_000)
+
+
+def test_manifest_publication_holds_a_shared_cross_process_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate import h_probe_control as control
+
+    directory, spec = root(tmp_path), launch()
+    original = control.publish_d1_atomic_bytes
+    runner = BoundedSubprocessD1CommandRunner(timeout_seconds=30, max_output_bytes=10_000)
+    code = """import fcntl, os, sys
+descriptor = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+try:
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print('blocked')
+else:
+    print('unlocked')
+finally:
+    os.close(descriptor)
+"""
+
+    def checked(root: Path, name: object, payload: bytes, *, label: str) -> ArtifactIdentity:
+        if name == "launch.json":
+            observed = runner.run(
+                (sys.executable, "-c", code, str(directory / "launch.lock")),
+                cwd=Path.cwd(),
+                stdin=None,
+            )
+            assert observed.returncode == 0 and observed.stdout.strip() == "blocked"
+        return original(root, name, payload, label=label)
+
+    monkeypatch.setattr(control, "publish_d1_atomic_bytes", checked)
+    with own_probe_role(directory, spec, "controller"):
+        pass
+
+
+def test_two_processes_can_initialize_different_roles_in_one_fresh_directory(
+    tmp_path: Path,
+) -> None:
+    directory, spec = root(tmp_path), launch()
+    code = """import os, sys
+from pathlib import Path
+from entropic_substrate.h_probe_launch import parse_probe_launch
+from entropic_substrate.h_probe_control import own_probe_role
+launch = parse_probe_launch(sys.stdin.buffer.read(), max_bytes=10000)
+with own_probe_role(Path(sys.argv[1]), launch, sys.argv[2]) as role:
+    role.write('entered', {'pid': os.getpid()}, max_bytes=10000)
+"""
+
+    def enter(role: str) -> D1CommandResult:
+        runner = BoundedSubprocessD1CommandRunner(timeout_seconds=30, max_output_bytes=10_000)
+        return runner.run(
+            (sys.executable, "-c", code, str(directory), role),
+            cwd=Path.cwd(),
+            stdin=spec.payload.decode(),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.map(enter, ("controller", "watchdog")))
+    assert all(result.returncode == 0 for result in results), [r.stderr for r in results]
+    first = read_probe_control(directory, spec, "controller", "entered", max_bytes=10_000)
+    second = read_probe_control(directory, spec, "watchdog", "entered", max_bytes=10_000)
+    assert first is not None and second is not None and first["pid"] != second["pid"]
+
+
+def test_abrupt_owner_exit_releases_lock_but_preserves_intent(tmp_path: Path) -> None:
+    directory, spec = root(tmp_path), launch()
+    code = """import os, sys
+from pathlib import Path
+from entropic_substrate.h_probe_launch import parse_probe_launch
+from entropic_substrate.h_probe_control import own_probe_role
+launch = parse_probe_launch(sys.stdin.buffer.read(), max_bytes=10000)
+with own_probe_role(Path(sys.argv[1]), launch, 'controller') as writer:
+    writer.write('create-intent', {'case': 'crash-fixture'}, max_bytes=10000)
+    os._exit(7)
+"""
+    runner = BoundedSubprocessD1CommandRunner(timeout_seconds=30, max_output_bytes=10_000)
+    result = runner.run(
+        (sys.executable, "-c", code, str(directory)), cwd=Path.cwd(), stdin=spec.payload.decode()
+    )
+    assert result.returncode == 7
+    with own_probe_role(directory, spec, "controller"):
+        assert read_probe_control(
+            directory, spec, "controller", "create-intent", max_bytes=10_000
+        ) == {"case": "crash-fixture"}

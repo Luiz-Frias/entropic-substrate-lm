@@ -116,20 +116,12 @@ class _ProbeControlWriter:
 
 
 @contextmanager
-def own_probe_role(root: Path, launch: H0ProbeLaunch, role: str) -> Generator[_ProbeControlWriter]:
-    """Lease one role without waiting; process exit releases the OS lock, not history.
-
-    A restarted controller must inspect existing intent before any create call.
-    A stale ready file never proves its original watchdog process is alive.
-    The bound launch uses the request's explicit artifact-size envelope.
-    """
-    launch, directory = _scope(launch, role), _root(root)
+def _locked_file(directory: Path, name: str, *, wait: bool) -> Generator[None]:
     descriptor: int | None = None
-    writer: _ProbeControlWriter | None = None
     try:
         try:
             descriptor = os.open(
-                directory / f"{role}.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600
+                directory / f"{name}.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600
             )
             metadata = os.fstat(descriptor)
             if (
@@ -139,20 +131,38 @@ def own_probe_role(root: Path, launch: H0ProbeLaunch, role: str) -> Generator[_P
                 or metadata.st_nlink != 1
             ):
                 raise ValueError("probe role lock is unsafe")
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
             raise ValueError("probe role is already owned") from None
         except OSError:
             raise ValueError("probe role lock could not be safely opened") from None
-        manifest = directory / "launch.json"
-        if manifest.exists() or manifest.is_symlink():
-            _verify_launch(directory, launch)
-        else:
-            publish_d1_atomic_bytes(directory, "launch.json", launch.payload, label="probe launch")
-        writer = _ProbeControlWriter(directory, launch, role)
-        yield writer
+        yield
     finally:
-        if writer is not None:
-            writer.release()
         if descriptor is not None:
             os.close(descriptor)
+
+
+@contextmanager
+def own_probe_role(root: Path, launch: H0ProbeLaunch, role: str) -> Generator[_ProbeControlWriter]:
+    """Lease one role without waiting; process exit releases the OS lock, not history.
+
+    The short shared initialization lock serializes the two roles' manifest bind.
+    A restarted controller must inspect existing intent before any create call.
+    A stale ready file never proves its original watchdog process is alive.
+    The bound launch uses the request's explicit artifact-size envelope.
+    """
+    launch, directory = _scope(launch, role), _root(root)
+    with _locked_file(directory, role, wait=False):
+        with _locked_file(directory, "launch", wait=True):
+            manifest = directory / "launch.json"
+            if manifest.exists() or manifest.is_symlink():
+                _verify_launch(directory, launch)
+            else:
+                publish_d1_atomic_bytes(
+                    directory, "launch.json", launch.payload, label="probe launch"
+                )
+        writer = _ProbeControlWriter(directory, launch, role)
+        try:
+            yield writer
+        finally:
+            writer.release()

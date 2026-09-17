@@ -344,7 +344,9 @@ def test_named_reconciliation_includes_stopped_pods_and_does_not_create(
     assert all("create" not in call and "delete" not in call for call in runner.calls)
 
 
-@pytest.mark.parametrize("kind", ["null", "object", "duplicate", "malformed", "wrong_image"])
+@pytest.mark.parametrize(
+    "kind", ["null", "object", "duplicate", "malformed", "wrong_image", "row_type", "nonfinite"]
+)
 def test_invalid_inventory_never_becomes_an_empty_reconciliation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
@@ -355,6 +357,8 @@ def test_invalid_inventory_never_becomes_an_empty_reconciliation(
         "duplicate": [pod(spec), pod(spec)],
         "malformed": [{}],
         "wrong_image": [pod(spec) | {"imageName": "different"}],
+        "row_type": ["not-an-object"],
+        "nonfinite": [pod(spec) | {"ignored": float("nan")}],
     }
     runner = Runner([success(cases[kind])])
     with pytest.raises(ProbeProviderError):

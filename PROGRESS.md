@@ -417,7 +417,7 @@ Review follow-up covers remote runtime identity as a metadata contract, not a re
 Rejected completion retains byte-custody evidence for inspection without admitting completion.
 Removing the pod-identity comparison failed the remote metadata guard test.
 
-### Local validation checkpoint — 2026-09-16
+### Local validation checkpoint — 2026-09-17
 
 Host control custody now enforces per-role OS locks in a private directory, binds
 the exact launch manifest, refuses duplicate event publication and invalidates
@@ -428,7 +428,15 @@ The control/provider focused suite passed 58 tests; removing the lock made its g
 fail. This supplies the durable boundary for the forthcoming watchdog/controller,
 not a running supervisor, allocation, or scientific advancement.
 
-The next, separately uncommitted H provider transport uses the pinned bounded CLI
+Review exposed cross-role manifest initialization as a race. A shared initialization
+lock now covers publication and exact-byte adoption. The new cross-process lock test
+failed before the fix; concurrent fresh-directory startup and abrupt-owner-exit tests
+now pass. The control/provider focused suite passed 64 tests, including the added
+non-object/nonfinite inventory guards. No timeout or retry budget was increased.
+
+### Local validation checkpoint — 2026-09-16
+
+The H provider transport, since committed as `288ac0a`, uses the pinned bounded CLI
 runner, redacts environment payloads, never retries creation, and retains possible
 allocation IDs on ambiguous failures. Ownership is reread before deletion;
 acknowledgement is separate from a successful absence check. The provider/launch
