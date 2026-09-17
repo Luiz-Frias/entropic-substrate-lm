@@ -1,0 +1,150 @@
+"""Host command composition is distinct from paid or scientific execution proof."""
+
+import io
+import json
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
+
+import pytest
+from tests.test_h_probe_launch import launch
+
+from entropic_substrate.h_probe_command import run_probe_command
+from entropic_substrate.h_probe_controller import ProbeControllerFailure
+from entropic_substrate.h_probe_launch import H0ProbeLaunch
+from entropic_substrate.h_probe_process import WatchdogProcessConfig
+
+pytestmark = pytest.mark.unit
+
+
+def arguments(tmp_path: Path) -> list[str]:
+    (tmp_path / "launch.json").write_bytes(launch().payload)
+    (tmp_path / "workspace").mkdir(mode=0o700)
+    return [
+        "--launch-root",
+        str(tmp_path),
+        "--launch-file",
+        "launch.json",
+        "--workspace",
+        str(tmp_path / "workspace"),
+        "--repo-root",
+        str(tmp_path),
+        "--expected-account-id",
+        "fixture-account",
+        "--runpodctl",
+        "/fixture/runpodctl",
+        "--provider-timeout",
+        "30",
+        "--max-provider-bytes",
+        "1000000",
+        "--max-launch-bytes",
+        "1000000",
+        "--max-control-bytes",
+        "1000000",
+        "--poll-seconds",
+        "5",
+        "--startup-timeout",
+        "120",
+        "--shutdown-timeout",
+        "30",
+        "--max-hourly-rate",
+        "0.6",
+    ]
+
+
+@pytest.mark.parametrize(
+    "failure,release_failure", [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_command_connects_one_manifest_to_guard_and_controller(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: bool,
+    release_failure: bool,
+) -> None:
+    argv = arguments(tmp_path)
+    calls: list[str] = []
+    provider, objects, guard = object(), object(), object()
+    report = {
+        "status": "controller_failed" if failure else "terminal_collected",
+        "workload_verified": not failure,
+        "termination_verified": True,
+        "scientific_authority": "none",
+    }
+
+    def object_factory(repo: Path, environ: Mapping[str, str], **limits: int) -> object:
+        assert repo == tmp_path and environ == {"FIXTURE": "not-credentials"}
+        assert limits["max_object_bytes"] == launch().request.limits.max_object_bytes
+        calls.append("objects")
+        return objects
+
+    @contextmanager
+    def supervise(
+        root: Path, spec: H0ProbeLaunch, config: WatchdogProcessConfig, *, expected_account_id: str
+    ) -> Generator[object, None, None]:
+        assert spec == launch() and expected_account_id == "fixture-account"
+        assert root == tmp_path / "workspace/control" and root.is_dir()
+        assert config.executable == Path("/fixture/runpodctl")
+        calls.append("guard_enter")
+        try:
+            yield guard
+        finally:
+            calls.append("guard_exit")
+            if release_failure:
+                raise RuntimeError("private release detail")
+
+    def controller(
+        actual_guard: object,
+        actual_provider: object,
+        actual_objects: object,
+        destination: Path,
+        **limits: float,
+    ) -> dict[str, object]:
+        assert (actual_guard, actual_provider, actual_objects) == (guard, provider, objects)
+        assert destination == tmp_path / "workspace/capture" and destination.is_dir()
+        assert limits == {"poll_seconds": 5.0, "max_hourly_rate": 0.6}
+        calls.append("controller")
+        if failure:
+            raise ProbeControllerFailure(report, (ValueError("private detail"),))
+        return report
+
+    monkeypatch.setattr("entropic_substrate.h_probe_command.HRunpodTransport", lambda **_: provider)
+    monkeypatch.setattr("entropic_substrate.h_probe_command.build_worker_objects", object_factory)
+    monkeypatch.setattr("entropic_substrate.h_probe_command.supervise_probe_watchdog", supervise)
+    monkeypatch.setattr("entropic_substrate.h_probe_command.run_probe_controller", controller)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    code = run_probe_command(
+        argv, environ={"FIXTURE": "not-credentials"}, stdout=stdout, stderr=stderr
+    )
+    failed = failure or release_failure
+    assert code == (1 if failed else 0)
+    result = json.loads(stderr.getvalue() if failed else stdout.getvalue())
+    assert (result["evidence"] if failed else result) == report
+    assert "private detail" not in stderr.getvalue()
+    assert "private release detail" not in stderr.getvalue()
+    assert calls == ["objects", "guard_enter", "controller", "guard_exit"]
+
+
+@pytest.mark.parametrize("invalid", ["occupied", "public", "bad_manifest", "missing_flag"])
+def test_invalid_launch_never_reaches_provider_or_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+) -> None:
+    argv = arguments(tmp_path)
+    if invalid == "occupied":
+        (tmp_path / "workspace/existing").write_text("keep")
+    elif invalid == "public":
+        (tmp_path / "workspace").chmod(0o755)
+    elif invalid == "bad_manifest":
+        (tmp_path / "launch.json").write_bytes(b"{}")
+    else:
+        argv = argv[:-2]
+
+    def forbidden(**_kwargs: object) -> None:
+        pytest.fail("invalid input reached provider construction")
+
+    monkeypatch.setattr("entropic_substrate.h_probe_command.HRunpodTransport", forbidden)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) != 0
+    assert stdout.getvalue() == ""
+    assert not (tmp_path / "workspace/control").exists()

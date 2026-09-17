@@ -121,6 +121,8 @@ def test_deployment_and_analysis_are_audited_runtime_capabilities() -> None:
     groups = pyproject["dependency-groups"]
     assert "boto3" in _dependency_names(groups["deploy"])
     assert "boto3" not in _dependency_names(groups["dev"])
+    assert "botocore" in _dependency_names(groups["deploy"])
+    assert "botocore" not in _dependency_names(groups["dev"])
     assert "scipy" in _dependency_names(groups["deploy"])
     assert "scipy" in _dependency_names(groups["analysis"])
     audit = pyproject["tool"]["deptry"]
@@ -340,3 +342,13 @@ def test_baked_model_copies_carry_a_matching_containerignore_negation() -> None:
             f"Containerfile COPYs {path!r} but .containerignore has no "
             f"'!{path}' negation — `models/` excludes it from the build context"
         )
+
+
+def test_training_image_invokes_the_pinned_uv_copy_not_a_path_shadow() -> None:
+    containerfile = (Path(__file__).resolve().parents[1] / "Containerfile").read_text()
+    for launcher in ("RUN ", "&& "):
+        for binary in ("uv ", "/usr/local/bin/uv "):
+            assert launcher + binary not in containerfile
+    assert "RUN /bin/uv export --frozen" in containerfile
+    assert "&& /bin/uv pip install --system" in containerfile
+    assert "RUN /bin/uv pip install --system --no-cache --no-deps ." in containerfile

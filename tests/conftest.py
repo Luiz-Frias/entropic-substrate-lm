@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -30,6 +31,20 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register markers so the suite also runs standalone (strict-markers safe)."""
     config.addinivalue_line("markers", "unit: fast CPU-only tests")
     config.addinivalue_line("markers", "integration: slow / network / GPU tests")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_callers_git_context() -> Iterator[None]:
+    """Keep hook-owned indexes out of fixture repositories, including module fixtures.
+
+    Git path-only commits export a temporary index. Regressions that exercise
+    hostile context inject it inside their own tests, after this isolation.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        for name in tuple(os.environ):
+            if name.startswith("GIT_"):
+                patch.delenv(name)
+        yield
 
 
 @pytest.fixture(autouse=True)

@@ -38,6 +38,75 @@ class D1TrainerS3ObjectError(RuntimeError):
         self.code = code
         super().__init__(f"D1 trainer S3 object {operation}: {code}")
 
+    def safe_diagnostic(self) -> dict[str, str | int | None]:
+        """Allowlisted facts only: never messages, URLs, keys, headers or request IDs."""
+        cause = self.__cause__
+        provider_code, status = (
+            _provider_code(cause) if isinstance(cause, Exception) else (None, None)
+        )
+        codes = {
+            "AccessDenied",
+            "InvalidAccessKeyId",
+            "SignatureDoesNotMatch",
+            "ExpiredToken",
+            "InvalidToken",
+            "RequestTimeTooSkewed",
+            "AuthorizationHeaderMalformed",
+            "InvalidArgument",
+            "NoSuchBucket",
+            "NoSuchKey",
+            "NotFound",
+            "SlowDown",
+            "InternalError",
+            "ServiceUnavailable",
+            "400",
+            "403",
+            "404",
+            "500",
+            "503",
+        }
+        local_codes = {
+            "metadata_invalid",
+            "response_invalid",
+            "provider_failure",
+            "byte_limit",
+            "body_read",
+            "object_bytes",
+            "identity_invalid",
+            "payload_hash",
+            "immutable_collision",
+            "readback_mismatch",
+            "head_failure",
+            "head_identity",
+            "row_invalid",
+            "object_limit",
+            "continuation_invalid",
+        }
+        cause_name = type(cause).__name__ if cause is not None else None
+        cause_names = {
+            "ClientError",
+            "EndpointConnectionError",
+            "ConnectTimeoutError",
+            "ReadTimeoutError",
+            "SSLError",
+            "ConnectionClosedError",
+            "ProxyConnectionError",
+            "ParamValidationError",
+        }
+        return {
+            "operation": self.operation
+            if self.operation in {"read", "publish", "list"}
+            else "unrecognized",
+            "code": self.code if self.code in local_codes else "unrecognized",
+            "cause_type": cause_name
+            if cause_name in cause_names or cause is None
+            else "unrecognized",
+            "provider_code": provider_code
+            if provider_code in codes or provider_code is None
+            else "unrecognized",
+            "http_status": status if type(status) is int and 100 <= status <= 599 else None,
+        }
+
 
 def _error(operation: str, code: str) -> D1TrainerS3ObjectError:
     return D1TrainerS3ObjectError(operation=operation, code=code)
@@ -105,6 +174,7 @@ class Boto3D1TrainerMailboxObjectAdapter:
         client: D1S3ClientPort,
         bucket: str,
         max_objects: int,
+        max_object_bytes: int | None = None,
     ) -> None:
         methods = ("put_object", "get_object", "head_object", "list_objects_v2")
         if not all(callable(getattr(client, method, None)) for method in methods):
@@ -113,9 +183,14 @@ class Boto3D1TrainerMailboxObjectAdapter:
             raise ValueError("D1 trainer S3 bucket identity is unsafe")
         if type(max_objects) is not int or max_objects < 1:
             raise ValueError("D1 trainer S3 max_objects must be a positive integer")
+        if max_object_bytes is not None and (
+            type(max_object_bytes) is not int or max_object_bytes < 1
+        ):
+            raise ValueError("S3 object byte limit must be a positive integer")
         self._client = client
         self._bucket = bucket
         self._max_objects = max_objects
+        self._max_object_bytes = max_object_bytes
 
     def _read(self, key: str) -> D1TrainerMailboxObjectRead | None:
         try:
@@ -125,23 +200,22 @@ class Boto3D1TrainerMailboxObjectAdapter:
                 return None
             raise _error("read", "provider_failure") from cause
         response = _response(raw_response, operation="read")
-        length = response.get("ContentLength")
-        metadata = _metadata(response.get("Metadata"), operation="read")
-        digest = metadata.get("sha256")
         body = response.get("Body")
-        if (
-            type(length) is not int
-            or length < 1
-            or type(digest) is not str
-            or not callable(getattr(body, "read", None))
-            or not callable(getattr(body, "close", None))
-        ):
+        if not callable(getattr(body, "read", None)) or not callable(getattr(body, "close", None)):
             raise _error("read", "response_invalid")
         stream = cast(D1S3BodyPort, body)
         try:
-            payload = stream.read(length + 1)
-        except Exception as cause:
-            raise _error("read", "body_read") from cause
+            length = response.get("ContentLength")
+            metadata = _metadata(response.get("Metadata"), operation="read")
+            digest = metadata.get("sha256")
+            if type(length) is not int or length < 1 or type(digest) is not str:
+                raise _error("read", "response_invalid")
+            if self._max_object_bytes is not None and length > self._max_object_bytes:
+                raise _error("read", "byte_limit")
+            try:
+                payload = stream.read(length + 1)
+            except Exception as cause:
+                raise _error("read", "body_read") from cause
         finally:
             stream.close()
         try:
@@ -168,6 +242,8 @@ class Boto3D1TrainerMailboxObjectAdapter:
             raise _error("publish", "identity_invalid") from cause
         if type(payload) is not bytes or hashlib.sha256(payload).hexdigest() != expected.sha256:
             raise _error("publish", "payload_hash")
+        if self._max_object_bytes is not None and len(payload) > self._max_object_bytes:
+            raise _error("publish", "byte_limit")
         try:
             self._client.put_object(
                 Body=payload,

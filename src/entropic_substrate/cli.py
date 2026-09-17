@@ -287,6 +287,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_score_gain_parser(sub)
 
+    from entropic_substrate.sentence_prediction.cli import add_sentence_parsers
+
+    add_sentence_parsers(sub)
+
+    from entropic_substrate.sentence_prediction.capture_cli import add_capture_parsers
+
+    add_capture_parsers(sub)
+
+    from entropic_substrate.sentence_prediction.span_cli import add_span_parsers
+
+    add_span_parsers(sub)
+
+    from entropic_substrate.sentence_prediction.source_cli import add_source_parsers
+
+    add_source_parsers(sub)
+
     from entropic_substrate.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
@@ -1081,6 +1097,27 @@ def main(
         from entropic_substrate.d_ladder_probe_cli import cmd_score_gain
 
         return cmd_score_gain(args)
+    if args.command in (
+        "h-train-probe",
+        "h-inspect-training",
+        "h-generate-probe",
+        "h-inspect-generation",
+    ):
+        from entropic_substrate.sentence_prediction.cli import cmd_sentence
+
+        return cmd_sentence(args)
+    if args.command in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
+        from entropic_substrate.sentence_prediction.capture_cli import cmd_capture
+
+        return cmd_capture(args)
+    if args.command in ("h-diagnose-spans", "h-inspect-spans"):
+        from entropic_substrate.sentence_prediction.span_cli import cmd_span
+
+        return cmd_span(args)
+    if args.command in ("h-prepare-source", "h-inspect-source"):
+        from entropic_substrate.sentence_prediction.source_cli import cmd_source
+
+        return cmd_source(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:

@@ -1,5 +1,47 @@
 # Deploy — H100 on RunPod / Vast.ai
 
+## Current H-series image
+
+The refreshed project image was built and published using Docker Build Cloud's
+`cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
+record is `publication.json` inside the DVC-backed publication capture, referenced
+by [the capture pointer](../results/h-image-publication-9a6300a.dvc). Git stores this
+human-readable pin and the pointer, not a second copy of the generated evidence.
+
+```text
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:12ed163429a1de87566788956573b0fe7f0e4d7230487f65b46debc6afce4986
+```
+
+Runtime source matches commit `9a6300a20eddd3cbe5c00f01abc1ee25f5c0b128` exactly.
+Native validation includes source replay and allowlisted S3 failure diagnostics.
+Requests must bind their code commit and bundle to this publication, not a later
+host-only controller commit. Earlier publication captures remain historical evidence.
+The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
+present. These are CPU-side packaging/provenance checks, not CUDA training,
+scientific confirmation, or successor eligibility. Paid 6K validation is authorized,
+but completion requires the worker's verified artifacts. Do not substitute `latest`
+for this digest.
+
+Publication capture used a fresh task-private DVC site cache through
+`DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
+or modified. Use a private cache for subsequent capture work too.
+
+For H-probe template preparation, Luiz confirmed the Runpod secret-reference names
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` on 2026-09-17. These are names, not
+credential values. The H object worker reads its endpoint from committed DVC topology;
+it does not require the separate `R2_API_KEY` or `MLFLOW_S3_ENDPOINT_URL` references.
+RETRACTION (2026-09-17): supplied names did not establish that account secrets existed.
+An authenticated metadata query returned zero stored secrets; pod `8raqb0mtr6alzz`
+received literal references and failed before training. Its termination was verified.
+With explicit approval, both named secrets were then created from locally verified
+R2 credentials and their metadata read back. Values were not printed or captured.
+Verify secret-name existence separately from template-reference spelling before launch.
+The current v2 OpenAPI exposes `/v2/account/secrets`; the connected tool subset does not.
+
+## Historical E-series deployment
+
+The following commands and sizing discussion retain their historical E-series scope.
+
 The `Containerfile` builds a single image (base: `pytorch/pytorch:2.13.0-cuda12.6-cudnn9-runtime`,
 CUDA 12.6 covers H100 / sm_90). Everything below assumes the image is pushed to a registry both
 platforms can pull from (GHCR or Docker Hub).
