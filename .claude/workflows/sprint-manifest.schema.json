@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sprint-manifest.schema.json",
-  "title": "Sprint Manifest \u2014 the rails/trains/parallel sequencing artifact",
-  "description": "Machine-readable sprint plan: the horizontal sequencing within a pass (companion to the vertical Linear tree of ~/.claude/plans/active/subsystem-taxonomy-level-sync-ratchet.md). Emitted by sprint-preflight's brief assembler, AMENDED AND RATIFIED at the operator interview (ratified:false until then), then consumed as the SSOT the conductor composes lifecycle launch args from \u2014 hand-typed args are the failure class this artifact retires (the p2 missing-brace launch failure, the p1c invariant drift). DOCTRINE ENCODED, enforced by the generator and the conductor because JSON Schema cannot express topology: [R-rails] for every phase P and every entry in P.contracts_consumed, the owner must appear STRICTLY EARLIER in `sequence` or already exist on trunk \u2014 consumed-before-owned is a topological violation and a generation-time HALT (this check catches seam conflicts that file-overlap analysis cannot: both M6 DECISION-NEEDED halts \u2014 deckPlan ownership drift, recap-through-promotion \u2014 were of this class). [R-door] a contract with kind:'door' (schemas, wire formats, error envelopes, ID schemes \u2014 the one-way-door list) is owned by the EARLIEST feasible phase and carries frozen_after:true; later phases consume, never redefine (M6's 'shapes freeze again after p3b' discovered this rule three times ad hoc). [R-hub] every file appearing in two or more touch_sets is a hub file and must be OWNED by exactly one phase; other touchers acquire a conflict edge driving serial order. [R-train] among phases with no rail relation, land order is ASCENDING conflict footprint (least\u2192most merge-conflict risk): the disruptive branch lands LAST, so its conflicts are resolved once, by the branch that caused them, against a settled base \u2014 this minimizes total expected rebase work and concentrates resolution at the point of maximum information. [R-parallel] phases with zero conflict edges of either type may share a parallel_group (the CALM cut: disjoint implementation is monotone and coordination-free; trunk integration is non-monotone and stays serial). [R-mode] parallel_group is only honored when every member has mode:'ratchet' \u2014 tracer-bullet phases run agent-serial by doctrine (unproven slices earn no parallelism). [R-cost] every phase carries cost_class (FM one-way-door 5): build = cites a work item and produces a persisted artifact (the default for sprint phases); serve = fulfills an external run; defense = neither.",
+  "title": "Sprint Manifest — the rails/trains/parallel sequencing artifact",
+  "description": "Machine-readable sprint plan: the horizontal sequencing within a pass (companion to the vertical Linear tree of ~/.claude/plans/active/subsystem-taxonomy-level-sync-ratchet.md). Emitted by sprint-preflight's brief assembler, AMENDED AND RATIFIED at the operator interview (ratified:false until then), then consumed as the SSOT the conductor composes lifecycle launch args from — hand-typed args are the failure class this artifact retires (the p2 missing-brace launch failure, the p1c invariant drift). DOCTRINE ENCODED, enforced by the generator and the conductor because JSON Schema cannot express topology: [R-rails] for every phase P and every entry in P.contracts_consumed, the owner must appear STRICTLY EARLIER in `sequence` or already exist on trunk — consumed-before-owned is a topological violation and a generation-time HALT (this check catches seam conflicts that file-overlap analysis cannot: both M6 DECISION-NEEDED halts — deckPlan ownership drift, recap-through-promotion — were of this class). [R-door] a contract with kind:'door' (schemas, wire formats, error envelopes, ID schemes — the one-way-door list) is owned by the EARLIEST feasible phase and carries frozen_after:true; later phases consume, never redefine (M6's 'shapes freeze again after p3b' discovered this rule three times ad hoc). [R-hub] every file appearing in two or more touch_sets is a hub file and must be OWNED by exactly one phase; other touchers acquire a conflict edge driving serial order. [R-train] among phases with no rail relation, land order is ASCENDING conflict footprint (least→most merge-conflict risk): the disruptive branch lands LAST, so its conflicts are resolved once, by the branch that caused them, against a settled base — this minimizes total expected rebase work and concentrates resolution at the point of maximum information. [R-parallel] phases with zero conflict edges of either type may share a parallel_group (the CALM cut: disjoint implementation is monotone and coordination-free; trunk integration is non-monotone and stays serial). [R-mode] parallel_group is only honored when every member has mode:'ratchet' — tracer-bullet phases run agent-serial by doctrine (unproven slices earn no parallelism). [R-cost] every phase carries cost_class (FM one-way-door 5): build = cites a work item and produces a persisted artifact (the default for sprint phases); serve = fulfills an external run; defense = neither.",
   "type": "object",
   "required": [
     "spec_version",
@@ -22,7 +22,7 @@
     "sprint": {
       "type": "string",
       "minLength": 1,
-      "description": "Human name, e.g. 'M6 deck \u2014 p4a..p5b remainder'"
+      "description": "Human name, e.g. 'M6 deck — p4a..p5b remainder'"
     },
     "trunk": {
       "type": "string",
@@ -48,7 +48,7 @@
     },
     "merge_topology": {
       "type": "string",
-      "description": "Prose statement of the integration shape, e.g. 'stacked phase branches \u2192 squash onto milestone baseline \u2192 merge --no-ff into dev'"
+      "description": "Prose statement of the integration shape, e.g. 'stacked phase branches → squash onto milestone baseline → merge --no-ff into dev'"
     },
     "sequence": {
       "type": "array",
@@ -94,7 +94,8 @@
               "type": "string",
               "pattern": "^[A-Z]+-[0-9]+$"
             },
-            "description": "Tracker ids for the phase. PORT NOTE (entropic-substrate-lm): the AGX original required at least one Linear issue per phase; this repo has no Linear project, and td-phase-lifecycle.js itself treats the field as optional (PH.issue || 'n/a'), so the minItems constraint was dropped rather than satisfied with a fabricated id."
+            "description": "Tracker ids for the phase (Linear, team FOR). PORT NOTE (entropic-substrate-lm, 2026-09-17): the Linear project \"entropic-substrate-lm — hexagonal refactor\" now exists (one milestone per phase, one issue per planned commit branch), so the upstream minItems:1 constraint is restored; the 2026-08-12 port had dropped it because no project existed then.",
+            "minItems": 1
           },
           "branch": {
             "type": "string",
@@ -128,7 +129,7 @@
               },
               "liveDeferred": {
                 "type": "string",
-                "description": "If the live gate is conductor-deferred, the reason and re-certification owner \u2014 an honest deferral is recorded, never a false green"
+                "description": "If the live gate is conductor-deferred, the reason and re-certification owner — an honest deferral is recorded, never a false green"
               }
             }
           },
@@ -162,7 +163,7 @@
                     "contract",
                     "door"
                   ],
-                  "description": "door = one-way-door class (schema/wire-format/envelope/ID) \u2014 earliest feasible owner, frozen after"
+                  "description": "door = one-way-door class (schema/wire-format/envelope/ID) — earliest feasible owner, frozen after"
                 },
                 "frozen_after": {
                   "type": "boolean",
@@ -182,7 +183,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Files/globs this phase edits \u2014 the input to hub detection and R-train footprint"
+            "description": "Files/globs this phase edits — the input to hub detection and R-train footprint"
           },
           "conflict_edges": {
             "type": "array",
@@ -208,7 +209,7 @@
                 },
                 "evidence": {
                   "type": "string",
-                  "description": "The shared files or the contract name \u2014 never a bare assertion"
+                  "description": "The shared files or the contract name — never a bare assertion"
                 },
                 "resolution": {
                   "enum": [
@@ -250,7 +251,7 @@
         "active",
         "archived"
       ],
-      "description": "Sprint lifecycle (operator-ruled 2026-07-29, D12): queued = ratified, awaiting first launch; active = phases in flight; archived = sprint complete. ROTATION PROTOCOL: at the NEXT sprint's prelaunch commit, the completed sprint's manifest flips to archived and is renamed sprint-manifest.<slug>.json, and its launch-queue.jsonl rotates to launch-queue.<slug>.jsonl \u2014 the active filenames always hold exactly one sprint, so the final no-ff merge into dev never conflicts on ledger history and concerns never mix across sprints."
+      "description": "Sprint lifecycle (operator-ruled 2026-07-29, D12): queued = ratified, awaiting first launch; active = phases in flight; archived = sprint complete. ROTATION PROTOCOL: at the NEXT sprint's prelaunch commit, the completed sprint's manifest flips to archived and is renamed sprint-manifest.<slug>.json, and its launch-queue.jsonl rotates to launch-queue.<slug>.jsonl — the active filenames always hold exactly one sprint, so the final no-ff merge into dev never conflicts on ledger history and concerns never mix across sprints."
     },
     "ledger": {
       "type": "string",

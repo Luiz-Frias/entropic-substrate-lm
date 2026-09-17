@@ -1,170 +1,1147 @@
 {
   "spec_version": "1",
-  "sprint": "Observability nervous system — p0 conductor port, p1 loguru substrate, p2 MLflow tracking (local podman live-tested, Railway-deployable)",
-  "trunk": "feature/observability-conductor",
-  "verified_at": "aac237b",
-  "ratified": true,
-  "generated_by": "operator interview 2026-08-12 (3 rounds, 12 rulings) + advisor consult on nested-run structure + Railway/R2 deployment audit. verified_at aac237b is the p0 tip; trunk feature/observability-conductor sits at c6c1646, which is main after PRs #1-#7 merged.",
-  "registry": ".claude/workflows/td-phase-lifecycle.registry.json (ported from sales-collateral-agx 2026-08-12)",
-  "ledger": ".claude/workflows/launch-queue.jsonl",
-  "merge_topology": "Linear stack on feature/observability-conductor, STRICTLY SERIAL per the td-phase-lifecycle contract (single shared worktree at .claude/worktrees/observability-sprint; the main checkout stays parked on main so no branch is held twice). Stack merges as a unit at sprint end; operator owns all merges. Branch names follow the mythwave/ convention.",
-  "lifecycle": "active",
+  "sprint": "src/ hexagonal refactor — p0..p13 (+p3b)",
+  "trunk": "refactor/hexagonal-redesign",
+  "verified_at": "bbe7976",
+  "ratified": false,
+  "generated_by": "docs/plans/src-hexagonal-refactor.plan.md (approved 2026-09-17); sprint-preflight pending",
+  "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
+  "merge_topology": "Stacked mythwave/<id> branches on refactor/hexagonal-redesign, following the p0-p13(+p3b) sequence below. Rails p0-p3b and p4-p5 land strictly serially (mode:tracer, R-mode forbids parallelism). Wave w1 = {p6-core, p7-register-gate} and wave w2 = {p8-capture, p9-run-lower, p11-analyze-review-file} are parallel_group cohorts of zero-conflict-edge ratchet phases: each member is a lane of td-phase-lifecycle-cascade (ARCH mode) in its own pre-created worktree, branch parented on the wave's entry branch (p6/p7 on mythwave/p5-kernel; p8/p9/p11 on mythwave/p7-register-gate, the w1 zip's integration tip, restated at the zip per R-train). Lanes end CERTIFIED (publishMode:'defer'); the wave ZIP is the single serializing point: conductor restacks each lane ascending by touch-set + conflict-edge footprint, runs ONE just ship-it on the integrated tip, then gt submit --stack publishes the whole wave's PRs at once. p10-run-upper, p12-historical-composition and p13-sweep are serial phases inside the lifecycle (each runs its own just ship-it). CURRENT TOOLING CAVEAT (the survey's phase-decomposition report (retained outside the repo)): td-phase-lifecycle runs strictly sequentially in a single shared worktree, so parallel_group is advisory under that tooling; refactor-wave-overlay.js assumes the pre-created-worktree-per-lane mechanism in the survey's execution-overlay report (retained outside the repo) is available before any wave is actually fanned out. The operator owns every merge and every DECISION ruling.",
   "sequence": [
-    "p0-conductor-port",
-    "p1-loguru",
-    "p2-mlflow"
+    "p0-contract-pin",
+    "p1-anchors",
+    "p2-d1-closure",
+    "p3-quarantine",
+    "p3b-observability-rail",
+    "p4-h-tracer",
+    "p5-kernel",
+    "p6-core",
+    "p7-register-gate",
+    "p8-capture",
+    "p9-run-lower",
+    "p11-analyze-review-file",
+    "p10-run-upper",
+    "p12-historical-composition",
+    "p13-sweep"
   ],
   "phases": [
     {
-      "id": "p0-conductor-port",
-      "title": "Conductor port — exit-gate typestate core + deterministic runner in Python",
-      "issues": [],
-      "branch": "mythwave/p0-conductor-port",
-      "parent": "feature/observability-conductor",
+      "id": "p0-contract-pin",
+      "title": "Contract pin: epoch, identities, sentinels, CLI/packaging, import-linter",
+      "issues": [
+        "FOR-1401",
+        "FOR-1402",
+        "FOR-1403",
+        "FOR-1404",
+        "FOR-1405",
+        "FOR-1406",
+        "FOR-1407",
+        "FOR-1408"
+      ],
+      "branch": "mythwave/p0-contract-pin",
+      "parent": "refactor/hexagonal-redesign",
+      "brief": ".claude/workflows/briefs/p0-contract-pin.md",
       "mode": "tracer",
-      "cost_class": "build",
-      "model_tier": "sonnet",
-      "gates": {
-        "liveRequired": false
-      },
-      "status": "done",
-      "contracts_owned": [
-        {
-          "name": "scripts/exit_gate.py :: ExitGateCertificate / certify_exit_gate / to_submitted",
-          "kind": "contract"
-        },
-        {
-          "name": "scripts/run_exit_gate.py :: stdout JSON {ok, cert{cmd,certifiedTip,tailDigest}, error, evidence}",
-          "kind": "door",
-          "frozen_after": true
-        }
-      ],
-      "contracts_consumed": [],
-      "touch_set": [
-        "scripts/exit_gate.py",
-        "scripts/run_exit_gate.py",
-        "tests/test_exit_gate.py",
-        "tests/test_run_exit_gate.py",
-        "pyproject.toml",
-        "justfile",
-        ".github/workflows/ci.yaml",
-        ".pre-commit-config.yaml",
-        "tests/conftest.py",
-        ".claude/workflows/**",
-        ".claude/hooks/**"
-      ],
-      "conflict_edges": [],
-      "notes": "DONE — PR #8. Landed via a dynamic impl->opus-review->fix workflow (10 agents, 4 review rounds on the core). Typecheck coverage extended to scripts/ so the typestate is enforced rather than decorative. Runtime brand guard is STRONGER than the TS original (refuses every construction path outside certify_exit_gate, including dataclasses.replace); the static half is weaker (direct construction typechecks). A flip-test caught a real Python-vs-JS hazard: `$` matches before a trailing newline in Python, so an un-stripped `git rev-parse HEAD` would have CERTIFIED — fixed to \\Z."
-    },
-    {
-      "id": "p1-loguru",
-      "title": "loguru logging substrate — full replacement across src/, with stdout-as-data carved out",
-      "issues": [],
-      "branch": "mythwave/p1-loguru",
-      "parent": "mythwave/p0-conductor-port",
-      "mode": "tracer",
-      "cost_class": "build",
-      "model_tier": "sonnet",
-      "gates": {
-        "liveRequired": false
-      },
-      "status": "queued",
-      "contracts_owned": [
-        {
-          "name": "src/entropic_substrate/logging.py :: configure_logging() — lazy sink setup at CLI entry only",
-          "kind": "contract"
-        },
-        {
-          "name": "human stderr sink format (America/New_York wall clock)",
-          "kind": "contract"
-        },
-        {
-          "name": "structured JSON log sink format (UTC ISO-8601) — persisted, machine-parsed",
-          "kind": "door",
-          "frozen_after": true
-        }
-      ],
-      "contracts_consumed": [],
-      "touch_set": [
-        "src/entropic_substrate/logging.py",
-        "src/entropic_substrate/cli.py",
-        "src/entropic_substrate/train.py",
-        "src/entropic_substrate/checkpoint.py",
-        "src/entropic_substrate/telemetry.py",
-        "tests/conftest.py",
-        "tests/test_logging.py",
-        "pyproject.toml"
-      ],
-      "conflict_edges": [],
-      "brief": "OPERATOR RULING: loguru FULLY replaces output across src/ and is therefore a RUNTIME dependency, not a dev one. Gate banners (DECISION-NEEDED blocks) DO gain standard loguru formatting.\n\nTHE ONE CARVE-OUT — stdout-as-data stays raw print(). `scripts/run_ladder.sh` captures `python -m entropic_substrate.telemetry final-eval --metric nats_per_byte` via $( ) and feeds it to float(); a loguru timestamp prefix on that line crashes the ladder with ValueError. tests/test_telemetry.py::test_cli_final_eval_prints_only_the_number asserts the stdout is exactly '1.25'. Same class for scripts/run_exit_gate.py, whose stdout must remain a single parseable JSON object. Rule: machine-consumed stdout is DATA and stays raw; diagnostics and human-facing banners are LOGS and go through loguru.\n\nTIMEZONE: use zoneinfo.ZoneInfo('America/New_York') via a custom format function, NOT a fixed EST offset — today is EDT (UTC-4) and a hardcoded EST would be an hour off for ~8 months a year. Pods run UTC, so this also renders pod logs in operator-local time. The structured JSON sink stays UTC ISO-8601 (human sink local, machine sink absolute).\n\nTHE PYTEST TRAP: loguru binds sys.stderr at HANDLER-CREATION time. pytest's capsys replaces sys.stderr per test, so a handler created at import time writes to the original stream and capsys silently sees nothing — the existing gate assertions would stop asserting anything real while still passing. Configure sinks LAZILY inside configure_logging() called at CLI entry, never at import, and add a conftest fixture that re-points a sink at the live sys.stderr per test.",
-      "notes": "Lands FIRST because it rewrites the output substrate; p2 then adds a consumer of the same events. Running them in the other order means p2's diff gets rewritten by p1."
-    },
-    {
-      "id": "p2-mlflow",
-      "title": "MLflow tracking — MetricSink port, R2 artifacts, live-tested on local podman",
-      "issues": [],
-      "branch": "mythwave/p2-mlflow",
-      "parent": "mythwave/p1-loguru",
-      "mode": "tracer",
-      "cost_class": "build",
-      "model_tier": "sonnet",
       "gates": {
         "liveRequired": true
       },
-      "status": "queued",
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
       "contracts_owned": [
         {
-          "name": "src/entropic_substrate/sinks.py :: MetricSink port + JsonlSink (authoritative) + MlflowSink (best-effort)",
-          "kind": "contract"
-        },
-        {
-          "name": "MLflow run identity: params/tags schema (exp, seed, config_hash, git_sha) — persisted in an external store",
+          "name": ".importlinter :: layers kernel < core < ladder < historical < composition (__legacy outside the contract until p13; NO ignore list, ruled DN-P1) + forbidden(core.* → mlflow|boto3|botocore|dvc|runpod|huggingface_hub|datasets)",
           "kind": "door",
           "frozen_after": true
         },
         {
-          "name": "kappa metric namespace: kappa/L{i}/h{j} + kappa/spread_max + per-layer spread — renaming orphans history",
+          "name": "tests/test_identity_epoch.py :: h-source-reader-v2, h-checkpoint-reader-v1, 52-entry D1 closure manifest, CHECKPOINT_FORMAT_VERSION, both codec construction_digests, every *-v1/*-v2 literal",
           "kind": "door",
           "frozen_after": true
         },
         {
-          "name": "CLI: mlflow-aggregate subcommand (idempotent seed-aggregation)",
+          "name": "tests/test_module_identity.py :: sys.modules single-object + _TOKEN singleton across both spellings for all 330(+2) modules",
           "kind": "contract"
         },
         {
-          "name": "compose.yaml :: local MLflow + Postgres stack",
+          "name": "tests/test_cli_surface.py :: --help snapshot for entropic_substrate.cli and every subcommand, -m telemetry, -m sentence_prediction.worker_command",
           "kind": "contract"
         },
         {
-          "name": "justfile :: container-test recipe",
+          "name": "tests/test_packaging_identity.py :: packages.find result + basedpyright/pre-commit include regexes",
+          "kind": "contract"
+        },
+        {
+          "name": "graph epoch record (tools/import_graph.py output at HEAD) :: re-derived epoch (332 files / 326 edge-bearing modules / 1783 edges at bbe7976)",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [],
+      "touch_set": [
+        ".importlinter",
+        "tests/test_identity_epoch.py",
+        "tests/test_module_identity.py",
+        "tests/test_cli_surface.py",
+        "tests/test_packaging_identity.py",
+        "pyproject.toml",
+        "justfile"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p13-sweep",
+          "type": "contract",
+          "evidence": ".importlinter ignore list emptied there",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict."
+    },
+    {
+      "id": "p1-anchors",
+      "title": "Layout-invariant path anchors, five sites, RED-first",
+      "issues": [
+        "FOR-1409",
+        "FOR-1410",
+        "FOR-1411",
+        "FOR-1412",
+        "FOR-1413",
+        "FOR-1414"
+      ],
+      "branch": "mythwave/p1-anchors",
+      "parent": "mythwave/p0-contract-pin",
+      "brief": ".claude/workflows/briefs/p1-anchors.md",
+      "mode": "tracer",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "src/entropic_substrate/paths.py :: repo_root() resolved from the package __init__, not from file depth",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        ".importlinter (p0)",
+        "tests/test_identity_epoch.py (p0)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/paths.py",
+        "src/entropic_substrate/config.py",
+        "src/entropic_substrate/sinks.py",
+        "src/entropic_substrate/analysis/d1_reader_source_closure.py",
+        "src/entropic_substrate/d_ladder_worker_runtime.py",
+        "src/entropic_substrate/sentence_prediction/worker_execution.py",
+        "tests/test_worker_source_anchor.py",
+        "tests/test_config.py",
+        "tests/test_sinks.py",
+        ".claude/workflows/landed-set/p1-anchors.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p2-d1-closure",
+          "type": "file",
+          "evidence": "analysis/d1_reader_source_closure.py (p1 owns the file; p2 removes it)",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "p4-h-tracer",
+          "type": "file",
+          "evidence": "sentence_prediction/worker_execution.py",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p3b-observability-rail",
+          "type": "file",
+          "evidence": "sinks.py (p1 rewrites the parents[2] resolver; p3b rewrites sink construction)",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently."
+    },
+    {
+      "id": "p2-d1-closure",
+      "title": "Retire the D1 reader source closure and its manifest arm",
+      "issues": [
+        "FOR-1415",
+        "FOR-1416",
+        "FOR-1417",
+        "FOR-1418",
+        "FOR-1419"
+      ],
+      "branch": "mythwave/p2-d1-closure",
+      "parent": "mythwave/p1-anchors",
+      "brief": ".claude/workflows/briefs/p2-d1-closure.md",
+      "mode": "tracer",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "D1 external-analysis control envelope :: reader_source_manifest_base64 removed",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "analysis/d1_reader_source_closure.py :: retired",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "src/entropic_substrate/paths.py (p1)",
+        "tests/test_identity_epoch.py (p0)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/analysis/d1_reader_source_closure.py",
+        "src/entropic_substrate/analysis/d1_external_analysis_control.py",
+        "src/entropic_substrate/analysis/d1_external_worker.py",
+        "tests/test_d1_reader_source_closure.py",
+        "tests/test_d1_external_worker.py",
+        "tests/test_review_packet.py",
+        ".claude/workflows/landed-set/p2-d1-closure.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p11-analyze-review-file",
+          "type": "file",
+          "evidence": "analysis/d1_external_*.py move later",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED."
+    },
+    {
+      "id": "p3-quarantine",
+      "title": "__legacy/ quarantine + generated shim layer + landed-set manifest",
+      "issues": [
+        "FOR-1420",
+        "FOR-1421",
+        "FOR-1422",
+        "FOR-1423",
+        "FOR-1424",
+        "FOR-1425",
+        "FOR-1426"
+      ],
+      "branch": "mythwave/p3-quarantine",
+      "parent": "mythwave/p2-d1-closure",
+      "brief": ".claude/workflows/briefs/p3-quarantine.md",
+      "mode": "tracer",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "tools/gen_shims.py :: one 3-line sys.modules alias file per old dotted path, generated from mapping.json",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": ".claude/workflows/landed-set.json :: the manifest driving both the shim generator and the ignore list",
           "kind": "contract"
         }
       ],
       "contracts_consumed": [
-        "src/entropic_substrate/logging.py (p1)",
-        "results/*.jsonl record shape (unchanged — telemetry.py MUST NOT be modified)"
+        ".importlinter (p0)",
+        "src/entropic_substrate/paths.py (p1)",
+        "D1 closure retirement (p2)"
       ],
       "touch_set": [
-        "src/entropic_substrate/sinks.py",
-        "src/entropic_substrate/train.py",
-        "src/entropic_substrate/cli.py",
-        "compose.yaml",
-        "justfile",
-        ".env.example",
-        "tests/test_sinks.py",
-        "tests/test_mlflow_integration.py",
-        "pyproject.toml"
+        "src/entropic_substrate/**",
+        "src/entropic_substrate/__legacy/**",
+        "tools/gen_shims.py",
+        ".claude/workflows/landed-set.json",
+        "tests/test_shim_layer.py",
+        ".claude/workflows/landed-set/p3-quarantine.json"
       ],
       "conflict_edges": [
         {
-          "with": "p1-loguru",
+          "with": "p3b-observability-rail",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p4-h-tracer",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p5-kernel",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p6-core",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p7-register-gate",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p8-capture",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p9-run-lower",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p11-analyze-review-file",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p10-run-upper",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p12-historical-composition",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p13-sweep",
+          "type": "contract",
+          "evidence": "tools/gen_shims.py + landed-set.json",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo)."
+    },
+    {
+      "id": "p3b-observability-rail",
+      "title": "Observability rail: loguru substrate, MetricSink port + adapters, run-descriptor door (lands before the H tracer)",
+      "issues": [
+        "FOR-1427",
+        "FOR-1428",
+        "FOR-1429",
+        "FOR-1430",
+        "FOR-1431",
+        "FOR-1432",
+        "FOR-1433",
+        "FOR-1434"
+      ],
+      "branch": "mythwave/p3b-observability-rail",
+      "parent": "mythwave/p3-quarantine",
+      "brief": ".claude/workflows/briefs/p3b-observability-rail.md",
+      "mode": "tracer",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "kernel/runtime/logging.py :: configure_logging substrate (loguru; human stderr, report stdout, structured JSONL)",
+          "kind": "contract"
+        },
+        {
+          "name": "ladder/capture/ports/metric_sink.py :: MetricSink port",
+          "kind": "contract"
+        },
+        {
+          "name": "ladder/capture/adapters/{jsonl,composite,mlflow}.py :: JsonlSink (authoritative) / CompositeSink / MlflowSink (best-effort)",
+          "kind": "contract"
+        },
+        {
+          "name": "mlflow importable ONLY from ladder.capture.adapters.mlflow",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "tracking_contracts.py + build_sink_for_run :: run-descriptor door",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "tests/test_observability_conformance.py :: zero bare print() outside the two pinned stdout sites; every entry point calls configure_logging at entry; every landed emitter resolves its sink through the port",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        ".importlinter layers + forbidden contracts (p0)",
+        "tools/gen_shims.py + landed-set.json (p3)",
+        "src/entropic_substrate/paths.py (p1)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/logging.py",
+        "src/entropic_substrate/sinks.py",
+        "src/entropic_substrate/tracking_contracts.py",
+        "src/entropic_substrate/d1_observability.py",
+        "src/entropic_substrate/d1_tracking.py",
+        "tests/test_observability_conformance.py",
+        "src/entropic_substrate/kernel/runtime/logging.py",
+        "src/entropic_substrate/ladder/capture/ports/metric_sink.py",
+        "src/entropic_substrate/ladder/capture/adapters/jsonl.py",
+        "src/entropic_substrate/ladder/capture/adapters/composite.py",
+        "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
+        ".claude/workflows/landed-set/p3b-observability-rail.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p1-anchors",
           "type": "file",
-          "evidence": "src/entropic_substrate/train.py, src/entropic_substrate/cli.py — both phases edit them",
+          "evidence": "sinks.py — p1 rewrites its parents[2] resolver, p3b rewrites its sink construction",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p0-contract-pin",
+          "type": "contract",
+          "evidence": ".importlinter forbidden-contract entry for the mlflow-adapter allowlist",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p4-h-tracer",
+          "type": "contract",
+          "evidence": "core/sentence emits through CompositeSink under a run descriptor — p4 consumes the landed port/adapters, not old-prefix shims",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PRIORITY AMENDMENT (ruled 2026-09-17, P-1): lands the E-series observability seam FIRST, ahead of the H tracer, so p4 consumes landed addresses rather than old-prefix shims (a per-phase no-old-prefix test would otherwise fail on core/sentence at p4). D1's D1JournalObserver/D1MlflowObserver protocols in d1_observability.py are re-based as adapters of the one MetricSink port — no second port survives. E entry points keep working through shims; the p3b `just ship-it` live gate proves the moved MLflow path end to end for the first time. Teeth (added to .importlinter and this phase's test set, both arms by mutation): add `import mlflow` in core/sentence → RED; add one bare print() outside the two pinned sites (telemetry final-eval, cli eval --json) → RED; drop configure_logging from worker_command → RED. Rewrite-on-arrival is extended for every subsequent phase: print() routed through logger, metric emission routed through MetricSink, every -m entry point calls configure_logging at entry — the one permitted behaviour-change class inside structural phases (measured scientific behaviour stays frozen, guarded by the identity fixtures)."
+    },
+    {
+      "id": "p4-h-tracer",
+      "title": "H lane migration; both H reader identities bumped",
+      "issues": [
+        "FOR-1435",
+        "FOR-1436",
+        "FOR-1437",
+        "FOR-1438",
+        "FOR-1439",
+        "FOR-1440",
+        "FOR-1441",
+        "FOR-1442"
+      ],
+      "branch": "mythwave/p4-h-tracer",
+      "parent": "mythwave/p3b-observability-rail",
+      "brief": ".claude/workflows/briefs/p4-h-tracer.md",
+      "mode": "tracer",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "h-source-reader-v3 :: sentence_prediction/capture.py _READER_MODULES rewritten to post-move dotted names",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "h-checkpoint-reader-v2 :: sentence_prediction/checkpoint.py _reader_identity() rewritten from a package glob to an explicit dotted-name tuple",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "docs/identity/read-old-table.md :: v2→v3 and v1→v2 rows with the pinned p0 digests",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "kernel/artifacts, kernel/lifecycle, core/latent/{metric,dynamics} addresses (reader-closure rail)",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "tools/gen_shims.py + landed-set.json (p3)",
+        "src/entropic_substrate/paths.py (p1)",
+        "tests/test_identity_epoch.py (p0)",
+        "ladder/capture/ports/metric_sink.py + adapters (p3b)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/sentence_prediction/**",
+        "src/entropic_substrate/__legacy/h_probe_*.py",
+        "src/entropic_substrate/__legacy/h_probe_command.py",
+        "src/entropic_substrate/__legacy/h_probe_controller.py",
+        "src/entropic_substrate/__legacy/h_runpod_transport.py",
+        "src/entropic_substrate/__legacy/git_environment.py",
+        "src/entropic_substrate/__legacy/d1_artifact_snapshot.py",
+        "src/entropic_substrate/__legacy/evidence/lifecycle.py",
+        "src/entropic_substrate/__legacy/predictive_state/metric.py",
+        "src/entropic_substrate/__legacy/predictive_state/dynamics.py",
+        "src/entropic_substrate/core/sentence/**",
+        "src/entropic_substrate/core/probe/score_gain.py",
+        "src/entropic_substrate/ladder/run/training/**",
+        "src/entropic_substrate/ladder/run/worker/**",
+        "src/entropic_substrate/ladder/run/transport/**",
+        "src/entropic_substrate/ladder/run/spanprobe/**",
+        "src/entropic_substrate/ladder/run/journal/**",
+        "src/entropic_substrate/ladder/capture/custody/h_source.py",
+        "src/entropic_substrate/kernel/artifacts/**",
+        "src/entropic_substrate/kernel/lifecycle/**",
+        "src/entropic_substrate/kernel/runtime/**",
+        "src/entropic_substrate/composition/entrypoints/**",
+        "tests/test_identity_epoch.py",
+        ".claude/workflows/landed-set/p4-h-tracer.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p5-kernel",
+          "type": "contract",
+          "evidence": "kernel/artifacts + kernel/lifecycle owned here, not in p5",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "p6-core",
+          "type": "contract",
+          "evidence": "core/latent metric+dynamics owned here",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "p9-run-lower",
+          "type": "file",
+          "evidence": "ladder/run/{worker,transport} sub-packages created here",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p10-run-upper",
+          "type": "file",
+          "evidence": "ladder/run/{worker,transport} sub-packages created here",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "First strangler tracer (operator ruling: H first) — the 55-module H lane plus the 4 reader-closure rail modules (d1_artifact_snapshot, evidence.lifecycle, predictive_state.metric/dynamics) so both H identities fire exactly once; PLUS h_probe_command.py and h_probe_controller.py, two H-lane modules discovered since the survey (dest ladder/run/worker — conductor-confirmed 2026-09-17). checkpoint.py's glob RAISES once package.parent is ladder/run (not merely changes value) — rewritten to an explicit dotted-name tuple, the idiom capture.py already uses. d_ladder_worker_runtime splits here (E-7): the live half (measure_hardware, verify_source_tree) goes to ladder/run/worker with the H tracer, verify_worker_source goes to historical/d_ladder. git_environment.py diverges from the ruling's literal wording (E-12): zero H importers, lands in p5 kernel/runtime instead. Guard-teeth: revert one of the four reader-closure rail modules to __legacy and the checkpoint identity test goes RED with a resolution error, not a digest mismatch."
+    },
+    {
+      "id": "p5-kernel",
+      "title": "kernel/{identity,evidence_class,verdict,runtime}",
+      "issues": [
+        "FOR-1443",
+        "FOR-1444",
+        "FOR-1445",
+        "FOR-1446",
+        "FOR-1447",
+        "FOR-1448",
+        "FOR-1449",
+        "FOR-1450"
+      ],
+      "branch": "mythwave/p5-kernel",
+      "parent": "mythwave/p4-h-tracer",
+      "brief": ".claude/workflows/briefs/p5-kernel.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "kernel/identity, kernel/evidence_class, kernel/verdict, kernel/runtime addresses",
+          "kind": "contract"
+        },
+        {
+          "name": "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "tools/gen_shims.py + landed-set.json (p3)",
+        "kernel/artifacts, kernel/lifecycle (p4)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/kernel_identity_modules/**",
+        "src/entropic_substrate/__legacy/evidence_class_modules/**",
+        "src/entropic_substrate/__legacy/verdict_modules/**",
+        "src/entropic_substrate/__legacy/runtime_modules/**",
+        "src/entropic_substrate/__legacy/git_environment.py",
+        "src/entropic_substrate/kernel/identity/**",
+        "src/entropic_substrate/kernel/evidence_class/**",
+        "src/entropic_substrate/kernel/verdict/**",
+        "src/entropic_substrate/kernel/runtime/**",
+        "src/entropic_substrate/__legacy/d1_training_step.py",
+        "src/entropic_substrate/__legacy/d1_calibration.py",
+        "src/entropic_substrate/__legacy/d1_training_step_records.py",
+        "src/entropic_substrate/__legacy/d1_calibration_records.py",
+        "tests/test_d1_training_step_split.py",
+        ".claude/workflows/landed-set/p5-kernel.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p7-register-gate",
+          "type": "contract",
+          "evidence": "kernel.identity: 123 eager importers, 53 shared with register (paid via shims under rewrite-on-arrival)",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Lands the remaining kernel: identity (2), evidence_class (2), verdict (5), runtime (4), plus git_environment.py (12 lines, zero outbound edges, two D1 importers — E-12 divergence from the ruling's literal wording, recorded explicitly rather than silently). kernel/artifacts and kernel/lifecycle already landed in p4. Highest fan-out rail (kernel.identity: 123 eager importers, measured via blast_radius.py) — lands alone, before the waves. Guard-teeth: add one kernel→ladder import and the layers contract goes RED; reintroduce one old-prefix import in a landed package and the no-old-prefix test goes RED (ignore-list count must strictly decrease every phase from here).\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+    },
+    {
+      "id": "p6-core",
+      "title": "core/{geometry,substrate,observation,corpus,probe,latent}",
+      "issues": [
+        "FOR-1451",
+        "FOR-1452",
+        "FOR-1453",
+        "FOR-1454",
+        "FOR-1455",
+        "FOR-1456",
+        "FOR-1457"
+      ],
+      "branch": "mythwave/p6-core",
+      "parent": "mythwave/p5-kernel",
+      "brief": ".claude/workflows/briefs/p6-core.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "core/{geometry,substrate,observation,corpus,probe,latent} addresses",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "kernel addresses (p4, p5)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/geometry/**",
+        "src/entropic_substrate/__legacy/substrate/**",
+        "src/entropic_substrate/__legacy/observation/**",
+        "src/entropic_substrate/__legacy/corpus/**",
+        "src/entropic_substrate/__legacy/probe/**",
+        "src/entropic_substrate/__legacy/latent/**",
+        "src/entropic_substrate/layers/kappa_norm.py",
+        "src/entropic_substrate/core/geometry/**",
+        "src/entropic_substrate/core/substrate/**",
+        "src/entropic_substrate/core/observation/**",
+        "src/entropic_substrate/core/corpus/**",
+        "src/entropic_substrate/core/probe/**",
+        "src/entropic_substrate/core/latent/**",
+        ".claude/workflows/landed-set/p6-core.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p4-h-tracer",
+          "type": "contract",
+          "evidence": "core/latent metric+dynamics landed in p4",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": "w1",
+      "status": "queued",
+      "notes": "The science layer: geometry 5, substrate 6, observation 5, corpus 3, probe 2, latent 11 (metric+dynamics already landed in p4). Zero algorithm or parameter change — operator-ruled zone; retracts the layers/kappa_norm.py dead-end filing in the moving commit (UnitNorm is live in build_norm). Guard-teeth: add one mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets import to any of the 54 core modules and the forbidden contract goes RED; numerics tests stay byte-identical. Under EAGER rewriting this phase would share 8 importer files with p7 (core.latent × ladder.register) — the wave is legal only because rewrite-on-arrival makes the touch sets disjoint (the survey's phase-decomposition report (retained outside the repo))."
+    },
+    {
+      "id": "p7-register-gate",
+      "title": "ladder/register + ladder/gate",
+      "issues": [
+        "FOR-1458",
+        "FOR-1459",
+        "FOR-1460",
+        "FOR-1461",
+        "FOR-1462",
+        "FOR-1463"
+      ],
+      "branch": "mythwave/p7-register-gate",
+      "parent": "mythwave/p5-kernel",
+      "brief": ".claude/workflows/briefs/p7-register-gate.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "ladder/register (17), ladder/gate (3), ladder/register/rungs/, ladder/register/arms/ scaffolding",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "kernel addresses (p4, p5)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/experiments/d1_family.py",
+        "src/entropic_substrate/__legacy/experiments/d1_runs.py",
+        "src/entropic_substrate/__legacy/register_modules/**",
+        "src/entropic_substrate/__legacy/gate_modules/**",
+        "src/entropic_substrate/ladder/register/**",
+        "src/entropic_substrate/ladder/register/rungs/**",
+        "src/entropic_substrate/ladder/register/arms/**",
+        "src/entropic_substrate/ladder/gate/**",
+        ".claude/workflows/landed-set/p7-register-gate.json"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "w1",
+      "status": "queued",
+      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied."
+    },
+    {
+      "id": "p8-capture",
+      "title": "ladder/capture, five sub-packages",
+      "issues": [
+        "FOR-1464",
+        "FOR-1465",
+        "FOR-1466",
+        "FOR-1467",
+        "FOR-1468",
+        "FOR-1469",
+        "FOR-1470"
+      ],
+      "branch": "mythwave/p8-capture",
+      "parent": "mythwave/p7-register-gate",
+      "brief": ".claude/workflows/briefs/p8-capture.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "ladder/capture/{records,reader,custody,resource,ledger}",
+          "kind": "contract"
+        },
+        {
+          "name": "ladder/capture/reader/telemetry.py old dotted name disposition",
+          "kind": "door"
+        }
+      ],
+      "contracts_consumed": [
+        "kernel addresses (p4, p5)",
+        "core addresses (p6)",
+        "ladder/capture/ports + adapters (p3b)",
+        "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/capture_custody/**",
+        "src/entropic_substrate/__legacy/capture_records/**",
+        "src/entropic_substrate/__legacy/capture_resource/**",
+        "src/entropic_substrate/__legacy/capture_reader/**",
+        "src/entropic_substrate/__legacy/capture_ledger/**",
+        "src/entropic_substrate/ladder/capture/custody/**",
+        "src/entropic_substrate/ladder/capture/records/**",
+        "src/entropic_substrate/ladder/capture/resource/**",
+        "src/entropic_substrate/ladder/capture/reader/**",
+        "src/entropic_substrate/ladder/capture/ledger/**",
+        ".claude/workflows/landed-set/p8-capture.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p5-kernel",
+          "type": "contract",
+          "evidence": "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": "w2",
+      "status": "queued",
+      "notes": "DVC-CAPTURED stage as five measured sub-packages: custody 20, records 10, resource 9, reader 9, ledger 4 (ext fan-in 74/35/46/27/20, measured — the survey's phase-decomposition report (retained outside the repo)). sentence_prediction/capture.py already landed in p4. Lands the record halves of the d1_training_step and d1_calibration splits RED-first (class 2 of the honest residue, §D.4). telemetry.py stays the only admissible read side, asserted by mutation (raises rather than returning empty on inadmissible telemetry). This is a genuine intra-wave R-hub edge with p9 (record vs torch halves of the same split) — flagged for the wave's plan-wave gate, not silently resolved here.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+    },
+    {
+      "id": "p9-run-lower",
+      "title": "ladder/run lower stack (values, transport, provider, training, construction)",
+      "issues": [
+        "FOR-1471",
+        "FOR-1472",
+        "FOR-1473",
+        "FOR-1474",
+        "FOR-1475",
+        "FOR-1476",
+        "FOR-1477"
+      ],
+      "branch": "mythwave/p9-run-lower",
+      "parent": "mythwave/p7-register-gate",
+      "brief": ".claude/workflows/briefs/p9-run-lower.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "ladder/run/{values,transport,provider,resource,training,construction}",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "kernel addresses",
+        "core addresses (p6)",
+        "ladder/run/{worker,transport,journal} skeleton (p4)",
+        "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/d1_operator_values.py",
+        "src/entropic_substrate/__legacy/d1_operator_evidence.py",
+        "src/entropic_substrate/__legacy/d1_operator_ports.py",
+        "src/entropic_substrate/__legacy/d1_resource_activation.py",
+        "src/entropic_substrate/__legacy/d1_r2_runtime_composition.py",
+        "src/entropic_substrate/ladder/run/values/**",
+        "src/entropic_substrate/ladder/run/transport/**",
+        "src/entropic_substrate/ladder/run/provider/**",
+        "src/entropic_substrate/ladder/run/resource/**",
+        "src/entropic_substrate/ladder/run/training/**",
+        "src/entropic_substrate/ladder/run/construction/**",
+        ".claude/workflows/landed-set/p9-run-lower.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p10-run-upper",
+          "type": "contract",
+          "evidence": "ladder/run/values + ladder/run/transport",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p5-kernel",
+          "type": "contract",
+          "evidence": "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": "w2",
+      "status": "queued",
+      "notes": "Lower half of the run stack, decomposed by measured DAG depth rather than by name: values (7 promoted value/port modules — d1_operator_values, d1_operator_evidence, d1_operator_ports), transport 15, provider 9, resource 1, training 20, construction 5 (receives d1_r2_runtime_composition). Includes the torch halves of the d1_training_step and d1_calibration splits. Sub-package membership validated with remap_check.py before the first git mv (target: no worse than the pre-agreed intra-run cycle count). Guard-teeth: move d1_operator_values back into campaign and the committed remap_check output regenerates strictly worse.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+    },
+    {
+      "id": "p11-analyze-review-file",
+      "title": "ladder/{analyze,review,file}",
+      "issues": [
+        "FOR-1478",
+        "FOR-1479",
+        "FOR-1480",
+        "FOR-1481",
+        "FOR-1482"
+      ],
+      "branch": "mythwave/p11-analyze-review-file",
+      "parent": "mythwave/p7-register-gate",
+      "brief": ".claude/workflows/briefs/p11-analyze-review-file.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "ladder/analyze (24), ladder/review (13), ladder/file (12)",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "kernel addresses",
+        "core addresses (p6)",
+        "D1 closure retirement (p2)",
+        "ladder/capture/reader (p8)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/analysis/d1_external_analysis_control.py",
+        "src/entropic_substrate/__legacy/analysis/d1_external_worker.py",
+        "src/entropic_substrate/__legacy/analyze_modules/**",
+        "src/entropic_substrate/__legacy/review_modules/**",
+        "src/entropic_substrate/__legacy/file_modules/**",
+        "src/entropic_substrate/ladder/analyze/**",
+        "src/entropic_substrate/ladder/review/**",
+        "src/entropic_substrate/ladder/review/isolation/**",
+        "src/entropic_substrate/ladder/file/**",
+        ".claude/workflows/landed-set/p11-analyze-review-file.json"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "w2",
+      "status": "queued",
+      "notes": "ANALYZED, BLIND REVIEWED and FILED stages. The container/ACL/hermetic isolation ring lands in ladder/review/isolation, not analyze, per proposal C's named deviation. The two d1_external_* modules arrive already free of the retired reader closure (p2). In the wave, not p10, because p10 has a contract edge on p9's values/transport (rails-before), which p11 does not share. Guard-teeth: give ladder/analyze a live-service import and the forbidden contract goes RED; the Okabe-Ito chart lane and the alias commitment/reveal round-trip tests pass unchanged."
+    },
+    {
+      "id": "p10-run-upper",
+      "title": "ladder/run upper stack (campaign, closure, ckptsync, D1 worker)",
+      "issues": [
+        "FOR-1483",
+        "FOR-1484",
+        "FOR-1485",
+        "FOR-1486",
+        "FOR-1487",
+        "FOR-1488"
+      ],
+      "branch": "mythwave/p10-run-upper",
+      "parent": "mythwave/p11-analyze-review-file",
+      "brief": ".claude/workflows/briefs/p10-run-upper.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "ladder/run/{campaign,closure,ckptsync} and the D1 half of ladder/run/worker",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "ladder/run/values, ladder/run/transport (p9)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/d_ladder_campaign_modules/**",
+        "src/entropic_substrate/__legacy/d_ladder_closure_modules/**",
+        "src/entropic_substrate/__legacy/d_ladder_ckptsync_modules/**",
+        "src/entropic_substrate/__legacy/d1_runpod_adapter.py",
+        "src/entropic_substrate/__legacy/provider_launch.py",
+        "src/entropic_substrate/ladder/run/campaign/**",
+        "src/entropic_substrate/ladder/run/closure/**",
+        "src/entropic_substrate/ladder/run/ckptsync/**",
+        "src/entropic_substrate/ladder/run/worker/**",
+        ".claude/workflows/landed-set/p10-run-upper.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p9-run-lower",
+          "type": "contract",
+          "evidence": "ladder/run/values + ladder/run/transport",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Serial by necessity, not by wave membership: consumes p9's values and transport sub-packages, so it lands strictly after wave w2 zips. Upper half of the run stack: campaign 15, closure 6, ckptsync 5, minus the modules promoted down in p9 (d1_operator_values/evidence/ports). provider_launch.known_workers and d1_runpod_adapter.py:345's dotted allowlist are edited in the SAME commit as the move (E-4: edit the scripts, no forwarders). Guard-teeth: leave one allowlist entry stale and the p0 CLI/entrypoint pin goes RED."
+    },
+    {
+      "id": "p12-historical-composition",
+      "title": "historical/{e_series,d_ladder}, composition/; __legacy empty",
+      "issues": [
+        "FOR-1489",
+        "FOR-1490",
+        "FOR-1491",
+        "FOR-1492",
+        "FOR-1493",
+        "FOR-1494"
+      ],
+      "branch": "mythwave/p12-historical-composition",
+      "parent": "mythwave/p10-run-upper",
+      "brief": ".claude/workflows/briefs/p12-historical-composition.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": "historical/ governed read-only package (E-series: train.py, field_pretrain.py, E model stack, E charts)",
+          "kind": "contract"
+        },
+        {
+          "name": "historical/d_ladder/",
+          "kind": "contract"
+        },
+        {
+          "name": "composition/{cli.py,wiring,entrypoints}",
+          "kind": "contract"
+        },
+        {
+          "name": "__legacy/ empty postcondition",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "every landed address (p0-p11)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/__legacy/train.py",
+        "src/entropic_substrate/__legacy/field_pretrain.py",
+        "src/entropic_substrate/__legacy/d_ladder_artifacts.py",
+        "src/entropic_substrate/__legacy/d_ladder_execution.py",
+        "src/entropic_substrate/__legacy/analysis/d1_probe.py",
+        "src/entropic_substrate/__legacy/analysis/ladder_probe.py",
+        "src/entropic_substrate/__legacy/experiments/ladder_profile.py",
+        "src/entropic_substrate/historical/e_series/**",
+        "src/entropic_substrate/historical/d_ladder/**",
+        "src/entropic_substrate/composition/cli.py",
+        "src/entropic_substrate/composition/wiring/**",
+        "src/entropic_substrate/composition/entrypoints/**",
+        "justfile",
+        "scripts/run_ladder.sh",
+        "Containerfile",
+        ".claude/workflows/landed-set/p12-historical-composition.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p0-contract-pin",
+          "type": "file",
+          "evidence": "justfile",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "E-series to a governed read-only historical/ (proposal B §6); the 11 d_ladder modules plus analysis/d1_probe and analysis/ladder_probe to historical/d_ladder — their only importers are inside the lane (E-6/DN-9). One composition root: cli.py, per-lane wiring, -m entrypoints (E-9: run/construction accepted as a second composition site, deviation recorded in docs/architecture.md). d_ladder_artifacts + d_ladder_execution move as ONE unit (the second module-level SCC). E-4 dotted entrypoint parameterization lands here for justfile/run_ladder.sh/Containerfile. Guard-teeth: postcondition test asserts zero files under __legacy/; split the SCC pair across commits and collection goes RED. justfile is also touched by p0 — hub conflict recorded on both entries."
+    },
+    {
+      "id": "p13-sweep",
+      "title": "Tests onto new paths, shims deleted, contracts tightened",
+      "issues": [
+        "FOR-1495",
+        "FOR-1496",
+        "FOR-1497",
+        "FOR-1498",
+        "FOR-1499",
+        "FOR-1500"
+      ],
+      "branch": "mythwave/p13-sweep",
+      "parent": "mythwave/p12-historical-composition",
+      "brief": ".claude/workflows/briefs/p13-sweep.md",
+      "mode": "ratchet",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "defense",
+      "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
+      "contracts_owned": [
+        {
+          "name": ".importlinter :: __legacy added to the layers contract (package must be gone); full enforcement, zero exceptions, no ignore list (DN-P1)",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "the old dotted namespace :: retired",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "every phase's addresses (p0-p12)"
+      ],
+      "touch_set": [
+        "tests/**",
+        "src/entropic_substrate/__legacy/**",
+        "tools/gen_shims.py",
+        ".claude/workflows/landed-set.json",
+        ".importlinter",
+        ".claude/workflows/landed-set/p13-sweep.json"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p0-contract-pin",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p1-anchors",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p2-d1-closure",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p3-quarantine",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p3b-observability-rail",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p4-h-tracer",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p5-kernel",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p6-core",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p7-register-gate",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p8-capture",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p9-run-lower",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p11-analyze-review-file",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p10-run-upper",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "p12-historical-composition",
+          "type": "file",
+          "evidence": "the shim files and every test importing an old dotted path",
           "resolution": "serial-after"
         }
       ],
-      "brief": "OPERATOR RULINGS (interview 2026-08-12), all binding:\n\n1. TOPOLOGY: self-hosted MLflow server + R2 artifacts. Railway project = MLflow container service + Postgres service, R2 as artifact store.\n2. SOURCE OF TRUTH: JSONL is the durable write substrate AND the sole gate input; MLflow is the read/query/citation surface. Backfill reconciles them so MLflow converges to complete.\n3. GATE READ PATH: JSONL-ONLY. telemetry.py and run_ladder.sh are NOT to be touched — no MLflow client in the gate path, no completeness check, no dual-source logic. This is the ruling that dissolved the precedence inversion; do not reintroduce it.\n4. FAILURE SEMANTICS: ABORT AT STARTUP if tracking is unreachable/misconfigured (catches bad URI, missing creds). After startup, LOUD-CONTINUE on blips: warn, count failed writes, record the gap in the JSONL, report loudly at run end. Never kill a 20k-step H100 run over a network blip; never silently lose metrics either.\n5. KAPPA GRANULARITY: all 108 series (9 layers x 12 heads at full scale) as kappa/L{i}/h{j}, PLUS derived aggregates (per-layer spread, kappa/spread_max, mean|kappa|). Per-head trajectories ARE the E3 readout and head divergence is the E3'' trigger.\n6. SEED STRUCTURE: nested, but PARENT-AT-AGGREGATION-TIME (advisor ruling). Seed runs write FLAT (params seed+exp, tag config_hash) — zero coordination, retry-safe, works across pods. A separate IDEMPOTENT `mlflow-aggregate` step queries children by config_hash, creates/updates the parent, adopts children via the mlflow.parentRunId tag, and writes mean/std/n_seeds. INVARIANT: a parent either carries the COMPLETE aggregate or does not exist — its absence is the loud signal. Naive parent-first nesting is forbidden: a run that dies after seed 2 would leave a parent carrying a stale mean, which is a false citable object and exactly what the 3-seed rule exists to prevent. VERIFY at implementation time whether setting mlflow.parentRunId on EXISTING runs nests them retroactively in the UI; if it does not, create the parent first but write NOTHING to it except tags until aggregation.\n7. TINY RUNS: no MLflow run for --tiny by default; opt-in via flag/env. Mirrors the .dvcignore decision.\n8. ARTIFACTS: DVC keeps every checkpoint (content-addressed to R2). MLflow additionally holds the final and best-by-nats/byte for one-click access. MLflow also logs the .dvc md5 + remote path, which kills the pod-local-pointer orphaning that run_ladder.sh currently warns about in DECISION-NEEDED #4.\n9. R2 LAYOUT: same bucket, distinct prefix — s3://entropic-substrate-lm/mlflow/, disjoint from DVC's files/md5/. Reuses the EXISTING AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (R2 S3-protocol creds already in .env). Endpoint https://62c7fd87a1874f1dee6b149ad40ac657.r2.cloudflarestorage.com via MLFLOW_S3_ENDPOINT_URL. NO new R2 provisioning is required.\n\nLIVE TESTING (liveRequired: true): stand the stack up locally with podman — compose.yaml with the official MLflow image + Postgres, artifact root pointed at the REAL R2 prefix. `just container-test` builds/starts it and runs the integration-marked tests against it. Test against real R2, NOT MinIO: MLflow uses boto3, and recent AWS SDKs send integrity checksums (CRC32) that R2 has historically rejected — that incompatibility is invisible against MinIO and would only surface in production. If it bites, the fix is likely AWS_REQUEST_CHECKSUM_CALCULATION=when_required and/or AWS_DEFAULT_REGION=auto; VERIFY empirically, do not assume.\n\nDEPENDENCY CLASS: mlflow is imported by src/, so it is a RUNTIME dependency.",
-      "notes": "Railway deploy follows this phase, not inside it: the Railway template (railway.com/deploy/mlflow) ships Caddy(auth) + MLflow + Postgres + MinIO; we deploy it MINUS MinIO with the artifact root repointed at R2. Caddy env AUTH_USERNAME/AUTH_PASSWORD gate the public URL that RunPod pods will reach; clients read MLFLOW_TRACKING_URI + MLFLOW_TRACKING_USERNAME/PASSWORD. The template's internal backend/artifact env wiring is NOT documented in its README — read the compose/config at deploy time rather than trusting assumed names."
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "One mechanical pass rewriting all test files onto the new dotted paths, then deletes every shim and the generator. Empties the import-linter ignore list, enforces the layer contract with zero exceptions. The only step that breaks an external caller — announced separately. Lands LAST per R-train (maximal conflict footprint, resolved once by the branch that caused it against a settled base). Guard-teeth: reintroduce one old dotted import anywhere and BOTH the layers contract and the no-old-prefix test go RED; remap_check at the new HEAD recorded in-repo as the next refactor's baseline. Postconditions from the priority amendment: single mlflow importer, zero unconfigured entry points, zero prints outside the allowlist, D1 observer protocols gone.\n\nDN-P1 (2026-09-17): no import-linter ignore list exists; quarantine coupling is measured per phase via .claude/workflows/landed-set/<id>.json legacy_edge_budget + tests/test_legacy_coupling.py."
     }
-  ]
+  ],
+  "lifecycle": "queued",
+  "ledger": ".claude/workflows/launch-queue.jsonl"
 }

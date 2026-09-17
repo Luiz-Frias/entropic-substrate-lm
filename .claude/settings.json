@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "helmsman@helmsman-marketplace": true
+  }
+}
