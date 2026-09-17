@@ -18,7 +18,7 @@ class ProbeAllocationProvider(Protocol):
 
 
 class ProbeAllocationHandoffError(RuntimeError):
-    """The guardian lacks attribution; the caller must reconcile this exact attempt.
+    """Safe supervision failed; the caller must reconcile this exact attempt.
 
     Retain the safe response ID for emergency ownership-checked cleanup. Neither
     this exception nor the surviving guardian proves that cleanup succeeded.
@@ -92,5 +92,8 @@ def allocate_probe_once(
         _handoff(guard, pod_id=possible_id, response_sha256=None, provider_error=error)
         raise
     _handoff(guard, pod_id=pod.pod_id, response_sha256=pod.response_sha256, provider_error=None)
-    guard.require_alive()
+    try:
+        guard.require_alive()
+    except Exception as error:
+        raise ProbeAllocationHandoffError(pod.pod_id, None) from error
     return pod

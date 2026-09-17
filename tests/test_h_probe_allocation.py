@@ -10,6 +10,7 @@ from tests.test_h_probe_control import root
 from tests.test_h_probe_launch import launch
 from tests.test_h_probe_process import config, fake_policy
 
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.h_probe_allocation import (
     ProbeAllocationHandoffError,
     allocate_probe_once,
@@ -154,7 +155,7 @@ def test_failed_handoff_exposes_attributed_pod_without_claiming_cleanup(
             )
         original = guard.control.write
 
-        def fail(name: str, payload: dict[str, object], *, max_bytes: int):
+        def fail(name: str, payload: dict[str, object], *, max_bytes: int) -> ArtifactIdentity:
             if name == "allocation":
                 raise OSError("injected write failure")
             return original(name, payload, max_bytes=max_bytes)
@@ -166,3 +167,22 @@ def test_failed_handoff_exposes_attributed_pod_without_claiming_cleanup(
         assert caught.value.provider_error is provider.error
         assert isinstance(caught.value.__cause__, OSError)
         assert record(guard, "allocation") is None and guard.alive and provider.calls == 1
+
+
+def test_liveness_failure_after_handoff_still_exposes_the_allocated_pod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with rig(tmp_path, monkeypatch) as (guard, provider, objects):
+        original = guard.require_alive
+
+        def fail_after_handoff() -> None:
+            original()
+            if record(guard, "allocation") is not None:
+                raise ValueError("injected guardian loss after response handoff")
+
+        monkeypatch.setattr(guard, "require_alive", fail_after_handoff)
+        with pytest.raises(ProbeAllocationHandoffError) as caught:
+            allocate_probe_once(guard, provider, objects)
+        assert caught.value.pod_id == "owned-pod" and caught.value.provider_error is None
+        assert isinstance(caught.value.__cause__, ValueError)
+        assert record(guard, "allocation") is not None and provider.calls == 1

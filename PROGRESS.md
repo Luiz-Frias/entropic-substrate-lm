@@ -419,6 +419,16 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+Allocation review follow-up retains the attributed pod ID in the structured error
+when guardian liveness fails immediately after a successful response handoff.
+The new regression was RED before this correction; all 11 allocation tests pass.
+No pod was allocated. Bounded FineWeb preparation first failed under local amd64
+emulation, and its owned container was removed. The approved native Docker Cloud
+attempt reported source verification, then aborted during Python finalization with
+`PyGILState_Release` while a Hugging Face read remained active (exit 134). No export
+was admitted. GPU launch is paused pending a clean source-preparation process exit;
+the shutdown failure's underlying library/lifecycle cause is not yet established.
+
 The allocation handoff now rechecks the published request marker, account and
 template, then claims immutable intent before one provider submission. Success
 and uncertain failures hand response attribution to the real watchdog; a failed
