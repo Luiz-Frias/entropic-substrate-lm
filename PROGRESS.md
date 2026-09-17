@@ -419,6 +419,12 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+The optional host command connects one explicit launch/account/limit set to the
+supervised controller; eight command-composition tests pass, including retained
+evidence after a context-release failure. Luiz chose manual operation for the first
+6K tiny probe: run identity/evidence stay recorded, while campaign automation is
+not a prerequisite. No GPU allocation has occurred at this checkpoint.
+
 The host controller now composes allocation, terminal collection and watchdog join,
 retaining workload and termination verification separately. Eighteen controller
 tests pass; disabling termination admission fails four mutation cases. Emergency
