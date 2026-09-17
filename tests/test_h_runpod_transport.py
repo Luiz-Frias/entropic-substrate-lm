@@ -320,3 +320,52 @@ def test_changed_output_tail_stops_before_provider(
     with pytest.raises(ProbeProviderError, match="invalid_launch"):
         transport(tmp_path, monkeypatch, runner).create_once(launch())
     assert runner.calls == []
+
+
+def test_named_reconciliation_includes_stopped_pods_and_does_not_create(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = launch()
+    stopped = pod(spec) | {"desiredStatus": "EXITED", "runtimeStatus": "stopped"}
+    foreign = pod(spec) | {"id": "foreign-pod", "name": "other-job"}
+    runner = Runner([success([stopped, foreign])])
+    observed = transport(tmp_path, monkeypatch, runner).list_owned(spec)
+    assert [p.pod_id for p in observed] == ["owned-pod"]
+    assert observed[0].runtime_status == "stopped"
+    assert runner.calls[0][1:] == (
+        "pod",
+        "list",
+        "--all",
+        "--name",
+        spec.pod_name,
+        "--output",
+        "json",
+    )
+    assert all("create" not in call and "delete" not in call for call in runner.calls)
+
+
+@pytest.mark.parametrize("kind", ["null", "object", "duplicate", "malformed", "wrong_image"])
+def test_invalid_inventory_never_becomes_an_empty_reconciliation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    spec = launch()
+    cases = {
+        "null": None,
+        "object": {},
+        "duplicate": [pod(spec), pod(spec)],
+        "malformed": [{}],
+        "wrong_image": [pod(spec) | {"imageName": "different"}],
+    }
+    runner = Runner([success(cases[kind])])
+    with pytest.raises(ProbeProviderError):
+        transport(tmp_path, monkeypatch, runner).list_owned(spec)
+
+
+def test_empty_inventory_is_only_a_snapshot_and_multiple_candidates_are_retained(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = launch()
+    runner = Runner([success([]), success([pod(spec), pod(spec) | {"id": "second-pod"}])])
+    adapter = transport(tmp_path, monkeypatch, runner)
+    assert adapter.list_owned(spec) == ()
+    assert len(adapter.list_owned(spec)) == 2

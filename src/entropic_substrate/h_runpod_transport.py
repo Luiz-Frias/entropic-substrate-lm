@@ -250,6 +250,38 @@ class HRunpodTransport:
             raise
         return self._pod(launch, row, digest, expected_id=pod_id, creating=False)
 
+    def list_owned(self, launch: H0ProbeLaunch) -> tuple[ProbePod, ...]:
+        """Reconcile the exact launch name, including stopped resources.
+
+        An empty snapshot does not disprove a delayed allocation after a timed-out
+        create. Multiple candidates stay visible; this method never selects one,
+        retries creation, deletes resources, or grants a termination certificate.
+        """
+        launch = self._launch(launch)
+        raw = self._invoke(("pod", "list", "--all", "--name", launch.pod_name, "--output", "json"))
+        try:
+            rows: object = json.loads(raw, object_pairs_hook=_pairs)
+            json.dumps(rows, allow_nan=False)
+            if type(rows) is not list:
+                raise ValueError("provider inventory must be an array")
+            digest = hashlib.sha256(raw.encode()).hexdigest()
+            found: list[ProbePod] = []
+            seen: set[str] = set()
+            for value in cast(list[object], rows):
+                if type(value) is not dict:
+                    raise ValueError("provider inventory row must be an object")
+                row = cast(dict[str, object], value)
+                pod_id = require_d1_pod_id(row.get("id"))
+                name = row.get("name")
+                if pod_id in seen or type(name) is not str or not name.strip():
+                    raise ValueError("provider inventory identity is invalid or duplicated")
+                seen.add(pod_id)
+                if name == launch.pod_name:
+                    found.append(self._pod(launch, row, digest, expected_id=pod_id, creating=False))
+            return tuple(found)
+        except (TypeError, ValueError):
+            raise ProbeProviderError("invalid_inventory") from None
+
     def delete_owned(
         self, launch: H0ProbeLaunch, pod_id: str
     ) -> Literal["already_absent", "deletion_acknowledged"]:

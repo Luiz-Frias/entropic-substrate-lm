@@ -419,6 +419,15 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+Host control custody now enforces per-role OS locks in a private directory, binds
+the exact launch manifest, refuses duplicate event publication and invalidates
+released writers. A separate Python process proves exclusion and later acquisition.
+Named provider reconciliation includes stopped pods and preserves multiple candidates;
+an empty inventory is not proof that a timed-out allocation cannot appear later.
+The control/provider focused suite passed 58 tests; removing the lock made its guard
+fail. This supplies the durable boundary for the forthcoming watchdog/controller,
+not a running supervisor, allocation, or scientific advancement.
+
 The next, separately uncommitted H provider transport uses the pinned bounded CLI
 runner, redacts environment payloads, never retries creation, and retains possible
 allocation IDs on ambiguous failures. Ownership is reread before deletion;
