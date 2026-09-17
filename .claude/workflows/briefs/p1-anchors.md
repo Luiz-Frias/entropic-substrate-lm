@@ -60,7 +60,7 @@ House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
 
 ## Scope
 
-Rewrite five depth-derived path sites onto one resolver anchored on the package **init**: config.py:382 and sinks.py:141 (parents[2] with silent CWD fallback), d1_reader_source_closure.py:263, and the two fail-closed pod guards d_ladder_worker_runtime.py:120 and sentence_prediction/worker_execution.py:38. Not a structural phase; it changes guard predicates. Detail: plan §0.6.
+Rewrite five depth-derived path sites onto one resolver anchored on the package `__init__`: config.py:382 and sinks.py:141 (parents[2] with silent CWD fallback), d1_reader_source_closure.py:263, and the two fail-closed pod guards d_ladder_worker_runtime.py:120 and sentence_prediction/worker_execution.py:38. Not a structural phase; it changes guard predicates. Detail: plan §0.6.
 
 ## ACCEPTANCE
 

@@ -62,13 +62,13 @@ House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
 
 ## Scope
 
-git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old path from tools/mapping.json. Physical files, not a finder table: that keeps later touch sets disjoint. Each shim static-imports its target so grimp sees the chain, then rebinds sys.modules. 12 are package **init** files, checked explicitly. Owns the fragment convention. Detail: plan §mechanism.
+git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old path from tools/mapping.json. Physical files, not a finder table: that keeps later touch sets disjoint. Each shim static-imports its target so grimp sees the chain, then rebinds sys.modules. 12 are package `__init__` files, checked explicitly. Owns the fragment convention. Detail: plan §mechanism.
 
 ## ACCEPTANCE
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
-- p0's sentinel test green for all dotted paths under both spellings — this is the exit gate, because a package **init** shim can leak the parent **path** and load a child twice. Every -m entry point and the full CLI --help snapshot unchanged. Mutation: emit one shim as a star-import and the singleton test goes RED.
+- p0's sentinel test green for all dotted paths under both spellings — this is the exit gate, because a package `__init__` shim can leak the parent `__path__` and load a child twice. Every -m entry point and the full CLI --help snapshot unchanged. Mutation: emit one shim as a star-import and the singleton test goes RED.
 - `just check` green on the lane tip.
 - `just pc-ci` (exit gate) green on the lane tip.
 - `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
@@ -137,5 +137,5 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 3. Add test_legacy_coupling.py over the AST graph
 4. git mv the whole package into __legacy with zero byte edits
 5. Generate the per-module static-import shim layer
-6. Verify the 12 package **init** shims against the sentinel test
+6. Verify the 12 package `__init__` shims against the sentinel test
 7. Record the from-import and string-shim mutation proofs
