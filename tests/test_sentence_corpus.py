@@ -1,7 +1,7 @@
 """Bounded document admission; aliases never become independent split samples."""
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from dataclasses import replace
 from itertools import count
 from types import SimpleNamespace
@@ -171,7 +171,51 @@ def test_fineweb_adapter_refuses_invented_ids_or_text_coercion(
     from entropic_substrate.data import fineweb
 
     monkeypatch.setitem(
-        sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: [row])
+        sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: (r for r in [row]))
     )
     with pytest.raises(ValueError):
+        list(fineweb.stream_fineweb_documents(max_documents=1))
+
+
+@pytest.mark.parametrize("stop", ["consumer_close", "limit", "invalid_row"])
+def test_fineweb_owns_and_closes_the_underlying_dataset_iterator(
+    monkeypatch: pytest.MonkeyPatch, stop: str
+) -> None:
+    from entropic_substrate.data import fineweb
+
+    closed = []
+
+    def rows() -> Generator[dict[str, object], None, None]:
+        try:
+            yield {"id": "one", "text": None if stop == "invalid_row" else "First."}
+            pytest.fail("bounded loader read beyond its requested prefix")
+        finally:
+            closed.append(True)
+
+    iterator = rows()  # Keep a strong reference: garbage collection cannot pass this test.
+    monkeypatch.setitem(
+        sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: iterator)
+    )
+    documents = fineweb.stream_fineweb_documents(max_documents=1)
+    try:
+        if stop == "consumer_close":
+            next(documents)
+            documents.close()
+        elif stop == "invalid_row":
+            with pytest.raises(ValueError):
+                list(documents)
+        else:
+            assert len(list(documents)) == 1
+        assert closed == [True]
+    finally:
+        iterator.close()
+
+
+def test_fineweb_refuses_a_backend_without_explicit_generator_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from entropic_substrate.data import fineweb
+
+    monkeypatch.setitem(sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: []))
+    with pytest.raises(TypeError, match="closeable dataset generator"):
         list(fineweb.stream_fineweb_documents(max_documents=1))

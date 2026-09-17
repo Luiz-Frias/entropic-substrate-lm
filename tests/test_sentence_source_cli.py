@@ -1,6 +1,7 @@
 """Source preparation commands preserve documents and require explicit policy."""
 
 import json
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -8,8 +9,10 @@ import pytest
 
 from entropic_substrate.cli import main
 from entropic_substrate.data.fineweb import FINEWEB_REVISION
-from entropic_substrate.evidence.lifecycle import ContentHash
+from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.sentence_prediction import source_cli
 from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
+from entropic_substrate.sentence_prediction.corpus import PreparedCorpus
 from entropic_substrate.sentence_prediction.journal import write_json
 from entropic_substrate.sentence_prediction.records import SourceDocument
 
@@ -41,7 +44,7 @@ def test_prepare_and_inspect_source_use_the_same_captured_documents(
         SourceDocument("alias", "  Café. Next sentence.\n", FINEWEB_REVISION),
         SourceDocument("oversize", "x" * 65 + ".", FINEWEB_REVISION),
     )
-    stream = Mock(return_value=iter(documents))
+    stream = Mock(return_value=(document for document in documents))
     monkeypatch.setattr("entropic_substrate.data.fineweb.stream_fineweb_documents", stream)
     (tmp_path / "source").mkdir()
     write_json(tmp_path, "prepare.json", manifest(), max_bytes=10_000)
@@ -114,7 +117,8 @@ def test_empty_source_is_retained_as_empty_not_model_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        "entropic_substrate.data.fineweb.stream_fineweb_documents", Mock(return_value=iter(()))
+        "entropic_substrate.data.fineweb.stream_fineweb_documents",
+        Mock(return_value=(d for d in ())),
     )
     (tmp_path / "source").mkdir()
     write_json(tmp_path, "empty.json", manifest(), max_bytes=10_000)
@@ -128,7 +132,7 @@ def test_empty_source_is_retained_as_empty_not_model_ready(
 def test_empty_dataset_configurations_retain_distinct_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    stream = Mock(side_effect=lambda **_: iter(()))
+    stream = Mock(side_effect=lambda **_: (d for d in ()))
     monkeypatch.setattr("entropic_substrate.data.fineweb.stream_fineweb_documents", stream)
     identities = []
     for name in ("sample-10BT", "sample-100BT"):
@@ -170,7 +174,7 @@ def test_failed_preparation_does_not_publish_success(
     stream = (
         Mock(side_effect=OSError("provider details must remain private"))
         if provider_failure
-        else Mock(return_value=iter(()))
+        else Mock(return_value=(d for d in ()))
     )
     monkeypatch.setattr("entropic_substrate.data.fineweb.stream_fineweb_documents", stream)
     source = tmp_path / "source"
@@ -180,3 +184,56 @@ def test_failed_preparation_does_not_publish_success(
     output = capsys.readouterr().out
     assert json.loads(output)["status"] == "execution_defect"
     assert "provider details" not in output and not tuple(source.iterdir())
+
+
+@pytest.mark.parametrize("stop", ["limit", "budget", "invalid_revision", "close_error"])
+def test_source_command_closes_owned_stream_before_publication_or_error_return(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stop: str,
+) -> None:
+    closed = []
+
+    def rows() -> Generator[SourceDocument, None, None]:
+        try:
+            for index in range(5):
+                yield SourceDocument(
+                    str(index),
+                    f"Sentence {index}.",
+                    "wrong" if stop == "invalid_revision" else FINEWEB_REVISION,
+                )
+        finally:
+            closed.append(True)
+            if stop == "close_error":
+                raise OSError("owned provider stream failed to close")
+
+    iterator = rows()
+    monkeypatch.setattr(
+        "entropic_substrate.data.fineweb.stream_fineweb_documents", Mock(return_value=iterator)
+    )
+    original_write = source_cli.write_prepared_corpus
+
+    def checked_write(root: Path, corpus: PreparedCorpus, *, max_bytes: int) -> ArtifactIdentity:
+        assert closed == [True], "source published before closing its owned stream"
+        return original_write(root, corpus, max_bytes=max_bytes)
+
+    monkeypatch.setattr(source_cli, "write_prepared_corpus", checked_write)
+    (tmp_path / "source").mkdir()
+    command = manifest() | ({"admitted_byte_limit": 1} if stop == "budget" else {})
+    write_json(tmp_path, "request.json", command, max_bytes=10_000)
+    failed = stop in ("invalid_revision", "close_error")
+    try:
+        assert main(
+            ["h-prepare-source", "--root", str(tmp_path), "--manifest", "request.json"]
+        ) == (1 if failed else 0)
+        assert closed == [True]
+        result = json.loads(capsys.readouterr().out)
+        assert result["status"] == ("execution_defect" if failed else "source_verified")
+        if failed:
+            assert not list((tmp_path / "source").iterdir())
+    finally:
+        try:
+            iterator.close()
+        except OSError:
+            assert stop == "close_error"  # Only dispose this test's retained negative fixture.

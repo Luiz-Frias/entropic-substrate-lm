@@ -419,6 +419,25 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+Git-isolation repair `7ba2788` passed the normal path-only commit hooks. Bundle
+cloning and provenance reads remove inherited Git context, and fixture repositories
+cannot consume a hook-owned index. Forty focused tests include an unchanged foreign
+index and deliberately poisoned production calls; isolation-removal mutations fail.
+The source-loader repair remained separate and was restored after the Git commit.
+
+The bounded H source path now owns both generator layers: the command closes its
+document stream before publishing, and the adapter closes the dataset iterator.
+Outer closure alone and disabled Parquet pre-buffering each still aborted natively;
+explicit inner closure passed. Two sequential native runs of the production functions
+then exited cleanly and exported identical SHA-256 captures (`aafb86f5cd604092...`).
+Each examined 512 documents, admitted 491 / 1,954,698 bytes and retained 21 rejections.
+The diagnostic records and exported captures are under
+`results/h0-6k-preparation.v79jqJ/`; this is source preparation, not model evidence.
+Seven RED-first lifecycle cases and removal-of-closure mutations prove cleanup is
+load-bearing; 75 source/data tests pass. No buffering, dataset, sleep or timeout
+change was retained. The source repair requires a refreshed worker image before
+the authorized GPU probe; controller orchestration remains unfinished.
+
 Allocation review follow-up retains the attributed pod ID in the structured error
 when guardian liveness fails immediately after a successful response handoff.
 The new regression was RED before this correction; all 11 allocation tests pass.

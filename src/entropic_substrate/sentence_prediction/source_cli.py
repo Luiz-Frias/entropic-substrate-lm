@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import closing
 from pathlib import Path
 
 from entropic_substrate.d1_artifact_snapshot import (
@@ -98,8 +99,10 @@ def cmd_source(args: argparse.Namespace) -> int:
             from entropic_substrate.data.fineweb import stream_fineweb_documents
 
             stage = "execution"
-            documents = stream_fineweb_documents(max_documents=spec.candidate_limit, name=name)
-            corpus = prepare_documents(documents, spec)
+            with closing(
+                stream_fineweb_documents(max_documents=spec.candidate_limit, name=name)
+            ) as documents:
+                corpus = prepare_documents(documents, spec)
             source = write_prepared_corpus(output, corpus, max_bytes=limit)
         else:
             source = artifact_from_mapping(row["source"])

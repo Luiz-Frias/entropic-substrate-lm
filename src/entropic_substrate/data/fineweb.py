@@ -8,8 +8,10 @@ on ephemeral GPU boxes (RunPod / Vast).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from contextlib import closing
 from itertools import islice
+from typing import cast
 
 from entropic_substrate.sentence_prediction.records import SourceDocument
 
@@ -29,11 +31,13 @@ FINEWEB_EOT = "<|endoftext|>"
 
 def stream_fineweb_documents(
     *, max_documents: int, name: str = "sample-10BT"
-) -> Iterator[SourceDocument]:
+) -> Generator[SourceDocument, None, None]:
     """Bounded, provenance-preserving H-program input, without EOT text injection.
 
     The old flattened stream below remains unchanged. Missing provider IDs or
     non-text rows are defects, not fabricated IDs or silently coerced content.
+    Callers own this generator and must close it when stopping early. Its scope
+    closes the underlying dataset iterator; a bounded islice does not do that.
     """
     if type(max_documents) is not int or max_documents < 1:
         raise ValueError("document limit must be a positive integer")
@@ -44,13 +48,17 @@ def stream_fineweb_documents(
     dataset = load_dataset(  # nosec B615 -- existing immutable revision is forwarded unchanged
         FINEWEB_REPO, name=name, split="train", streaming=True, revision=FINEWEB_REVISION
     )
-    for item in islice(dataset, max_documents):
-        if not isinstance(item, dict):
-            raise ValueError("FineWeb document row must be a mapping")
-        source_id, text = item.get("id"), item.get("text")
-        if type(source_id) is not str or not source_id.strip() or type(text) is not str:
-            raise ValueError("FineWeb document requires its original ID and text")
-        yield SourceDocument(f"{FINEWEB_REPO}/{name}/{source_id}", text, FINEWEB_REVISION)
+    iterator = iter(dataset)
+    if not isinstance(cast(object, iterator), Generator):
+        raise TypeError("FineWeb streaming requires a closeable dataset generator")
+    with closing(iterator):
+        for item in islice(iterator, max_documents):
+            if not isinstance(item, dict):
+                raise ValueError("FineWeb document row must be a mapping")
+            source_id, text = item.get("id"), item.get("text")
+            if type(source_id) is not str or not source_id.strip() or type(text) is not str:
+                raise ValueError("FineWeb document requires its original ID and text")
+            yield SourceDocument(f"{FINEWEB_REPO}/{name}/{source_id}", text, FINEWEB_REVISION)
 
 
 def _iter_documents(name: str, split: str) -> Iterator[str]:
