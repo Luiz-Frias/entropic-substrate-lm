@@ -419,6 +419,20 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+The next, separately uncommitted H provider transport uses the pinned bounded CLI
+runner, redacts environment payloads, never retries creation, and retains possible
+allocation IDs on ambiguous failures. Ownership is reread before deletion;
+acknowledgement is separate from a successful absence check. The provider/launch
+focused suite passed 80 tests. Removing the pod-name check exposed an attempted
+foreign deletion and failed its guard; the guard was restored. Mutated launches
+and incomplete not-found errors also have RED-before-GREEN coverage. No provider
+mutation was performed; watchdog/controller composition is not yet implemented.
+Command: `uv run pytest tests/test_h_runpod_transport.py tests/test_h_probe_launch.py -q --tb=short`.
+The real bounded account path authenticated and measured balance 22.3809008535 USD,
+current spend 0 USD/hour. This is account-read evidence, not allocation validation.
+Review feedback added separate byte bounds, version rejection and an output-tail guard.
+The existing D1 result/runner code disproved its missing-returncode claim.
+
 H0 deployment descriptions now bind the full remote-tiny request, immutable image,
 private template, placement, CLI build/digest and separate controller/watchdog budgets.
 They generate a command without allocating resources or granting authority. The
