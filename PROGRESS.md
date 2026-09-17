@@ -419,6 +419,21 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+H0 deployment descriptions now bind the full remote-tiny request, immutable image,
+private template, placement, CLI build/digest and separate controller/watchdog budgets.
+They generate a command without allocating resources or granting authority. The
+template reader checks the documented secret-reference path and rejects changed
+images, exposed ports, entrypoints, storage, secret references or serverless/public scope.
+Workspace creation uses private permissions below the image-owned `/app` directory;
+the shell fixture proves existing evidence is not overwritten. The scope-guard
+mutation failed as intended, and the workspace hardening was RED before GREEN.
+Focused validation passed 54 tests with
+`uv run pytest tests/test_h_probe_launch.py tests/test_sentence_worker_request.py -q --tb=short`.
+Removing the remote-only guard failed its local-request test; the two workspace
+location/permission tests failed before hardening, then passed after the correction.
+Actual provider calls, watchdog arming, template preparation and the prelaunch check-in
+remain separate requirements; these declarations do not prove those steps occurred.
+
 The host event reader now admits start/checkpoint/paused/complete/failure observations
 from the existing immutable worker protocol. Its observed completion is explicitly
 unverified until the separate capture/native-receipt check succeeds. Failure kinds
