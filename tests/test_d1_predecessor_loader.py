@@ -5,10 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from entropic_substrate.d1_command_runner import D1BoundedProcessResult
 from entropic_substrate.d1_predecessor_loader import load_d1_predecessor, verified_git_bundle
 from entropic_substrate.evidence.ladder_campaign import artifact_mapping
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
@@ -38,7 +41,10 @@ def _git(root: Path, *args: str) -> str:
     return subprocess.check_output(("git", *args), cwd=root, text=True).strip()
 
 
-def test_bundle_proves_actual_blob_and_ancestry_without_checkout(tmp_path: Path) -> None:
+@pytest.mark.parametrize("poison", [False, True])
+def test_bundle_proves_actual_blob_and_ancestry_without_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, poison: bool
+) -> None:
     repo = tmp_path / "source"
     repo.mkdir()
     _git(repo, "init", "-b", "proof")
@@ -54,12 +60,22 @@ def test_bundle_proves_actual_blob_and_ancestry_without_checkout(tmp_path: Path)
     second = _git(repo, "rev-parse", "HEAD")
     bundle = tmp_path / "proof.bundle"
     _git(repo, "bundle", "create", str(bundle), "proof")
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    _git(decoy, "init", "-b", "decoy")
+    foreign_index = decoy / ".git/index"
+    foreign_index.write_bytes(b"untouched foreign index")
+    if poison:
+        monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
+        monkeypatch.setenv("GIT_WORK_TREE", str(decoy))
+        monkeypatch.setenv("GIT_INDEX_FILE", str(foreign_index))
     with verified_git_bundle(tmp_path, _artifact(bundle)) as git:
         assert git.read_file(first, "proof.txt") == b"first\n"
         assert git.read_file(second, "proof.txt") == b"second\n"
         assert git.is_ancestor(first, second)
         assert not git.is_ancestor(second, first)
     assert not (tmp_path / ".git").exists()
+    assert foreign_index.read_bytes() == b"untouched foreign index"
 
 
 def test_bad_bundle_hash_is_rejected_before_git(tmp_path: Path) -> None:
@@ -69,6 +85,35 @@ def test_bad_bundle_hash_is_rejected_before_git(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="digest"):
         with verified_git_bundle(tmp_path, identity):
             pytest.fail("bad bundle admitted")
+
+
+def test_bundle_clone_cannot_inherit_repository_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "entropic_substrate.d1_predecessor_loader.os",
+        SimpleNamespace(environ={"GIT_DIR": "foreign", "PATH": "/fixture/bin"}),
+    )
+
+    class InspectClone:
+        def __init__(self, *, timeout_seconds: float, max_output_bytes: int) -> None:
+            assert timeout_seconds > 0 and max_output_bytes > 0
+
+        def run(
+            self, argv: tuple[str, ...], *, cwd: Path, input: bytes, env: Mapping[str, str]
+        ) -> D1BoundedProcessResult:
+            assert "clone" in argv and cwd.is_dir() and input == b""
+            assert dict(env) == {"PATH": "/fixture/bin"}
+            return D1BoundedProcessResult(1, b"", b"fixture rejection")
+
+    monkeypatch.setattr(
+        "entropic_substrate.d1_predecessor_loader.D1BoundedProcessRunner", InspectClone
+    )
+    bundle = tmp_path / "proof.bundle"
+    bundle.write_bytes(b"fake bundle for environment inspection")
+    with pytest.raises(ValueError, match="complete bare proof"):
+        with verified_git_bundle(tmp_path, _artifact(bundle)):
+            pytest.fail("rejected clone admitted")
 
 
 def test_predecessor_never_accepts_summary_authorization(tmp_path: Path) -> None:

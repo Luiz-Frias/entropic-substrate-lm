@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,6 +75,35 @@ def test_adapter_reads_commit_time_raw_blob_hash_and_ancestry(tmp_path: Path) ->
         ("git", "cat-file", "blob", f"{_PREREG}:{_PATH}"),
         ("git", "merge-base", "--is-ancestor", _PREREG, _CODE),
     ]
+
+
+def test_explicit_repository_cannot_inherit_git_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Assertion tracebacks can render call arguments: never pass live credentials.
+    monkeypatch.setattr(
+        "entropic_substrate.d1_git_provenance_adapter.os",
+        SimpleNamespace(
+            environ={
+                "GIT_DIR": "foreign-repository",
+                "GIT_INDEX_FILE": "foreign-index",
+                "GIT_OBJECT_DIRECTORY": "foreign-objects",
+                "H_GIT_ENV_SENTINEL": "preserved",
+            }
+        ),
+    )
+
+    class InspectEnvironment:
+        def run(
+            self, argv: tuple[str, ...], *, cwd: Path, input: bytes, env: Mapping[str, str]
+        ) -> D1BoundedProcessResult:
+            assert cwd == tmp_path and input == b"" and argv[0] == "git"
+            assert not any(key.startswith("GIT_") for key in env)
+            assert env["H_GIT_ENV_SENTINEL"] == "preserved"
+            return _result(returncode=128)
+
+    adapter = SubprocessD1GitProvenance(repo_root=tmp_path, runner=InspectEnvironment())
+    assert adapter.read_file(_PREREG, _PATH) is None
 
 
 def test_missing_commit_or_blob_and_nonancestor_are_explicit_false_values(

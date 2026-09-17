@@ -45,6 +45,7 @@ from entropic_substrate.experiments.d1_registration_codec import (
     parse_decision_contract,
     parse_registered_design_declaration,
 )
+from entropic_substrate.git_environment import isolated_git_environment
 
 
 @contextmanager
@@ -72,7 +73,7 @@ def verified_git_bundle(
             ),
             cwd=temporary_root,
             input=b"",
-            env=dict(os.environ),
+            env=isolated_git_environment(os.environ),
         )
         if result.returncode != 0:
             raise ValueError("Git bundle cannot produce a complete bare proof repository")
