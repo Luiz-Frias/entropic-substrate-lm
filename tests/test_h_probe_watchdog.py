@@ -9,7 +9,7 @@ from tests.test_h_probe_control import root
 from tests.test_h_probe_launch import launch
 
 from entropic_substrate.h_probe_control import (
-    _ProbeControlWriter,
+    ProbeControlPublisher,
     own_probe_role,
     read_probe_control,
 )
@@ -69,7 +69,7 @@ class Provider:
 
 
 def declare(
-    controller: _ProbeControlWriter,
+    controller: ProbeControlPublisher,
     *,
     outcome: str = "created",
     stop: bool = False,

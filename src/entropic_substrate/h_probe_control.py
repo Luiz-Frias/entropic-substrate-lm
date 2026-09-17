@@ -8,6 +8,7 @@ import stat
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Protocol
 
 from entropic_substrate.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
@@ -82,6 +83,14 @@ def read_probe_control(
     return row["payload"]
 
 
+class ProbeControlPublisher(Protocol):
+    """Writing surface only; ownership is established by own_probe_role."""
+
+    def write(
+        self, name: str, payload: dict[str, object], *, max_bytes: int
+    ) -> ArtifactIdentity: ...
+
+
 class _ProbeControlWriter:
     """Valid only while its role lock is held in this process; never claims readiness."""
 
@@ -143,7 +152,9 @@ def _locked_file(directory: Path, name: str, *, wait: bool) -> Generator[None]:
 
 
 @contextmanager
-def own_probe_role(root: Path, launch: H0ProbeLaunch, role: str) -> Generator[_ProbeControlWriter]:
+def own_probe_role(
+    root: Path, launch: H0ProbeLaunch, role: str
+) -> Generator[ProbeControlPublisher]:
     """Lease one role without waiting; process exit releases the OS lock, not history.
 
     The short shared initialization lock serializes the two roles' manifest bind.

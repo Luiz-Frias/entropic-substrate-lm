@@ -419,6 +419,15 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+The separate-process supervisor now binds ready evidence to its real child PID,
+isolated process group, account and startup clock. It holds the controller lease,
+records create intent once, and refuses late/stopped/changed admission. Post-intent
+scope exit retains the watchdog rather than killing it. The process/control/policy
+suite passed 50 tests with real spawned children; PID-guard removal failed its test.
+Test-only bodies are importable in spawned interpreters and negative tests pin their
+actual failure causes. The remaining connection is the controller/R2 execution flow;
+this supervisor alone grants no spending, workload-completion or scientific authority.
+
 The watchdog policy core now separates attributed allocation, deadline cleanup,
 deletion acknowledgement, confirmed absence and inventory gaps. Its 14 focused
 tests pass; deliberately adopting a name-only candidate failed the safety guard.
