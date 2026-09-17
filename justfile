@@ -2,44 +2,60 @@ set shell := ["bash", "-cu"]
 
 import? 'justfile.local'
 
+# Deliverable 10 (dreamy-questing-scroll.md, E-4 ruling): the dotted `python -m`
+# entrypoint names are parameterized from ONE source, scripts/entrypoints.env,
+# shared with run_ladder.sh and the worker allowlists in provider_launch.py /
+# d1_runpod_adapter.py / h_probe_launch.py / d1_external_analysis_adapter.py
+# (see patches/entrypoints-python.md for how those four read the same values).
+# `set dotenv-load` + `set dotenv-path` load it into every recipe's environment
+# AND make it visible to `env_var()` at parse time, so a missing key fails
+# immediately (`just --evaluate` / any recipe invocation), never silently as an
+# empty string.
+set dotenv-load
+set dotenv-path := "scripts/entrypoints.env"
+
+cli := env_var("ENTRYPOINT_CLI")
+telemetry := env_var("ENTRYPOINT_TELEMETRY")
+h_worker := env_var("ENTRYPOINT_H_WORKER")
+
 # List all recipes (default target)
 default:
     @just --list --unsorted
 
 # Local synthetic smoke only; no scientific gate or Runpod spending authority.
 d-probe *ARGS:
-    uv run python -m entropic_substrate.cli d-probe {{ ARGS }}
+    uv run python -m {{ cli }} d-probe {{ ARGS }}
 
 # H numerical training only; full probe/scientific completion is a separate gate.
 h-train-probe *ARGS:
-    uv run python -m entropic_substrate.cli h-train-probe {{ ARGS }}
+    uv run python -m {{ cli }} h-train-probe {{ ARGS }}
 
 h-inspect-training *ARGS:
-    uv run python -m entropic_substrate.cli h-inspect-training {{ ARGS }}
+    uv run python -m {{ cli }} h-inspect-training {{ ARGS }}
 
 h-generate-probe *ARGS:
-    uv run python -m entropic_substrate.cli h-generate-probe {{ ARGS }}
+    uv run python -m {{ cli }} h-generate-probe {{ ARGS }}
 
 h-inspect-generation *ARGS:
-    uv run python -m entropic_substrate.cli h-inspect-generation {{ ARGS }}
+    uv run python -m {{ cli }} h-inspect-generation {{ ARGS }}
 
 h-capture-model *ARGS:
-    uv run python -m entropic_substrate.cli h-capture-model {{ ARGS }}
+    uv run python -m {{ cli }} h-capture-model {{ ARGS }}
 
 h-inspect-model *ARGS:
-    uv run python -m entropic_substrate.cli h-inspect-model {{ ARGS }}
+    uv run python -m {{ cli }} h-inspect-model {{ ARGS }}
 
 h-inspect-custody *ARGS:
-    uv run python -m entropic_substrate.cli h-inspect-custody {{ ARGS }}
+    uv run python -m {{ cli }} h-inspect-custody {{ ARGS }}
 
 h-diagnose-spans *ARGS:
-    uv run python -m entropic_substrate.cli h-diagnose-spans {{ ARGS }}
+    uv run python -m {{ cli }} h-diagnose-spans {{ ARGS }}
 
 h-inspect-spans *ARGS:
-    uv run python -m entropic_substrate.cli h-inspect-spans {{ ARGS }}
+    uv run python -m {{ cli }} h-inspect-spans {{ ARGS }}
 
 h-worker *ARGS:
-    uv run python -m entropic_substrate.sentence_prediction.worker_command {{ ARGS }}
+    uv run python -m {{ h_worker }} {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Environment setup
@@ -145,7 +161,7 @@ download-data:
 # Valid exp values: e0-byte, e0-bpe, e1-fisher, e1-random, e2, e3,
 # e3-anchor, e3-vantage (anchored arms are execution-gated on the E3 readout)
 train exp="tiny" *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli train --exp {{ exp }} {{ ARGS }}
+    PYTHONPATH=src uv run python -m {{ cli }} train --exp {{ exp }} {{ ARGS }}
 
 # Gated ladder E1 → E2 → E3 (stops with DECISION-NEEDED before the anchored
 # arms / E4). `just ladder --tiny` = CPU smoke of the whole ladder in minutes.
@@ -154,7 +170,7 @@ ladder *ARGS:
 
 # Evaluate a checkpoint, e.g.: just eval ckpt=models/e3-latest.pt
 eval ckpt *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli eval --ckpt {{ ckpt }} {{ ARGS }}
+    PYTHONPATH=src uv run python -m {{ cli }} eval --ckpt {{ ckpt }} {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Container

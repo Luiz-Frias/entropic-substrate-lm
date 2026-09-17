@@ -1,0 +1,2025 @@
+{
+ "layers": [
+  "kernel",
+  "core",
+  "ladder",
+  "__legacy",
+  "composition"
+ ],
+ "modules": {
+  "entropic_substrate": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.__main__": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.analysis": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.charts": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "Okabe-Ito colorblind-safe figure lane (analysis product surface)"
+  },
+  "entropic_substrate.analysis.codec_equivariance": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "read-only geometry/codec diagnostics over captured checkpoints"
+  },
+  "entropic_substrate.analysis.d1_analysis_api": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_analysis_receipt_codec": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_blind_aliases": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_capture": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_clause_policy": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_diagnostics": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_execution_receipt": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_external_analysis_adapter": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_external_analysis_codec": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_external_analysis_control": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_external_review_adapter": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_external_worker": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_factorial": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_machine_analysis": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_machine_analysis_binding": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_machine_analysis_codec": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.d1_machine_analysis_verification": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_output_access": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "ACL boundary and the source closure that pins the authoritative reader"
+  },
+  "entropic_substrate.analysis.d1_probe": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.analysis.d1_reader_source_closure": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "ACL boundary and the source closure that pins the authoritative reader"
+  },
+  "entropic_substrate.analysis.d1_real_arm_verdict": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.analysis.d1_review_execution": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.d1_review_packet": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.analysis.embedding_geometry": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "read-only geometry/codec diagnostics over captured checkpoints"
+  },
+  "entropic_substrate.analysis.field_head_audit": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "read-only geometry/codec diagnostics over captured checkpoints"
+  },
+  "entropic_substrate.analysis.ladder_analysis": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.ladder_filing": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.analysis.ladder_probe": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.analysis.ladder_registration": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.mlflow_attach": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "Okabe-Ito colorblind-safe figure lane (analysis product surface)"
+  },
+  "entropic_substrate.analysis.palette": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "Okabe-Ito colorblind-safe figure lane (analysis product surface)"
+  },
+  "entropic_substrate.analysis.predictive_probe": {
+   "dest": "entropic_substrate.core.probe",
+   "layer": "core",
+   "action": "move",
+   "note": "frozen equal-capacity probe numerics and signed score-gain algebra; pure, zero outbound"
+  },
+  "entropic_substrate.analysis.predictive_score_gain": {
+   "dest": "entropic_substrate.core.probe",
+   "layer": "core",
+   "action": "move",
+   "note": "frozen equal-capacity probe numerics and signed score-gain algebra; pure, zero outbound"
+  },
+  "entropic_substrate.analysis.seed_sizing": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "construction-blind arithmetic over admitted cells; no live services"
+  },
+  "entropic_substrate.analysis.series": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "Okabe-Ito colorblind-safe figure lane (analysis product surface)"
+  },
+  "entropic_substrate.capture_results": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.checkpoint": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "process-wide config/logging/checkpoint-format constants"
+  },
+  "entropic_substrate.cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.config": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "process-wide config/logging/checkpoint-format constants"
+  },
+  "entropic_substrate.d1_artifact_snapshot": {
+   "dest": "entropic_substrate.kernel.artifacts",
+   "layer": "kernel",
+   "action": "move",
+   "note": "atomic no-follow artifact bytes; 54 inbound, only outbound is lifecycle"
+  },
+  "entropic_substrate.d1_billing_finalization_values": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_billing_finalizer": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_build_cloud_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_calibration": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT: D1BaselineCalibrationAttestation -> ladder/capture/records/calibration.py (imported function-locally at evidence/d1_telemetry_payloads.py:178); the calibrator stays in ladder/run/training/"
+  },
+  "entropic_substrate.d1_campaign_authority_loader": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_campaign_bootstrap": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_capture": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_checkpoint": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_checkpoint_repository": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_cli_service": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_campaign_controller_factory": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_campaign_evidence_assembler": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_queue": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_recovery": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_recovery_queue": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_campaign_request": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_capture_cli_services": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_capture_finalize_coordinator": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "run-side capture coordination and cadenced checkpoint->DVC/R2 sync"
+  },
+  "entropic_substrate.d1_capture_finalize_request": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "run-side capture coordination and cadenced checkpoint->DVC/R2 sync"
+  },
+  "entropic_substrate.d1_capture_prepare_coordinator": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "run-side capture coordination and cadenced checkpoint->DVC/R2 sync"
+  },
+  "entropic_substrate.d1_checkpoint_dvc_recovery": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "run-side capture coordination and cadenced checkpoint->DVC/R2 sync"
+  },
+  "entropic_substrate.d1_checkpoint_dvc_sync": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "run-side capture coordination and cadenced checkpoint->DVC/R2 sync"
+  },
+  "entropic_substrate.d1_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_cli_composition": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_command_runner": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_content_addressed_custody": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.d1_dual_failure": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "typed terminal/dual trainer failure (reaches resource + plan vocabulary)"
+  },
+  "entropic_substrate.d1_dvc_remote_config": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_evaluation": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_evaluation_codec": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_evaluation_values": {
+   "dest": "entropic_substrate.kernel.verdict",
+   "layer": "kernel",
+   "action": "move",
+   "note": "verdict/decision-contract vocabulary read by register, analyze, file and gate"
+  },
+  "entropic_substrate.d1_excluded_capture": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_excluded_operator": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_filing_application": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.d1_finalized_cell_custody": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_finalized_cell_custody_repository": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_fresh_trainer": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_git_provenance_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_inspect_codec": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "bounded read-only journal inspection projections"
+  },
+  "entropic_substrate.d1_inspect_projection": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "bounded read-only journal inspection projections"
+  },
+  "entropic_substrate.d1_inspect_request": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "bounded read-only journal inspection projections"
+  },
+  "entropic_substrate.d1_inspect_service": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_inspect_values": {
+   "dest": "entropic_substrate.ladder.analyze",
+   "layer": "ladder",
+   "action": "move",
+   "note": "bounded read-only journal inspection projections"
+  },
+  "entropic_substrate.d1_journal_snapshot": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.d1_numerical_defect": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.d1_observability": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.d1_operator_controller": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_operator_custody_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_operator_evidence": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_operator_intent_codec": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_operator_ports": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_operator_values": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "campaign lifecycle: wave queue, checkpointed restart state, recovery"
+  },
+  "entropic_substrate.d1_optimizer": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_predecessor_loader": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.d1_probe_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_r2_runtime_composition": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_r2_trainer_mailbox_worker": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_resource_activation": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_resume_runtime": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_resume_trainer": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_runpod_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_runpod_billing_parser": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "per-attempt run closure: finalized-cell custody and provider billing reconciliation"
+  },
+  "entropic_substrate.d1_segment_engine": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_system_runtime_probe": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.d1_terminal_failure": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "typed terminal/dual trainer failure (reaches resource + plan vocabulary)"
+  },
+  "entropic_substrate.d1_tracking": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.d1_trainer_cli_services": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_trainer_evidence_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_handoff": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_handoff_codec": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_mailbox_command": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_trainer_mailbox_contracts": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_mailbox_worker": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_object_transport": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_output_publication": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_process_contracts": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_process_worker": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_trainer_request_codec": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_runtime": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_trainer_s3_object_adapter": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.d1_trainer_stage": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.d1_trainer_worker_command": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d1_training_step": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT: D1TrainStepResult/D1ComponentGradientEvidence/D1GradientEvidenceKind/D1GradientReachability -> ladder/capture/records/train_step.py (the only symbols the three evidence.d1_telemetry_* readers import); the torch forward/backward/clip transaction stays in ladder/run/training/"
+  },
+  "entropic_substrate.d_ladder_artifacts": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d_ladder_execution": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_probe_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.d_ladder_remote": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_remote_request": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_request": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_resources": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_training": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_worker_command": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.d_ladder_worker_runtime": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT: measure_hardware/verify_source_tree/build_worker_factory/worker_resource_registration -> ladder.run.worker (the three live importers need only these); verify_worker_source and its `Path(__file__).parent == src/entropic_substrate` anchor -> __legacy.d_ladder"
+  },
+  "entropic_substrate.data": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT of an aggregate re-export facade with zero measured inbound edges: the corpus-source\n   re-exports become ladder/capture/sources/__init__.py, the batching re-exports become\n   core/corpus/__init__.py"
+  },
+  "entropic_substrate.data.batching": {
+   "dest": "entropic_substrate.core.corpus",
+   "layer": "core",
+   "action": "move",
+   "note": "corpus batching + source-order attestation (pure, needs only observation)"
+  },
+  "entropic_substrate.data.build": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.data.enwik8": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.data.fineweb": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.data.ladder_batching": {
+   "dest": "entropic_substrate.core.corpus",
+   "layer": "core",
+   "action": "move",
+   "note": "corpus batching + source-order attestation (pure, needs only observation)"
+  },
+  "entropic_substrate.data.ladder_source_order": {
+   "dest": "entropic_substrate.core.corpus",
+   "layer": "core",
+   "action": "move",
+   "note": "corpus batching + source-order attestation (pure, needs only observation)"
+  },
+  "entropic_substrate.data.synthetic": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "package facade for the capture stage"
+  },
+  "entropic_substrate.evidence.d1_abort_evidence": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_capture_aggregate": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_aggregate_codec": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_aggregate_validation": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_artifacts": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_bundle": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_declaration_codec": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_filesystem": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_ports": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_preparation_custody": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_preparation_custody_repository": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_roster": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_service": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_subprocess": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_capture_validation": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.evidence.d1_contract": {
+   "dest": "entropic_substrate.kernel.verdict",
+   "layer": "kernel",
+   "action": "move",
+   "note": "verdict/decision-contract vocabulary read by register, analyze, file and gate"
+  },
+  "entropic_substrate.evidence.d1_decision_validation": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_family_adapter": {
+   "dest": "entropic_substrate.ladder.gate",
+   "layer": "ladder",
+   "action": "move",
+   "note": "successor authorization off a filed lineage; never computes a verdict"
+  },
+  "entropic_substrate.evidence.d1_filing": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_filing_assembly": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_filing_edges": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_filing_graph": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_filing_receipts": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT: D1FilingArtifactPort/D1FilingGitPort/D1FilingRevisions/D1EvidenceGap* -> ladder/file/ports.py (used by d1_filing_graph, d1_filing_edges, d1_filing_application, d1_predecessor_loader); parse_alias_commitment/parse_alias_reveal/parse_analysis_receipt -> ladder/review/receipts.py (used by d1_review_execution, d1_external_analysis_control, d1_real_arm_verdict)"
+  },
+  "entropic_substrate.evidence.d1_gate": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_journal": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_journal_values": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_lifecycle_repository": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "durable process-lifecycle ledger beneath the pure typestate"
+  },
+  "entropic_substrate.evidence.d1_lifecycle_values": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "durable process-lifecycle ledger beneath the pure typestate"
+  },
+  "entropic_substrate.evidence.d1_parsing": {
+   "dest": "entropic_substrate.kernel.verdict",
+   "layer": "kernel",
+   "action": "move",
+   "note": "verdict/decision-contract vocabulary read by register, analyze, file and gate"
+  },
+  "entropic_substrate.evidence.d1_process_filing": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_process_manager": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "durable process-lifecycle ledger beneath the pure typestate"
+  },
+  "entropic_substrate.evidence.d1_process_replay": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "durable process-lifecycle ledger beneath the pure typestate"
+  },
+  "entropic_substrate.evidence.d1_review_adjudication": {
+   "dest": "entropic_substrate.ladder.review",
+   "layer": "ladder",
+   "action": "move",
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+  },
+  "entropic_substrate.evidence.d1_statistical_gaps": {
+   "dest": "entropic_substrate.kernel.verdict",
+   "layer": "kernel",
+   "action": "move",
+   "note": "verdict/decision-contract vocabulary read by register, analyze, file and gate"
+  },
+  "entropic_substrate.evidence.d1_telemetry": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_telemetry_measurements": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_telemetry_payloads": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_telemetry_query": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_telemetry_values": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_terminal_defect_capture": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_terminal_defect_query": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "authoritative journal + telemetry records and their strict parsers"
+  },
+  "entropic_substrate.evidence.d1_types": {
+   "dest": "entropic_substrate.kernel.verdict",
+   "layer": "kernel",
+   "action": "move",
+   "note": "verdict/decision-contract vocabulary read by register, analyze, file and gate"
+  },
+  "entropic_substrate.evidence.d1_validator": {
+   "dest": "entropic_substrate.ladder.file",
+   "layer": "ladder",
+   "action": "move",
+   "note": "verdict validation and the filed-manifest -> real-git verification graph"
+  },
+  "entropic_substrate.evidence.d1_verdict": {
+   "dest": "entropic_substrate.ladder.gate",
+   "layer": "ladder",
+   "action": "move",
+   "note": "successor authorization off a filed lineage; never computes a verdict"
+  },
+  "entropic_substrate.evidence.ladder_campaign": {
+   "dest": "entropic_substrate.kernel.artifacts",
+   "layer": "kernel",
+   "action": "split",
+   "note": "SPLIT: artifact_mapping/artifact_from_mapping/read_bound_artifact/object_fields -> kernel.artifacts (the only symbols 14 sentence_prediction modules import); RunAuthorization/SuccessorAuthorization -> ladder.gate.campaign"
+  },
+  "entropic_substrate.evidence.ladder_predecessor": {
+   "dest": "entropic_substrate.ladder.gate",
+   "layer": "ladder",
+   "action": "move",
+   "note": "successor authorization off a filed lineage; never computes a verdict"
+  },
+  "entropic_substrate.evidence.lifecycle": {
+   "dest": "entropic_substrate.kernel.lifecycle",
+   "layer": "kernel",
+   "action": "move",
+   "note": "rung typestate + ArtifactIdentity/ContentHash; 79 inbound, zero outbound"
+  },
+  "entropic_substrate.evidence.resource_billing": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_billing_reconciliation": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_ledger": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_ledger_codec": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_meter_models": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_meter_runtime": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_meter_strategy": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_provenance": {
+   "dest": "entropic_substrate.kernel.evidence_class",
+   "layer": "kernel",
+   "action": "move",
+   "note": "EvidenceClass/run-provenance vocabulary: 45 inbound, outbound only kernel.identity"
+  },
+  "entropic_substrate.evidence.resource_provenance_codec": {
+   "dest": "entropic_substrate.kernel.evidence_class",
+   "layer": "kernel",
+   "action": "move",
+   "note": "EvidenceClass/run-provenance vocabulary: 45 inbound, outbound only kernel.identity"
+  },
+  "entropic_substrate.evidence.resource_work": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.evidence.resource_work_codec": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "resource/billing evidence with per-reading EvidenceClass tagging"
+  },
+  "entropic_substrate.experiments": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_config": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_config_profile": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_confirmatory_matrix": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_execution": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_family": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_launch_attempt_codec": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_launch_attempts": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_plan": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_primitives": {
+   "dest": "entropic_substrate.kernel.identity",
+   "layer": "kernel",
+   "action": "move",
+   "note": "canonical_digest/D1Arm/RunClass: 122 inbound, zero outbound (fan_in_top)"
+  },
+  "entropic_substrate.experiments.d1_provenance": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_registered_design": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_registration_codec": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_runs": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.d1_stabilization": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.h_preservation": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.ladder": {
+   "dest": "entropic_substrate.ladder.register",
+   "layer": "ladder",
+   "action": "move",
+   "note": "rung specs, arm families, launch admission, registration codecs"
+  },
+  "entropic_substrate.experiments.ladder_matching": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "composition root that turns a registered arm into one runnable system"
+  },
+  "entropic_substrate.experiments.ladder_profile": {
+   "dest": "entropic_substrate.__legacy.d_ladder",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+  },
+  "entropic_substrate.factory_attestation": {
+   "dest": "entropic_substrate.kernel.identity",
+   "layer": "kernel",
+   "action": "move",
+   "note": "factory-sealed construction attestation, zero outbound"
+  },
+  "entropic_substrate.field_pretrain": {
+   "dest": "entropic_substrate.__legacy.e_series",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls)"
+  },
+  "entropic_substrate.geometry": {
+   "dest": "entropic_substrate.core.geometry",
+   "layer": "core",
+   "action": "move",
+   "note": "kappa-stereographic + Gram primitives, FP32 islands, no I/O"
+  },
+  "entropic_substrate.geometry.gram": {
+   "dest": "entropic_substrate.core.geometry",
+   "layer": "core",
+   "action": "move",
+   "note": "kappa-stereographic + Gram primitives, FP32 islands, no I/O"
+  },
+  "entropic_substrate.geometry.kappa": {
+   "dest": "entropic_substrate.core.geometry",
+   "layer": "core",
+   "action": "move",
+   "note": "kappa-stereographic + Gram primitives, FP32 islands, no I/O"
+  },
+  "entropic_substrate.h_probe_collection": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_probe_control": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_probe_events": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_probe_launch": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_probe_process": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_probe_watchdog": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.h_runpod_transport": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.init": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.init.fisher": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.layers": {
+   "dest": "entropic_substrate.core.geometry",
+   "layer": "core",
+   "action": "move",
+   "note": "kappa-stereographic + Gram primitives, FP32 islands, no I/O"
+  },
+  "entropic_substrate.layers.kappa_norm": {
+   "dest": "entropic_substrate.core.geometry",
+   "layer": "core",
+   "action": "move",
+   "note": "kappa-stereographic + Gram primitives, FP32 islands, no I/O"
+  },
+  "entropic_substrate.logging": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "process-wide config/logging/checkpoint-format constants"
+  },
+  "entropic_substrate.mlflow_aggregate": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.models": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.models.backbone": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.models.blocks": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.models.field_encoder": {
+   "dest": "entropic_substrate.core.substrate",
+   "layer": "core",
+   "action": "move",
+   "note": "byte-substrate model: Fisher init, blocks, backbone, field encoder"
+  },
+  "entropic_substrate.observation": {
+   "dest": "entropic_substrate.core.observation",
+   "layer": "core",
+   "action": "move",
+   "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
+  },
+  "entropic_substrate.observation.byte_codec": {
+   "dest": "entropic_substrate.core.observation",
+   "layer": "core",
+   "action": "move",
+   "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
+  },
+  "entropic_substrate.observation.contracts": {
+   "dest": "entropic_substrate.core.observation",
+   "layer": "core",
+   "action": "move",
+   "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
+  },
+  "entropic_substrate.observation.modules": {
+   "dest": "entropic_substrate.core.observation",
+   "layer": "core",
+   "action": "move",
+   "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
+  },
+  "entropic_substrate.observation.permuted_byte_codec": {
+   "dest": "entropic_substrate.core.observation",
+   "layer": "core",
+   "action": "move",
+   "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
+  },
+  "entropic_substrate.predictive_state": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "split",
+   "note": "SPLIT of an aggregate re-export facade with zero measured inbound edges: runtime re-exports\n   become ladder/run/construction/__init__.py, the domain re-exports core/latent/__init__.py"
+  },
+  "entropic_substrate.predictive_state.checkpoint_envelope": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.predictive_state.checkpoint_repository": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.predictive_state.checkpoint_validation": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.predictive_state.checkpoint_values": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.predictive_state.coarse_graining": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.dynamics": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.ema_schedules": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.future_law": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.horizons": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.initialization": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.ladder_runtime": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "composition root that turns a registered arm into one runnable system"
+  },
+  "entropic_substrate.predictive_state.metric": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.objective": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.runtime": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "composition root that turns a registered arm into one runnable system"
+  },
+  "entropic_substrate.predictive_state.runtime_components": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "composition root that turns a registered arm into one runnable system"
+  },
+  "entropic_substrate.predictive_state.runtime_construction": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "composition root that turns a registered arm into one runnable system"
+  },
+  "entropic_substrate.predictive_state.stabilization": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.state": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.target_updates": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.target_values": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.predictive_state.targets": {
+   "dest": "entropic_substrate.core.latent",
+   "layer": "core",
+   "action": "move",
+   "note": "D-series latent predictive-state domain: architecture.md predictive_state block"
+  },
+  "entropic_substrate.provider_launch": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider ports and their adapters (RunPod, Build Cloud, git, subprocess)"
+  },
+  "entropic_substrate.sentence_prediction": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.boundary": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.capture": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "local->DVC/Git custody hexagon: ports, filesystem/subprocess adapters, service"
+  },
+  "entropic_substrate.sentence_prediction.capture_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.sentence_prediction.checkpoint": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.sentence_prediction.codec": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.consumer": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.corpus": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.evaluation_records": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.execution": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.generation": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.head": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.journal": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.law": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.mechanism_evidence": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.model": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.native_verification": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.numerics": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.object_worker": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.objective": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.profile": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.records": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.recovery_state": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.rollout": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.runner": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.runtime_precision": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.sampling": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.score_gain": {
+   "dest": "entropic_substrate.core.probe",
+   "layer": "core",
+   "action": "move",
+   "note": "frozen equal-capacity probe numerics and signed score-gain algebra; pure, zero outbound"
+  },
+  "entropic_substrate.sentence_prediction.scoring": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.seals": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.segmentation": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.source_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.sentence_prediction.span_cli": {
+   "dest": "entropic_substrate.composition",
+   "layer": "composition",
+   "action": "move",
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+  },
+  "entropic_substrate.sentence_prediction.span_diagnostics": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "on-pod span-probe evidence: needs a live execution, produced during the run"
+  },
+  "entropic_substrate.sentence_prediction.span_probe": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "on-pod span-probe evidence: needs a live execution, produced during the run"
+  },
+  "entropic_substrate.sentence_prediction.span_probe_artifacts": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "on-pod span-probe evidence: needs a live execution, produced during the run"
+  },
+  "entropic_substrate.sentence_prediction.span_states": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "on-pod span-probe evidence: needs a live execution, produced during the run"
+  },
+  "entropic_substrate.sentence_prediction.spine": {
+   "dest": "entropic_substrate.core.sentence",
+   "layer": "core",
+   "action": "move",
+   "note": "H-series sentence domain: codec, spine, law, head, numerics, rollout, scoring"
+  },
+  "entropic_substrate.sentence_prediction.trace_capture": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.training": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the training/eval transaction and its checkpoint custody"
+  },
+  "entropic_substrate.sentence_prediction.worker_command": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.worker_completion": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.worker_execution": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+  },
+  "entropic_substrate.sentence_prediction.worker_request": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.sentence_prediction.worker_snapshot": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.sentence_prediction.worker_transport": {
+   "dest": "entropic_substrate.ladder.run",
+   "layer": "ladder",
+   "action": "move",
+   "note": "provider-neutral immutable-object mailbox port + local/S3 adapters"
+  },
+  "entropic_substrate.shared_attempt": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "era-agnostic attempt flow value type, zero outbound"
+  },
+  "entropic_substrate.sinks": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.telemetry": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.tracking_contracts": {
+   "dest": "entropic_substrate.ladder.capture",
+   "layer": "ladder",
+   "action": "move",
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+  },
+  "entropic_substrate.train": {
+   "dest": "entropic_substrate.__legacy.e_series",
+   "layer": "__legacy",
+   "action": "retire_legacy",
+   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls)"
+  },
+  "entropic_substrate.git_environment": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "added at epoch bbe7976; 12 lines, zero outbound, two D1 importers (E-12)"
+  },
+  "entropic_substrate.h_probe_allocation": {
+   "dest": "entropic_substrate.ladder.run.worker",
+   "layer": "ladder",
+   "action": "move",
+   "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)"
+  },
+  "entropic_substrate.h_probe_command": {
+   "dest": "entropic_substrate.ladder.run.worker",
+   "layer": "ladder",
+   "action": "move",
+   "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)"
+  },
+  "entropic_substrate.h_probe_controller": {
+   "dest": "entropic_substrate.ladder.run.worker",
+   "layer": "ladder",
+   "action": "move",
+   "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)"
+  },
+  "entropic_substrate.d1_training_step_records": {
+   "dest": "entropic_substrate.ladder.capture.records",
+   "layer": "ladder",
+   "action": "split",
+   "note": "record half of d1_training_step, split RED-first in p5-kernel (both halves under __legacy until p8)"
+  },
+  "entropic_substrate.d1_calibration_records": {
+   "dest": "entropic_substrate.ladder.capture.records",
+   "layer": "ladder",
+   "action": "split",
+   "note": "record half of d1_calibration, split RED-first in p5-kernel (both halves under __legacy until p8)"
+  }
+ },
+ "_provenance": {
+  "source": "survey proposal C mapping.json (2026-09-17) + conductor amendments",
+  "epoch": "bbe7976",
+  "amendments": [
+   "git_environment→kernel.runtime",
+   "h_probe_{allocation,command,controller}→ladder.run.worker",
+   "d1_training_step_records/d1_calibration_records→ladder.capture.records (p5 splits)",
+   "DN-19 sub-package refinement of ladder.run / ladder.capture pending p8/p9 remap_check gate"
+  ]
+ }
+}
