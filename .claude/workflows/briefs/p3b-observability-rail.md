@@ -1,0 +1,159 @@
+# p3b-observability-rail — Observability rail: loguru substrate, MetricSink port, sink adapters, run-descriptor door
+
+Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-17 against the approved plan `docs/plans/src-hexagonal-refactor.plan.md`. The lane's `acceptance` arg reads "Per the brief's ACCEPTANCE section"; this file is where that section lives.
+
+## Branch
+
+| field                                        | value                                                                                                                                                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p3b-observability-rail`                                                                                                                                                   |
+| parent                                       | `mythwave/p3-quarantine`                                                                                                                                                            |
+| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                                                                            |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
+| wave                                         | `serial`                                                                                                                                                                            |
+| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
+| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
+| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
+| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
+| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+
+## Contract surface owned
+
+| contract                                                                                                                                                                                                                  | kind     | frozen_after |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------ |
+| `kernel/runtime/logging.py` :: the loguru substrate; `configure_logging` (human stderr, report stdout, structured JSONL). The ONLY logging substrate in the tree.                                                         | contract | p13          |
+| `ladder/capture/ports/metric_sink.py` :: the `MetricSink` Protocol (today `sinks.py:209`). The ONLY metric port in the tree; D1's second port does not survive.                                                           | door     | p3b          |
+| `ladder/capture/adapters/{jsonl,composite,mlflow}.py` :: `JsonlSink` (authoritative), `CompositeSink`, `MlflowSink` (best-effort). `adapters/mlflow.py` is the ONLY module in the tree allowed to import `mlflow`.        | door     | p3b          |
+| run-descriptor door :: `TrackingRunDescriptor` (`tracking_contracts.py:32`) + `build_sink_for_run` (`sinks.py:729`) as the single construction seam                                                                       | door     | p3b          |
+| `tests/test_observability_conformance.py` :: zero bare `print(` outside the two pinned sites; every entry point's first stderr line carries the substrate prefix; every landed emitter resolves its sink through the port | contract | p13          |
+| the `mlflow` forbidden rule :: `mlflow` importable from `ladder.capture.adapters.mlflow` ONLY, declared in `.importlinter` at p0 and ACTIVE from this phase on                                                            | door     | p13          |
+
+## Contracts consumed
+
+R-rails: consumed-before-owned is a topological violation and a generation-time HALT. Every item below is LANDED before this lane launches.
+
+- `tools/gen_shims.py`, the landed-set fragment convention and `tests/test_legacy_coupling.py` (p3)
+- `.importlinter` over the landed layers (p0)
+- the CLI snapshot's two pinned raw-`print` sites (p0)
+
+## Sacred invariants
+
+The five below are quoted verbatim from `CLAUDE.md` (North star and
+*Non-negotiable numerics*). They bind every phase without exception. `SI-*` ids are local to this
+brief set; the text is the contract.
+
+| id   | verbatim invariant                                                                                                          | tripwire                                                                                                         | guard-teeth recipe (house rule 5, both arms)                                                                                                                       |
+| ---- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SI-1 | "all geometric math runs in FP32 inside `torch.amp.autocast(enabled=False)` blocks regardless of surrounding bf16 autocast" | This phase moves no numerics file: `touch_set ∩ core/geometry = ∅`. The numerics tests must stay byte-identical. | Drop one `autocast(enabled=False)` wrapper in `geometry/kappa.py`; the FP32-island dtype assertion must go RED. Revert in-branch, record both arms in the PR body. |
+| SI-2 | "κ is clamped and inputs are projected into the component domain with a boundary epsilon before any map"                    | `touch_set ∩ core/geometry = ∅`; the κ clamp and its test move only under a phase that owns `core/`.             | Widen the κ clamp bound by one ulp and feed a boundary input; the κ-domain test must go RED. Revert in-branch.                                                     |
+| SI-3 | "the load-balance loss must stay finite and gradients must reach κ (unit-tested)"                                           | `touch_set ∩ core/substrate = ∅`; the load-balance test must stay byte-identical.                                | Detach κ from the load-balance term; the gradient-reaches-κ unit test must go RED. Revert in-branch.                                                               |
+| SI-4 | "A magnitude-preserving carrier must not contain a hidden final UnitNorm or RMS overwrite."                                 | `touch_set ∩ core/sentence = ∅`; carrier code is untouched by this phase.                                        | Append a `UnitNorm` to the magnitude-preserving carrier's output; the carrier magnitude test must go RED. Revert in-branch.                                        |
+| SI-5 | "No probability-floor/square-root substitution is permitted in the main latent path."                                       | `touch_set ∩ core/latent = ∅`; the latent law is untouched by this phase.                                        | Substitute a `sqrt(p + eps)` for the latent law in the main path; the latent-path law test must go RED. Revert in-branch.                                          |
+
+House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
+
+| id   | verbatim house rule                                                            | tripwire                                                                                   | guard-teeth recipe                                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HR-1 | "Publish with `just ship-it`, never a bare `gt submit`."                       | Serial phase: `just ship-it` runs inside the lifecycle and is the only publish path.       | Inspect the lane transcript for any `gt submit` not reached through `just ship-it`; presence is a BLOCKED verdict, not a note.                         |
+| HR-2 | "Probe sequentially. Never draw a conclusion from concurrent containers."      | The podman VM is 4 vCPU / 4 GB; two MLflow stacks at once make even a control appear hung. | Any container conclusion in this phase must name the single container it came from. Two concurrent stacks in the transcript invalidate the conclusion. |
+| HR-3 | "Never fix flakiness by raising a timeout or a retry budget."                  | A gate that goes green only after a timeout bump.                                          | A diff that raises any timeout or retry constant is a BLOCKED verdict unless it carries the measurement showing the cause was found.                   |
+| HR-4 | "Comments record measurements, with the measurement."                          | A comment in this phase's diff stating a fact with no measurement attached.                | A wrong measured claim is retracted explicitly, in the commit that fixes it. Silent overwrite is a defect.                                             |
+| HR-5 | "TDD is non-negotiable, and guard-teeth prove both arms."                      | A guard landed without its RED arm demonstrated.                                           | Every guard in this phase carries the mutation listed under *Guard teeth by mutation*, performed and reverted in-branch, evidence in the PR body.      |
+| HR-6 | "Secrets never enter git."                                                     | gitleaks runs at pre-commit and pre-push.                                                  | No credential, token or `.env` value in any diff of this phase.                                                                                        |
+| HR-7 | "Upgrading an existing venv across the mlflow → mlflow-skinny swap breaks it." | `import mlflow` raising `ModuleNotFoundError` in a lane worktree.                          | Fix with `uv sync --all-groups --reinstall-package mlflow-skinny`, never by pinning around it.                                                         |
+
+## Scope
+
+Land the E-series observability seam before the H tracer. loguru substrate to kernel/runtime/logging.py; the MetricSink Protocol (sinks.py:209) to ladder/capture/ports/metric_sink.py; JsonlSink/CompositeSink/MlflowSink to ladder/capture/adapters/; tracking_contracts + build_sink_for_run as the run-descriptor door; D1's observer protocols re-based as adapters. Detail: plan §P-1.
+
+## ACCEPTANCE
+
+Machine-checkable, one line each. The lane's `acceptance` arg points here.
+
+- just ship-it green with the live MLflow gate exercised on the MOVED path; the run id recorded in the PR body. tests/test_observability_conformance.py green. Mutations: import mlflow in core/sentence goes RED on the forbidden contract; drop configure_logging from an entry point goes RED; a MetricSink construction outside the composition root goes RED.
+- `just check` green on the lane tip.
+- `just pc-ci` (exit gate) green on the lane tip.
+- `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
+- Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
+- The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
+- `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+
+## Non-goals
+
+Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that looks necessary for correctness is a `DECISION`, not an edit.
+
+- Does NOT move the H lane; that is p4.
+- Does NOT move `telemetry.py` or the rest of `ladder/capture`; that is p8.
+- Does NOT change any metric VALUE, loss, or identity. Only log routing, metric routing and entry-point configuration move.
+- Does not introduce a second metric port. D1's `D1JournalObserver` / `D1MlflowObserver` are RE-BASED as adapters of the one port, never kept alongside it.
+
+## Allowed files
+
+The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
+
+- `src/entropic_substrate/__legacy/logging.py` and its shim
+- `src/entropic_substrate/__legacy/sinks.py` and its shim
+- `src/entropic_substrate/__legacy/tracking_contracts.py` and its shim
+- `src/entropic_substrate/__legacy/d1_observability.py` and its shim
+- `src/entropic_substrate/__legacy/d1_tracking.py` and its shim
+- `src/entropic_substrate/kernel/runtime/logging.py`
+- `src/entropic_substrate/ladder/capture/ports/metric_sink.py`
+- `src/entropic_substrate/ladder/capture/adapters/{jsonl,composite,mlflow}.py`
+- `src/entropic_substrate/ladder/capture/ports/run_descriptor.py`
+- `tests/test_observability_conformance.py`
+- `tests/test_sinks.py`, `tests/test_logging.py`, `tests/test_d1_observability.py`
+- `.claude/workflows/landed-set/p3b-observability-rail.json` (THIS phase's disjoint fragment: modules landed, targets, `legacy_edge_budget`)
+
+## Already ruled
+
+Settled. The design gate must not re-open any of these as a `DECISION`.
+
+| id                 | status           | ruling                                                                                                                                                                                                            |
+| ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-1                | RULED 2026-09-17 | Observability wired through DURING the refactor on the E-series pattern. p3b lands the seam FIRST, before the H tracer, so p4 consumes landed addresses rather than old-prefix shims.                             |
+| O-2                | RULED 2026-09-17 | The archived Observability manifest's p1-loguru / p2-mlflow are marked `retired` with the note "absorbed into refactor p3b + rewrite-on-arrival". Retired, not abandoned. Do not re-plan them.                    |
+| one port           | RULED 2026-09-17 | No second metric port survives. The D1 observer protocols become adapters of `MetricSink`.                                                                                                                        |
+| P-1                | RULED 2026-09-17 | Observability is wired through DURING the refactor on the E-series pattern. Rail phase p3b plus the extended rewrite-on-arrival rule. This is the one permitted behaviour-change class inside a structural phase. |
+| O-1                | RULED 2026-09-17 | `publishMode:'defer'`. Wave lanes end CERTIFIED, the zip publishes once through `just ship-it`, and `/pr-stack-comment-triage` files into the Linear project after every wave publish.                            |
+| E-4                | RULED 2026-09-17 | Edit the scripts, no forwarders. The dotted entrypoint names live in ONE parameterized source consumed by `run_ladder.sh`, the justfile and the worker allowlists.                                                |
+| rewrite-on-arrival | RULED 2026-09-17 | A file's import lines are rewritten exactly once, by the phase that moves it. This phase never rewrites an importer outside its own touch set.                                                                    |
+| shim form          | RULED 2026-09-17 | `import entropic_substrate.__legacy.<x> as _target` then `sys.modules[__name__] = _target`. A string-only `importlib.import_module` shim is forbidden: it makes the layers contract vacuously green.              |
+| skeleton           | RULED 2026-09-17 | Merged skeleton (proposal C tree + proposal B grafts), layer contract `kernel < core < ladder < historical                                                                                                        |
+
+## Guard teeth by mutation
+
+House rule 5: a guard is proven load-bearing by breaking the guarded thing and showing the test goes RED. The happy path passing does not distinguish "the guard worked" from "the hazard never reached it". Each mutation is performed and reverted in-branch; both arms go in the PR body.
+
+| mutation                                                               | must go RED                                                                                         |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| add `import mlflow` to a `core/sentence` module                        | the `.importlinter` forbidden contract                                                              |
+| add one bare `print(` in a landed package outside the two pinned sites | `tests/test_observability_conformance.py`                                                           |
+| drop `configure_logging` from `worker_command`'s entry point           | the entry-point stderr-prefix assertion in the conformance test                                     |
+| construct a `MetricSink` implementation outside the composition root   | the sink-construction-site assertion (grep `MetricSink` construction sites = composition root only) |
+
+## Observability conformance
+
+Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE behaviour-change class permitted inside a structural phase, scoped to log routing, metric routing and entry-point configuration. Measured scientific behaviour (losses, metric values, identities) stays frozen; the identity fixtures and the numerics tests are the tripwire.
+
+- THIS PHASE AUTHORS THE RAIL. Everything below is the contract every later phase conforms to.
+- Substrate: `logging.py` moves to `kernel/runtime/logging.py`. `configure_logging` is called at ENTRY, never at import. loguru stays the only logging import in `src/` (measured: zero stdlib-logging users).
+- Port: the `MetricSink` Protocol (`sinks.py:209`) moves to `ladder/capture/ports/metric_sink.py`. It is the only metric port in the tree.
+- Adapters: `JsonlSink` (`sinks.py:225`, authoritative) → `adapters/jsonl.py`; `CompositeSink` (`sinks.py:632`) → `adapters/composite.py`; `MlflowSink` (`sinks.py:333`, best-effort) → `adapters/mlflow.py`, the single permitted `mlflow` importer.
+- Door: `TrackingRunDescriptor` (`tracking_contracts.py:32`) + `build_sink_for_run` (`sinks.py:729`) become the run-descriptor door, `kind: door`, `frozen_after: p3b`.
+- Re-basing: `D1JournalObserver` (`d1_observability.py:39`) and `D1MlflowObserver` (`d1_observability.py:64`), plus `d1_tracking_descriptor` (`d1_tracking.py:109`), are re-based as adapters of the one port. No second port survives.
+- E entry points keep working through their shims for the whole of this phase; p12 removes them.
+- `liveRequired: true`. The p3b `just ship-it` live gate proves the MOVED MLflow path end to end, which is the only evidence that the port move did not break the best-effort sink.
+
+## Planned commit branches
+
+One Linear issue per line, inside this phase's milestone in project "entropic-substrate-lm — hexagonal refactor" (team Form_fxn, key FOR). Each is one commit branch in this phase's stack.
+
+1. Write test_observability_conformance.py RED-first with its three arms
+2. Move the loguru substrate to kernel/runtime/logging.py
+3. Extract the MetricSink port to ladder/capture/ports
+4. Land the jsonl, composite and mlflow sink adapters
+5. Freeze the run-descriptor door on TrackingRunDescriptor
+6. Re-base the D1 observer protocols as adapters of the one port
+7. Activate the mlflow forbidden contract and prove it by mutation
+8. Record the live MLflow run id from the ship-it gate in the PR body
