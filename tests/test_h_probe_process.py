@@ -144,11 +144,16 @@ def test_stale_ready_file_cannot_start_a_new_guard(
             pytest.fail("stale guard adopted")
 
 
+@pytest.mark.parametrize("dangling", [False, True])
 def test_existing_process_log_refuses_spawn_before_child_creation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dangling: bool
 ) -> None:
     directory, spec = root(tmp_path), launch()
-    (directory / "watchdog-process.log").write_text("retained failure evidence")
+    log = directory / "watchdog-process.log"
+    if dangling:
+        log.symlink_to(directory / "absent-target")
+    else:
+        log.write_text("retained failure evidence")
 
     def forbidden(*_args: object, **_kwargs: object) -> None:
         pytest.fail("a replacement child was started")
@@ -159,7 +164,10 @@ def test_existing_process_log_refuses_spawn_before_child_creation(
             directory, spec, config(tmp_path), expected_account_id="test-account"
         ):
             pytest.fail("existing log admitted")
-    assert (directory / "watchdog-process.log").read_text() == "retained failure evidence"
+    if dangling:
+        assert log.is_symlink() and not log.exists()
+    else:
+        assert log.read_text() == "retained failure evidence"
 
 
 @pytest.mark.parametrize(

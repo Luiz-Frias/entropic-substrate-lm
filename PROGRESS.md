@@ -419,6 +419,16 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+The allocation handoff now rechecks the published request marker, account and
+template, then claims immutable intent before one provider submission. Success
+and uncertain failures hand response attribution to the real watchdog; a failed
+handoff exposes the pod ID and original error without claiming cleanup. Repeated
+submission is refused. RED-first tests, an account-guard removal mutation and
+63 restored allocation/process/control/policy tests verify this boundary. Review
+coverage also rejects dangling process-log symlinks before spawn. Full controller
+polling and cleanup composition remain open. The operator renewed tiny allocation
+authorization; no pod has been allocated by this implementation.
+
 Terminal collection now reuses native completion admission, keeps pauses/failures
 distinct, and retains exact terminal bytes when snapshot recovery fails. A paused
 receipt must include its declared resume artifact. The collector/process suite
