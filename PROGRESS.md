@@ -419,6 +419,15 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-17
 
+Terminal collection now reuses native completion admission, keeps pauses/failures
+distinct, and retains exact terminal bytes when snapshot recovery fails. A paused
+receipt must include its declared resume artifact. The collector/process suite
+passed 28 tests, including real local training, generation and native verification;
+removing the failure request join failed the rehashed foreign-lineage test.
+Startup review fixes reject an existing process log before spawn and capture
+process-isolation failures in that private log. The controller orchestration and
+scientific analysis/review/filing connections remain open; no pod was allocated.
+
 The separate-process supervisor now binds ready evidence to its real child PID,
 isolated process group, account and startup clock. It holds the controller lease,
 records create intent once, and refuses late/stopped/changed admission. Post-intent

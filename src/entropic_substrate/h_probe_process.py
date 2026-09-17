@@ -92,8 +92,6 @@ def _process_main(
     config: WatchdogProcessConfig,
     body: Callable[[Path, H0ProbeLaunch, WatchdogProcessConfig], None],
 ) -> None:
-    os.setsid()
-    signal.signal(signal.SIGTERM, _interrupt)
     descriptor = os.open(
         root / "watchdog-process.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
     )
@@ -101,6 +99,8 @@ def _process_main(
     os.dup2(descriptor, 2)
     os.close(descriptor)
     try:
+        os.setsid()
+        signal.signal(signal.SIGTERM, _interrupt)
         body(root, parse_probe_launch(payload, max_bytes=config.max_launch_bytes), config)
     except BaseException as error:
         sys.stderr.write(
@@ -287,10 +287,15 @@ def supervise_probe_watchdog(
         raise ValueError("watchdog requires the independently observed account identity")
     root = normalize_d1_artifact_root(root)
     with own_probe_role(root, launch, "controller") as control:
-        if any(
-            read_probe_control(root, launch, role, name, max_bytes=config.max_control_bytes)
-            is not None
-            for role, name in (("watchdog", "ready"), ("controller", "create-intent"))
+        log = root / "watchdog-process.log"
+        if (
+            log.exists()
+            or log.is_symlink()
+            or any(
+                read_probe_control(root, launch, role, name, max_bytes=config.max_control_bytes)
+                is not None
+                for role, name in (("watchdog", "ready"), ("controller", "create-intent"))
+            )
         ):
             raise ValueError("existing attempt requires inspection, not a fresh watchdog")
         started = time.monotonic()

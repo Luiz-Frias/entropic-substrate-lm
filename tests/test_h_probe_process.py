@@ -1,6 +1,7 @@
 """A ready file is admitted only with the actual isolated watchdog child alive."""
 
 import os
+import sys
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ import pytest
 from tests.test_h_probe_control import root
 from tests.test_h_probe_launch import launch
 
+from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.h_probe_control import own_probe_role, read_probe_control
 from entropic_substrate.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.h_probe_process import WatchdogProcessConfig, supervise_probe_watchdog
@@ -142,6 +144,24 @@ def test_stale_ready_file_cannot_start_a_new_guard(
             pytest.fail("stale guard adopted")
 
 
+def test_existing_process_log_refuses_spawn_before_child_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, spec = root(tmp_path), launch()
+    (directory / "watchdog-process.log").write_text("retained failure evidence")
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a replacement child was started")
+
+    monkeypatch.setattr("entropic_substrate.h_probe_process.multiprocessing.get_context", forbidden)
+    with pytest.raises(ValueError, match="existing"):
+        with supervise_probe_watchdog(
+            directory, spec, config(tmp_path), expected_account_id="test-account"
+        ):
+            pytest.fail("existing log admitted")
+    assert (directory / "watchdog-process.log").read_text() == "retained failure evidence"
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -233,3 +253,24 @@ def test_supervisor_keeps_absolute_control_identity_across_parent_chdir(
         monkeypatch.chdir(elsewhere)
         supervisor.control.write("stop", {"reason": "fixture_only"}, max_bytes=10_000)
         assert supervisor.wait_result(timeout_seconds=5)["status"] == "test_only_observation"
+
+
+def test_process_isolation_failure_is_retained_in_private_log(tmp_path: Path) -> None:
+    directory = root(tmp_path)
+    code = """import sys
+from pathlib import Path
+from entropic_substrate import h_probe_process as process
+def fail():
+    raise OSError('injected isolation failure')
+process.os.setsid = fail
+config = process.WatchdogProcessConfig(Path(sys.executable), 1, 10000, 10000, 10000, .01, 1, 1)
+process._process_main(Path(sys.argv[1]), sys.stdin.buffer.read(), config, process._run_policy)
+"""
+    runner = BoundedSubprocessD1CommandRunner(timeout_seconds=30, max_output_bytes=10_000)
+    result = runner.run(
+        (sys.executable, "-c", code, str(directory)),
+        cwd=Path.cwd(),
+        stdin=launch().payload.decode(),
+    )
+    assert result.returncode == 2
+    assert '"error_type": "OSError"' in (directory / "watchdog-process.log").read_text()
