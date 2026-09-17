@@ -419,6 +419,18 @@ Removing the pod-identity comparison failed the remote metadata guard test.
 
 ### Local validation checkpoint — 2026-09-16
 
+The host event reader now admits start/checkpoint/paused/complete/failure observations
+from the existing immutable worker protocol. Its observed completion is explicitly
+unverified until the separate capture/native-receipt check succeeds. Failure kinds
+and failed evidence delivery remain distinct. The focused event/worker/completion
+suite passed 43 tests; removing the request-identity join made its guard fail.
+Review added a real paused-worker case; all 37 reader tests then passed, including
+the restored request guard. Observations still carry no completion authority.
+The follow-up review was clean and the repository full-suite hook passed. Manual
+branch-message validation required explicit `origin/main..HEAD` refs and then passed.
+This host-only addition does not alter the published image's numerical reader or
+add provider allocation, teardown, or scientific authority.
+
 The refreshed image is published from tested runtime revision `79a4be2` on the
 approved Docker cloud builder. `docs/deploy-h100.md` records its amd64 digest;
 the canonical machine-readable publication record is DVC-backed. Exact Git-source verification,
