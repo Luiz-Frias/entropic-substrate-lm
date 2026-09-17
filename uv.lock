@@ -1148,6 +1148,7 @@ analysis = [
 ]
 deploy = [
     { name = "boto3" },
+    { name = "botocore" },
     { name = "dvc", extra = ["s3"] },
     { name = "psutil" },
     { name = "pynvml" },
@@ -1158,6 +1159,7 @@ dev = [
     { name = "bandit" },
     { name = "basedpyright" },
     { name = "boto3" },
+    { name = "botocore" },
     { name = "deptry" },
     { name = "dvc", extra = ["s3"] },
     { name = "geoopt" },
@@ -1195,6 +1197,7 @@ analysis = [
 ]
 deploy = [
     { name = "boto3", specifier = ">=1.34.0" },
+    { name = "botocore", specifier = ">=1.34.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "pynvml", specifier = ">=12.0.0" },
@@ -1205,6 +1208,7 @@ dev = [
     { name = "bandit", specifier = ">=1.8.0" },
     { name = "basedpyright", specifier = ">=1.37.0" },
     { name = "boto3", specifier = ">=1.34.0" },
+    { name = "botocore", specifier = ">=1.34.0" },
     { name = "deptry", specifier = ">=0.20.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "geoopt", git = "https://github.com/geoopt/geoopt.git" },
