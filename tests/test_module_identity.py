@@ -41,7 +41,22 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-_SRC_ROOT = Path(__file__).resolve().parent.parent / "src" / "entropic_substrate"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_SRC_ROOT = _REPO_ROOT / "src" / "entropic_substrate"
+
+
+def _all_graph_modules() -> tuple[str, ...]:
+    """Every dotted module path over the live tree, via the same measurement
+    oracle the epoch fixture uses (tools/import_graph.py) -- never a
+    hand-written list, so a module a phase adds or a probe mutation drops is
+    swept automatically."""
+    tools_dir = _REPO_ROOT / "tools"
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    from import_graph import build_graph  # local import: tools/ is not a package
+
+    mods, _edges = build_graph(_SRC_ROOT, "entropic_substrate")
+    return tuple(sorted(mods.keys()))
 
 
 def _is_bare_object_call(node: ast.expr | None) -> bool:
@@ -219,3 +234,65 @@ class TestExternalIsolationLockDictPairIsPinned:
             sys.modules.clear()
             sys.modules.update(saved_modules)
         assert alias_name not in sys.modules
+
+
+class TestExhaustiveImportSweepIsTheP3ExitGateFoundation:
+    """p3's exit gate is a sentinel test over EVERY dotted path. A sweep that
+    swallows import failures makes that gate vacuously green over precisely
+    the modules most likely to break at the quarantine (architect ruling).
+    This sweep imports every graph node with no ``except: continue`` -- any
+    failure fails this test by name, and is a DECISION for the conductor, not
+    an exclusion list the implementer invents.
+
+    Probed clean at authoring time: all 337 dotted paths import successfully
+    under ``.venv/bin/python`` (scratch probe, not shipped). A duplicate-load
+    mutation (guard-teeth mutation 3, performed and reverted in-branch) adds
+    a probe module under ``kernel/`` that registers a second ``sys.modules``
+    entry sharing ``evidence/lifecycle.py``'s file -- this sweep discovers
+    and imports the probe module as an ordinary graph node, and the
+    file-singleton test below is what actually goes RED."""
+
+    def test_every_graph_module_imports_without_exception(self) -> None:
+        failures: list[tuple[str, str]] = []
+        for name in _all_graph_modules():
+            try:
+                importlib.import_module(name)
+            except Exception as exc:
+                failures.append((name, repr(exc)))
+        assert failures == [], f"modules that failed to import: {failures}"
+
+
+class TestSentinelModulesAreFileSingletonsAfterTheSweep:
+    """After the exhaustive sweep has imported every module, none of the 18
+    AST-derived sentinel modules may share its ``__file__`` with any OTHER
+    ``sys.modules`` entry. This is the guard that actually goes RED under
+    the double-load mutation -- the earlier double-load test in this file
+    demonstrates the hazard (two distinct objects); this test is the guard
+    that a real collision must never pass."""
+
+    def test_no_sentinel_module_file_is_double_registered_in_sys_modules(self) -> None:
+        for name in _all_graph_modules():
+            try:
+                importlib.import_module(name)
+            except Exception:
+                continue
+
+        violations: dict[str, list[str]] = {}
+        for sentinel_module in _FROZEN_SENTINEL_MAP:
+            owner = sys.modules.get(sentinel_module)
+            if owner is None or getattr(owner, "__file__", None) is None:
+                continue
+            owner_file = Path(owner.__file__).resolve()
+            duplicates = [
+                other_name
+                for other_name, other_module in sys.modules.items()
+                if other_name != sentinel_module
+                and getattr(other_module, "__file__", None) is not None
+                and Path(other_module.__file__).resolve() == owner_file
+            ]
+            if duplicates:
+                violations[sentinel_module] = duplicates
+        assert violations == {}, (
+            f"sentinel module(s) double-registered under another sys.modules "
+            f"name (breaks the singleton guarantee): {violations}"
+        )
