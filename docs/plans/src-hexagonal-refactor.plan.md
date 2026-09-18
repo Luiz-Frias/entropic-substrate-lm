@@ -226,6 +226,32 @@ blindness on a deliberately illegal edge, and p3 repeats the demonstration on a 
 the single most dangerous silent failure in the mechanism, and it is proven by mutation, not
 argued.
 
+**Generator contract, redesigned 2026-09-18 (four defects closed, DN-P1 gen_shims v2).** The
+generator is being redesigned in parallel with this plan:
+
+1. **Fragments only ADD.** A module absent from every phase's landed-set fragment defaults to
+   `__legacy` — no module ever migrates between fragments as it lands, so p3's own fragment is
+   empty (or carries only the convention and its budget) and no later phase edits it. This closes
+   the ten-writer hub on p3's fragment that a migrate-on-land contract would otherwise create.
+2. **The generator never rebinds or writes a package `__init__.py`.** Only LEAF modules get the
+   3-line `sys.modules` alias shim. p3 restores each original package `__init__.py` at its old
+   (now `__legacy`) location, unmodified, after the wholesale `git mv`; its relative imports resolve
+   through the sibling leaf shims exactly as they did before the move. A multi-destination package
+   key (7 of 12 measured from `tools/mapping.json`) therefore never hits the single-target rebind
+   hazard, because no package key is ever rebound at all.
+3. **A fragment naming a package key or the root key fails loud.** `mapping.json` carries the
+   package root itself (`entropic_substrate` → `entropic_substrate.composition`); the generator
+   refuses rather than silently rebinding the tree root or a package's `__path__`.
+4. **`--verify` checks an emitted-files manifest only**, never an `rglob` over `out_dir` — a real,
+   restored package `__init__.py` is not a shim and must not be asked to look like one.
+
+Canonical invocation, pinned so `out_dir` is never left to prose:
+
+```
+uv run python tools/gen_shims.py .claude/workflows/landed-set tools/mapping.json src \
+  --manifest-out .claude/workflows/landed-set/.emitted.json
+```
+
 **Honest caveat on wave legality.** Under eager rewriting, p6 and p7 would share 8 importer files
 `[M, core.latent × ladder.register]` and wave 1 would be illegal. The waves are a consequence of
 rewrite-on-arrival, not of the packages' independence.
@@ -258,11 +284,25 @@ every `*-v1`/`*-v2` schema literal. Read-only fixtures: p4 bumps two, p2 deletes
 change is an explicit fixture edit in the same commit.
 
 **(c) Sentinel-singleton test.** Import every dotted path under both spellings; assert
-`sys.modules[a] is sys.modules[b]` and that every module-level `_TOKEN = object()` sentinel and the
-`weakref` registry in `analysis/d1_execution_receipt.py` is a single object. 15 `_TOKEN` modules /
-27 files `[M, arbiter §0 re-count, superseding B's 18/25]`. **This is p3's exit gate**, because 12
-shims are package `__init__.py` files whose `__path__` can double-load a child under the legacy
-name, bypassing the per-module shim. Verify by test, not by reasoning.
+`sys.modules[a] is sys.modules[b]` and that every module-level sentinel found by an **AST
+PREDICATE** — `Name = object()` at module scope, not a name pattern — plus the `weakref` registry in
+`analysis/d1_execution_receipt.py`, is a single object under both spellings.
+**RETRACTED 2026-09-18 (Q5 ruled (a)):** this paragraph previously pinned "15 `_TOKEN` modules / 27
+files `[M, arbiter §0 re-count, superseding B's 18/25]`". That figure does not reproduce under any
+principled method: a literal `_TOKEN = object()` grep finds 8; a column-0 `^_[A-Z_]*TOKEN[A-Z_]*=`
+grep minus one regex-like false positive finds 15 by two cancelling errors, one of which silently
+drops `_REQUEST_V2_TOKEN` (`[A-Z_]*` cannot match a digit); the AST predicate finds 18 module-level
+sentinels in 18 modules, 16 `_TOKEN`-named plus `_MATRIX_ATTESTATION`
+(`experiments/d1_confirmatory_matrix.py:26`) and `_DESIGN_ATTESTATION`
+(`experiments/d1_registered_design.py:28`), which are the same double-load hazard class and escape
+every name-pattern method. The AST-derived count at `144a9b5` is **`18 sentinels in 18 modules (AST predicate `Name = object()` at module level, measured at 144a9b5; includes `_MATRIX_ATTESTATION` and `_DESIGN_ATTESTATION` beyond the 16 TOKEN-named)`**
+(conductor-substituted; p0's coverage rule is the predicate, not this number). **This is p3's exit
+gate.** RETRACTED, same date, DN-P1 gen_shims v2: package `__init__.py` files are never shimmed
+under the redesigned generator (leaf modules only; the 12 original package `__init__.py` files are
+restored at their old locations after the `git mv` — see p3-quarantine below and
+`.claude/workflows/briefs/p3-quarantine.md`), so the prior rationale here ("12 shims are package
+`__init__.py` files whose `__path__` can double-load a child") no longer describes the mechanism.
+Verify by test, not by reasoning.
 
 **(d) CLI and packaging pins.** `--help` snapshots for `entropic_substrate.cli` and every
 subcommand, `-m entropic_substrate.telemetry`, `-m entropic_substrate.sentence_prediction.worker_command`.
@@ -306,10 +346,10 @@ the exact re-count is owed to p0's mapping re-derivation.
 | [p5-kernel](#p5) | `kernel/{identity,evidence_class,verdict,runtime}` (`kernel.identity`: 123 eager importers); splits `d1_training_step` and `d1_calibration` RED-first under `__legacy/` | ratchet | 14 + 2 splits | ship-it | serial | p4 |
 | [p6-core](#p6) | `core/{geometry,substrate,observation,corpus,probe,latent}`; `kappa_norm` filing retraction | ratchet | 33 | deferred → zip | **w1** | p5 |
 | [p7-register-gate](#p7) | `ladder/register` + `ladder/gate`; `rungs/`, `arms/` scaffolded; `d1_family+d1_runs` SCC as one unit | ratchet | 20 | deferred → zip | **w1** | p5 |
-| [p8-capture](#p8) | `ladder/capture` five sub-packages beside p3b's ports/adapters; moves p5's two record halves | ratchet | 53 | deferred → zip | **w2** | p7 |
-| [p9-run-lower](#p9) | `ladder/run/{values,transport,provider,resource,training,construction}`; moves p5's two torch halves | ratchet | 52 | deferred → zip | **w2** | p7 |
-| [p11-analyze-review-file](#p11) | `ladder/{analyze,review,file}`; isolation ring in `review/` | ratchet | 49 | deferred → zip | **w2** | p7 |
-| [p10-run-upper](#p10) | `ladder/run/{campaign,closure,ckptsync}` + D1 worker; consumes p9's values/transport | ratchet | 19 | ship-it | serial | p11 |
+| [p8-capture](#p8) | `ladder/capture` five sub-packages beside p3b's ports/adapters; moves p5's two record halves | ratchet | 53 | deferred → zip | **w2** | p6 |
+| [p9-run-lower](#p9) | `ladder/run/{values,transport,provider,resource,training,construction}`; moves p5's two torch halves | ratchet | 52 | deferred → zip | **w2** | p6 |
+| [p11-analyze-review-file](#p11) | `ladder/{analyze,review,file}`; isolation ring in `review/` | ratchet | 49 | deferred → zip | **w2** | p6 |
+| [p10-run-upper](#p10) | `ladder/run/{campaign,closure,ckptsync}` + D1 worker; consumes p9's values/transport | ratchet | 19 | ship-it | serial | p8 |
 | [p12-historical-composition](#p12) | `historical/{e_series,d_ladder}`, `composition/`; `__legacy` empty; justfile/run_ladder.sh/Containerfile | ratchet | 57 | ship-it | serial | p10 |
 | [p13-sweep](#p13) | rewrite 395 test files, delete shims + fragments + generator, add `__legacy` to the contract, re-pin the image | ratchet | 0 src | ship-it | serial (last, R-train) | p12 |
 
@@ -319,8 +359,14 @@ the exact re-count is owed to p0's mapping re-derivation.
 p0  p1  p2  p3  p3b  p4  p5  [p6 ∥ p7]  [p8 ∥ p9 ∥ p11]  p10  p12  p13
 ```
 
-Wave-member parents follow the ratified `sprint-manifest.json`: w2 stacks on `mythwave/p7-register-gate`
-and p10 on `mythwave/p11-analyze-review-file`. Inside a wave the FANOUT PLANNER's `zipOrder` is
+Wave-member parents follow the ratified `sprint-manifest.json`, **CORRECTED 2026-09-18** under this
+plan's own R-train rule (ascending footprint, §307-311 below): `sequence` LISTS p6 before p7 (the
+serial-reading order) and p8/p9/p11 in that order, but the ZIP order inside each wave is the
+opposite of listing order — w1 zips p7 (20) then p6 (33), tip `mythwave/p6-core`; w2 zips p11 (49),
+p9 (52), p8 (53), tip `mythwave/p8-capture`. p8, p9 and p11 all parent on `mythwave/p6-core` (w1's
+tip, not its bottom `mythwave/p7-register-gate`), and p10 parents on `mythwave/p8-capture` (w2's
+tip), which contains p9's `ladder/run/{values,transport}` that p10 consumes — a parent at the
+zip's bottom would provably exclude it (DEFECT 5). Inside a wave the FANOUT PLANNER's `zipOrder` is
 authoritative and is validated as an exact permutation of the admitted lanes before any lane
 launches; a non-permutation halts the wave with DECISION-NEEDED. Each zip's ledger entry stamps the
 actual tip.
@@ -380,9 +426,11 @@ retraction in the same commit (house rule 4).
 ## p3-quarantine
 
 `git mv` the whole package into `__legacy/` with zero byte edits, then generate one alias shim per
-old dotted path in the required static-import form. `verify_source_tree` sees the shims in the
-inventory, which is fine: they are committed and the comparison is against the same commit. The
-exit gate is p0's sentinel test over every dotted path under both spellings.
+old dotted LEAF path in the required static-import form (see *Generator contract* above); the 12
+original package `__init__.py` files are restored, unmodified, at their old locations right after
+the move, never shimmed. `verify_source_tree` sees the shims in the inventory, which is fine: they
+are committed and the comparison is against the same commit. The exit gate is p0's sentinel test
+over every dotted path under both spellings.
 
 <a id="p3b"></a>
 
@@ -548,6 +596,14 @@ enforce it with zero exceptions. That is the second and last edit of `.importlin
 the only step that breaks an external caller, so it is announced separately.** The deployment image
 is rebuilt and re-pinned ONCE here (ruling recommendation E-5, spend-adjacent).
 
+**Docs ownership (Q6, emitted default accepted).** p13 owns `CLAUDE.md`, `docs/architecture.md` and
+`docs/deploy-h100.md`, updating all three to the landed layout — the emitted default from the
+sprint-preflight interview, ratified here rather than left placed-by-default. Sealed artifacts
+(`docs/verdicts/*`, `docs/e1-*preregistration*.md`) are NEVER edited by this phase or any other and
+stay stale by design even though p13's terminal state leaves their dotted paths invalid — **ruling
+pending** on the operator's one-line disposition of that staleness (Q6's second half), not yet
+ruled as of 2026-09-18.
+
 ---
 
 ## Guard teeth by mutation
@@ -610,9 +666,20 @@ ceremony: the overlay provisions and drives the lanes itself.
 ACCEPTANCE section". `parent` is the wave parent branch. `checkout` is the conductor session's own
 worktree. `cascadeScriptPath` is the REPO's ported cascade, `.claude/workflows/td-phase-lifecycle.cascade.js`.
 `gates` are `{offline: "just check", exit: "just pc-ci"}` byte-for-byte from the ratified repo
-profile. Every lane carries `mode: 'arch'` explicitly. `K = 3` for wave 1 (ruling O-3); the engine's
-hard cap is `K_MAX = 4` and an out-of-range `K` throws rather than silently truncating. Measured
-band 4.75M-6.57M tokens for 3-4 lanes; halt at >1.5× band.
+profile. Every lane carries `mode: 'arch'` explicitly. **K WORDING, corrected 2026-09-18:** `K` is
+the fan-out's MAXIMUM LANE WIDTH, not a per-wave cardinality — ruling O-3 sets the cap at `3` here;
+the engine's hard cap is `K_MAX = 4` and an out-of-range `K` throws rather than silently truncating.
+w1 launches 2 lanes and w2 launches 3, both admissible under the same cap; neither wave's lane count
+needs to equal `K`. Measured band 4.75M-6.57M tokens for 3-4 lanes; halt at >1.5× band.
+
+**Gate contention, recorded not budgeted (Q8 ruled (b)).** Lane offline gates (`just check`) run
+CONCURRENTLY on the one conductor host — `just check` measures 696s (11:36) single-lane for 4565
+unit tests, and the wave runs up to 3 lanes at once in separate worktrees. Nothing bounds host CPU
+or wall-clock for that concurrency; house rule 2 ("Probe sequentially. Never draw a conclusion from
+concurrent containers.") has no stated analogue for concurrent host gates, and the port notes only
+clear the container hazard (`publishMode:'defer'` keeps every lane off `container-test`; MLflow
+runs once, serially, at the zip). The first wave's measured wall-clock under concurrency is a
+FINDING to record after it runs, not a budget to gate on before it runs.
 
 **Lane worktrees NEST under the conductor's checkout.** Exactly
 `<checkout>/.claude/worktrees/<lane>`, and lane agents `cd` there first in every stage. This is a
@@ -643,6 +710,27 @@ that every lane branch rebases onto its zip parent with ZERO conflicts. A confli
 edge-disjointness claim and fails the WAVE, not just the lane. Gate re-certification after restack
 is mandatory: a restacked tree is a new tree, and the lane's old certificate speaks for a tree that
 no longer exists.
+
+**Rollback (Q7 ruled (a)).** Axiom 8 (Terminal) requires three honest exits per loop; a failed
+INTEGRATED gate at the zip is not a fourth path around that requirement. When the zip's `just
+ship-it` (or the re-run exit gate at a restacked tip) fails, the zip UNWINDS to tip N-1 — the last
+gate-certified tip before the failing restack — and raises `DECISION-NEEDED`, naming the specific
+lane whose restack broke the gate. This is cheap because per-tip re-certification (re-running the
+exit gate at EVERY restacked tip, above) already localises the failure to one restack: the unwind
+never has to bisect across lanes, it just returns to the last tip that was actually proven green.
+Nothing is auto-ruled; the conductor decides whether to re-fix the lane, re-order the zip, or pull
+the lane from the wave entirely.
+
+**Why these engines are ported, not invoked (§8 item 3).** `td-phase-lifecycle.cascade.js` and
+`mass-patch-fanout.js` are repo-local copies of the helmsman engine, not calls to the installed
+plugin commands, because the installed plugin cannot express four things this sprint needs: the
+bun-based exit-gate runner and `bun install` are hardcoded at seven call sites upstream, with no
+seam for this repo's `just`-based gates; the `gt submit` lane policy is hardcoded upstream, with no
+seam for `publishMode:'defer'` (ruling O-1); a teardown race in the upstream zip tears down a lane's
+worktree before its exit-gate log is flushed; and the Workflow tool refuses a `scriptPath` inside a
+plugin's own cache directory when invoked from a host repo, which is exactly how the installed
+command would have to be reached. Each is a real, reproduced blocker, not a preference, and each is
+tracked upstream as Linear **FOR-1501** so the local copies can retire once fixed there.
 
 **Mode is always explicit.** NAME COLLISION: the sprint manifest's `phases[].mode` is
 `tracer|ratchet` (parallel eligibility); the cascade's `args.phase.mode` is `arch|normal` (model
@@ -784,6 +872,13 @@ Never auto-ruled. Each names its door or scope question, its measured support an
   layers contract with zero exceptions,
   zero old-prefix imports, and `remap_check` at the new HEAD recorded in-repo as the next baseline;
   the six E/D CLI subcommands still dispatch into `historical/`.
+- **Topology end-state (Q9), owned not left implicit.** The p13 terminal state is **4 inversions /
+  5 package cycles**, ACCEPTED as ruled debt — not zero. This refactor is a topological cut of the
+  measured 142/11 starting state, not a promise to drive topology to zero; §Blast Radius Summary and
+  §p9's "honest residue" already carry the measurement, this line makes it a stated verification
+  target instead of something a reader has to infer. Verified by `remap_check` run at the p13 tip
+  and recorded in-repo as the next refactor's baseline, the same artifact p13's own postcondition
+  above names.
 - **Observability.** p3b and p4 `just ship-it` live gates green, with the H lane's first MLflow run
   id recorded in the PR body; `tests/test_observability_conformance.py` green with its arms shown
   RED under mutation; at p13 a single `mlflow` importer, every entry point configured, zero prints

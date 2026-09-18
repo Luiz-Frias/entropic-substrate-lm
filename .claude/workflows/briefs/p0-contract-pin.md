@@ -4,31 +4,33 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p0-contract-pin`                                                                                                                                                          |
-| parent                                       | `refactor/hexagonal-redesign (the sprint trunk)`                                                                                                                                    |
-| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                                                                            |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
-| wave                                         | `serial`                                                                                                                                                                            |
-| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
-| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
-| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
-| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
-| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+| field                                        | value                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p0-contract-pin`                                                                                                 |
+| parent                                       | `refactor/hexagonal-redesign (the sprint trunk)`                                                                           |
+| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                   |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate. |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `serial` |
+  | `gates.liveRequired` | `true` |
+  | live gate | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`. |
+  | gates | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}` |
+  | launch | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+  | `repoToplevel` | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
-| contract                                                                                                                                                                                                               | kind     | frozen_after |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------ |
-| `.importlinter` :: layers over the LANDED layers `kernel < core < ladder < historical < composition`, with `__legacy` deliberately OUTSIDE the contract until p13 + forbidden(`core.*` ↛ mlflow                        | boto3    | botocore     |
-| `tests/test_identity_epoch.py` :: h-source-reader-v2, h-checkpoint-reader-v1, the 52-entry D1 closure manifest, `CHECKPOINT_FORMAT_VERSION`, `_TAU_ERAS`, both codec construction digests, every `*-v1`/`*-v2` literal | door     | p0           |
-| `tests/test_module_identity.py` :: `sys.modules` single-object + `_TOKEN` singleton across both spellings for all 332 modules                                                                                          | contract | p3           |
-| `tests/test_cli_surface.py` :: `--help` snapshot for `entropic_substrate.cli` and every subcommand, `-m telemetry`, `-m sentence_prediction.worker_command`; the frozen dotted-name literal set                        | contract | p13          |
-| `tests/test_packaging_identity.py` :: `packages.find` result + basedpyright / pre-commit include regexes                                                                                                               | contract | p13          |
-| `graph-bbe7976/` :: the re-derived epoch, 332 files / 326 edge-bearing modules / 1783 edges                                                                                                                            | contract | p0           |
-| `tools/mapping.json` :: the machine input, covering every node at this epoch                                                                                                                                           | contract | p5           |
+| contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | kind     | frozen_after |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------ |
+| `.importlinter` :: layers over the LANDED layers `kernel < core < ladder < historical < composition`, with `__legacy` deliberately OUTSIDE the contract until p13 + forbidden(`core.*` ↛ mlflow                                                                                                                                                                                                                                                                                                                                                                   | boto3    | botocore     |
+| `tests/test_identity_epoch.py` :: h-source-reader-v2, h-checkpoint-reader-v1, the 52-entry D1 closure manifest, `CHECKPOINT_FORMAT_VERSION`, `_TAU_ERAS`, both codec construction digests, every `*-v1`/`*-v2` literal                                                                                                                                                                                                                                                                                                                                            | door     | p0           |
+| `tests/test_module_identity.py` :: `sys.modules` single-object identity for EVERY module-level `Name = object()` sentinel found by AST PREDICATE (not by name pattern), across both spellings, for all 332 modules. RETRACTED 2026-09-18 (Q5 ruled (a)): previously "`_TOKEN` singleton" — a name-pattern scope misses `_MATRIX_ATTESTATION` and `_DESIGN_ATTESTATION`, same hazard class. Count restated in the plan's `18 module-level`Name = object()`sentinels in 18 modules by AST predicate at 144a9b5 (incl.`_MATRIX_ATTESTATION`,`_DESIGN_ATTESTATION`)`. | contract | p3           |
+| `tests/test_cli_surface.py` :: `--help` snapshot for `entropic_substrate.cli` and every subcommand, `-m telemetry`, `-m sentence_prediction.worker_command`; the frozen dotted-name literal set                                                                                                                                                                                                                                                                                                                                                                   | contract | p13          |
+| `tests/test_packaging_identity.py` :: `packages.find` result + basedpyright / pre-commit include regexes                                                                                                                                                                                                                                                                                                                                                                                                                                                          | contract | p13          |
+| `graph-bbe7976/` :: the re-derived epoch, 332 files / 326 edge-bearing modules / 1783 edges                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | contract | p0           |
+| `tools/mapping.json` :: the machine input, covering every node at this epoch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | contract | p5           |
 
 ## Contracts consumed
 
@@ -77,6 +79,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
 - The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 
@@ -99,6 +102,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_packaging_identity.py`
 - `pyproject.toml` (dev group: add `import-linter`)
 - `justfile` (add `lint-imports` to `just check`)
+- `uv.lock` (NEW 2026-09-18, DEFECT 7 carry-forward: the `import-linter` dev-group add in `pyproject.toml` changes the lockfile in the same commit)
 
 ## Already ruled
 

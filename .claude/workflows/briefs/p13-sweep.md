@@ -4,19 +4,21 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p13-sweep`                                                                                                                                                                |
-| parent                                       | `mythwave/p12-historical-composition`                                                                                                                                               |
-| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                                                                           |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
-| wave                                         | `serial (last, R-train)`                                                                                                                                                            |
-| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
-| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
-| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
-| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
-| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+| field                                        | value                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p13-sweep`                                                                                                       |
+| parent                                       | `mythwave/p12-historical-composition`                                                                                      |
+| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                  |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate. |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `serial (last, R-train)` |
+  | `gates.liveRequired` | `true` |
+  | live gate | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`. |
+  | gates | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}` |
+  | launch | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+  | `repoToplevel` | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
@@ -74,6 +76,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
 - The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 
@@ -82,6 +85,7 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 - No `src/` module moves. This is the test-side and contract-tightening pass.
 - Does not tighten `layers` to `independence` between the stage hexagons. That is a later step, after the measurement supports it.
 - Does not resolve the class-level residue (`d1_trainer_handoff ↔ d1_evaluation`, `sentence_prediction.journal ↔ execution`). Named, measured, scheduled after p13.
+- Does NOT edit sealed artifacts (`docs/verdicts/*`, `docs/e1-*preregistration*.md`). They stay stale by design even though this phase's terminal state leaves their dotted paths invalid — ruled 2026-09-18: never edited, stale by design on the operator's one-line disposition of that staleness (Q6).
 
 ## Allowed files
 
@@ -94,22 +98,25 @@ The escalation door: if correctness would require touching a contract surface, a
 - `.importlinter` (second and last edit: add `__legacy` to the contract)
 - `tests/test_legacy_coupling.py` (retired with the shims)
 - the deployment image pin
+- `CLAUDE.md`, `docs/architecture.md`, `docs/deploy-h100.md` (NEW 2026-09-18, Q6 emitted default accepted: p13 owns docs, updating all three to the landed layout)
 
 ## Already ruled
 
 Settled. The design gate must not re-open any of these as a `DECISION`.
 
-| id                 | status                                        | ruling                                                                                                                                                                                                            |
-| ------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E-5 (was DN-7)     | RATIFIED at sprint-preflight (recommendation) | The deployment image is re-pinned ONCE, at p13. Spend-adjacent.                                                                                                                                                   |
-| announcement       | RULED 2026-09-17                              | This is the only step that breaks an external caller, so it is announced separately.                                                                                                                              |
-| E-10 (was DN-20)   | RATIFIED at sprint-preflight (recommendation) | The one-implementation port and the checked-in `*Fake` doubles are DEFERRED PAST p13. Both are behaviour-adjacent and belong in no structural phase.                                                              |
-| P-1                | RULED 2026-09-17                              | Observability is wired through DURING the refactor on the E-series pattern. Rail phase p3b plus the extended rewrite-on-arrival rule. This is the one permitted behaviour-change class inside a structural phase. |
-| O-1                | RULED 2026-09-17                              | `publishMode:'defer'`. Wave lanes end CERTIFIED, the zip publishes once through `just ship-it`, and `/pr-stack-comment-triage` files into the Linear project after every wave publish.                            |
-| E-4                | RULED 2026-09-17                              | Edit the scripts, no forwarders. The dotted entrypoint names live in ONE parameterized source consumed by `run_ladder.sh`, the justfile and the worker allowlists.                                                |
-| rewrite-on-arrival | RULED 2026-09-17                              | A file's import lines are rewritten exactly once, by the phase that moves it. This phase never rewrites an importer outside its own touch set.                                                                    |
-| shim form          | RULED 2026-09-17                              | `import entropic_substrate.__legacy.<x> as _target` then `sys.modules[__name__] = _target`. A string-only `importlib.import_module` shim is forbidden: it makes the layers contract vacuously green.              |
-| skeleton           | RULED 2026-09-17                              | Merged skeleton (proposal C tree + proposal B grafts), layer contract `kernel < core < ladder < historical                                                                                                        |
+| id                 | status                                        | ruling                                                                                                                                                                                                                                      |
+| ------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E-5 (was DN-7)     | RATIFIED at sprint-preflight (recommendation) | The deployment image is re-pinned ONCE, at p13. Spend-adjacent.                                                                                                                                                                             |
+| announcement       | RULED 2026-09-17                              | This is the only step that breaks an external caller, so it is announced separately.                                                                                                                                                        |
+| E-10 (was DN-20)   | RATIFIED at sprint-preflight (recommendation) | The one-implementation port and the checked-in `*Fake` doubles are DEFERRED PAST p13. Both are behaviour-adjacent and belong in no structural phase.                                                                                        |
+| Q10                | RULED 2026-09-18                              | The ~383-file test rewrite is SCRIPTED, not hand-edited: the rewrite script itself is committed and reviewed as script-plus-spot-check against a sample, not as ~383 individual diffs.                                                      |
+| Q6 (docs)          | RULED 2026-09-18 (emitted default accepted)   | p13 owns `CLAUDE.md`, `docs/architecture.md`, `docs/deploy-h100.md`. Sealed artifacts (`docs/verdicts/*`, `docs/e1-*preregistration*.md`) are never edited; their staleness disposition is ruled 2026-09-18: never edited, stale by design. |
+| P-1                | RULED 2026-09-17                              | Observability is wired through DURING the refactor on the E-series pattern. Rail phase p3b plus the extended rewrite-on-arrival rule. This is the one permitted behaviour-change class inside a structural phase.                           |
+| O-1                | RULED 2026-09-17                              | `publishMode:'defer'`. Wave lanes end CERTIFIED, the zip publishes once through `just ship-it`, and `/pr-stack-comment-triage` files into the Linear project after every wave publish.                                                      |
+| E-4                | RULED 2026-09-17                              | Edit the scripts, no forwarders. The dotted entrypoint names live in ONE parameterized source consumed by `run_ladder.sh`, the justfile and the worker allowlists.                                                                          |
+| rewrite-on-arrival | RULED 2026-09-17                              | A file's import lines are rewritten exactly once, by the phase that moves it. This phase never rewrites an importer outside its own touch set.                                                                                              |
+| shim form          | RULED 2026-09-17                              | `import entropic_substrate.__legacy.<x> as _target` then `sys.modules[__name__] = _target`. A string-only `importlib.import_module` shim is forbidden: it makes the layers contract vacuously green.                                        |
+| skeleton           | RULED 2026-09-17                              | Merged skeleton (proposal C tree + proposal B grafts), layer contract `kernel < core < ladder < historical                                                                                                                                  |
 
 ## Guard teeth by mutation
 
@@ -133,9 +140,11 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 
 One Linear issue per line, inside this phase's milestone in project "entropic-substrate-lm — hexagonal refactor" (team Form_fxn, key FOR). Each is one commit branch in this phase's stack.
 
-1. Rewrite the 395 test files onto the new dotted paths
-2. Delete every shim and the shim generator
-3. Add __legacy to the import-linter contract and enforce zero exceptions
-4. Promote the observability conformance test to a whole-tree postcondition
-5. Record remap_check at the new HEAD as the next baseline
-6. Rebuild and re-pin the deployment image once
+1. Write and commit the scripted test-rewrite tool; review as script-plus-spot-check (Q10), not per-file diff
+2. Rewrite the 395 test files onto the new dotted paths with that script
+3. Delete every shim and the shim generator
+4. Add __legacy to the import-linter contract and enforce zero exceptions
+5. Promote the observability conformance test to a whole-tree postcondition
+6. Record remap_check at the new HEAD as the next baseline
+7. Update CLAUDE.md, docs/architecture.md and docs/deploy-h100.md to the landed layout
+8. Rebuild and re-pin the deployment image once

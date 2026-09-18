@@ -2,11 +2,11 @@
   "spec_version": "1",
   "sprint": "src/ hexagonal refactor — p0..p13 (+p3b)",
   "trunk": "refactor/hexagonal-redesign",
-  "verified_at": "bbe7976",
+  "verified_at": "144a9b5",
   "ratified": false,
-  "generated_by": "docs/plans/src-hexagonal-refactor.plan.md (approved 2026-09-17); sprint-preflight pending",
+  "generated_by": "docs/plans/src-hexagonal-refactor.plan.md (approved 2026-09-17); sprint-preflight EXECUTIVE BRIEF @ 144a9b5 (refactor-survey-2026-09-17); conductor-ruled corrections applied 2026-09-18 (this manifest)",
   "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
-  "merge_topology": "Stacked mythwave/<id> branches on refactor/hexagonal-redesign, following the p0-p13(+p3b) sequence below. Rails p0-p3b and p4-p5 land strictly serially (mode:tracer, R-mode forbids parallelism). Wave w1 = {p6-core, p7-register-gate} and wave w2 = {p8-capture, p9-run-lower, p11-analyze-review-file} are parallel_group cohorts of zero-conflict-edge ratchet phases: each member is a lane of td-phase-lifecycle-cascade (ARCH mode) in its own pre-created worktree, branch parented on the wave's entry branch (p6/p7 on mythwave/p5-kernel; p8/p9/p11 on mythwave/p7-register-gate, the w1 zip's integration tip, restated at the zip per R-train). Lanes end CERTIFIED (publishMode:'defer'); the wave ZIP is the single serializing point: conductor restacks each lane ascending by touch-set + conflict-edge footprint, runs ONE just ship-it on the integrated tip, then gt submit --stack publishes the whole wave's PRs at once. p10-run-upper, p12-historical-composition and p13-sweep are serial phases inside the lifecycle (each runs its own just ship-it). CURRENT TOOLING CAVEAT (the survey's phase-decomposition report (retained outside the repo)): td-phase-lifecycle runs strictly sequentially in a single shared worktree, so parallel_group is advisory under that tooling; refactor-wave-overlay.js assumes the pre-created-worktree-per-lane mechanism in the survey's execution-overlay report (retained outside the repo) is available before any wave is actually fanned out. The operator owns every merge and every DECISION ruling.",
+  "merge_topology": "Stacked mythwave/<id> branches on refactor/hexagonal-redesign, following the p0-p13(+p3b) sequence below. Rails p0-p3b and p4-p5 land strictly serially (mode:tracer, R-mode forbids parallelism). Wave w1 = {p6-core, p7-register-gate} parents on mythwave/p5-kernel. CORRECTED 2026-09-18 under the plan's own R-train rule (ascending footprint, plan:307-311): sequence LISTS p6 before p7 (the ratified serial-reading order) but the w1 ZIP order is p7 (20) then p6 (33), so sequence position and zip position are NOT the same thing inside a wave - the zip's integration TIP is mythwave/p6-core, the BOTTOM of that zip is mythwave/p7-register-gate. Wave w2 = {p8-capture, p9-run-lower, p11-analyze-review-file}, RULED 2026-09-18 (Q2 ruled (b)) to keep all three members, parented on mythwave/p6-core (w1's tip, not w1's bottom); zip order p11 (49), p9 (52), p8 (53), tip mythwave/p8-capture. p10-run-upper parents on mythwave/p8-capture (w2's tip), which under this lineage (p8 > p9 > p11 > p6 > p5 > ...) DOES contain p9's ladder/run/{values,transport} that p10 consumes - a parent at p11 (the zip's bottom) would provably exclude p9's work, which is the DEFECT 5 failure mode this correction closes. Lanes end CERTIFIED (publishMode:'defer'); the wave ZIP is the single serializing point: the conductor restacks ascending by footprint, RE-RUNS THE EXIT GATE AT EVERY RESTACKED TIP (plan:667-668, the per-tip re-certification the house vocabulary promises - never one gate at the bottom-most tip), then ONE just ship-it on the integrated tip, then gt submit --stack. p10, p12 and p13 are serial phases with their own just ship-it. K is the fan-out's MAXIMUM LANE WIDTH, not a per-wave cardinality (ruling O-3 sets the cap at 3 here, engine hard cap K_MAX=4): w1 launches 2 lanes, w2 launches 3, neither throws nor truncates under that cap. R-PARALLEL READING, stated because the schema wording is ambiguous and the literal reading voids both waves: the schema says a parallel_group needs 'zero conflict edges of either type', but every wave member carries a rails-before edge to a SERIAL phase (p6->p4, p8->p5, p9->p5/p10), so the literal reading admits no wave at all. Applied reading: zero conflict edges to ANOTHER MEMBER OF THE SAME GROUP - edges to serial phases are rail relations discharged by sequence position. Measured under it, w1 and w2 are both clean. The overlay provisioning, driving and zipping the lanes is `mass-patch-fanout.js` (`.claude/workflows/mass-patch-fanout.js`), the repo's ported copy of the helmsman engine; there is no bespoke refactor-wave-overlay.js (plan:599-606). The operator owns every merge and every DECISION ruling.",
   "sequence": [
     "p0-contract-pin",
     "p1-anchors",
@@ -59,7 +59,7 @@
           "frozen_after": true
         },
         {
-          "name": "tests/test_module_identity.py :: sys.modules single-object + _TOKEN singleton across both spellings for all 330(+2) modules",
+          "name": "tests/test_module_identity.py :: sys.modules single-object identity for EVERY module-level `Name = object()` sentinel found by AST PREDICATE (not by name pattern), across both spellings, for all 332(+2) modules. RETRACTED 2026-09-18 (Q5 ruled (a)): this row previously read \"_TOKEN singleton\"; a name-pattern scope misses two same-class sentinels (`_MATRIX_ATTESTATION`, `_DESIGN_ATTESTATION`). The AST-derived count at 144a9b5 is restated in the plan's 18 module-level Name = object() sentinels in 18 modules by AST predicate at 144a9b5 (incl. _MATRIX_ATTESTATION, _DESIGN_ATTESTATION) placeholder, not duplicated here.",
           "kind": "contract"
         },
         {
@@ -89,13 +89,14 @@
         {
           "with": "p13-sweep",
           "type": "contract",
-          "evidence": ".importlinter ignore list emptied there",
+          "evidence": "RETRACTED 2026-09-18: the pre-DN-P1 wording said '.importlinter ignore list emptied there'. DN-P1 abolished the ignore list entirely, so there is none to empty. The real edge: p0 creates `.importlinter` with `__legacy` OUTSIDE the layers contract; p13 makes the second and last edit, adding `__legacy` to the contract with zero exceptions.",
           "resolution": "rails-before"
         }
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict."
+      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict.",
+      "engine_mode": "arch"
     },
     {
       "id": "p1-anchors",
@@ -162,7 +163,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently."
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently.",
+      "engine_mode": "arch"
     },
     {
       "id": "p2-d1-closure",
@@ -218,7 +220,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED."
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED.",
+      "engine_mode": "arch"
     },
     {
       "id": "p3-quarantine",
@@ -243,12 +246,12 @@
       "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
       "contracts_owned": [
         {
-          "name": "tools/gen_shims.py :: one 3-line sys.modules alias file per old dotted path, generated from mapping.json",
+          "name": "tools/gen_shims.py :: one 3-line sys.modules alias file per old dotted LEAF path, generated from tools/mapping.json; fragments only ADD landed entries (DN-P1 gen_shims v2, 2026-09-18 - no module ever migrates between fragments); NEVER rebinds or writes a package __init__.py (leaf shims only - see p3's ACCEPTANCE)",
           "kind": "door",
           "frozen_after": true
         },
         {
-          "name": ".claude/workflows/landed-set.json :: the manifest driving both the shim generator and the ignore list",
+          "name": ".claude/workflows/landed-set/<id>.json :: the manifest driving the shim generator. RETRACTED 2026-09-18 (DEFECT 7, cites DN-P1): this contract previously read \"...driving both the shim generator and the ignore list\". DN-P1 abolished the import-linter ignore list at ratification; there is no ignore list left for this manifest to drive.",
           "kind": "contract"
         }
       ],
@@ -261,8 +264,8 @@
         "src/entropic_substrate/**",
         "src/entropic_substrate/__legacy/**",
         "tools/gen_shims.py",
-        ".claude/workflows/landed-set.json",
         "tests/test_shim_layer.py",
+        "tests/test_legacy_coupling.py",
         ".claude/workflows/landed-set/p3-quarantine.json"
       ],
       "conflict_edges": [
@@ -335,7 +338,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo)."
+      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo).",
+      "engine_mode": "arch"
     },
     {
       "id": "p3b-observability-rail",
@@ -389,7 +393,7 @@
       ],
       "contracts_consumed": [
         ".importlinter layers + forbidden contracts (p0)",
-        "tools/gen_shims.py + landed-set.json (p3)",
+        "tools/gen_shims.py + the landed-set fragment convention (.claude/workflows/landed-set/<id>.json) (p3)",
         "src/entropic_substrate/paths.py (p1)"
       ],
       "touch_set": [
@@ -428,7 +432,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "PRIORITY AMENDMENT (ruled 2026-09-17, P-1): lands the E-series observability seam FIRST, ahead of the H tracer, so p4 consumes landed addresses rather than old-prefix shims (a per-phase no-old-prefix test would otherwise fail on core/sentence at p4). D1's D1JournalObserver/D1MlflowObserver protocols in d1_observability.py are re-based as adapters of the one MetricSink port — no second port survives. E entry points keep working through shims; the p3b `just ship-it` live gate proves the moved MLflow path end to end for the first time. Teeth (added to .importlinter and this phase's test set, both arms by mutation): add `import mlflow` in core/sentence → RED; add one bare print() outside the two pinned sites (telemetry final-eval, cli eval --json) → RED; drop configure_logging from worker_command → RED. Rewrite-on-arrival is extended for every subsequent phase: print() routed through logger, metric emission routed through MetricSink, every -m entry point calls configure_logging at entry — the one permitted behaviour-change class inside structural phases (measured scientific behaviour stays frozen, guarded by the identity fixtures)."
+      "notes": "PRIORITY AMENDMENT (ruled 2026-09-17, P-1): lands the E-series observability seam FIRST, ahead of the H tracer, so p4 consumes landed addresses rather than old-prefix shims (a per-phase no-old-prefix test would otherwise fail on core/sentence at p4). D1's D1JournalObserver/D1MlflowObserver protocols in d1_observability.py are re-based as adapters of the one MetricSink port — no second port survives. E entry points keep working through shims; the p3b `just ship-it` live gate proves the moved MLflow path end to end for the first time. Teeth (added to .importlinter and this phase's test set, both arms by mutation): add `import mlflow` in core/sentence → RED; add one bare print() outside the two pinned sites (telemetry final-eval, cli eval --json) → RED; drop configure_logging from worker_command → RED. Rewrite-on-arrival is extended for every subsequent phase: print() routed through logger, metric emission routed through MetricSink, every -m entry point calls configure_logging at entry — the one permitted behaviour-change class inside structural phases (measured scientific behaviour stays frozen, guarded by the identity fixtures).",
+      "engine_mode": "arch"
     },
     {
       "id": "p4-h-tracer",
@@ -474,7 +479,7 @@
         }
       ],
       "contracts_consumed": [
-        "tools/gen_shims.py + landed-set.json (p3)",
+        "tools/gen_shims.py + the landed-set fragment convention (.claude/workflows/landed-set/<id>.json) (p3)",
         "src/entropic_substrate/paths.py (p1)",
         "tests/test_identity_epoch.py (p0)",
         "ladder/capture/ports/metric_sink.py + adapters (p3b)"
@@ -485,7 +490,6 @@
         "src/entropic_substrate/__legacy/h_probe_command.py",
         "src/entropic_substrate/__legacy/h_probe_controller.py",
         "src/entropic_substrate/__legacy/h_runpod_transport.py",
-        "src/entropic_substrate/__legacy/git_environment.py",
         "src/entropic_substrate/__legacy/d1_artifact_snapshot.py",
         "src/entropic_substrate/__legacy/evidence/lifecycle.py",
         "src/entropic_substrate/__legacy/predictive_state/metric.py",
@@ -500,10 +504,10 @@
         "src/entropic_substrate/ladder/capture/custody/h_source.py",
         "src/entropic_substrate/kernel/artifacts/**",
         "src/entropic_substrate/kernel/lifecycle/**",
-        "src/entropic_substrate/kernel/runtime/**",
         "src/entropic_substrate/composition/entrypoints/**",
         "tests/test_identity_epoch.py",
-        ".claude/workflows/landed-set/p4-h-tracer.json"
+        ".claude/workflows/landed-set/p4-h-tracer.json",
+        "scripts/entrypoints.env"
       ],
       "conflict_edges": [
         {
@@ -529,11 +533,18 @@
           "type": "file",
           "evidence": "ladder/run/{worker,transport} sub-packages created here",
           "resolution": "rails-before"
+        },
+        {
+          "with": "p10-run-upper",
+          "type": "file",
+          "evidence": "scripts/entrypoints.env - HAZARD 3 (lens-summary, 2026-09-17): ENTRYPOINT_H_WORKER names entropic_substrate.sentence_prediction.worker_command, which tools/mapping.json maps to p4's ladder.run destination, not p10's. p4's edit here only keeps ENTRYPOINT_H_WORKER's target valid after the H-lane move; p10 owns the parameterized entrypoint source itself as its frozen door (frozen_after p12).",
+          "resolution": "rails-before"
         }
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "First strangler tracer (operator ruling: H first) — the 55-module H lane plus the 4 reader-closure rail modules (d1_artifact_snapshot, evidence.lifecycle, predictive_state.metric/dynamics) so both H identities fire exactly once; PLUS h_probe_command.py and h_probe_controller.py, two H-lane modules discovered since the survey (dest ladder/run/worker — conductor-confirmed 2026-09-17). checkpoint.py's glob RAISES once package.parent is ladder/run (not merely changes value) — rewritten to an explicit dotted-name tuple, the idiom capture.py already uses. d_ladder_worker_runtime splits here (E-7): the live half (measure_hardware, verify_source_tree) goes to ladder/run/worker with the H tracer, verify_worker_source goes to historical/d_ladder. git_environment.py diverges from the ruling's literal wording (E-12): zero H importers, lands in p5 kernel/runtime instead. Guard-teeth: revert one of the four reader-closure rail modules to __legacy and the checkpoint identity test goes RED with a resolution error, not a digest mismatch."
+      "notes": "First strangler tracer (operator ruling: H first) — the 55-module H lane plus the 4 reader-closure rail modules (d1_artifact_snapshot, evidence.lifecycle, predictive_state.metric/dynamics) so both H identities fire exactly once; PLUS h_probe_command.py and h_probe_controller.py, two H-lane modules discovered since the survey (dest ladder/run/worker — conductor-confirmed 2026-09-17). checkpoint.py's glob RAISES once package.parent is ladder/run (not merely changes value) — rewritten to an explicit dotted-name tuple, the idiom capture.py already uses. d_ladder_worker_runtime splits here (E-7): the live half (measure_hardware, verify_source_tree) goes to ladder/run/worker with the H tracer, verify_worker_source goes to historical/d_ladder. git_environment.py diverges from the ruling's literal wording (E-12): zero H importers, lands in p5 kernel/runtime instead. Guard-teeth: revert one of the four reader-closure rail modules to __legacy and the checkpoint identity test goes RED with a resolution error, not a digest mismatch.",
+      "engine_mode": "arch"
     },
     {
       "id": "p5-kernel",
@@ -568,7 +579,7 @@
         }
       ],
       "contracts_consumed": [
-        "tools/gen_shims.py + landed-set.json (p3)",
+        "tools/gen_shims.py + the landed-set fragment convention (.claude/workflows/landed-set/<id>.json) (p3)",
         "kernel/artifacts, kernel/lifecycle (p4)"
       ],
       "touch_set": [
@@ -585,6 +596,7 @@
         "src/entropic_substrate/__legacy/d1_calibration.py",
         "src/entropic_substrate/__legacy/d1_training_step_records.py",
         "src/entropic_substrate/__legacy/d1_calibration_records.py",
+        "tests/test_no_old_prefix.py",
         "tests/test_d1_training_step_split.py",
         ".claude/workflows/landed-set/p5-kernel.json"
       ],
@@ -598,7 +610,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Lands the remaining kernel: identity (2), evidence_class (2), verdict (5), runtime (4), plus git_environment.py (12 lines, zero outbound edges, two D1 importers — E-12 divergence from the ruling's literal wording, recorded explicitly rather than silently). kernel/artifacts and kernel/lifecycle already landed in p4. Highest fan-out rail (kernel.identity: 123 eager importers, measured via blast_radius.py) — lands alone, before the waves. Guard-teeth: add one kernel→ladder import and the layers contract goes RED; reintroduce one old-prefix import in a landed package and the no-old-prefix test goes RED (ignore-list count must strictly decrease every phase from here).\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+      "notes": "Lands the remaining kernel: identity (2), evidence_class (2), verdict (5), runtime (4), plus git_environment.py (12 lines, zero outbound edges, two D1 importers — E-12 divergence from the ruling's literal wording, recorded explicitly rather than silently). kernel/artifacts and kernel/lifecycle already landed in p4. Highest fan-out rail (kernel.identity: 123 eager importers, measured via blast_radius.py) — lands alone, before the waves. Guard-teeth: add one kernel→ladder import and the layers contract goes RED; reintroduce one old-prefix import in a landed package and the no-old-prefix test goes RED. RETRACTED 2026-09-18 (DEFECT 7 class, cites DN-P1): this used to read \"(ignore-list count must strictly decrease every phase from here)\" - there is no import-linter ignore list; the strictly-decreasing quantity is each phase's own `legacy_edge_budget` in its landed-set fragment, asserted by `tests/test_legacy_coupling.py`.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file.",
+      "engine_mode": "arch"
     },
     {
       "id": "p6-core",
@@ -657,7 +670,8 @@
       ],
       "parallel_group": "w1",
       "status": "queued",
-      "notes": "The science layer: geometry 5, substrate 6, observation 5, corpus 3, probe 2, latent 11 (metric+dynamics already landed in p4). Zero algorithm or parameter change — operator-ruled zone; retracts the layers/kappa_norm.py dead-end filing in the moving commit (UnitNorm is live in build_norm). Guard-teeth: add one mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets import to any of the 54 core modules and the forbidden contract goes RED; numerics tests stay byte-identical. Under EAGER rewriting this phase would share 8 importer files with p7 (core.latent × ladder.register) — the wave is legal only because rewrite-on-arrival makes the touch sets disjoint (the survey's phase-decomposition report (retained outside the repo))."
+      "notes": "The science layer: geometry 5, substrate 6, observation 5, corpus 3, probe 2, latent 11 (metric+dynamics already landed in p4). Zero algorithm or parameter change — operator-ruled zone; retracts the layers/kappa_norm.py dead-end filing in the moving commit (UnitNorm is live in build_norm). Guard-teeth: add one mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets import to any of the 54 core modules and the forbidden contract goes RED; numerics tests stay byte-identical. Under EAGER rewriting this phase would share 8 importer files with p7 (core.latent × ladder.register) — the wave is legal only because rewrite-on-arrival makes the touch sets disjoint (the survey's phase-decomposition report (retained outside the repo)).",
+      "engine_mode": "arch"
     },
     {
       "id": "p7-register-gate",
@@ -703,7 +717,8 @@
       "conflict_edges": [],
       "parallel_group": "w1",
       "status": "queued",
-      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied."
+      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied.",
+      "engine_mode": "arch"
     },
     {
       "id": "p8-capture",
@@ -718,7 +733,7 @@
         "FOR-1470"
       ],
       "branch": "mythwave/p8-capture",
-      "parent": "mythwave/p7-register-gate",
+      "parent": "mythwave/p6-core",
       "brief": ".claude/workflows/briefs/p8-capture.md",
       "mode": "ratchet",
       "gates": {
@@ -754,7 +769,8 @@
         "src/entropic_substrate/ladder/capture/resource/**",
         "src/entropic_substrate/ladder/capture/reader/**",
         "src/entropic_substrate/ladder/capture/ledger/**",
-        ".claude/workflows/landed-set/p8-capture.json"
+        ".claude/workflows/landed-set/p8-capture.json",
+        "docs/plans/measurements/p8-capture-remap.txt"
       ],
       "conflict_edges": [
         {
@@ -766,7 +782,8 @@
       ],
       "parallel_group": "w2",
       "status": "queued",
-      "notes": "DVC-CAPTURED stage as five measured sub-packages: custody 20, records 10, resource 9, reader 9, ledger 4 (ext fan-in 74/35/46/27/20, measured — the survey's phase-decomposition report (retained outside the repo)). sentence_prediction/capture.py already landed in p4. Lands the record halves of the d1_training_step and d1_calibration splits RED-first (class 2 of the honest residue, §D.4). telemetry.py stays the only admissible read side, asserted by mutation (raises rather than returning empty on inadmissible telemetry). This is a genuine intra-wave R-hub edge with p9 (record vs torch halves of the same split) — flagged for the wave's plan-wave gate, not silently resolved here.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+      "notes": "DVC-CAPTURED stage as five measured sub-packages: custody 20, records 10, resource 9, reader 9, ledger 4 (ext fan-in 74/35/46/27/20, measured — the survey's phase-decomposition report (retained outside the repo)). sentence_prediction/capture.py already landed in p4. Lands the record halves of the d1_training_step and d1_calibration splits RED-first (class 2 of the honest residue, §D.4). telemetry.py stays the only admissible read side, asserted by mutation (raises rather than returning empty on inadmissible telemetry). This is a genuine intra-wave R-hub edge with p9 (record vs torch halves of the same split) — flagged for the wave's plan-wave gate, not silently resolved here.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file.",
+      "engine_mode": "arch"
     },
     {
       "id": "p9-run-lower",
@@ -781,7 +798,7 @@
         "FOR-1477"
       ],
       "branch": "mythwave/p9-run-lower",
-      "parent": "mythwave/p7-register-gate",
+      "parent": "mythwave/p6-core",
       "brief": ".claude/workflows/briefs/p9-run-lower.md",
       "mode": "ratchet",
       "gates": {
@@ -797,7 +814,7 @@
         }
       ],
       "contracts_consumed": [
-        "kernel addresses",
+        "kernel addresses (p4, p5)",
         "core addresses (p6)",
         "ladder/run/{worker,transport,journal} skeleton (p4)",
         "__legacy/d1_training_step.py + __legacy/d1_calibration.py :: symbol-level split into record halves (d1_training_step_records.py, d1_calibration_records.py) and torch halves, RED-first, both halves still under __legacy"
@@ -814,7 +831,8 @@
         "src/entropic_substrate/ladder/run/resource/**",
         "src/entropic_substrate/ladder/run/training/**",
         "src/entropic_substrate/ladder/run/construction/**",
-        ".claude/workflows/landed-set/p9-run-lower.json"
+        ".claude/workflows/landed-set/p9-run-lower.json",
+        "docs/plans/measurements/p9-run-lower-remap.txt"
       ],
       "conflict_edges": [
         {
@@ -832,7 +850,8 @@
       ],
       "parallel_group": "w2",
       "status": "queued",
-      "notes": "Lower half of the run stack, decomposed by measured DAG depth rather than by name: values (7 promoted value/port modules — d1_operator_values, d1_operator_evidence, d1_operator_ports), transport 15, provider 9, resource 1, training 20, construction 5 (receives d1_r2_runtime_composition). Includes the torch halves of the d1_training_step and d1_calibration splits. Sub-package membership validated with remap_check.py before the first git mv (target: no worse than the pre-agreed intra-run cycle count). Guard-teeth: move d1_operator_values back into campaign and the committed remap_check output regenerates strictly worse.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file."
+      "notes": "Lower half of the run stack, decomposed by measured DAG depth rather than by name: values (7 promoted value/port modules — d1_operator_values, d1_operator_evidence, d1_operator_ports), transport 15, provider 9, resource 1, training 20, construction 5 (receives d1_r2_runtime_composition). Includes the torch halves of the d1_training_step and d1_calibration splits. Sub-package membership validated with remap_check.py before the first git mv (target: no worse than the pre-agreed intra-run cycle count). Guard-teeth: move d1_operator_values back into campaign and the committed remap_check output regenerates strictly worse.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file.",
+      "engine_mode": "arch"
     },
     {
       "id": "p11-analyze-review-file",
@@ -845,7 +864,7 @@
         "FOR-1482"
       ],
       "branch": "mythwave/p11-analyze-review-file",
-      "parent": "mythwave/p7-register-gate",
+      "parent": "mythwave/p6-core",
       "brief": ".claude/workflows/briefs/p11-analyze-review-file.md",
       "mode": "ratchet",
       "gates": {
@@ -861,10 +880,9 @@
         }
       ],
       "contracts_consumed": [
-        "kernel addresses",
+        "kernel addresses (p4, p5)",
         "core addresses (p6)",
-        "D1 closure retirement (p2)",
-        "ladder/capture/reader (p8)"
+        "D1 closure retirement (p2)"
       ],
       "touch_set": [
         "src/entropic_substrate/__legacy/analysis/d1_external_analysis_control.py",
@@ -881,7 +899,8 @@
       "conflict_edges": [],
       "parallel_group": "w2",
       "status": "queued",
-      "notes": "ANALYZED, BLIND REVIEWED and FILED stages. The container/ACL/hermetic isolation ring lands in ladder/review/isolation, not analyze, per proposal C's named deviation. The two d1_external_* modules arrive already free of the retired reader closure (p2). In the wave, not p10, because p10 has a contract edge on p9's values/transport (rails-before), which p11 does not share. Guard-teeth: give ladder/analyze a live-service import and the forbidden contract goes RED; the Okabe-Ito chart lane and the alias commitment/reveal round-trip tests pass unchanged."
+      "notes": "ANALYZED, BLIND REVIEWED and FILED stages. The container/ACL/hermetic isolation ring lands in ladder/review/isolation, not analyze, per proposal C's named deviation. The two d1_external_* modules arrive already free of the retired reader closure (p2). In the wave, not p10, because p10 has a contract edge on p9's values/transport (rails-before), which p11 does not share. Guard-teeth: give ladder/analyze a live-service import and the forbidden contract goes RED; the Okabe-Ito chart lane and the alias commitment/reveal round-trip tests pass unchanged. RETRACTED 2026-09-18 (Q2 ruled (b), DEFECT 4): contracts_consumed previously listed \"ladder/capture/reader (p8)\" here, a same-wave contract edge R-parallel forbids. Struck: `gen_shims.py` keeps p8's `ladder.capture.reader` module shimmed under its old dotted name (`entropic_substrate.telemetry`) for as long as it is named in p8's own landed-set fragment, i.e. for the whole of wave w2, so p11's analyze modules resolve it through the shim rather than through a same-wave contract. This rests on `tests/test_no_old_prefix.py` being scoped to each phase's OWN merged fragment rather than the union of every landed fragment; recorded here as an auditable premise, not re-litigated. p11 keeps `parallel_group: \"w2\"` and now parents on `mythwave/p6-core` (the w1 zip's integration tip under ascending-footprint order p7(20) then p6(33)).",
+      "engine_mode": "arch"
     },
     {
       "id": "p10-run-upper",
@@ -895,7 +914,7 @@
         "FOR-1488"
       ],
       "branch": "mythwave/p10-run-upper",
-      "parent": "mythwave/p11-analyze-review-file",
+      "parent": "mythwave/p8-capture",
       "brief": ".claude/workflows/briefs/p10-run-upper.md",
       "mode": "ratchet",
       "gates": {
@@ -922,6 +941,7 @@
         "src/entropic_substrate/ladder/run/closure/**",
         "src/entropic_substrate/ladder/run/ckptsync/**",
         "src/entropic_substrate/ladder/run/worker/**",
+        "tests/test_entrypoint_source.py",
         ".claude/workflows/landed-set/p10-run-upper.json"
       ],
       "conflict_edges": [
@@ -930,11 +950,18 @@
           "type": "contract",
           "evidence": "ladder/run/values + ladder/run/transport",
           "resolution": "rails-before"
+        },
+        {
+          "with": "p4-h-tracer",
+          "type": "file",
+          "evidence": "scripts/entrypoints.env - reciprocal of p4's edge (HAZARD 3). p10 owns the parameterized entrypoint source as its frozen door (kind door, frozen_after:p12) and lands strictly after p4 in the serial rail order.",
+          "resolution": "hub-owner"
         }
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Serial by necessity, not by wave membership: consumes p9's values and transport sub-packages, so it lands strictly after wave w2 zips. Upper half of the run stack: campaign 15, closure 6, ckptsync 5, minus the modules promoted down in p9 (d1_operator_values/evidence/ports). provider_launch.known_workers and d1_runpod_adapter.py:345's dotted allowlist are edited in the SAME commit as the move (E-4: edit the scripts, no forwarders). Guard-teeth: leave one allowlist entry stale and the p0 CLI/entrypoint pin goes RED."
+      "notes": "Serial by necessity, not by wave membership: consumes p9's values and transport sub-packages, so it lands strictly after wave w2 zips. Upper half of the run stack: campaign 15, closure 6, ckptsync 5, minus the modules promoted down in p9 (d1_operator_values/evidence/ports). provider_launch.known_workers and d1_runpod_adapter.py:345's dotted allowlist are edited in the SAME commit as the move (E-4: edit the scripts, no forwarders). Guard-teeth: leave one allowlist entry stale and the p0 CLI/entrypoint pin goes RED.",
+      "engine_mode": "arch"
     },
     {
       "id": "p12-historical-composition",
@@ -1006,7 +1033,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "E-series to a governed read-only historical/ (proposal B §6); the 11 d_ladder modules plus analysis/d1_probe and analysis/ladder_probe to historical/d_ladder — their only importers are inside the lane (E-6/DN-9). One composition root: cli.py, per-lane wiring, -m entrypoints (E-9: run/construction accepted as a second composition site, deviation recorded in docs/architecture.md). d_ladder_artifacts + d_ladder_execution move as ONE unit (the second module-level SCC). E-4 dotted entrypoint parameterization lands here for justfile/run_ladder.sh/Containerfile. Guard-teeth: postcondition test asserts zero files under __legacy/; split the SCC pair across commits and collection goes RED. justfile is also touched by p0 — hub conflict recorded on both entries."
+      "notes": "E-series to a governed read-only historical/ (proposal B §6); the 11 d_ladder modules plus analysis/d1_probe and analysis/ladder_probe to historical/d_ladder — their only importers are inside the lane (E-6/DN-9). One composition root: cli.py, per-lane wiring, -m entrypoints (E-9: run/construction accepted as a second composition site, deviation recorded in docs/architecture.md). d_ladder_artifacts + d_ladder_execution move as ONE unit (the second module-level SCC). E-4 dotted entrypoint parameterization lands here for justfile/run_ladder.sh/Containerfile. Guard-teeth: postcondition test asserts zero files under __legacy/; split the SCC pair across commits and collection goes RED. justfile is also touched by p0 — hub conflict recorded on both entries.",
+      "engine_mode": "arch"
     },
     {
       "id": "p13-sweep",
@@ -1047,9 +1075,13 @@
         "tests/**",
         "src/entropic_substrate/__legacy/**",
         "tools/gen_shims.py",
-        ".claude/workflows/landed-set.json",
+        ".claude/workflows/landed-set/",
         ".importlinter",
-        ".claude/workflows/landed-set/p13-sweep.json"
+        "CLAUDE.md",
+        "docs/architecture.md",
+        "docs/deploy-h100.md",
+        ".claude/workflows/landed-set/p13-sweep.json",
+        "docs/plans/measurements/p13-sweep-remap.txt"
       ],
       "conflict_edges": [
         {
@@ -1139,7 +1171,8 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "One mechanical pass rewriting all test files onto the new dotted paths, then deletes every shim and the generator. Empties the import-linter ignore list, enforces the layer contract with zero exceptions. The only step that breaks an external caller — announced separately. Lands LAST per R-train (maximal conflict footprint, resolved once by the branch that caused it against a settled base). Guard-teeth: reintroduce one old dotted import anywhere and BOTH the layers contract and the no-old-prefix test go RED; remap_check at the new HEAD recorded in-repo as the next refactor's baseline. Postconditions from the priority amendment: single mlflow importer, zero unconfigured entry points, zero prints outside the allowlist, D1 observer protocols gone.\n\nDN-P1 (2026-09-17): no import-linter ignore list exists; quarantine coupling is measured per phase via .claude/workflows/landed-set/<id>.json legacy_edge_budget + tests/test_legacy_coupling.py."
+      "notes": "One mechanical pass rewriting all test files onto the new dotted paths, then deletes every shim and the generator. RETRACTED 2026-09-18 (DEFECT 7, cites DN-P1): this used to read \"Empties the import-linter ignore list\" - there is no import-linter ignore list to empty. p13 enforces the layer contract with zero exceptions by adding `__legacy` to it; that is the second and last edit of `.importlinter`. The only step that breaks an external caller — announced separately. Lands LAST per R-train (maximal conflict footprint, resolved once by the branch that caused it against a settled base). Guard-teeth: reintroduce one old dotted import anywhere and BOTH the layers contract and the no-old-prefix test go RED; remap_check at the new HEAD recorded in-repo as the next refactor's baseline. Postconditions from the priority amendment: single mlflow importer, zero unconfigured entry points, zero prints outside the allowlist, D1 observer protocols gone.\n\nDN-P1 (2026-09-17): no import-linter ignore list exists; quarantine coupling is measured per phase via .claude/workflows/landed-set/<id>.json legacy_edge_budget + tests/test_legacy_coupling.py.",
+      "engine_mode": "arch"
     }
   ],
   "lifecycle": "queued",

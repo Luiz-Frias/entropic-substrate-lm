@@ -4,19 +4,21 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p10-run-upper`                                                                                                                                                            |
-| parent                                       | `mythwave/p11-analyze-review-file (per the ratified manifest; the w2 zip ledger confirms the tip)`                                                                                  |
-| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                                                                           |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
-| wave                                         | `serial`                                                                                                                                                                            |
-| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
-| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
-| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
-| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
-| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+| field                                        | value                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p10-run-upper`                                                                                                                                                                                                                                                                                             |
+| parent                                       | `mythwave/p8-capture` (CORRECTED 2026-09-18: the w2 zip order is p11 (49), p9 (52), p8 (53), so the integration tip is `mythwave/p8-capture`, which contains p9's `ladder/run/{values,transport}`; a parent at the zip's bottom `mythwave/p11-analyze-review-file` would have provably excluded p9's work, DEFECT 5) |
+| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                                                                                                                                                                                                            |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                                                                                                                                                           |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `serial` |
+  | `gates.liveRequired` | `true` |
+  | live gate | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`. |
+  | gates | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}` |
+  | launch | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+  | `repoToplevel` | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
@@ -74,6 +76,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
 - The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 
@@ -94,6 +97,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - the parameterized entrypoint source (`[tool.entropic_substrate.entrypoints]` or `scripts/entrypoints.env`)
 - `src/entropic_substrate/__legacy/provider_launch.py` (allowlist literals)
 - `src/entropic_substrate/__legacy/d1_runpod_adapter.py` (allowlist literal at :345)
+- `tests/test_entrypoint_source.py` (NEW, AGENT-NAMED 2026-09-18: Q1 ruled (b) requires p10's own new-test path; the brief's guard-teeth row "the fail-closed allowlist refuses at launch, asserted by test rather than discovered on a pod" names no file, so this is the conventionally-named test asserting both allowlists resolve against the parameterized entrypoint source)
 
 ## Already ruled
 

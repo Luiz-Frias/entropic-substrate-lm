@@ -4,19 +4,21 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p4-h-tracer`                                                                                                                                                              |
-| parent                                       | `mythwave/p3b-observability-rail`                                                                                                                                                   |
-| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                                                                            |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
-| wave                                         | `serial`                                                                                                                                                                            |
-| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
-| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
-| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
-| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
-| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+| field                                        | value                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p4-h-tracer`                                                                                                     |
+| parent                                       | `mythwave/p3b-observability-rail`                                                                                          |
+| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                   |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate. |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `serial` |
+  | `gates.liveRequired` | `true` |
+  | live gate | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`. |
+  | gates | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}` |
+  | launch | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+  | `repoToplevel` | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
@@ -78,6 +80,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
 - The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 
@@ -104,7 +107,8 @@ The escalation door: if correctness would require touching a contract surface, a
 - `src/entropic_substrate/core/probe/score_gain.py`
 - `src/entropic_substrate/ladder/run/{training,worker,transport,spanprobe,journal}/**`
 - `src/entropic_substrate/ladder/capture/custody/h_source.py`
-- `src/entropic_substrate/kernel/{artifacts,lifecycle,runtime}/**`
+- `src/entropic_substrate/kernel/{artifacts,lifecycle}/**` (NARROWED 2026-09-18, HAZARD 2: dropped `runtime` — p4's own Non-goals already disclaim `git_environment.py` and p5 owns the rest of `kernel/runtime` per ruling E-12; the prior `{artifacts,lifecycle,runtime}` glob weakened the subset-of-Allowed-files envelope check against p5)
+- `scripts/entrypoints.env` (NEW 2026-09-18, HAZARD 3: `ENTRYPOINT_H_WORKER` names `entropic_substrate.sentence_prediction.worker_command`, which this phase moves; edited here only to keep that entry's target valid, not to author the parameterized entrypoint source, which p10 owns as its frozen door)
 - `src/entropic_substrate/composition/entrypoints/**`
 - `tests/test_identity_epoch.py`
 - `docs/identity/read-old-table.md`

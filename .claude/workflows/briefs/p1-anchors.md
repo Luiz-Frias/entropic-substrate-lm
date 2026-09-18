@@ -4,19 +4,21 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p1-anchors`                                                                                                                                                               |
-| parent                                       | `mythwave/p0-contract-pin`                                                                                                                                                          |
-| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                                                                            |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
-| wave                                         | `serial`                                                                                                                                                                            |
-| `gates.liveRequired`                         | `true`                                                                                                                                                                              |
-| live gate                                    | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`.                                                                                                   |
-| gates                                        | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}`                                                                                     |
-| launch                                       | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
-| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename.                                        |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                       |
+| field                                        | value                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p1-anchors`                                                                                                      |
+| parent                                       | `mythwave/p0-contract-pin`                                                                                                 |
+| mode (sprint manifest, parallel eligibility) | `tracer`                                                                                                                   |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate. |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `serial` |
+  | `gates.liveRequired` | `true` |
+  | live gate | `just ship-it` runs INSIDE the lifecycle. House rule 1: never a bare `gt submit`. |
+  | gates | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":true}` |
+  | launch | SERIAL phase: the conductor launches the repo's ported cascade DIRECTLY, `Workflow({scriptPath: <repo>/.claude/workflows/td-phase-lifecycle.cascade.js, args})`. Not a wave member. |
+  | `repoToplevel` | `/Users/luizfrias/CursorAI/entropic-substrate-lm`. The MAIN checkout, never a worktree, because `advisorLockPath` derives from its basename. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
@@ -73,6 +75,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
 - The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 

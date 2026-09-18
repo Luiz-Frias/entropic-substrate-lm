@@ -241,6 +241,13 @@
           },
           "notes": {
             "type": "string"
+          },
+          "engine_mode": {
+            "enum": [
+              "arch",
+              "normal"
+            ],
+            "description": "Launcher-read cascade mode copied verbatim into args.phase.mode; distinct from `mode` (tracer|ratchet = parallel eligibility). Local amendment 2026-09-18 (operator ruling; upstream feature FOR-1502): a phase without it launches in normal mode, so the launch composer refuses to launch a phase of this sprint that lacks it."
           }
         }
       }

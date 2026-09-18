@@ -4,22 +4,24 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| branch                                       | `mythwave/p6-core`                                                                                                                                                                                                                                                                                                                               |
-| parent                                       | `mythwave/p5-kernel`                                                                                                                                                                                                                                                                                                                             |
-| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                                                                                                                                                                                                                                        |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                                                                                                                                                                                       |
-| wave                                         | `w1`                                                                                                                                                                                                                                                                                                                                             |
-| `gates.liveRequired`                         | `false`                                                                                                                                                                                                                                                                                                                                          |
-| live gate                                    | DEFERRED. `gates.liveDeferred` names the wave zip as re-certification owner: one `just ship-it` on the integrated tip, never K concurrent podman stacks (house rule 2, 4 vCPU VM).                                                                                                                                                               |
-| gates                                        | The fanout takes `{"offline":"just check","exit":"just pc-ci"}` and adds no gate vocabulary of its own. `liveRequired:false` is the ported cascade's default under `publishMode:'defer'`; `gates.liveDeferred` lives in the sprint manifest, not in the fanout args.                                                                             |
-| launch                                       | WAVE MEMBER: this phase is ONE TICKET `{id,title,scope,acceptance}` inside the single `mass-patch-fanout` invocation for wave `w1`. The overlay plans, provisions and drives the lane; there is no per-lane session and no hand-written wave script. `cascadeScriptPath` is the repo's ported `.claude/workflows/td-phase-lifecycle.cascade.js`. |
-| zip order                                    | The fanout planner's `zipOrder` is AUTHORITATIVE and is validated as an exact permutation of the admitted lanes BEFORE any lane launches. The parent above is the ratified manifest's prediction; a non-permutation halts the wave with DECISION-NEEDED.                                                                                         |
-| lane worktree                                | NESTED at `<checkout>/.claude/worktrees/p6-core`, never a sibling of the conductor's worktree. Measured law from the 2026-08-27 pilot: a sibling lane is unreachable to workers (`EnterWorktree` reports success, Bash then refuses), a nested path is reachable by plain `cd`.                                                                  |
-| lane isolation                               | `cd` to the lane worktree FIRST in every stage, never `EnterWorktree`. Verify `pwd` and branch before acting and FREEZE on mismatch: harness-carved isolation worktrees have landed under the wrong lane when several nested worktrees coexist.                                                                                                  |
-| `policy.publishMode`                         | `'defer'` (ruling O-1). The lane ends CERTIFIED and publishes nothing. The wave's zip publishes once.                                                                                                                                                                                                                                            |
-| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                                                                                                                                                                                    |
+| field                                        | value                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| branch                                       | `mythwave/p6-core`                                                                                                         |
+| parent                                       | `mythwave/p5-kernel`                                                                                                       |
+| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                  |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate. |
+
+- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
+  | wave | `w1` |
+  | `gates.liveRequired` | `false` |
+  | live gate | DEFERRED. `gates.liveDeferred` names the wave zip as re-certification owner: one `just ship-it` on the integrated tip, never K concurrent podman stacks (house rule 2, 4 vCPU VM). |
+  | gates | The fanout takes `{"offline":"just check","exit":"just pc-ci"}` and adds no gate vocabulary of its own. `liveRequired:false` is the ported cascade's default under `publishMode:'defer'`; `gates.liveDeferred` lives in the sprint manifest, not in the fanout args. |
+  | launch | WAVE MEMBER: this phase is ONE TICKET `{id,title,scope,acceptance}` inside the single `mass-patch-fanout` invocation for wave `w1`. The overlay plans, provisions and drives the lane; there is no per-lane session and no hand-written wave script. `cascadeScriptPath` is the repo's ported `.claude/workflows/td-phase-lifecycle.cascade.js`. |
+  | zip order | The fanout planner's `zipOrder` is AUTHORITATIVE and is validated as an exact permutation of the admitted lanes BEFORE any lane launches. The parent above is the ratified manifest's prediction; a non-permutation halts the wave with DECISION-NEEDED. |
+  | lane worktree | NESTED at `<checkout>/.claude/worktrees/p6-core`, never a sibling of the conductor's worktree. Measured law from the 2026-08-27 pilot: a sibling lane is unreachable to workers (`EnterWorktree` reports success, Bash then refuses), a nested path is reachable by plain `cd`. |
+  | lane isolation | `cd` to the lane worktree FIRST in every stage, never `EnterWorktree`. Verify `pwd` and branch before acting and FREEZE on mismatch: harness-carved isolation worktrees have landed under the wrong lane when several nested worktrees coexist. |
+  | `policy.publishMode` | `'defer'` (ruling O-1). The lane ends CERTIFIED and publishes nothing. The wave's zip publishes once. |
+  | trunk | `refactor/hexagonal-redesign` |
 
 ## Contract surface owned
 
@@ -78,6 +80,7 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - Verdict CERTIFIED (tip SHA + exit-gate JSON). The lane does NOT publish.
 - The lane branch rebases onto its zip parent with ZERO conflicts. A conflict falsifies the wave's edge-disjointness claim and fails the WAVE, not just this lane.
 - The exit gate re-runs at the restacked tip. A restacked tree is a new tree; this lane's pre-zip certificate speaks for a tree that no longer exists.
+- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
 ## Non-goals
 
@@ -90,13 +93,12 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 
 ## Allowed files
 
-The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
+The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output). RETRACTED 2026-09-18 (Q1 ruled (b)): this section previously granted "the numerics tests, for import-path rewrite only" as a prose test grant. Struck — no phase before p13 edits EXISTING tests; shims keep them green under rewrite-on-arrival, and the prose form cannot discharge the ACCEPTANCE subset-of-Allowed-files check anyway.
 
 - `.claude/workflows/landed-set/p6-core.json` — THIS phase's disjoint fragment (modules landed, targets, `legacy_edge_budget`). No other phase's fragment. `.importlinter` is NOT in this envelope: it is edited only at p0 and p13.
 - the 33 remaining `core.*` modules and their shims
 - `src/entropic_substrate/core/**`
 - `src/entropic_substrate/__legacy/layers/kappa_norm.py` (retraction comment only)
-- the numerics tests, for import-path rewrite only
 
 ## Already ruled
 
