@@ -297,6 +297,7 @@ class TestSentinelModulesAreFileSingletonsAfterTheSweep:
                 other_name
                 for other_name, other_module in sys.modules.items()
                 if other_name != sentinel_module
+                and other_module is not owner
                 and getattr(other_module, "__file__", None) is not None
                 and Path(other_module.__file__).resolve() == owner_file
             ]
