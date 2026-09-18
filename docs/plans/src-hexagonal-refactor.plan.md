@@ -79,7 +79,7 @@ means all of them are frozen and test-verified at p0, before a single module mov
 | `h-source-reader-v2` → `v3` | door | p4 | p4 | yes, `tests/test_identity_epoch.py` |
 | `h-checkpoint-reader-v1` → `v2` | door | p4 | p4 | yes |
 | `docs/identity/read-old-table.md` | door | p4 | p4 | yes, digests asserted |
-| D1 reader source closure, 52-entry manifest | door | p2 (RETIRED) | p2 | yes, until retracted |
+| D1 reader source closure, 73-entry manifest (52 retracted at p0, measured 2026-09-18) | door | p2 (RETIRED) | p2 | yes, until retracted |
 | D1 external-analysis control envelope, `reader_source_manifest_base64` | door | p2 (REMOVED) | p2 | yes |
 | `CHECKPOINT_FORMAT_VERSION`, `_TAU_ERAS`, both codec construction digests, every `*-v1`/`*-v2` literal | door | p0 | p0 | yes |
 | sentinel-singleton identity over every dotted path, both spellings | contract | p0 | p3 | yes, `tests/test_module_identity.py` |
@@ -278,7 +278,7 @@ outbound, so free in any phase) `[M]`; `h_probe_command` and `h_probe_controller
 7ba2788 → bbe7976]`.
 
 **(b) Identity fixtures at the old epoch.** One test that computes and compares as literals:
-`h-source-reader-v2`, `h-checkpoint-reader-v1`, the 52-entry D1 closure manifest (path + sha256),
+`h-source-reader-v2`, `h-checkpoint-reader-v1`, the 73-entry D1 closure manifest (path + sha256; the survey's 52 was retracted at p0, measured 2026-09-18),
 `CHECKPOINT_FORMAT_VERSION`, the `_TAU_ERAS` tuple, both observation-codec `construction_digest`s,
 every `*-v1`/`*-v2` schema literal. Read-only fixtures: p4 bumps two, p2 deletes one, and each
 change is an explicit fixture edit in the same commit.
@@ -418,7 +418,7 @@ Retire the D1 reader source closure and the `reader_source_manifest_base64` enve
 outright (ruling E-1). Measured support: no `d1-verdict` exists, no D1 preregistration exists, no
 D1 confirmatory capture exists `[M, survey progression report §2, arbiter-reproduced; retained outside the repo]`, so **zero stored
 envelopes carry the field**. The closure has exactly two importers, both `analysis/d1_external_*`,
-and zero outbound edges `[M]`. The identity fixture drops the 52-entry manifest row and records the
+and zero outbound edges `[M]`. The identity fixture drops the 73-entry manifest row (p0-measured) and records the
 retraction in the same commit (house rule 4).
 
 <a id="p3"></a>

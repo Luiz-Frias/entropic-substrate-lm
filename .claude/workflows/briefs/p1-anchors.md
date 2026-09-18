@@ -66,7 +66,7 @@ Rewrite five depth-derived path sites onto one resolver anchored on the package 
 
 ## ACCEPTANCE
 
-- Closure MEMBERSHIP may change, not only content: if `config.py` imports the new `paths.py`, the D1 reader closure grows 52 -> 53 members; the fixture re-pin in this phase covers membership and per-file digests, and the PR body states the new count.
+- Closure MEMBERSHIP may change, not only content: if `config.py` imports the new `paths.py`, the D1 reader closure grows 73 -> 74 members (73 measured at p0, retracting the survey's 52); the fixture re-pin in this phase covers membership and per-file digests, and the PR body states the new count.
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
