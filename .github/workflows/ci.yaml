@@ -60,3 +60,9 @@ jobs:
         env:
           ENTROPIC_SUBSTRATE_DEVICE: cpu
         run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings
+
+      # p0-contract-pin (operator ruling 2026-09-18): a channel that can stop
+      # a merge, not just a local `just check` a contributor can skip. Layers
+      # contract over the LANDED layers, __legacy outside it until p13.
+      - name: Import layers (lint-imports)
+        run: uv run --no-sync lint-imports

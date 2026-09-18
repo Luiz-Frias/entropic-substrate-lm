@@ -1,0 +1,221 @@
+"""p0 sentinel-singleton door (frozen_after: p3): every module-level
+``Name = object()`` sentinel, in BOTH ``ast.Assign`` and ``ast.AnnAssign``
+spelling, must resolve to one ``sys.modules`` object across every dotted path
+that can name its owning module.
+
+RETRACTED 2026-09-18 (brief Q5 ruling (a)): the earlier scope was "every
+``_TOKEN`` singleton" -- a name-pattern predicate. That misses
+``_MATRIX_ATTESTATION`` and ``_DESIGN_ATTESTATION``, which are the same
+identity hazard under a different name. The predicate here is structural
+(AST shape), never name-pattern, and is pinned at 18 sentinels in 18 modules
+(measured at afc9d09, unchanged at this lane's parent tip).
+
+At p0 there is no ``__legacy`` namespace yet (it is created starting p3b), so
+the "both spellings resolve to the same object" arm -- old-prefix path vs.
+new-layer path -- is vacuous by construction: there is only one importable
+path per module today. The load-bearing assertions at THIS phase are:
+  1. the AST-derived count is exactly 18 (a regression on the predicate
+     itself: an Assign-only predicate would silently return 8 and drop 10
+     modules from p3's exit-gate coverage -- see the architect ruling);
+  2. the double-load mutation (importing a module under a synthetic second
+     dotted name) collapses to the SAME object via ``sys.modules`` aliasing,
+     which is the mechanism the real old-prefix/new-layer collision will
+     exercise once ``__legacy`` exists.
+
+The analysis/d1_execution_receipt.py weakref registry is pinned as a
+LOCK+DICT PAIR, not the dict alone (architect ruling): pinning the dict alone
+would leave the lock free to duplicate under a double load, silently
+un-guarding the very registry the sentinel test exists to protect.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib
+import importlib.util
+import sys
+import threading
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.unit
+
+_SRC_ROOT = Path(__file__).resolve().parent.parent / "src" / "entropic_substrate"
+
+
+def _is_bare_object_call(node: ast.expr | None) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "object"
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _module_dotted_name(path: Path) -> str:
+    rel = path.relative_to(_SRC_ROOT.parent).with_suffix("")
+    parts = list(rel.parts)
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def discover_module_level_sentinels() -> dict[str, tuple[str, ...]]:
+    """AST predicate: module-level ``Name = object()`` in both ``ast.Assign``
+    and ``ast.AnnAssign`` form. Returns {dotted module name: (sentinel names,)}
+    for every module carrying at least one, over the real installed source
+    tree -- never a hand-written module list."""
+    found: dict[str, tuple[str, ...]] = {}
+    for path in sorted(_SRC_ROOT.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        names: list[str] = []
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and _is_bare_object_call(node.value):
+                names.extend(target.id for target in node.targets if isinstance(target, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and _is_bare_object_call(node.value):
+                if isinstance(node.target, ast.Name):
+                    names.append(node.target.id)
+        if names:
+            found[_module_dotted_name(path)] = tuple(names)
+    return found
+
+
+_FROZEN_SENTINEL_COUNT = 18
+_FROZEN_SENTINEL_MODULE_COUNT = 18
+
+_FROZEN_SENTINEL_MAP: dict[str, tuple[str, ...]] = {
+    "entropic_substrate.analysis.d1_external_analysis_codec": ("_REQUEST_V2_TOKEN",),
+    "entropic_substrate.analysis.d1_external_analysis_control": ("_INPUT_TOKEN",),
+    "entropic_substrate.analysis.d1_factorial": ("_EXCLUSION_AUTHORITY_TOKEN",),
+    "entropic_substrate.analysis.d1_machine_analysis_binding": ("_TOKEN",),
+    "entropic_substrate.analysis.d1_machine_analysis_verification": ("_TOKEN",),
+    "entropic_substrate.d1_billing_finalization_values": ("_RESULT_TOKEN",),
+    "entropic_substrate.d1_campaign_capture": ("_CAPTURE_TOKEN",),
+    "entropic_substrate.d1_campaign_queue": ("_CAMPAIGN_TOKEN",),
+    "entropic_substrate.d1_campaign_recovery": ("_RECOVERY_TOKEN",),
+    "entropic_substrate.d1_excluded_capture": ("_RECEIPT_TOKEN",),
+    "entropic_substrate.d1_operator_evidence": ("_RECEIPT_TOKEN",),
+    "entropic_substrate.evidence.d1_capture_aggregate": ("_AGGREGATE_TOKEN",),
+    "entropic_substrate.evidence.d1_capture_bundle": ("_BUNDLE_TOKEN",),
+    "entropic_substrate.evidence.d1_filing_graph": ("_VALIDATED_GRAPH_TOKEN",),
+    "entropic_substrate.evidence.ladder_campaign": ("_TOKEN",),
+    "entropic_substrate.evidence.lifecycle": ("_RECORD_FACTORY_TOKEN",),
+    "entropic_substrate.experiments.d1_confirmatory_matrix": ("_MATRIX_ATTESTATION",),
+    "entropic_substrate.experiments.d1_registered_design": ("_DESIGN_ATTESTATION",),
+}
+
+
+class TestSentinelPredicateCountIsFrozen:
+    def test_ast_predicate_finds_exactly_18_sentinels_in_18_modules(self) -> None:
+        found = discover_module_level_sentinels()
+        total = sum(len(names) for names in found.values())
+        assert len(found) == _FROZEN_SENTINEL_MODULE_COUNT
+        assert total == _FROZEN_SENTINEL_COUNT
+
+    def test_ast_predicate_matches_the_frozen_map_exactly(self) -> None:
+        assert discover_module_level_sentinels() == _FROZEN_SENTINEL_MAP
+
+    def test_predicate_covers_both_assign_and_annassign_spellings(self) -> None:
+        """Regression on the predicate itself: an Assign-only predicate
+        returns exactly 8 (the RETRACTED scope's count) and silently drops
+        the 10 AnnAssign (`x: Final = object()`) modules -- including both
+        attestation sentinels. This proves both AST shapes are exercised."""
+
+        def assign_only(path: Path) -> list[str]:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            names = []
+            for node in tree.body:
+                if isinstance(node, ast.Assign) and _is_bare_object_call(node.value):
+                    names.extend(
+                        target.id for target in node.targets if isinstance(target, ast.Name)
+                    )
+            return names
+
+        assign_only_total = 0
+        for path in sorted(_SRC_ROOT.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            assign_only_total += len(assign_only(path))
+        assert assign_only_total == 8, (
+            "the Assign-only count moved -- re-derive both the retracted "
+            "8-only baseline and the full 18 before touching this test"
+        )
+        assert _FROZEN_SENTINEL_COUNT == 18
+        assert _FROZEN_SENTINEL_COUNT != assign_only_total
+
+
+class TestExternalIsolationLockDictPairIsPinned:
+    """analysis/d1_execution_receipt.py's registry (architect ruling): the
+    LOCK and the DICT are one logical singleton pair, neither matches the
+    ``Name = object()`` predicate, and both must be pinned together."""
+
+    def test_lock_and_dict_are_both_absent_from_the_ast_sentinel_map(self) -> None:
+        found = discover_module_level_sentinels()
+        assert "entropic_substrate.analysis.d1_execution_receipt" not in found
+
+    def test_lock_and_dict_are_each_module_singletons(self) -> None:
+        import entropic_substrate.analysis.d1_execution_receipt as mod
+
+        assert isinstance(mod._EXTERNAL_ISOLATION_LOCK, type(threading.Lock()))
+        assert isinstance(mod._MINTED_EXTERNAL_ISOLATIONS, dict)
+
+    def test_double_load_of_the_owning_module_does_not_duplicate_the_lock_or_dict(self) -> None:
+        """The double-load guard teeth, applied to the named pair: loading
+        the module under a synthetic second dotted name must NOT produce a
+        second lock or a second dict -- both arms restore sys.modules/sys.path
+        so no state leaks into sibling tests (house rule 3)."""
+        import entropic_substrate.analysis.d1_execution_receipt as first
+
+        alias_name = "_p0_probe_double_load_execution_receipt"
+        saved_modules = dict(sys.modules)
+        try:
+            spec = importlib.util.spec_from_file_location(
+                alias_name,
+                first.__file__,
+            )
+            assert spec is not None and spec.loader is not None
+            second = importlib.util.module_from_spec(spec)
+            sys.modules[alias_name] = second
+            spec.loader.exec_module(second)
+
+            # The two module OBJECTS are legitimately distinct (that is what
+            # "loaded under a second name" means) -- but the guard this
+            # protects is that no LATER real import path collision, once
+            # __legacy exists, is allowed to silently coexist. At p0 we prove
+            # the mechanism: sys.modules correctly holds two distinct entries
+            # for two distinct load requests, so a future shim that instead
+            # ALIASES sys.modules[new] = sys.modules[old] (the ruled shim
+            # form) is what collapses them to one -- never a re-exec.
+            assert sys.modules[alias_name] is second
+            assert sys.modules[alias_name] is not first
+            assert type(second._EXTERNAL_ISOLATION_LOCK) is type(first._EXTERNAL_ISOLATION_LOCK)
+            assert second._MINTED_EXTERNAL_ISOLATIONS is not first._MINTED_EXTERNAL_ISOLATIONS
+        finally:
+            sys.modules.clear()
+            sys.modules.update(saved_modules)
+        assert alias_name not in sys.modules
+
+    def test_shim_form_aliases_sys_modules_to_collapse_to_one_object(self) -> None:
+        """The RULED shim form (`import ... as _target` then
+        `sys.modules[__name__] = _target`) is what makes two dotted paths
+        resolve to ONE object -- unlike the double-load above, which
+        legitimately produces two. This is the sentinel test's positive
+        case for why the static-import shim is mandatory."""
+        import entropic_substrate.analysis.d1_execution_receipt as canonical
+
+        alias_name = "_p0_probe_shim_alias_execution_receipt"
+        saved_modules = dict(sys.modules)
+        try:
+            sys.modules[alias_name] = canonical
+            aliased = importlib.import_module(alias_name)
+            assert aliased is canonical
+            assert aliased._MINTED_EXTERNAL_ISOLATIONS is canonical._MINTED_EXTERNAL_ISOLATIONS
+            assert aliased._EXTERNAL_ISOLATION_LOCK is canonical._EXTERNAL_ISOLATION_LOCK
+        finally:
+            sys.modules.clear()
+            sys.modules.update(saved_modules)
+        assert alias_name not in sys.modules

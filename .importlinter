@@ -1,0 +1,42 @@
+; p0-contract-pin (design-gate rulings D1/D2, DN-P1 2026-09-17).
+;
+; This is a create-only file at p0 and, per DN-P1, is edited ONLY here and at
+; p13 (which adds `__legacy` and turns on full enforcement). From p3b through
+; p12 it names the LANDED layers and deliberately leaves `__legacy` outside
+; the contract -- quarantine coupling is bounded instead by
+; tests/test_legacy_coupling.py's legacy_edge_budget, never by an ignore list
+; here (there is no ignore list, by ruling).
+;
+; At p0 both contracts below are vacuous by construction: the five layer
+; packages are empty and core/* does not exist yet, so both pass over an
+; empty domain. Non-vacuity is proven in the lane's PR body by two mutations,
+; reverted in-branch:
+;   1. adding `import boto3` to a core.* module turns the forbidden contract
+;      RED (see the mutation log in the commit that lands this file);
+;   2. adding one `entropic_substrate.kernel -> entropic_substrate.ladder`
+;      import turns the layers contract RED.
+
+[importlinter]
+root_packages =
+    entropic_substrate
+include_external_packages = True
+
+[importlinter:contract:landed-layers]
+name = Landed layer contract: kernel < core < ladder < historical < composition
+type = layers
+layers =
+    entropic_substrate.composition
+    entropic_substrate.historical
+    entropic_substrate.ladder
+    entropic_substrate.core
+    entropic_substrate.kernel
+
+[importlinter:contract:core-forbids-external-io]
+name = core.* never imports mlflow, boto3 or botocore directly (p3b door, frozen_after p3b)
+type = forbidden
+source_modules =
+    entropic_substrate.core
+forbidden_modules =
+    mlflow
+    boto3
+    botocore
