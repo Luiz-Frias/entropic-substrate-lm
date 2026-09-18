@@ -81,6 +81,15 @@ Machine-checkable, one line each. The lane's `acceptance` arg points here.
 - `just ship-it` green; every PR's `gh pr view --json headRefOid` equals `git rev-parse` on its branch.
 - Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
 
+### Design-gate rulings (conductor, 2026-09-18, resume of wf_5a1887ce-db2)
+
+- **D1, epoch artifact:** `graph-<sha>/` is NOT committed (217 KB, regenerable by `tools/import_graph.py`). p0 commits `docs/plans/measurements/p0-epoch.json` (HEAD SHA, file/module/edge counts, inversions, cycles, tool versions) and the identity fixtures; that path is in Allowed files. Planned commit 7 (`tools/mapping.json`) is discharged by an assertion that the tracked file covers every module of the graph, with zero edits to it.
+- **D2, mapping vs contract:** `tools/mapping.json` now routes the 13 E-series / D2-D5 modules to `historical.*` and its `layers` list is `kernel, core, ladder, historical, composition`; `__legacy` is a quarantine, never a layer, in both oracles (`remap_check.py` and `lint-imports`).
+- **Layer packages may exist empty at p0:** import-linter cannot name a layer whose package is absent, so p0 MAY create exactly five empty markers `src/entropic_substrate/{kernel,core,ladder,historical,composition}/__init__.py` and name each package on a bare line of the layers contract (so the package's own `__init__.py` is linted). This is the ONLY `src/` edit permitted in p0 and it moves no code; the Non-goal 'no src edit' is amended to 'no src edit except the five empty layer markers'.
+- **Identity fixture regimes:** the composed H digests hash `python_version()` and `torch.__version__`, so the fixture asserts EXACTLY the source-derived components (reader module tuple, per-file sha256, schema literals, format version, codec digests) and records the composed digest per measured regime `(python, torch) -> digest` starting with the local one; an unmeasured regime fails loud naming the row to add, never skips.
+- **lint-imports channel (operator ruling 2026-09-18):** `just check` gains `lint-imports` AND `.github/workflows/ci.yaml` gains a `lint-imports` step after the test job, so the contracts have a channel that can stop a merge; mutation-proven in this lane.
+- **Sentinel test at p0:** with no `__legacy` namespace yet, the both-spellings arm is vacuous by construction; the double-load mutation and the exact AST-derived count (18 at afc9d09) are the load-bearing assertions and must appear in the PR body.
+
 ## Non-goals
 
 Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that looks necessary for correctness is a `DECISION`, not an edit.
@@ -92,6 +101,9 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 - Thoroughness beyond the stated ACCEPTANCE is not welcome.
 
 ## Allowed files
+
+- `docs/plans/measurements/p0-epoch.json` (epoch summary record; D1 ruling)
+- `src/entropic_substrate/{kernel,core,ladder,historical,composition}/__init__.py` (empty layer markers only; design-gate ruling)
 
 The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
 

@@ -3,7 +3,7 @@
   "kernel",
   "core",
   "ladder",
-  "__legacy",
+  "historical",
   "composition"
  ],
  "modules": {
@@ -148,10 +148,10 @@
    "note": "ACL boundary and the source closure that pins the authoritative reader"
   },
   "entropic_substrate.analysis.d1_probe": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.analysis.d1_reader_source_closure": {
    "dest": "entropic_substrate.ladder.analyze",
@@ -202,10 +202,10 @@
    "note": "verdict validation and the filed-manifest -> real-git verification graph"
   },
   "entropic_substrate.analysis.ladder_probe": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.analysis.ladder_registration": {
    "dest": "entropic_substrate.ladder.analyze",
@@ -780,10 +780,10 @@
    "note": "SPLIT: D1TrainStepResult/D1ComponentGradientEvidence/D1GradientEvidenceKind/D1GradientReachability -> ladder/capture/records/train_step.py (the only symbols the three evidence.d1_telemetry_* readers import); the torch forward/backward/clip transaction stays in ladder/run/training/"
   },
   "entropic_substrate.d_ladder_artifacts": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_cli": {
    "dest": "entropic_substrate.composition",
@@ -792,10 +792,10 @@
    "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
   },
   "entropic_substrate.d_ladder_execution": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_probe_cli": {
    "dest": "entropic_substrate.composition",
@@ -804,40 +804,40 @@
    "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
   },
   "entropic_substrate.d_ladder_remote": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_remote_request": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_request": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_resources": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_training": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.d_ladder_worker_command": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)",
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)",
    "entrypoint": true
   },
   "entropic_substrate.d_ladder_worker_runtime": {
@@ -1363,10 +1363,10 @@
    "note": "composition root that turns a registered arm into one runnable system"
   },
   "entropic_substrate.experiments.ladder_profile": {
-   "dest": "entropic_substrate.__legacy.d_ladder",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "dest": "entropic_substrate.historical.d_ladder",
+   "layer": "historical",
+   "action": "move",
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.factory_attestation": {
    "dest": "entropic_substrate.kernel.identity",
@@ -1375,10 +1375,10 @@
    "note": "factory-sealed construction attestation, zero outbound"
   },
   "entropic_substrate.field_pretrain": {
-   "dest": "entropic_substrate.__legacy.e_series",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls)"
+   "dest": "entropic_substrate.historical.e_series",
+   "layer": "historical",
+   "action": "move",
+   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.geometry": {
    "dest": "entropic_substrate.core.geometry",
@@ -1977,10 +1977,10 @@
    "note": "the only admissible read side for results/*.jsonl, plus its sinks"
   },
   "entropic_substrate.train": {
-   "dest": "entropic_substrate.__legacy.e_series",
-   "layer": "__legacy",
-   "action": "retire_legacy",
-   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls)"
+   "dest": "entropic_substrate.historical.e_series",
+   "layer": "historical",
+   "action": "move",
+   "note": "E-series byte-clock trainer; superseded as the forward path by ladder.run, kept runnable for E0-E1.5c replay (architecture.md: preserve unchanged as historical controls) | RULED DN-9/E-6 (2026-09-17): __legacy empties at p12; E-series replay and the D2-D5 lane live in a governed read-only historical/ package (p12)"
   },
   "entropic_substrate.git_environment": {
    "dest": "entropic_substrate.kernel.runtime",
@@ -2026,7 +2026,8 @@
    "git_environment→kernel.runtime",
    "h_probe_{allocation,command,controller}→ladder.run.worker",
    "d1_training_step_records/d1_calibration_records→ladder.capture.records (p5 splits)",
-   "DN-19 sub-package refinement of ladder.run / ladder.capture pending p8/p9 remap_check gate"
+   "DN-19 sub-package refinement of ladder.run / ladder.capture pending p8/p9 remap_check gate",
+   "2026-09-18 p0 design-gate D2: 13 __legacy.{e_series,d_ladder} terminal dests -> historical.*; layers list = kernel,core,ladder,historical,composition (__legacy is a quarantine, not a layer)"
   ]
  }
 }

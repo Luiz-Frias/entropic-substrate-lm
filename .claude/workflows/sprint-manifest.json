@@ -83,7 +83,14 @@
         "tests/test_cli_surface.py",
         "tests/test_packaging_identity.py",
         "pyproject.toml",
-        "justfile"
+        "justfile",
+        "docs/plans/measurements/p0-epoch.json",
+        "src/entropic_substrate/kernel/__init__.py",
+        "src/entropic_substrate/core/__init__.py",
+        "src/entropic_substrate/ladder/__init__.py",
+        "src/entropic_substrate/historical/__init__.py",
+        "src/entropic_substrate/composition/__init__.py",
+        ".github/workflows/ci.yaml"
       ],
       "conflict_edges": [
         {
@@ -95,7 +102,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict.",
+      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict.\n\nDESIGN-GATE RULINGS 2026-09-18 (wf_5a1887ce-db2): D1 epoch record = docs/plans/measurements/p0-epoch.json (graph dirs never committed); D2 mapping.json layers = kernel,core,ladder,historical,composition with the 13 legacy-lane modules re-routed to historical.*; five empty layer-package markers are the only src edit; identity fixture asserts source-derived components exactly and composed digests per measured regime. OPERATOR RULING 2026-09-18: p0 adds a lint-imports step to .github/workflows/ci.yaml (CI gate change approved).",
       "engine_mode": "arch"
     },
     {

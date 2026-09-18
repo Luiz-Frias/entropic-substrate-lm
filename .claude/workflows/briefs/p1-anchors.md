@@ -66,6 +66,8 @@ Rewrite five depth-derived path sites onto one resolver anchored on the package 
 
 ## ACCEPTANCE
 
+- Closure MEMBERSHIP may change, not only content: if `config.py` imports the new `paths.py`, the D1 reader closure grows 52 -> 53 members; the fixture re-pin in this phase covers membership and per-file digests, and the PR body states the new count.
+
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
 - New RED-first tests execute both pod guards from a relocated copy of the module and assert they still accept the bound tree and still refuse an unbound one. Mutation: point the resolver at a wrong root, both guards go RED; today no test fails when either guard breaks (measured). Identity fixtures re-pinned in the same commit.
