@@ -120,12 +120,12 @@ audit:
 # Fast hermetic unit tests only (CPU, <60s total).
 test:
     @echo "→ Running unit tests..."
-    PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings
+    PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
 # All tests (unit + integration).
 test-all:
     @echo "→ Running full test suite..."
-    PYTHONPATH=src uv run pytest -q --maxfail=1 --disable-warnings
+    PYTHONPATH=src uv run pytest -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
 # ---------------------------------------------------------------------------
 # Quality gates
