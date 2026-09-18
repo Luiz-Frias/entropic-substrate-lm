@@ -18,9 +18,14 @@ path per module today. The load-bearing assertions at THIS phase are:
      itself: an Assign-only predicate would silently return 8 and drop 10
      modules from p3's exit-gate coverage -- see the architect ruling);
   2. the double-load mutation (importing a module under a synthetic second
-     dotted name) collapses to the SAME object via ``sys.modules`` aliasing,
-     which is the mechanism the real old-prefix/new-layer collision will
-     exercise once ``__legacy`` exists.
+     dotted name) is DEMONSTRATED to produce two distinct objects -- the
+     hazard, not the guard. The guard is the file-singleton test run after
+     the exhaustive import sweep further below: it is what actually goes RED
+     when a probe module registers a duplicate ``sys.modules`` entry sharing
+     a sentinel module's file. The RULED shim form (static ``import ... as
+     _target`` then ``sys.modules[__name__] = _target``) is the only thing
+     that collapses two dotted names to the SAME object, demonstrated in
+     ``test_shim_form_aliases_sys_modules_to_collapse_to_one_object`` below.
 
 The analysis/d1_execution_receipt.py weakref registry is pinned as a
 LOCK+DICT PAIR, not the dict alone (architect ruling): pinning the dict alone
@@ -178,11 +183,16 @@ class TestExternalIsolationLockDictPairIsPinned:
         assert isinstance(mod._EXTERNAL_ISOLATION_LOCK, type(threading.Lock()))
         assert isinstance(mod._MINTED_EXTERNAL_ISOLATIONS, dict)
 
-    def test_double_load_of_the_owning_module_does_not_duplicate_the_lock_or_dict(self) -> None:
-        """The double-load guard teeth, applied to the named pair: loading
-        the module under a synthetic second dotted name must NOT produce a
-        second lock or a second dict -- both arms restore sys.modules/sys.path
-        so no state leaks into sibling tests (house rule 3)."""
+    def test_double_load_of_the_owning_module_produces_distinct_lock_and_dict(self) -> None:
+        """This is the HAZARD demonstration, not the guard: loading the
+        module under a synthetic second dotted name DOES produce a second
+        lock and a second dict -- two independently constructed objects with
+        no relationship to the originals. That is exactly the defect class
+        the sentinel test exists to catch; the actual guard that must go RED
+        under this class of mutation is the file-singleton test after the
+        exhaustive import sweep, further below. Both arms here restore
+        sys.modules/sys.path so no state leaks into sibling tests (house
+        rule 3)."""
         import entropic_substrate.analysis.d1_execution_receipt as first
 
         alias_name = "_p0_probe_double_load_execution_receipt"
