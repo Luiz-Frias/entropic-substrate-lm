@@ -17,7 +17,8 @@
    "dest": "entropic_substrate.composition",
    "layer": "composition",
    "action": "move",
-   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic",
+   "entrypoint": true
   },
   "entropic_substrate.analysis": {
    "dest": "entropic_substrate.ladder.analyze",
@@ -107,7 +108,8 @@
    "dest": "entropic_substrate.ladder.review",
    "layer": "ladder",
    "action": "move",
-   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store"
+   "note": "blind alias custody, leak-scanned packet, cloud reviewer port + receipt store",
+   "entrypoint": true
   },
   "entropic_substrate.analysis.d1_factorial": {
    "dest": "entropic_substrate.ladder.analyze",
@@ -263,7 +265,8 @@
    "dest": "entropic_substrate.composition",
    "layer": "composition",
    "action": "move",
-   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic",
+   "entrypoint": true
   },
   "entropic_substrate.config": {
    "dest": "entropic_substrate.kernel.runtime",
@@ -701,7 +704,8 @@
    "dest": "entropic_substrate.composition",
    "layer": "composition",
    "action": "move",
-   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic"
+   "note": "the one composition root: argparse surface + per-lane wiring, no domain logic",
+   "entrypoint": true
   },
   "entropic_substrate.d1_trainer_mailbox_contracts": {
    "dest": "entropic_substrate.ladder.run",
@@ -833,7 +837,8 @@
    "dest": "entropic_substrate.__legacy.d_ladder",
    "layer": "__legacy",
    "action": "retire_legacy",
-   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)"
+   "note": "D2-D5 d-ladder lane: composed 2026-09-06, never preregistered, never captured (progression.md 1.D: no confirmatory runs, no verdicts for D2-D5)",
+   "entrypoint": true
   },
   "entropic_substrate.d_ladder_worker_runtime": {
    "dest": "entropic_substrate.ladder.run",
@@ -1913,7 +1918,8 @@
    "dest": "entropic_substrate.ladder.run",
    "layer": "ladder",
    "action": "move",
-   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane"
+   "note": "pod-side worker runtime and the H0 probe supervision/watchdog plane",
+   "entrypoint": true
   },
   "entropic_substrate.sentence_prediction.worker_completion": {
    "dest": "entropic_substrate.ladder.run",
@@ -1961,7 +1967,8 @@
    "dest": "entropic_substrate.ladder.capture",
    "layer": "ladder",
    "action": "move",
-   "note": "the only admissible read side for results/*.jsonl, plus its sinks"
+   "note": "the only admissible read side for results/*.jsonl, plus its sinks",
+   "entrypoint": true
   },
   "entropic_substrate.tracking_contracts": {
    "dest": "entropic_substrate.ladder.capture",
