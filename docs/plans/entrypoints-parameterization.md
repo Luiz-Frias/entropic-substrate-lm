@@ -23,7 +23,7 @@ deliverable-10 line: "the dotted module names become ONE parameterized source
 | `Containerfile` | 90 | `entropic_substrate.cli` | a comment showing an example manual override of the default `CMD` (`sleep infinity`); never executed by the build, but the literal will read stale once `entropic_substrate.cli` moves — p12 (which owns `justfile`/`run_ladder.sh`/`Containerfile` per the phase table) should update it in the same pass |
 
 Excluded deliberately: `analysis/d1_reader_source_closure.py:24` lists
-`"entropic_substrate.telemetry"` as one of 52 entries in the D1 reader-source
+`"entropic_substrate.telemetry"` as one of 73 entries in the D1 reader-source
 closure manifest (a set of modules whose *source text* is hashed for a
 provenance digest, not an executable allowlist). Ruling E-1 retires that whole
 closure in phase `p2-d1-closure`; it is out of scope for this parameterization

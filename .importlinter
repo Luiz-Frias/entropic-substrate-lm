@@ -40,3 +40,7 @@ forbidden_modules =
     mlflow
     boto3
     botocore
+    dvc
+    runpod
+    huggingface_hub
+    datasets
