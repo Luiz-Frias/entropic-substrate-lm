@@ -137,11 +137,26 @@ check: fmt-check lint typecheck test
     @echo "✓ All quality checks passed"
 
 # CI parity gate — runs prek hooks (commit + push stages).
-pc-ci:
-    @echo "→ Running prek hooks on changed files..."
-    prek run
-    prek run --stage pre-push
-    @echo "✓ All prek gates passed"
+# CI-parity gate on the BRANCH DIFF, never on the staged set. MEASURED 2026-09-18
+# (sprint-preflight wf_f189da1b-7c8): plain `prek run` examines only staged files, so on
+# a clean tree — and on every lifecycle lane after its commits — it ran zero hooks and
+# reported PASS. A gate that examines nothing must refuse, not pass (measurement path
+# fails LOUD). base = the phase's parent under a stacked sprint ($PC_CI_BASE), default
+# origin/dev; the diff is merge-base(HEAD, base)..HEAD, i.e. exactly what this branch
+# added. An empty diff exits 2 instead of reporting a vacuous PASS.
+pc-ci base=env("PC_CI_BASE", "origin/dev"):
+    #!/usr/bin/env bash
+    set -euo pipefail
+    from_ref="$(git merge-base HEAD "{{base}}")"
+    changed="$(git diff --name-only "${from_ref}..HEAD" | wc -l | tr -d ' ')"
+    if [ "${changed}" -eq 0 ]; then
+        echo "✗ pc-ci: empty diff vs {{base}} (${from_ref:0:7}..HEAD) — nothing examined, refusing to report PASS" >&2
+        exit 2
+    fi
+    echo "→ Running prek hooks on ${changed} file(s) changed vs {{base}} (${from_ref:0:7}..HEAD)..."
+    prek run --from-ref "${from_ref}" --to-ref HEAD
+    prek run --stage pre-push --from-ref "${from_ref}" --to-ref HEAD
+    echo "✓ All prek gates passed on the branch diff"
 
 # ---------------------------------------------------------------------------
 # Data
