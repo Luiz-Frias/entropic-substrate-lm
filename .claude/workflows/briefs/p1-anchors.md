@@ -102,7 +102,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_worker_source_anchor.py`
 - `tests/test_config.py`
 - `tests/test_sinks.py`
-- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, p0 review B-integration: re-pin ONLY the D1 closure count/digest rows that the `paths.py` membership change moves; every other fixture value stays byte-identical to p0)
+- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, amended 2026-09-19 after the p0 fixer's reproduction: re-pin the D1 closure count/digest rows that the `paths.py` membership change moves AND both `_CHECKPOINT_REGIME_TABLE` composed rows, because `sentence_prediction/checkpoint.py::_reader_identity()` sweeps `sentence_prediction/*.py` and this phase edits `worker_execution.py` in that package. The local row is measured in the lane; the CI row `("3.12.14", "2.13.0+cpu")` is computed with `uv run --no-sync python tools/regime_rows.py --python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4` (its control test pins that the tool reproduces the repo's identity functions). `_SOURCE_REGIME_TABLE` rows stay byte-identical: the source reader's fixed module tuple is untouched by this phase, and the identity LABELS (`h-checkpoint-reader-v1`, `h-source-reader-v2`) do not bump before p4.)
 
 ## Already ruled
 

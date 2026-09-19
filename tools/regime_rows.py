@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Compute the H composed identity rows for a given regime.
+
+Conductor tooling (p0 ruling 2026-09-19). The two composed H identities hash a
+regime key next to regime-independent file digests:
+
+- ``h-checkpoint-reader-v1`` keys on ``(python_version, torch.__version__)``
+  (``sentence_prediction/checkpoint.py::_reader_identity``);
+- ``h-source-reader-v2`` keys on ``(python_version, pysbd version)``
+  (``sentence_prediction/capture.py::_reader_identity``).
+
+``content_identity`` is ``sha256(json.dumps(parts))``, a pure function of the
+strings, so a row for a regime this machine cannot run (CI's Linux torch build)
+is computable here from MEASURED regime strings plus the file digests at this
+tip. The regime strings are inputs, never guessed by this tool: measure them
+(a dry-run resolution on CI's platform, or CI's own log) and pass them in.
+
+Control: fed the local regime strings, both functions must reproduce the repo's
+own identity functions exactly (pinned by tests/test_regime_rows.py). Run from
+the repo root with ``PYTHONPATH=src`` or ``uv run --no-sync``:
+
+    uv run --no-sync python tools/regime_rows.py --python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from importlib import import_module
+from pathlib import Path
+
+from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
+from entropic_substrate.sentence_prediction import capture, checkpoint
+from entropic_substrate.sentence_prediction.records import content_identity
+
+
+def checkpoint_row(python: str, torch_version: str) -> str:
+    """Mirror of checkpoint._reader_identity() with the regime strings injected."""
+    package = Path(checkpoint.__file__).parent
+    paths = [
+        *package.glob("*.py"),
+        *(package.parent / "predictive_state" / name for name in ("metric.py", "dynamics.py")),
+        package.parent / "d1_artifact_snapshot.py",
+        package.parent / "evidence/lifecycle.py",
+    ]
+    return content_identity(
+        (
+            "h-checkpoint-reader-v1",
+            python,
+            torch_version,
+            *(
+                f"{path.relative_to(package.parent)}:{read_d1_artifact_bytes(path.parent, path.name, label='checkpoint reader')[2]}"
+                for path in sorted(paths)
+            ),
+        )
+    )
+
+
+def source_row(python: str, pysbd_version: str) -> str:
+    """Mirror of capture._reader_identity() with the regime strings injected."""
+    digests = []
+    for name in capture._READER_MODULES:  # pyright: ignore[reportPrivateUsage] -- mirrors the private identity on purpose
+        module = import_module(f"entropic_substrate.{name}")
+        if module.__file__ is None:
+            raise RuntimeError(f"source reader cannot bind module {name}")
+        source = Path(module.__file__)
+        _, _, digest = read_d1_artifact_bytes(source.parent, source.name, label="H source reader")
+        digests.append(f"{name}:{digest}")
+    return content_identity(("h-source-reader-v2", python, pysbd_version, *digests))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--python", required=True, help="platform.python_version() string of the target regime"
+    )
+    parser.add_argument(
+        "--torch", required=True, help="torch.__version__ string of the target regime"
+    )
+    parser.add_argument(
+        "--pysbd", required=True, help="pysbd distribution version of the target regime"
+    )
+    args = parser.parse_args(argv)
+    print(
+        f"_CHECKPOINT_REGIME_TABLE[({args.python!r}, {args.torch!r})] = {checkpoint_row(args.python, args.torch)!r}"
+    )
+    print(
+        f"_SOURCE_REGIME_TABLE[({args.python!r}, {args.pysbd!r})] = {source_row(args.python, args.pysbd)!r}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
