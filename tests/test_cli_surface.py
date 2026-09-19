@@ -18,6 +18,7 @@ would both fail (no torch) and prove nothing about this project's CLI.
 
 from __future__ import annotations
 
+import ast
 import importlib
 import os
 import subprocess
@@ -209,3 +210,16 @@ class TestMachineConsumedStdoutSitesArePinnedNotRouted:
     def test_cli_eval_json_flag_exists_and_is_raw_print(self) -> None:
         text = (_REPO_ROOT / "src/entropic_substrate/cli.py").read_text(encoding="utf-8")
         assert 'evaluate.add_argument("--json"' in text
+        # Scoped to cmd_eval itself (AST, not a whole-file substring): cli.py
+        # has a second, unrelated --json report site with the identical
+        # print(json.dumps(...)) idiom, so a file-wide substring check cannot
+        # tell "cmd_eval still raw-prints" from "some other command still does".
+        tree = ast.parse(text)
+        cmd_eval = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "cmd_eval"
+        )
+        body = ast.get_source_segment(text, cmd_eval)
+        assert body is not None, "cmd_eval has no source segment"
+        assert "print(json.dumps(payload, sort_keys=True))" in body
