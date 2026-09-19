@@ -65,5 +65,23 @@
       "entropic_substrate/d_ladder_worker_runtime.py"
     ],
     "verified_by": "PYTHONPATH=src .venv/bin/python -c \"from entropic_substrate.analysis.d1_reader_source_closure import installed_d1_reader_source_files; paths={i.path for i in installed_d1_reader_source_files()}; check=['entropic_substrate/config.py','entropic_substrate/analysis/d1_reader_source_closure.py','entropic_substrate/sinks.py','entropic_substrate/sentence_prediction/worker_execution.py','entropic_substrate/d_ladder_worker_runtime.py']; print([(c, c in paths) for c in check])\" -- both closure_members present (True), all three not_closure_members absent (False), matching the architect ruling exactly."
+  },
+  "observability_baseline": {
+    "description": "E-series entry points and modules that import from entropic_substrate.logging or entropic_substrate.sinks, measured at this epoch. Includes all direct importers; sinks itself imports logging and is included.",
+    "entry_points_and_importers": [
+      "entropic_substrate.analysis.embedding_geometry",
+      "entropic_substrate.analysis.mlflow_attach",
+      "entropic_substrate.capture_results",
+      "entropic_substrate.checkpoint",
+      "entropic_substrate.cli",
+      "entropic_substrate.field_pretrain",
+      "entropic_substrate.mlflow_aggregate",
+      "entropic_substrate.sinks",
+      "entropic_substrate.telemetry",
+      "entropic_substrate.train"
+    ],
+    "measurement_count": 10,
+    "note": "The brief mentions 9 modules (7 named + 2 unnamed analysis modules); measurement finds 10 including sinks. These are the observability surface that p1+ will rewrite to logger routing.",
+    "verified_by": "uv run --no-sync python tools/import_graph.py src/entropic_substrate /tmp/graph; then filtered edges.json for edges where dst in {entropic_substrate.logging, entropic_substrate.sinks} to extract unique src modules."
   }
 }
