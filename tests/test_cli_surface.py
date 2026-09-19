@@ -18,6 +18,7 @@ would both fail (no torch) and prove nothing about this project's CLI.
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
@@ -75,20 +76,18 @@ _FROZEN_DOTTED_LITERALS = (
 )
 
 # {relative file path: literal substrings that file must contain verbatim}.
-_FROZEN_LITERAL_SITES: dict[str, tuple[str, ...]] = {
-    "src/entropic_substrate/provider_launch.py": (
+# Split into module-importable sites (src/) keyed by dotted name and path-only sites.
+_FROZEN_LITERAL_SITES_MODULE: dict[str, tuple[str, ...]] = {
+    "provider_launch": (
         "entropic_substrate.d1_trainer_mailbox_command",
         "entropic_substrate.d_ladder_worker_command",
     ),
-    "src/entropic_substrate/d1_runpod_adapter.py": (
-        "entropic_substrate.d1_trainer_mailbox_command",
-    ),
-    "src/entropic_substrate/h_probe_launch.py": (
-        "entropic_substrate.sentence_prediction.worker_command",
-    ),
-    "src/entropic_substrate/analysis/d1_external_analysis_adapter.py": (
-        "entropic_substrate.analysis.d1_external_worker",
-    ),
+    "d1_runpod_adapter": ("entropic_substrate.d1_trainer_mailbox_command",),
+    "h_probe_launch": ("entropic_substrate.sentence_prediction.worker_command",),
+    "analysis.d1_external_analysis_adapter": ("entropic_substrate.analysis.d1_external_worker",),
+}
+
+_FROZEN_LITERAL_SITES_PATH: dict[str, tuple[str, ...]] = {
     "scripts/assemble_review_packet.py": (
         "entropic_substrate.d1_",
         "entropic_substrate.evidence.d1_",
@@ -101,6 +100,12 @@ _FROZEN_LITERAL_SITES: dict[str, tuple[str, ...]] = {
         "entropic_substrate.d_ladder_worker_command",
         "entropic_substrate.analysis.d1_external_worker",
     ),
+}
+
+# Union for the frozen literal set check: all literals across both dicts
+_FROZEN_LITERAL_SITES: dict[str, tuple[str, ...]] = {
+    **{f"src/entropic_substrate/{k}.py": v for k, v in _FROZEN_LITERAL_SITES_MODULE.items()},
+    **_FROZEN_LITERAL_SITES_PATH,
 }
 
 
@@ -157,12 +162,28 @@ class TestHelpSnapshotIsWidthPinned:
 
 class TestFrozenDottedNameLiteralSet:
     @pytest.mark.parametrize(
-        ("relative_path", "literals"),
-        list(_FROZEN_LITERAL_SITES.items()),
+        ("dotted_name", "literals"),
+        list(_FROZEN_LITERAL_SITES_MODULE.items()),
     )
-    def test_site_contains_its_frozen_literals_verbatim(
+    def test_module_site_contains_its_frozen_literals_verbatim(
+        self, dotted_name: str, literals: tuple[str, ...]
+    ) -> None:
+        # Resolve by importlib to survive p3's shim rebind
+        module_name = f"entropic_substrate.{dotted_name}"
+        module = importlib.import_module(module_name)
+        assert module.__file__ is not None, f"{module_name} has no __file__"
+        text = Path(module.__file__).read_text(encoding="utf-8")
+        for literal in literals:
+            assert literal in text, f"{module_name!s} lost frozen literal {literal!r}"
+
+    @pytest.mark.parametrize(
+        ("relative_path", "literals"),
+        list(_FROZEN_LITERAL_SITES_PATH.items()),
+    )
+    def test_path_site_contains_its_frozen_literals_verbatim(
         self, relative_path: str, literals: tuple[str, ...]
     ) -> None:
+        # Path-based sites (scripts/) cannot be imported as modules
         text = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
         for literal in literals:
             assert literal in text, f"{relative_path!s} lost frozen literal {literal!r}"
