@@ -203,12 +203,18 @@ class TestMachineConsumedStdoutSitesArePinnedNotRouted:
     the machine-readable contract a later phase's scripts parse."""
 
     def test_telemetry_final_eval_subcommand_exists_and_is_raw_print(self) -> None:
-        text = (_REPO_ROOT / "src/entropic_substrate/telemetry.py").read_text(encoding="utf-8")
+        # Resolve by importlib to survive p8's shim rebind
+        module = importlib.import_module("entropic_substrate.telemetry")
+        assert module.__file__ is not None, "entropic_substrate.telemetry has no __file__"
+        text = Path(module.__file__).read_text(encoding="utf-8")
         assert '"final-eval"' in text
         assert "print(final_eval_metric(args.path, args.metric))" in text
 
     def test_cli_eval_json_flag_exists_and_is_raw_print(self) -> None:
-        text = (_REPO_ROOT / "src/entropic_substrate/cli.py").read_text(encoding="utf-8")
+        # Resolve by importlib to survive p8's shim rebind
+        module = importlib.import_module("entropic_substrate.cli")
+        assert module.__file__ is not None, "entropic_substrate.cli has no __file__"
+        text = Path(module.__file__).read_text(encoding="utf-8")
         assert 'evaluate.add_argument("--json"' in text
         # Scoped to cmd_eval itself (AST, not a whole-file substring): cli.py
         # has a second, unrelated --json report site with the identical
