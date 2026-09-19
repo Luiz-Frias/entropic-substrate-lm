@@ -51,6 +51,24 @@ def _pyproject() -> dict:
         return tomllib.load(f)
 
 
+def _precommit_basedpyright_files_pattern() -> re.Pattern[str]:
+    """Locate the basedpyright hook's own `files:` regex in
+    .pre-commit-config.yaml without a YAML parse dependency shift -- a plain
+    line scan anchored on the hook id, matching how this file's own comment
+    cites the pin. Bounded to THIS hook's block (up to the next `- id:` or
+    end of file) so a later hook's `files:` key -- hadolint's, further down --
+    is never mistaken for basedpyright's own."""
+    precommit_text = (_REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    hook_start = re.search(r"-\s*id:\s*basedpyright\b", precommit_text)
+    assert hook_start is not None, "basedpyright hook not found in .pre-commit-config.yaml"
+    next_hook = re.search(r"\n\s*-\s*id:\s*\S+", precommit_text[hook_start.end() :])
+    block_end = hook_start.end() + next_hook.start() if next_hook else len(precommit_text)
+    block = precommit_text[hook_start.start() : block_end]
+    match = re.search(r"files:\s*(\S+)", block)
+    assert match is not None, "basedpyright hook has no files: key in .pre-commit-config.yaml"
+    return re.compile(match.group(1))
+
+
 class TestPackagesFindDiscoversTheFiveLayerMarkers:
     def test_packages_find_config_is_unedited_where_src(self) -> None:
         config = _pyproject()
@@ -90,23 +108,13 @@ class TestBasedpyrightAndPrecommitIncludeRegexesStayAligned:
         assert include == ["src", "scripts"]
 
     def test_precommit_basedpyright_files_regex_matches_the_same_tree(self) -> None:
-        precommit_text = (_REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-        # Locate the basedpyright hook block and its `files:` regex without a
-        # YAML parse dependency shift -- a plain line scan anchored on the
-        # hook id, matching how this file's own comment cites the pin.
-        match = re.search(r"id:\s*basedpyright.*?files:\s*(\S+)", precommit_text, re.DOTALL)
-        assert match is not None, "basedpyright hook not found in .pre-commit-config.yaml"
-        files_regex = match.group(1)
-        pattern = re.compile(files_regex)
+        pattern = _precommit_basedpyright_files_pattern()
         assert pattern.match("src/entropic_substrate/checkpoint.py")
         assert pattern.match("scripts/run_exit_gate.py")
         assert not pattern.match("tests/test_packaging_identity.py")
 
     def test_precommit_basedpyright_files_regex_covers_the_five_new_layer_markers(self) -> None:
-        precommit_text = (_REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-        match = re.search(r"id:\s*basedpyright.*?files:\s*(\S+)", precommit_text, re.DOTALL)
-        assert match is not None
-        pattern = re.compile(match.group(1))
+        pattern = _precommit_basedpyright_files_pattern()
         for pkg in ("kernel", "core", "ladder", "historical", "composition"):
             rel = f"src/entropic_substrate/{pkg}/__init__.py"
             assert pattern.match(rel), f"{rel} not covered by the basedpyright files regex"
