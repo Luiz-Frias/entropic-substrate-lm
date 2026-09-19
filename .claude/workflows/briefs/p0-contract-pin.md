@@ -99,6 +99,17 @@ Inputs and how each was measured (script and outputs kept by the conductor as `p
 
 Validation in the target regime happens when the draft PR's CI runs; the Validate stage reads the check states. Pinning CI's Python patch is a CI-gate change and stays with the operator (ask-first).
 
+## Gate-check ruling: mapping-coverage predicate (conductor, 2026-09-19, DECISION at gate-check:integration of wf_1e9deec4-d4a)
+
+`TestMappingCoversEveryGraphNodeAtThisEpoch` asserts every import-graph node is a `tools/mapping.json` key, minus the five layer markers. That predicate is correct at this epoch and wrong for the sprint's life: after p3 every quarantined module also appears as `entropic_substrate.__legacy.<name>`, and from p3b on, phases create modules directly inside landed layers, which are destinations and never mapping keys. Left as-is, p3 and every later phase would need `tools/mapping.json` in their envelope, which is a hub the waves forbid (R-parallel).
+
+Ruling (lane fixer applies it inside p0, TDD, mutation-proven):
+
+- The coverage set is every graph node that is NOT already at a landed layer, after stripping one leading `__legacy.` segment: `entropic_substrate.__legacy.foo` and the shim `entropic_substrate.foo` both resolve to the key `entropic_substrate.foo`; `entropic_substrate.kernel.runtime.paths` is exempt because `kernel` is in `layers`. The layer markers stay exempt through the same rule.
+- Guard teeth, both arms: an unmapped module outside the landed layers (mutation: add a throwaway `src/entropic_substrate/probe_unmapped.py`) turns the test RED; an unmapped module inside a landed layer (mutation: add `src/entropic_substrate/kernel/probe_landed.py`) stays GREEN; both mutations reverted before commit and recorded in the PR body.
+- p1 still adds its one `entropic_substrate.paths` row (its brief now grants `tools/mapping.json` for that row only); p2's deletion of `d1_reader_source_closure.py` leaves a stale mapping row, which is allowed (graph ⊆ mapping, never equality) and swept at p13.
+- `.importlinter`'s header cites `db2399e`, unreachable after the reword-only rebase; the fixer rewrites that reference to `2eaa372`. Commit messages that cite pre-reword SHAs are left alone (the ledger carries the old-to-new map).
+
 ## Design-gate rulings (conductor, 2026-09-18, resume of wf_5a1887ce-db2)
 
 - **D1, epoch artifact:** `graph-<sha>/` is NOT committed (217 KB, regenerable by `tools/import_graph.py`). p0 commits `docs/plans/measurements/p0-epoch.json` (HEAD SHA, file/module/edge counts, inversions, cycles, tool versions) and the identity fixtures; that path is in Allowed files. Planned commit 7 (`tools/mapping.json`) is discharged by an assertion that the tracked file covers every module of the graph, with zero edits to it.
@@ -134,7 +145,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `justfile` (add `lint-imports` to `just check`)
 - `uv.lock` (NEW 2026-09-18, DEFECT 7 carry-forward: the `import-linter` dev-group add in `pyproject.toml` changes the lockfile in the same commit)
 - `.github/workflows/ci.yaml` (add the `lint-imports` step; operator ruling 2026-09-18)
-- `.secrets.baseline` (CONDUCTOR RULING 2026-09-18, gate-check halt of wf_1e9deec4-d4a: mechanical companion of allowed content, same class as `uv.lock`. Permitted entries are ONLY `Hex High Entropy String` hits whose flagged lines are sha256 / git-SHA literals inside p0's own new files; verified on the lane diff: 6 entries, `docs/plans/measurements/p0-epoch.json:4` and `tests/test_identity_epoch.py:72,78,84,94,98`, all digests, no credential)
+- `.secrets.baseline` (CONDUCTOR RULING 2026-09-18, gate-check halt of wf_1e9deec4-d4a: mechanical companion of allowed content, same class as `uv.lock`. Permitted entries are ONLY `Hex High Entropy String` hits whose flagged lines are sha256 / git-SHA literals inside p0's own new files; verified on the lane diff: 6 entries, `docs/plans/measurements/p0-epoch.json:4` and `tests/test_identity_epoch.py:72,78,84,94,102` (102 corrected 2026-09-19; the earlier 98 was pragma-suppressed), all digests, no credential)
 - Conductor ruling commits ONLY (message prefix `docs(refactor):`, authored by the conductor between engine runs, never by a lane agent): this brief, `.claude/workflows/briefs/p1-anchors.md`, `.claude/workflows/briefs/p2-d1-closure.md`, `docs/plans/src-hexagonal-refactor.plan.md`, `.claude/workflows/sprint-manifest.json`. They carry rulings and measured retractions and are excluded from the lane's ACCEPTANCE subset check.
 
 ## Already ruled

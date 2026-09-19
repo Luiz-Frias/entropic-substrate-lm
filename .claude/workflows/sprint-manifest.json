@@ -148,7 +148,8 @@
         "tests/test_config.py",
         "tests/test_sinks.py",
         ".claude/workflows/landed-set/p1-anchors.json",
-        "tests/test_identity_epoch.py"
+        "tests/test_identity_epoch.py",
+        "tools/mapping.json"
       ],
       "conflict_edges": [
         {
@@ -172,7 +173,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge.",
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge. CONDUCTOR RULING 2026-09-19: tools/mapping.json enters the touch set for exactly one added row (entropic_substrate.paths -> kernel.runtime); p0's mapping-coverage predicate is generalized to nodes outside landed layers modulo a __legacy. prefix, so no later phase needs the mapping for landed-layer modules.",
       "engine_mode": "arch"
     },
     {

@@ -93,6 +93,7 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
 
 - `src/entropic_substrate/paths.py`
+- `tools/mapping.json` (CONDUCTOR RULING 2026-09-19, p0 gate-check integration: ADD exactly one row for the new module, `"entropic_substrate.paths": {"dest": "entropic_substrate.kernel.runtime", "layer": "kernel", "action": "move", "note": "added at p1; layout-invariant repo_root resolver (E-3/DN-8)"}`; no other row changes, so p0's mapping-coverage contract stays green when `paths.py` appears in the graph)
 - `src/entropic_substrate/config.py`
 - `src/entropic_substrate/sinks.py`
 - `src/entropic_substrate/analysis/d1_reader_source_closure.py`
