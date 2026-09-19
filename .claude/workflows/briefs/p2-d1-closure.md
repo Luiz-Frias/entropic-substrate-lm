@@ -95,6 +95,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_d1_reader_source_closure.py`
 - `tests/test_d1_external_worker.py`
 - `tests/test_review_packet.py`
+- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, p0 review B-integration: drop the 73-entry D1 closure manifest rows with their retraction measurement; every other fixture value stays byte-identical to p0/p1)
 
 ## Already ruled
 

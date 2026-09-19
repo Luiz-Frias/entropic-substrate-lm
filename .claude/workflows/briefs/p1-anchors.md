@@ -101,6 +101,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_worker_source_anchor.py`
 - `tests/test_config.py`
 - `tests/test_sinks.py`
+- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, p0 review B-integration: re-pin ONLY the D1 closure count/digest rows that the `paths.py` membership change moves; every other fixture value stays byte-identical to p0)
 
 ## Already ruled
 

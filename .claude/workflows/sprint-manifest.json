@@ -147,7 +147,8 @@
         "tests/test_worker_source_anchor.py",
         "tests/test_config.py",
         "tests/test_sinks.py",
-        ".claude/workflows/landed-set/p1-anchors.json"
+        ".claude/workflows/landed-set/p1-anchors.json",
+        "tests/test_identity_epoch.py"
       ],
       "conflict_edges": [
         {
@@ -171,7 +172,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently.",
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge.",
       "engine_mode": "arch"
     },
     {
@@ -216,7 +217,8 @@
         "tests/test_d1_reader_source_closure.py",
         "tests/test_d1_external_worker.py",
         "tests/test_review_packet.py",
-        ".claude/workflows/landed-set/p2-d1-closure.json"
+        ".claude/workflows/landed-set/p2-d1-closure.json",
+        "tests/test_identity_epoch.py"
       ],
       "conflict_edges": [
         {
@@ -228,7 +230,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED.",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge.",
       "engine_mode": "arch"
     },
     {
