@@ -57,14 +57,37 @@ def _mapping() -> dict:
         return json.load(f)
 
 
-def _canonical_sentinel_key(node: str) -> str:
+def _canonical_sentinel_key(node: str, *, fragments_dir: Path | None = None) -> str:
     """Normalize a module name for sentinel test comparison by:
-    1. Stripping exactly one leading __legacy. segment if present
-    2. If the result is a mapping 'dest' value, return the source key instead
-    3. Else return the result as-is
+    1. Stripping exactly one leading __legacy. segment if present.
+    2. If the result is a LANDED module's exact new dotted name, return its
+       mapping.json source key instead.
+    3. Else return the result as-is.
 
-    This allows test_module_identity to stay green when p3 moves modules under
-    __legacy and adds shims, without needing to edit this p0-owned file."""
+    This allows test_module_identity to stay green when a later phase moves
+    modules under __legacy or on into a landed layer, without needing to
+    edit this p0-owned file.
+
+    RETRACTED (gate-check finding, 2026-09-19): step 2 previously compared
+    the FULL normalized name against mapping.json's `dest` with `==`.
+    `dest` is a destination PACKAGE, shared by up to 100 source modules
+    (measured: `entropic_substrate.ladder.run` alone), never the module's
+    own final leaf path -- concatenating `dest + "." + basename` to guess
+    that path is exactly the invented rule tools/gen_shims.py's own
+    docstring refuses to add, because no primary source pins it. That made
+    the `==` match succeed only for the one sentinel whose dest happens to
+    be a singleton (`evidence.lifecycle` -> `kernel.lifecycle`, shared_by
+    1) and silently fail for the other 17.
+
+    The authoritative source for a landed module's exact new dotted name is
+    the landed-set fragments' `target` field
+    (`.claude/workflows/landed-set/<phase>.json`, merged via
+    tools/gen_shims.py's own `load_fragments`/`merge_fragments`/
+    `resolve_all_modules`) -- the same oracle the shim generator itself
+    reads to re-point a shim. Reverse-lookup goes through THAT, with
+    mapping.json's `dest` kept only as a fail-loud cross-check (a landed
+    target that disagrees with its mapping row's dest package is a defect
+    to raise, never to silently prefer one source over the other)."""
     # Step 1: strip __legacy. prefix
     legacy_prefix = "entropic_substrate.__legacy."
     if node.startswith(legacy_prefix):
@@ -72,11 +95,42 @@ def _canonical_sentinel_key(node: str) -> str:
     else:
         normalized = node
 
-    # Step 2: check if normalized matches any mapping dest
+    if normalized in _FROZEN_SENTINEL_MAP:
+        return normalized
+
+    # Step 2: reverse-lookup a LANDED module through the fragments' `target`
+    # (never through a `dest`-equality guess). At p0 (and any phase before
+    # the fragments directory exists) this is vacuous by construction.
+    if fragments_dir is None:
+        fragments_dir = _REPO_ROOT / ".claude" / "workflows" / "landed-set"
+    if not fragments_dir.is_dir():
+        return normalized
+
+    tools_dir = _REPO_ROOT / "tools"
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    import gen_shims  # local import: tools/ is not a package
+
     mapping = _mapping()
-    for source_key, entry in mapping["modules"].items():
-        if entry.get("dest") == normalized:
-            return source_key
+    fragments = gen_shims.load_fragments(fragments_dir)
+    merged = gen_shims.merge_fragments(fragments, mapping)
+    resolved = gen_shims.resolve_all_modules(merged, mapping)
+
+    for source_key in _FROZEN_SENTINEL_MAP:
+        entry = resolved.get(source_key)
+        if entry is None or not entry.get("landed", False):
+            continue
+        if entry["target"] != normalized:
+            continue
+        dest = mapping["modules"].get(source_key, {}).get("dest", "")
+        if not (normalized == dest or normalized.startswith(dest + ".")):
+            raise AssertionError(
+                f"{source_key}: landed-set target {normalized!r} disagrees "
+                f"with mapping.json dest {dest!r} for this sentinel module "
+                "-- the fragment and mapping.json sources have drifted "
+                "apart, this is a defect to raise, not to paper over"
+            )
+        return source_key
 
     # Step 3: return normalized
     return normalized
@@ -201,6 +255,99 @@ class TestSentinelPredicateCountIsFrozen:
         )
         assert _FROZEN_SENTINEL_COUNT == 18
         assert _FROZEN_SENTINEL_COUNT != assign_only_total
+
+
+class TestCanonicalSentinelKeyReverseLookupSurvivesSharedDestPackages:
+    """Guard teeth for the reverse-lookup mechanism (gate-check finding,
+    2026-09-19): mapping.json's `dest` is a destination PACKAGE, shared by
+    up to 100 source modules (measured), so a bare `dest == normalized`
+    match is structurally broken for every sentinel except the one
+    (`evidence.lifecycle` -> `kernel.lifecycle`) whose dest happens to be a
+    singleton. These mutations exercise the fragment-based reverse lookup
+    directly, via a throwaway fragments dir under ``tmp_path`` -- no real
+    source file ever moves (p0's Non-goals: zero modules move)."""
+
+    _SHARED_DEST_SOURCE = "entropic_substrate.d1_campaign_capture"
+    _SHARED_DEST_TARGET = "entropic_substrate.ladder.run.d1_campaign_capture"
+    _SINGLETON_SOURCE = "entropic_substrate.evidence.lifecycle"
+    _SINGLETON_TARGET = "entropic_substrate.kernel.lifecycle"
+
+    @staticmethod
+    def _write_fragment(tmp_path: Path, modules: dict) -> Path:
+        frag_dir = tmp_path / "landed-set"
+        frag_dir.mkdir(exist_ok=True)
+        (frag_dir / "p9-probe.json").write_text(
+            json.dumps({"phase": "p9-probe", "modules": modules})
+        )
+        return frag_dir
+
+    def test_shared_dest_package_resolves_via_fragment_target(self, tmp_path: Path) -> None:
+        """d1_campaign_capture's dest (`ladder.run`) is shared by 100 source
+        modules (measured) -- a `dest == normalized` guess can never match
+        its landed leaf name. GUARD-TEETH GREEN: with the landed-set
+        fragment naming the exact target, the reverse lookup resolves to
+        the original mapping.json source key."""
+        frag_dir = self._write_fragment(
+            tmp_path,
+            {self._SHARED_DEST_SOURCE: {"target": self._SHARED_DEST_TARGET, "landed": True}},
+        )
+        assert (
+            _canonical_sentinel_key(self._SHARED_DEST_TARGET, fragments_dir=frag_dir)
+            == self._SHARED_DEST_SOURCE
+        )
+
+    def test_landed_looking_name_with_no_claiming_fragment_does_not_falsely_resolve(
+        self, tmp_path: Path
+    ) -> None:
+        """GUARD-TEETH RED (discriminating arm): the identical dotted name
+        the previous test resolves, but with NO fragment claiming it, must
+        NOT resolve to the sentinel's old key. This is what proves the
+        fragment lookup -- not the shape of the dotted name -- is
+        load-bearing; a predicate that pattern-matched on name shape alone
+        would pass this test wrongly."""
+        frag_dir = self._write_fragment(tmp_path, {})
+        assert (
+            _canonical_sentinel_key(self._SHARED_DEST_TARGET, fragments_dir=frag_dir)
+            == self._SHARED_DEST_TARGET
+        )
+
+    def test_singleton_dest_module_still_resolves(self, tmp_path: Path) -> None:
+        """The one sentinel the OLD `dest == normalized` code happened to
+        get right (`evidence.lifecycle`, dest shared_by 1) must keep
+        resolving under the fragment-based lookup too -- the fix must not
+        regress the one case that used to work."""
+        frag_dir = self._write_fragment(
+            tmp_path,
+            {self._SINGLETON_SOURCE: {"target": self._SINGLETON_TARGET, "landed": True}},
+        )
+        assert (
+            _canonical_sentinel_key(self._SINGLETON_TARGET, fragments_dir=frag_dir)
+            == self._SINGLETON_SOURCE
+        )
+
+    def test_target_disagreeing_with_mapping_dest_fails_loud(self, tmp_path: Path) -> None:
+        """A landed-set target that disagrees with mapping.json's own dest
+        package for that source module is a drift between the two
+        authoritative sources -- raised, never silently resolved either
+        way (epistemic hygiene: never fill the gap)."""
+        wrong_target = "entropic_substrate.core.somewhere_else"
+        frag_dir = self._write_fragment(
+            tmp_path,
+            {self._SHARED_DEST_SOURCE: {"target": wrong_target, "landed": True}},
+        )
+        with pytest.raises(AssertionError, match=r"disagrees with mapping\.json dest"):
+            _canonical_sentinel_key(wrong_target, fragments_dir=frag_dir)
+
+    def test_absent_fragments_directory_is_vacuous(self) -> None:
+        """No landed-set directory yet (true at p0) -- the reverse lookup
+        must not attempt to import tools/gen_shims.py or touch the
+        filesystem beyond the existence check."""
+        missing = Path("/nonexistent-p0-landed-set-probe")
+        assert not missing.exists()
+        assert (
+            _canonical_sentinel_key(self._SHARED_DEST_TARGET, fragments_dir=missing)
+            == self._SHARED_DEST_TARGET
+        )
 
 
 class TestExternalIsolationLockDictPairIsPinned:
