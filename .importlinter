@@ -10,7 +10,7 @@
 ; At p0 both contracts below are vacuous by construction: the five layer
 ; packages are empty and core/* does not exist yet, so both pass over an
 ; empty domain. Non-vacuity plus the string-only-shim hazard were measured
-; directly against this tree at db2399e (not recorded in any commit; per
+; directly against this tree at 2eaa372 (not recorded in any commit; per
 ; house rule 5 and this brief's ACCEPTANCE, the arms belong in the lane's PR
 ; body once it is opened), each mutation applied then reverted in-branch:
 ;   1. `import boto3` in entropic_substrate/core/__init__.py ->

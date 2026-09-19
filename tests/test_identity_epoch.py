@@ -199,12 +199,14 @@ class TestUnmeasuredRegimeFailsLoudNeverSkips:
 
 
 # ---------------------------------------------------------------------------
-# D1, mapping coverage (architect ruling): tools/mapping.json's coverage
-# assertion is graph-nodes SUBSET-OF mapping-entries, one directional, never
-# set equality. Its only admissible exclusion is `entropic_substrate.<L>` for
-# each L in mapping.json's OWN `layers` key, derived at test time -- never a
-# hand-written ignore list, so a sixth unmapped top-level package still goes
-# RED while the five ruled layer markers do not.
+# D1, mapping coverage (architect ruling, generalized 2026-09-19): tools/mapping.json's
+# coverage assertion is graph-nodes SUBSET-OF mapping-entries, one directional, never set
+# equality. Admissible exclusions (ruling): (1) any subpackage of a landed layer
+# (`entropic_substrate.kernel`, `entropic_substrate.kernel.runtime`, etc.), derived at
+# test time from mapping.json's `layers` key; (2) any node that after stripping exactly
+# one `entropic_substrate.__legacy.` prefix resolves to (1) or is a mapping entry.
+# Never a hand-written ignore list, so a sixth unmapped top-level package outside
+# layers still goes RED while the five ruled layer markers do not.
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -225,6 +227,23 @@ def _mapping() -> dict:
         return json.load(f)
 
 
+def _is_layer_or_subpackage(node: str, layers: set[str]) -> bool:
+    """Check if node is a landed layer marker or a subpackage of one."""
+    for layer in layers:
+        layer_prefix = f"entropic_substrate.{layer}"
+        if node == layer_prefix or node.startswith(f"{layer_prefix}."):
+            return True
+    return False
+
+
+def _canonicalize_node(node: str) -> str:
+    """Strip exactly one leading __legacy. segment if present."""
+    legacy_prefix = "entropic_substrate.__legacy."
+    if node.startswith(legacy_prefix):
+        return "entropic_substrate." + node[len(legacy_prefix) :]
+    return node
+
+
 class TestMappingCoversEveryGraphNodeAtThisEpoch:
     def test_mapping_is_committed_with_zero_edits_to_it(self) -> None:
         mapping = _mapping()
@@ -235,16 +254,38 @@ class TestMappingCoversEveryGraphNodeAtThisEpoch:
         mapping = _mapping()
         mapping_entries = set(mapping["modules"].keys())
         layers = set(mapping["layers"])
-        excluded = {f"entropic_substrate.{layer}" for layer in layers}
         graph_nodes = _graph_module_names()
-        uncovered = graph_nodes - mapping_entries - excluded
+
+        # A node is covered if:
+        # 1. It is in the mapping, OR
+        # 2. It is a layer marker or subpackage of one, OR
+        # 3. After stripping one __legacy. prefix, it meets condition 1 or 2
+        uncovered = set()
+        for node in graph_nodes:
+            # Check condition 1: in mapping
+            if node in mapping_entries:
+                continue
+            # Check condition 2: is a layer or subpackage
+            if _is_layer_or_subpackage(node, layers):
+                continue
+            # Check condition 3: strip __legacy. and recheck
+            canonical = _canonicalize_node(node)
+            if canonical != node:
+                if canonical in mapping_entries or _is_layer_or_subpackage(canonical, layers):
+                    continue
+            uncovered.add(node)
+
         assert not uncovered, f"graph nodes not covered by tools/mapping.json: {sorted(uncovered)}"
 
     def test_exclusion_set_is_derived_from_the_layers_key_not_hand_written(self) -> None:
-        """A sixth unmapped top-level package must still go RED: the
-        exclusion set is exactly the five entries of `layers`, no more."""
+        """The base layer-marker set that seeds `_is_layer_or_subpackage` and
+        `_canonicalize_node` is exactly the five entries of `layers`, no
+        more -- both helpers are derived from this set at test time, never a
+        hand-written ignore list, so a sixth unmapped top-level package
+        (with or without a `__legacy.` prefix) still goes RED."""
         mapping = _mapping()
-        excluded = {f"entropic_substrate.{layer}" for layer in mapping["layers"]}
+        layers = set(mapping["layers"])
+        excluded = {f"entropic_substrate.{layer}" for layer in layers}
         assert excluded == {
             "entropic_substrate.kernel",
             "entropic_substrate.core",
@@ -253,5 +294,17 @@ class TestMappingCoversEveryGraphNodeAtThisEpoch:
             "entropic_substrate.composition",
         }
         # A synthetic sixth "unmapped package" is NOT in this set, so it
-        # would surface as uncovered rather than being silently absorbed.
+        # would surface as uncovered rather than being silently absorbed --
+        # neither directly nor via a __legacy. strip.
         assert "entropic_substrate.probe_unmapped_sixth_package" not in excluded
+        assert not _is_layer_or_subpackage(
+            "entropic_substrate.probe_unmapped_sixth_package", layers
+        )
+        # A subpackage of a landed layer IS covered, one level deep.
+        assert _is_layer_or_subpackage("entropic_substrate.kernel.probe", layers)
+        # Exactly one leading __legacy. segment is stripped -- a second
+        # occurrence is left in place, never recursively unwrapped.
+        assert (
+            _canonicalize_node("entropic_substrate.__legacy.__legacy.x")
+            == "entropic_substrate.__legacy.x"
+        )
