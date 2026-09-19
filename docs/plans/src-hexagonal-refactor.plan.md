@@ -210,7 +210,7 @@ Four consequences, all load-bearing:
    disjoint fragment `.claude/workflows/landed-set/<id>.json` (modules landed, targets, budget),
    which `tools/gen_shims.py` merges to emit and re-point shims and which
    `tests/test_legacy_coupling.py` checks against the AST graph. Two lanes of one wave therefore
-   never share a file, and no phase but p0 and p13 touches `.importlinter`.
+   never share a file, and no phase but p0, p3b and p13 touches `.importlinter` (p3b adds exactly one forbidden contract, the mlflow-only-from-adapter door, once its package exists; ruled 2026-09-19, p3b is a serial rail so this is not a hub).
 
 **Shim form (required).**
 

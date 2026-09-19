@@ -99,6 +99,10 @@ Inputs and how each was measured (script and outputs kept by the conductor as `p
 
 Validation in the target regime happens when the draft PR's CI runs; the Validate stage reads the check states. Pinning CI's Python patch is a CI-gate change and stays with the operator (ask-first).
 
+## Gate-check ruling: the mlflow door lives in `.importlinter` at p3b (conductor, 2026-09-19)
+
+DN-P1 said only p0 and p13 touch `.importlinter`. p0 cannot declare the mlflow-only-from-adapter forbidden contract because `ladder.capture.adapters` does not exist yet, and the p3b brief wrongly claimed p0 had. Ruled: p3b adds exactly that one forbidden contract to `.importlinter` when it creates the package (p3b is a serial rail, so the file is not a wave hub); the layers contract and p0's `core-forbids-external-io` contract stay byte-identical until p13. The p3b brief, the plan document and the manifest touch set now say so.
+
 ## Gate-check ruling: exact-match predicates and frozen_after (conductor, 2026-09-19, DECISION at gate-check:fixer of wf_1e9deec4-d4a, tip 4aa4da1)
 
 The p0 fixer reproduced, with probes reverted, that three more p0 contract tests pin exact snapshots that the quarantine itself (p3) must break, and that no later phase carries those test files, which would make them a hub across both waves. Same defect class as the mapping-coverage ruling; same remedy: keep the teeth, drop the snapshot. The lane fixer applies all three inside p0, TDD, both arms by mutation, and records the mutations in the PR body.
@@ -157,7 +161,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `.github/workflows/ci.yaml` (add the `lint-imports` step; operator ruling 2026-09-18)
 - `.secrets.baseline` (CONDUCTOR RULING 2026-09-18, gate-check halt of wf_1e9deec4-d4a: mechanical companion of allowed content, same class as `uv.lock`. Permitted entries are ONLY `Hex High Entropy String` hits whose flagged lines are sha256 / git-SHA literals inside p0's own new files; verified on the lane diff: 6 entries, `docs/plans/measurements/p0-epoch.json:4` and `tests/test_identity_epoch.py:72,78,84,94,102` (102 corrected 2026-09-19; the earlier 98 was pragma-suppressed), all digests, no credential)
 - `tools/regime_rows.py` and `tests/test_regime_rows.py` (conductor-authored tooling, ruling 2026-09-19; lane agents read them, never edit them)
-- Conductor ruling commits ONLY (message prefix `docs(refactor):`, authored by the conductor between engine runs, never by a lane agent): this brief, `.claude/workflows/briefs/p1-anchors.md`, `.claude/workflows/briefs/p2-d1-closure.md`, `docs/plans/src-hexagonal-refactor.plan.md`, `.claude/workflows/sprint-manifest.json`. They carry rulings and measured retractions and are excluded from the lane's ACCEPTANCE subset check.
+- Conductor ruling commits ONLY (message prefix `docs(refactor):`, authored by the conductor between engine runs, never by a lane agent): this brief, EVERY sibling brief under `.claude/workflows/briefs/`, every plan document under `docs/plans/` (including `docs/plans/entrypoints-parameterization.md`, touched at 2ce4388), and `.claude/workflows/sprint-manifest.json`. They carry rulings and measured retractions and are excluded from the lane's ACCEPTANCE subset check. (Generalized 2026-09-19 after two rounds of one-file-at-a-time additions.)
 
 ## Already ruled
 
