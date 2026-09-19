@@ -92,10 +92,18 @@ _FROZEN_PERMUTED_BYTE_CODEC_CONSTRUCTION_DIGEST = (
 
 _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     ("3.12.13", "2.13.0"): "42c7ac1087b0c9b1fdbe58d991458c3bf12c9c317fbe46543a44376c56b86cfe",
+    (
+        "3.12.14",
+        "2.13.0+cpu",
+    ): "a0bf5cad38047cfaf165bda80cb67b4988525404245cff9cf882dd7bebba7ec0",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     ("3.12.13", "0.3.4"): "da8205c91989bfc09feafcd56ff46d6fd6c2b366f452308e8353e425cfeae8be",
+    (
+        "3.12.14",
+        "0.3.4",
+    ): "8e973c8702bd20d9c8cfc25331346674c7070dd7cbb9e4b6488a1881f1b25165",  # pragma: allowlist secret
 }
 
 
