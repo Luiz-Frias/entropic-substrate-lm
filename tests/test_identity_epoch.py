@@ -259,7 +259,8 @@ class TestMappingCoversEveryGraphNodeAtThisEpoch:
         # A node is covered if:
         # 1. It is in the mapping, OR
         # 2. It is a layer marker or subpackage of one, OR
-        # 3. After stripping one __legacy. prefix, it meets condition 1 or 2
+        # 3. It is the bare quarantine root (entropic_substrate.__legacy), OR
+        # 4. After stripping one __legacy. prefix, it meets condition 1 or 2
         uncovered = set()
         for node in graph_nodes:
             # Check condition 1: in mapping
@@ -268,7 +269,10 @@ class TestMappingCoversEveryGraphNodeAtThisEpoch:
             # Check condition 2: is a layer or subpackage
             if _is_layer_or_subpackage(node, layers):
                 continue
-            # Check condition 3: strip __legacy. and recheck
+            # Check condition 3: bare quarantine root is always covered
+            if node == "entropic_substrate.__legacy":
+                continue
+            # Check condition 4: strip __legacy. and recheck
             canonical = _canonicalize_node(node)
             if canonical != node:
                 if canonical in mapping_entries or _is_layer_or_subpackage(canonical, layers):
