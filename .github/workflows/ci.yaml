@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # refactor/**: the hexagonal-refactor sprint trunk (operator ruling 2026-09-19);
+    # without it no sprint push or PR ran CI and lint-imports had no channel to stop a merge.
+    branches: [main, 'refactor/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'refactor/**']
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
