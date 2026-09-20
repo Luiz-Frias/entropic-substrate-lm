@@ -32,11 +32,20 @@ sweeps ``sentence_prediction/*.py`` by content, and this lane edited
 ``worker_execution.py``'s anchor (still E-3/DN-8), changing its bytes and
 therefore every regime row's digest. ``_SOURCE_REGIME_TABLE`` is untouched:
 the source reader's fixed module tuple never included ``worker_execution``.
+
+p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
+row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
+``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
+re-pinned. ``analysis/d1_reader_source_closure.py`` -- the module this row
+measured -- is retired outright this phase (operator ruling E-1); `git grep`
+over tracked source confirms zero remaining importers of
+``installed_d1_reader_source_files`` once this row is removed. This is the
+one D1 closure manifest row this phase's ruled bump touches; every other
+fixture value below stays byte-identical to p0/p1.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
 import sys
@@ -46,9 +55,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.analysis.d1_reader_source_closure import (
-    installed_d1_reader_source_files,
-)
 from entropic_substrate.checkpoint import _TAU_ERAS, CHECKPOINT_FORMAT_VERSION
 from entropic_substrate.observation.byte_codec import ByteObservationCodec
 from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
@@ -81,11 +87,6 @@ _FROZEN_SOURCE_READER_MODULES = (
 
 _FROZEN_CHECKPOINT_FORMAT_VERSION = 1
 _FROZEN_TAU_ERAS = ("softplus", "temperature")
-
-_FROZEN_D1_CLOSURE_COUNT = 74
-_FROZEN_D1_CLOSURE_MANIFEST_DIGEST = (
-    "e4917da4b6a2ad9aaef3249b85ce0317f7765d20b602669e95480cf91d5c404f"  # pragma: allowlist secret
-)
 
 _FROZEN_BYTE_CODEC_IDENTITY_LABEL = "identity-byte-v1"
 _FROZEN_BYTE_CODEC_CARDINALITY = 256
@@ -125,15 +126,6 @@ _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
 }
 
 
-def _closure_manifest_digest() -> tuple[int, str]:
-    closure = installed_d1_reader_source_files()
-    manifest = [item.manifest for item in closure]
-    digest = hashlib.sha256(
-        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    return len(closure), digest
-
-
 class TestSourceDerivedComponentsFrozenAtP0:
     """These assertions carry no regime key -- they are pure source facts."""
 
@@ -145,11 +137,6 @@ class TestSourceDerivedComponentsFrozenAtP0:
 
     def test_tau_eras_are_frozen(self) -> None:
         assert _TAU_ERAS == _FROZEN_TAU_ERAS
-
-    def test_d1_closure_manifest_is_frozen_at_74_entries(self) -> None:
-        count, digest = _closure_manifest_digest()
-        assert count == _FROZEN_D1_CLOSURE_COUNT
-        assert digest == _FROZEN_D1_CLOSURE_MANIFEST_DIGEST
 
     def test_byte_codec_construction_digest_is_frozen(self) -> None:
         codec = ByteObservationCodec()

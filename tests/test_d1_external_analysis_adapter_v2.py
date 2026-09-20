@@ -369,7 +369,7 @@ def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
         analysis=result.analysis,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(result.request.input_control.reader_source),
+        implementation=_implementation(),
         isolation=result.isolation,
     )
 
@@ -390,28 +390,7 @@ def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
         ).hexdigest(),
         "output_sha256": result.analysis.analysis_digest,
         "preregistration_sha256": result.request.input_control.preregistration.sha256,
-        "reader_sha256": hashlib.sha256(
-            result.request.input_control.reader_source.canonical_bytes
-        ).hexdigest(),
     }
-
-
-def test_v2_receipt_rejects_implementation_reader_identity_drift(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
-    result = _adapter(launch, runner).run(request)
-    implementation = _implementation(result.request.input_control.reader_source)
-
-    with pytest.raises(ValueError, match="complete reader digest differs"):
-        issue_d1_verified_analysis_receipt(
-            analysis=result.analysis,
-            request=result.request,
-            worker_response=result.worker_response,
-            implementation=replace(implementation, complete_reader_digest="f" * 64),
-            isolation=result.isolation,
-        )
 
 
 def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
@@ -450,7 +429,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
                 analysis=result.analysis,
                 request=result.request,
                 worker_response=drifted,
-                implementation=_implementation(result.request.input_control.reader_source),
+                implementation=_implementation(),
                 isolation=result.isolation,
             )
 
@@ -465,7 +444,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
     object.__setattr__(result.analysis, "aggregate", aggregate)
@@ -481,7 +460,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=other.request,
             worker_response=result.worker_response,
-            implementation=_implementation(other.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
 
@@ -491,7 +470,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
     object.__setattr__(
@@ -511,7 +490,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
 
@@ -548,7 +527,7 @@ def test_v2_receipt_rejects_each_inconsistent_execution_hash(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=isolation,
         )
 

@@ -437,13 +437,20 @@ def _run_attestations(
     return rows, parity
 
 
+# RETRACTED (house rule 4, measured 2026-09-20): this helper previously
+# also extracted the receipt's "readers" implementation block and required
+# both validated reader identities, threaded through to a "validated_readers"
+# packet field. The D1 reader-source closure that populated that block is
+# retired this phase; `git grep` over tracked source for `validated_readers`
+# returns no remaining producer once this extraction and the packet field
+# below are removed.
 def _receipt_bindings(
     receipt: D1AnalysisExecutionReceipt,
     analysis: D1AliasedMachineAnalysis,
     aggregate: D1HeterogeneousCaptureAggregate,
     aliases: D1PreparedBlindAliases,
     decision_contract: D1DecisionContract,
-) -> tuple[dict[str, object], dict[str, object]]:
+) -> dict[str, object]:
     data = receipt.manifest
     if data.get("filing_eligible") is not True:
         raise ValueError("D1 review packet requires a filing-eligible analysis receipt")
@@ -461,11 +468,7 @@ def _receipt_bindings(
         raise ValueError("D1 review packet analysis and receipt bindings differ")
     if bindings.get("decision_contract_digest") != decision_contract_digest(decision_contract):
         raise ValueError("D1 review packet decision contract binding differs")
-    implementation = cast(dict[str, object], data.get("implementation"))
-    readers = cast(dict[str, object], implementation.get("readers"))
-    if set(readers) != {"complete", "terminal_defect"}:
-        raise ValueError("D1 review packet requires both validated reader identities")
-    return bindings, readers
+    return bindings
 
 
 def build_d1_blind_review_packet(
@@ -478,7 +481,7 @@ def build_d1_blind_review_packet(
     run_evidence: tuple[D1RunEvidence, ...],
 ) -> D1ValidatedBlindReviewPacket:
     """Assemble exact evidence without serializing canonical mechanism identities."""
-    bindings, readers = _receipt_bindings(
+    bindings = _receipt_bindings(
         analysis_receipt,
         analysis,
         aggregate,
@@ -512,7 +515,6 @@ def build_d1_blind_review_packet(
         "roster_randomization": _roster_randomization(roster),
         "schema_version": _SCHEMA,
         "source_artifacts": _source_artifacts(aggregate),
-        "validated_readers": readers,
     }
     packet = D1BlindReviewPacket.from_manifest(manifest)
     validate_d1_packet_blindness(packet, decision_contract, aggregate, aliases)

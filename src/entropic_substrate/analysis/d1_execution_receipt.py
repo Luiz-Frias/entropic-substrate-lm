@@ -53,9 +53,6 @@ __all__ = [
     "parse_d1_analysis_execution_receipt",
 ]
 
-_COMPLETE_READER = "entropic_substrate.telemetry.read_d1_run_evidence"
-_DEFECT_READER = "entropic_substrate.telemetry.read_d1_terminal_defect"
-
 
 def _sha256(value: str, *, label: str) -> None:
     try:
@@ -403,22 +400,28 @@ class D1InProcessIsolationRunnerFake:
 
 @dataclass(frozen=True, slots=True)
 class D1AnalysisImplementationIdentity:
+    """Executed implementation identity for a D1 analysis run.
+
+    RETRACTED (house rule 4, measured 2026-09-20): this identity previously
+    also carried ``analysis_code_digest``, ``complete_reader_digest`` and
+    ``defect_reader_digest``, cross-verified in
+    ``issue_d1_verified_analysis_receipt`` against the external control
+    envelope's now-retired ``reader_source`` manifest. Zero persisted
+    receipts (checked over tracked source and DVC-materialized ``results/``)
+    carried a stored envelope with that arm populated for a reason other
+    than exercising this now-removed cross-check, so the fields and their
+    verification are retired outright rather than kept as unverified
+    passengers (design-gate constraint: no synthetic digest standing in for
+    a removed provenance guard).
+    """
+
     code_commit: str
     repository_digest: str
-    analysis_code_digest: str
     image_digest: str
-    complete_reader_digest: str
-    defect_reader_digest: str
 
     def __post_init__(self) -> None:
         _commit(self.code_commit)
-        for field in (
-            "repository_digest",
-            "analysis_code_digest",
-            "complete_reader_digest",
-            "defect_reader_digest",
-        ):
-            _sha256(getattr(self, field), label=f"D1 {field}")
+        _sha256(self.repository_digest, label="D1 repository_digest")
         if not self.image_digest.startswith("sha256:"):
             raise ValueError("D1 analysis image_digest must be immutable sha256 OCI identity")
         _sha256(self.image_digest.removeprefix("sha256:"), label="D1 analysis image_digest")
@@ -426,16 +429,8 @@ class D1AnalysisImplementationIdentity:
     @property
     def manifest(self) -> dict[str, object]:
         return {
-            "analysis_code_digest": self.analysis_code_digest,
             "code_commit": self.code_commit,
             "image_digest": self.image_digest,
-            "readers": {
-                "complete": {"identity": _COMPLETE_READER, "sha256": self.complete_reader_digest},
-                "terminal_defect": {
-                    "identity": _DEFECT_READER,
-                    "sha256": self.defect_reader_digest,
-                },
-            },
             "repository_digest": self.repository_digest,
         }
 
@@ -558,16 +553,6 @@ def issue_d1_verified_analysis_receipt(
         raise TypeError("D1 v2 analysis receipt requires nominal verified values")
     if analysis.expected is not request.input_control:
         raise ValueError("D1 v2 receipt request input differs from verified analysis")
-    reader_source = request.input_control.reader_source
-    reader_digests = {entry.identity: entry.sha256 for entry in reader_source.modules}
-    complete_reader_module = reader_source.complete_reader.rpartition(".")[0]
-    defect_reader_module = reader_source.terminal_defect_reader.rpartition(".")[0]
-    if implementation.analysis_code_digest != reader_source.analysis_code_digest:
-        raise ValueError("D1 v2 receipt analysis code digest differs from reader source")
-    if implementation.complete_reader_digest != reader_digests.get(complete_reader_module):
-        raise ValueError("D1 v2 receipt complete reader digest differs from reader source")
-    if implementation.defect_reader_digest != reader_digests.get(defect_reader_module):
-        raise ValueError("D1 v2 receipt terminal defect reader digest differs from reader source")
     if analysis.aggregate.manifest_digest != request.input_control.aggregate.manifest_digest:
         raise ValueError("D1 v2 receipt aggregate differs from request input")
     if worker_response.analysis_request_digest != request.analysis_request_digest:
@@ -612,9 +597,6 @@ def issue_d1_verified_analysis_receipt(
             request.input_control.aggregate.canonical_json.encode("utf-8")
         ).hexdigest(),
         preregistration_sha256=request.input_control.preregistration.sha256,
-        reader_sha256=hashlib.sha256(
-            request.input_control.reader_source.canonical_bytes
-        ).hexdigest(),
         isolation_attestation_sha256=hashlib.sha256(
             canonical_d1_analysis_receipt_bytes(isolation.manifest)
         ).hexdigest(),

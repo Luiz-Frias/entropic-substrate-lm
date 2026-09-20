@@ -1,4 +1,4 @@
-"""Real-arm evidence assembles one exact fourteen-role filing preparation."""
+"""Real-arm evidence assembles one exact thirteen-role filing preparation."""
 
 from __future__ import annotations
 
@@ -210,7 +210,6 @@ def _filing_git(prepared, revisions: D1FilingRevisions) -> FakeGit:
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),

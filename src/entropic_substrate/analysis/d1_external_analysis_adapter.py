@@ -178,6 +178,21 @@ def _mount(source: Path, destination: str, *, read_only: bool) -> str:
     return f"type=bind,src={source},dst={destination}{suffix}"
 
 
+# RETRACTED (house rule 4, measured 2026-09-20): the `/d1/input/reader`
+# mount below and the worker's `--reader-root` argv pair previously fed the
+# D1 reader-source provenance closure's verification
+# (analysis/d1_external_worker.py's now-removed `_verify_reader_identity`).
+# That closure and the v2 request envelope's `reader_source` field it
+# verified are retired this phase (operator ruling E-1). COMPLETION ruling
+# (2026-09-20): this mount is KEPT rather than removed, because removing it
+# is a one-way container-boundary change this repo's per-tip gates cannot
+# verify by execution (`git grep` over tests/ confirms no test pairs this
+# adapter's emitted argv with the worker's argparse; `just container-test`'s
+# three phases never launch the D1 worker image), and an image built from
+# the parent tip cannot serve a narrowed adapter regardless. Measured: the
+# worker's `_real_directory` check on the mounted path still verifies it
+# exists and is a real, non-symlinked directory; nothing verifies the files
+# beneath it any more.
 def _docker_prefix(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
     return (
         "docker",

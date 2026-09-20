@@ -20,13 +20,9 @@ from entropic_substrate.analysis.d1_analysis_api import (
 )
 from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
 from entropic_substrate.analysis.d1_external_analysis_codec import (
-    D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,
     decode_d1_external_analysis_request_v2,
     encode_d1_external_analysis_worker_response_v2,
-)
-from entropic_substrate.analysis.d1_reader_source_closure import (
-    installed_d1_reader_source_files,
 )
 from entropic_substrate.evidence.d1_capture_aggregate_codec import (
     hydrate_d1_capture_aggregate,
@@ -97,33 +93,21 @@ def _real_directory(value: object, *, code: str) -> Path:
     return lexical
 
 
-def _regular_mounted_file(root: Path, relative: str) -> Path:
-    candidate = Path(relative)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        _fail("reader_identity")
-    target = root / relative
-    if target.is_symlink() or not target.is_file() or not target.resolve().is_relative_to(root):
-        _fail("reader_identity")
-    cursor = target.parent
-    while cursor != root:
-        if cursor.is_symlink():
-            _fail("reader_identity")
-        cursor = cursor.parent
-    return target
-
-
-def _verify_reader_identity(
-    request: D1ExternalAnalysisRequestEnvelopeV2,
-    reader_root: Path,
-) -> None:
-    declared = tuple(item.manifest for item in request.input_control.reader_source.modules)
-    installed = tuple(item.manifest for item in installed_d1_reader_source_files())
-    if installed != declared:
-        _fail("reader_identity")
-    for entry in request.input_control.reader_source.modules:
-        target = _regular_mounted_file(reader_root, entry.path)
-        if hashlib.sha256(target.read_bytes()).hexdigest() != entry.sha256:
-            _fail("reader_identity")
+# RETRACTED (house rule 4, measured 2026-09-20): this module previously
+# verified the mounted reader tree's exact file identity against the D1
+# reader-source provenance closure (analysis/d1_reader_source_closure.py,
+# retired this phase) via `_verify_reader_identity` and its
+# `_regular_mounted_file` helper. Measured: `git grep -n "reader_root" tests/
+# src/` after their removal shows the mount's only remaining consumer is
+# `_real_directory` below, which checks that the mounted path exists and is
+# a real, non-symlinked directory -- it verifies NOTHING about the files
+# beneath it. The `/d1/input/reader` mount and its `--reader-root` argv are
+# KEPT (COMPLETION ruling, 2026-09-20) rather than removed, because the v2
+# request envelope's `reader_source` field they once cross-checked is
+# retired in the same commit, and this repo's own request/response contract
+# doors are frozen for this phase; nothing in analysis/d1_external_worker.py
+# or analysis/d1_external_analysis_adapter.py verifies the mounted tree's
+# contents any more.
 
 
 def _family(expected_digest: str) -> D1ExperimentFamily:
@@ -184,7 +168,7 @@ def run_d1_external_worker(
         raise TypeError("worker capture and reader roots must be Path")
     _guard_environment(environ)
     capture = _real_directory(capture_root, code="capture")
-    reader = _real_directory(reader_root, code="reader_identity")
+    _real_directory(reader_root, code="reader_identity")
     evidence = _stage(
         "preregistration",
         lambda: D1PreregistrationByteEvidence.from_bytes(preregistration_payload),
@@ -199,7 +183,6 @@ def run_d1_external_worker(
     isolation = D1IsolationRequest()
     if request.isolation_request_digest != isolation.request_digest:
         _fail("isolation")
-    _stage("reader_identity", lambda: _verify_reader_identity(request, reader))
     family = _stage("family", lambda: _family(request.input_control.expected_family_digest))
     design = _stage(
         "design",

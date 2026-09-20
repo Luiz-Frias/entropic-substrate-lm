@@ -132,7 +132,6 @@ def _verify_git(
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),
@@ -156,67 +155,12 @@ def _verify_git(
             )
 
 
-def _verify_analysis_reader(
-    receipt_manifest: Mapping[str, object], payloads: Mapping[str, bytes]
-) -> None:
-    try:
-        reader_value: object = json.loads(payloads["analysis_reader"])
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
-        _fail("analysis_reader", "analysis_reader", f"must be UTF-8 JSON: {error}")
-    if type(reader_value) is not dict:
-        _fail("analysis_reader", "analysis_reader", "must be an object")
-    reader = cast(dict[str, object], reader_value)
-    expected_fields = {
-        "analysis_code_digest",
-        "complete_reader",
-        "modules",
-        "schema_version",
-        "terminal_defect_reader",
-    }
-    if set(reader) != expected_fields or reader.get("schema_version") != (
-        "d1-reader-source-manifest-v1"
-    ):
-        _fail("analysis_reader", "analysis_reader", "schema or fields differ")
-    if _canonical_bytes(reader, path="analysis_reader") != payloads["analysis_reader"]:
-        _fail("analysis_reader", "analysis_reader", "bytes must be canonical JSON")
-    modules = reader["modules"]
-    if type(modules) is not list:
-        _fail("analysis_reader", "analysis_reader.modules", "must be an array")
-    by_identity: dict[str, str] = {}
-    for index, raw in enumerate(cast(list[object], modules)):
-        if type(raw) is not dict or set(raw) != {"identity", "path", "sha256"}:
-            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "fields differ")
-        row = cast(dict[str, object], raw)
-        identity, digest = row["identity"], row["sha256"]
-        if type(identity) is not str or type(digest) is not str or identity in by_identity:
-            _fail("analysis_reader", f"analysis_reader.modules[{index}]", "identity differs")
-        by_identity[identity] = digest
-    implementation = receipt_manifest["implementation"]
-    if type(implementation) is not dict:
-        _fail("analysis_reader", "analysis_receipt.implementation", "must be an object")
-    implementation = cast(dict[str, object], implementation)
-    if implementation.get("analysis_code_digest") != reader["analysis_code_digest"]:
-        _fail("analysis_reader", "analysis_receipt.implementation", "code digest differs")
-    readers = implementation.get("readers")
-    if type(readers) is not dict or set(readers) != {"complete", "terminal_defect"}:
-        _fail("analysis_reader", "analysis_receipt.implementation.readers", "fields differ")
-    readers = cast(dict[str, object], readers)
-    expected = {
-        "complete": reader["complete_reader"],
-        "terminal_defect": reader["terminal_defect_reader"],
-    }
-    for role, identity in expected.items():
-        entry = readers[role]
-        if type(entry) is not dict:
-            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "must be an object")
-        entry = cast(dict[str, object], entry)
-        if set(entry) != {"identity", "sha256"} or entry.get("identity") != identity:
-            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "identity differs")
-        module_identity = cast(str, identity).rpartition(".")[0]
-        if entry.get("sha256") != by_identity.get(module_identity):
-            _fail("analysis_reader", f"analysis_receipt.readers.{role}", "digest differs")
-
-
+# RETRACTED (house rule 4, measured 2026-09-20): ``_verify_analysis_reader``
+# cross-verified the filed "analysis_reader" artifact against the receipt's
+# "readers" implementation block, both retired this phase alongside the D1
+# reader-source closure. `git grep` over tracked source confirms no
+# remaining producer of either shape once this function and its call site
+# are removed.
 def _verify_analysis(
     payloads: Mapping[str, bytes],
 ) -> tuple[Mapping[str, object], D1AnalysisExecutionReceipt]:
@@ -227,7 +171,6 @@ def _verify_analysis(
     expected = {
         "capture_manifest_sha256": _sha(payloads["raw_capture_manifest"]),
         "preregistration_sha256": _sha(payloads["preregistration"]),
-        "reader_sha256": _sha(payloads["analysis_reader"]),
         "isolation_attestation_sha256": _sha(payloads["analysis_isolation_attestation"]),
         "output_sha256": _sha(payloads["blinded_analysis"]),
     }
@@ -250,7 +193,6 @@ def _verify_analysis(
         != payloads["analysis_isolation_attestation"]
     ):
         _fail("analysis_isolation", "analysis_receipt.isolation", "filed bytes differ")
-    _verify_analysis_reader(receipt_manifest, payloads)
     return analysis, receipt
 
 
@@ -281,12 +223,10 @@ def _verify_aliases(
     if canonical_packet != payloads["review_packet"]:
         _fail("review_packet", "review_packet", "bytes must use canonical JSON")
     receipt_manifest = analysis_receipt.manifest
-    implementation = cast(dict[str, object], receipt_manifest["implementation"])
     expected_analysis_lineage = {
         "analysis": analysis,
         "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
         "bindings": receipt_manifest["bindings"],
-        "validated_readers": implementation["readers"],
     }
     for field, expected in expected_analysis_lineage.items():
         if packet.get(field) != expected:

@@ -113,7 +113,6 @@ class D1AliasReveal:
 
 def _gap(role: str, field: str) -> D1EvidenceGapError:
     measurements = {
-        "reader_sha256": "the exact analysis reader file digest",
         "isolation_attestation_sha256": "the fresh-session isolation attestation digest",
         "model_id": "the reviewer model identity",
         "provider": "the reviewer provider identity",

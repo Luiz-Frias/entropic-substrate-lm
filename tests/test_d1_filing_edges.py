@@ -53,15 +53,6 @@ class FakeGit:
 
 def _case(mutation: str | None = None):
     machine = machine_verdict()
-    reader_manifest = {
-        "analysis_code_digest": "9" * 64,
-        "complete_reader": "reader.module.complete",
-        "modules": [
-            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
-        ],
-        "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": "reader.module.defect",
-    }
     isolation_manifest = {
         "execution_evidence": {"analysis_sha256": "6" * 64},
         "executor_kind": "external_enforced",
@@ -99,7 +90,6 @@ def _case(mutation: str | None = None):
             "preregistration": b"registered design bytes\n",
             "raw_capture_manifest": b'{"capture":"bound"}',
             "blinded_analysis": b"pending",
-            "analysis_reader": _json(reader_manifest),
             "analysis_isolation_attestation": _json(isolation_manifest),
             "review_packet": _json(
                 {
@@ -190,7 +180,6 @@ def _case(mutation: str | None = None):
         "isolation_attestation_sha256": _sha(payloads["analysis_isolation_attestation"]),
         "output_sha256": _sha(payloads["blinded_analysis"]),
         "preregistration_sha256": _sha(payloads["preregistration"]),
-        "reader_sha256": _sha(payloads["analysis_reader"]),
     }
     if mutation == "analysis_binding":
         analysis_fields["output_sha256"] = "0" * 64
@@ -200,16 +189,7 @@ def _case(mutation: str | None = None):
         "bindings": analysis_manifest["bindings"],
         "filing_bindings": analysis_fields,
         "filing_eligible": True,
-        "implementation": {
-            "analysis_code_digest": reader_manifest["analysis_code_digest"],
-            "readers": {
-                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
-                "terminal_defect": {
-                    "identity": "reader.module.defect",
-                    "sha256": "7" * 64,
-                },
-            },
-        },
+        "implementation": {"repository_digest": "9" * 64},
         "inputs": [{"sha256": "8" * 64}],
         "isolation": isolation_manifest,
         "schema_version": "d1-analysis-execution-receipt-v1",
@@ -226,11 +206,6 @@ def _case(mutation: str | None = None):
             **isolation_manifest,
             "mechanism": "unrelated-execution",
         }
-    elif mutation == "analysis_receipt_reader":
-        analysis_receipt["implementation"] = {
-            **analysis_receipt["implementation"],
-            "analysis_code_digest": "0" * 64,
-        }
     payloads["analysis_receipt"] = _json(analysis_receipt)
     if mutation not in {"packet_invalid_json", "packet_noncanonical", "packet_nonfinite"}:
         review_packet = json.loads(payloads["review_packet"])
@@ -239,7 +214,6 @@ def _case(mutation: str | None = None):
                 "analysis": analysis_manifest,
                 "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
                 "bindings": analysis_manifest["bindings"],
-                "validated_readers": analysis_receipt["implementation"]["readers"],
             }
         )
         if mutation == "packet_analysis_receipt":
@@ -250,11 +224,6 @@ def _case(mutation: str | None = None):
             review_packet["bindings"] = {
                 **analysis_manifest["bindings"],
                 "capture_digest": "0" * 64,
-            }
-        elif mutation == "packet_analysis_readers":
-            review_packet["validated_readers"] = {
-                **analysis_receipt["implementation"]["readers"],
-                "complete": {"identity": "reader.module.complete", "sha256": "0" * 64},
             }
         payloads["review_packet"] = _json(review_packet)
     review_receipt = json.loads(payloads["reviewer_execution_receipt"])
@@ -300,7 +269,6 @@ def _case(mutation: str | None = None):
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),
@@ -334,7 +302,6 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("analysis_receipt_alias", D1FilingGraphError, "analysis"),
         ("analysis_receipt_bindings", D1FilingGraphError, "analysis"),
         ("analysis_receipt_isolation", D1FilingGraphError, "isolation"),
-        ("analysis_receipt_reader", D1FilingGraphError, "reader"),
         ("alias_bijection", D1FilingGraphError, "bijection"),
         ("missing_model", D1EvidenceGapError, "model_id"),
         ("major_ids", D1FilingGraphError, "MAJOR"),
@@ -343,7 +310,6 @@ def test_complete_semantic_edge_graph_is_verified() -> None:
         ("packet_analysis_receipt", D1FilingGraphError, "review_packet"),
         ("packet_analysis_payload", D1FilingGraphError, "review_packet"),
         ("packet_analysis_bindings", D1FilingGraphError, "review_packet"),
-        ("packet_analysis_readers", D1FilingGraphError, "review_packet"),
         ("packet_invalid_json", D1FilingGraphError, "review_packet"),
         ("packet_schema", D1FilingGraphError, "review_packet"),
         ("packet_noncanonical", D1FilingGraphError, "review_packet"),
