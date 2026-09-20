@@ -21,7 +21,7 @@ _ROLES: frozenset[str] = frozenset(REQUIRED_D1_FILING_ARTIFACTS)
 _PATH_ERROR = "D1 filing material path must be nonempty and trimmed"
 _MARKER_ERROR = "D1 narrative body contains a machine-verdict marker"
 _MATERIAL_TUPLE_ERROR = "D1 filing assembly requires a typed tuple"
-_ROLE_SET_ERROR = "D1 filing assembly requires exactly fourteen roles"
+_ROLE_SET_ERROR = "D1 filing assembly requires exactly thirteen roles"
 _NARRATIVE_BINDING_ERROR = "D1 narrative must bind machine verdict"
 
 
@@ -83,7 +83,7 @@ def _all_materials(values: tuple[object, ...]) -> bool:
 def assemble_d1_filing_manifest(
     materials: tuple[D1FilingArtifactMaterial, ...],
 ) -> D1FilingManifest:
-    """Measure exact bytes and construct the fourteen-role manifest."""
+    """Measure exact bytes and construct the thirteen-role manifest."""
     if type(materials) is not tuple:
         raise TypeError(_MATERIAL_TUPLE_ERROR)
     if not _all_materials(materials):

@@ -41,7 +41,7 @@ def _paths() -> D1FilingArtifactPaths:
     )
 
 
-def test_preparation_derives_exact_fourteen_role_filing_from_attested_lineage(
+def test_preparation_derives_exact_thirteen_role_filing_from_attested_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
