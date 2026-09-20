@@ -92,6 +92,7 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 
 The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
 
+- `.secrets.baseline` (STANDING RULE, conductor 2026-09-19, generalizing p0's ruling: a mechanical companion of allowed content. detect-secrets regenerates it whenever an allowed file's digest literals move or change, so its diff may contain ONLY line renumbering, removal of orphaned entries, the `generated_at` stamp, and new `Hex High Entropy String` entries whose flagged lines are sha256 / git-SHA literals inside this phase's own Allowed files; the lane verifies that in the PR body. New digest literals in TEST files carry an inline `# pragma: allowlist secret` instead of a baseline entry, so the baseline stops churning; JSON records keep baseline entries. Never a credential.)
 - `src/entropic_substrate/paths.py`
 - `tools/mapping.json` (CONDUCTOR RULING 2026-09-19, p0 gate-check integration: ADD exactly one row for the new module, `"entropic_substrate.paths": {"dest": "entropic_substrate.kernel.runtime", "layer": "kernel", "action": "move", "note": "added at p1; layout-invariant repo_root resolver (E-3/DN-8)"}`; no other row changes, so p0's mapping-coverage contract stays green when `paths.py` appears in the graph)
 - `src/entropic_substrate/config.py`
