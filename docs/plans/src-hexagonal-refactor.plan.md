@@ -215,7 +215,7 @@ Four consequences, all load-bearing:
    `tests/test_legacy_coupling.py` checks against the AST graph. Two lanes of one wave therefore
    never share a file, and no phase but p0, p3b and p13 touches `.importlinter` (p3b adds exactly one forbidden contract, the mlflow-only-from-adapter door, once its package exists; ruled 2026-09-19, p3b is a serial rail so this is not a hub).
 
-**Shim form (required).** AMENDED 2026-09-20 (operator ruling, option (b) of the p3 design-gate DECISION): every leaf shim is a PAIR, the `.py` alias plus a one-line `.pyi` stub `from <target> import *`, because basedpyright cannot see through the `sys.modules` rebind (measured: 1741 old-prefix from-imports in 296 quarantined files, 80 names in the 7 restored facades); the stub is type-level only, never imported by CPython, invisible to grimp and to `tools/import_graph.py`, and is deleted with its shim at p13.
+**Shim form (required).** AMENDED 2026-09-20 (operator ruling, option (b) of the p3 design-gate DECISION): every leaf shim is a PAIR, the `.py` alias plus a `.pyi` stub of derived explicit `from <target> import <name> as <name>` re-exports (not a star import: it would honour the target's `__all__` and trip ruff F403, measured 2026-09-20), because basedpyright cannot see through the `sys.modules` rebind (measured: 1741 old-prefix from-imports in 296 quarantined files, 80 names in the 7 restored facades); the stub is type-level only, never imported by CPython, invisible to grimp and to `tools/import_graph.py`, and is deleted with its shim at p13.
 
 ```python
 import entropic_substrate.__legacy.<x> as _target
