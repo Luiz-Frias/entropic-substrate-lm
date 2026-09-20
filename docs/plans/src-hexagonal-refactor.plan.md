@@ -339,7 +339,7 @@ the exact re-count is owed to p0's mapping re-derivation.
 |---|---|---|---|---|---|---|
 | [p0-contract-pin](#p0) | epoch, identity fixtures, sentinel test, CLI/packaging pins, import-linter baselined | tracer | 0 | ship-it | serial | `refactor/hexagonal-redesign` |
 | [p1-anchors](#p1) | layout-invariant `paths.py` resolver at five depth-derived sites, RED-first guard tests | tracer | 5 edits | ship-it | serial | p0 |
-| [p2-d1-closure](#p2) | retire D1 reader source provenance end to end: closure, envelope arm, receipt readers block, filing artifact + binding (E-1 extended 2026-09-20) | tracer | 9 src edits | ship-it | serial | p1 |
+| [p2-d1-closure](#p2) | retire D1 reader source provenance end to end: closure, envelope arm, receipt readers block, filing artifact + binding (E-1 extended 2026-09-20) | tracer | 13 src edits, 1 deletion | ship-it | serial | p1 |
 | [p3-quarantine](#p3) | `git mv` whole tree into `__legacy/`, generate the shim layer, own the landed-set fragment convention and `tests/test_legacy_coupling.py` | tracer | 332 | ship-it | serial | p2 |
 | [**p3b-observability-rail**](#p3b) | loguru substrate → `kernel/runtime/logging.py`; `MetricSink` port → `ladder/capture/ports/`; three sinks → `ladder/capture/adapters/`; run-descriptor door; D1 observers re-based | tracer | 5 | **ship-it (live)** | serial | p3 |
 | [p4-h-tracer](#p4) | H lane out first (55 H modules + `h_probe_command` + `h_probe_controller` + 4 reader-closure rail modules + the `d_ladder_worker_runtime` live half); both H identities bumped | tracer | 63 | ship-it (live) | serial | p3b |
