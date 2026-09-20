@@ -192,3 +192,22 @@ def test_filing_bindings_require_exact_sha256_values() -> None:
             isolation_attestation_sha256="4" * 64,
             output_sha256="not-a-digest",
         )
+
+
+def test_implementation_identity_exact_key_set_guards_retired_analysis_code_digest() -> None:
+    """Guard-teeth: analysis_code_digest retirement is not re-introducible.
+
+    Reintroducing the retired "analysis_code_digest" key into the implementation
+    identity's manifest must cause this test to fail, pinning the exact-key-set
+    assertion on both the dataclass and the on-the-wire manifest property.
+    """
+    impl = _implementation()
+
+    # Retired field check: analysis_code_digest must not exist as a dataclass attribute.
+    assert not hasattr(impl, "analysis_code_digest")
+
+    # Expected keys in the implementation identity manifest (wire format).
+    # Retired: "analysis_code_digest", "complete_reader_digest", "defect_reader_digest"
+    # (D1 reader-source closure, measured 2026-09-20).
+    expected_keys = frozenset({"code_commit", "image_digest", "repository_digest"})
+    assert frozenset(impl.manifest) == expected_keys

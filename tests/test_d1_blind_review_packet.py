@@ -741,3 +741,43 @@ def test_packet_refuses_incomplete_all_run_reader_roster(
             aliases=aliases,
             run_evidence=evidence,
         )
+
+
+def test_packet_manifest_exact_key_set_guards_retired_validated_readers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guard-teeth: validated_readers retirement is not re-introducible.
+
+    Reintroducing the retired "validated_readers" key into the packet manifest
+    must cause this test to fail, pinning the exact-key-set assertion.
+    """
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+
+    packet = build_d1_blind_review_packet(
+        decision_contract=decision,
+        aggregate=aggregate,
+        analysis=analysis,
+        analysis_receipt=receipt,
+        aliases=aliases,
+        run_evidence=evidence,
+    )
+
+    # Expected keys in the blind review packet manifest (H0 exit).
+    # Retired: "validated_readers" (D1 closure, measured 2026-09-20).
+    expected_keys = frozenset(
+        {
+            "alias_commitment",
+            "analysis",
+            "analysis_receipt_digest",
+            "bindings",
+            "blindness_label",
+            "capture_roster",
+            "nonblindable_fields",
+            "parity_attestations",
+            "run_attestations",
+            "roster_randomization",
+            "schema_version",
+            "source_artifacts",
+        }
+    )
+    assert frozenset(packet.manifest) == expected_keys
