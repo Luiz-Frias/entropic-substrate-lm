@@ -810,6 +810,23 @@ def test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd(
     assert resolved.is_file(), f"must resolve the real repo-root pointer, got {resolved}"
 
 
+def test_default_enwik8_pointer_falls_back_to_cwd_relative_when_repo_root_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Error case pinned at authoring (E-3/DN-8): a RepoLayoutError from the
+    resolver must not propagate out of _default_enwik8_dvc_pointer() -- it
+    must fall through to the pre-existing bare CWD-relative candidate."""
+    import entropic_substrate.sinks as sinks_module
+    from entropic_substrate.paths import RepoLayoutError
+
+    def _raise() -> Path:
+        raise RepoLayoutError("mutated for test")
+
+    monkeypatch.setattr(sinks_module, "repo_root", _raise)
+    monkeypatch.chdir(tmp_path)
+    assert sinks_module._default_enwik8_dvc_pointer() == Path("data/enwik8.dvc")
+
+
 def test_read_dvc_pointer_digest_returns_none_for_an_absent_pointer(tmp_path: Path) -> None:
     from entropic_substrate.sinks import _read_dvc_pointer_digest
 

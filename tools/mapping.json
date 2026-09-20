@@ -1530,6 +1530,12 @@
    "action": "move",
    "note": "ObservationCodecPort + its two adapters (identity byte, D5 permuted)"
   },
+  "entropic_substrate.paths": {
+   "dest": "entropic_substrate.kernel.runtime",
+   "layer": "kernel",
+   "action": "move",
+   "note": "added at p1; layout-invariant repo_root resolver (E-3/DN-8)"
+  },
   "entropic_substrate.predictive_state": {
    "dest": "entropic_substrate.ladder.run",
    "layer": "ladder",
