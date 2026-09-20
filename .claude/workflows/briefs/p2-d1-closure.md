@@ -68,7 +68,7 @@ Retire the D1 reader source closure per the operator ruling. Forced earlier than
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
-- just check green with the review ring importable. Mutation: reintroduce a parents[2] anchor anywhere in the closure's former call path and the new test that imports the review ring from a relocated tree goes RED. Identity fixture drops the manifest row at whatever count p1 left (73 measured at p0, 74 if p1's `paths.py` joined the closure; read p1's PR body; the survey's 52 was retracted 2026-09-18) and records the retraction (house rule 4).
+- just check green with the review ring importable. Mutation: reintroduce a parents[2] anchor anywhere in the closure's former call path and the new test that imports the review ring from a relocated tree goes RED. Identity fixture drops the 74-entry manifest row (74 MEASURED at p1, PR #286, when `paths.py` joined the closure; 73 at p0; the survey's 52 was retracted 2026-09-18) and records the retraction (house rule 4).
 - `just check` green on the lane tip.
 - `just pc-ci` (exit gate) green on the lane tip.
 - `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
@@ -137,4 +137,4 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 2. Drop the reader_source manifest arm from the control envelope
 3. Drop the closure verification from the external worker
 4. Delete d1_reader_source_closure.py and its test
-5. Retract the 73-entry manifest fixture row (p0-measured count) with its measurement
+5. Retract the 74-entry manifest fixture row (p1-measured count) with its measurement

@@ -79,7 +79,7 @@ means all of them are frozen and test-verified at p0, before a single module mov
 | `h-source-reader-v2` → `v3` | door | p4 | p4 | yes, `tests/test_identity_epoch.py` |
 | `h-checkpoint-reader-v1` → `v2` | door | p4 | p4 | yes |
 | `docs/identity/read-old-table.md` | door | p4 | p4 | yes, digests asserted |
-| D1 reader source closure, 73-entry manifest (52 retracted at p0, measured 2026-09-18; 74 if p1's `paths.py` joins the closure, stated in p1's PR body) | door | p2 (RETIRED) | p2 | yes, until retracted |
+| D1 reader source closure, 74-entry manifest (52 retracted at p0; 73 measured at p0; 74 measured at p1 when `paths.py` joined the closure, PR #286) | door | p2 (RETIRED) | p2 | yes, until retracted |
 | D1 external-analysis control envelope, `reader_source_manifest_base64` | door | p2 (REMOVED) | p2 | yes |
 | `CHECKPOINT_FORMAT_VERSION`, `_TAU_ERAS`, both codec construction digests, every `*-v1`/`*-v2` literal | door | p0 | p0 | yes |
 | sentinel-singleton identity over every dotted path, both spellings | contract | p0 | p3 | yes, `tests/test_module_identity.py` |
