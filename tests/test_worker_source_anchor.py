@@ -104,10 +104,20 @@ class TestPathsResolvers:
     def test_repo_root_is_one_level_above_source_root(self) -> None:
         assert paths.repo_root() == paths.source_root().parent
 
-    def test_source_root_is_not_repo_root(self) -> None:
+    def test_repo_root_cannot_serve_as_the_closure_resolvers_source_root(self) -> None:
         """The two anchors are NOT interchangeable (architect constraint):
-        d1_reader_source_closure needs source_root, not repo_root."""
-        assert paths.source_root() != paths.repo_root()
+        d1_reader_source_closure needs source_root, not repo_root.
+
+        A bare inequality (source_root() != repo_root()) is nearly vacuous
+        given test_repo_root_is_one_level_above_source_root already pins
+        repo_root() == source_root().parent -- a path is never equal to its
+        own parent. This test instead pins the actual contract
+        d1_reader_source_closure._source_root() enforces: the candidate root
+        must directly contain a real ``entropic_substrate`` package
+        directory. repo_root() fails that contract (the package sits one
+        level deeper, under ``src/``), which is the concrete reason the two
+        anchors are not interchangeable."""
+        assert not (paths.repo_root() / "entropic_substrate").is_dir()
 
     def test_repo_root_raises_repo_layout_error_when_package_file_is_unset(
         self, monkeypatch: pytest.MonkeyPatch
