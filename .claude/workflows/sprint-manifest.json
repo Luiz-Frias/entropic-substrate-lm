@@ -279,7 +279,7 @@
         "FOR-1426"
       ],
       "branch": "mythwave/p3-quarantine",
-      "parent": "mythwave/p2-d1-closure",
+      "parent": "mythwave/for-1523-image-digest-crosscheck",
       "brief": ".claude/workflows/briefs/p3-quarantine.md",
       "mode": "tracer",
       "gates": {
@@ -289,7 +289,7 @@
       "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
       "contracts_owned": [
         {
-          "name": "tools/gen_shims.py :: one 3-line sys.modules alias file per old dotted LEAF path, generated from tools/mapping.json; fragments only ADD landed entries (DN-P1 gen_shims v2, 2026-09-18 - no module ever migrates between fragments); NEVER rebinds or writes a package __init__.py (leaf shims only - see p3's ACCEPTANCE)",
+          "name": "tools/gen_shims.py :: one typed shim PAIR per old dotted LEAF path (3-line sys.modules alias .py + one-line .pyi stub; RULED 2026-09-20 option b), generated from tools/mapping.json; fragments only ADD landed entries (DN-P1 gen_shims v2, 2026-09-18 - no module ever migrates between fragments); NEVER rebinds or writes a package __init__.py (leaf shims only - see p3's ACCEPTANCE)",
           "kind": "door",
           "frozen_after": true
         },
@@ -381,7 +381,7 @@
       ],
       "parallel_group": null,
       "status": "active",
-      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo). PRE-FLIGHT 2026-09-20: prune tools/mapping.json rows whose source module was deleted before p3 (d1_reader_source_closure at p2) before generating shims. Launch gap 2026-09-20: tools/gen_shims.py source-existence guard + `pending` fragment state landed as a conductor tooling commit (FOR-1522); --preflight at the p2 tip names exactly three rows (closure -> retired:true; the two _records halves -> pending:\"p5-kernel\"); tools/mapping.json stays untouched until p13. Engine: gates-before-submit + SHA-based ownership teeth (args.conductorCommits). PENDING: the image_digest cross-check fix (operator 2026-09-20, own Linear issue once the connector is back) is stacked at the then-current stack tip, never below p3 (a 330-file rename rebase is not worth one module's edit).",
+      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo). PRE-FLIGHT 2026-09-20: prune tools/mapping.json rows whose source module was deleted before p3 (d1_reader_source_closure at p2) before generating shims. Launch gap 2026-09-20: tools/gen_shims.py source-existence guard + `pending` fragment state landed as a conductor tooling commit (FOR-1522); --preflight at the p2 tip names exactly three rows (closure -> retired:true; the two _records halves -> pending:\"p5-kernel\"); tools/mapping.json stays untouched until p13. Engine: gates-before-submit + SHA-based ownership teeth (args.conductorCommits). PENDING: the image_digest cross-check fix (operator 2026-09-20, own Linear issue once the connector is back) is stacked at the then-current stack tip, never below p3 (a 330-file rename rebase is not worth one module's edit). RELAUNCH 2026-09-20: design gate of wf_7f27b290-e61 measured that basedpyright cannot see through the rebind shim; operator ruled option (b), typed shim pair (.py + .pyi). Parent is now mythwave/for-1523-image-digest-crosscheck (FOR-1523 image_digest cross-check, stacked between p2 and p3 while p3 held only conductor commits). The plan's two-facade / relative-import claims were retracted (a242c98).",
       "engine_mode": "arch"
     },
     {
