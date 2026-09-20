@@ -62,13 +62,14 @@ House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
 
 ## Scope
 
-Retire the D1 reader source closure per the operator ruling. Forced earlier than the D lane because d1_external_analysis_control.py:100 calls the closure at MODULE IMPORT, so the quarantine move makes the review ring unimportable. Drop the reader_source manifest arm from the control envelope and its worker verification. Measured: 2 importers, 0 stored envelopes. Detail: plan §0.5, §E-1.
+Retire D1 reader source PROVENANCE end to end per operator ruling E-1 as EXTENDED on 2026-09-20 ("widen p2", after the Opus design gate of wf_1ab2236b-4dd): the closure module, the `reader_source_manifest_base64` envelope arm and its worker verification, `D1_READER_SOURCE_MODULES` in the control module, the D1 analysis-receipt `readers` block (`complete_reader_digest` / `defect_reader_digest`, `d1_execution_receipt.py`), and the filing graph's `analysis_reader` artifact (`REQUIRED_D1_FILING_ARTIFACTS`) with its `reader_sha256` binding (`_FILING_BINDING_FIELDS`, `d1_analysis_receipt_codec.py`). Forced earlier than the D lane because d1_external_analysis_control.py:100 calls the closure at MODULE IMPORT, so the quarantine move makes the review ring unimportable. RETRACTION (house rule 4): the earlier "Measured: 2 importers" counted importers of the closure MODULE; the arm's PRODUCT has 9 src and 14 test consumers (design gate + conductor grep, 2026-09-20). Measured: zero persisted envelopes, receipts or filings carry any of these fields (grep over docs/, data/, results/: only the plan document and a stale image-refresh copy of tests). Each door removal is an explicit HR-4 retraction in the code comment and the PR body. Detail: plan §0.5, §E-1.
 
 ## ACCEPTANCE
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
 - just check green with the review ring importable. Mutation: reintroduce a parents[2] anchor anywhere in the closure's former call path and the new test that imports the review ring from a relocated tree goes RED. Identity fixture drops the 74-entry manifest row (74 MEASURED at p1, PR #286, when `paths.py` joined the closure; 73 at p0; the survey's 52 was retracted 2026-09-18) and records the retraction (house rule 4).
+- The retired doors are GONE, not stubbed: no `reader_sha256` in `_FILING_BINDING_FIELDS`, no `analysis_reader` in `REQUIRED_D1_FILING_ARTIFACTS`, no `readers` block in the analysis receipt, no `D1_READER_SOURCE_MODULES`, no hardcoded identity tuple standing in for the closure, no synthetic 64-hex digest satisfying a provenance guard (design-gate constraints 1 and 3). Each removal carries a house-rule-4 retraction naming the measurement (zero persisted artifacts).
 - `just check` green on the lane tip.
 - `just pc-ci` (exit gate) green on the lane tip.
 - `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
@@ -83,7 +84,8 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 
 - Does NOT build a replacement closure over the new tree. Ruling E-1: that is a later, separately ruled step if H1 wants reader-source pinning.
 - Does NOT move the two `analysis/d1_external_*` modules; they land in `ladder/review` at p11.
-- No compatibility shim for the removed envelope field. Measured: zero stored envelopes carry it.
+- No compatibility shim for the removed envelope field, receipt block or filing artifact. Measured: zero stored envelopes, receipts or filings carry them.
+- Does NOT touch E-series evidence, sealed docs, or any numerics module; does NOT rename or move any module.
 
 ## Allowed files
 
@@ -96,6 +98,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_d1_reader_source_closure.py`
 - `tests/test_d1_external_worker.py`
 - `tests/test_review_packet.py`
+- E-1 EXTENSION (operator, 2026-09-20; the receipt and filing doors): `src/entropic_substrate/analysis/d1_execution_receipt.py`, `src/entropic_substrate/analysis/d1_analysis_receipt_codec.py`, `src/entropic_substrate/d1_filing_application.py`, `src/entropic_substrate/evidence/d1_filing.py`, `src/entropic_substrate/evidence/d1_filing_edges.py`, `src/entropic_substrate/evidence/d1_filing_receipts.py`, `tests/test_d1_reader_source_manifest.py` (DELETE: it tests only the retired arm), `tests/test_d1_external_analysis_input.py`, `tests/test_d1_analysis_receipt.py`, `tests/test_d1_analysis_api.py`, `tests/test_d1_blind_review_packet.py`, `tests/test_d1_external_analysis_codec_v2.py`, `tests/test_d1_external_analysis_adapter_v2.py`, `tests/test_d1_machine_analysis_expected_bindings.py`, `tests/test_d1_machine_analysis_capture_diagnostics.py`, `tests/test_d1_real_arm_verdict_assembly.py`, `tests/test_d1_filing_receipts.py`, `tests/test_d1_filing_edges.py`
 - `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, p0 review B-integration: drop the 73-entry D1 closure manifest rows with their retraction measurement; every other fixture value stays byte-identical to p0/p1)
 
 ## Already ruled
@@ -121,6 +124,9 @@ House rule 5: a guard is proven load-bearing by breaking the guarded thing and s
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | reintroduce a `parents[2]` anchor anywhere in the closure's former call path | the new relocated-import test that imports the review ring from a relocated tree |
 | re-add `reader_source_manifest_base64` to the control envelope               | the envelope schema test                                                         |
+| re-add `reader_sha256` to `_FILING_BINDING_FIELDS`                           | the analysis-receipt codec round-trip / schema test                              |
+| re-add `analysis_reader` to `REQUIRED_D1_FILING_ARTIFACTS`                   | the filing graph completeness test                                               |
+| stand a hardcoded 74-identity tuple in for `D1_READER_SOURCE_MODULES`        | the test asserting the symbol and the closure are gone                           |
 
 ## Observability conformance
 
@@ -138,3 +144,5 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 3. Drop the closure verification from the external worker
 4. Delete d1_reader_source_closure.py and its test
 5. Retract the 74-entry manifest fixture row (p1-measured count) with its measurement
+6. Retire the analysis-receipt readers block and the reader_sha256 filing binding (E-1 extension)
+7. Retire the analysis_reader filing artifact and its verification (E-1 extension)

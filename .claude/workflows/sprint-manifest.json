@@ -207,6 +207,11 @@
           "name": "analysis/d1_reader_source_closure.py :: retired",
           "kind": "door",
           "frozen_after": true
+        },
+        {
+          "name": "D1 analysis receipt readers block + filing analysis_reader artifact + reader_sha256 binding :: retired (E-1 extended 2026-09-20, HR-4 retraction, zero persisted artifacts)",
+          "kind": "door",
+          "frozen_after": true
         }
       ],
       "contracts_consumed": [
@@ -221,7 +226,25 @@
         "tests/test_d1_external_worker.py",
         "tests/test_review_packet.py",
         ".claude/workflows/landed-set/p2-d1-closure.json",
-        "tests/test_identity_epoch.py"
+        "tests/test_identity_epoch.py",
+        "src/entropic_substrate/analysis/d1_execution_receipt.py",
+        "src/entropic_substrate/analysis/d1_analysis_receipt_codec.py",
+        "src/entropic_substrate/d1_filing_application.py",
+        "src/entropic_substrate/evidence/d1_filing.py",
+        "src/entropic_substrate/evidence/d1_filing_edges.py",
+        "src/entropic_substrate/evidence/d1_filing_receipts.py",
+        "tests/test_d1_reader_source_manifest.py",
+        "tests/test_d1_external_analysis_input.py",
+        "tests/test_d1_analysis_receipt.py",
+        "tests/test_d1_analysis_api.py",
+        "tests/test_d1_blind_review_packet.py",
+        "tests/test_d1_external_analysis_codec_v2.py",
+        "tests/test_d1_external_analysis_adapter_v2.py",
+        "tests/test_d1_machine_analysis_expected_bindings.py",
+        "tests/test_d1_machine_analysis_capture_diagnostics.py",
+        "tests/test_d1_real_arm_verdict_assembly.py",
+        "tests/test_d1_filing_receipts.py",
+        "tests/test_d1_filing_edges.py"
       ],
       "conflict_edges": [
         {
@@ -233,7 +256,7 @@
       ],
       "parallel_group": null,
       "status": "active",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9.",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9. OPERATOR RULING 2026-09-20 (widen p2): E-1 extended to the receipt readers block and the filing analysis_reader artifact + reader_sha256 binding; 6 src + 12 test files added to the touch set; serial rail, no parallel edge.",
       "engine_mode": "arch"
     },
     {

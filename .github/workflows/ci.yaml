@@ -7,7 +7,10 @@ on:
     # a merge (measured on PR #285: 0 workflow runs before this trigger landed).
     branches: [main, 'refactor/**']
   pull_request:
-    branches: [main, 'refactor/**']
+    # mythwave/**: stacked lane PRs base on the previous lane branch, so the
+    # refactor/** filter never matched them (measured on PR #286: 0 runs);
+    # operator ruling 2026-09-20. The filter matches the PR's BASE branch.
+    branches: [main, 'refactor/**', 'mythwave/**']
 
 # Least-privilege default: every step below only checks out and reads the repo
 # (lint, typecheck, unit tests, import-lint) — no push, comment, or artifact write.
