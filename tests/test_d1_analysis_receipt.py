@@ -8,6 +8,7 @@ import pytest
 
 from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
 from entropic_substrate.analysis.d1_execution_receipt import (
+    D1AnalysisExecutionReceipt,
     D1AnalysisFilingBindings,
     D1AnalysisImplementationIdentity,
     D1AnalysisRunnerRequest,
@@ -23,6 +24,7 @@ from entropic_substrate.evidence.d1_capture_artifacts import (
     D1ArtifactRole,
     D1DvcBinding,
 )
+from entropic_substrate.experiments.d1_primitives import canonical_json
 
 from .test_d1_aliased_analysis import _aliases, _packet
 
@@ -219,3 +221,37 @@ def test_implementation_identity_exact_key_set_guards_retired_analysis_code_dige
     # (D1 reader-source closure, measured 2026-09-20).
     expected_keys = frozenset({"code_commit", "image_digest", "repository_digest"})
     assert frozenset(impl.manifest) == expected_keys
+
+
+def test_wire_decoder_rejects_a_synthetic_digest_reintroduced_into_implementation() -> None:
+    """Guard-teeth: the on-wire decoder must reject a resurrected retired digest.
+
+    CodeRabbit (remote review, PR #287, inline finding at
+    .claude/workflows/briefs/p2-d1-closure.md:130-132): the emit-side exact-key
+    guard above pins ``D1AnalysisImplementationIdentity.manifest``, but
+    ``_decode`` in d1_analysis_receipt_codec.py only checked that
+    ``implementation`` was a dict, not that its keys were exact -- so a
+    reintroduced "analysis_code_digest" (or any other synthetic 64-hex field)
+    on the wire passed parsing untouched. MEASURED 2026-09-20: constructing a
+    D1AnalysisExecutionReceipt from a manifest with implementation keys
+    {"code_commit", "image_digest", "repository_digest", "analysis_code_digest"}
+    parsed successfully before the fix (design-gate constraint 3: no synthetic
+    64-hex digest may satisfy a provenance guard).
+    """
+    packet, admitted = _admitted()
+    isolation = D1ExternalIsolationAttestation.test_fake(D1IsolationRequest())
+    receipt = issue_d1_analysis_receipt(
+        analysis=packet,
+        admitted=admitted,
+        aliases=_aliases(),
+        implementation=_implementation(),
+        isolation=isolation,
+    )
+    mutated_manifest = dict(receipt.manifest)
+    mutated_manifest["implementation"] = {
+        **mutated_manifest["implementation"],  # type: ignore[dict-item]
+        "analysis_code_digest": "9" * 64,
+    }
+
+    with pytest.raises(ValueError, match="implementation"):
+        D1AnalysisExecutionReceipt(canonical_json(mutated_manifest))

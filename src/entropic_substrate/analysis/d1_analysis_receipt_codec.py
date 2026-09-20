@@ -40,6 +40,7 @@ _FILING_BINDING_FIELDS = frozenset(
         "preregistration_sha256",
     }
 )
+_IMPLEMENTATION_FIELDS = frozenset({"code_commit", "image_digest", "repository_digest"})
 
 
 def canonical_d1_analysis_receipt_bytes(value: object) -> bytes:
@@ -171,8 +172,7 @@ def _decode(payload: str) -> dict[str, object]:
         raise ValueError(
             "D1 analysis execution receipt non-filing result cannot carry filing bindings"
         )
-    if type(root["implementation"]) is not dict:
-        raise ValueError("D1 analysis execution receipt implementation must be an object")
+    _object(root["implementation"], fields=_IMPLEMENTATION_FIELDS, label="implementation")
     if type(root["inputs"]) is not list or not root["inputs"]:
         raise ValueError("D1 analysis execution receipt inputs must be a nonempty array")
     if type(root["isolation"]) is not dict:

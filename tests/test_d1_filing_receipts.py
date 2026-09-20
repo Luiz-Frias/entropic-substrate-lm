@@ -44,7 +44,11 @@ def _analysis_receipt() -> dict[str, object]:
             "preregistration_sha256": "2" * 64,
         },
         "filing_eligible": True,
-        "implementation": {"repository_digest": "9" * 64},
+        "implementation": {
+            "code_commit": "1" * 40,
+            "image_digest": "sha256:" + "4" * 64,
+            "repository_digest": "9" * 64,
+        },
         "inputs": [{"sha256": "b" * 64}],
         "isolation": {"executor_kind": "external_enforced"},
         "schema_version": "d1-analysis-execution-receipt-v1",

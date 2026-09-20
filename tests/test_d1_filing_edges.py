@@ -189,7 +189,11 @@ def _case(mutation: str | None = None):
         "bindings": analysis_manifest["bindings"],
         "filing_bindings": analysis_fields,
         "filing_eligible": True,
-        "implementation": {"repository_digest": "9" * 64},
+        "implementation": {
+            "code_commit": "1" * 40,
+            "image_digest": "sha256:" + "4" * 64,
+            "repository_digest": "9" * 64,
+        },
         "inputs": [{"sha256": "8" * 64}],
         "isolation": isolation_manifest,
         "schema_version": "d1-analysis-execution-receipt-v1",
