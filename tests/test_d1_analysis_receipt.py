@@ -203,8 +203,16 @@ def test_implementation_identity_exact_key_set_guards_retired_analysis_code_dige
     """
     impl = _implementation()
 
-    # Retired field check: analysis_code_digest must not exist as a dataclass attribute.
-    assert not hasattr(impl, "analysis_code_digest")
+    # Retired field check: none of the three retired fields exist as dataclass
+    # attributes. MEASURED 2026-09-20 (scratch-worktree mutation proof, local
+    # CodeRabbit review): a hasattr check scoped to analysis_code_digest alone
+    # stays GREEN if complete_reader_digest or defect_reader_digest is
+    # reintroduced as a dataclass field without also being added to the
+    # manifest property below, because the exact-key-set assertion only sees
+    # what manifest chooses to emit. Parameterizing across all three closes
+    # that gap.
+    for field_name in ("analysis_code_digest", "complete_reader_digest", "defect_reader_digest"):
+        assert not hasattr(impl, field_name)
 
     # Expected keys in the implementation identity manifest (wire format).
     # Retired: "analysis_code_digest", "complete_reader_digest", "defect_reader_digest"
