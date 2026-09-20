@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import shutil
+import sys
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, cast
 
 import pytest
@@ -79,6 +82,88 @@ def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
     an equality assertion against the old 74-entry set)."""
     assert importlib.util.find_spec("entropic_substrate.analysis.d1_reader_source_closure") is None
     assert not hasattr(control_module, "D1_READER_SOURCE_MODULES")
+
+
+# ---------------------------------------------------------------------------
+# Guard-teeth (brief table row 1): the retired closure's former call path was
+# d1_external_analysis_control.py:100, which called it at MODULE IMPORT; the
+# two review-ring modules are its only importers. ``_load_relocated_copy``
+# below is a W1 sibling copy of the ~18-line helper defined at
+# ``tests/test_worker_source_anchor.py:52`` (that module is out of this
+# phase's Allowed files and reserved for FOR-1519, so it is copied rather
+# than imported, per the design gate).
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_CONTROL_SOURCE = (
+    _REPO_ROOT / "src" / "entropic_substrate" / "analysis" / "d1_external_analysis_control.py"
+)
+_WORKER_SOURCE = _REPO_ROOT / "src" / "entropic_substrate" / "analysis" / "d1_external_worker.py"
+
+
+def _load_relocated_copy(source: Path, relocated_dir: Path, module_name: str) -> ModuleType:
+    """Copy ``source`` into ``relocated_dir`` and import it under a distinct
+    module name, so its own ``__file__`` differs from the installed
+    package's copy while its absolute ``from entropic_substrate...`` imports
+    still resolve to the real installed package (unaffected by the copy)."""
+    relocated_dir.mkdir(parents=True, exist_ok=True)
+    target = relocated_dir / source.name
+    shutil.copy2(source, target)
+    spec = importlib.util.spec_from_file_location(module_name, target)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+@pytest.fixture
+def _relocated_review_ring(tmp_path: Path) -> Iterator[tuple[ModuleType, ModuleType]]:
+    control_name = "test_relocated_d1_external_analysis_control"
+    worker_name = "test_relocated_d1_external_worker"
+    try:
+        elsewhere = tmp_path / "elsewhere"
+        control = _load_relocated_copy(_CONTROL_SOURCE, elsewhere, control_name)
+        worker = _load_relocated_copy(_WORKER_SOURCE, elsewhere, worker_name)
+        yield control, worker
+    finally:
+        sys.modules.pop(control_name, None)
+        sys.modules.pop(worker_name, None)
+
+
+def test_review_ring_imports_from_a_relocated_tree(
+    _relocated_review_ring: tuple[ModuleType, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """Pin: the review ring (``d1_external_analysis_control.py`` and
+    ``d1_external_worker.py``, the closure's only two importers before its
+    retirement) imports cleanly from a relocated copy, and the mounted-root
+    reality check that took over the closure's former call path
+    (``_real_directory``, see the RETRACTED comment in
+    ``d1_external_worker.py``) is anchored on the PATH ARGUMENT it receives,
+    never on the depth of the file that happens to define it.
+
+    Guard-teeth MEASURED 2026-09-20 (mutation performed and reverted
+    in-branch, evidence in the PR body): adding, at module scope near the
+    closure's former call site (``d1_external_analysis_control.py:100``),
+    ``_ANCHOR = Path(__file__).resolve().parents[2]`` followed by
+    ``if _ANCHOR.name != "src": raise RuntimeError("anchor")`` turns this
+    test RED with that ``RuntimeError`` (the real installed module's own
+    ``parents[2]`` is the repo's ``src/`` directory, so the check passes for
+    it, but the relocated copy's ``parents[2]`` is pytest's own base tmp
+    directory, named after the test run rather than ``src``); reverting
+    turns it back GREEN."""
+    control, worker = _relocated_review_ring
+    assert control.__name__ != "entropic_substrate.analysis.d1_external_analysis_control"
+    assert worker.__name__ != "entropic_substrate.analysis.d1_external_worker"
+    real_dir = tmp_path / "real-reader-root"
+    real_dir.mkdir()
+    resolved = worker._real_directory(real_dir, code="reader_root")
+    assert resolved == real_dir.resolve()
 
 
 class _WorkerCase(NamedTuple):
@@ -321,7 +406,7 @@ def test_worker_rejects_symlinked_reader_root(
             reader_root=reader_link,
             environ={},
         )
-    assert root_error.value.code == "reader_identity"
+    assert root_error.value.code == "reader_root"
 
 
 @pytest.mark.parametrize("invalid", ([], {1: "value"}, {"KEY": 1}))

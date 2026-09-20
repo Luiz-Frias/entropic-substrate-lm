@@ -168,7 +168,7 @@ def run_d1_external_worker(
         raise TypeError("worker capture and reader roots must be Path")
     _guard_environment(environ)
     capture = _real_directory(capture_root, code="capture")
-    _real_directory(reader_root, code="reader_identity")
+    _real_directory(reader_root, code="reader_root")
     evidence = _stage(
         "preregistration",
         lambda: D1PreregistrationByteEvidence.from_bytes(preregistration_payload),
