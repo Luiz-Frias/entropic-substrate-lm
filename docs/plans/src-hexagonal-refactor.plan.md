@@ -198,8 +198,11 @@ Four consequences, all load-bearing:
 2. Per-module physical shims beat a single redirect table. One table file would be a hub every
    phase edits, serialising the sprint.
 3. Destination packages ship an **empty `__init__.py`** during structural phases. Justified: the
-   only two re-export facades in the plan (`data/__init__.py`, `predictive_state/__init__.py`)
-   have zero measured inbound edges `[M, arbiter-reproduced]`. Without this rule
+   re-export facades have zero measured inbound edges `[M, arbiter-reproduced]`. RETRACTION
+   (house rule 4, conductor, 2026-09-20, p3 design gate): this item previously said "the only two
+   re-export facades in the plan (`data/__init__.py`, `predictive_state/__init__.py`)"; MEASURED
+   at de61455, SEVEN package `__init__.py` files re-export by absolute old-prefix imports (data 5,
+   geometry 1, init 1, layers 1, models 2, observation 3, predictive_state 7 statements). Without this rule
    `ladder/run/worker/__init__.py` would be co-owned by p4 and p10.
 4. **There is NO import-linter ignore list** (DN-P1, ruled). `.importlinter` is edited exactly
    twice: p0 creates it, p13 adds `__legacy` and turns on full enforcement. From p3b to p12 it
@@ -235,8 +238,11 @@ generator is being redesigned in parallel with this plan:
    the ten-writer hub on p3's fragment that a migrate-on-land contract would otherwise create.
 2. **The generator never rebinds or writes a package `__init__.py`.** Only LEAF modules get the
    3-line `sys.modules` alias shim. p3 restores each original package `__init__.py` at its old
-   (now `__legacy`) location, unmodified, after the wholesale `git mv`; its relative imports resolve
-   through the sibling leaf shims exactly as they did before the move. A multi-destination package
+   (now `__legacy`) location, unmodified, after the wholesale `git mv`; its ABSOLUTE old-prefix re-export
+   imports resolve through the sibling leaf shims exactly as they did before the move (RETRACTION,
+   house rule 4, conductor, 2026-09-20: this sentence previously said "relative imports"; MEASURED at
+   de61455, `grep "^from \.\|^import \." src/entropic_substrate/*/__init__.py` matches nothing --
+   no package `__init__.py` in the tree uses a relative import). A multi-destination package
    key (7 of 12 measured from `tools/mapping.json`) therefore never hits the single-target rebind
    hazard, because no package key is ever rebound at all.
 3. **A fragment naming a package key or the root key fails loud.** `mapping.json` carries the
