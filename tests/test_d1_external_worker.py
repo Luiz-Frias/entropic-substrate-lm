@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import shutil
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, cast
 
 import pytest
@@ -75,6 +77,75 @@ from .test_d1_external_analysis_input import _b64, _canonical
 from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 
 pytestmark = pytest.mark.unit
+
+
+# ---------------------------------------------------------------------------
+# RED-first relocated-import regression (design-gate constraint 1, planned
+# commit branch 1). ``_load_relocated_copy`` below is a W1 sibling copy of
+# the ~18-line helper defined at ``tests/test_worker_source_anchor.py:52``
+# (that module is out of this phase's Allowed files and reserved for
+# FOR-1519, so it is copied here rather than imported, per the design gate).
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_CLOSURE_SOURCE = (
+    _REPO_ROOT / "src" / "entropic_substrate" / "analysis" / "d1_reader_source_closure.py"
+)
+
+
+def _load_relocated_copy(source: Path, relocated_dir: Path, module_name: str) -> ModuleType:
+    """Copy ``source`` into ``relocated_dir`` and import it under a distinct
+    module name, so its own ``__file__`` differs from the installed
+    package's copy while its absolute ``from entropic_substrate...`` imports
+    still resolve to the real installed package (unaffected by the copy)."""
+    relocated_dir.mkdir(parents=True, exist_ok=True)
+    target = relocated_dir / source.name
+    shutil.copy2(source, target)
+    spec = importlib.util.spec_from_file_location(module_name, target)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+@pytest.fixture
+def _relocated_closure(tmp_path: Path) -> Iterator[ModuleType]:
+    module_name = "test_relocated_d1_reader_source_closure"
+    try:
+        yield _load_relocated_copy(_CLOSURE_SOURCE, tmp_path / "elsewhere", module_name)
+    finally:
+        sys.modules.pop(module_name, None)
+
+
+def test_closure_resolves_the_real_root_from_a_relocated_copy(
+    _relocated_closure: ModuleType,
+) -> None:
+    """Pin: the closure's root resolution is anchored on the INSTALLED
+    ``entropic_substrate`` package's own ``__file__`` (via
+    ``entropic_substrate.paths.source_root()``), never on the depth of the
+    file that happens to call it. Loading a COPY of
+    ``d1_reader_source_closure.py`` from an unrelated tmp directory and
+    calling ``installed_d1_reader_source_files()`` on that copy proves this
+    directly: a depth-derived ``Path(__file__).resolve().parents[2]``
+    anchor reintroduced inside the copied module would resolve against the
+    tmp location instead of the real repo and raise
+    ``D1ReaderSourceClosureError`` here.
+
+    Guard-teeth MEASURED 2026-09-20 (mutation performed and reverted
+    in-branch, evidence in the PR body): replacing this module's
+    ``source_root()`` import with a local
+    ``Path(__file__).resolve().parents[2]`` definition turns this test RED
+    with exactly that error; reverting turns it back GREEN. This test is
+    retired together with the closure module later in this phase (nothing
+    survives to relocate once ``d1_reader_source_closure.py`` is deleted)."""
+    files = _relocated_closure.installed_d1_reader_source_files()
+    assert len(files) == 74
+    assert any(item.identity == "entropic_substrate.telemetry" for item in files)
 
 
 class _WorkerCase(NamedTuple):
