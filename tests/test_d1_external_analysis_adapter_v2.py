@@ -595,3 +595,44 @@ def test_v2_adapter_rejects_symlinked_or_unexpected_output(
     )
     with pytest.raises(error_type, match=message):
         _adapter(launch, runner).run(request)
+
+
+def test_v2_receipt_rejects_implementation_image_digest_differing_from_execution_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOR-1523 (RED-first, 2026-09-20): the verified receipt must bind the
+    implementation identity the caller CLAIMS ran to the image the attested
+    isolation actually recorded in its execution evidence. Before the fix the
+    issuer checked the evidence's request/response/analysis hashes but never
+    its image_digest, so a receipt could name an image the evidence
+    contradicts -- and with the D1 reader-source closure retired in p2 the
+    image digest is the remaining implementation-provenance binding here."""
+    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    result = _adapter(launch, runner).run(request)
+    evidence = result.isolation.execution_evidence
+    assert evidence is not None
+    # Premise: the adapter mints the evidence from the launch's own image.
+    assert evidence.image_digest == launch.image_digest
+
+    drifted = replace(_implementation(), image_digest="sha256:" + "9" * 64)
+    assert drifted.image_digest != evidence.image_digest
+    with pytest.raises(ValueError, match="image_digest"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=drifted,
+            isolation=result.isolation,
+        )
+
+    # GREEN control: the same receipt issues once the claimed image matches.
+    matching = replace(_implementation(), image_digest=evidence.image_digest)
+    receipt = issue_d1_verified_analysis_receipt(
+        analysis=result.analysis,
+        request=result.request,
+        worker_response=result.worker_response,
+        implementation=matching,
+        isolation=result.isolation,
+    )
+    assert receipt.manifest["implementation"]["image_digest"] == evidence.image_digest  # type: ignore[index]
