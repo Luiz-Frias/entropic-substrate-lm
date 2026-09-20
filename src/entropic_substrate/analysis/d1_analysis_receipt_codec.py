@@ -40,6 +40,16 @@ _FILING_BINDING_FIELDS = frozenset(
         "preregistration_sha256",
     }
 )
+# Exact wire key set for the receipt "implementation" object. RETRACTED
+# (house rule 4, measured 2026-09-20): _decode previously checked only
+# `type(...) is dict`, so the retired analysis_code_digest,
+# complete_reader_digest, defect_reader_digest and nested "readers" keys
+# (see D1AnalysisImplementationIdentity's docstring in
+# d1_execution_receipt.py) still parsed on the wire unrejected. Zero
+# persisted receipts carry them (brief Scope measurement, conductor grep
+# over docs/, data/, results/), so the compat window closes by
+# measurement rather than a version bump; d1-analysis-execution-receipt-v1
+# stays frozen.
 _IMPLEMENTATION_FIELDS = frozenset({"code_commit", "image_digest", "repository_digest"})
 
 
