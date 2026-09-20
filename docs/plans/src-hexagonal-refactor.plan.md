@@ -197,7 +197,7 @@ Four consequences, all load-bearing:
    what makes the waves legal at all.
 2. Per-module physical shims beat a single redirect table. One table file would be a hub every
    phase edits, serialising the sprint.
-3. Destination packages ship an **empty `__init__.py`** during structural phases. Justified: the
+3. Destination packages ship an **empty `__init__.py`** during structural phases, and so does the MOVED copy of each of the seven re-export facades under `__legacy/` (RULED 2026-09-20, p3 design gate: a moved facade body re-enters its sibling leaf shim mid-import, load-order dependent, measured with a control). Justified: the
    re-export facades have zero measured inbound edges `[M, arbiter-reproduced]`. RETRACTION
    (house rule 4, conductor, 2026-09-20, p3 design gate): this item previously said "the only two
    re-export facades in the plan (`data/__init__.py`, `predictive_state/__init__.py`)"; MEASURED
