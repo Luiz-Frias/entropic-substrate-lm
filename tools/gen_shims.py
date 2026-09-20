@@ -11,7 +11,8 @@ under a fragments directory (e.g. ``.claude/workflows/landed-set/``):
 
     {"phase": "<phase-id>", "modules": {"<old dotted>": {"target": "<new
     dotted, or entropic_substrate.__legacy.<x> while quarantined>", "landed":
-    bool, "retired": bool (optional)}}, "legacy_edge_budget": <int>}
+    bool, "retired": bool (optional), "pending": "<phase-id>" (optional)}},
+    "legacy_edge_budget": <int>}
 
 ``modules`` may be EMPTY (or absent entries for anything the phase doesn't
 touch) -- "fragments only ever ADD" (sprint-preflight ruling, 2026-09-18):
@@ -69,6 +70,32 @@ draft, which said `landed:true` deletes the shim):
   default above resolves for the FIRST case; p13 still needs a positive,
   auditable way to say "this old name is done, delete its shim" for the
   SECOND) -- no shim emitted; overrides ``landed``.
+  Also admissible before p13 for ONE case: a module deleted outright before
+  its move (the fragment note names the deleting commit), because the guard
+  below would otherwise refuse the whole emission on its behalf.
+* ``pending: "<phase-id>"`` (FINDING 2026-09-20) -- the mapping row names a
+  module that does not exist YET: measured, ``d1_training_step_records`` and
+  ``d1_calibration_records`` are mapped today but only p5 creates them under
+  ``__legacy/``. No shim is emitted while pending, and the guard FAILS LOUD if
+  a pending module is in fact present (the creating phase then takes the row
+  into its own fragment and drops the flag -- the one sanctioned migration
+  between fragments, serial phases only; disjointness still holds at every
+  tip). Overrides ``landed``; mutually exclusive with ``retired``.
+* **Source-existence guard (FINDING 2026-09-20, p2 -> p3 gap).** Emission is
+  keyed off mapping rows alone, so a row whose module was deleted outright
+  before its move (measured: ``entropic_substrate.analysis
+  .d1_reader_source_closure``, deleted at p2 commit 8cf5aae, ruling E-1
+  extended; the mapping-coverage test tolerates the stale row because stale
+  rows are swept at p13) would otherwise become a shim importing a missing
+  ``__legacy`` module. generate() therefore refuses, BEFORE its first write,
+  any non-retired row with no real module file at its target dotted path and
+  none at its old one (a shim at the old path is not source), and refuses to
+  overwrite real source still sitting at the old path (the generator was run
+  before the ``git mv``). ``--verify`` re-checks the targets; ``--preflight``
+  runs the same walk against a tree with no fragments yet, writing nothing,
+  so p3 can name every stale row before it moves anything. The resolution of
+  a stale row is a ruling (``retired: true`` in the phase's fragment, or the
+  p13 sweep), never a silent skip.
 
 **Package keys are never shimmable (sprint-preflight DEFECTS 2, 3 and 9,
 ruled 2026-09-18).** A package key is any mapping key that is a dotted
@@ -465,6 +492,106 @@ def _check_merged(modules: dict) -> None:
         )
 
 
+def module_file(out_dir: Path, dotted: str) -> Path | None:
+    """The on-disk file a dotted module name resolves to under ``out_dir``:
+    ``<dotted as dirs>.py`` first, then ``<dotted as dirs>/__init__.py`` (a
+    leaf key whose module is a childless package); None when neither is a
+    file. Mirrors the import system's own order for a module vs a package."""
+    base = out_dir.joinpath(*dotted.split("."))
+    for candidate in (base.parent / f"{base.name}.py", base / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _is_shim_file(path: Path) -> bool:
+    return verify_shim_source(path.read_text())[0]
+
+
+def find_missing_sources(modules: dict, out_dir: Path) -> list[str]:
+    """Rows (non-retired) whose module has NO real source anywhere on disk:
+    nothing at the target dotted path, and at the old dotted path either
+    nothing or only a shim. Accepting real source at the old path is what
+    makes this valid BEFORE the move (``--preflight``); refusing to count a
+    shim there is what keeps it load-bearing AFTER p3, when every old path
+    holds one. Returns human-readable rows, one per stale entry."""
+    missing: list[str] = []
+    for old, entry in sorted(modules.items()):
+        if entry.get("retired", False) or entry.get("pending"):
+            continue
+        target = entry["target"]
+        if module_file(out_dir, target) is not None:
+            continue
+        old_file = module_file(out_dir, old)
+        if old_file is not None and not _is_shim_file(old_file):
+            continue
+        missing.append(
+            f"{old} -> {target}: no module file under {out_dir} at either dotted path "
+            "(stale mapping row, or the move never happened)"
+        )
+    return missing
+
+
+def find_unmoved_sources(modules: dict, out_dir: Path) -> list[str]:
+    """Rows (non-retired) whose OLD dotted path still holds real, non-shim
+    source. Emitting would overwrite that source with a three-line shim, so
+    generate() refuses; the caller ran the generator before the ``git mv``."""
+    unmoved: list[str] = []
+    for old, entry in sorted(modules.items()):
+        if entry.get("retired", False) or entry.get("pending"):
+            continue
+        old_file = module_file(out_dir, old)
+        if old_file is not None and not _is_shim_file(old_file):
+            unmoved.append(f"{old}: real source still at {old_file}")
+    return unmoved
+
+
+def find_pending_present(modules: dict, out_dir: Path) -> list[str]:
+    """Rows declared ``pending`` whose module DOES exist (at the target, or as
+    real source at the old path): the declaration is stale and the creating
+    phase must take the row over. Also rejects a row that is both pending and
+    retired -- the two say opposite things about the old name."""
+    present: list[str] = []
+    for old, entry in sorted(modules.items()):
+        phase = entry.get("pending")
+        if not phase:
+            continue
+        if entry.get("retired", False):
+            present.append(f"{old}: both pending ({phase!r}) and retired")
+            continue
+        target_file = module_file(out_dir, entry["target"])
+        old_file = module_file(out_dir, old)
+        if target_file is not None or (old_file is not None and not _is_shim_file(old_file)):
+            present.append(
+                f"{old}: declared pending until {phase!r} but its module is present at "
+                f"{target_file or old_file}"
+            )
+    return present
+
+
+def _check_sources(modules: dict, out_dir: Path) -> None:
+    stale_pending = find_pending_present(modules, out_dir)
+    if stale_pending:
+        raise ManifestError(
+            f"{len(stale_pending)} pending declaration(s) are stale -- the creating phase "
+            "takes the row into its own fragment and drops the flag: " + "; ".join(stale_pending)
+        )
+    missing = find_missing_sources(modules, out_dir)
+    if missing:
+        raise ManifestError(
+            f"{len(missing)} mapping row(s) name a module with no source on disk -- "
+            "refusing to emit ANY shim (a shim importing a missing module is an "
+            "ImportError far from its cause; resolve by ruling, never by skipping): "
+            + "; ".join(missing)
+        )
+    unmoved = find_unmoved_sources(modules, out_dir)
+    if unmoved:
+        raise ManifestError(
+            f"{len(unmoved)} module(s) still hold real source at the old dotted path -- "
+            "refusing to overwrite source with a shim (run the move first): " + "; ".join(unmoved)
+        )
+
+
 def generate(
     modules: dict,
     source_label: str,
@@ -472,11 +599,14 @@ def generate(
     manifest_path: Path | None = None,
 ) -> list[Path]:
     _check_merged(modules)
+    _check_sources(modules, out_dir)  # before the first write: all-or-nothing
     written: list[Path] = []
     manifest_entries: list[dict] = []
     for old, entry in sorted(modules.items()):
         if entry.get("retired", False):
-            continue  # p13 only: old name fully retired, no shim
+            continue  # old name fully retired (p13, or deleted before its move): no shim
+        if entry.get("pending"):
+            continue  # module not created yet (doctrine above): no shim until it exists
         target = entry["target"]
         is_entrypoint = bool(entry.get("entrypoint", False))
         out_path = shim_output_path(out_dir, old)
@@ -701,7 +831,7 @@ def compute_expected_shim_map(modules: dict, out_dir: Path) -> dict[str, str]:
     manifest that no longer reflects the fragments/mapping on disk."""
     expected: dict[str, str] = {}
     for old, entry in modules.items():
-        if entry.get("retired", False):
+        if entry.get("retired", False) or entry.get("pending"):
             continue
         out_path = shim_output_path(out_dir, old)
         expected[str(out_path.relative_to(out_dir))] = entry["target"]
@@ -767,6 +897,14 @@ def main(argv: list[str] | None = None) -> int:
         "instead of generating",
     )
     ap.add_argument(
+        "--preflight",
+        action="store_true",
+        help="write nothing; resolve every mapping row (a missing or empty fragments "
+        "directory is the legitimate pre-p3 state and resolves to the __legacy defaults) "
+        "and fail loud naming every row whose module has no source on disk at either its "
+        "old or its target dotted path",
+    )
+    ap.add_argument(
         "--manifest-out",
         type=Path,
         default=None,
@@ -793,12 +931,40 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         mapping = load_mapping(args.mapping_json)
-        fragments = load_fragments(args.fragments_dir)
+        if args.preflight and not any(args.fragments_dir.glob("*.json")):
+            fragments = {}  # pre-p3: no fragment exists yet; every row takes the derived default
+        else:
+            fragments = load_fragments(args.fragments_dir)
         merged = merge_fragments(fragments, mapping)
         resolved = resolve_all_modules(merged, mapping)
     except ManifestError as exc:
         print(f"FATAL: {exc}", file=sys.stderr)
         return 1
+
+    if args.preflight:
+        stale_pending = find_pending_present(resolved, args.out_dir)
+        if stale_pending:
+            print(f"FATAL: {len(stale_pending)} stale pending declaration(s):", file=sys.stderr)
+            for row in stale_pending:
+                print(f"    {row}", file=sys.stderr)
+            return 1
+        missing = find_missing_sources(resolved, args.out_dir)
+        if missing:
+            print(
+                f"FATAL: {len(missing)} mapping row(s) name a module with no source on disk "
+                f"under {args.out_dir}:",
+                file=sys.stderr,
+            )
+            for row in missing:
+                print(f"    {row}", file=sys.stderr)
+            return 1
+        unmoved = len(find_unmoved_sources(resolved, args.out_dir))
+        print(
+            f"preflight ok: {len(resolved)} row(s) resolve to source on disk under "
+            f"{args.out_dir} ({unmoved} still at the old path, "
+            f"{len(resolved) - unmoved} at the target) from {len(fragments)} fragment(s)"
+        )
+        return 0
 
     if args.print_budget:
         if args.sequence and args.sequence_file:
@@ -836,6 +1002,15 @@ def main(argv: list[str] | None = None) -> int:
             if drift:
                 raise ManifestError("; ".join(drift))
             failures = verify_shims_from_manifest(doc, args.out_dir)
+            stale_pending = find_pending_present(resolved, args.out_dir)
+            if stale_pending:
+                raise ManifestError("stale pending declaration(s): " + "; ".join(stale_pending))
+            missing = find_missing_sources(resolved, args.out_dir)
+            if missing:
+                raise ManifestError(
+                    f"{len(missing)} shim(s) point at a module with no source on disk: "
+                    + "; ".join(missing)
+                )
         except ManifestError as exc:
             print(f"FATAL: {exc}", file=sys.stderr)
             return 1
@@ -850,7 +1025,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"verified: fragments are disjoint, no package key was named, merged manifest is "
             f"landed/target-consistent, the manifest matches the freshly resolved module set, "
-            f"and every shim in {manifest_path} is exact-form"
+            f"every shim in {manifest_path} is exact-form, and every target has source on disk"
         )
         return 0
 

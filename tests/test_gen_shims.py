@@ -110,6 +110,22 @@ def write_fragment(
     return p
 
 
+def plant(out_dir: Path, *dotted: str) -> list[Path]:
+    """Creates a real (non-shim) module file at each dotted path under
+    ``out_dir`` -- the on-disk state generate() now requires for every row it
+    shims (the module must physically exist at its target; see
+    find_missing_sources). Never writes a package ``__init__.py``: the guard
+    keys on the module file alone, and several tests pin that no
+    ``__init__.py`` ever appears under out_dir."""
+    planted: list[Path] = []
+    for name in dotted:
+        f = out_dir.joinpath(*name.split(".")).with_suffix(".py")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(f'"""planted fixture source for {name}"""\n\nPLANTED = True\n')
+        planted.append(f)
+    return planted
+
+
 def resolve(fragments_dir: Path, mapping_path: Path) -> dict:
     """Convenience: run the full merge -> derive-legacy-defaults pipeline the
     way main() does, for tests that want the fully resolved module set."""
@@ -246,6 +262,11 @@ def test_verify_reports_disjointness_violation_via_main(tmp_path: Path) -> None:
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(
+        out_dir,
+        "entropic_substrate.kernel.runtime.shared_thing",
+        "entropic_substrate.core.geometry.shared_thing",
+    )
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"])
     assert rc == 1
 
@@ -288,6 +309,7 @@ def test_unlanded_module_gets_a_shim_to_legacy(tmp_path: Path) -> None:
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     out = out_dir / "entropic_substrate" / "old_thing.py"
@@ -309,6 +331,7 @@ def test_landed_module_still_gets_a_shim_at_new_home(tmp_path: Path) -> None:
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.ladder.run.new_thing")
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     out = out_dir / "entropic_substrate" / "old_thing.py"
@@ -332,6 +355,7 @@ def test_retired_module_gets_no_shim(tmp_path: Path) -> None:
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.ladder.run.new_thing")
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     assert written == []
@@ -353,6 +377,7 @@ def test_landed_true_with_legacy_target_rejected(tmp_path: Path) -> None:
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.__legacy.confused")
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 1
 
@@ -372,6 +397,7 @@ def test_landed_false_with_non_legacy_target_rejected_GREEN_mirror(tmp_path: Pat
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.ladder.run.already_promoted")
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 1
 
@@ -391,6 +417,7 @@ def test_unnamed_module_gets_implicit_legacy_shim(tmp_path: Path) -> None:
     frags_dir = tmp_path / "landed-set"
     write_fragment(frags_dir, "p3-quarantine", {}, legacy_edge_budget=12)
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     out = out_dir / "entropic_substrate" / "old_thing.py"
@@ -510,6 +537,7 @@ def test_no_package_init_ever_written_even_when_children_named(tmp_path: Path) -
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.analysis.charts")
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     init_paths = list(out_dir.rglob("__init__.py"))
@@ -537,6 +565,7 @@ def test_real_init_left_in_out_dir_untouched_byte_for_byte(tmp_path: Path) -> No
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.analysis.charts")
     merged = resolve(frags_dir, mapping_path)
     gen_shims.generate(merged, str(frags_dir), out_dir)
 
@@ -581,6 +610,7 @@ def test_verify_manifest_ignores_real_production_module_in_tree(tmp_path: Path) 
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
     manifest_path = tmp_path / "emitted.json"
     merged = resolve(frags_dir, mapping_path)
     gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
@@ -623,6 +653,7 @@ def test_verify_manifest_still_catches_a_broken_emitted_shim_GREEN_control(
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
     manifest_path = tmp_path / "emitted.json"
     merged = resolve(frags_dir, mapping_path)
     gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
@@ -665,6 +696,7 @@ def test_generate_default_manifest_path_matches_pinned_invocation(tmp_path: Path
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 0
     default_manifest = frags_dir / ".emitted.json"
@@ -703,6 +735,7 @@ def test_cli_has_no_ignore_list_flag(tmp_path: Path) -> None:
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.kernel.runtime.thing")
     with pytest.raises(SystemExit):
         gen_shims.main(
             [
@@ -734,6 +767,7 @@ def test_generate_writes_no_ini_or_cfg_files(tmp_path: Path) -> None:
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.kernel.runtime.thing")
     merged = resolve(frags_dir, mapping_path)
     gen_shims.generate(merged, str(frags_dir), out_dir)
     non_py = [p for p in out_dir.rglob("*") if p.is_file() and p.suffix != ".py"]
@@ -765,6 +799,7 @@ def test_print_budget_reports_highest_ordered_fragment(
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.kernel.runtime.a", "entropic_substrate.core.geometry.b")
     rc = gen_shims.main(
         [
             str(frags_dir),
@@ -795,6 +830,7 @@ def test_print_budget_uses_only_the_present_prefix_GREEN_control(
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.kernel.runtime.a")
     rc = gen_shims.main(
         [
             str(frags_dir),
@@ -823,6 +859,7 @@ def test_print_budget_fails_loud_on_out_of_sequence_fragment(tmp_path: Path) -> 
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.kernel.runtime.a")
     rc = gen_shims.main(
         [
             str(frags_dir),
@@ -849,6 +886,7 @@ def test_print_budget_via_sequence_file(tmp_path: Path, capsys: pytest.CaptureFi
     seq_file.write_text(json.dumps({"sequence": ["p0", "p5-kernel", "p6-core"]}))
     out_dir = tmp_path / "out"
     out_dir.mkdir()
+    plant(out_dir, "entropic_substrate.kernel.runtime.a")
     rc = gen_shims.main(
         [
             str(frags_dir),
@@ -933,6 +971,7 @@ def test_generate_emits_entrypoint_form_for_flagged_module(tmp_path: Path) -> No
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.kernel.runtime.worker_command")
     merged = resolve(frags_dir, mapping_path)
     assert merged["entropic_substrate.worker_command"]["entrypoint"] is True
     gen_shims.generate(merged, str(frags_dir), out_dir)
@@ -968,6 +1007,7 @@ def test_generate_emits_standard_form_for_non_entrypoint_module_GREEN_control(
         },
     )
     out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.kernel.runtime.ordinary_thing")
     merged = resolve(frags_dir, mapping_path)
     assert merged["entropic_substrate.ordinary_thing"]["entrypoint"] is False
     gen_shims.generate(merged, str(frags_dir), out_dir)
@@ -1174,6 +1214,9 @@ def test_stale_verify_fails_when_landed_flips_without_regenerate(tmp_path: Path)
         },
     )
     out_dir = tmp_path / "out"
+    plant(
+        out_dir, "entropic_substrate.__legacy.old_thing", "entropic_substrate.ladder.run.old_thing"
+    )
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 0
 
@@ -1210,6 +1253,9 @@ def test_stale_verify_passes_after_regenerate_GREEN_control(tmp_path: Path) -> N
         },
     )
     out_dir = tmp_path / "out"
+    plant(
+        out_dir, "entropic_substrate.__legacy.old_thing", "entropic_substrate.ladder.run.old_thing"
+    )
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 0
 
@@ -1227,3 +1273,273 @@ def test_stale_verify_passes_after_regenerate_GREEN_control(tmp_path: Path) -> N
     assert rc == 0
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"])
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Source-existence guard (FINDING 2026-09-20, sprint p2 -> p3 gap). Shim
+# emission is keyed off mapping.json rows alone: resolve_all_modules()
+# manufactures a `__legacy` default for EVERY non-package key, and generate()
+# used to write a shim for each one without ever asking whether the module it
+# points at exists. Measured on mythwave/p2-d1-closure: the row
+# `entropic_substrate.analysis.d1_reader_source_closure` (deleted outright at
+# 8cf5aae, ruling E-1 extended) would have become a shim importing a missing
+# `__legacy` module at p3. The mapping-coverage test deliberately tolerates the
+# stale row (swept at p13), so the generator itself must refuse. Both arms:
+# the RED arm shows the refusal names the row and writes nothing; the GREEN
+# control shows a planted target source is enough.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_refuses_row_whose_module_has_no_source_on_disk(tmp_path: Path) -> None:
+    """RED arm: nothing at the target dotted path, nothing at the old one ->
+    ManifestError naming the row, and NO shim file is written (all-or-nothing:
+    the refusal happens before the first write)."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.analysis.gone_closure"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    merged = resolve(frags_dir, mapping_path)
+    with pytest.raises(gen_shims.ManifestError) as excinfo:
+        gen_shims.generate(merged, str(frags_dir), out_dir)
+    msg = str(excinfo.value)
+    assert "entropic_substrate.analysis.gone_closure" in msg
+    assert "entropic_substrate.__legacy.analysis.gone_closure" in msg
+    assert not (out_dir / "entropic_substrate" / "analysis" / "gone_closure.py").exists()
+
+
+def test_generate_refusal_is_all_or_nothing(tmp_path: Path) -> None:
+    """One stale row among healthy ones must block the WHOLE emission: a
+    partial shim set on disk would be worse than none (half the tree resolves,
+    the other half raises ImportError somewhere far from the cause)."""
+    mapping_path = write_mapping(
+        tmp_path, ["entropic_substrate.aaa_present", "entropic_substrate.zzz_gone"]
+    )
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.aaa_present")
+    merged = resolve(frags_dir, mapping_path)
+    with pytest.raises(gen_shims.ManifestError, match="zzz_gone"):
+        gen_shims.generate(merged, str(frags_dir), out_dir)
+    assert not (out_dir / "entropic_substrate" / "aaa_present.py").exists()
+
+
+def test_generate_emits_when_target_source_exists_GREEN_control(tmp_path: Path) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.analysis.kept_module"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.analysis.kept_module")
+    merged = resolve(frags_dir, mapping_path)
+    written = gen_shims.generate(merged, str(frags_dir), out_dir)
+    assert written == [out_dir / "entropic_substrate" / "analysis" / "kept_module.py"]
+
+
+def test_find_missing_sources_accepts_unmoved_real_source_at_old_path(tmp_path: Path) -> None:
+    """Pre-move state (what --preflight sees before p3's git mv): the module
+    still lives at its OLD path and no `__legacy` target exists yet. That is
+    not a stale row; the pre-flight must stay quiet about it."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.still_here"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.still_here")
+    merged = resolve(frags_dir, mapping_path)
+    assert gen_shims.find_missing_sources(merged, out_dir) == []
+
+
+def test_find_missing_sources_does_not_count_a_shim_at_old_path(tmp_path: Path) -> None:
+    """A shim sitting at the old path is not source: if its target is gone,
+    the row is stale even though a file exists at the old dotted name. This is
+    the arm that keeps the guard load-bearing AFTER p3, when every old path
+    holds a shim."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.shimmed_only"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    old_path = out_dir / "entropic_substrate" / "shimmed_only.py"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_text(
+        gen_shims.shim_source(
+            "entropic_substrate.shimmed_only", "entropic_substrate.__legacy.shimmed_only", "t"
+        )
+    )
+    merged = resolve(frags_dir, mapping_path)
+    missing = gen_shims.find_missing_sources(merged, out_dir)
+    assert len(missing) == 1
+    assert "entropic_substrate.shimmed_only" in missing[0]
+
+
+def test_find_missing_sources_accepts_package_init_as_target(tmp_path: Path) -> None:
+    """A leaf key whose module is a package directory (no mapped children, so
+    compute_package_keys does not classify it) resolves through its
+    `__init__.py`, exactly as the import system would."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.leaf_pkg"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    init = out_dir / "entropic_substrate" / "__legacy" / "leaf_pkg" / "__init__.py"
+    init.parent.mkdir(parents=True)
+    init.write_text('"""real package"""\n')
+    merged = resolve(frags_dir, mapping_path)
+    assert gen_shims.find_missing_sources(merged, out_dir) == []
+
+
+def test_generate_refuses_to_overwrite_real_source_at_old_path(tmp_path: Path) -> None:
+    """The sibling hazard the same walk exposes: running the generator BEFORE
+    the git mv would replace every real module with a three-line shim. Real
+    (non-shim) source at the old path is a refusal, and the file is untouched."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.not_yet_moved"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    (real,) = plant(out_dir, "entropic_substrate.not_yet_moved")
+    plant(out_dir, "entropic_substrate.__legacy.not_yet_moved")  # target present too
+    before = real.read_bytes()
+    merged = resolve(frags_dir, mapping_path)
+    with pytest.raises(gen_shims.ManifestError, match="not_yet_moved"):
+        gen_shims.generate(merged, str(frags_dir), out_dir)
+    assert real.read_bytes() == before
+
+
+def test_generate_overwrites_its_own_earlier_shim_GREEN_control(tmp_path: Path) -> None:
+    """Regeneration is the normal path (every later phase re-runs the
+    generator): an exact-form shim at the old path is replaced, not refused."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.re_gen"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.re_gen")
+    merged = resolve(frags_dir, mapping_path)
+    first = gen_shims.generate(merged, str(frags_dir), out_dir)
+    second = gen_shims.generate(merged, str(frags_dir), out_dir)
+    assert first == second == [out_dir / "entropic_substrate" / "re_gen.py"]
+
+
+def test_preflight_names_stale_row_and_exits_1(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--preflight` is the pre-move check p3 runs first: no fragment exists
+    yet (the landed-set directory may not even exist), every row takes the
+    derived `__legacy` default, and a row with no source anywhere is reported
+    by name. Nothing is written."""
+    mapping_path = write_mapping(
+        tmp_path, ["entropic_substrate.present_one", "entropic_substrate.analysis.deleted_one"]
+    )
+    frags_dir = tmp_path / "landed-set"  # deliberately never created
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.present_one")
+    rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--preflight"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "entropic_substrate.analysis.deleted_one" in captured.err
+    assert "present_one" not in captured.err
+    assert list(out_dir.rglob("*.py")) == [out_dir / "entropic_substrate" / "present_one.py"]
+
+
+def test_preflight_clean_tree_exits_0_GREEN_control(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.present_one"])
+    frags_dir = tmp_path / "landed-set"
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.present_one")
+    rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--preflight"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "1 row(s)" in captured.out
+    assert list(out_dir.rglob("*.py")) == [out_dir / "entropic_substrate" / "present_one.py"]
+
+
+def test_verify_fails_when_target_source_vanishes_after_generate(tmp_path: Path) -> None:
+    """`--verify` gains the same teeth: a module deleted AFTER its shim was
+    emitted leaves an exact-form shim pointing at nothing, which the
+    manifest-drift and form checks alone cannot see."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(frags_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "out"
+    (target,) = plant(out_dir, "entropic_substrate.__legacy.old_thing")
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)]) == 0
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"]) == 0
+    target.unlink()
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# `pending` -- the fourth fragment state the same measurement forced. The
+# real-tree --preflight at the p2 tip listed THREE rows without source: the
+# deleted closure, plus `d1_training_step_records` / `d1_calibration_records`,
+# which mapping.json carries today but p5 only creates. Without a positive
+# declaration the guard would (correctly) block p3's whole emission on them.
+# ---------------------------------------------------------------------------
+
+
+def test_pending_row_gets_no_shim_and_passes_the_guard(tmp_path: Path) -> None:
+    mapping_path = write_mapping(
+        tmp_path, ["entropic_substrate.here_now", "entropic_substrate.d1_future_records"]
+    )
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.d1_future_records": {
+                "target": "entropic_substrate.__legacy.d1_future_records",
+                "landed": False,
+                "pending": "p5-kernel",
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.here_now")
+    # main() so the emitted-files manifest is written where --verify reads it.
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)]) == 0
+    assert (out_dir / "entropic_substrate" / "here_now.py").is_file()
+    assert not (out_dir / "entropic_substrate" / "d1_future_records.py").exists()
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"]) == 0
+
+
+def test_pending_row_whose_module_exists_is_refused(tmp_path: Path) -> None:
+    """The flag cannot linger: once the creating phase lands the module, a
+    stale `pending` declaration is a loud refusal, not a silently missing shim."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.d1_future_records"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.d1_future_records": {
+                "target": "entropic_substrate.__legacy.d1_future_records",
+                "landed": False,
+                "pending": "p5-kernel",
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.d1_future_records")
+    merged = resolve(frags_dir, mapping_path)
+    with pytest.raises(gen_shims.ManifestError, match="pending"):
+        gen_shims.generate(merged, str(frags_dir), out_dir)
+    assert gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--preflight"]) == 1
+
+
+def test_pending_and_retired_together_is_refused(tmp_path: Path) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.contradiction"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.contradiction": {
+                "target": "entropic_substrate.__legacy.contradiction",
+                "landed": False,
+                "pending": "p5-kernel",
+                "retired": True,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    merged = resolve(frags_dir, mapping_path)
+    with pytest.raises(gen_shims.ManifestError, match="both pending"):
+        gen_shims.generate(merged, str(frags_dir), out_dir)
