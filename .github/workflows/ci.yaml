@@ -3,10 +3,16 @@ name: CI
 on:
   push:
     # refactor/**: the hexagonal-refactor sprint trunk (operator ruling 2026-09-19);
-    # without it no sprint push or PR ran CI and lint-imports had no channel to stop a merge.
+    # without it no sprint push or PR ran CI and lint-imports had no channel to stop
+    # a merge (measured on PR #285: 0 workflow runs before this trigger landed).
     branches: [main, 'refactor/**']
   pull_request:
     branches: [main, 'refactor/**']
+
+# Least-privilege default: every step below only checks out and reads the repo
+# (lint, typecheck, unit tests, import-lint) — no push, comment, or artifact write.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
