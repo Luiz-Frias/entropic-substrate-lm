@@ -247,7 +247,11 @@
         "tests/test_d1_filing_edges.py",
         "src/entropic_substrate/d1_predecessor_loader.py",
         "src/entropic_substrate/evidence/d1_filing_assembly.py",
-        "tests/test_d1_filing_assembly.py"
+        "tests/test_d1_filing_assembly.py",
+        "src/entropic_substrate/analysis/d1_review_packet.py",
+        "src/entropic_substrate/analysis/d1_external_analysis_adapter.py",
+        "tests/test_d1_filing_application.py",
+        "tests/test_d1_filing_graph_gate.py"
       ],
       "conflict_edges": [
         {
@@ -259,7 +263,7 @@
       ],
       "parallel_group": null,
       "status": "active",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9. OPERATOR RULING 2026-09-20 (widen p2): E-1 extended to the receipt readers block and the filing analysis_reader artifact + reader_sha256 binding; 6 src + 12 test files added to the touch set; serial rail, no parallel edge. GATE-CHECK COMPLETION 2026-09-20: filing-role count 14 -> 13 reaches d1_predecessor_loader.py, evidence/d1_filing_assembly.py, tests/test_d1_filing_assembly.py (added); no landed-set fragment for p2; the stale mapping row is pruned at p3.",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9. OPERATOR RULING 2026-09-20 (widen p2): E-1 extended to the receipt readers block and the filing analysis_reader artifact + reader_sha256 binding; 6 src + 12 test files added to the touch set; serial rail, no parallel edge. GATE-CHECK COMPLETION 2026-09-20: filing-role count 14 -> 13 reaches d1_predecessor_loader.py, evidence/d1_filing_assembly.py, tests/test_d1_filing_assembly.py (added); no landed-set fragment for p2; the stale mapping row is pruned at p3. RETRACTION (house rule 4, fixer 2026-09-20): conductor commit 276901f's message claimed 'Manifest touch set ... updated' for the E-1 COMPLETION round (review packet, worker adapter, filing-application and filing-graph-gate tests) but its diff touched only the brief's Allowed files, not this touch_set; measured via `git diff --name-only mythwave/p1-anchors...mythwave/p2-d1-closure`, which shows 4 of the 5 E-1-COMPLETION-granted files actually edited (tests/test_d1_external_worker_publication.py was granted but never touched); those 4 are added here in this follow-up commit.",
       "engine_mode": "arch"
     },
     {
