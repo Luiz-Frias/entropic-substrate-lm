@@ -627,13 +627,23 @@ def derive_stub_body(target: str, target_source: str) -> str:
     one. Raises on unparseable source (fail loud, never a silent empty
     stub)."""
     tree = ast.parse(target_source)
+    all_names = _module_all(tree)
     names = sorted(set(_bound_names_in_stmts(tree.body)))
+    if all_names is not None:
+        # `__all__` gets its own literal restatement below (SLICE-PROBE
+        # FINDING, 2026-09-20: leaving it in the generic name list too
+        # produced BOTH `from X import __all__ as __all__` and a literal
+        # `__all__ = [...]` in the same stub -- redundant, the second
+        # silently wins at runtime). Skipped only when a literal WAS
+        # derived; when the target's `__all__` is computed/non-literal
+        # (returns None), the generic line stays as the only exposure a
+        # stub gives that attribute.
+        names = [n for n in names if n != "__all__"]
     lines = [
         f"from {target} import {name} as {name}"
         + (PRIVATE_IGNORE_COMMENT if _is_private_name(name) else "")
         for name in names
     ]
-    all_names = _module_all(tree)
     if all_names is not None:
         lines.append("__all__ = " + repr(list(all_names)))
     return "\n".join(lines) + ("\n" if lines else "")
