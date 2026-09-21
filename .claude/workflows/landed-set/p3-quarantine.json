@@ -1,0 +1,22 @@
+{
+  "phase": "p3-quarantine",
+  "modules": {
+    "entropic_substrate.analysis.d1_reader_source_closure": {
+      "target": "entropic_substrate.__legacy.analysis.d1_reader_source_closure",
+      "landed": false,
+      "retired": true,
+      "note": "deleted outright at p2 commit 8cf5aae (ruling E-1 extended); the mapping-coverage test tolerates the stale row because stale rows are otherwise swept at p13 -- this row is retired early because the module never existed to move."
+    },
+    "entropic_substrate.d1_training_step_records": {
+      "target": "entropic_substrate.__legacy.d1_training_step_records",
+      "landed": false,
+      "pending": "p5-kernel"
+    },
+    "entropic_substrate.d1_calibration_records": {
+      "target": "entropic_substrate.__legacy.d1_calibration_records",
+      "landed": false,
+      "pending": "p5-kernel"
+    }
+  },
+  "legacy_edge_budget": 0
+}
