@@ -14,13 +14,21 @@ lists ``tests/observability_conformance_config.py`` explicitly. Zero files
 were added beyond the brief's own envelope; this module is declared IN it,
 not beside it.
 
-Every later phase that lands one of ``NOT_YET_CONFORMED_ENTRYPOINTS`` moves
-its dotted name into ``CONFORMING_ENTRYPOINTS`` in the SAME commit that
-lands it and adds a ``configure_logging()`` call at its entry function --
-this file is where that promotion happens, never inside the test.
+CONFORMANCE-PROMOTION RULING (conductor 2026-09-21, resolving
+wf_8a5c8008-50e review:fixer): This module DERIVES its three per-phase sets
+(``CONFORMING_ENTRYPOINTS``, ``PRINT_ALLOWLIST``, ``ALLOWED_SINK_CONSTRUCTION_MODULES``)
+by merging the optional fragment keys ``conforming_entrypoints``, ``print_allowlist``
+and ``sink_construction_modules`` of every ``.claude/workflows/landed-set/*.json``
+present. A phase promotes an entry point, re-keys an allowlist entry, or adds a
+construction site by editing its OWN fragment in the same commit that moves the
+module. The fragment is already in every phase's touch set and fragments are
+disjoint by construction, so later phases never share a file with p3b.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 LANDED_LAYER_PREFIXES = (
     "entropic_substrate.kernel",
@@ -29,6 +37,58 @@ LANDED_LAYER_PREFIXES = (
     "entropic_substrate.historical",
     "entropic_substrate.composition",
 )
+
+
+def _load_merged_fragment_sets(
+    fragments_dir: Path,
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Load and merge conforming_entrypoints, print_allowlist, and
+    sink_construction_modules from every .claude/workflows/landed-set/*.json
+    fragment present. Returns (conforming, allowlist, sinks) as frozensets."""
+    conforming = set()
+    allowlist = set()
+    sinks = set()
+
+    if fragments_dir.exists():
+        for fragment_file in sorted(fragments_dir.glob("*.json")):
+            try:
+                data = json.loads(fragment_file.read_text())
+                if "conforming_entrypoints" in data:
+                    conforming.update(data["conforming_entrypoints"])
+                if "print_allowlist" in data:
+                    allowlist.update(data["print_allowlist"])
+                if "sink_construction_modules" in data:
+                    sinks.update(data["sink_construction_modules"])
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    return frozenset(conforming), frozenset(allowlist), frozenset(sinks)
+
+
+def _load_all_entrypoints(mapping_file: Path) -> frozenset[str]:
+    """Load all entrypoint: true rows from tools/mapping.json."""
+    if not mapping_file.exists():
+        return frozenset()
+
+    try:
+        data = json.loads(mapping_file.read_text())
+        entrypoints = {
+            name for name, entry in data.get("modules", {}).items() if entry.get("entrypoint")
+        }
+        return frozenset(entrypoints)
+    except (json.JSONDecodeError, OSError):
+        return frozenset()
+
+
+# Derive all three constants from fragment merging and tools/mapping.json
+_repo_root = Path(__file__).resolve().parents[1]
+_fragments_dir = _repo_root / ".claude" / "workflows" / "landed-set"
+_mapping_file = _repo_root / "tools" / "mapping.json"
+
+_conforming_from_fragments, _allowlist_from_fragments, _sinks_from_fragments = (
+    _load_merged_fragment_sets(_fragments_dir)
+)
+_all_entrypoints = _load_all_entrypoints(_mapping_file)
 
 # ---------------------------------------------------------------------------
 # Print-ban arm: the two machine-consumed stdout sites pinned by p0's CLI
@@ -39,20 +99,11 @@ LANDED_LAYER_PREFIXES = (
 # here are keyed on the LANDED dotted name the print-ban arm derives from a
 # file's path under a landed layer root (test_observability_conformance.py
 # scans only `_landed_py_files()`) -- the same dotted-name space the
-# entry-point and sink-construction arms use. Neither `telemetry` nor `cli`
-# moves this phase (p9/p10 own them), so the two entries below are PRE-MOVE
-# PLACEHOLDERS at their pre-refactor dotted names: they match nothing today
-# (the allowlist is currently never consulted against a landed file) and
-# the phase that lands each module must re-key its entry to the new landed
-# dotted name in the SAME commit that moves it, never edit the frozen
-# contract test to do so.
+# entry-point and sink-construction arms use. The phase that lands each
+# module must re-key its entry to the new landed dotted name in the SAME
+# commit that moves it by editing its own fragment.
 # ---------------------------------------------------------------------------
-PRINT_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "entropic_substrate.telemetry",
-        "entropic_substrate.cli",
-    }
-)
+PRINT_ALLOWLIST: frozenset[str] = _allowlist_from_fragments
 
 # ---------------------------------------------------------------------------
 # Entry-point arm (RULING 2026-09-21, wf_3b1acf4d-36f): the SEVEN
@@ -65,21 +116,8 @@ PRINT_ALLOWLIST: frozenset[str] = frozenset(
 # asserted by the test, not here, so a future edit to this file that drops
 # an entrypoint by accident is still caught.
 # ---------------------------------------------------------------------------
-CONFORMING_ENTRYPOINTS: frozenset[str] = frozenset(
-    {
-        "entropic_substrate.cli",
-        "entropic_substrate.telemetry",
-    }
-)
-NOT_YET_CONFORMED_ENTRYPOINTS: frozenset[str] = frozenset(
-    {
-        "entropic_substrate.__main__",
-        "entropic_substrate.analysis.d1_external_worker",
-        "entropic_substrate.d1_trainer_mailbox_command",
-        "entropic_substrate.d_ladder_worker_command",
-        "entropic_substrate.sentence_prediction.worker_command",
-    }
-)
+CONFORMING_ENTRYPOINTS: frozenset[str] = _conforming_from_fragments
+NOT_YET_CONFORMED_ENTRYPOINTS: frozenset[str] = _all_entrypoints - _conforming_from_fragments
 
 # ---------------------------------------------------------------------------
 # Sink-construction arm: the run-descriptor door's single construction seam
@@ -93,9 +131,7 @@ NOT_YET_CONFORMED_ENTRYPOINTS: frozenset[str] = frozenset(
 # promoting phase adds a member here -- it never has to change a scalar's
 # TYPE inside a contract test frozen_after p13 to do it.
 # ---------------------------------------------------------------------------
-ALLOWED_SINK_CONSTRUCTION_MODULES: frozenset[str] = frozenset(
-    {"entropic_substrate.ladder.capture.adapters.composite"}
-)
+ALLOWED_SINK_CONSTRUCTION_MODULES: frozenset[str] = _sinks_from_fragments
 SINK_IMPLEMENTATION_CLASS_NAMES: frozenset[str] = frozenset(
     {"JsonlSink", "MlflowSink", "CompositeSink"}
 )

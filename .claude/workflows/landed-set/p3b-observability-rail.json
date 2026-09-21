@@ -10,5 +10,16 @@
       "landed": true
     }
   },
-  "legacy_edge_budget": 2
+  "legacy_edge_budget": 2,
+  "conforming_entrypoints": [
+    "entropic_substrate.cli",
+    "entropic_substrate.telemetry"
+  ],
+  "print_allowlist": [
+    "entropic_substrate.telemetry",
+    "entropic_substrate.cli"
+  ],
+  "sink_construction_modules": [
+    "entropic_substrate.ladder.capture.adapters.composite"
+  ]
 }

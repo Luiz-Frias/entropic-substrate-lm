@@ -290,6 +290,3 @@ def test_a_hand_built_string_only_shim_is_rejected_by_the_same_check_GREEN_mirro
     illegal = 'import importlib\nsys.modules[__name__] = importlib.import_module("entropic_substrate.__legacy.x")\n'
     ok, _ = gen_shims.verify_shim_source(illegal)
     assert ok is False
-
-
-# ---------------------------------------------------------------------------
