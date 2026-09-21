@@ -1727,6 +1727,74 @@ def test_derived_stub_includes_pep695_type_alias_statements(tmp_path: Path) -> N
     assert "FrozenJson as FrozenJson" in text
 
 
+def test_derive_stub_body_pins_single_all_binding(tmp_path: Path) -> None:
+    """RED-FIRST (house rule 5 / SLICE-PROBE FINDING 2026-09-20): commit
+    1e63ec1 ("fix(refactor): stop double-binding __all__ in derived stubs")
+    filtered `__all__` from the generic name list when a literal `__all__`
+    is derived, preventing BOTH a `from X import __all__` line AND a literal
+    `__all__ = [...]` restatement in the same stub. The prior test suite's
+    assertion `"__all__" in text` passes identically for both the buggy
+    (double) and fixed (single) output. This test pins the exact invariant
+    via AST:
+
+    RED mutation (shows the bug):
+        sed -i '650s/names = [n for n in names if n != "__all__"]/names = [n for n in names]  # BUGGY/' tools/gen_shims.py
+    produces:
+        from entropic_substrate.__legacy.curated import __all__ as __all__
+        from entropic_substrate.__legacy.curated import Exposed as Exposed
+        __all__ = ["Exposed"]  # The duplicate: two bindings, not one
+
+    Tested two arms:
+    - literal `__all__`: exactly one ast.Assign binding, zero ImportFrom aliases
+    - computed `__all__`: exactly one ImportFrom alias binding, zero Assigns
+    """
+    import ast
+
+    def count_all_bindings_in_stub(stub_body: str) -> tuple[int, int]:
+        """Parse stub body AST and count:
+        - ast.Assign statements that bind to __all__
+        - ast.ImportFrom aliases named __all__ (or aliased to __all__)
+        """
+        tree = ast.parse(stub_body)
+        assign_count = 0
+        import_count = 0
+
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id == "__all__":
+                        assign_count += 1
+            elif isinstance(stmt, ast.ImportFrom):
+                for alias in stmt.names:
+                    if alias.name == "__all__" and (
+                        alias.asname == "__all__" or alias.asname is None
+                    ):
+                        import_count += 1
+
+        return assign_count, import_count
+
+    # ARM 1: literal __all__ -- should have exactly one ast.Assign, zero ImportFroms
+    target = "entropic_substrate.__legacy.curated"
+    source_literal = '__all__ = ["Exposed", "Hidden"]\n\nExposed = 1\nHidden = 2\n'
+
+    body = gen_shims.derive_stub_body(target, source_literal)
+    assign_count, import_count = count_all_bindings_in_stub(body)
+
+    assert assign_count == 1, f"literal __all__: expected 1 assignment, got {assign_count}"
+    assert import_count == 0, f"literal __all__: expected 0 from-imports, got {import_count}"
+
+    # ARM 2: computed __all__ (non-literal) -- should have zero Assigns, exactly one ImportFrom
+    source_computed = '__all__ = sorted(["X", "Y"])\n\nX = 1\nY = 2\n'
+
+    body2 = gen_shims.derive_stub_body(target, source_computed)
+    assign_count2, import_count2 = count_all_bindings_in_stub(body2)
+
+    assert assign_count2 == 0, (
+        f"computed __all__: expected 0 assignments (not literal), got {assign_count2}"
+    )
+    assert import_count2 == 1, f"computed __all__: expected 1 from-import, got {import_count2}"
+
+
 def test_verify_fails_loud_when_a_stub_is_deleted(tmp_path: Path) -> None:
     """Guard tooth: delete one emitted .pyi (leave its .py shim) -> --verify
     fails naming the missing stub."""
