@@ -1,4 +1,10 @@
-"""Unit tests for :mod:`entropic_substrate.sinks` — the MetricSink port.
+"""Unit tests for :mod:`entropic_substrate.sinks` — the backward-compat facade.
+
+``entropic_substrate.sinks`` is a re-export facade providing the 18-name compat
+surface for legacy importers; the actual adapter implementations (including
+:class:`MlflowSink`, which holds the MetricSink port contract) landed in
+``entropic_substrate.ladder.capture.adapters`` as part of p3b's architecture
+rewrite.
 
 All tests here run against a FAKE MLflow client (``FakeMlflowClient``,
 implementing just the slice of ``mlflow.tracking.MlflowClient`` the sink
