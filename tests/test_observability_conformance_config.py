@@ -41,20 +41,19 @@ def test_load_merged_fragment_sets_raises_on_malformed_json() -> None:
 
 
 def test_load_merged_fragment_sets_raises_on_read_error() -> None:
-    """Verify that _load_merged_fragment_sets raises ManifestError on
-    OSError (e.g., permission denied), matching gen_shims behavior."""
+    """Verify that _load_merged_fragment_sets raises ManifestError on an
+    OSError from a fragment path. A directory named ``*.json`` is a
+    deterministic, platform-independent way to trigger an unreadable-path
+    OSError -- unlike ``chmod(0o000)``, this does not depend on the test
+    process running as a non-root user (root and Windows ignore POSIX mode
+    bits), matching gen_shims behavior."""
     with tempfile.TemporaryDirectory() as td:
         fragments_dir = Path(td)
         unreadable = fragments_dir / "unreadable.json"
-        unreadable.write_text("{}")
-        unreadable.chmod(0o000)
+        unreadable.mkdir()
 
-        try:
-            with pytest.raises(gen_shims.ManifestError, match="cannot read fragment"):
-                occ._load_merged_fragment_sets(fragments_dir)
-        finally:
-            # Restore permissions for cleanup
-            unreadable.chmod(0o644)
+        with pytest.raises(gen_shims.ManifestError, match="cannot read fragment"):
+            occ._load_merged_fragment_sets(fragments_dir)
 
 
 def test_load_merged_fragment_sets_excludes_dotfiles() -> None:
