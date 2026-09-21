@@ -25,7 +25,6 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-1
 | contract                                                                                                                                                                                                                                                                                   | kind     | frozen_after |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------------ |
 | `kernel/identity`, `kernel/evidence_class`, `kernel/verdict`, `kernel/runtime` addresses (the remainder, after p3b's `logging.py` and p4's `artifacts`/`lifecycle`)                                                                                                                        | contract | p13          |
-| `tests/test_no_old_prefix.py` :: zero old-prefix imports in any landed package                                                                                                                                                                                                             | contract | p13          |
 | the `d1_training_step` / `d1_calibration` SYMBOL SPLIT :: record halves (`d1_training_step_records.py`, `d1_calibration_records.py`) and torch halves, both still under `__legacy/`. p8 later moves only the record halves, p9 only the torch halves, so the two wave lanes share NO file. | contract | p9           |
 
 ## Contracts consumed
@@ -34,6 +33,7 @@ R-rails: consumed-before-owned is a topological violation and a generation-time 
 
 - `tools/gen_shims.py`, the landed-set fragment convention and `tests/test_legacy_coupling.py` (p3)
 - `kernel/runtime/logging.py` (p3b)
+- `tests/test_no_old_prefix.py` (p3b; RULED 2026-09-21, wf_8a5c8008-50e: p3b CREATED this instrument because it is the first phase with a landed emitter; this brief previously listed it under Contract surface owned, which double-claimed ownership and violated R-rails consumed-before-owned; p5 consumes it and, like every phase from here to p12, keeps it green and cites it in its guard-teeth row)
 - `kernel/artifacts`, `kernel/lifecycle` (p4)
 
 ## Sacred invariants
