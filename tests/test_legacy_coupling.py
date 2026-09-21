@@ -154,19 +154,26 @@ def test_measured_landed_to_legacy_edges_equals_committed_budget() -> None:
 
 
 def test_injected_landed_to_legacy_edge_is_counted_RED_at_zero_budget() -> None:
-    """RED-first: a single fabricated landed->__legacy edge (the shape a
-    real `import entropic_substrate.__legacy.x` inside `kernel/__init__.py`
+    """RED-first: fabricated landed->__legacy edges (the shape a real
+    `import entropic_substrate.__legacy.x` inside `kernel/__init__.py`
     would add to the graph) must be COUNTED, and checked against the real
-    committed p3 budget (0) it must fail equality -- proving the guard
-    is load-bearing, not vacuously green because nothing was ever
-    reachable (house rule 5)."""
-    edges = [("entropic_substrate.kernel", "entropic_substrate.__legacy.some_leaf")]
-    measured = count_landed_to_legacy_edges(edges)
-    assert measured == 1
+    committed budget it must fail equality -- proving the guard is
+    load-bearing, not vacuously green because nothing was ever reachable
+    (house rule 5). Injects `budget + 1` edges (CodeRabbit 2026-09-21),
+    never a hardcoded `1`: that guarantees `measured != budget` by
+    construction, so the mutation stays RED even if a later phase's fragment
+    ever raises the committed budget above 0, instead of accidentally
+    depending on today's value."""
     budget = load_committed_budget(
         REPO_ROOT / ".claude" / "workflows" / "landed-set",
         REPO_ROOT / ".claude" / "workflows" / "sprint-manifest.json",
     )
+    edges = [
+        ("entropic_substrate.kernel", f"entropic_substrate.__legacy.some_leaf_{i}")
+        for i in range(budget + 1)
+    ]
+    measured = count_landed_to_legacy_edges(edges)
+    assert measured == budget + 1
     assert measured != budget, (
         "this mutation is supposed to break equality against the committed "
         f"budget ({budget}) -- if it did not, the counting function is not "
@@ -208,14 +215,40 @@ def test_edge_between_two_ordinary_quarantined_modules_is_not_counted_GREEN_cont
     assert count_landed_to_legacy_edges(edges) == 0
 
 
-def test_raising_the_budget_above_the_real_measured_count_breaks_equality() -> None:
-    """The brief's OWN required arm, restated directly against the equality
-    form: raising a phase's budget above its measured count must turn the
-    check RED (a plain `<=` form would stay green here -- this is
-    precisely why `==` was chosen, see module docstring)."""
-    measured = 0  # the real measured count today (proven by the test above)
+def test_raising_the_budget_above_the_real_measured_count_breaks_equality(tmp_path: Path) -> None:
+    """The brief's OWN required arm, restated through the SAME loader chain
+    `test_measured_landed_to_legacy_edges_equals_committed_budget` calls --
+    not a hardcoded `measured != measured + 5` (root-cause fix, CodeRabbit
+    2026-09-21: any two distinct local ints satisfy that trivially; it
+    never touches `load_committed_budget`, `load_fragments` or
+    `highest_ordered_fragment`, so it could not actually catch a
+    regression in any of them). A real, isolated fragments dir + sequence
+    file with `legacy_edge_budget` inflated ABOVE the real measured count
+    is pushed through `load_committed_budget`, proving a `<=` form would
+    have stayed green here (measured <= inflated) -- exactly why `==` was
+    chosen (module docstring)."""
+    _mods, edges = import_graph.build_graph(
+        REPO_ROOT / "src" / "entropic_substrate", "entropic_substrate"
+    )
+    measured = count_landed_to_legacy_edges(edges)
     inflated_budget = measured + 5
-    assert measured != inflated_budget
+
+    frags_dir = tmp_path / "landed-set"
+    frags_dir.mkdir()
+    (frags_dir / "p3-quarantine.json").write_text(
+        json.dumps({"phase": "p3-quarantine", "modules": {}, "legacy_edge_budget": inflated_budget})
+    )
+    sequence_file = tmp_path / "sprint-manifest.json"
+    sequence_file.write_text(json.dumps({"sequence": ["p3-quarantine"]}))
+
+    loaded = load_committed_budget(frags_dir, sequence_file)
+    assert loaded == inflated_budget
+    assert measured <= loaded  # the `<=` form's blind spot, made explicit
+    assert measured != loaded, (
+        "raising a phase's budget above its measured count was supposed to "
+        f"break equality (measured={measured}, inflated budget={loaded}) -- "
+        "if it did not, the equality check is not load-bearing"
+    )
 
 
 # ---------------------------------------------------------------------------

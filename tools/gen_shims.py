@@ -335,18 +335,28 @@ def load_mapping(path: Path) -> dict:
     return doc
 
 
+def _fragment_json_files(fragments_dir: Path) -> list[Path]:
+    """The non-dotfile `*.json` paths directly under fragments_dir, sorted.
+    `Path.glob("*.json")` matches dotfiles (unlike a shell glob, MEASURED
+    2026-09-18), and this generator's own emitted-files manifest (default
+    `.emitted.json`) lives in this same directory -- it must never be
+    mistaken for a fragment. SINGLE SOURCE for both `load_fragments` and the
+    CLI's `--preflight` empty-directory probe (root-cause fix, CodeRabbit
+    2026-09-21: the probe used to test `any(glob("*.json"))` directly and so
+    treated a directory holding only `.emitted.json` as non-empty, then
+    handed it to `load_fragments`, which would fail loud with "no *.json
+    fragments found" instead of the intended pre-p3 empty-directory
+    derived-default path)."""
+    return [p for p in sorted(fragments_dir.glob("*.json")) if not p.name.startswith(".")]
+
+
 def load_fragments(fragments_dir: Path) -> dict[str, dict]:
     """Returns {phase_id: fragment_dict} for every non-dotfile *.json directly
-    under fragments_dir. Dot-prefixed files are skipped: `Path.glob("*.json")`
-    matches dotfiles (unlike a shell glob, MEASURED 2026-09-18), and this
-    generator's own emitted-files manifest (default `.emitted.json`) lives in
-    this same directory -- it must never be parsed as a fragment."""
+    under fragments_dir (see `_fragment_json_files`)."""
     if not fragments_dir.is_dir():
         raise ManifestError(f"fragments directory {fragments_dir} does not exist")
     fragments: dict[str, dict] = {}
-    for p in sorted(fragments_dir.glob("*.json")):
-        if p.name.startswith("."):
-            continue
+    for p in _fragment_json_files(fragments_dir):
         doc = _load_json(p, "fragment")
         phase = doc.get("phase")
         if not phase:
@@ -734,7 +744,18 @@ def canonicalize_python_texts(raw_by_relpath: dict[str, str], out_dir: Path) -> 
                 capture_output=True,
                 text=True,
             )
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        except subprocess.CalledProcessError as exc:
+            # CalledProcessError's own str() is just argv + returncode -- the
+            # actual reason (a malformed derived stub, a ruff config error)
+            # is in the captured streams this call already asked for
+            # (capture_output=True). Root-cause fix, CodeRabbit 2026-09-21:
+            # the prior text swallowed both, leaving "returned non-zero exit
+            # status 1" as the only diagnostic for a fail-loud path.
+            raise ManifestError(
+                f"ruff stub-canonicalization pipeline failed: {exc}\nstdout:\n{exc.stdout}\n"
+                f"stderr:\n{exc.stderr}"
+            ) from exc
+        except FileNotFoundError as exc:
             raise ManifestError(f"ruff stub-canonicalization pipeline failed: {exc}") from exc
         return {relpath: (tdp / relpath).read_text() for relpath in raw_by_relpath}
 
@@ -1288,7 +1309,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         mapping = load_mapping(args.mapping_json)
-        if args.preflight and not any(args.fragments_dir.glob("*.json")):
+        if args.preflight and not _fragment_json_files(args.fragments_dir):
             fragments = {}  # pre-p3: no fragment exists yet; every row takes the derived default
         else:
             fragments = load_fragments(args.fragments_dir)
@@ -1315,11 +1336,22 @@ def main(argv: list[str] | None = None) -> int:
             for row in missing:
                 print(f"    {row}", file=sys.stderr)
             return 1
+        # find_missing_sources/find_unmoved_sources both skip retired/pending
+        # rows internally (neither is a row this preflight pass actually
+        # resolves against on-disk source), so the summary below counts only
+        # the CHECKED subset -- not len(resolved), which still includes them
+        # (root-cause fix, CodeRabbit 2026-09-21: the prior text used
+        # len(resolved) as the "resolves to source on disk" / "at target"
+        # total, silently crediting retired/pending rows as checked-and-
+        # landed when they were never looked at).
+        excluded = sum(1 for e in resolved.values() if e.get("retired", False) or e.get("pending"))
+        checked = len(resolved) - excluded
         unmoved = len(find_unmoved_sources(resolved, args.out_dir))
         print(
-            f"preflight ok: {len(resolved)} row(s) resolve to source on disk under "
+            f"preflight ok: {checked} row(s) resolve to source on disk under "
             f"{args.out_dir} ({unmoved} still at the old path, "
-            f"{len(resolved) - unmoved} at the target) from {len(fragments)} fragment(s)"
+            f"{checked - unmoved} at the target; {excluded} retired/pending row(s) "
+            f"not checked) from {len(fragments)} fragment(s)"
         )
         return 0
 

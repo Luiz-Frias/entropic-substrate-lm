@@ -1467,6 +1467,72 @@ def test_preflight_clean_tree_exits_0_GREEN_control(
     assert list(out_dir.rglob("*.py")) == [out_dir / "entropic_substrate" / "present_one.py"]
 
 
+def test_preflight_with_only_manifest_dotfile_present_is_treated_as_no_fragments(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Root-cause fix (CodeRabbit 2026-09-21): a fragments directory holding
+    ONLY a stray `.emitted.json` (no real phase fragment) used to fail
+    `any(glob("*.json"))`'s dotfile-blind check in main()'s own probe, so
+    --preflight handed it to load_fragments() instead of taking the pre-p3
+    derived-default path -- load_fragments() already skips dotfiles itself,
+    so it found zero real fragments and raised "no *.json fragments found",
+    a FATAL where the derived-default path was the correct read. Both call
+    sites now share `_fragment_json_files`."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.present_one"])
+    frags_dir = tmp_path / "landed-set"
+    frags_dir.mkdir(parents=True)
+    (frags_dir / ".emitted.json").write_text("{}")  # stray manifest, not a fragment
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.present_one")
+    rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--preflight"])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.err
+    assert "preflight ok: 1 row(s)" in captured.out
+    assert "from 0 fragment(s)" in captured.out
+
+
+def test_preflight_summary_excludes_retired_and_pending_from_checked_count(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Root-cause fix (CodeRabbit 2026-09-21): find_missing_sources and
+    find_unmoved_sources both skip retired/pending rows internally -- they
+    are never looked at against on-disk source -- so the preflight
+    summary's "row(s) resolve to source on disk" / "at the target" counts
+    must not silently credit them as checked-and-landed."""
+    mapping_path = write_mapping(
+        tmp_path,
+        [
+            "entropic_substrate.alpha",
+            "entropic_substrate.beta_retired",
+            "entropic_substrate.gamma_pending",
+        ],
+    )
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.beta_retired": {
+                "target": "entropic_substrate.__legacy.beta_retired",
+                "landed": False,
+                "retired": True,
+            },
+            "entropic_substrate.gamma_pending": {
+                "target": "entropic_substrate.__legacy.gamma_pending",
+                "landed": False,
+                "pending": "p9-later",
+            },
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.alpha")  # only the CHECKED row has real source
+    rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--preflight"])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.err
+    assert "preflight ok: 1 row(s)" in captured.out
+    assert "2 retired/pending row(s) not checked" in captured.out
+
+
 def test_verify_fails_when_target_source_vanishes_after_generate(tmp_path: Path) -> None:
     """`--verify` gains the same teeth: a module deleted AFTER its shim was
     emitted leaves an exact-form shim pointing at nothing, which the
@@ -2005,13 +2071,25 @@ def _ruff_diff(paths: list[Path]) -> str:
     disk. Non-empty output means the hook would REWRITE the file mid-gate --
     the exact 'hook fixed point' failure mode constraint 5 (design gate
     2026-09-20) warns about for the stub pipeline, checked here for the
-    SHIM `.py` side of the typed pair."""
+    SHIM `.py` side of the typed pair.
+
+    Only returncode 0 (no changes) or 1 (`--diff` reports changes it would
+    make -- MEASURED: both `ruff check --fix --diff` and `ruff format
+    --diff` use 1 for this, never a raised error) are treated as a real
+    answer; any other status is a fail-loud assertion naming the command and
+    stderr, not a silently-empty diff read as "no changes" (root-cause fix,
+    CodeRabbit 2026-09-21 -- a crashed/misconfigured ruff invocation must
+    not be indistinguishable from a genuine fixed point)."""
     out = ""
     for args in (
         ["ruff", "check", "--fix", "--diff", "--config", str(REPO_PYPROJECT)],
         ["ruff", "format", "--diff", "--config", str(REPO_PYPROJECT)],
     ):
-        r = subprocess.run([*args, *[str(p) for p in paths]], capture_output=True, text=True)
+        cmd = [*args, *[str(p) for p in paths]]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        assert r.returncode in (0, 1), (
+            f"{cmd} exited {r.returncode} (expected 0 or 1): stderr={r.stderr!r}"
+        )
         out += r.stdout
     return out
 
@@ -2041,3 +2119,36 @@ def test_shim_py_is_a_ruff_fixed_point_against_the_real_repo_config(tmp_path: Pa
     assert shim_paths
     diff = _ruff_diff(shim_paths)
     assert diff == "", f"ruff would rewrite the emitted shim mid-gate:\n{diff}"
+
+
+def test_canonicalize_reports_ruff_stdout_and_stderr_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Root-cause fix (CodeRabbit 2026-09-21): `CalledProcessError`'s own
+    `str()` carries only argv + returncode, never the captured streams this
+    call already asks for (`capture_output=True`) -- the actual reason a
+    canonicalization pass failed (a malformed derived text, a ruff config
+    error) was invisible in the raised `ManifestError`."""
+
+    def _fake_run(cmd: list[str], **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, cmd, output="STDOUT-MARKER", stderr="STDERR-MARKER")
+
+    monkeypatch.setattr(gen_shims.subprocess, "run", _fake_run)
+    with pytest.raises(gen_shims.ManifestError, match="STDOUT-MARKER") as exc_info:
+        gen_shims.canonicalize_python_texts({"x.py": "x = 1\n"}, tmp_path)
+    assert "STDERR-MARKER" in str(exc_info.value)
+
+
+def test_canonicalize_file_not_found_stays_concise_GREEN_control(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for the fix above: a missing `ruff` binary (`FileNotFoundError`,
+    no captured streams to report) keeps its original, concise message
+    shape -- only the `CalledProcessError` arm gained stdout/stderr."""
+
+    def _fake_run(cmd: list[str], **_kwargs: object) -> None:
+        raise FileNotFoundError("ruff")
+
+    monkeypatch.setattr(gen_shims.subprocess, "run", _fake_run)
+    with pytest.raises(gen_shims.ManifestError, match="ruff stub-canonicalization pipeline failed"):
+        gen_shims.canonicalize_python_texts({"x.py": "x = 1\n"}, tmp_path)
