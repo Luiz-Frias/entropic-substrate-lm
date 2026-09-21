@@ -96,11 +96,11 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
 
 - `.secrets.baseline` (STANDING RULE, conductor 2026-09-19, generalizing p0's ruling: a mechanical companion of allowed content. detect-secrets regenerates it whenever an allowed file's digest literals move or change, so its diff may contain ONLY line renumbering, removal of orphaned entries, the `generated_at` stamp, and new `Hex High Entropy String` entries whose flagged lines are sha256 / git-SHA literals inside this phase's own Allowed files; the lane verifies that in the PR body. New digest literals in TEST files carry an inline `# pragma: allowlist secret` instead of a baseline entry, so the baseline stops churning; JSON records keep baseline entries. Never a credential.)
-- `src/entropic_substrate/__legacy/logging.py` and its shim
-- `src/entropic_substrate/__legacy/sinks.py` and its shim
-- `src/entropic_substrate/__legacy/tracking_contracts.py` and its shim
-- `src/entropic_substrate/__legacy/d1_observability.py` and its shim
-- `src/entropic_substrate/__legacy/d1_tracking.py` and its shim
+- `src/entropic_substrate/__legacy/logging.py` and its shim PAIR (`.py` alias + `.pyi` stub of derived explicit re-exports; p3 landed the typed-pair form, operator ruling 2026-09-20; this phase re-points both by marking the module `landed: true` in its fragment and re-running `tools/gen_shims.py` — never by hand-editing a shim or stub; `--verify` green at the tip)
+- `src/entropic_substrate/__legacy/sinks.py` and its shim PAIR (`.py` alias + `.pyi` stub of derived explicit re-exports; p3 landed the typed-pair form, operator ruling 2026-09-20; this phase re-points both by marking the module `landed: true` in its fragment and re-running `tools/gen_shims.py` — never by hand-editing a shim or stub; `--verify` green at the tip)
+- `src/entropic_substrate/__legacy/tracking_contracts.py` and its shim PAIR (`.py` alias + `.pyi` stub of derived explicit re-exports; p3 landed the typed-pair form, operator ruling 2026-09-20; this phase re-points both by marking the module `landed: true` in its fragment and re-running `tools/gen_shims.py` — never by hand-editing a shim or stub; `--verify` green at the tip)
+- `src/entropic_substrate/__legacy/d1_observability.py` and its shim PAIR (`.py` alias + `.pyi` stub of derived explicit re-exports; p3 landed the typed-pair form, operator ruling 2026-09-20; this phase re-points both by marking the module `landed: true` in its fragment and re-running `tools/gen_shims.py` — never by hand-editing a shim or stub; `--verify` green at the tip)
+- `src/entropic_substrate/__legacy/d1_tracking.py` and its shim PAIR (`.py` alias + `.pyi` stub of derived explicit re-exports; p3 landed the typed-pair form, operator ruling 2026-09-20; this phase re-points both by marking the module `landed: true` in its fragment and re-running `tools/gen_shims.py` — never by hand-editing a shim or stub; `--verify` green at the tip)
 - `src/entropic_substrate/kernel/runtime/logging.py`
 - `src/entropic_substrate/ladder/capture/ports/metric_sink.py`
 - `src/entropic_substrate/ladder/capture/adapters/{jsonl,composite,mlflow}.py`
@@ -113,6 +113,8 @@ The escalation door: if correctness would require touching a contract surface, a
 ## Already ruled
 
 Settled. The design gate must not re-open any of these as a `DECISION`.
+
+CARRIED FROM p3 (2026-09-20/21, settled): typed shim pair with DERIVED explicit re-export stubs (never `import *`); the moved copies of the seven facade `__init__.py` files under `__legacy/` are docstring-only and stay so; `tools/mapping.json` is read-only until p13; `tools/gen_shims.py --preflight` runs before any move and its output is quoted in the PR body; generated files are a hook fixed point (`git status --porcelain` empty after `just check` and `just pc-ci`); the cold-import subprocess guard (`tests/test_shim_layer.py`) stays green; conductor-owned files are checked by SHA through `args.conductorCommits`; publish runs the offline, exit and live gates BEFORE `gt submit` (engine-enforced). The shim-form guard's instrument is `tests/test_legacy_coupling.py`'s static-form test plus `--verify`, not the sentinel test (measured 2026-09-21).
 
 | id                 | status           | ruling                                                                                                                                                                                                            |
 | ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
