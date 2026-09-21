@@ -464,6 +464,7 @@
         "tests/test_sinks.py",
         "tests/test_logging.py",
         "tests/observability_conformance_config.py",
+        "tests/test_observability_conformance_config.py",
         "tests/test_no_old_prefix.py",
         "tests/test_legacy_coupling.py"
       ],

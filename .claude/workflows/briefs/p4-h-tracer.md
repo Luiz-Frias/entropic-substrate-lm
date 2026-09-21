@@ -150,7 +150,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - All 8 bare `print(` sites in the H lane are routed through `logger` in the commit that moves their file. Neither is one of the two pinned raw-`print` sites.
 - `sentence_prediction/journal.py` keeps its JSONL journal as the authoritative record, now written through the `MetricSink` port rather than beside it.
 - `liveRequired: true`. This is the FIRST time `just ship-it` runs the MLflow container gate on the H lane. The run id goes in the PR body.
-- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `sentence_prediction.worker_command` (p4) is promoted through this phase's fragment key `conforming_entrypoints`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `sentence_prediction.worker_command` (p4) is promoted through this phase's fragment key `conforming_entrypoints`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present. KEYING (conductor 2026-09-21, disambiguation after p3b's L2): `conforming_entrypoints` entries are keyed by the entry point's `tools/mapping.json` dotted name (the PRE-MOVE name, since mapping.json is read-only until p13 and the frozen partition assertion compares against those seven rows) and are NEVER re-keyed before p13; only `print_allowlist` entries are re-keyed to the LANDED dotted name, because the print-ban arm derives names from file paths under the landed roots.
 
 ## Planned commit branches
 
