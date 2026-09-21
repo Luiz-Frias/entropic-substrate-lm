@@ -446,6 +446,8 @@ The PRIORITY AMENDMENT's seam, landed before the H tracer. Contents, measured de
 teeth are in the amendment section above and in `.claude/workflows/briefs/p3b-observability-rail.md`.
 `liveRequired:true`: the `ship-it` gate is the only evidence that moving the port did not break the
 best-effort MLflow sink.
+The 2026-09-21 rulings that shaped the landed phase (D1/D2/D3, R1, entry-point arm, gate-check,
+promotion) are in the conductor-rulings table under Rulings; the brief carries them verbatim.
 
 <a id="p4"></a>
 
@@ -818,6 +820,18 @@ tracer; merged skeleton (C tree + B grafts); `__legacy` empties with E replay in
 `historical/`; survey intermediates retained outside the repo (operator ruling); the execution shape (merge `--no-ff` into
 `dev` → cut `refactor/` trunk → commit plan → cut `feature/` trunk → sprint-preflight → fan-out
 waves → zip at fan-in → serial).
+
+**Conductor rulings 2026-09-19..21 (the seam below the operator's; each recorded in the brief it binds and in the run's args, never only here).** Added 2026-09-21 after p3b's review round found this document lagging the briefs.
+
+| id | ruling |
+|---|---|
+| p3-shim-pair | Operator, 2026-09-20 (option (b) of the p3 design-gate DECISION): every leaf shim is a typed PAIR (3-line `.py` alias + `.pyi` stub of DERIVED explicit re-exports, never `import *`); `tools/gen_shims.py` is the only writer, `--preflight` before any move, `--verify` at every commit touching `src/`; `tools/mapping.json` read-only until p13; a `pending: "<phase>"` fragment state sanctions one migration to the creating phase. |
+| p3b-D1/D2/D3 | Design gate, 2026-09-21: `logging` and `tracking_contracts` land; `sinks`, `d1_observability`, `d1_tracking` stay quarantined (a shim has one target; their old-prefix names have out-of-envelope importers); four zero-byte package markers; the mlflow forbidden contract carries exactly one `ignore_imports` line naming the single sanctioned edge (not DN-P1's ignore list). |
+| p3b-R1 | 2026-09-21: the D1 observer re-basing is DEFERRED to p8 (`D1MlflowObserver` becomes a STRICT `MetricSink` adapter; `D1JournalObserver` observes journal EVENTS and sits outside the one-METRIC-port rule; `d1_tracking_descriptor` consumes the frozen door). p3b leaves both `__legacy` files untouched; FOR-1432 re-parented to p8. |
+| p3b-entry-arm | 2026-09-21: the conformance test's entry-point arm is defined over the seven `entrypoint: true` rows of `tools/mapping.json`, partitioned by constants in `tests/observability_conformance_config.py` (outside the frozen test); measured conforming today: `cli`, `telemetry`. |
+| p3b-gate-check | 2026-09-21: `tests/test_legacy_coupling.py` takes ONE ruled change (the synthetic-edge control no longer compares against the real budget); the no-old-prefix arm lives in the new `tests/test_no_old_prefix.py`, created by p3b and CONSUMED by p4..p12. |
+| p3b-promotion | 2026-09-21: the conformance config DERIVES its sets from optional landed-set fragment keys (`conforming_entrypoints`, `print_allowlist`, `sink_construction_modules`); each phase promotes through its own disjoint fragment, so the file never enters a wave lane's touch set (w2's p8 and p11 would otherwise share it). p13 inlines the merged sets when it retires the fragments. |
+| ownership-by-SHA | Engine, 2026-09-20: conductor-owned files (briefs, plan docs, manifest, engine scripts, CI workflow, `tools/regime_rows.py`) change only in conductor commits whose SHAs ride in `args.conductorCommits`; the engine checks them by SHA and a lane returns DECISION instead of editing them. |
 
 **Recommendations carried into the sprint-preflight interview (not yet ruled).**
 

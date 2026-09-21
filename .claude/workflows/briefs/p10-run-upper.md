@@ -132,6 +132,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - Every `python -m` worker entry point this phase moves calls `configure_logging` at ENTRY.
 - Campaign, closure and billing metrics emit through `MetricSink` under the run descriptor. The resource ledger keeps `JsonlSink` as authoritative and MLflow as best-effort.
 - `liveRequired: true`. This phase publishes through `just ship-it` inside the lifecycle.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): every entry point this phase moves is promoted through this phase's fragment key `conforming_entrypoints`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present.
 
 ## Planned commit branches
 

@@ -139,6 +139,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - `telemetry.py` and the reader sub-package log through the substrate, EXCEPT `telemetry final-eval`, which is one of the two machine-consumed stdout sites pinned raw at p0 and must stay a raw `print`.
 - Resource and ledger metering emits through `MetricSink` under the run descriptor, replacing any direct write.
 - D1 observers (R1): `D1MlflowObserver` becomes a STRICT `MetricSink` adapter (raises through); `D1JournalObserver` is event-side and untouched by the metric-port rule; `d1_tracking_descriptor` builds its sink through `build_sink_for_run`. Guard teeth: swallow an mlflow error inside the re-based adapter and `tests/test_d1_observability.py` must go RED.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `telemetry` keeps its conforming entry and its raw-print allowlist entry re-keyed to the LANDED dotted name through this phase's fragment keys `conforming_entrypoints` and `print_allowlist`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present.
 
 ## Planned commit branches
 

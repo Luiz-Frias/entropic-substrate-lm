@@ -136,6 +136,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - Every `python -m` entry point under `composition/entrypoints/` calls `configure_logging` at entry.
 - The E entry points stop routing through shims and reach `kernel/runtime/logging.py` and the capture adapters directly. `historical/e_series` keeps emitting through the same port, so E replay keeps its telemetry.
 - `verify_worker_source` lands in `historical/d_ladder` carrying the p1 resolver, not the old depth anchor.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `__main__`, `cli` (re-keyed, with its `eval --json` raw-print allowlist entry), `d1_trainer_mailbox_command` and `d_ladder_worker_command` are promoted / re-keyed through this phase's fragment keys `conforming_entrypoints` and `print_allowlist`; a second sanctioned sink construction site, if any, through `sink_construction_modules`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present.
 
 ## Planned commit branches
 

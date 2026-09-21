@@ -136,6 +136,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - POSTCONDITIONS, asserted not asserted-by-narrative: exactly ONE `mlflow` importer in the tree (`ladder/capture/adapters/mlflow.py`); ZERO unconfigured entry points; ZERO bare `print(` outside the two pinned allowlist sites; the D1 observer protocols GONE.
 - The observability conformance test graduates from per-phase to whole-tree here.
 - The rewrite-on-arrival exception closes: after p13 there is no structural phase left, so any further log or metric routing change is an ordinary behaviour change under normal rules.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): when this phase retires the landed-set fragments with the shim generator, it inlines the merged sets into `tests/observability_conformance_config.py` in the same commit and asserts the postconditions (every entry point conforming, allowlist = the two pinned sites). `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present.
 
 ## Planned commit branches
 
