@@ -3,7 +3,7 @@ run-descriptor door's single construction seam, :func:`build_sink_for_run`.
 
 Landed at p3b from ``entropic_substrate.sinks`` (quarantined
 ``entropic_substrate.__legacy.sinks``): ``CompositeSink`` was ``sinks.py:640``,
-``build_sink_for_run`` was ``sinks.py:729``.
+``build_sink_for_run`` was ``sinks.py:737``.
 
 ``build_sink_for_run`` physically lives HERE, not in
 ``entropic_substrate.ladder.capture.ports.run_descriptor`` -- the Allowed-files

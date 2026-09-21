@@ -1,7 +1,7 @@
 """The ``MetricSink`` port -- where ``Trainer.log()``/``log_artifact()`` records go.
 
 Landed at p3b (docs/plans/src-hexagonal-refactor.plan.md #p3b) from
-``entropic_substrate.sinks:209`` (``entropic_substrate.__legacy.sinks`` under
+``entropic_substrate.sinks:217`` (``entropic_substrate.__legacy.sinks`` under
 quarantine). The ONLY metric port in the tree, ``kind: door``, ``frozen_after:
 p3b`` -- D1's second port does not survive (RULED 2026-09-17, reaffirmed R1
 2026-09-21, wf_12821961-8cd: "one port" means one METRIC port; p8 re-bases

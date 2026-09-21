@@ -1,6 +1,6 @@
 """``JsonlSink`` -- the AUTHORITATIVE :class:`~entropic_substrate.ladder.capture.ports.metric_sink.MetricSink` adapter.
 
-Landed at p3b from ``entropic_substrate.sinks:225`` (quarantined
+Landed at p3b from ``entropic_substrate.sinks:233`` (quarantined
 ``entropic_substrate.__legacy.sinks``). Owns the exact byte-for-byte
 serialisation of ``results/*.jsonl`` that :mod:`entropic_substrate.telemetry`
 (the E3 execution gate) parses -- same dict, same

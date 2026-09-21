@@ -12,16 +12,16 @@ their landed homes and rewrote this module's body into a thin re-export
 facade over those landed addresses:
 
 * :class:`~entropic_substrate.ladder.capture.ports.metric_sink.MetricSink`
-  (was ``sinks.py:209``)
+  (was ``sinks.py:217``)
 * :class:`~entropic_substrate.ladder.capture.adapters.jsonl.JsonlSink`
-  (was ``sinks.py:225``)
+  (was ``sinks.py:233``)
 * :class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`
-  (was ``sinks.py:333``) — the psutil/pynvml-avoidance guard
+  (was ``sinks.py:341``) — the psutil/pynvml-avoidance guard
   (``tests/test_sinks.py``) now reads that module's own ``__file__``, not
   this one's.
 * :class:`~entropic_substrate.ladder.capture.adapters.composite.CompositeSink`
   and :func:`~entropic_substrate.ladder.capture.adapters.composite.build_sink_for_run`
-  (were ``sinks.py:640`` / ``sinks.py:729``)
+  (were ``sinks.py:640`` / ``sinks.py:737``)
 * :class:`~entropic_substrate.ladder.capture.ports.run_descriptor.TrackingRunDescriptor`
   (was ``entropic_substrate.tracking_contracts.TrackingRunDescriptor``)
 
