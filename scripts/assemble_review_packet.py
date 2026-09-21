@@ -637,7 +637,53 @@ _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
 )
 
 
-def build_reader(telemetry_source: str) -> str:
+def _is_shim_source(source: str) -> bool:
+    """True if ``source`` is (structurally) a generated alias shim: the
+    ``import <target> as _target`` / ``sys.modules[__name__] = _target``
+    rebind ``tools/gen_shims.py`` emits, with or without its leading
+    entrypoint ``if __name__ == "__main__":`` guard.
+
+    A reader built from a source this shallow degrades to a no-op that
+    still "succeeds" (FOR-1524, MEASURED 2026-09-20: p3-quarantine's move
+    made ``src/entropic_substrate/telemetry.py`` exactly this shape, and
+    the bare ``import entropic_substrate.__legacy.telemetry as _target``
+    line survives ``build_reader``'s ImportFrom-only filter, leaking the
+    banned ``entropic`` token into the packet instead of failing loud).
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    body = tree.body
+    if body and isinstance(body[0], ast.If):
+        body = body[1:]
+    if len(body) != 3:
+        return False
+    s0, s1, s2 = body
+    imports_sys = (
+        isinstance(s0, ast.Import)
+        and len(s0.names) == 1
+        and s0.names[0].name == "sys"
+        and s0.names[0].asname is None
+    )
+    imports_target = (
+        isinstance(s1, ast.Import) and len(s1.names) == 1 and s1.names[0].asname == "_target"
+    )
+    rebinds = (
+        isinstance(s2, ast.Assign)
+        and len(s2.targets) == 1
+        and isinstance(s2.targets[0], ast.Subscript)
+        and isinstance(s2.targets[0].value, ast.Attribute)
+        and s2.targets[0].value.attr == "modules"
+        and isinstance(s2.targets[0].value.value, ast.Name)
+        and s2.targets[0].value.value.id == "sys"
+        and isinstance(s2.value, ast.Name)
+        and s2.value.id == "_target"
+    )
+    return imports_sys and imports_target and rebinds
+
+
+def build_reader(telemetry_source: str, *, source_path: Path | None = None) -> str:
     """Strip prose and D1-only imports from the legacy packet reader.
 
     Also drops the operator CLI (``main``/``_build_parser``/``__main__``
@@ -646,7 +692,19 @@ def build_reader(telemetry_source: str) -> str:
     live in separate modules and are not dependencies of the legacy E-series
     packet reader; copying their package imports would both break standalone
     execution and leak repository identity into a blinded packet.
+
+    Refuses a shim-form ``telemetry_source`` outright (FOR-1524): a literal
+    alias shim can never become a packet reader, whether reached through the
+    default resolution or an explicit ``--telemetry`` override.
     """
+    if _is_shim_source(telemetry_source):
+        where = f" ({source_path})" if source_path is not None else ""
+        msg = (
+            f"refusing to build a review-packet reader from a generated alias "
+            f"shim{where} -- it has no real telemetry code to read; point "
+            "--telemetry at the real module (FOR-1524)"
+        )
+        raise ValueError(msg)
     tree = _DocstringStripper().visit(ast.parse(telemetry_source))
     tree.body = [
         node
@@ -794,7 +852,13 @@ def main() -> int:
     parser.add_argument("--rung", choices=sorted(RUNGS), default="e1")
     parser.add_argument("--captured", type=Path, default=Path("results/captured"))
     parser.add_argument(
-        "--telemetry", type=Path, default=Path("src/entropic_substrate/telemetry.py")
+        "--telemetry",
+        type=Path,
+        default=None,
+        help="defaults to the real module behind entropic_substrate.telemetry, "
+        "resolved THROUGH the module (not a literal repo path) so it follows "
+        "the sys.modules rebind to wherever the module actually lives "
+        "(FOR-1524)",
     )
     parser.add_argument("--packet-out", type=Path, required=True)
     parser.add_argument("--sealed-out", type=Path, required=True)
@@ -821,6 +885,16 @@ def main() -> int:
     args = parser.parse_args()
     spec = RUNGS[args.rung]
 
+    telemetry_path = args.telemetry
+    if telemetry_path is None:
+        # Resolve THROUGH the module, never a literal repo path: the
+        # sys.modules rebind (tools/gen_shims.py) makes __file__ the real
+        # target module wherever it actually lives, and stays correct
+        # across a later structural move (FOR-1524).
+        import entropic_substrate.telemetry as _telemetry
+
+        telemetry_path = Path(_telemetry.__file__)
+
     packet = args.packet_out
     if packet.exists():
         shutil.rmtree(packet)
@@ -834,7 +908,8 @@ def main() -> int:
         prereg_text += spec.extension_registration
     (packet / "preregistration.md").write_text(prereg_text, encoding="utf-8")
     (packet / "reader.py").write_text(
-        build_reader(args.telemetry.read_text(encoding="utf-8")), encoding="utf-8"
+        build_reader(telemetry_path.read_text(encoding="utf-8"), source_path=telemetry_path),
+        encoding="utf-8",
     )
 
     # One fresh salt per assembly: two packets over the same runs must not
