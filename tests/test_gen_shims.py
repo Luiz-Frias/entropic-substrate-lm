@@ -983,9 +983,20 @@ def test_generate_emits_entrypoint_form_for_flagged_module(tmp_path: Path) -> No
     text = (out_dir / "entropic_substrate" / "worker_command.py").read_text()
     assert 'if __name__ == "__main__":' in text
     assert "import runpy" in text
+    # generate() now canonicalizes shim text through the same ruff pipeline
+    # as the stub (constraint 3, design gate 2026-09-20: an uncanonicalized
+    # shim is rewritten mid-gate by `ruff check . --fix`), so a long
+    # `runpy.run_module(...)` call may be WRAPPED across lines by `ruff
+    # format` -- collapse whitespace before comparing so this assertion
+    # checks the call's substance, not its exact line-wrap.
+    collapsed = " ".join(text.split())
     assert (
-        'runpy.run_module("entropic_substrate.kernel.runtime.worker_command", '
-        'run_name="__main__", alter_sys=True)' in text
+        'runpy.run_module( "entropic_substrate.kernel.runtime.worker_command",'
+        ' run_name="__main__", alter_sys=True )'
+        in collapsed
+        or 'runpy.run_module("entropic_substrate.kernel.runtime.worker_command",'
+        ' run_name="__main__", alter_sys=True)'
+        in collapsed
     )
     assert "raise SystemExit(0)" in text
     assert "import entropic_substrate.kernel.runtime.worker_command as _target" in text
@@ -1679,6 +1690,43 @@ def test_derived_stub_recurses_into_type_checking_block(tmp_path: Path) -> None:
     assert "PathAlias as PathAlias" in text
 
 
+def test_derived_stub_includes_pep695_type_alias_statements(tmp_path: Path) -> None:
+    """RED-FIRST (found post-mass-emission, constraint 5 firing after the
+    fact): `_bound_names_in_stmts` had no branch for `ast.TypeAlias` (the
+    PEP 695 `type X = ...` statement, Python 3.12+), so a target module
+    that defines its public type with `type FrozenJson = ...` -- the real,
+    measured shape of `FrozenJson`/`JsonValue`/`InterfaceMode`/
+    `D1TrainerRequest` and 6 other names across 9 real quarantined modules
+    -- got NO re-export line in its stub. A consumer's OWN derived stub
+    then imported that name from the target and basedpyright reported
+    `reportAttributeAccessIssue` / `reportUnsupportedDunderAll` (83 errors
+    measured against the real tree, all one root cause)."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.type_alias_user"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.type_alias_user": {
+                "target": "entropic_substrate.__legacy.type_alias_user",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "type_alias_user.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(
+        "type FrozenJsonScalar = str | int | float | bool | None\n"
+        'type FrozenJson = FrozenJsonScalar | tuple["FrozenJson", ...]\n'
+    )
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir)
+    text = (out_dir / "entropic_substrate" / "type_alias_user.pyi").read_text()
+    assert "FrozenJsonScalar as FrozenJsonScalar" in text
+    assert "FrozenJson as FrozenJson" in text
+
+
 def test_verify_fails_loud_when_a_stub_is_deleted(tmp_path: Path) -> None:
     """Guard tooth: delete one emitted .pyi (leave its .py shim) -> --verify
     fails naming the missing stub."""
@@ -1877,3 +1925,51 @@ def test_verify_rejects_old_order_target_import_before_sys(tmp_path: Path) -> No
     ok, reason = gen_shims.verify_shim_source(source)
     assert ok is False
     assert "sys" in reason
+
+
+REPO_PYPROJECT = TOOLS.parent / "pyproject.toml"
+
+
+def _ruff_diff(paths: list[Path]) -> str:
+    """Runs this repo's OWN `ruff check --fix --diff` (isort included, per
+    [tool.ruff.lint] select) then `ruff format --diff`, exactly the two
+    passes `just lint` / the pre-commit hook apply, against real files on
+    disk. Non-empty output means the hook would REWRITE the file mid-gate --
+    the exact 'hook fixed point' failure mode constraint 5 (design gate
+    2026-09-20) warns about for the stub pipeline, checked here for the
+    SHIM `.py` side of the typed pair."""
+    out = ""
+    for args in (
+        ["ruff", "check", "--fix", "--diff", "--config", str(REPO_PYPROJECT)],
+        ["ruff", "format", "--diff", "--config", str(REPO_PYPROJECT)],
+    ):
+        r = subprocess.run([*args, *[str(p) for p in paths]], capture_output=True, text=True)
+        out += r.stdout
+    return out
+
+
+def test_shim_py_is_a_ruff_fixed_point_against_the_real_repo_config(tmp_path: Path) -> None:
+    """RED-FIRST (constraint 3, design gate 2026-09-20): `shim_source()`'s
+    raw text is written to disk with NO ruff canonicalization pass, unlike
+    the `.pyi` stub (`canonicalize_stub_texts`). Under THIS repo's own
+    ruff config (`known-first-party = ["entropic_substrate"]`, `select`
+    includes `I`), isort splits `import sys` (stdlib) and
+    `import entropic_substrate.__legacy.x as _target` (first-party) into
+    two groups and ruff format inserts a blank line after the import
+    block -- `ruff check . --fix` (house rule: `just lint`, and the
+    pre-commit hook `just check`/`just pc-ci` both run) REWRITES every
+    emitted shim mid-gate, which is exactly the ACCEPTANCE bullet 'git
+    status --porcelain is EMPTY after just check and after just pc-ci'
+    failing. MEASURED (this test, before the fix): non-empty diff on a
+    freshly emitted shim under the real repo config."""
+    fragments_dir = tmp_path / "fragments"
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    write_fragment(fragments_dir, "p3-quarantine", {})
+    out_dir = tmp_path / "src"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
+    resolved = resolve(fragments_dir, mapping_path)
+    written = gen_shims.generate(resolved, str(fragments_dir), out_dir)
+    shim_paths = [p for p in written if p.suffix == ".py"]
+    assert shim_paths
+    diff = _ruff_diff(shim_paths)
+    assert diff == "", f"ruff would rewrite the emitted shim mid-gate:\n{diff}"

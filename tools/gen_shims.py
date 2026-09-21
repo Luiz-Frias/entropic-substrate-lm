@@ -299,7 +299,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import subprocess  # nosec B404 -- stub ruff-canonicalization only, fixed argv below
+import subprocess  # nosec B404 -- shim/stub ruff-canonicalization only, fixed argv below
 import sys
 import tempfile
 from pathlib import Path
@@ -563,6 +563,15 @@ def _bound_names_in_stmts(stmts: list[ast.stmt]) -> list[str]:
     for stmt in stmts:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.append(stmt.name)
+        elif isinstance(stmt, ast.TypeAlias):
+            # PEP 695 `type X = ...` (Python 3.12+). MEASURED post-mass-
+            # emission (constraint 5 firing after the fact): 9 real
+            # quarantined modules define their public type this way
+            # (FrozenJson, JsonValue, InterfaceMode, D1TrainerRequest,
+            # ...); missing this branch produced 83 basedpyright errors,
+            # all one root cause -- the name was simply never derived.
+            if isinstance(stmt.name, ast.Name):
+                names.append(stmt.name.id)
         elif isinstance(stmt, ast.Import):
             for alias in stmt.names:
                 names.append(alias.asname or alias.name.split(".")[0])
@@ -674,19 +683,27 @@ def _find_pyproject(start: Path) -> Path | None:
     return None
 
 
-def canonicalize_stub_texts(raw_by_relpath: dict[str, str], out_dir: Path) -> dict[str, str]:
-    """Pipes every raw derived stub through THIS repo's own `ruff check --fix
-    --select I` (import sort only) then `ruff format`, batched into ONE
-    subprocess pair regardless of how many stubs are given -- never
-    reimplements ruff's own sort key (case-insensitive order-by-type;
-    MEASURED `_TAN_LIMIT` before `_TANH_LIMIT`, SCREAMING_CASE constants
-    after the underscore group). Every stub is what `just lint`'s `ruff
-    check . --fix` would produce for it, by construction, so nothing
-    rewrites it mid-gate and `--verify`'s byte-for-byte comparison (which
-    re-derives through this SAME function) cannot deadlock against it.
-    Files land in the temp dir at the SAME relative path they occupy on
-    disk, so any path-pattern-scoped ruff config (e.g. per-file-ignores)
-    still applies. Fails loud if `ruff` cannot run at all."""
+def canonicalize_python_texts(raw_by_relpath: dict[str, str], out_dir: Path) -> dict[str, str]:
+    """Pipes every raw derived `.py`/`.pyi` text through THIS repo's own
+    `ruff check --fix --select I` (import sort only) then `ruff format`,
+    batched into ONE subprocess pair regardless of how many files are given
+    -- never reimplements ruff's own sort key (case-insensitive
+    order-by-type; MEASURED `_TAN_LIMIT` before `_TANH_LIMIT`,
+    SCREAMING_CASE constants after the underscore group). Originally
+    stub-only ("canonicalize_stub_texts"); generate() found the SAME
+    deadlock class on the shim `.py` side (constraint 3, design gate
+    2026-09-20 -- MEASURED: `known-first-party = ["entropic_substrate"]`
+    splits `import sys` from the first-party target import into two isort
+    groups and `ruff format` inserts a blank line after the import block,
+    so `ruff check . --fix` rewrites every emitted shim mid-gate), so this
+    function now canonicalizes both file classes through the identical
+    pipeline. Every file is what `just lint`'s `ruff check . --fix` would
+    produce for it, by construction, so nothing rewrites it mid-gate and
+    `--verify`'s byte-for-byte stub comparison (which re-derives through
+    this SAME function) cannot deadlock against it. Files land in the temp
+    dir at the SAME relative path they occupy on disk, so any
+    path-pattern-scoped ruff config (e.g. per-file-ignores) still applies.
+    Fails loud if `ruff` cannot run at all."""
     if not raw_by_relpath:
         return {}
     pyproject = _find_pyproject(out_dir)
@@ -837,8 +854,8 @@ def generate(
     written: list[Path] = []
     manifest_entries: list[dict] = []
     stub_entries: list[dict] = []
-    raw_stubs: dict[str, str] = {}
-    stub_paths: dict[str, Path] = {}
+    raw_texts: dict[str, str] = {}  # relpath -> raw text, BOTH shims and stubs
+    out_paths: dict[str, Path] = {}
     for old, entry in sorted(modules.items()):
         if entry.get("retired", False):
             continue  # old name fully retired (p13, or deleted before its move): no shim
@@ -847,12 +864,23 @@ def generate(
         target = entry["target"]
         is_entrypoint = bool(entry.get("entrypoint", False))
         out_path = shim_output_path(out_dir, old)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(shim_source(old, target, source_label, is_entrypoint=is_entrypoint))
+        shim_relpath = str(out_path.relative_to(out_dir))
+        # RAW text only here -- NOT written yet. Writing the un-canonicalized
+        # form was the defect (constraint 3, design gate 2026-09-20): this
+        # repo's own ruff config splits `import sys` from the first-party
+        # target import into two isort groups and formats a blank line after
+        # the import block, so `ruff check . --fix` (house rule: `just
+        # lint`, run inside both `just check` and `just pc-ci`) rewrote every
+        # emitted shim mid-gate -- the SAME deadlock class the stub pipeline
+        # was built to avoid, just on the shim side of the typed pair.
+        raw_texts[shim_relpath] = shim_source(
+            old, target, source_label, is_entrypoint=is_entrypoint
+        )
+        out_paths[shim_relpath] = out_path
         written.append(out_path)
         manifest_entries.append(
             {
-                "path": str(out_path.relative_to(out_dir)),
+                "path": shim_relpath,
                 "target": target,
                 "entrypoint": is_entrypoint,
             }
@@ -871,13 +899,19 @@ def generate(
                 "cannot derive its type stub (run the move before generating)"
             )
         stub_path = out_path.with_suffix(".pyi")
-        relpath = str(stub_path.relative_to(out_dir))
-        raw_stubs[relpath] = stub_source_raw(target, target_file.read_text(), source_label)
-        stub_paths[relpath] = stub_path
-        stub_entries.append({"path": relpath, "target": target})
-    canonical = canonicalize_stub_texts(raw_stubs, out_dir)
+        stub_relpath = str(stub_path.relative_to(out_dir))
+        raw_texts[stub_relpath] = stub_source_raw(target, target_file.read_text(), source_label)
+        out_paths[stub_relpath] = stub_path
+        stub_entries.append({"path": stub_relpath, "target": target})
+    # ONE canonicalization pass over BOTH the shim `.py` and stub `.pyi`
+    # raw text, so the whole typed pair is a ruff fixed point by
+    # construction and nothing mid-gate (`ruff check . --fix`, `ruff
+    # format`) can rewrite anything under out_dir after generate() returns.
+    canonical = canonicalize_python_texts(raw_texts, out_dir)
     for relpath, text in canonical.items():
-        stub_paths[relpath].write_text(text)
+        p = out_paths[relpath]
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
     if manifest_path is not None:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
@@ -1182,7 +1216,7 @@ def verify_stubs_from_manifest(
             stub["target"], target_file.read_text(), source_label
         )
         order.append(stub["path"])
-    canonical = canonicalize_stub_texts(raw_by_relpath, out_dir) if raw_by_relpath else {}
+    canonical = canonicalize_python_texts(raw_by_relpath, out_dir) if raw_by_relpath else {}
     for relpath in order:
         p = out_dir / relpath
         expected_text = canonical[relpath]

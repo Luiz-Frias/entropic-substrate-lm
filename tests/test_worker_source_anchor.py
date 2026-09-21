@@ -40,9 +40,16 @@ pytestmark = pytest.mark.unit
 # wrong root" mutation corrupt these fixtures instead of exercising the
 # guards, producing a vacuous (ERROR, not RED-on-the-guard) arm.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_D_LADDER_RUNTIME_SOURCE = _REPO_ROOT / "src" / "entropic_substrate" / "d_ladder_worker_runtime.py"
+_D_LADDER_RUNTIME_SOURCE = (
+    _REPO_ROOT / "src" / "entropic_substrate" / "__legacy" / "d_ladder_worker_runtime.py"
+)
 _WORKER_EXECUTION_SOURCE = (
-    _REPO_ROOT / "src" / "entropic_substrate" / "sentence_prediction" / "worker_execution.py"
+    _REPO_ROOT
+    / "src"
+    / "entropic_substrate"
+    / "__legacy"
+    / "sentence_prediction"
+    / "worker_execution.py"
 )
 
 _GUARD_TEXT_D_LADDER = "worker is not executing the source tree selected for verification"

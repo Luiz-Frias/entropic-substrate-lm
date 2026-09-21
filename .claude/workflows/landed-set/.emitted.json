@@ -1,0 +1,2887 @@
+{
+  "out_dir": "src",
+  "shims": [
+    {
+      "path": "entropic_substrate/__main__.py",
+      "target": "entropic_substrate.__legacy.__main__",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/analysis/charts.py",
+      "target": "entropic_substrate.__legacy.analysis.charts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/codec_equivariance.py",
+      "target": "entropic_substrate.__legacy.analysis.codec_equivariance",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_analysis_api.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_analysis_api",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_analysis_receipt_codec.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_analysis_receipt_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_blind_aliases.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_blind_aliases",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_capture.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_clause_policy.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_clause_policy",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_diagnostics.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_diagnostics",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_execution_receipt.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_execution_receipt",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_adapter.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_codec.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_control.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_control",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_review_adapter.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_review_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_worker.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_worker",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_factorial.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_factorial",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_binding.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_binding",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_codec.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_verification.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_verification",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_output_access.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_output_access",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_probe.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_probe",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_real_arm_verdict.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_real_arm_verdict",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_review_execution.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_review_execution",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_review_packet.py",
+      "target": "entropic_substrate.__legacy.analysis.d1_review_packet",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/embedding_geometry.py",
+      "target": "entropic_substrate.__legacy.analysis.embedding_geometry",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/field_head_audit.py",
+      "target": "entropic_substrate.__legacy.analysis.field_head_audit",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_analysis.py",
+      "target": "entropic_substrate.__legacy.analysis.ladder_analysis",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_filing.py",
+      "target": "entropic_substrate.__legacy.analysis.ladder_filing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_probe.py",
+      "target": "entropic_substrate.__legacy.analysis.ladder_probe",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_registration.py",
+      "target": "entropic_substrate.__legacy.analysis.ladder_registration",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/mlflow_attach.py",
+      "target": "entropic_substrate.__legacy.analysis.mlflow_attach",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/palette.py",
+      "target": "entropic_substrate.__legacy.analysis.palette",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/predictive_probe.py",
+      "target": "entropic_substrate.__legacy.analysis.predictive_probe",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/predictive_score_gain.py",
+      "target": "entropic_substrate.__legacy.analysis.predictive_score_gain",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/seed_sizing.py",
+      "target": "entropic_substrate.__legacy.analysis.seed_sizing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/analysis/series.py",
+      "target": "entropic_substrate.__legacy.analysis.series",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/capture_results.py",
+      "target": "entropic_substrate.__legacy.capture_results",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/checkpoint.py",
+      "target": "entropic_substrate.__legacy.checkpoint",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/cli.py",
+      "target": "entropic_substrate.__legacy.cli",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/config.py",
+      "target": "entropic_substrate.__legacy.config",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_artifact_snapshot.py",
+      "target": "entropic_substrate.__legacy.d1_artifact_snapshot",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_billing_finalization_values.py",
+      "target": "entropic_substrate.__legacy.d1_billing_finalization_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_billing_finalizer.py",
+      "target": "entropic_substrate.__legacy.d1_billing_finalizer",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_build_cloud_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_build_cloud_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_calibration.py",
+      "target": "entropic_substrate.__legacy.d1_calibration",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_authority_loader.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_authority_loader",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_bootstrap.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_bootstrap",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_capture.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_checkpoint.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_checkpoint",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_checkpoint_repository.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_checkpoint_repository",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_cli_service.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_cli_service",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_controller_factory.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_controller_factory",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_evidence_assembler.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_evidence_assembler",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_queue.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_queue",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_recovery.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_recovery",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_recovery_queue.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_recovery_queue",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_request.py",
+      "target": "entropic_substrate.__legacy.d1_campaign_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_capture_cli_services.py",
+      "target": "entropic_substrate.__legacy.d1_capture_cli_services",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_capture_finalize_coordinator.py",
+      "target": "entropic_substrate.__legacy.d1_capture_finalize_coordinator",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_capture_finalize_request.py",
+      "target": "entropic_substrate.__legacy.d1_capture_finalize_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_capture_prepare_coordinator.py",
+      "target": "entropic_substrate.__legacy.d1_capture_prepare_coordinator",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_checkpoint_dvc_recovery.py",
+      "target": "entropic_substrate.__legacy.d1_checkpoint_dvc_recovery",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_checkpoint_dvc_sync.py",
+      "target": "entropic_substrate.__legacy.d1_checkpoint_dvc_sync",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_cli.py",
+      "target": "entropic_substrate.__legacy.d1_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_cli_composition.py",
+      "target": "entropic_substrate.__legacy.d1_cli_composition",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_command_runner.py",
+      "target": "entropic_substrate.__legacy.d1_command_runner",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_content_addressed_custody.py",
+      "target": "entropic_substrate.__legacy.d1_content_addressed_custody",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_dual_failure.py",
+      "target": "entropic_substrate.__legacy.d1_dual_failure",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_dvc_remote_config.py",
+      "target": "entropic_substrate.__legacy.d1_dvc_remote_config",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation.py",
+      "target": "entropic_substrate.__legacy.d1_evaluation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation_codec.py",
+      "target": "entropic_substrate.__legacy.d1_evaluation_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation_values.py",
+      "target": "entropic_substrate.__legacy.d1_evaluation_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_excluded_capture.py",
+      "target": "entropic_substrate.__legacy.d1_excluded_capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_excluded_operator.py",
+      "target": "entropic_substrate.__legacy.d1_excluded_operator",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_filing_application.py",
+      "target": "entropic_substrate.__legacy.d1_filing_application",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_finalized_cell_custody.py",
+      "target": "entropic_substrate.__legacy.d1_finalized_cell_custody",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_finalized_cell_custody_repository.py",
+      "target": "entropic_substrate.__legacy.d1_finalized_cell_custody_repository",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_fresh_trainer.py",
+      "target": "entropic_substrate.__legacy.d1_fresh_trainer",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_git_provenance_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_git_provenance_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_codec.py",
+      "target": "entropic_substrate.__legacy.d1_inspect_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_projection.py",
+      "target": "entropic_substrate.__legacy.d1_inspect_projection",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_request.py",
+      "target": "entropic_substrate.__legacy.d1_inspect_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_service.py",
+      "target": "entropic_substrate.__legacy.d1_inspect_service",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_values.py",
+      "target": "entropic_substrate.__legacy.d1_inspect_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_journal_snapshot.py",
+      "target": "entropic_substrate.__legacy.d1_journal_snapshot",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_numerical_defect.py",
+      "target": "entropic_substrate.__legacy.d1_numerical_defect",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_observability.py",
+      "target": "entropic_substrate.__legacy.d1_observability",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_controller.py",
+      "target": "entropic_substrate.__legacy.d1_operator_controller",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_custody_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_operator_custody_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_evidence.py",
+      "target": "entropic_substrate.__legacy.d1_operator_evidence",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_intent_codec.py",
+      "target": "entropic_substrate.__legacy.d1_operator_intent_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_ports.py",
+      "target": "entropic_substrate.__legacy.d1_operator_ports",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_operator_values.py",
+      "target": "entropic_substrate.__legacy.d1_operator_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_optimizer.py",
+      "target": "entropic_substrate.__legacy.d1_optimizer",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_predecessor_loader.py",
+      "target": "entropic_substrate.__legacy.d1_predecessor_loader",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_probe_cli.py",
+      "target": "entropic_substrate.__legacy.d1_probe_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_r2_runtime_composition.py",
+      "target": "entropic_substrate.__legacy.d1_r2_runtime_composition",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_r2_trainer_mailbox_worker.py",
+      "target": "entropic_substrate.__legacy.d1_r2_trainer_mailbox_worker",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_resource_activation.py",
+      "target": "entropic_substrate.__legacy.d1_resource_activation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_resume_runtime.py",
+      "target": "entropic_substrate.__legacy.d1_resume_runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_resume_trainer.py",
+      "target": "entropic_substrate.__legacy.d1_resume_trainer",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_runpod_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_runpod_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_runpod_billing_parser.py",
+      "target": "entropic_substrate.__legacy.d1_runpod_billing_parser",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_segment_engine.py",
+      "target": "entropic_substrate.__legacy.d1_segment_engine",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_system_runtime_probe.py",
+      "target": "entropic_substrate.__legacy.d1_system_runtime_probe",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_terminal_failure.py",
+      "target": "entropic_substrate.__legacy.d1_terminal_failure",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_tracking.py",
+      "target": "entropic_substrate.__legacy.d1_tracking",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_cli_services.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_cli_services",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_evidence_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_evidence_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_handoff.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_handoff",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_handoff_codec.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_handoff_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_command.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_command",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_contracts.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_contracts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_worker.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_worker",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_object_transport.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_object_transport",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_output_publication.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_output_publication",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_process_contracts.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_process_contracts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_process_worker.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_process_worker",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_request_codec.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_request_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_runtime.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_s3_object_adapter.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_s3_object_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_stage.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_stage",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_worker_command.py",
+      "target": "entropic_substrate.__legacy.d1_trainer_worker_command",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d1_training_step.py",
+      "target": "entropic_substrate.__legacy.d1_training_step",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_artifacts.py",
+      "target": "entropic_substrate.__legacy.d_ladder_artifacts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_cli.py",
+      "target": "entropic_substrate.__legacy.d_ladder_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_execution.py",
+      "target": "entropic_substrate.__legacy.d_ladder_execution",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_probe_cli.py",
+      "target": "entropic_substrate.__legacy.d_ladder_probe_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_remote.py",
+      "target": "entropic_substrate.__legacy.d_ladder_remote",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_remote_request.py",
+      "target": "entropic_substrate.__legacy.d_ladder_remote_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_request.py",
+      "target": "entropic_substrate.__legacy.d_ladder_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_resources.py",
+      "target": "entropic_substrate.__legacy.d_ladder_resources",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_training.py",
+      "target": "entropic_substrate.__legacy.d_ladder_training",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/d_ladder_worker_command.py",
+      "target": "entropic_substrate.__legacy.d_ladder_worker_command",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/d_ladder_worker_runtime.py",
+      "target": "entropic_substrate.__legacy.d_ladder_worker_runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/batching.py",
+      "target": "entropic_substrate.__legacy.data.batching",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/build.py",
+      "target": "entropic_substrate.__legacy.data.build",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/enwik8.py",
+      "target": "entropic_substrate.__legacy.data.enwik8",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/fineweb.py",
+      "target": "entropic_substrate.__legacy.data.fineweb",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/ladder_batching.py",
+      "target": "entropic_substrate.__legacy.data.ladder_batching",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/ladder_source_order.py",
+      "target": "entropic_substrate.__legacy.data.ladder_source_order",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/data/synthetic.py",
+      "target": "entropic_substrate.__legacy.data.synthetic",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_abort_evidence.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_abort_evidence",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate_codec.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate_validation.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate_validation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_artifacts.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_artifacts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_bundle.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_bundle",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_declaration_codec.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_declaration_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_filesystem.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_filesystem",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_ports.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_ports",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_preparation_custody.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_preparation_custody",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_preparation_custody_repository.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_preparation_custody_repository",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_roster.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_roster",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_service.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_service",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_subprocess.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_subprocess",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_validation.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_validation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_contract.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_contract",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_decision_validation.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_decision_validation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_family_adapter.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_family_adapter",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_assembly.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_assembly",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_edges.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_edges",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_graph.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_graph",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_receipts.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_receipts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_gate.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_gate",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_journal.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_journal",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_journal_values.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_journal_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_lifecycle_repository.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_lifecycle_repository",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_lifecycle_values.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_lifecycle_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_parsing.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_parsing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_filing.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_filing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_manager.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_manager",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_replay.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_replay",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_review_adjudication.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_review_adjudication",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_statistical_gaps.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_statistical_gaps",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_measurements.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_measurements",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_payloads.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_payloads",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_query.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_query",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_values.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_terminal_defect_capture.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_terminal_defect_capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_terminal_defect_query.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_terminal_defect_query",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_types.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_types",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_validator.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_validator",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_verdict.py",
+      "target": "entropic_substrate.__legacy.evidence.d1_verdict",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/ladder_campaign.py",
+      "target": "entropic_substrate.__legacy.evidence.ladder_campaign",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/ladder_predecessor.py",
+      "target": "entropic_substrate.__legacy.evidence.ladder_predecessor",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/lifecycle.py",
+      "target": "entropic_substrate.__legacy.evidence.lifecycle",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_billing.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_billing",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_billing_reconciliation.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_billing_reconciliation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_ledger.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_ledger",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_ledger_codec.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_ledger_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_models.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_models",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_runtime.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_strategy.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_strategy",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_provenance.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_provenance",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_provenance_codec.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_provenance_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_work.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_work",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_work_codec.py",
+      "target": "entropic_substrate.__legacy.evidence.resource_work_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1.py",
+      "target": "entropic_substrate.__legacy.experiments.d1",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_config.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_config",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_config_profile.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_config_profile",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_confirmatory_matrix.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_confirmatory_matrix",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_execution.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_execution",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_family.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_family",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_launch_attempt_codec.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_launch_attempt_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_launch_attempts.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_launch_attempts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_plan.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_plan",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_primitives.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_primitives",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_provenance.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_provenance",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_registered_design.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_registered_design",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_registration_codec.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_registration_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_runs.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_runs",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_stabilization.py",
+      "target": "entropic_substrate.__legacy.experiments.d1_stabilization",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/h_preservation.py",
+      "target": "entropic_substrate.__legacy.experiments.h_preservation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder.py",
+      "target": "entropic_substrate.__legacy.experiments.ladder",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder_matching.py",
+      "target": "entropic_substrate.__legacy.experiments.ladder_matching",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder_profile.py",
+      "target": "entropic_substrate.__legacy.experiments.ladder_profile",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/factory_attestation.py",
+      "target": "entropic_substrate.__legacy.factory_attestation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/field_pretrain.py",
+      "target": "entropic_substrate.__legacy.field_pretrain",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/geometry/gram.py",
+      "target": "entropic_substrate.__legacy.geometry.gram",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/geometry/kappa.py",
+      "target": "entropic_substrate.__legacy.geometry.kappa",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/git_environment.py",
+      "target": "entropic_substrate.__legacy.git_environment",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_allocation.py",
+      "target": "entropic_substrate.__legacy.h_probe_allocation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_collection.py",
+      "target": "entropic_substrate.__legacy.h_probe_collection",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_command.py",
+      "target": "entropic_substrate.__legacy.h_probe_command",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_control.py",
+      "target": "entropic_substrate.__legacy.h_probe_control",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_controller.py",
+      "target": "entropic_substrate.__legacy.h_probe_controller",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_events.py",
+      "target": "entropic_substrate.__legacy.h_probe_events",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_launch.py",
+      "target": "entropic_substrate.__legacy.h_probe_launch",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_process.py",
+      "target": "entropic_substrate.__legacy.h_probe_process",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_probe_watchdog.py",
+      "target": "entropic_substrate.__legacy.h_probe_watchdog",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/h_runpod_transport.py",
+      "target": "entropic_substrate.__legacy.h_runpod_transport",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/init/fisher.py",
+      "target": "entropic_substrate.__legacy.init.fisher",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/layers/kappa_norm.py",
+      "target": "entropic_substrate.__legacy.layers.kappa_norm",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/logging.py",
+      "target": "entropic_substrate.__legacy.logging",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/mlflow_aggregate.py",
+      "target": "entropic_substrate.__legacy.mlflow_aggregate",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/models/backbone.py",
+      "target": "entropic_substrate.__legacy.models.backbone",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/models/blocks.py",
+      "target": "entropic_substrate.__legacy.models.blocks",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/models/field_encoder.py",
+      "target": "entropic_substrate.__legacy.models.field_encoder",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/observation/byte_codec.py",
+      "target": "entropic_substrate.__legacy.observation.byte_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/observation/contracts.py",
+      "target": "entropic_substrate.__legacy.observation.contracts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/observation/modules.py",
+      "target": "entropic_substrate.__legacy.observation.modules",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/observation/permuted_byte_codec.py",
+      "target": "entropic_substrate.__legacy.observation.permuted_byte_codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/paths.py",
+      "target": "entropic_substrate.__legacy.paths",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_envelope.py",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_envelope",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_repository.py",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_repository",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_validation.py",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_validation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_values.py",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/coarse_graining.py",
+      "target": "entropic_substrate.__legacy.predictive_state.coarse_graining",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/dynamics.py",
+      "target": "entropic_substrate.__legacy.predictive_state.dynamics",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/ema_schedules.py",
+      "target": "entropic_substrate.__legacy.predictive_state.ema_schedules",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/future_law.py",
+      "target": "entropic_substrate.__legacy.predictive_state.future_law",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/horizons.py",
+      "target": "entropic_substrate.__legacy.predictive_state.horizons",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/initialization.py",
+      "target": "entropic_substrate.__legacy.predictive_state.initialization",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/ladder_runtime.py",
+      "target": "entropic_substrate.__legacy.predictive_state.ladder_runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/metric.py",
+      "target": "entropic_substrate.__legacy.predictive_state.metric",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/objective.py",
+      "target": "entropic_substrate.__legacy.predictive_state.objective",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime.py",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime_components.py",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime_components",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime_construction.py",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime_construction",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/stabilization.py",
+      "target": "entropic_substrate.__legacy.predictive_state.stabilization",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/state.py",
+      "target": "entropic_substrate.__legacy.predictive_state.state",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/target_updates.py",
+      "target": "entropic_substrate.__legacy.predictive_state.target_updates",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/target_values.py",
+      "target": "entropic_substrate.__legacy.predictive_state.target_values",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/predictive_state/targets.py",
+      "target": "entropic_substrate.__legacy.predictive_state.targets",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/provider_launch.py",
+      "target": "entropic_substrate.__legacy.provider_launch",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/boundary.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.boundary",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/capture.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/capture_cli.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.capture_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/checkpoint.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.checkpoint",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/cli.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/codec.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.codec",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/consumer.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.consumer",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/corpus.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.corpus",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/evaluation_records.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.evaluation_records",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/execution.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.execution",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/generation.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.generation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/head.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.head",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/journal.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.journal",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/law.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.law",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/mechanism_evidence.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.mechanism_evidence",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/model.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.model",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/native_verification.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.native_verification",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/numerics.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.numerics",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/object_worker.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.object_worker",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/objective.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.objective",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/profile.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.profile",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/records.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.records",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/recovery_state.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.recovery_state",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/rollout.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.rollout",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/runner.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.runner",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/runtime_precision.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.runtime_precision",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/sampling.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.sampling",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/score_gain.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.score_gain",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/scoring.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.scoring",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/seals.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.seals",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/segmentation.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.segmentation",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/source_cli.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.source_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_cli.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_cli",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_diagnostics.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_diagnostics",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_probe.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_probe_artifacts.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe_artifacts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_states.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_states",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/spine.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.spine",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/trace_capture.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.trace_capture",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/training.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.training",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_command.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_command",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_completion.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_completion",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_execution.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_execution",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_request.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_request",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_snapshot.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_snapshot",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_transport.py",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_transport",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/shared_attempt.py",
+      "target": "entropic_substrate.__legacy.shared_attempt",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/sinks.py",
+      "target": "entropic_substrate.__legacy.sinks",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/telemetry.py",
+      "target": "entropic_substrate.__legacy.telemetry",
+      "entrypoint": true
+    },
+    {
+      "path": "entropic_substrate/tracking_contracts.py",
+      "target": "entropic_substrate.__legacy.tracking_contracts",
+      "entrypoint": false
+    },
+    {
+      "path": "entropic_substrate/train.py",
+      "target": "entropic_substrate.__legacy.train",
+      "entrypoint": false
+    }
+  ],
+  "stubs": [
+    {
+      "path": "entropic_substrate/__main__.pyi",
+      "target": "entropic_substrate.__legacy.__main__"
+    },
+    {
+      "path": "entropic_substrate/analysis/charts.pyi",
+      "target": "entropic_substrate.__legacy.analysis.charts"
+    },
+    {
+      "path": "entropic_substrate/analysis/codec_equivariance.pyi",
+      "target": "entropic_substrate.__legacy.analysis.codec_equivariance"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_analysis_api.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_analysis_api"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_analysis_receipt_codec.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_analysis_receipt_codec"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_blind_aliases.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_blind_aliases"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_capture.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_capture"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_clause_policy.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_clause_policy"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_diagnostics.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_diagnostics"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_execution_receipt.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_execution_receipt"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_adapter.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_adapter"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_codec.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_codec"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_analysis_control.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_analysis_control"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_review_adapter.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_review_adapter"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_external_worker.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_external_worker"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_factorial.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_factorial"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_binding.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_binding"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_codec.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_codec"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_machine_analysis_verification.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_machine_analysis_verification"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_output_access.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_output_access"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_probe.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_probe"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_real_arm_verdict.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_real_arm_verdict"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_review_execution.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_review_execution"
+    },
+    {
+      "path": "entropic_substrate/analysis/d1_review_packet.pyi",
+      "target": "entropic_substrate.__legacy.analysis.d1_review_packet"
+    },
+    {
+      "path": "entropic_substrate/analysis/embedding_geometry.pyi",
+      "target": "entropic_substrate.__legacy.analysis.embedding_geometry"
+    },
+    {
+      "path": "entropic_substrate/analysis/field_head_audit.pyi",
+      "target": "entropic_substrate.__legacy.analysis.field_head_audit"
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_analysis.pyi",
+      "target": "entropic_substrate.__legacy.analysis.ladder_analysis"
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_filing.pyi",
+      "target": "entropic_substrate.__legacy.analysis.ladder_filing"
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_probe.pyi",
+      "target": "entropic_substrate.__legacy.analysis.ladder_probe"
+    },
+    {
+      "path": "entropic_substrate/analysis/ladder_registration.pyi",
+      "target": "entropic_substrate.__legacy.analysis.ladder_registration"
+    },
+    {
+      "path": "entropic_substrate/analysis/mlflow_attach.pyi",
+      "target": "entropic_substrate.__legacy.analysis.mlflow_attach"
+    },
+    {
+      "path": "entropic_substrate/analysis/palette.pyi",
+      "target": "entropic_substrate.__legacy.analysis.palette"
+    },
+    {
+      "path": "entropic_substrate/analysis/predictive_probe.pyi",
+      "target": "entropic_substrate.__legacy.analysis.predictive_probe"
+    },
+    {
+      "path": "entropic_substrate/analysis/predictive_score_gain.pyi",
+      "target": "entropic_substrate.__legacy.analysis.predictive_score_gain"
+    },
+    {
+      "path": "entropic_substrate/analysis/seed_sizing.pyi",
+      "target": "entropic_substrate.__legacy.analysis.seed_sizing"
+    },
+    {
+      "path": "entropic_substrate/analysis/series.pyi",
+      "target": "entropic_substrate.__legacy.analysis.series"
+    },
+    {
+      "path": "entropic_substrate/capture_results.pyi",
+      "target": "entropic_substrate.__legacy.capture_results"
+    },
+    {
+      "path": "entropic_substrate/checkpoint.pyi",
+      "target": "entropic_substrate.__legacy.checkpoint"
+    },
+    {
+      "path": "entropic_substrate/cli.pyi",
+      "target": "entropic_substrate.__legacy.cli"
+    },
+    {
+      "path": "entropic_substrate/config.pyi",
+      "target": "entropic_substrate.__legacy.config"
+    },
+    {
+      "path": "entropic_substrate/d1_artifact_snapshot.pyi",
+      "target": "entropic_substrate.__legacy.d1_artifact_snapshot"
+    },
+    {
+      "path": "entropic_substrate/d1_billing_finalization_values.pyi",
+      "target": "entropic_substrate.__legacy.d1_billing_finalization_values"
+    },
+    {
+      "path": "entropic_substrate/d1_billing_finalizer.pyi",
+      "target": "entropic_substrate.__legacy.d1_billing_finalizer"
+    },
+    {
+      "path": "entropic_substrate/d1_build_cloud_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_build_cloud_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_calibration.pyi",
+      "target": "entropic_substrate.__legacy.d1_calibration"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_authority_loader.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_authority_loader"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_bootstrap.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_bootstrap"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_capture.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_capture"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_checkpoint.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_checkpoint"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_checkpoint_repository.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_checkpoint_repository"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_cli_service.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_cli_service"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_controller_factory.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_controller_factory"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_evidence_assembler.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_evidence_assembler"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_queue.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_queue"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_recovery.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_recovery"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_recovery_queue.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_recovery_queue"
+    },
+    {
+      "path": "entropic_substrate/d1_campaign_request.pyi",
+      "target": "entropic_substrate.__legacy.d1_campaign_request"
+    },
+    {
+      "path": "entropic_substrate/d1_capture_cli_services.pyi",
+      "target": "entropic_substrate.__legacy.d1_capture_cli_services"
+    },
+    {
+      "path": "entropic_substrate/d1_capture_finalize_coordinator.pyi",
+      "target": "entropic_substrate.__legacy.d1_capture_finalize_coordinator"
+    },
+    {
+      "path": "entropic_substrate/d1_capture_finalize_request.pyi",
+      "target": "entropic_substrate.__legacy.d1_capture_finalize_request"
+    },
+    {
+      "path": "entropic_substrate/d1_capture_prepare_coordinator.pyi",
+      "target": "entropic_substrate.__legacy.d1_capture_prepare_coordinator"
+    },
+    {
+      "path": "entropic_substrate/d1_checkpoint_dvc_recovery.pyi",
+      "target": "entropic_substrate.__legacy.d1_checkpoint_dvc_recovery"
+    },
+    {
+      "path": "entropic_substrate/d1_checkpoint_dvc_sync.pyi",
+      "target": "entropic_substrate.__legacy.d1_checkpoint_dvc_sync"
+    },
+    {
+      "path": "entropic_substrate/d1_cli.pyi",
+      "target": "entropic_substrate.__legacy.d1_cli"
+    },
+    {
+      "path": "entropic_substrate/d1_cli_composition.pyi",
+      "target": "entropic_substrate.__legacy.d1_cli_composition"
+    },
+    {
+      "path": "entropic_substrate/d1_command_runner.pyi",
+      "target": "entropic_substrate.__legacy.d1_command_runner"
+    },
+    {
+      "path": "entropic_substrate/d1_content_addressed_custody.pyi",
+      "target": "entropic_substrate.__legacy.d1_content_addressed_custody"
+    },
+    {
+      "path": "entropic_substrate/d1_dual_failure.pyi",
+      "target": "entropic_substrate.__legacy.d1_dual_failure"
+    },
+    {
+      "path": "entropic_substrate/d1_dvc_remote_config.pyi",
+      "target": "entropic_substrate.__legacy.d1_dvc_remote_config"
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation.pyi",
+      "target": "entropic_substrate.__legacy.d1_evaluation"
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation_codec.pyi",
+      "target": "entropic_substrate.__legacy.d1_evaluation_codec"
+    },
+    {
+      "path": "entropic_substrate/d1_evaluation_values.pyi",
+      "target": "entropic_substrate.__legacy.d1_evaluation_values"
+    },
+    {
+      "path": "entropic_substrate/d1_excluded_capture.pyi",
+      "target": "entropic_substrate.__legacy.d1_excluded_capture"
+    },
+    {
+      "path": "entropic_substrate/d1_excluded_operator.pyi",
+      "target": "entropic_substrate.__legacy.d1_excluded_operator"
+    },
+    {
+      "path": "entropic_substrate/d1_filing_application.pyi",
+      "target": "entropic_substrate.__legacy.d1_filing_application"
+    },
+    {
+      "path": "entropic_substrate/d1_finalized_cell_custody.pyi",
+      "target": "entropic_substrate.__legacy.d1_finalized_cell_custody"
+    },
+    {
+      "path": "entropic_substrate/d1_finalized_cell_custody_repository.pyi",
+      "target": "entropic_substrate.__legacy.d1_finalized_cell_custody_repository"
+    },
+    {
+      "path": "entropic_substrate/d1_fresh_trainer.pyi",
+      "target": "entropic_substrate.__legacy.d1_fresh_trainer"
+    },
+    {
+      "path": "entropic_substrate/d1_git_provenance_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_git_provenance_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_codec.pyi",
+      "target": "entropic_substrate.__legacy.d1_inspect_codec"
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_projection.pyi",
+      "target": "entropic_substrate.__legacy.d1_inspect_projection"
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_request.pyi",
+      "target": "entropic_substrate.__legacy.d1_inspect_request"
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_service.pyi",
+      "target": "entropic_substrate.__legacy.d1_inspect_service"
+    },
+    {
+      "path": "entropic_substrate/d1_inspect_values.pyi",
+      "target": "entropic_substrate.__legacy.d1_inspect_values"
+    },
+    {
+      "path": "entropic_substrate/d1_journal_snapshot.pyi",
+      "target": "entropic_substrate.__legacy.d1_journal_snapshot"
+    },
+    {
+      "path": "entropic_substrate/d1_numerical_defect.pyi",
+      "target": "entropic_substrate.__legacy.d1_numerical_defect"
+    },
+    {
+      "path": "entropic_substrate/d1_observability.pyi",
+      "target": "entropic_substrate.__legacy.d1_observability"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_controller.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_controller"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_custody_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_custody_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_evidence.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_evidence"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_intent_codec.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_intent_codec"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_ports.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_ports"
+    },
+    {
+      "path": "entropic_substrate/d1_operator_values.pyi",
+      "target": "entropic_substrate.__legacy.d1_operator_values"
+    },
+    {
+      "path": "entropic_substrate/d1_optimizer.pyi",
+      "target": "entropic_substrate.__legacy.d1_optimizer"
+    },
+    {
+      "path": "entropic_substrate/d1_predecessor_loader.pyi",
+      "target": "entropic_substrate.__legacy.d1_predecessor_loader"
+    },
+    {
+      "path": "entropic_substrate/d1_probe_cli.pyi",
+      "target": "entropic_substrate.__legacy.d1_probe_cli"
+    },
+    {
+      "path": "entropic_substrate/d1_r2_runtime_composition.pyi",
+      "target": "entropic_substrate.__legacy.d1_r2_runtime_composition"
+    },
+    {
+      "path": "entropic_substrate/d1_r2_trainer_mailbox_worker.pyi",
+      "target": "entropic_substrate.__legacy.d1_r2_trainer_mailbox_worker"
+    },
+    {
+      "path": "entropic_substrate/d1_resource_activation.pyi",
+      "target": "entropic_substrate.__legacy.d1_resource_activation"
+    },
+    {
+      "path": "entropic_substrate/d1_resume_runtime.pyi",
+      "target": "entropic_substrate.__legacy.d1_resume_runtime"
+    },
+    {
+      "path": "entropic_substrate/d1_resume_trainer.pyi",
+      "target": "entropic_substrate.__legacy.d1_resume_trainer"
+    },
+    {
+      "path": "entropic_substrate/d1_runpod_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_runpod_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_runpod_billing_parser.pyi",
+      "target": "entropic_substrate.__legacy.d1_runpod_billing_parser"
+    },
+    {
+      "path": "entropic_substrate/d1_segment_engine.pyi",
+      "target": "entropic_substrate.__legacy.d1_segment_engine"
+    },
+    {
+      "path": "entropic_substrate/d1_system_runtime_probe.pyi",
+      "target": "entropic_substrate.__legacy.d1_system_runtime_probe"
+    },
+    {
+      "path": "entropic_substrate/d1_terminal_failure.pyi",
+      "target": "entropic_substrate.__legacy.d1_terminal_failure"
+    },
+    {
+      "path": "entropic_substrate/d1_tracking.pyi",
+      "target": "entropic_substrate.__legacy.d1_tracking"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_cli_services.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_cli_services"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_evidence_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_evidence_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_handoff.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_handoff"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_handoff_codec.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_handoff_codec"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_command.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_command"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_contracts.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_contracts"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_mailbox_worker.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_mailbox_worker"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_object_transport.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_object_transport"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_output_publication.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_output_publication"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_process_contracts.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_process_contracts"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_process_worker.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_process_worker"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_request_codec.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_request_codec"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_runtime.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_runtime"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_s3_object_adapter.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_s3_object_adapter"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_stage.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_stage"
+    },
+    {
+      "path": "entropic_substrate/d1_trainer_worker_command.pyi",
+      "target": "entropic_substrate.__legacy.d1_trainer_worker_command"
+    },
+    {
+      "path": "entropic_substrate/d1_training_step.pyi",
+      "target": "entropic_substrate.__legacy.d1_training_step"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_artifacts.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_artifacts"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_cli.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_cli"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_execution.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_execution"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_probe_cli.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_probe_cli"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_remote.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_remote"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_remote_request.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_remote_request"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_request.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_request"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_resources.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_resources"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_training.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_training"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_worker_command.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_worker_command"
+    },
+    {
+      "path": "entropic_substrate/d_ladder_worker_runtime.pyi",
+      "target": "entropic_substrate.__legacy.d_ladder_worker_runtime"
+    },
+    {
+      "path": "entropic_substrate/data/batching.pyi",
+      "target": "entropic_substrate.__legacy.data.batching"
+    },
+    {
+      "path": "entropic_substrate/data/build.pyi",
+      "target": "entropic_substrate.__legacy.data.build"
+    },
+    {
+      "path": "entropic_substrate/data/enwik8.pyi",
+      "target": "entropic_substrate.__legacy.data.enwik8"
+    },
+    {
+      "path": "entropic_substrate/data/fineweb.pyi",
+      "target": "entropic_substrate.__legacy.data.fineweb"
+    },
+    {
+      "path": "entropic_substrate/data/ladder_batching.pyi",
+      "target": "entropic_substrate.__legacy.data.ladder_batching"
+    },
+    {
+      "path": "entropic_substrate/data/ladder_source_order.pyi",
+      "target": "entropic_substrate.__legacy.data.ladder_source_order"
+    },
+    {
+      "path": "entropic_substrate/data/synthetic.pyi",
+      "target": "entropic_substrate.__legacy.data.synthetic"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_abort_evidence.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_abort_evidence"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate_codec.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate_codec"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_aggregate_validation.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_aggregate_validation"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_artifacts.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_artifacts"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_bundle.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_bundle"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_declaration_codec.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_declaration_codec"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_filesystem.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_filesystem"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_ports.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_ports"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_preparation_custody.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_preparation_custody"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_preparation_custody_repository.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_preparation_custody_repository"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_roster.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_roster"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_service.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_service"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_subprocess.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_subprocess"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_capture_validation.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_capture_validation"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_contract.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_contract"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_decision_validation.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_decision_validation"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_family_adapter.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_family_adapter"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_assembly.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_assembly"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_edges.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_edges"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_graph.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_graph"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_filing_receipts.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_filing_receipts"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_gate.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_gate"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_journal.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_journal"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_journal_values.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_journal_values"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_lifecycle_repository.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_lifecycle_repository"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_lifecycle_values.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_lifecycle_values"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_parsing.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_parsing"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_filing.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_filing"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_manager.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_manager"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_process_replay.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_process_replay"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_review_adjudication.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_review_adjudication"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_statistical_gaps.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_statistical_gaps"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_measurements.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_measurements"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_payloads.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_payloads"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_query.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_query"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_telemetry_values.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_telemetry_values"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_terminal_defect_capture.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_terminal_defect_capture"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_terminal_defect_query.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_terminal_defect_query"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_types.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_types"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_validator.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_validator"
+    },
+    {
+      "path": "entropic_substrate/evidence/d1_verdict.pyi",
+      "target": "entropic_substrate.__legacy.evidence.d1_verdict"
+    },
+    {
+      "path": "entropic_substrate/evidence/ladder_campaign.pyi",
+      "target": "entropic_substrate.__legacy.evidence.ladder_campaign"
+    },
+    {
+      "path": "entropic_substrate/evidence/ladder_predecessor.pyi",
+      "target": "entropic_substrate.__legacy.evidence.ladder_predecessor"
+    },
+    {
+      "path": "entropic_substrate/evidence/lifecycle.pyi",
+      "target": "entropic_substrate.__legacy.evidence.lifecycle"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_billing.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_billing"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_billing_reconciliation.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_billing_reconciliation"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_ledger.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_ledger"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_ledger_codec.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_ledger_codec"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_models.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_models"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_runtime.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_runtime"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_meter_strategy.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_meter_strategy"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_provenance.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_provenance"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_provenance_codec.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_provenance_codec"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_work.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_work"
+    },
+    {
+      "path": "entropic_substrate/evidence/resource_work_codec.pyi",
+      "target": "entropic_substrate.__legacy.evidence.resource_work_codec"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_config.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_config"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_config_profile.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_config_profile"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_confirmatory_matrix.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_confirmatory_matrix"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_execution.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_execution"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_family.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_family"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_launch_attempt_codec.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_launch_attempt_codec"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_launch_attempts.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_launch_attempts"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_plan.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_plan"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_primitives.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_primitives"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_provenance.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_provenance"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_registered_design.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_registered_design"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_registration_codec.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_registration_codec"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_runs.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_runs"
+    },
+    {
+      "path": "entropic_substrate/experiments/d1_stabilization.pyi",
+      "target": "entropic_substrate.__legacy.experiments.d1_stabilization"
+    },
+    {
+      "path": "entropic_substrate/experiments/h_preservation.pyi",
+      "target": "entropic_substrate.__legacy.experiments.h_preservation"
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder.pyi",
+      "target": "entropic_substrate.__legacy.experiments.ladder"
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder_matching.pyi",
+      "target": "entropic_substrate.__legacy.experiments.ladder_matching"
+    },
+    {
+      "path": "entropic_substrate/experiments/ladder_profile.pyi",
+      "target": "entropic_substrate.__legacy.experiments.ladder_profile"
+    },
+    {
+      "path": "entropic_substrate/factory_attestation.pyi",
+      "target": "entropic_substrate.__legacy.factory_attestation"
+    },
+    {
+      "path": "entropic_substrate/field_pretrain.pyi",
+      "target": "entropic_substrate.__legacy.field_pretrain"
+    },
+    {
+      "path": "entropic_substrate/geometry/gram.pyi",
+      "target": "entropic_substrate.__legacy.geometry.gram"
+    },
+    {
+      "path": "entropic_substrate/geometry/kappa.pyi",
+      "target": "entropic_substrate.__legacy.geometry.kappa"
+    },
+    {
+      "path": "entropic_substrate/git_environment.pyi",
+      "target": "entropic_substrate.__legacy.git_environment"
+    },
+    {
+      "path": "entropic_substrate/h_probe_allocation.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_allocation"
+    },
+    {
+      "path": "entropic_substrate/h_probe_collection.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_collection"
+    },
+    {
+      "path": "entropic_substrate/h_probe_command.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_command"
+    },
+    {
+      "path": "entropic_substrate/h_probe_control.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_control"
+    },
+    {
+      "path": "entropic_substrate/h_probe_controller.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_controller"
+    },
+    {
+      "path": "entropic_substrate/h_probe_events.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_events"
+    },
+    {
+      "path": "entropic_substrate/h_probe_launch.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_launch"
+    },
+    {
+      "path": "entropic_substrate/h_probe_process.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_process"
+    },
+    {
+      "path": "entropic_substrate/h_probe_watchdog.pyi",
+      "target": "entropic_substrate.__legacy.h_probe_watchdog"
+    },
+    {
+      "path": "entropic_substrate/h_runpod_transport.pyi",
+      "target": "entropic_substrate.__legacy.h_runpod_transport"
+    },
+    {
+      "path": "entropic_substrate/init/fisher.pyi",
+      "target": "entropic_substrate.__legacy.init.fisher"
+    },
+    {
+      "path": "entropic_substrate/layers/kappa_norm.pyi",
+      "target": "entropic_substrate.__legacy.layers.kappa_norm"
+    },
+    {
+      "path": "entropic_substrate/logging.pyi",
+      "target": "entropic_substrate.__legacy.logging"
+    },
+    {
+      "path": "entropic_substrate/mlflow_aggregate.pyi",
+      "target": "entropic_substrate.__legacy.mlflow_aggregate"
+    },
+    {
+      "path": "entropic_substrate/models/backbone.pyi",
+      "target": "entropic_substrate.__legacy.models.backbone"
+    },
+    {
+      "path": "entropic_substrate/models/blocks.pyi",
+      "target": "entropic_substrate.__legacy.models.blocks"
+    },
+    {
+      "path": "entropic_substrate/models/field_encoder.pyi",
+      "target": "entropic_substrate.__legacy.models.field_encoder"
+    },
+    {
+      "path": "entropic_substrate/observation/byte_codec.pyi",
+      "target": "entropic_substrate.__legacy.observation.byte_codec"
+    },
+    {
+      "path": "entropic_substrate/observation/contracts.pyi",
+      "target": "entropic_substrate.__legacy.observation.contracts"
+    },
+    {
+      "path": "entropic_substrate/observation/modules.pyi",
+      "target": "entropic_substrate.__legacy.observation.modules"
+    },
+    {
+      "path": "entropic_substrate/observation/permuted_byte_codec.pyi",
+      "target": "entropic_substrate.__legacy.observation.permuted_byte_codec"
+    },
+    {
+      "path": "entropic_substrate/paths.pyi",
+      "target": "entropic_substrate.__legacy.paths"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_envelope.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_envelope"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_repository.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_repository"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_validation.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_validation"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/checkpoint_values.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.checkpoint_values"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/coarse_graining.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.coarse_graining"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/dynamics.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.dynamics"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/ema_schedules.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.ema_schedules"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/future_law.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.future_law"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/horizons.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.horizons"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/initialization.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.initialization"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/ladder_runtime.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.ladder_runtime"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/metric.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.metric"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/objective.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.objective"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime_components.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime_components"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/runtime_construction.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.runtime_construction"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/stabilization.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.stabilization"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/state.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.state"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/target_updates.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.target_updates"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/target_values.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.target_values"
+    },
+    {
+      "path": "entropic_substrate/predictive_state/targets.pyi",
+      "target": "entropic_substrate.__legacy.predictive_state.targets"
+    },
+    {
+      "path": "entropic_substrate/provider_launch.pyi",
+      "target": "entropic_substrate.__legacy.provider_launch"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/boundary.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.boundary"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/capture.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.capture"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/capture_cli.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.capture_cli"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/checkpoint.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.checkpoint"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/cli.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.cli"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/codec.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.codec"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/consumer.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.consumer"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/corpus.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.corpus"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/evaluation_records.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.evaluation_records"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/execution.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.execution"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/generation.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.generation"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/head.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.head"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/journal.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.journal"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/law.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.law"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/mechanism_evidence.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.mechanism_evidence"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/model.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.model"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/native_verification.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.native_verification"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/numerics.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.numerics"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/object_worker.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.object_worker"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/objective.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.objective"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/profile.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.profile"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/records.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.records"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/recovery_state.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.recovery_state"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/rollout.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.rollout"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/runner.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.runner"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/runtime_precision.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.runtime_precision"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/sampling.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.sampling"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/score_gain.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.score_gain"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/scoring.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.scoring"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/seals.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.seals"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/segmentation.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.segmentation"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/source_cli.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.source_cli"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_cli.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_cli"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_diagnostics.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_diagnostics"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_probe.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_probe_artifacts.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe_artifacts"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/span_states.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.span_states"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/spine.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.spine"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/trace_capture.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.trace_capture"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/training.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.training"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_command.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_command"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_completion.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_completion"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_execution.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_execution"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_request.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_request"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_snapshot.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_snapshot"
+    },
+    {
+      "path": "entropic_substrate/sentence_prediction/worker_transport.pyi",
+      "target": "entropic_substrate.__legacy.sentence_prediction.worker_transport"
+    },
+    {
+      "path": "entropic_substrate/shared_attempt.pyi",
+      "target": "entropic_substrate.__legacy.shared_attempt"
+    },
+    {
+      "path": "entropic_substrate/sinks.pyi",
+      "target": "entropic_substrate.__legacy.sinks"
+    },
+    {
+      "path": "entropic_substrate/telemetry.pyi",
+      "target": "entropic_substrate.__legacy.telemetry"
+    },
+    {
+      "path": "entropic_substrate/tracking_contracts.pyi",
+      "target": "entropic_substrate.__legacy.tracking_contracts"
+    },
+    {
+      "path": "entropic_substrate/train.pyi",
+      "target": "entropic_substrate.__legacy.train"
+    }
+  ]
+}
