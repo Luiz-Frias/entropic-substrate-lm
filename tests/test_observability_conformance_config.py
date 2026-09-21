@@ -186,19 +186,17 @@ def test_load_all_entrypoints_raises_on_malformed_json() -> None:
 
 
 def test_load_all_entrypoints_raises_on_read_error() -> None:
-    """Verify that _load_all_entrypoints raises ManifestError on OSError
-    (e.g., permission denied), matching gen_shims behavior."""
+    """Verify that _load_all_entrypoints raises ManifestError on an OSError
+    from the mapping path. A directory named mapping.json is a
+    deterministic, platform-independent way to trigger this -- see
+    test_load_merged_fragment_sets_raises_on_read_error's docstring for why
+    chmod(0o000) does not reliably do so."""
     with tempfile.TemporaryDirectory() as td:
         unreadable = Path(td) / "mapping.json"
-        unreadable.write_text("{}")
-        unreadable.chmod(0o000)
+        unreadable.mkdir()
 
-        try:
-            with pytest.raises(gen_shims.ManifestError, match="cannot read mapping"):
-                occ._load_all_entrypoints(unreadable)
-        finally:
-            # Restore permissions for cleanup
-            unreadable.chmod(0o644)
+        with pytest.raises(gen_shims.ManifestError, match="cannot read mapping"):
+            occ._load_all_entrypoints(unreadable)
 
 
 def test_load_all_entrypoints_handles_nonexistent_file() -> None:
