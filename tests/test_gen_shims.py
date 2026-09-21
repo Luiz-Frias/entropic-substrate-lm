@@ -752,7 +752,9 @@ def test_cli_has_no_ignore_list_flag(tmp_path: Path) -> None:
 def test_generate_writes_no_ini_or_cfg_files(tmp_path: Path) -> None:
     """GREEN-control-shaped sweep: after a normal generate() run (called
     directly, no manifest_path given), nothing under out_dir looks like an
-    ignore-list artifact (.cfg/.ini), only *.py shims -- a direct
+    ignore-list artifact (.cfg/.ini) -- only *.py shims and their *.pyi
+    stub siblings (typed shim pair, RULED 2026-09-20; amended by this
+    phase, which turned the pair on by construction) -- a direct
     behavioural check, not just an API-surface check."""
     mapping_path = write_mapping(tmp_path, ["entropic_substrate.thing"])
     frags_dir = tmp_path / "landed-set"
@@ -770,8 +772,11 @@ def test_generate_writes_no_ini_or_cfg_files(tmp_path: Path) -> None:
     plant(out_dir, "entropic_substrate.kernel.runtime.thing")
     merged = resolve(frags_dir, mapping_path)
     gen_shims.generate(merged, str(frags_dir), out_dir)
-    non_py = [p for p in out_dir.rglob("*") if p.is_file() and p.suffix != ".py"]
-    assert non_py == []
+    non_py_non_pyi = [
+        p for p in out_dir.rglob("*") if p.is_file() and p.suffix not in (".py", ".pyi")
+    ]
+    assert non_py_non_pyi == []
+    assert (out_dir / "entropic_substrate" / "thing.pyi").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -1543,3 +1548,332 @@ def test_pending_and_retired_together_is_refused(tmp_path: Path) -> None:
     merged = resolve(frags_dir, mapping_path)
     with pytest.raises(gen_shims.ManifestError, match="both pending"):
         gen_shims.generate(merged, str(frags_dir), out_dir)
+
+
+# ---------------------------------------------------------------------------
+# RED-first: TYPED SHIM PAIR (RULED 2026-09-20, operator, option (b) of
+# design-gate wf_7f27b290-e61). Every non-retired, non-pending row gets a
+# `.pyi` stub alongside its `.py` shim, DERIVED from the target's own AST --
+# never a star import. `--verify` re-derives and compares byte-for-byte,
+# never crossing the stub check with the shim exact-form check.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_emits_a_pyi_stub_sibling_for_every_shim(tmp_path: Path) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.old_thing": {
+                "target": "entropic_substrate.__legacy.old_thing",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "old_thing.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("PUBLIC_THING = 1\n\n\ndef helper():\n    return PUBLIC_THING\n")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+
+    stub = out_dir / "entropic_substrate" / "old_thing.pyi"
+    assert stub.is_file()
+    text = stub.read_text()
+    assert "from entropic_substrate.__legacy.old_thing import PUBLIC_THING as PUBLIC_THING" in text
+    assert "from entropic_substrate.__legacy.old_thing import helper as helper" in text
+    assert "import *" not in text  # no star import anywhere
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["stubs"] == [
+        {
+            "path": "entropic_substrate/old_thing.pyi",
+            "target": "entropic_substrate.__legacy.old_thing",
+        }
+    ]
+
+
+def test_derived_stub_includes_underscore_names_with_pyright_ignore(tmp_path: Path) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.private_haver"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.private_haver": {
+                "target": "entropic_substrate.__legacy.private_haver",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "private_haver.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("_PRIVATE_LIMIT = 5\n\n\ndef _helper():\n    return _PRIVATE_LIMIT\n")
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir)
+    text = (out_dir / "entropic_substrate" / "private_haver.pyi").read_text()
+    # ruff format may wrap a long `from X import name as name  # comment`
+    # onto several lines (parenthesized), so this checks substrings survive
+    # the canonicalization pipeline rather than pinning one exact line shape.
+    assert "_PRIVATE_LIMIT as _PRIVATE_LIMIT" in text
+    assert "_helper as _helper" in text
+    assert text.count("pyright: ignore[reportPrivateUsage]") == 2
+
+
+def test_derived_stub_restates_a_literal_dunder_all_GREEN_control(tmp_path: Path) -> None:
+    """Control: a target defining a literal __all__ gets that list restated
+    verbatim in the stub, alongside every module-level binding (nothing an
+    __all__-omitted name hides is invisible to the derivation -- only the
+    literal restatement of __all__ itself is conditional)."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.curated"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.curated": {
+                "target": "entropic_substrate.__legacy.curated",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "curated.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text('__all__ = ["Exposed"]\n\nExposed = 1\nHidden = 2\n')
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir)
+    text = (out_dir / "entropic_substrate" / "curated.pyi").read_text()
+    assert "__all__" in text and "Exposed" in text
+    # Hidden is still re-exported (a star stub would have hidden it -- this
+    # derivation never hides a binding the target actually has).
+    assert "Hidden as Hidden" in text
+
+
+def test_derived_stub_recurses_into_type_checking_block(tmp_path: Path) -> None:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.tc_user"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.tc_user": {
+                "target": "entropic_substrate.__legacy.tc_user",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "tc_user.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(
+        "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from pathlib import Path as PathAlias\n"
+    )
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir)
+    text = (out_dir / "entropic_substrate" / "tc_user.pyi").read_text()
+    assert "PathAlias as PathAlias" in text
+
+
+def test_verify_fails_loud_when_a_stub_is_deleted(tmp_path: Path) -> None:
+    """Guard tooth: delete one emitted .pyi (leave its .py shim) -> --verify
+    fails naming the missing stub."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.old_thing": {
+                "target": "entropic_substrate.__legacy.old_thing",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.__legacy.old_thing")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    rc = gen_shims.main(
+        [
+            str(frags_dir),
+            str(mapping_path),
+            str(out_dir),
+            "--verify",
+            "--manifest-out",
+            str(manifest_path),
+        ]
+    )
+    assert rc == 0  # GREEN control arm: passes before the mutation
+
+    (out_dir / "entropic_substrate" / "old_thing.pyi").unlink()
+    rc = gen_shims.main(
+        [
+            str(frags_dir),
+            str(mapping_path),
+            str(out_dir),
+            "--verify",
+            "--manifest-out",
+            str(manifest_path),
+        ]
+    )
+    assert rc == 1
+
+
+def test_verify_fails_loud_when_a_stub_is_repointed_at_a_different_target(tmp_path: Path) -> None:
+    """Guard tooth: point one .pyi stub at a different target than its .py
+    sibling -> --verify fails loud naming the stub (as manifest drift, since
+    the manifest's own recorded target no longer matches the freshly
+    resolved one)."""
+    mapping_path = write_mapping(
+        tmp_path, ["entropic_substrate.old_thing", "entropic_substrate.other_thing"]
+    )
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.old_thing": {
+                "target": "entropic_substrate.__legacy.old_thing",
+                "landed": False,
+            },
+            "entropic_substrate.other_thing": {
+                "target": "entropic_substrate.__legacy.other_thing",
+                "landed": False,
+            },
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(
+        out_dir, "entropic_substrate.__legacy.old_thing", "entropic_substrate.__legacy.other_thing"
+    )
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+
+    manifest = json.loads(manifest_path.read_text())
+    for stub in manifest["stubs"]:
+        if stub["path"] == "entropic_substrate/old_thing.pyi":
+            stub["target"] = "entropic_substrate.__legacy.other_thing"
+    manifest_path.write_text(json.dumps(manifest))
+
+    rc = gen_shims.main(
+        [
+            str(frags_dir),
+            str(mapping_path),
+            str(out_dir),
+            "--verify",
+            "--manifest-out",
+            str(manifest_path),
+        ]
+    )
+    assert rc == 1
+
+
+def test_verify_fails_loud_when_a_derived_reexport_line_is_removed(tmp_path: Path) -> None:
+    """Guard tooth: remove one derived re-export line from a stub whose name
+    a consumer would import -> --verify fails loud (content no longer
+    matches a fresh re-derivation)."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.old_thing": {
+                "target": "entropic_substrate.__legacy.old_thing",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "old_thing.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("FIRST_NAME = 1\nSECOND_NAME = 2\n")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+
+    stub_path = out_dir / "entropic_substrate" / "old_thing.pyi"
+    lines = [ln for ln in stub_path.read_text().splitlines() if "SECOND_NAME" not in ln]
+    stub_path.write_text("\n".join(lines) + "\n")
+
+    rc = gen_shims.main(
+        [
+            str(frags_dir),
+            str(mapping_path),
+            str(out_dir),
+            "--verify",
+            "--manifest-out",
+            str(manifest_path),
+        ]
+    )
+    assert rc == 1
+
+
+def test_verify_passes_on_a_freshly_generated_pair_GREEN_control(tmp_path: Path) -> None:
+    """Control for the three mutation arms above: an untouched, freshly
+    generated shim+stub pair verifies clean."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.old_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.old_thing": {
+                "target": "entropic_substrate.__legacy.old_thing",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    target_file = out_dir / "entropic_substrate" / "__legacy" / "old_thing.py"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("FIRST_NAME = 1\nSECOND_NAME = 2\n")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    rc = gen_shims.main(
+        [
+            str(frags_dir),
+            str(mapping_path),
+            str(out_dir),
+            "--verify",
+            "--manifest-out",
+            str(manifest_path),
+        ]
+    )
+    assert rc == 0
+
+
+def test_shim_source_puts_import_sys_before_target_import(tmp_path: Path) -> None:
+    """RULED 2026-09-20 (wf_43ef5138-4bc, 'SECOND'): `import sys` sits AHEAD
+    of the static target import in the emitted shim."""
+    source = gen_shims.shim_source(
+        "entropic_substrate.old_thing", "entropic_substrate.__legacy.old_thing", "fragments/"
+    )
+    lines = [ln for ln in source.splitlines() if not ln.startswith("#")]
+    assert lines[0] == "import sys"
+    assert lines[1] == "import entropic_substrate.__legacy.old_thing as _target"
+    assert lines[2] == "sys.modules[__name__] = _target"
+    ok, reason = gen_shims.verify_shim_source(source)
+    assert ok is True, reason
+
+
+def test_verify_rejects_old_order_target_import_before_sys(tmp_path: Path) -> None:
+    """RED-first mirror of the reordering: the OLD order (target import
+    first, then `import sys`) must now be REJECTED -- proves the order
+    check is load-bearing, not merely permissive of both."""
+    source = (
+        "import entropic_substrate.__legacy.old_thing as _target\n"
+        "import sys\n"
+        "sys.modules[__name__] = _target\n"
+    )
+    ok, reason = gen_shims.verify_shim_source(source)
+    assert ok is False
+    assert "sys" in reason
