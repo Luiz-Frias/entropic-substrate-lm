@@ -28,7 +28,15 @@ disjoint by construction, so later phases never share a file with p3b.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+# Import ManifestError from tools/gen_shims.py (same pattern as test_legacy_coupling.py)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TOOLS = REPO_ROOT / "tools"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+import gen_shims  # noqa: E402
 
 LANDED_LAYER_PREFIXES = (
     "entropic_substrate.kernel",
@@ -39,45 +47,72 @@ LANDED_LAYER_PREFIXES = (
 )
 
 
+def _fragment_json_files(fragments_dir: Path) -> list[Path]:
+    """The non-dotfile `*.json` paths directly under fragments_dir, sorted.
+    `Path.glob("*.json")` matches dotfiles (unlike a shell glob), and
+    `.emitted.json` lives in this directory -- it must never be mistaken
+    for a fragment. This is the same filter logic as tools/gen_shims.py's
+    _fragment_json_files function, to match the source-of-truth fragment reader.
+    """
+    return [p for p in sorted(fragments_dir.glob("*.json")) if not p.name.startswith(".")]
+
+
 def _load_merged_fragment_sets(
     fragments_dir: Path,
 ) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
     """Load and merge conforming_entrypoints, print_allowlist, and
     sink_construction_modules from every .claude/workflows/landed-set/*.json
-    fragment present. Returns (conforming, allowlist, sinks) as frozensets."""
+    fragment present. Returns (conforming, allowlist, sinks) as frozensets.
+    Raises ManifestError on malformed JSON or file read errors, matching the
+    error handling of tools/gen_shims.py:load_fragments."""
     conforming = set()
     allowlist = set()
     sinks = set()
 
     if fragments_dir.exists():
-        for fragment_file in sorted(fragments_dir.glob("*.json")):
+        for fragment_file in _fragment_json_files(fragments_dir):
             try:
                 data = json.loads(fragment_file.read_text())
-                if "conforming_entrypoints" in data:
-                    conforming.update(data["conforming_entrypoints"])
-                if "print_allowlist" in data:
-                    allowlist.update(data["print_allowlist"])
-                if "sink_construction_modules" in data:
-                    sinks.update(data["sink_construction_modules"])
-            except (json.JSONDecodeError, OSError):
-                pass
+            except OSError as exc:
+                raise gen_shims.ManifestError(
+                    f"cannot read fragment {fragment_file}: {exc}"
+                ) from exc
+            except json.JSONDecodeError as exc:
+                raise gen_shims.ManifestError(
+                    f"fragment {fragment_file} is not valid JSON: {exc}"
+                ) from exc
+
+            if "conforming_entrypoints" in data:
+                conforming.update(data["conforming_entrypoints"])
+            if "print_allowlist" in data:
+                allowlist.update(data["print_allowlist"])
+            if "sink_construction_modules" in data:
+                sinks.update(data["sink_construction_modules"])
 
     return frozenset(conforming), frozenset(allowlist), frozenset(sinks)
 
 
 def _load_all_entrypoints(mapping_file: Path) -> frozenset[str]:
-    """Load all entrypoint: true rows from tools/mapping.json."""
+    """Load all entrypoint: true rows from tools/mapping.json. A missing
+    file is a soft empty-set fallback (pre-checked below, matching
+    _load_merged_fragment_sets' own fragments_dir.exists() gate); a
+    malformed or unreadable file that DOES exist raises ManifestError,
+    matching tools/gen_shims.py:load_mapping's fail-loud handling of the
+    identical exception pair."""
     if not mapping_file.exists():
         return frozenset()
 
     try:
         data = json.loads(mapping_file.read_text())
-        entrypoints = {
-            name for name, entry in data.get("modules", {}).items() if entry.get("entrypoint")
-        }
-        return frozenset(entrypoints)
-    except (json.JSONDecodeError, OSError):
-        return frozenset()
+    except OSError as exc:
+        raise gen_shims.ManifestError(f"cannot read mapping {mapping_file}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise gen_shims.ManifestError(f"mapping {mapping_file} is not valid JSON: {exc}") from exc
+
+    entrypoints = {
+        name for name, entry in data.get("modules", {}).items() if entry.get("entrypoint")
+    }
+    return frozenset(entrypoints)
 
 
 # Derive all three constants from fragment merging and tools/mapping.json
