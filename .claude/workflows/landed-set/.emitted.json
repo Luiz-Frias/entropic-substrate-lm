@@ -1188,7 +1188,7 @@
     },
     {
       "path": "entropic_substrate/logging.py",
-      "target": "entropic_substrate.__legacy.logging",
+      "target": "entropic_substrate.kernel.runtime.logging",
       "entrypoint": false
     },
     {
@@ -1593,7 +1593,7 @@
     },
     {
       "path": "entropic_substrate/tracking_contracts.py",
-      "target": "entropic_substrate.__legacy.tracking_contracts",
+      "target": "entropic_substrate.ladder.capture.ports.run_descriptor",
       "entrypoint": false
     },
     {
@@ -2553,7 +2553,7 @@
     },
     {
       "path": "entropic_substrate/logging.pyi",
-      "target": "entropic_substrate.__legacy.logging"
+      "target": "entropic_substrate.kernel.runtime.logging"
     },
     {
       "path": "entropic_substrate/mlflow_aggregate.pyi",
@@ -2877,7 +2877,7 @@
     },
     {
       "path": "entropic_substrate/tracking_contracts.pyi",
-      "target": "entropic_substrate.__legacy.tracking_contracts"
+      "target": "entropic_substrate.ladder.capture.ports.run_descriptor"
     },
     {
       "path": "entropic_substrate/train.pyi",

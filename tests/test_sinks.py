@@ -745,16 +745,24 @@ def test_default_system_metrics_monitor_factory_call_shape_binds_the_real_constr
 
 
 def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
-    """Guard-tooth for the stated invariant: sinks.py must not grow a
-    module-level ``import psutil`` / ``import pynvml`` — either dependency
-    reaches this module ONLY via the lazily-imported mlflow SystemMetricsMonitor,
-    inside the env-gated factory. A module-level import would make training
-    runs without MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING pay an ImportError risk
-    (or a hard dependency) for a feature they never opted into.
+    """Guard-tooth for the stated invariant: the MlflowSink adapter must not
+    grow a module-level ``import psutil`` / ``import pynvml`` — either
+    dependency reaches this module ONLY via the lazily-imported mlflow
+    SystemMetricsMonitor, inside the env-gated factory. A module-level
+    import would make training runs without
+    MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING pay an ImportError risk (or a hard
+    dependency) for a feature they never opted into.
+
+    RE-POINTED at p3b (architect constraint, design gate 2026-09-21):
+    ``_default_system_metrics_monitor_factory`` (the guarded lazy import)
+    landed at ``entropic_substrate.ladder.capture.adapters.mlflow`` along
+    with :class:`MlflowSink`; a guard still reading
+    ``entropic_substrate.sinks.__file__`` (now a facade with a different
+    body) would guard nothing.
 
     Reads the source via the imported module's own ``__file__`` rather than a
-    CWD-relative ``Path("src/entropic_substrate/sinks.py")`` — same rationale
-    as ``test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd``
+    CWD-relative path — same rationale as
+    ``test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd``
     above: a bare relative path only resolves under a CWD that happens to be
     the repo root. MEASURED: from any other CWD it raises
     ``FileNotFoundError`` on ``.read_text()`` — an ERROR, not a silent skip —
@@ -764,9 +772,9 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
     """
     import ast
 
-    import entropic_substrate.sinks as sinks_module
+    import entropic_substrate.ladder.capture.adapters.mlflow as mlflow_adapter_module
 
-    source = Path(sinks_module.__file__).read_text(encoding="utf-8")
+    source = Path(mlflow_adapter_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     banned = {"psutil", "pynvml"}
     # MODULE-LEVEL statements only (tree.body) — a lazy import INSIDE a
@@ -828,13 +836,13 @@ def test_default_enwik8_pointer_falls_back_to_cwd_relative_when_repo_root_raises
 
 
 def test_read_dvc_pointer_digest_returns_none_for_an_absent_pointer(tmp_path: Path) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     assert _read_dvc_pointer_digest(tmp_path / "missing.dvc") is None
 
 
 def test_read_dvc_pointer_digest_reads_the_real_pointer_shape(tmp_path: Path) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     pointer = tmp_path / "enwik8.dvc"
     pointer.write_text(
@@ -862,7 +870,7 @@ def test_read_dvc_pointer_digest_reads_the_real_pointer_shape(tmp_path: Path) ->
 def test_read_dvc_pointer_digest_raises_on_a_malformed_pointer(
     tmp_path: Path, content: str
 ) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     pointer = tmp_path / "enwik8.dvc"
     pointer.write_text(content, encoding="utf-8")
@@ -1189,7 +1197,7 @@ class NewConnectionError(Exception):
 
 def test_read_timeout_in_the_cause_chain_is_a_cold_start() -> None:
     """A wrapped read timeout means the server ANSWERED and was slow."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     wrapped = RuntimeError("API request to /experiments/create failed")
     wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
@@ -1203,7 +1211,7 @@ def test_connection_refused_is_not_a_cold_start() -> None:
     whole cold-start budget before failing, which is the opposite of failing
     fast before GPU hours are spent.
     """
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     wrapped = RuntimeError("failed to connect")
     wrapped.__cause__ = NewConnectionError("[Errno 61] Connection refused")
@@ -1212,14 +1220,14 @@ def test_connection_refused_is_not_a_cold_start() -> None:
 
 def test_cold_start_detection_survives_a_broken_cause_chain() -> None:
     """Fallback path: a re-raise that dropped __cause__ still classifies."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     assert _is_cold_start(RuntimeError("HTTPConnectionPool: Read timed out."))
 
 
 def test_cold_start_walk_terminates_on_a_cyclic_cause_chain() -> None:
     """A self-referential chain must not hang the startup path."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     a = RuntimeError("a")
     b = RuntimeError("b")

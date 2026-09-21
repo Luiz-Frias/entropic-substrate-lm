@@ -181,19 +181,27 @@ def test_injected_landed_to_legacy_edge_is_counted_RED_at_zero_budget() -> None:
     )
 
 
-def test_no_injected_edge_matches_the_real_zero_budget_GREEN_control() -> None:
-    """Control for the mutation above: with NO fabricated edge, the count
-    is 0 and matches the real committed budget -- proving the RED case
-    above is caused by the injection, not by the equality check being
-    broken in general."""
+def test_no_injected_edge_measures_zero_GREEN_control() -> None:
+    """Control for the mutation above: with NO fabricated edge, the
+    classify-and-count function itself returns 0 -- proving the RED case
+    above is caused by the injection, not by the counting function being
+    broken in general.
+
+    RETRACTION (house rule 4, p3b): this control previously also asserted
+    ``measured == load_committed_budget(...)``, coupling it to the REAL
+    committed fragment's budget rather than to the synthetic input this test
+    actually constructs. That held only by coincidence, while every fragment
+    on disk still carried ``legacy_edge_budget: 0`` (p3-quarantine, before
+    any phase had landed real modules). p3b legitimately measures and commits
+    a non-zero budget (2 -- see
+    ``test_measured_landed_to_legacy_edges_equals_committed_budget``, the
+    ACCEPTANCE-level assertion that already covers the real tree against the
+    real committed value), so re-asserting it here against a synthetic
+    zero-edge input would fail for a reason that has nothing to do with this
+    test's own subject."""
     edges: list[tuple[str, str]] = []
     measured = count_landed_to_legacy_edges(edges)
     assert measured == 0
-    budget = load_committed_budget(
-        REPO_ROOT / ".claude" / "workflows" / "landed-set",
-        REPO_ROOT / ".claude" / "workflows" / "sprint-manifest.json",
-    )
-    assert measured == budget
 
 
 def test_edge_in_the_other_direction_is_not_counted_GREEN_control() -> None:
@@ -282,3 +290,87 @@ def test_a_hand_built_string_only_shim_is_rejected_by_the_same_check_GREEN_mirro
     illegal = 'import importlib\nsys.modules[__name__] = importlib.import_module("entropic_substrate.__legacy.x")\n'
     ok, _ = gen_shims.verify_shim_source(illegal)
     assert ok is False
+
+
+# ---------------------------------------------------------------------------
+# SACRED INVARIANT (p3b): zero old-prefix (entropic_substrate.<legacy-dotted-
+# name>) imports in any landed package. count_landed_to_legacy_edges above is
+# BLIND to this hazard by construction -- a landed module importing the
+# ROOT-LEVEL compat shim (e.g. `entropic_substrate.logging`, still present
+# for out-of-envelope importers) is neither a landed->legacy edge (the shim's
+# dotted name is not under `entropic_substrate.__legacy`) nor caught by the
+# layers contract (the shim sits outside all five layer packages, so
+# `.importlinter`'s landed-layers contract never sees it either -- MEASURED,
+# `.importlinter`'s own header comment records the same blindness class for
+# a string-only shim). This phase is the first with real landed modules, so
+# this is the phase where the gap stops being vacuous and needs its own
+# arm, landed here (not a new file) per the SAME classify-by-dotted-prefix
+# discipline as the rest of this module.
+# ---------------------------------------------------------------------------
+
+
+_ROOT_PACKAGE = "entropic_substrate"
+
+
+def _is_old_prefix(mod: str) -> bool:
+    """A module is an OLD-PREFIX compat shim destination iff it is neither
+    under a landed layer prefix nor under `__legacy`, and is not the root
+    package itself -- i.e. one of the pre-refactor dotted names gen_shims.py
+    still emits a shim for (`entropic_substrate.logging`,
+    `entropic_substrate.sinks`, `entropic_substrate.cli`, ...)."""
+    return mod != _ROOT_PACKAGE and not _is_landed(mod) and not _is_legacy(mod)
+
+
+def count_landed_to_old_prefix_edges(edges: list[tuple[str, str]]) -> int:
+    """Edges whose SOURCE is landed and whose DESTINATION is an old-prefix
+    compat shim -- the hazard neither `count_landed_to_legacy_edges` nor
+    `.importlinter`'s landed-layers contract can see (module docstring)."""
+    return sum(1 for src, dst in edges if _is_landed(src) and _is_old_prefix(dst))
+
+
+def test_is_old_prefix_matches_root_level_shims_not_landed_or_legacy() -> None:
+    assert _is_old_prefix("entropic_substrate.logging") is True
+    assert _is_old_prefix("entropic_substrate.sinks") is True
+    assert _is_old_prefix("entropic_substrate.cli") is True
+    assert _is_old_prefix("entropic_substrate") is False  # the root package itself
+    assert _is_old_prefix("entropic_substrate.kernel.runtime.logging") is False  # landed
+    assert _is_old_prefix("entropic_substrate.__legacy.sinks") is False  # legacy
+
+
+def test_measured_landed_to_old_prefix_edges_is_zero() -> None:
+    """ACCEPTANCE-level assertion, hard zero (not a budget, unlike the
+    landed->__legacy bound above) -- every landed module in this phase
+    reaches the pre-refactor names it still needs (`MlflowStartupError`,
+    the `MLFLOW_*_ENV` residue) through `entropic_substrate.__legacy.<x>`
+    directly, never through the root-level compat shim."""
+    _mods, edges = import_graph.build_graph(
+        REPO_ROOT / "src" / "entropic_substrate", "entropic_substrate"
+    )
+    measured = count_landed_to_old_prefix_edges(edges)
+    assert measured == 0, (
+        f"{measured} landed->old-prefix edge(s) found -- a landed module must import "
+        "entropic_substrate.__legacy.<x> directly, never the root-level compat shim "
+        "entropic_substrate.<x>"
+    )
+
+
+def test_injected_landed_to_old_prefix_edge_is_counted_RED() -> None:
+    """Guard-tooth (house rule 5): fabricated landed->old-prefix edges (the
+    shape a real `import entropic_substrate.logging` inside a landed module
+    would add to the graph) must be COUNTED and must break the hard-zero
+    invariant above -- proving the classifier is load-bearing. A real-file
+    mutation-and-revert (one landed module importing
+    `entropic_substrate.logging` by its old prefix) was additionally
+    performed in-branch against this phase's own tip and reverted; both
+    arms are quoted in this phase's PR body (house rule 5)."""
+    edges = [("entropic_substrate.kernel.runtime.logging", "entropic_substrate.logging")]
+    measured = count_landed_to_old_prefix_edges(edges)
+    assert measured == 1
+    assert measured != 0
+
+
+def test_old_prefix_edge_from_a_non_landed_module_is_not_counted_GREEN_control() -> None:
+    """A quarantined or root-level module importing another old-prefix shim
+    is not what this bound measures -- only a LANDED source counts."""
+    edges = [("entropic_substrate.cli", "entropic_substrate.logging")]
+    assert count_landed_to_old_prefix_edges(edges) == 0
