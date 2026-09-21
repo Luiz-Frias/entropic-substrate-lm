@@ -111,9 +111,14 @@ after the wholesale ``git mv`` that quarantines its children: the ORIGINAL
 packages -- MEASURED 2026-09-18, ``find src/entropic_substrate -name
 __init__.py -exec wc -c {} +``, min ``sentence_prediction/__init__.py`` /
 max ``predictive_state/__init__.py``) stays at the OLD location VERBATIM,
-untouched by this generator. Its relative imports (``from .charts import
-...`` and similar) resolve through the SIBLING LEAF shims this generator
-does write, to the same module objects the new tree holds -- so a
+untouched by this generator. RETRACTION (house rule 4, constraint C9): this
+sentence previously said its "relative imports (``from .charts import
+...`` and similar)" resolve through the sibling shims -- that premise is
+FALSE (MEASURED at de61455: no package ``__init__.py`` in the tree uses a
+relative import; a leading-dot-import grep over every package
+``__init__.py`` matches nothing). Its ABSOLUTE old-prefix re-export
+imports resolve through the SIBLING LEAF shims this generator does write,
+to the same module objects the new tree holds -- so a
 RE-EXPORT, or a sentinel DEFINED IN A LEAF module and merely imported by the
 package, stays single-object without this generator needing to reason about
 it at all.
