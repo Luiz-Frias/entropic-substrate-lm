@@ -223,7 +223,7 @@ def test_sink_construction_sites_resolve_to_the_single_construction_seam() -> No
         for lineno, name in _find_sink_construction_sites(path):
             entry = f"{mod}:{lineno} ({name})"
             all_sites.append(entry)
-            if mod != occ.ALLOWED_SINK_CONSTRUCTION_MODULE:
+            if mod not in occ.ALLOWED_SINK_CONSTRUCTION_MODULES:
                 offenders.append(entry)
     assert all_sites, (
         "zero MetricSink-implementing construction sites found in any landed package -- "
@@ -232,7 +232,7 @@ def test_sink_construction_sites_resolve_to_the_single_construction_seam() -> No
     )
     assert not offenders, (
         f"MetricSink-implementing class constructed outside "
-        f"{occ.ALLOWED_SINK_CONSTRUCTION_MODULE!r}: {offenders}"
+        f"{sorted(occ.ALLOWED_SINK_CONSTRUCTION_MODULES)!r}: {offenders}"
     )
 
 

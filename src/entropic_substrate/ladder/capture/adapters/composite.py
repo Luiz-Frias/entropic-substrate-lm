@@ -22,6 +22,31 @@ inside the function body, never at module scope, for the same reason
 ``adapters/mlflow.py`` does: the facade (``__legacy/sinks.py``) imports this
 module at module level to re-export both names under the old prefix, so a
 module-level import back would be a real cycle.
+
+**Frozen door vs. body residue (design-gate risk, architect constraint
+2026-09-21):** the run-descriptor door's freeze covers ``TrackingRunDescriptor``'s
+and ``build_sink_for_run``'s SIGNATURE and documented raise/abort semantics --
+never the residue names their bodies still reach into
+``entropic_substrate.__legacy.sinks`` for. The full p8-owned relocation set,
+across both files this door's construction path touches:
+
+* HERE (``build_sink_for_run``, function-scope import above): ``_DEFAULT_EXPERIMENT``,
+  ``MLFLOW_TRACKING_ENV``, ``MLFLOW_EXPERIMENT_ENV``, ``mlflow_enabled``.
+* ``adapters/mlflow.py`` (function-scope imports, that module's own body):
+  ``MLFLOW_SYSTEM_METRICS_ENV`` (``mlflow.py:144``) and ``MlflowStartupError``
+  (``mlflow.py:262``, raised at ``mlflow.py:292`` and ``mlflow.py:328``).
+
+p8 re-pointing any of these six names to their eventual landed home is a BODY
+edit to this function and to ``adapters/mlflow.py``, not a door violation --
+the door's signature and abort contract are unchanged by where the residue
+lives. The one exception is ``MlflowStartupError``'s class IDENTITY: it is
+part of ``build_sink_for_run``'s documented startup-abort contract (see that
+function's docstring), and out-of-envelope callers catch it by the old
+prefix (``tests/test_caddy_auth.py``, ``tests/test_sinks.py``,
+``__legacy/cli.py``) -- p8 MUST re-export the SAME class object under its new
+home, never redefine it, or ``except MlflowStartupError`` silently stops
+catching and a bad ``MLFLOW_TRACKING_URI`` burns GPU hours instead of
+aborting before ``Trainer`` construction.
 """
 
 from __future__ import annotations

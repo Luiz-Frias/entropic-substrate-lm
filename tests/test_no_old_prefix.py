@@ -17,25 +17,41 @@ if str(TOOLS) not in sys.path:  # tools/ is not a package; import the measuremen
     sys.path.insert(0, str(TOOLS))
 import import_graph  # noqa: E402
 
-pytestmark = pytest.mark.unit
+# Sourced from test_legacy_coupling (sealed this phase, GATE-CHECK RULING
+# 2026-09-21: exactly one change already made, nothing else in that file
+# moves here) rather than hand-copied a third time, per the architect
+# constraint that the five landed prefixes have ONE source. That module has
+# no package __init__ (pytest --import-mode=importlib, tests/ un-packaged),
+# so this is the same cross-test import pattern test_sinks.py's importers
+# already use (e.g. test_tracking_sinks.py: "from test_sinks import
+# FakeMlflowClient").
+from test_legacy_coupling import LANDED_LAYER_PREFIXES  # noqa: E402
 
-LANDED_LAYER_PREFIXES = (
-    "entropic_substrate.kernel",
-    "entropic_substrate.core",
-    "entropic_substrate.ladder",
-    "entropic_substrate.historical",
-    "entropic_substrate.composition",
-)
+pytestmark = pytest.mark.unit
 
 
 def _is_landed(mod: str) -> bool:
-    """A module is LANDED iff it starts with one of the five layer prefixes."""
-    return any(mod.startswith(prefix) for prefix in LANDED_LAYER_PREFIXES)
+    """A module is LANDED iff its dotted name is exactly one of the five
+    layer package roots, or a descendant of one -- prefix-matched on a dot
+    boundary so ``entropic_substrate.kernelling`` (a hypothetical sibling)
+    is never mistaken for a child of ``entropic_substrate.kernel`` (same
+    dot-boundary form as test_legacy_coupling.py's own ``_is_landed``,
+    architect constraint 2026-09-21: the earlier ``mod.startswith(prefix)``
+    form here was boundary-less and regressed the classifier fix that
+    module's docstring records)."""
+    return any(mod == p or mod.startswith(p + ".") for p in LANDED_LAYER_PREFIXES)
+
+
+_LEGACY_PREFIX = "entropic_substrate.__legacy"
 
 
 def _is_legacy(mod: str) -> bool:
-    """A module is in __legacy iff it is under entropic_substrate.__legacy."""
-    return mod.startswith("entropic_substrate.__legacy")
+    """A module is in __legacy iff it IS the quarantine root or a descendant
+    of it, dot-boundary matched (same form as test_legacy_coupling.py's own
+    ``_is_legacy``): a plain ``startswith`` would mistake a hypothetical
+    ``entropic_substrate.__legacyish`` sibling for quarantined code, the
+    same boundary hazard ``_is_landed`` above was fixed for."""
+    return mod == _LEGACY_PREFIX or mod.startswith(_LEGACY_PREFIX + ".")
 
 
 # SACRED INVARIANT (p3b): zero old-prefix (entropic_substrate.<legacy-dotted-
@@ -71,6 +87,24 @@ def count_landed_to_old_prefix_edges(edges: list[tuple[str, str]]) -> int:
     compat shim -- the hazard neither `count_landed_to_legacy_edges` nor
     `.importlinter`'s landed-layers contract can see (module docstring)."""
     return sum(1 for src, dst in edges if _is_landed(src) and _is_old_prefix(dst))
+
+
+def test_is_landed_is_dot_boundary_not_prefix_matched() -> None:
+    """Guard-tooth for the boundary fix (architect constraint 2026-09-21):
+    a hypothetical sibling package sharing a plain string prefix with a
+    landed layer root must NOT be classified landed. Before this fix,
+    ``_is_landed`` here used bare ``mod.startswith(prefix)`` and this
+    assertion was FALSE."""
+    assert _is_landed("entropic_substrate.kernelling") is False
+    assert _is_landed("entropic_substrate.kernel") is True
+    assert _is_landed("entropic_substrate.kernel.runtime.logging") is True
+
+
+def test_is_legacy_is_dot_boundary_not_prefix_matched() -> None:
+    """Same boundary hazard, for the quarantine-root classifier."""
+    assert _is_legacy("entropic_substrate.__legacyish") is False
+    assert _is_legacy("entropic_substrate.__legacy") is True
+    assert _is_legacy("entropic_substrate.__legacy.sinks") is True
 
 
 def test_is_old_prefix_matches_root_level_shims_not_landed_or_legacy() -> None:
