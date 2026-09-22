@@ -1,9 +1,9 @@
 # Read-old table — reader identity bumps across the hexagonal refactor
 
-**Status: TEMPLATE.** The `old digest` column is filled at **p0**, when the identity fixtures are
-computed and pinned at the epoch. The `new digest` column is filled at **p4**, when both readers are
-rewritten and recomputed. A row with an unfilled digest is an unmet precondition, not a placeholder:
-p4's ACCEPTANCE asserts both columns are populated before the phase can go green.
+**Status: FILLED at p4.** The `old digest` column was filled at **p0**, when the identity fixtures
+were computed and pinned at the epoch. The `new digest` column is filled here, at **p4**, at the
+tip where both readers were rewritten and recomputed (commit `31113d1a8f5904c0491a4cd4b8d8fcb5f77aad43`,
+"feat(h-lane): pin both H reader identities (rung 3)").
 
 This file is a **door** (`kind: door`, `frozen_after: p4`). After p4 no phase may change either
 value.
@@ -37,13 +37,13 @@ is admissible rather than a compatibility window.
 
 | identity | old version | old digest (pinned at p0) | new version | new digest (computed at p4) | read-old window | re-certification owner |
 |---|---|---|---|---|---|---|
-| h-source-reader | `h-source-reader-v2` | per-regime rows in `tests/test_identity_epoch.py::_SOURCE_REGIME_TABLE` (keyed (python, pysbd); two regimes pinned at p0) | `h-source-reader-v3` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Three local `h-source-capture-v2` captures, none DVC-tracked. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
-| h-checkpoint-reader | `h-checkpoint-reader-v1` | per-regime rows in `tests/test_identity_epoch.py::_CHECKPOINT_REGIME_TABLE` (keyed (python, torch); two regimes pinned at p0) | `h-checkpoint-reader-v2` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Existing H checkpoints do not resume across the bump. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
+| h-source-reader | `h-source-reader-v2` | per-regime rows in `tests/test_identity_epoch.py::_SOURCE_REGIME_TABLE` (keyed (python, pysbd); two regimes pinned at p0) | `h-source-reader-v3` | per-regime rows in `tests/test_identity_epoch.py::_SOURCE_REGIME_TABLE` (keyed (python, pysbd); local `(3.12.13, 0.3.4)` = `a6075295436de193087160f65fa2558fc28054115118946e53ecbdd4f22d510f`, CI `(3.12.14, 0.3.4)` = `214730ac2b370a7b67fc24a43077c49ecdcc59291505d80f249f235aaccf0467`) | Replay against the p0-epoch commit only. Three local `h-source-capture-v2` captures, none DVC-tracked. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
+| h-checkpoint-reader | `h-checkpoint-reader-v1` | per-regime rows in `tests/test_identity_epoch.py::_CHECKPOINT_REGIME_TABLE` (keyed (python, torch); two regimes pinned at p0) | `h-checkpoint-reader-v2` | per-regime rows in `tests/test_identity_epoch.py::_CHECKPOINT_REGIME_TABLE` (keyed (python, torch); local `(3.12.13, 2.13.0)` = `8e4ca5a3840e5c2efa7c4e0f0a1521af576e54139588cef76169021276b8eaf3`, CI `(3.12.14, 2.13.0+cpu)` = `ea85d18b278423bc7de7095b8292ce224b6c7aa50428eecf443dec828eb1602a`) | Replay against the p0-epoch commit only. Existing H checkpoints do not resume across the bump. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
 
 **p0 epoch commit:** `bbe7976df0710af5bdc00879b1b8145568169034`
 **Shape amendment (conductor, 2026-09-21, p4 brief audit; door `frozen_after: p4` not yet frozen):** p0 pinned each reader's old digest as a COMPOSED value per measured regime (Python x torch for the checkpoint reader, Python x pysbd for the source reader), because the digest is regime-dependent (MEASURED at p0, see the module docstring of `tests/test_identity_epoch.py`). The 'old digest' column therefore points at those regime tables rather than carrying one literal; p4 fills the 'new digest' column the same way, one row per regime it measures, and records the tip SHA below. The read-old window itself is unchanged: replay against the p0-epoch commit only.
 
-**p4 tip commit:** `<FILL AT p4 — the 40-hex SHA the new digests were computed at>`
+**p4 tip commit:** `31113d1a8f5904c0491a4cd4b8d8fcb5f77aad43` — "feat(h-lane): pin both H reader identities (rung 3)", the last commit whose diff touches a member of either reader's `_READER_MODULES` tuple. This commit (the read-old-table fill) is docs-only and touches no member file, so the digests above remain valid at this tip. Provenance is pre-merge: the SHA is recomputable from the tree it names (`git show 31113d1a8f5904c0491a4cd4b8d8fcb5f77aad43`) and is restated, never reinterpreted, if any in-lane restack or amend moves it before merge.
 
 Both SHAs are full 40-hex, not short. A verdict binds to a derived immutable identifier; a moved
 epoch voids the row and it is restated, never reinterpreted.
@@ -52,10 +52,12 @@ epoch voids the row and it is restated, never reinterpreted.
 
 ## Why each identity changes, measured
 
-**`h-source-reader-v2` → `v3`.** `sentence_prediction/capture.py` `_READER_MODULES` is seven literal
-dotted names, and the identity is
+**`h-source-reader-v2` → `v3`.** `sentence_prediction/capture.py` (now `ladder/capture/capture.py`)
+`_READER_MODULES` is seven literal dotted names, and the identity is
 `content_identity(("h-source-reader-v2", python_version(), pysbd version, *"name:digest"))`
-`[M, capture.py:25-48]`. p4 rewrites all seven names to their post-move dotted paths and the digest
+`[M, capture.py:25-48]`. p4 rewrites all seven names to their post-move dotted paths (including the
+package member, `sentence_prediction` → `core.sentence`, resolving to its own minimal `__init__.py`
+rather than the pre-move bare name — the p4 design-gate package-member constraint) and the digest
 of every one of the seven files changes. Both the names and the bytes move, so the value cannot
 survive.
 
@@ -63,13 +65,29 @@ survive.
 `sentence_prediction/*.py` plus four named siblings, and hashes `path.relative_to(package.parent)`
 into the identity string `[M, checkpoint.py:45-64]`. Once `package.parent` is `ladder/run`, the glob
 **RAISES rather than changing value**: there is no valid root. p4 therefore rewrites it to an
-explicit dotted-name tuple, the idiom `capture.py` already uses.
+explicit dotted-name tuple, the idiom `capture.py` already uses, now living at
+`ladder/run/checkpoint.py`.
 
 **Membership is a faithful restatement (recommendation E-2).** The v2 tuple enumerates the **same
-file set** at the new dotted names. After p4 those files sit in `core/sentence` (18), `ladder/run`
-(29 including the H-specific modules), `composition` (4) and `core/probe` (1) `[M]`. Narrowing to
-domain modules only would be a genuine narrowing of what the checkpoint binds, which is a
-**scientific** change, not a structural one. It is not offered here.
+51-member file set** at the new dotted names (ACCEPTANCE RECONCILIATION, corrected here per the
+architect's measured constraint, retracting the prior "core/sentence (18), ladder/run (29 including
+the H-specific modules), composition (4) and core/probe (1)" figure, which folded the 7 `h_probe_*`
+modules into `ladder/run` and omitted `ladder/capture` and the package member entirely — the earlier
+figure counted 52 with an omission and a double-count, not 51):
+
+| destination | count | members |
+|---|---|---|
+| `core.sentence` | 18 leaves + 1 package (`core.sentence` itself) | boundary, codec, consumer, corpus, head, law, model, numerics, objective, profile, records, recovery_state, rollout, runtime_precision, sampling, scoring, segmentation, spine |
+| `ladder.run` | 22 | checkpoint, evaluation_records, execution, generation, journal, mechanism_evidence, native_verification, object_worker, runner, seals, span_diagnostics, span_probe, span_probe_artifacts, span_states, trace_capture, training, worker_command, worker_completion, worker_execution, worker_request, worker_snapshot, worker_transport |
+| `ladder.capture` | 1 | capture |
+| `composition` | 4 | capture_cli, cli, source_cli, span_cli |
+| `core.probe` | 1 | score_gain |
+| `kernel` | 2 | artifacts (`d1_artifact_snapshot`), lifecycle (`evidence.lifecycle`) |
+| `core.latent` | 2 | metric, dynamics (`predictive_state.{metric,dynamics}`) |
+| **total** | **51** | |
+
+Narrowing to domain modules only would be a genuine narrowing of what the checkpoint binds, which
+is a **scientific** change, not a structural one. It is not offered here.
 
 ---
 
@@ -84,3 +102,11 @@ domain modules only would be a genuine narrowing of what the checkpoint binds, w
 
 The third row is the one that matters most for the whole sprint: these two values are frozen after
 p4, and **no later phase may change either**.
+
+**Row 1 performed (both arms).** Mutated `_READER_MODULES` in `ladder/run/checkpoint.py`,
+replacing `"kernel.artifacts"` with `"__legacy.d1_artifact_snapshot"` (simulating the rail module
+sitting back under quarantine): `uv run pytest tests/test_identity_epoch.py` went RED on
+`test_checkpoint_reader_digest_matches_measured_regime_row` with
+`ModuleNotFoundError: No module named 'entropic_substrate.__legacy.d1_artifact_snapshot'` — a
+resolution error, not a digest mismatch, exactly the failure mode the row names. Reverted; the
+same test file re-ran 12 passed, `git diff` on the mutated file empty.
