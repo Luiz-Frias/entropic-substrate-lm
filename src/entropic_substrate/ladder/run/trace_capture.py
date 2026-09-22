@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import (
+    artifact_from_mapping,
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,

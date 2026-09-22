@@ -7,13 +7,13 @@ from typing import NoReturn, cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import PreparedCorpus
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
 from entropic_substrate.kernel.artifacts import (
+    artifact_from_mapping,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,

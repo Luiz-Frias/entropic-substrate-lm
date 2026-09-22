@@ -11,7 +11,6 @@ from zipfile import ZipFile
 
 import torch
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
@@ -28,6 +27,7 @@ from entropic_substrate.core.sentence.rollout import (
     begin_rollout,
 )
 from entropic_substrate.kernel.artifacts import (
+    artifact_from_mapping,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )

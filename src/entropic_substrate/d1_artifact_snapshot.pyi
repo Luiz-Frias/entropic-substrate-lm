@@ -34,20 +34,29 @@ from entropic_substrate.kernel.artifacts import (
     _open_directory_path as _open_directory_path,  # pyright: ignore[reportPrivateUsage]
 )
 from entropic_substrate.kernel.artifacts import (
+    _unique as _unique,  # pyright: ignore[reportPrivateUsage]
+)
+from entropic_substrate.kernel.artifacts import (
     _write_all as _write_all,  # pyright: ignore[reportPrivateUsage]
 )
 from entropic_substrate.kernel.artifacts import annotations as annotations
+from entropic_substrate.kernel.artifacts import artifact_from_mapping as artifact_from_mapping
+from entropic_substrate.kernel.artifacts import artifact_mapping as artifact_mapping
 from entropic_substrate.kernel.artifacts import cast as cast
 from entropic_substrate.kernel.artifacts import hashlib as hashlib
+from entropic_substrate.kernel.artifacts import json as json
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root as normalize_d1_artifact_root,
 )
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_relative_artifact_path as normalize_d1_relative_artifact_path,
 )
+from entropic_substrate.kernel.artifacts import object_fields as object_fields
 from entropic_substrate.kernel.artifacts import os as os
 from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes as publish_d1_atomic_bytes
+from entropic_substrate.kernel.artifacts import read_bound_artifact as read_bound_artifact
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes as read_d1_artifact_bytes
+from entropic_substrate.kernel.artifacts import read_json_artifact as read_json_artifact
 from entropic_substrate.kernel.artifacts import (
     relative_d1_artifact_path as relative_d1_artifact_path,
 )
@@ -57,10 +66,15 @@ from entropic_substrate.kernel.artifacts import stat as stat
 
 __all__ = [
     "D1ArtifactSnapshotError",
+    "artifact_from_mapping",
+    "artifact_mapping",
     "normalize_d1_artifact_root",
     "normalize_d1_relative_artifact_path",
+    "object_fields",
     "publish_d1_atomic_bytes",
+    "read_bound_artifact",
     "read_d1_artifact_bytes",
+    "read_json_artifact",
     "relative_d1_artifact_path",
     "snapshot_d1_artifact",
 ]

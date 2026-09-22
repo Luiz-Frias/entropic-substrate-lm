@@ -6,79 +6,34 @@ workflow engine. Local smoke records have no promotion path through it.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
-from entropic_substrate.d1_artifact_snapshot import (
-    read_d1_artifact_bytes,
-    relative_d1_artifact_path,
-)
 from entropic_substrate.evidence.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
-    ContentHash,
     FiledVerdictEvidence,
     LifecycleRecord,
     LifecycleState,
     SuccessorAuthorization,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.kernel.artifacts import (
+    artifact_from_mapping,
+    artifact_mapping,
+    object_fields,
+    read_bound_artifact,
+    read_json_artifact,
+)
 
 if TYPE_CHECKING:
     from entropic_substrate.analysis.ladder_registration import StatisticalDesign
     from entropic_substrate.evidence.d1_filing_graph import ValidatedD1Filing
     from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
-
-
-def read_bound_artifact(root: Path, artifact: ArtifactIdentity) -> bytes:
-    """Read and hash the same no-follow descriptor; never trust a caller summary."""
-    if type(artifact) is not ArtifactIdentity or artifact.content_hash.algorithm != "sha256":
-        raise ValueError("ladder artifacts require exact SHA-256 identities")
-    name = artifact.path
-    if Path(name).is_absolute():
-        name = relative_d1_artifact_path(root, Path(name), label="ladder artifact")
-    _, data, observed = read_d1_artifact_bytes(root, name, label="ladder artifact")
-    if observed != artifact.content_hash.digest:
-        raise ValueError("ladder artifact digest mismatch")
-    return data
-
-
-def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate ladder JSON key")
-        result[key] = value
-    return result
-
-
-def object_fields(value: object, fields: str) -> dict[str, object]:
-    if type(value) is not dict or set(value) != set(fields.split()):
-        raise ValueError("ladder artifact fields must be exact")
-    return cast(dict[str, object], value)
-
-
-def read_json_artifact(root: Path, artifact: ArtifactIdentity) -> dict[str, object]:
-    value = json.loads(read_bound_artifact(root, artifact), object_pairs_hook=_unique)
-    if type(value) is not dict:
-        raise ValueError("ladder artifact must be a JSON object")
-    return cast(dict[str, object], value)
-
-
-def artifact_from_mapping(value: object) -> ArtifactIdentity:
-    row = object_fields(value, "path sha256")
-    if type(row["path"]) is not str or type(row["sha256"]) is not str:
-        raise ValueError("artifact path and sha256 must be strings")
-    return ArtifactIdentity(row["path"], ContentHash("sha256", row["sha256"]))
-
-
-def artifact_mapping(value: ArtifactIdentity) -> dict[str, str]:
-    return {"path": value.path, "sha256": value.content_hash.digest}
 
 
 def actor_from_mapping(value: object) -> ActorIdentity:
