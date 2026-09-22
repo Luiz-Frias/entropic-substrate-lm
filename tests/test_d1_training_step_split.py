@@ -146,7 +146,15 @@ def test_record_halves_cold_import_without_torch_or_numpy() -> None:
     in torch/numpy without tripping it. This runs the record-half imports
     in an isolated subprocess with a meta-path finder that raises on any
     attempted `torch`/`numpy` import, direct or transitive, and keeps the
-    AST check above for the direct-import case (subprocess overhead)."""
+    AST check above for the direct-import case (subprocess overhead).
+
+    Guard-teeth, both arms (house rule 5): the negative control at the top
+    of the subprocess script proves the finder itself actually intercepts
+    `torch`/`numpy` (asserting AssertionError if it does not) before the
+    green arm below it proves the record halves import clean under that
+    same finder -- a finder that silently stopped intercepting would still
+    let the green arm pass, which is exactly what the negative control
+    catches."""
     import os
     import subprocess
     import sys
@@ -167,6 +175,14 @@ class RefuseTorchOrNumpy(importlib.abc.MetaPathFinder):
 
 
 sys.meta_path.insert(0, RefuseTorchOrNumpy())
+for forbidden_module in ("torch", "numpy"):
+    try:
+        __import__(forbidden_module)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError(f"guard accepted {forbidden_module}")
+
 for module_name in sys.argv[1:]:
     __import__(module_name)
 """
