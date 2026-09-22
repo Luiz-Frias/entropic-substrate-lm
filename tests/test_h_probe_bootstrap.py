@@ -197,6 +197,31 @@ def test_git_subprocess_guards_reap_the_owned_process(
     assert len(processes) == 1 and processes[0].poll() is not None
 
 
+@pytest.mark.parametrize("refusal", [PermissionError, ProcessLookupError])
+def test_git_guard_cleanup_survives_a_refused_or_missing_group_kill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    refusal: type[OSError],
+) -> None:
+    """FOR-1537: the cleanup's killpg may be answered EPERM (PGID reused by a
+    session we do not own) as well as ESRCH; both mean "not ours", neither may
+    escape _git. ProcessLookupError is the control arm (already handled)."""
+    reaped: list[int] = []
+    real_killpg = bootstrap.os.killpg
+
+    def refuse(pgid: int, sig: int) -> None:
+        reaped.append(pgid)
+        raise refusal(1, "refused by the kernel")
+
+    monkeypatch.setattr(bootstrap.os, "killpg", refuse)
+    try:
+        output = bootstrap._git(tmp_path, ("--version",), timeout=10, max_bytes=65536)
+    finally:
+        monkeypatch.setattr(bootstrap.os, "killpg", real_killpg)
+    assert output.startswith(b"git version")
+    assert len(reaped) == 1
+
+
 def test_bootstrap_inventory_matches_native_worker_verification() -> None:
     from entropic_substrate.d_ladder_worker_runtime import SOURCE_PREFIXES
 
