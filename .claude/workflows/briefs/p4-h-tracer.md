@@ -103,7 +103,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `src/entropic_substrate/__legacy/d1_artifact_snapshot.py` and its shim
 - `src/entropic_substrate/__legacy/evidence/lifecycle.py` and its shim
 - `src/entropic_substrate/__legacy/predictive_state/{metric,dynamics}.py` and their shims
-- `src/entropic_substrate/__legacy/d_ladder_worker_runtime.py` (SPLIT: live half only)
+- `src/entropic_substrate/__legacy/d_ladder_worker_runtime.py` (SPLIT, NARROWED by RULING D-E, conductor 2026-09-22, third design gate, wf_6d1caf7e-2e6: p4's half is exactly the two names p4's own moved importers consume, `measure_hardware` and `verify_source_tree` (`__legacy/sentence_prediction/worker_execution.py:11`, `__legacy/sentence_prediction/native_verification.py:16`), landed in `ladder/run/worker`; `build_worker_factory`, `worker_resource_registration` and `verify_worker_source` STAY in the `__legacy` remainder, which keeps re-exporting the two moved names so `__legacy/d_ladder_worker_command.py:41` and its tests resolve unchanged. The remainder is p12's (with p10 consuming `worker_resource_registration` per its brief). MEASURED reason: moving `build_worker_factory` would silently disarm `tests/test_d_ladder_worker_runtime.py`'s monkeypatch of `build_torch_cuda_adapters` (module-globals binding; the guard would pass for the wrong reason on CPU). The four-name enumeration in the mapping.json row note is a survey-era note, not a door; mapping.json stays read-only and the divergence is stated in the PR body. C17 binds: for every out-of-envelope consumer of a moved or split module the lane proves, by a mutation arm, that the consumer still exercises what it claims.)
 - `src/entropic_substrate/core/sentence/**`
 - `src/entropic_substrate/core/probe/score_gain.py`
 - `src/entropic_substrate/core/latent/**` (RULED D-C 2026-09-22: the reader-closure rail's landed home for `predictive_state.{metric,dynamics}`, mapping dest `entropic_substrate.core.latent`; was named only in the Contract-surface table)
@@ -161,7 +161,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 
 One Linear issue per line, inside this phase's milestone in project "entropic-substrate-lm — hexagonal refactor" (team Form_fxn, key FOR). Each is one commit branch in this phase's stack.
 
-1. Split d_ladder_worker_runtime and land its live half in ladder/run/worker
+1. Split d_ladder_worker_runtime and land its live half (measure_hardware, verify_source_tree; ruling D-E) in ladder/run/worker
 2. Move the H domain modules to core/sentence
 3. Move the H execution plane to ladder/run
 4. Move the H probe plane including h_probe_command and h_probe_controller
