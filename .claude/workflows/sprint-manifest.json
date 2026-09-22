@@ -587,7 +587,13 @@
         "src/entropic_substrate/composition/cli.py",
         "src/entropic_substrate/composition/source_cli.py",
         "src/entropic_substrate/composition/span_cli.py",
-        "src/entropic_substrate/composition/__init__.py"
+        "src/entropic_substrate/composition/__init__.py",
+        "src/entropic_substrate/ladder/run/*.py",
+        "src/entropic_substrate/kernel/artifacts.py",
+        "src/entropic_substrate/kernel/lifecycle.py",
+        "src/entropic_substrate/ladder/capture/capture.py",
+        "tests/test_h_metric_routing.py",
+        "tests/test_h_worker_command_observability.py"
       ],
       "conflict_edges": [
         {
