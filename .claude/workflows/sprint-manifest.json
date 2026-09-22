@@ -574,7 +574,12 @@
         "scripts/entrypoints.env",
         ".secrets.baseline",
         "docs/identity/read-old-table.md",
-        "src/entropic_substrate/__legacy/d_ladder_worker_runtime.py"
+        "src/entropic_substrate/__legacy/d_ladder_worker_runtime.py",
+        "src/entropic_substrate/core/latent/**",
+        "src/entropic_substrate/core/probe/__init__.py",
+        "src/entropic_substrate/ladder/run/__init__.py",
+        "src/entropic_substrate/ladder/capture/custody/__init__.py",
+        "tests/test_h_lane_live.py"
       ],
       "conflict_edges": [
         {
