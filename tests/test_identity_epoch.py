@@ -88,6 +88,26 @@ values they replace --
 itself still does not bump (h-checkpoint-reader-v1, h-source-reader-v2)
 until this phase's identity-pin commit (rung 3), per plan.
 
+p4 re-pin #3 (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 1 batch (b) "core.probe: score_gain"): this
+batch ``git mv``'d ``sentence_prediction/score_gain.py`` to
+``entropic_substrate.core.probe.score_gain`` (a new package; D-C's
+zero-byte ``core/probe/__init__.py`` marker, not a docstring facade --
+``score_gain`` is not a mapping.json package-key member). Only
+h-checkpoint-reader-v1 changes: ``checkpoint.py``'s ``package.glob("*.py")``
+sweep of ``sentence_prediction/`` drops from 29 files to 28 once
+``score_gain.py`` leaves. h-source-reader-v2 is untouched --
+``score_gain`` was never one of its seven fixed members -- confirmed by
+re-measuring the source row unchanged (``701d2b5b...`` local,
+``f8354ee1...`` CI, byte-identical to the batch-(a) re-pin above).
+Recomputed with ``tools/regime_rows.py`` (same two regimes as above); the
+values replaced,
+``5a3cd776bd8a8cbc8add95c772e01f259a8f00f31d95b26bd5a2283e6bb7855f``
+(local) and
+``2a66a7b1758d1b370d851a333e882b29c85426025fe501d20bceb9d89fd751c3``
+(CI), are retracted here, not silently overwritten. Label still does not
+bump until rung 3.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -165,11 +185,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "5a3cd776bd8a8cbc8add95c772e01f259a8f00f31d95b26bd5a2283e6bb7855f",  # pragma: allowlist secret
+    ): "9d08ecb44633e6a45b23049d635af9202db21138ec1582b3620d00fa8c2565e3",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "2a66a7b1758d1b370d851a333e882b29c85426025fe501d20bceb9d89fd751c3",  # pragma: allowlist secret
+    ): "23fa1e8919bc9f35477aad0ba480d630257c41c16bc306c6e6c2176474726777",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

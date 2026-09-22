@@ -101,6 +101,10 @@
       "target": "entropic_substrate.core.sentence.sampling",
       "landed": true
     },
+    "entropic_substrate.sentence_prediction.score_gain": {
+      "target": "entropic_substrate.core.probe.score_gain",
+      "landed": true
+    },
     "entropic_substrate.sentence_prediction.scoring": {
       "target": "entropic_substrate.core.sentence.scoring",
       "landed": true
@@ -114,5 +118,5 @@
       "landed": true
     }
   },
-  "legacy_edge_budget": 44
+  "legacy_edge_budget": 45
 }

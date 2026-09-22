@@ -1483,7 +1483,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/score_gain.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.score_gain",
+      "target": "entropic_substrate.core.probe.score_gain",
       "entrypoint": false
     },
     {
@@ -2789,7 +2789,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/score_gain.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.score_gain"
+      "target": "entropic_substrate.core.probe.score_gain"
     },
     {
       "path": "entropic_substrate/sentence_prediction/scoring.pyi",
