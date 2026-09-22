@@ -454,7 +454,8 @@ const OWNERSHIP_STEP =
 function ownershipOffenders(list) {
   return (Array.isArray(list) ? list : []).filter((t) => t && typeof t.sha === 'string' && !CONDUCTOR_COMMITS.some((c) => c.length >= 7 && t.sha.toLowerCase().startsWith(c)))
 }
-const OWNED_NOTE = 'CONDUCTOR-OWNED PATHS (ruling 1, engine-enforced by SHA): ' + CONDUCTOR_OWNED_PATHS + ' — you NEVER edit or commit these, whatever prefix the commit would carry; a change needed there is a DECISION, not a commit.\n'
+const DOCS_SWEEP_NOTE = 'DOCS-SWEEP RULE (operator 2026-09-21, sprint-wide): a finding whose remedy touches ONLY prose (comments, docstrings, brief narrative, plan text, manifest notes) goes under `docsDeferred` in your result, NOT under findings, and never turns your verdict; the conductor sweeps the bucket into one docs commit per phase after SUBMITTED. Envelope/contract text (a brief\'s Allowed files, manifest touch sets, frozen symbols, ACCEPTANCE arms, guard-teeth rows) is NOT prose. Judge by the critical path: a repair enters the loop only if it would delay the next phase\'s launch.\n'
+const OWNED_NOTE = 'CONDUCTOR-OWNED PATHS (ruling 1, engine-enforced by SHA): ' + CONDUCTOR_OWNED_PATHS + ' — you NEVER edit or commit these, whatever prefix the commit would carry; a change needed there is a DECISION, not a commit.\n' + DOCS_SWEEP_NOTE
 const INSTALL = P.installCmd
 
 // ─── cascade control plane: deterministic mode gate + fixer ladder + packets ────
@@ -936,6 +937,21 @@ const ROUND = {
         required: ['severity', 'summary'],
       },
     },
+    // DOCS-SWEEP RULE (operator 2026-09-21): a finding whose remedy touches ONLY prose
+    // (comments, docstrings, brief narrative, plan text, manifest notes) is recorded HERE,
+    // never under findings, and never turns the verdict. The conductor drains this bucket
+    // into one docs(refactor) sweep commit per phase after SUBMITTED. Envelope/contract
+    // text (Allowed files, touch sets, frozen symbols, ACCEPTANCE arms, guard-teeth rows)
+    // is NOT prose and stays under findings.
+    docsDeferred: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { file: { type: 'string' }, summary: { type: 'string' } },
+        required: ['summary'],
+      },
+    },
     decision: { type: 'string' },
     evidence: { type: 'string', minLength: 1 },
     notes: { type: 'string' },
@@ -1026,6 +1042,21 @@ const VAL = {
     verifiedTip: { type: 'string', pattern: '^[0-9a-f]{40}$' },
     advisor: { type: 'string' },
     findings: { type: 'array', items: { type: 'string' } },
+    // DOCS-SWEEP RULE (operator 2026-09-21): a finding whose remedy touches ONLY prose
+    // (comments, docstrings, brief narrative, plan text, manifest notes) is recorded HERE,
+    // never under findings, and never turns the verdict. The conductor drains this bucket
+    // into one docs(refactor) sweep commit per phase after SUBMITTED. Envelope/contract
+    // text (Allowed files, touch sets, frozen symbols, ACCEPTANCE arms, guard-teeth rows)
+    // is NOT prose and stays under findings.
+    docsDeferred: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { file: { type: 'string' }, summary: { type: 'string' } },
+        required: ['summary'],
+      },
+    },
     // OWNERSHIP TEETH (conductor fix 2026-09-20): every commit in parent..branch that
     // touches a conductor-owned path, transcribed from a fixed git command; the engine
     // decides against args.conductorCommits (SHA prefixes), never the agent.
@@ -1467,7 +1498,8 @@ const RULING =
 const ISOLATION_NOTE =
   'ISOLATION (freeze #r3-9 — OVERRIDES any cd-into-worktree instruction in the scope): you run in your OWN isolated git worktree (your starting cwd). FIRST ACTS: git checkout --detach ' +
   PH.branch +
-  ' (branch refs are repo-global; detach avoids the two-worktrees-one-branch refusal — if the branch does not exist yet, STOP and return DECISION), then `' + INSTALL + '` (and any additional per-package installs this repo\'s OWN tooling declares — do not assume a fixed subdirectory layout). Run ALL commands, probes, flip-tests and gate runs HERE. The SHARED LAUNCH WORKTREE (the checkout this phase was launched in — never this isolated one) is READ-ONLY to you: inspect it via git show <ref>:<path> only; NEVER write there, never check anything out there, never run mutating git commands there.\n\n'
+  ' (branch refs are repo-global; detach avoids the two-worktrees-one-branch refusal — if the branch does not exist yet, STOP and return DECISION), then `' + INSTALL + '` (and any additional per-package installs this repo\'s OWN tooling declares — do not assume a fixed subdirectory layout). Run ALL commands, probes, flip-tests and gate runs HERE. The SHARED LAUNCH WORKTREE (the checkout this phase was launched in — never this isolated one) is READ-ONLY to you: inspect it via git show <ref>:<path> only; NEVER write there, never check anything out there, never run mutating git commands there.\n\n' +
+  DOCS_SWEEP_NOTE
 
 const l2Prompts = {
   gate:
@@ -1505,6 +1537,8 @@ for (let l2Round = 1; l2Round <= P.maxL2Loops; l2Round++) {
   if (owned.length) return { verdict: 'DECISION-NEEDED', at: 'gate-check:ownership', decision: 'lane commit(s) touched conductor-owned paths (ruling 1): ' + owned.map((t) => t.sha.slice(0, 7) + ' ' + t.title).join('; ') + ' — conductor drops or adopts each (add adopted SHAs to args.conductorCommits)', findings: (gate && gate.findings) || [], cascade: cascadeStats }
   const dec = both.find((x) => x.r && x.r.verdict === 'DECISION')
   if (dec) return { verdict: 'DECISION-NEEDED', at: 'gate-check:' + dec.key, decision: dec.r.decision, findings: dec.r.findings, cascade: cascadeStats }
+  const l2Deferred = both.reduce((n, x) => n + ((x.r && x.r.docsDeferred) || []).length, 0)
+  if (l2Deferred) log('L2 docsDeferred: ' + l2Deferred + ' prose item(s) parked for the phase docs sweep')
   const failed = both.filter((x) => !x.r || x.r.verdict === 'FAIL')
   if (l2Pending) {
     // MEASURED cascade economics: which lens keys the previous round's fixer actually cleared.
@@ -1600,6 +1634,8 @@ for (let round = 1; round <= P.maxReviewLoops && pendingLenses.length; round++) 
   paired.forEach((x) => {
     roundsSummary[x.lens.key] = x.r ? x.r.verdict + ' (' + x.r.findings.length + ' findings)' : 'NULL→FAIL'
   })
+  const revDeferred = paired.reduce((n, x) => n + ((x.r && x.r.docsDeferred) || []).length, 0)
+  if (revDeferred) log('review docsDeferred: ' + revDeferred + ' prose item(s) parked for the phase docs sweep')
   const failed = paired.filter((x) => !x.r || x.r.verdict === 'FAIL')
   if (revPending) {
     revPending.entry.resolvedLenses = revPending.keys.filter((k) => !failed.some((x) => x.lens.key === k))
@@ -1713,7 +1749,7 @@ const val = await agent(
         OWNERSHIP_STEP.replace('- OWNERSHIP', '9b. OWNERSHIP') +
         '10. FIX DELEGATIONS (cascade): if your verdict is FAIL, ALSO emit delegations — bounded work packets [{tier, files, task, constraints, acceptance}]: tier haiku for mechanical file-local corrections, sonnet for semantic/integration repair. The conductor dispatches them on resume; your judgment must land as finite contracts, not prose. Empty when VALIDATED.\n' +
         'Verdict VALIDATED only if every non-skipped check passes with evidence; any failed check → FAIL with findings.' +
-        RULING
+        RULING + DOCS_SWEEP_NOTE
     : BRIEF +
         '\n\nYou are the L1 VALIDATOR (fresh context, distinct from every prior agent; you fix NOTHING — validation only). The phase is SUBMITTED: PR ' + pub.pr + ' (Publish reported tip ' + pub.tip + ' — CONTEXT ONLY, see step 1; a prior report-relayed SHA standing in for a validated fact was a real incident, never repeat it). Validate it end-to-end; every check gets EVIDENCE (the command you ran + observed output) in your evidence field:\n' +
         '1. MACHINE-TO-MACHINE TIP (confabulated-SHA fix — do this FIRST, before anything below depends on "the tip"): resolve the phase\'s true tip from TWO INDEPENDENT MACHINE SOURCES ONLY — `git rev-parse HEAD` (verify you are on branch ' + PH.branch + ' first) AND `gh pr view ' + pub.pr + ' --json headRefOid -q .headRefOid`. They MUST agree byte-for-byte; disagreement, or either command failing, is a FAIL finding — NEVER fall back to pub.tip or any other agent-reported SHA (prose is not evidence). Report the agreed 40-hex SHA in your verifiedTip field.\n' +
@@ -1728,7 +1764,7 @@ const val = await agent(
         OWNERSHIP_STEP.replace('- OWNERSHIP', '9b. OWNERSHIP') +
         '10. FIX DELEGATIONS (cascade): if your verdict is FAIL, ALSO emit delegations — bounded work packets [{tier, files, task, constraints, acceptance}]: tier haiku for mechanical file-local corrections, sonnet for semantic/integration repair. The conductor dispatches them on resume; your judgment must land as finite contracts, not prose. Empty when VALIDATED.\n' +
         'Verdict VALIDATED only if every non-skipped check passes with evidence; any failed check → FAIL with findings.' +
-        RULING,
+        RULING + DOCS_SWEEP_NOTE,
   { label: 'validate:' + PH.id, phase: 'Validate', schema: VAL, model: 'opus', effort: 'xhigh' },
 )
 if (!val) return { verdict: 'BLOCKED', at: 'validate', reason: 'validator died', publish: pub }
