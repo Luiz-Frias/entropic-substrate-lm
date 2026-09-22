@@ -265,22 +265,32 @@ def test_raising_the_budget_above_the_real_measured_count_breaks_equality(tmp_pa
 
 
 def test_every_emitted_shim_is_the_static_import_form_not_string_only() -> None:
-    """Every `.py` shim named in the real emitted-files manifest parses to
+    """Every `.py` shim the generator resolves from the real fragments parses to
     the exact-form AST rebind (`verify_shim_source`) -- never a
     string-only `importlib.import_module` shim, which is invisible to
     grimp and makes the landed-layers contract vacuously green for any
     edge routed through it (see `.importlinter`'s own recorded probe)."""
-    manifest_path = REPO_ROOT / ".claude" / "workflows" / "landed-set" / ".emitted.json"
-    doc = gen_shims.load_emitted_manifest(manifest_path)
-    shims = doc.get("shims", [])
-    assert shims, "the emitted-files manifest names zero shims -- generate() has not run"
+    # FOR-1539 (2026-09-22): the emitted-files manifest is untracked derived state, so a
+    # fresh checkout has none. Derive the shim set the generator WOULD emit from the
+    # fragments + mapping on disk instead of reading a file that only exists after a
+    # local generate() run (measured RED in a fresh worktree at 1c10969).
+    fragments_dir = REPO_ROOT / ".claude" / "workflows" / "landed-set"
+    mapping = gen_shims.load_mapping(REPO_ROOT / "tools" / "mapping.json")
+    merged = gen_shims.merge_fragments(gen_shims.load_fragments(fragments_dir), mapping)
     out_dir = REPO_ROOT / "src"
+    expected = gen_shims.compute_expected_shim_map(merged, out_dir)
+    assert expected, "the fragments resolve to zero shims -- nothing is quarantined?"
     bad: list[tuple[str, str]] = []
-    for entry in shims:
-        p = out_dir / entry["path"]
+    for rel in sorted(expected):
+        if not rel.endswith(".py"):
+            continue
+        p = out_dir / rel
+        if not p.is_file():
+            bad.append((rel, "expected shim file is missing"))
+            continue
         ok, reason = gen_shims.verify_shim_source(p.read_text())
         if not ok:
-            bad.append((entry["path"], reason))
+            bad.append((rel, reason))
     assert not bad, f"{len(bad)} shim(s) are not in the required static-import form: {bad}"
 
 
