@@ -137,3 +137,53 @@ def test_record_halves_declare_no_torch_or_numpy_import() -> None:
                 imported_roots.add(node.module.split(".")[0])
         assert "torch" not in imported_roots, f"{relpath} must not import torch"
         assert "numpy" not in imported_roots, f"{relpath} must not import numpy"
+
+
+def test_record_halves_cold_import_without_torch_or_numpy() -> None:
+    """Strengthens the AST check above: that check only inspects the two
+    record files' own source, so a project-module dependency THEY import
+    (e.g. the calibration half's `d1_primitives`) could transitively pull
+    in torch/numpy without tripping it. This runs the record-half imports
+    in an isolated subprocess with a meta-path finder that raises on any
+    attempted `torch`/`numpy` import, direct or transitive, and keeps the
+    AST check above for the direct-import case (subprocess overhead)."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = """
+import importlib.abc
+import sys
+
+
+class RefuseTorchOrNumpy(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise RuntimeError("record modules must not import torch")
+        if fullname == "numpy" or fullname.startswith("numpy."):
+            raise RuntimeError("record modules must not import numpy")
+        return None
+
+
+sys.meta_path.insert(0, RefuseTorchOrNumpy())
+for module_name in sys.argv[1:]:
+    __import__(module_name)
+"""
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(repo_root / "src"), env.get("PYTHONPATH", "")])
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            _TRAINING_STEP_RECORD_MODULE,
+            _CALIBRATION_RECORD_MODULE,
+        ],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
