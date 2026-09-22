@@ -6,19 +6,19 @@ import argparse
 import json
 from pathlib import Path
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.generation import read_generation, run_probe_generation
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.runner import read_training_progress, run_probe_training
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.generation import read_generation, run_probe_generation
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json
+from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
 
 
 def add_sentence_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]

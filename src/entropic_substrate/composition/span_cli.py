@@ -8,23 +8,23 @@ from dataclasses import fields
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.span_diagnostics import (
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json
+from entropic_substrate.ladder.run.span_diagnostics import (
     read_span_diagnostics,
     run_span_diagnostics,
 )
-from entropic_substrate.sentence_prediction.span_states import SpanPopulationGap
+from entropic_substrate.ladder.run.span_states import SpanPopulationGap
 
 
 def add_span_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]

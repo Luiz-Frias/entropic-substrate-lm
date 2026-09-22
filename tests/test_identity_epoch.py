@@ -156,6 +156,26 @@ recomputed with ``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch
 itself still does not bump until this phase's identity-pin commit (rung 3),
 per plan.
 
+p4 re-pin #5 (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 1 batch (d) "composition: 4 CLI modules"): this
+batch ``git mv``'d the 4 remaining ``sentence_prediction`` CLI modules
+(capture_cli, cli, source_cli, span_cli) to
+``entropic_substrate.composition.*`` (mapping.json's package-level dest for
+each; ruling D-A's ``print_allowlist`` fragment entries use these same
+landed dotted names). Only h-checkpoint-reader-v1 changes: ``checkpoint.py``'s
+``package.glob("*.py")`` sweep of ``sentence_prediction/`` drops from 6
+files to 2 (``__init__.py``, ``checkpoint.py``) once the 4 CLI modules
+leave. h-source-reader-v2 is untouched -- none of the 4 CLI modules were
+ever one of its seven fixed members -- confirmed by re-measuring the source
+row unchanged (``b78ad25a...`` local, ``c63ffeb3...`` CI, byte-identical to
+the batch-(c) re-pin above). Recomputed with ``tools/regime_rows.py`` (same
+two regimes as above); the values replaced,
+``49e9a1b11dbde1097c65dc11ef62621fb3e7b6173ca677bafdfa6cb6aef92f6d``
+(checkpoint, local) and
+``e6d01c13dd3f0d36c922be5528b1921e0d7553d8b36f3ea082c959c627e90aed``
+(checkpoint, CI), are retracted here, not silently overwritten. Label still
+does not bump until rung 3.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -233,11 +253,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "49e9a1b11dbde1097c65dc11ef62621fb3e7b6173ca677bafdfa6cb6aef92f6d",  # pragma: allowlist secret
+    ): "d9be9f47178a557263ad64b0a397049db94a6554e8d877a39eba4237c6bcde6d",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "e6d01c13dd3f0d36c922be5528b1921e0d7553d8b36f3ea082c959c627e90aed",  # pragma: allowlist secret
+    ): "af9268d28f5cd62db26d6b78800c86ef84141e57af967afbf94163e7ddeff5a1",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

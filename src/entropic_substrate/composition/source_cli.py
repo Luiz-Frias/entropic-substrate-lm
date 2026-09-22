@@ -7,26 +7,26 @@ import json
 from contextlib import closing
 from pathlib import Path
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.data.fineweb import FINEWEB_REVISION
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.capture import (
-    read_prepared_corpus,
-    write_prepared_corpus,
-)
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.__legacy.data.fineweb import FINEWEB_REVISION
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     SplitPolicy,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
+from entropic_substrate.ladder.capture.capture import (
+    read_prepared_corpus,
+    write_prepared_corpus,
+)
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 
 
 def add_source_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
@@ -96,7 +96,7 @@ def cmd_source(args: argparse.Namespace) -> int:
             )
             if any(output.iterdir()):
                 raise ValueError("source preparation requires an empty owned output directory")
-            from entropic_substrate.data.fineweb import stream_fineweb_documents
+            from entropic_substrate.__legacy.data.fineweb import stream_fineweb_documents
 
             stage = "execution"
             with closing(

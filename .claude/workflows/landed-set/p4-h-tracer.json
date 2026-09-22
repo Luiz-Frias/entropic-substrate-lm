@@ -121,6 +121,22 @@
       "target": "entropic_substrate.ladder.capture.capture",
       "landed": true
     },
+    "entropic_substrate.sentence_prediction.capture_cli": {
+      "target": "entropic_substrate.composition.capture_cli",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.cli": {
+      "target": "entropic_substrate.composition.cli",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.source_cli": {
+      "target": "entropic_substrate.composition.source_cli",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.span_cli": {
+      "target": "entropic_substrate.composition.span_cli",
+      "landed": true
+    },
     "entropic_substrate.sentence_prediction.evaluation_records": {
       "target": "entropic_substrate.ladder.run.evaluation_records",
       "landed": true
@@ -206,5 +222,11 @@
       "landed": true
     }
   },
-  "legacy_edge_budget": 104
+  "legacy_edge_budget": 118,
+  "print_allowlist": [
+    "entropic_substrate.composition.capture_cli",
+    "entropic_substrate.composition.cli",
+    "entropic_substrate.composition.source_cli",
+    "entropic_substrate.composition.span_cli"
+  ]
 }

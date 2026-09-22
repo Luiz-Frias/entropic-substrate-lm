@@ -1358,7 +1358,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/capture_cli.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.capture_cli",
+      "target": "entropic_substrate.composition.capture_cli",
       "entrypoint": false
     },
     {
@@ -1368,7 +1368,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/cli.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.cli",
+      "target": "entropic_substrate.composition.cli",
       "entrypoint": false
     },
     {
@@ -1503,12 +1503,12 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/source_cli.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.source_cli",
+      "target": "entropic_substrate.composition.source_cli",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_cli.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_cli",
+      "target": "entropic_substrate.composition.span_cli",
       "entrypoint": false
     },
     {
@@ -2689,7 +2689,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/capture_cli.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.capture_cli"
+      "target": "entropic_substrate.composition.capture_cli"
     },
     {
       "path": "entropic_substrate/sentence_prediction/checkpoint.pyi",
@@ -2697,7 +2697,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/cli.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.cli"
+      "target": "entropic_substrate.composition.cli"
     },
     {
       "path": "entropic_substrate/sentence_prediction/codec.pyi",
@@ -2805,11 +2805,11 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/source_cli.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.source_cli"
+      "target": "entropic_substrate.composition.source_cli"
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_cli.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_cli"
+      "target": "entropic_substrate.composition.span_cli"
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_diagnostics.pyi",
