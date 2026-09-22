@@ -152,3 +152,7 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 5. Land ladder/run/resource with the promoted activation module
 6. Land ladder/run/training with p5's two torch split halves
 7. Land ladder/run/construction and record the named deviation
+
+## Wave slice rule (D-WAVES r2, operator 2026-09-22)
+
+This lane's file SLICE = the modules it moves ∪ every LANDED module that imports one of them by its explicit `entropic_substrate.__legacy.<x>` address (rewrite-on-arrival: this lane rewrites those lines once) ∪ the typed shim pair at each old path. The manifest touch set IS that slice, derived by `tools/lane_slices.py` at the p5 gap; a file outside it is a `DECISION`, never an edit, and a lane that touches a sibling lane's slice HALTs the zip. Five files are ZIP-OWNED REGENERABLE (`tests/test_identity_epoch.py`, `tools/regime_rows.py`, `tests/test_regime_rows.py`, `docs/identity/read-old-table.md`, `.secrets.baseline`): if this lane rewrites a member of `_READER_MODULES` it re-pins the checkpoint regime rows with the tool so its own hooks stay green (ruling R-PIN), knowing the zip regenerates those five files on the integrated tip in one rung and never hand-merges them. Cite `tools/lane_slices.py` output for this wave in the PR body.
