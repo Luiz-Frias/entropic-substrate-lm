@@ -118,7 +118,7 @@ def _overlay_with_planted_facade_body(root: Path, facade: str, body: str) -> Pat
 
 
 @pytest.fixture
-def committed_legacy_facades_untouched() -> Generator[None]:
+def committed_legacy_facades_untouched() -> Generator[None, None, None]:
     """Regression pin (FOR-1542): no test in this file may write into the
     committed tree.
 
