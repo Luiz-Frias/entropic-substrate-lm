@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
 import subprocess
@@ -364,7 +365,11 @@ def test_bounded_runner_refuses_unproven_clean_group_sweep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = D1BoundedProcessRunner(timeout_seconds=2, max_output_bytes=1024)
-    monkeypatch.setattr(runner, "_sweep_group", lambda _process: False)
+
+    def unsignalable(_pgid: int, _sig: int) -> None:
+        raise OSError(errno.EIO, "killpg sentinel")
+
+    monkeypatch.setattr(runner_module.os, "killpg", unsignalable)
 
     with pytest.raises(D1BoundedProcessError) as caught:
         runner.run(
@@ -408,3 +413,137 @@ def test_bounded_runner_sweeps_descendant_after_clean_leader_exit(tmp_path: Path
         except ProcessLookupError:
             pass
         pytest.fail("bounded runner left a descendant alive")
+
+
+def _wait_until_unreaped_zombie(pid: int) -> None:
+    """Spin until ``pid`` has exited and has not yet been reaped.
+
+    Test scaffolding that makes the FOR-1515 race deterministic instead of
+    load-dependent. The deadline fails the test; it bounds no product operation
+    and is not a retry budget on the runner.
+    """
+    deadline = time.monotonic() + 10.0
+    while True:
+        result = subprocess.run(  # nosec B603 -- fixed diagnostic argv in a unit test
+            ("ps", "-o", "stat=", "-p", str(pid)),
+            capture_output=True,
+            check=False,
+            shell=False,
+        )
+        state = result.stdout.decode().strip()
+        if result.returncode == 0 and state.startswith("Z"):
+            return
+        if time.monotonic() > deadline:
+            raise AssertionError(f"child {pid} never became an unreaped zombie, state={state!r}")
+
+
+class _ReapedProcess:
+    """Stand-in for a Popen whose child has already been reaped."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+
+    def wait(self, timeout: float | None = None) -> int:
+        assert timeout is not None
+        return 0
+
+
+def test_sweep_counts_an_exited_but_unreaped_child_as_swept() -> None:
+    """The sweep must confirm absence after reaping, not sample before it.
+
+    Regression for FOR-1515. MEASURED 2026-09-22 on Darwin 27.0.0: killpg
+    answers EPERM, not ESRCH, while a process group still exists but holds only
+    an unreaped child, so deciding the sweep from that one sample reported
+    process_group_swept=False for a child that had merely finished first.
+    """
+    runner = D1BoundedProcessRunner(timeout_seconds=2, max_output_bytes=1024)
+    process = subprocess.Popen(  # nosec B603 -- fixed argv in a unit test
+        (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*4096)"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+        start_new_session=True,
+    )
+    try:
+        _wait_until_unreaped_zombie(process.pid)
+        swept, reaped = runner._sweep_and_reap(process)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+
+    assert swept is True
+    assert reaped is True
+
+
+def test_output_limit_sweep_holds_when_the_child_exits_before_the_kill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end arm: the FOR-1515 race, forced at the seam that loses it.
+
+    The first group signal is delayed until the child is an unreaped zombie,
+    which is the state CPU contention produced intermittently under the full
+    unit run. Delegating to the real implementation keeps the OS contract, not a
+    mock, under test.
+    """
+    runner = D1BoundedProcessRunner(timeout_seconds=2.0, max_output_bytes=32)
+    original = D1BoundedProcessRunner._signal_group
+    calls = {"count": 0}
+
+    def delayed(pgid: int) -> bool:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            _wait_until_unreaped_zombie(pgid)
+        return original(pgid)
+
+    monkeypatch.setattr(runner, "_signal_group", delayed)
+
+    with pytest.raises(D1BoundedProcessError) as caught:
+        runner.run(
+            (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*4096)"),
+            cwd=tmp_path,
+            input=b"",
+            env=dict(os.environ),
+        )
+
+    assert calls["count"] >= 1
+    assert caught.value.code == "output_limit"
+    assert caught.value.process_group_swept is True
+    assert caught.value.process_reaped is True
+
+
+@pytest.mark.parametrize(
+    ("absent", "expected_swept"),
+    [(True, True), (False, False)],
+)
+def test_sweep_resolves_an_unsignalable_group_by_observing_absence(
+    monkeypatch: pytest.MonkeyPatch,
+    absent: bool,
+    expected_swept: bool,
+) -> None:
+    """Teeth on any platform: EPERM is resolved by a probe, never assumed.
+
+    An unsignalable group counts as swept only when the signal-0 probe then
+    reports the group gone. When the probe still finds the group, the runner
+    reports process_group_swept=False rather than inferring success from EPERM.
+    """
+    runner = D1BoundedProcessRunner(timeout_seconds=2, max_output_bytes=1024)
+
+    def fake_killpg(_pgid: int, sig: int) -> None:
+        if sig == 0 and absent:
+            raise ProcessLookupError(errno.ESRCH, "no such process group")
+        if sig == 0:
+            return
+        raise PermissionError(errno.EPERM, "operation not permitted")
+
+    monkeypatch.setattr(runner_module.os, "killpg", fake_killpg)
+    process = cast("subprocess.Popen[bytes]", _ReapedProcess(pid=4_242_424))
+
+    swept, reaped = runner._sweep_and_reap(process)
+
+    assert swept is expected_swept
+    assert reaped is True

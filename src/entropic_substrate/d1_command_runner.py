@@ -116,14 +116,41 @@ class D1BoundedProcessRunner:
                 pass
 
     @staticmethod
-    def _sweep_group(process: subprocess.Popen[bytes]) -> bool:
+    def _signal_group(pgid: int) -> bool:
+        """Report whether SIGKILL reached the group or the group was already gone.
+
+        MEASURED 2026-09-22 on Darwin 27.0.0 (three-arm probe over one
+        `start_new_session=True` child, signal 0 and SIGKILL, live arm as the
+        control): killpg answers 0 while a member is alive, ESRCH only once the
+        group itself no longer exists, and EPERM while the group still exists but
+        holds no signalable member -- that is, while the child has exited and has
+        not yet been reaped. Delivery therefore cannot be decided from EPERM: it
+        is neither proof of a sweep nor proof of a live survivor.
+        """
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(pgid, signal.SIGKILL)
         except ProcessLookupError:
             return True
         except OSError:
             return False
         return True
+
+    @staticmethod
+    def _group_absent(pgid: int) -> bool:
+        """Observe whether the group still exists, using a signal-0 probe.
+
+        Absence is ESRCH and nothing else, per the same measurement recorded on
+        `_signal_group`. The probe runs only after our own child is reaped, so a
+        recycled pid can at worst make a swept group read as present; it can
+        never make a surviving group read as absent.
+        """
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        return False
 
     @staticmethod
     def _reap(process: subprocess.Popen[bytes]) -> bool:
@@ -133,6 +160,21 @@ class D1BoundedProcessRunner:
             return False
         return True
 
+    def _sweep_and_reap(self, process: subprocess.Popen[bytes]) -> tuple[bool, bool]:
+        """Kill the group, reap our child, then confirm the group is gone.
+
+        The sweep is confirmed by the group's observed absence after the reap,
+        never by a single killpg sample taken before it: an exited-but-unreaped
+        child answers EPERM, which the sample cannot tell apart from a genuine
+        failure to signal. `wait` is a synchronizing event, so the confirmation
+        needs no window of its own.
+        """
+        delivered = self._signal_group(process.pid)
+        reaped = self._reap(process)
+        if delivered:
+            return True, reaped
+        return reaped and self._group_absent(process.pid), reaped
+
     def _kill_group(
         self,
         process: subprocess.Popen[bytes],
@@ -141,12 +183,13 @@ class D1BoundedProcessRunner:
         stdout: bytearray,
         stderr: bytearray,
     ) -> NoReturn:
+        swept, reaped = self._sweep_and_reap(process)
         raise D1BoundedProcessError(
             code,
             stdout=bytes(stdout),
             stderr=bytes(stderr),
-            process_group_swept=self._sweep_group(process),
-            process_reaped=self._reap(process),
+            process_group_swept=swept,
+            process_reaped=reaped,
         )
 
     def run(
@@ -238,7 +281,7 @@ class D1BoundedProcessRunner:
                 returncode = process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 self._kill_group(process, code="timeout", stdout=stdout, stderr=stderr)
-            group_swept = self._sweep_group(process)
+            group_swept, _ = self._sweep_and_reap(process)
             if not group_swept:
                 self._kill_group(
                     process,
@@ -257,8 +300,10 @@ class D1BoundedProcessRunner:
                     selector.close()
                 except OSError:
                     selector_close_failed = True
-            swept = group_swept or self._sweep_group(process)
-            reaped = self._reap(process)
+            if group_swept:
+                swept, reaped = True, self._reap(process)
+            else:
+                swept, reaped = self._sweep_and_reap(process)
             self._close(process.stdin)
             self._close(process.stdout)
             self._close(process.stderr)
