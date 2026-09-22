@@ -455,7 +455,6 @@
         "src/entropic_substrate/ladder/capture/adapters/composite.py",
         "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
         ".claude/workflows/landed-set/p3b-observability-rail.json",
-        ".claude/workflows/landed-set/.emitted.json",
         ".importlinter",
         "src/entropic_substrate/kernel/runtime/__init__.py",
         "src/entropic_substrate/ladder/capture/__init__.py",

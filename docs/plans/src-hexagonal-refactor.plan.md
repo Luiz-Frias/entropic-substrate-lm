@@ -258,6 +258,10 @@ uv run python tools/gen_shims.py .claude/workflows/landed-set tools/mapping.json
   --manifest-out .claude/workflows/landed-set/.emitted.json
 ```
 
+The manifest is derived, untracked state (gitignored since 2026-09-22, FOR-1539): every lane
+regenerates it in the step that verifies its shims, and no phase commits it, so the wave lanes
+share no file through the generator.
+
 **Honest caveat on wave legality.** Under eager rewriting, p6 and p7 would share 8 importer files
 `[M, core.latent × ladder.register]` and wave 1 would be illegal. The waves are a consequence of
 rewrite-on-arrival, not of the packages' independence.
