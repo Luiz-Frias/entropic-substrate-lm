@@ -5,8 +5,13 @@ were computed and pinned at the epoch. The `new digest` column is filled here, a
 tip where both readers were rewritten and recomputed (commit `31113d1a8f5904c0491a4cd4b8d8fcb5f77aad43`,
 "feat(h-lane): pin both H reader identities (rung 3)").
 
-This file is a **door** (`kind: door`, `frozen_after: p4`). After p4 no phase may change either
-value.
+This file is a **door** (`kind: door`, `frozen_after: p4`). What is frozen is the LABEL and the
+module-set SHAPE of each reader (conductor ruling 2026-09-19: "frozen_after freezes label + shape,
+not digest values"). The digest VALUES re-measure whenever a later phase rewrites a member module's
+bytes (ruling R-PIN, 2026-09-22: 44 explicit `__legacy` imports sit inside the checkpoint reader's
+51 members and are rewritten across p5..p10); each such phase appends a dated row below with the
+tool-measured values. The sentence this replaces ("After p4 no phase may change either value") was
+stricter than the ruling and is retracted here (house rule 4).
 
 ---
 

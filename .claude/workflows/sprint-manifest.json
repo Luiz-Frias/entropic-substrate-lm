@@ -262,7 +262,7 @@
         }
       ],
       "parallel_group": null,
-      "status": "submitted",
+      "status": "active",
       "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9. OPERATOR RULING 2026-09-20 (widen p2): E-1 extended to the receipt readers block and the filing analysis_reader artifact + reader_sha256 binding; 6 src + 12 test files added to the touch set; serial rail, no parallel edge. GATE-CHECK COMPLETION 2026-09-20: filing-role count 14 -> 13 reaches d1_predecessor_loader.py, evidence/d1_filing_assembly.py, tests/test_d1_filing_assembly.py (added); no landed-set fragment for p2; the stale mapping row is pruned at p3. RETRACTION (house rule 4, fixer 2026-09-20): conductor commit 276901f's message claimed 'Manifest touch set ... updated' for the E-1 COMPLETION round (review packet, worker adapter, filing-application and filing-graph-gate tests) but its diff touched only the brief's Allowed files, not this touch_set; measured via `git diff --name-only mythwave/p1-anchors...mythwave/p2-d1-closure`, which shows 4 of the 5 E-1-COMPLETION-granted files actually edited (tests/test_d1_external_worker_publication.py was granted but never touched); those 4 are added here in this follow-up commit. SUBMITTED 2026-09-20: draft PR #287 @ 1629c90ef5e4affa85c220631f9fbe35d5d70dd9 (validator BLOCKED on PR-body defects only, cured at 8c273dab; docs-only follow-up 1629c90 submitted after; code certified by the validator's own gate runs + CI 35527665068).",
       "engine_mode": "arch"
     },
@@ -385,7 +385,7 @@
         }
       ],
       "parallel_group": null,
-      "status": "submitted",
+      "status": "active",
       "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo). PRE-FLIGHT 2026-09-20: prune tools/mapping.json rows whose source module was deleted before p3 (d1_reader_source_closure at p2) before generating shims. Launch gap 2026-09-20: tools/gen_shims.py source-existence guard + `pending` fragment state landed as a conductor tooling commit (FOR-1522); --preflight at the p2 tip names exactly three rows (closure -> retired:true; the two _records halves -> pending:\"p5-kernel\"); tools/mapping.json stays untouched until p13. Engine: gates-before-submit + SHA-based ownership teeth (args.conductorCommits). PENDING: the image_digest cross-check fix (operator 2026-09-20, own Linear issue once the connector is back) is stacked at the then-current stack tip, never below p3 (a 330-file rename rebase is not worth one module's edit). RELAUNCH 2026-09-20: design gate of wf_7f27b290-e61 measured that basedpyright cannot see through the rebind shim; operator ruled option (b), typed shim pair (.py + .pyi). Parent is now mythwave/for-1523-image-digest-crosscheck (FOR-1523 image_digest cross-check, stacked between p2 and p3 while p3 held only conductor commits). The plan's two-facade / relative-import claims were retracted (a242c98). REFINED 2026-09-20 (conductor, inside option b, resolving wf_7f55472a-499): stub = derived explicit `from <target> import <name> as <name>` lines (star honours __all__ + ruff F403, measured); envelope + tests/test_gen_shims.py, and two path literals each in tests/test_worker_source_anchor.py and tests/test_d1_external_worker.py. RULED 2026-09-20 (conductor, wf_43ef5138-4bc): moved copies of the seven facade __init__.py files are emptied (docstring-only) because their bodies re-enter the sibling shims mid-import, load-order dependent; cold-import subprocess guard added to ACCEPTANCE; HR-4 retraction of the Scope sentence. SUBMITTED 2026-09-21: draft PR #289 @ 08264d75e34be736becf13751538a28bee303262 (validator BLOCKED on record defects only: 3 missing guard-teeth rows, the brief's row-1 instrument claim measured false, one stray traceability file; cured in the PR body at the unchanged tip, brief corrected by this commit; just check 4676 passed, exit gate ok at 08264d7, container-test green, CI green). CodeRabbit skipped the review (663 files > its 150-file limit): ACCEPTED for p3 by the conductor (whole-tree move, byte-for-byte per file, three reviewer rounds + validate covered it); a path filter excluding generated stubs/shims is recommended before p4 (61 modules x 3 files exceeds the limit too) and is an operator decision on .coderabbit.yaml. FOR-1524 fixed inside p3 (implement ruling).",
       "engine_mode": "arch"
     },
@@ -627,7 +627,7 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
+      "status": "active",
       "notes": "First strangler tracer (operator ruling: H first) — the 55-module H lane plus the 4 reader-closure rail modules (d1_artifact_snapshot, evidence.lifecycle, predictive_state.metric/dynamics) so both H identities fire exactly once; PLUS h_probe_command.py and h_probe_controller.py, two H-lane modules discovered since the survey (dest ladder/run/worker — conductor-confirmed 2026-09-17). checkpoint.py's glob RAISES once package.parent is ladder/run (not merely changes value) — rewritten to an explicit dotted-name tuple, the idiom capture.py already uses. d_ladder_worker_runtime splits here (E-7): the live half (measure_hardware, verify_source_tree) goes to ladder/run/worker with the H tracer, verify_worker_source goes to historical/d_ladder. git_environment.py diverges from the ruling's literal wording (E-12): zero H importers, lands in p5 kernel/runtime instead. Guard-teeth: revert one of the four reader-closure rail modules to __legacy and the checkpoint identity test goes RED with a resolution error, not a digest mismatch.",
       "engine_mode": "arch"
     },
@@ -668,10 +668,6 @@
         "kernel/artifacts, kernel/lifecycle (p4)"
       ],
       "touch_set": [
-        "src/entropic_substrate/__legacy/kernel_identity_modules/**",
-        "src/entropic_substrate/__legacy/evidence_class_modules/**",
-        "src/entropic_substrate/__legacy/verdict_modules/**",
-        "src/entropic_substrate/__legacy/runtime_modules/**",
         "src/entropic_substrate/__legacy/git_environment.py",
         "src/entropic_substrate/kernel/identity/**",
         "src/entropic_substrate/kernel/evidence_class/**",
@@ -683,7 +679,57 @@
         "src/entropic_substrate/__legacy/d1_calibration_records.py",
         "tests/test_no_old_prefix.py",
         "tests/test_d1_training_step_split.py",
-        ".claude/workflows/landed-set/p5-kernel.json"
+        ".claude/workflows/landed-set/p5-kernel.json",
+        "src/entropic_substrate/__legacy/checkpoint.py",
+        "src/entropic_substrate/__legacy/config.py",
+        "src/entropic_substrate/__legacy/d1_evaluation_values.py",
+        "src/entropic_substrate/__legacy/evidence/d1_contract.py",
+        "src/entropic_substrate/__legacy/evidence/d1_parsing.py",
+        "src/entropic_substrate/__legacy/evidence/d1_statistical_gaps.py",
+        "src/entropic_substrate/__legacy/evidence/d1_types.py",
+        "src/entropic_substrate/__legacy/evidence/resource_provenance.py",
+        "src/entropic_substrate/__legacy/evidence/resource_provenance_codec.py",
+        "src/entropic_substrate/__legacy/experiments/d1_primitives.py",
+        "src/entropic_substrate/__legacy/factory_attestation.py",
+        "src/entropic_substrate/__legacy/paths.py",
+        "src/entropic_substrate/__legacy/shared_attempt.py",
+        "src/entropic_substrate/checkpoint.py",
+        "src/entropic_substrate/config.py",
+        "src/entropic_substrate/d1_evaluation_values.py",
+        "src/entropic_substrate/evidence/d1_contract.py",
+        "src/entropic_substrate/evidence/d1_parsing.py",
+        "src/entropic_substrate/evidence/d1_statistical_gaps.py",
+        "src/entropic_substrate/evidence/d1_types.py",
+        "src/entropic_substrate/evidence/resource_provenance.py",
+        "src/entropic_substrate/evidence/resource_provenance_codec.py",
+        "src/entropic_substrate/experiments/d1_primitives.py",
+        "src/entropic_substrate/factory_attestation.py",
+        "src/entropic_substrate/git_environment.py",
+        "src/entropic_substrate/paths.py",
+        "src/entropic_substrate/shared_attempt.py",
+        "src/entropic_substrate/checkpoint.pyi",
+        "src/entropic_substrate/config.pyi",
+        "src/entropic_substrate/d1_evaluation_values.pyi",
+        "src/entropic_substrate/evidence/d1_contract.pyi",
+        "src/entropic_substrate/evidence/d1_parsing.pyi",
+        "src/entropic_substrate/evidence/d1_statistical_gaps.pyi",
+        "src/entropic_substrate/evidence/d1_types.pyi",
+        "src/entropic_substrate/evidence/resource_provenance.pyi",
+        "src/entropic_substrate/evidence/resource_provenance_codec.pyi",
+        "src/entropic_substrate/experiments/d1_primitives.pyi",
+        "src/entropic_substrate/factory_attestation.pyi",
+        "src/entropic_substrate/git_environment.pyi",
+        "src/entropic_substrate/paths.pyi",
+        "src/entropic_substrate/shared_attempt.pyi",
+        "src/entropic_substrate/ladder/run/worker_execution.py",
+        "tests/test_identity_epoch.py",
+        "tools/regime_rows.py",
+        "tests/test_regime_rows.py",
+        "docs/identity/read-old-table.md",
+        "tests/test_worker_source_anchor.py",
+        "tests/test_legacy_coupling.py",
+        ".claude/workflows/landed-set/p3-quarantine.json",
+        ".secrets.baseline"
       ],
       "conflict_edges": [
         {
@@ -694,8 +740,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "Lands the remaining kernel: identity (2), evidence_class (2), verdict (5), runtime (4), plus git_environment.py (12 lines, zero outbound edges, two D1 importers — E-12 divergence from the ruling's literal wording, recorded explicitly rather than silently). kernel/artifacts and kernel/lifecycle already landed in p4. Highest fan-out rail (kernel.identity: 123 eager importers, measured via blast_radius.py) — lands alone, before the waves. Guard-teeth: add one kernel→ladder import and the layers contract goes RED; reintroduce one old-prefix import in a landed package and the no-old-prefix test goes RED. RETRACTED 2026-09-18 (DEFECT 7 class, cites DN-P1): this used to read \"(ignore-list count must strictly decrease every phase from here)\" - there is no import-linter ignore list; the strictly-decreasing quantity is each phase's own `legacy_edge_budget` in its landed-set fragment, asserted by `tests/test_legacy_coupling.py`.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file.",
+      "status": "active",
+      "notes": "Lands the remaining kernel: identity (2), evidence_class (2), verdict (5), runtime (4), plus git_environment.py (12 lines, zero outbound edges, two D1 importers — E-12 divergence from the ruling's literal wording, recorded explicitly rather than silently). kernel/artifacts and kernel/lifecycle already landed in p4. Highest fan-out rail (kernel.identity: 123 eager importers, measured via blast_radius.py) — lands alone, before the waves. Guard-teeth: add one kernel→ladder import and the layers contract goes RED; reintroduce one old-prefix import in a landed package and the no-old-prefix test goes RED. RETRACTED 2026-09-18 (DEFECT 7 class, cites DN-P1): this used to read \"(ignore-list count must strictly decrease every phase from here)\" - there is no import-linter ignore list; the strictly-decreasing quantity is each phase's own `legacy_edge_budget` in its landed-set fragment, asserted by `tests/test_legacy_coupling.py`.\n\nR-PARALLEL FIX (conductor, 2026-09-17): the d1_training_step/d1_calibration symbol splits were an intra-wave hub edge p8<->p9; both splits now land RED-first in p5-kernel (serial) with both halves still under __legacy, so p8 moves the record halves and p9 the torch halves with no shared file. ENVELOPE RECONCILED 2026-09-22 (conductor, pre-launch audit): the four `*_modules/**` phantom globs replaced by the 14 legacy source paths and their shim pairs from tools/mapping.json; worker_execution.py:10 (the one landed→__legacy.paths edge) + the h-checkpoint-reader-v2 re-pin fixtures admitted under ruling R-PIN; test_worker_source_anchor.py and the monotone-budget arm of test_legacy_coupling.py admitted; .secrets.baseline and the sanctioned p3-quarantine.json pending-row edit listed; .emitted.json untracked (FOR-1539). STATUS 2026-09-22: active at launch (serial, off the p4 tip after the envelope reconciliation).",
       "engine_mode": "arch"
     },
     {
