@@ -173,8 +173,13 @@ pc-ci base=env("PC_CI_BASE", "origin/dev"):
     # pre-push stages only; gitlint lives in the commit-msg stage, so a commit
     # made with hooks skipped reached submit with an 84-char title. Lint every
     # message in the range with the same tool the hook pins.
-    echo "→ gitlint over ${from_ref:0:7}..HEAD..."
-    uv run gitlint --commits "${from_ref}..HEAD"
+    # MEASURED 2026-09-22 (p4 ladder): the whole-range form flagged a commit already
+    # published in the p3 PR (21d146d, B6), which no later phase may rewrite. The
+    # gate exists to stop a bad message BEFORE it is pushed, so it lints exactly the
+    # commits no remote ref can reach; an empty set is a pass, never an error.
+    unpublished="$(git rev-list HEAD --not --remotes)"
+    echo "→ gitlint over $(printf '%s\n' "${unpublished}" | grep -c . || true) unpublished commit(s)..."
+    for sha in ${unpublished}; do uv run gitlint --commit "${sha}"; done
     echo "✓ All prek gates passed on the branch diff"
 
 # ---------------------------------------------------------------------------
