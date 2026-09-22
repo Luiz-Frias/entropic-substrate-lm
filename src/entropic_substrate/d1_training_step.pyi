@@ -23,7 +23,6 @@ from entropic_substrate.__legacy.d1_training_step import PredictiveBatch as Pred
 from entropic_substrate.__legacy.d1_training_step import (
     StopGradientEmaUpdate as StopGradientEmaUpdate,
 )
-from entropic_substrate.__legacy.d1_training_step import StrEnum as StrEnum
 from entropic_substrate.__legacy.d1_training_step import (
     TargetUpdateStrategy as TargetUpdateStrategy,
 )
@@ -75,7 +74,6 @@ from entropic_substrate.__legacy.d1_training_step import (
 )
 from entropic_substrate.__legacy.d1_training_step import canonical_digest as canonical_digest
 from entropic_substrate.__legacy.d1_training_step import d1_learning_rate as d1_learning_rate
-from entropic_substrate.__legacy.d1_training_step import dataclass as dataclass
 from entropic_substrate.__legacy.d1_training_step import math as math
 from entropic_substrate.__legacy.d1_training_step import nn as nn
 from entropic_substrate.__legacy.d1_training_step import (

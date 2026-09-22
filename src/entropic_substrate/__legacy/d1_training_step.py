@@ -1,14 +1,30 @@
-"""Transactional application service for one registered D1 training step."""
+"""Transactional application service for one registered D1 training step.
+
+RED-first split (ruling R-parallel; contract C17-p5): the immutable
+evidence types (``D1TrainStepResult`` and friends) moved to the record half,
+``d1_training_step_records.py``, still under ``__legacy/`` -- both halves
+stay quarantined this phase; p8 moves only the record half, p9 only this
+one, so the two future wave lanes share no file. This module RE-EXPORTS
+every record name below (never redefines one) because 7 ``__legacy``
+modules and 4 test files outside this phase's envelope still import them
+by this module's old dotted name; those importers are rewritten by p8/p9,
+never here.
+"""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from enum import StrEnum
 
 import torch
 from torch import nn
 
+from entropic_substrate.__legacy.d1_training_step_records import (
+    D1ComponentGradientEvidence,
+    D1GradientEvidenceKind,
+    D1GradientReachability,
+    D1TrainStepResult,
+    _require_aggregate_gradient_norm,  # pyright: ignore[reportPrivateUsage]  # shared cross-split invariant, not a public export (ruling C17-p5)
+)
 from entropic_substrate.d1_optimizer import D1OptimizerBundle
 from entropic_substrate.data.batching import PredictiveBatch
 from entropic_substrate.experiments.d1_execution import D1AmpPolicy, D1OptimizationSpec
@@ -32,174 +48,6 @@ __all__ = [
 ]
 
 _clip_grad_norm = nn.utils.clip_grad_norm_
-
-
-class D1GradientEvidenceKind(StrEnum):
-    """The only admissible interpretations of a D1 component gradient."""
-
-    MEASURED_NONZERO = "measured_nonzero"
-    MEASURED_ZERO = "measured_zero"
-    STRUCTURALLY_ABSENT_STOP_GRADIENT = "structurally_absent_stop_gradient"
-
-
-@dataclass(frozen=True, slots=True)
-class D1ComponentGradientEvidence:
-    """Pre-clip gradient norm or the registered stop-gradient absence."""
-
-    kind: D1GradientEvidenceKind
-    pre_clip_l2_norm: float | None
-
-    def __post_init__(self) -> None:
-        if type(self.kind) is not D1GradientEvidenceKind:
-            raise TypeError("D1 component gradient kind must be D1GradientEvidenceKind")
-        if self.kind is D1GradientEvidenceKind.MEASURED_NONZERO:
-            if (
-                type(self.pre_clip_l2_norm) is not float
-                or not math.isfinite(self.pre_clip_l2_norm)
-                or self.pre_clip_l2_norm <= 0.0
-            ):
-                raise ValueError("D1 measured component gradient must be a finite nonzero float")
-        elif self.kind is D1GradientEvidenceKind.MEASURED_ZERO:
-            if type(self.pre_clip_l2_norm) is not float or self.pre_clip_l2_norm != 0.0:
-                raise ValueError("D1 measured zero gradient must have a zero float norm")
-        elif self.pre_clip_l2_norm is not None:
-            raise ValueError("D1 structurally absent gradient must have a null norm")
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {"kind": self.kind.value, "pre_clip_l2_norm": self.pre_clip_l2_norm}
-
-
-@dataclass(frozen=True, slots=True)
-class D1GradientReachability:
-    """Closed four-component gradient evidence for one D1 backward pass."""
-
-    online_branch: D1ComponentGradientEvidence
-    target_branch: D1ComponentGradientEvidence
-    language_readout: D1ComponentGradientEvidence
-    future_law: D1ComponentGradientEvidence
-
-    def __post_init__(self) -> None:
-        components = (
-            self.online_branch,
-            self.target_branch,
-            self.language_readout,
-            self.future_law,
-        )
-        if any(type(item) is not D1ComponentGradientEvidence for item in components):
-            raise TypeError("D1 gradient reachability requires four component evidence values")
-        required = (self.online_branch, self.language_readout, self.future_law)
-        measured = {D1GradientEvidenceKind.MEASURED_NONZERO, D1GradientEvidenceKind.MEASURED_ZERO}
-        if any(item.kind not in measured for item in required):
-            raise ValueError("D1 non-target component gradients must be measured")
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "future_law": self.future_law.manifest,
-            "language_readout": self.language_readout.manifest,
-            "online_branch": self.online_branch.manifest,
-            "target_branch": self.target_branch.manifest,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class D1TrainStepResult:
-    """Immutable, unrounded scalar evidence from one committed optimizer step."""
-
-    successful_step: int
-    learning_rate: float
-    objective: float
-    language_loss: float
-    future_nll: float
-    variance_penalty: float
-    covariance_penalty: float
-    raw_variance_penalty: float
-    raw_covariance_penalty: float
-    zero_displacement_nll: float
-    mean_displacement_nll: float
-    residual_mean: float
-    residual_rms: float
-    residual_variance: float
-    coverage_50: float
-    coverage_80: float
-    coverage_95: float
-    effective_rank: float
-    numerical_rank: int
-    gradient_norm: float
-    gradient_reachability: D1GradientReachability
-
-    def __post_init__(self) -> None:
-        if type(self.successful_step) is not int or self.successful_step < 1:
-            msg = "D1 train result successful_step must be a positive integer"
-            raise ValueError(msg)
-        float_fields = (
-            "learning_rate",
-            "objective",
-            "language_loss",
-            "future_nll",
-            "variance_penalty",
-            "covariance_penalty",
-            "raw_variance_penalty",
-            "raw_covariance_penalty",
-            "zero_displacement_nll",
-            "mean_displacement_nll",
-            "residual_mean",
-            "residual_rms",
-            "residual_variance",
-            "coverage_50",
-            "coverage_80",
-            "coverage_95",
-            "effective_rank",
-            "gradient_norm",
-        )
-        for name in float_fields:
-            value = getattr(self, name)
-            if type(value) is not float or not math.isfinite(value):
-                msg = f"D1 train result {name} must be a finite float"
-                raise ValueError(msg)
-        if self.learning_rate <= 0.0 or self.gradient_norm < 0.0:
-            msg = "D1 train result learning rate must be positive and gradient norm nonnegative"
-            raise ValueError(msg)
-        if any(not 0.0 <= value <= 1.0 for value in self.coverages):
-            msg = "D1 train result coverage must be in [0, 1]"
-            raise ValueError(msg)
-        if type(self.numerical_rank) is not int or self.numerical_rank < 0:
-            msg = "D1 train result numerical_rank must be a nonnegative integer"
-            raise ValueError(msg)
-        if type(self.gradient_reachability) is not D1GradientReachability:
-            raise TypeError("D1 train result requires typed gradient reachability")
-        _require_aggregate_gradient_norm(self.gradient_reachability, self.gradient_norm)
-
-    @property
-    def coverages(self) -> tuple[float, float, float]:
-        return self.coverage_50, self.coverage_80, self.coverage_95
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "covariance_penalty": self.covariance_penalty,
-            "coverage_50": self.coverage_50,
-            "coverage_80": self.coverage_80,
-            "coverage_95": self.coverage_95,
-            "effective_rank": self.effective_rank,
-            "future_nll": self.future_nll,
-            "gradient_norm": self.gradient_norm,
-            "gradient_reachability": self.gradient_reachability.manifest,
-            "language_loss": self.language_loss,
-            "learning_rate": self.learning_rate,
-            "mean_displacement_nll": self.mean_displacement_nll,
-            "numerical_rank": self.numerical_rank,
-            "objective": self.objective,
-            "raw_covariance_penalty": self.raw_covariance_penalty,
-            "raw_variance_penalty": self.raw_variance_penalty,
-            "residual_mean": self.residual_mean,
-            "residual_rms": self.residual_rms,
-            "residual_variance": self.residual_variance,
-            "successful_step": self.successful_step,
-            "variance_penalty": self.variance_penalty,
-            "zero_displacement_nll": self.zero_displacement_nll,
-        }
 
 
 def d1_learning_rate(spec: D1OptimizationSpec, *, successful_step: int) -> float:
@@ -487,30 +335,6 @@ def _measured_component_gradient(
         else D1GradientEvidenceKind.MEASURED_NONZERO
     )
     return D1ComponentGradientEvidence(kind, norm)
-
-
-def _require_aggregate_gradient_norm(
-    reachability: D1GradientReachability,
-    aggregate_norm: float,
-) -> None:
-    """Bind component norms to the pre-clip total returned by ``clip_grad_norm_``."""
-    component_norms = tuple(
-        item.pre_clip_l2_norm
-        for item in (
-            reachability.online_branch,
-            reachability.target_branch,
-            reachability.language_readout,
-            reachability.future_law,
-        )
-        if item.pre_clip_l2_norm is not None
-    )
-    if not math.isclose(
-        aggregate_norm,
-        math.hypot(*component_norms),
-        rel_tol=1e-5,
-        abs_tol=1e-12,
-    ):
-        raise ValueError("D1 component gradients do not reconstruct the aggregate norm")
 
 
 def _require_finite_parameters(owned: tuple[nn.Parameter, ...]) -> None:

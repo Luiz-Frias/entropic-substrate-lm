@@ -1,15 +1,22 @@
-"""Dedicated pre-optimization calibration for D1's frozen mean comparator."""
+"""Dedicated pre-optimization calibration for D1's frozen mean comparator.
+
+RED-first split (ruling R-parallel; contract C17-p5): the immutable
+attestation type moved to the record half, ``d1_calibration_records.py``,
+still under ``__legacy/``. This module RE-EXPORTS it (never redefines it)
+for the out-of-envelope importers still on this module's old dotted name;
+p8/p9 rewrite those, never this phase.
+"""
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 
 import numpy as np
 import torch
 
+from entropic_substrate.__legacy.d1_calibration_records import D1BaselineCalibrationAttestation
 from entropic_substrate.data.batching import PredictiveBatch, SequenceSampler, TokenSplit
-from entropic_substrate.experiments.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
 
 __all__ = ["D1BaselineCalibrationAttestation", "D1BaselineCalibrator"]
@@ -27,69 +34,6 @@ def _tensor_digest(value: torch.Tensor) -> str:
 def _split_digest(split: TokenSplit) -> str:
     values = np.asarray(split.tokens, dtype="<i8")
     return hashlib.sha256(values.tobytes()).hexdigest()
-
-
-@dataclass(frozen=True, slots=True)
-class D1BaselineCalibrationAttestation:
-    """Identity and accounted work of one successful calibration transition."""
-
-    protocol_digest: str
-    spec_digest: str
-    split_digest: str
-    source_order_digest: str
-    mean_parameter_digest: str
-    codec_digest: str
-    initialization_seed: int
-    num_batches: int
-    online_positions: int
-    source_span_positions: int
-    successful_step_at_fit: int = 0
-    schema_version: str = "d1-baseline-calibration-v1"
-
-    def __post_init__(self) -> None:
-        for label, value in (
-            ("protocol_digest", self.protocol_digest),
-            ("spec_digest", self.spec_digest),
-            ("split_digest", self.split_digest),
-            ("source_order_digest", self.source_order_digest),
-            ("mean_parameter_digest", self.mean_parameter_digest),
-            ("codec_digest", self.codec_digest),
-        ):
-            require_sha256(value, label=label)
-        if type(self.initialization_seed) is not int or self.initialization_seed < 0:
-            msg = "calibration initialization_seed must be nonnegative"
-            raise ValueError(msg)
-        for label, value in (
-            ("num_batches", self.num_batches),
-            ("online_positions", self.online_positions),
-            ("source_span_positions", self.source_span_positions),
-        ):
-            if type(value) is not int or value < 1:
-                msg = f"calibration {label} must be a positive integer"
-                raise ValueError(msg)
-        if self.successful_step_at_fit != 0:
-            msg = "D1 calibration attestation must be fitted at step zero"
-            raise ValueError(msg)
-        if self.schema_version != "d1-baseline-calibration-v1":
-            msg = "unsupported D1 baseline calibration schema"
-            raise ValueError(msg)
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {
-            "codec_digest": self.codec_digest,
-            "initialization_seed": self.initialization_seed,
-            "mean_parameter_digest": self.mean_parameter_digest,
-            "num_batches": self.num_batches,
-            "online_positions": self.online_positions,
-            "protocol_digest": self.protocol_digest,
-            "schema_version": self.schema_version,
-            "source_order_digest": self.source_order_digest,
-            "source_span_positions": self.source_span_positions,
-            "spec_digest": self.spec_digest,
-            "split_digest": self.split_digest,
-            "successful_step_at_fit": self.successful_step_at_fit,
-        }
 
 
 class D1BaselineCalibrator:
