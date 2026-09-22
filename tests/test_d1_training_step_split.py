@@ -32,7 +32,11 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.__legacy import d1_calibration, d1_training_step
+from entropic_substrate.__legacy import (
+    d1_calibration,
+    d1_training_step,
+    d1_training_step_records,
+)
 from entropic_substrate.__legacy.d1_calibration_records import (
     D1BaselineCalibrationAttestation,
 )
@@ -73,13 +77,7 @@ def test_d1_training_step_torch_half_reexports_the_record_object_by_identity(
     defines (``is``, not merely an equal one) -- a re-export, never a
     parallel re-definition."""
     torch_half_attr = getattr(d1_training_step, name)
-    record_half_attr = getattr(
-        __import__(
-            "entropic_substrate.__legacy.d1_training_step_records",
-            fromlist=[name],
-        ),
-        name,
-    )
+    record_half_attr = getattr(d1_training_step_records, name)
     assert torch_half_attr is record_half_attr
 
 
