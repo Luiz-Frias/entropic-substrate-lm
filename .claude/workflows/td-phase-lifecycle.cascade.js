@@ -448,7 +448,10 @@ const RUNNER = P.exitRunner
 // ownership breach decided HERE. Measured trigger: lane fixers on p2 authored
 // 39abe5a/80e876f under a docs(refactor): prefix, indistinguishable by prose.
 const CONDUCTOR_COMMITS = (ARGS && Array.isArray(ARGS.conductorCommits) ? ARGS.conductorCommits : []).map((x) => String(x).toLowerCase())
-const CONDUCTOR_OWNED_PATHS = '.claude/workflows/briefs .claude/workflows/sprint-manifest.json .claude/workflows/td-phase-lifecycle.cascade.js .claude/workflows/mass-patch-fanout.js docs/plans .github/workflows/ci.yaml tools/regime_rows.py tests/test_regime_rows.py'
+// 2026-09-22 (p4 design gate, Q1): tools/regime_rows.py and tests/test_regime_rows.py LEFT this list.
+// The tool mirrors the reader-identity functions, so the phase that rewrites an identity (p4) must
+// update the mirror in the same pin commit; a conductor-owned mirror made that commit impossible.
+const CONDUCTOR_OWNED_PATHS = '.claude/workflows/briefs .claude/workflows/sprint-manifest.json .claude/workflows/td-phase-lifecycle.cascade.js .claude/workflows/mass-patch-fanout.js docs/plans .github/workflows/ci.yaml'
 const OWNERSHIP_STEP =
   '- OWNERSHIP TRANSCRIPTION (mandatory, machine output only): run `git log --format=%H%x09%s ' + PH.parent + '..' + PH.branch + ' -- ' + CONDUCTOR_OWNED_PATHS + '` and return EVERY line as ownedTouches [{sha, title}] (empty array when the command prints nothing). Do not judge them; the engine decides against the conductor\'s own commit list.\n'
 function ownershipOffenders(list) {

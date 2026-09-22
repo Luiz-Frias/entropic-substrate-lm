@@ -579,7 +579,10 @@
         "src/entropic_substrate/core/probe/__init__.py",
         "src/entropic_substrate/ladder/run/__init__.py",
         "src/entropic_substrate/ladder/capture/custody/__init__.py",
-        "tests/test_h_lane_live.py"
+        "tests/test_h_lane_live.py",
+        "tools/regime_rows.py",
+        "tests/test_regime_rows.py",
+        "tests/test_worker_source_anchor.py"
       ],
       "conflict_edges": [
         {
