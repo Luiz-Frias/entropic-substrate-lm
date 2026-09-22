@@ -535,6 +535,11 @@
         {
           "name": "kernel/artifacts, kernel/lifecycle, core/latent/{metric,dynamics} addresses (reader-closure rail)",
           "kind": "contract"
+        },
+        {
+          "name": "ladder/run/worker :: the H half, including h_probe_command and h_probe_controller (frozen at p10, which lands the D1 half)",
+          "kind": "contract",
+          "frozen_after": false
         }
       ],
       "contracts_consumed": [
@@ -566,7 +571,10 @@
         "src/entropic_substrate/composition/entrypoints/**",
         "tests/test_identity_epoch.py",
         ".claude/workflows/landed-set/p4-h-tracer.json",
-        "scripts/entrypoints.env"
+        "scripts/entrypoints.env",
+        ".secrets.baseline",
+        "docs/identity/read-old-table.md",
+        "src/entropic_substrate/__legacy/d_ladder_worker_runtime.py"
       ],
       "conflict_edges": [
         {

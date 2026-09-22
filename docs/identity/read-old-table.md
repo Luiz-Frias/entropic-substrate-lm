@@ -37,10 +37,12 @@ is admissible rather than a compatibility window.
 
 | identity | old version | old digest (pinned at p0) | new version | new digest (computed at p4) | read-old window | re-certification owner |
 |---|---|---|---|---|---|---|
-| h-source-reader | `h-source-reader-v2` | `<FILL AT p0>` | `h-source-reader-v3` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Three local `h-source-capture-v2` captures, none DVC-tracked. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
-| h-checkpoint-reader | `h-checkpoint-reader-v1` | `<FILL AT p0>` | `h-checkpoint-reader-v2` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Existing H checkpoints do not resume across the bump. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
+| h-source-reader | `h-source-reader-v2` | per-regime rows in `tests/test_identity_epoch.py::_SOURCE_REGIME_TABLE` (keyed (python, pysbd); two regimes pinned at p0) | `h-source-reader-v3` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Three local `h-source-capture-v2` captures, none DVC-tracked. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
+| h-checkpoint-reader | `h-checkpoint-reader-v1` | per-regime rows in `tests/test_identity_epoch.py::_CHECKPOINT_REGIME_TABLE` (keyed (python, torch); two regimes pinned at p0) | `h-checkpoint-reader-v2` | `<FILL AT p4>` | Replay against the p0-epoch commit only. Existing H checkpoints do not resume across the bump. No cross-reader resume. | **p4-h-tracer** (serial, `liveRequired:true`, `just ship-it`) |
 
-**p0 epoch commit:** `<FILL AT p0 — the 40-hex SHA the fixtures were computed at>`
+**p0 epoch commit:** `bbe7976df0710af5bdc00879b1b8145568169034`
+**Shape amendment (conductor, 2026-09-21, p4 brief audit; door `frozen_after: p4` not yet frozen):** p0 pinned each reader's old digest as a COMPOSED value per measured regime (Python x torch for the checkpoint reader, Python x pysbd for the source reader), because the digest is regime-dependent (MEASURED at p0, see the module docstring of `tests/test_identity_epoch.py`). The 'old digest' column therefore points at those regime tables rather than carrying one literal; p4 fills the 'new digest' column the same way, one row per regime it measures, and records the tip SHA below. The read-old window itself is unchanged: replay against the p0-epoch commit only.
+
 **p4 tip commit:** `<FILL AT p4 — the 40-hex SHA the new digests were computed at>`
 
 Both SHAs are full 40-hex, not short. A verdict binds to a derived immutable identifier; a moved
