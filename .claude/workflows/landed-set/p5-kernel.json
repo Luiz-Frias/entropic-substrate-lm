@@ -8,6 +8,14 @@
     "entropic_substrate.factory_attestation": {
       "target": "entropic_substrate.kernel.identity.factory_attestation",
       "landed": true
+    },
+    "entropic_substrate.evidence.resource_provenance": {
+      "target": "entropic_substrate.kernel.evidence_class.resource_provenance",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_provenance_codec": {
+      "target": "entropic_substrate.kernel.evidence_class.resource_provenance_codec",
+      "landed": true
     }
   },
   "legacy_edge_budget": 57
