@@ -6,20 +6,20 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
-from entropic_substrate.sentence_prediction.native_verification import read_native_verification
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.runner import read_training_progress
-from entropic_substrate.sentence_prediction.span_states import SpanPopulationGap
-from entropic_substrate.sentence_prediction.worker_execution import execute_probe_request
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, worker_artifact
-from entropic_substrate.sentence_prediction.worker_snapshot import publish_worker_snapshot
-from entropic_substrate.sentence_prediction.worker_transport import (
+from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.native_verification import read_native_verification
+from entropic_substrate.ladder.run.runner import read_training_progress
+from entropic_substrate.ladder.run.span_states import SpanPopulationGap
+from entropic_substrate.ladder.run.worker_execution import execute_probe_request
+from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
+from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
+from entropic_substrate.ladder.run.worker_transport import (
     materialize_probe_request,
     publish_verified_object,
     read_published_probe_request,

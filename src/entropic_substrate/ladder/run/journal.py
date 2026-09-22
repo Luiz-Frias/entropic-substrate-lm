@@ -7,22 +7,22 @@ from typing import NoReturn, cast
 
 import torch
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
     relative_d1_artifact_path,
 )
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.corpus import PreparedCorpus
-from entropic_substrate.sentence_prediction.execution import SentenceExecution, batch_coordinates
-from entropic_substrate.sentence_prediction.mechanism_evidence import admit_mechanism
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.corpus import PreparedCorpus
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.execution import SentenceExecution, batch_coordinates
+from entropic_substrate.ladder.run.mechanism_evidence import admit_mechanism
 
 
 def artifact_reference(root: Path, artifact: ArtifactIdentity) -> dict[str, str]:

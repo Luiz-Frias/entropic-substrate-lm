@@ -4,21 +4,21 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
-from entropic_substrate.sentence_prediction.worker_transport import publish_verified_object
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_transport import publish_verified_object
 
 
 def _path(value: object) -> str:

@@ -6,19 +6,19 @@ from pathlib import Path
 from platform import python_version
 from typing import cast
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     PreparedCorpus,
     SplitPolicy,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.records import SourceDocument, content_identity
-from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
+from entropic_substrate.core.sentence.records import SourceDocument, content_identity
+from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
 
 _VERSION = "h-source-capture-v2"
 _FILENAME = "prepared-corpus.json"

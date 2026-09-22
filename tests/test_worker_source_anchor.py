@@ -44,12 +44,7 @@ _D_LADDER_RUNTIME_SOURCE = (
     _REPO_ROOT / "src" / "entropic_substrate" / "__legacy" / "d_ladder_worker_runtime.py"
 )
 _WORKER_EXECUTION_SOURCE = (
-    _REPO_ROOT
-    / "src"
-    / "entropic_substrate"
-    / "__legacy"
-    / "sentence_prediction"
-    / "worker_execution.py"
+    _REPO_ROOT / "src" / "entropic_substrate" / "ladder" / "run" / "worker_execution.py"
 )
 
 _GUARD_TEXT_D_LADDER = "worker is not executing the source tree selected for verification"

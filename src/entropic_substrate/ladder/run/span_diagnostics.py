@@ -8,27 +8,27 @@ from uuid import uuid4
 
 import torch
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.corpus import CorpusSplit, PreparedCorpus
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.runner import read_training_progress
-from entropic_substrate.sentence_prediction.seals import SealedStep, read_seal, resume_seal
-from entropic_substrate.sentence_prediction.span_probe_artifacts import (
+from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.corpus import CorpusSplit, PreparedCorpus
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.runner import read_training_progress
+from entropic_substrate.ladder.run.seals import SealedStep, read_seal, resume_seal
+from entropic_substrate.ladder.run.span_probe_artifacts import (
     SpanProbeBundle,
     capture_span_probes,
     read_span_probes,
     reconcile_span_evidence,
 )
-from entropic_substrate.sentence_prediction.span_states import (
+from entropic_substrate.ladder.run.span_states import (
     SpanPopulationGap,
     SpanStateSet,
     collect_span_states,

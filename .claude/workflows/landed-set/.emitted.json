@@ -1353,7 +1353,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/capture.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.capture",
+      "target": "entropic_substrate.ladder.capture.capture",
       "entrypoint": false
     },
     {
@@ -1388,17 +1388,17 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/evaluation_records.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.evaluation_records",
+      "target": "entropic_substrate.ladder.run.evaluation_records",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/execution.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.execution",
+      "target": "entropic_substrate.ladder.run.execution",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/generation.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.generation",
+      "target": "entropic_substrate.ladder.run.generation",
       "entrypoint": false
     },
     {
@@ -1408,7 +1408,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/journal.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.journal",
+      "target": "entropic_substrate.ladder.run.journal",
       "entrypoint": false
     },
     {
@@ -1418,7 +1418,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/mechanism_evidence.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.mechanism_evidence",
+      "target": "entropic_substrate.ladder.run.mechanism_evidence",
       "entrypoint": false
     },
     {
@@ -1428,7 +1428,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/native_verification.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.native_verification",
+      "target": "entropic_substrate.ladder.run.native_verification",
       "entrypoint": false
     },
     {
@@ -1438,7 +1438,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/object_worker.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.object_worker",
+      "target": "entropic_substrate.ladder.run.object_worker",
       "entrypoint": false
     },
     {
@@ -1468,7 +1468,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/runner.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.runner",
+      "target": "entropic_substrate.ladder.run.runner",
       "entrypoint": false
     },
     {
@@ -1493,7 +1493,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/seals.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.seals",
+      "target": "entropic_substrate.ladder.run.seals",
       "entrypoint": false
     },
     {
@@ -1513,22 +1513,22 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_diagnostics.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_diagnostics",
+      "target": "entropic_substrate.ladder.run.span_diagnostics",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_probe.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe",
+      "target": "entropic_substrate.ladder.run.span_probe",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_probe_artifacts.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe_artifacts",
+      "target": "entropic_substrate.ladder.run.span_probe_artifacts",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_states.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_states",
+      "target": "entropic_substrate.ladder.run.span_states",
       "entrypoint": false
     },
     {
@@ -1538,42 +1538,42 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/trace_capture.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.trace_capture",
+      "target": "entropic_substrate.ladder.run.trace_capture",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/training.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.training",
+      "target": "entropic_substrate.ladder.run.training",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_command.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_command",
+      "target": "entropic_substrate.ladder.run.worker_command",
       "entrypoint": true
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_completion.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_completion",
+      "target": "entropic_substrate.ladder.run.worker_completion",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_execution.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_execution",
+      "target": "entropic_substrate.ladder.run.worker_execution",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_request.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_request",
+      "target": "entropic_substrate.ladder.run.worker_request",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_snapshot.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_snapshot",
+      "target": "entropic_substrate.ladder.run.worker_snapshot",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_transport.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_transport",
+      "target": "entropic_substrate.ladder.run.worker_transport",
       "entrypoint": false
     },
     {
@@ -2685,7 +2685,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/capture.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.capture"
+      "target": "entropic_substrate.ladder.capture.capture"
     },
     {
       "path": "entropic_substrate/sentence_prediction/capture_cli.pyi",
@@ -2713,15 +2713,15 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/evaluation_records.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.evaluation_records"
+      "target": "entropic_substrate.ladder.run.evaluation_records"
     },
     {
       "path": "entropic_substrate/sentence_prediction/execution.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.execution"
+      "target": "entropic_substrate.ladder.run.execution"
     },
     {
       "path": "entropic_substrate/sentence_prediction/generation.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.generation"
+      "target": "entropic_substrate.ladder.run.generation"
     },
     {
       "path": "entropic_substrate/sentence_prediction/head.pyi",
@@ -2729,7 +2729,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/journal.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.journal"
+      "target": "entropic_substrate.ladder.run.journal"
     },
     {
       "path": "entropic_substrate/sentence_prediction/law.pyi",
@@ -2737,7 +2737,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/mechanism_evidence.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.mechanism_evidence"
+      "target": "entropic_substrate.ladder.run.mechanism_evidence"
     },
     {
       "path": "entropic_substrate/sentence_prediction/model.pyi",
@@ -2745,7 +2745,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/native_verification.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.native_verification"
+      "target": "entropic_substrate.ladder.run.native_verification"
     },
     {
       "path": "entropic_substrate/sentence_prediction/numerics.pyi",
@@ -2753,7 +2753,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/object_worker.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.object_worker"
+      "target": "entropic_substrate.ladder.run.object_worker"
     },
     {
       "path": "entropic_substrate/sentence_prediction/objective.pyi",
@@ -2777,7 +2777,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/runner.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.runner"
+      "target": "entropic_substrate.ladder.run.runner"
     },
     {
       "path": "entropic_substrate/sentence_prediction/runtime_precision.pyi",
@@ -2797,7 +2797,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/seals.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.seals"
+      "target": "entropic_substrate.ladder.run.seals"
     },
     {
       "path": "entropic_substrate/sentence_prediction/segmentation.pyi",
@@ -2813,19 +2813,19 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_diagnostics.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_diagnostics"
+      "target": "entropic_substrate.ladder.run.span_diagnostics"
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_probe.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe"
+      "target": "entropic_substrate.ladder.run.span_probe"
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_probe_artifacts.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_probe_artifacts"
+      "target": "entropic_substrate.ladder.run.span_probe_artifacts"
     },
     {
       "path": "entropic_substrate/sentence_prediction/span_states.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.span_states"
+      "target": "entropic_substrate.ladder.run.span_states"
     },
     {
       "path": "entropic_substrate/sentence_prediction/spine.pyi",
@@ -2833,35 +2833,35 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/trace_capture.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.trace_capture"
+      "target": "entropic_substrate.ladder.run.trace_capture"
     },
     {
       "path": "entropic_substrate/sentence_prediction/training.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.training"
+      "target": "entropic_substrate.ladder.run.training"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_command.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_command"
+      "target": "entropic_substrate.ladder.run.worker_command"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_completion.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_completion"
+      "target": "entropic_substrate.ladder.run.worker_completion"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_execution.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_execution"
+      "target": "entropic_substrate.ladder.run.worker_execution"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_request.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_request"
+      "target": "entropic_substrate.ladder.run.worker_request"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_snapshot.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_snapshot"
+      "target": "entropic_substrate.ladder.run.worker_snapshot"
     },
     {
       "path": "entropic_substrate/sentence_prediction/worker_transport.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.worker_transport"
+      "target": "entropic_substrate.ladder.run.worker_transport"
     },
     {
       "path": "entropic_substrate/shared_attempt.pyi",

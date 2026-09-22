@@ -16,15 +16,15 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.analysis.predictive_score_gain import ScoreBinding
-from entropic_substrate.sentence_prediction.score_gain import (
+from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.__legacy.analysis.predictive_score_gain import ScoreBinding
+from entropic_substrate.core.probe.score_gain import (
     SpanGainSummary,
     SpanPredictiveScore,
     SpanScoreGain,
     summarize_span_gains,
 )
-from entropic_substrate.sentence_prediction.span_states import SpanProbePosition, SpanStateSet
+from entropic_substrate.ladder.run.span_states import SpanProbePosition, SpanStateSet
 
 
 def _digest(metadata: object, *tensors: Tensor) -> str:

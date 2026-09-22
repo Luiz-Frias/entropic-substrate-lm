@@ -16,12 +16,15 @@ from zipfile import ZipFile
 
 import torch
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes, read_d1_artifact_bytes
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.sentence_prediction.journal import artifact_reference
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.span_probe import (
+from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
+    publish_d1_atomic_bytes,
+    read_d1_artifact_bytes,
+)
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.journal import artifact_reference
+from entropic_substrate.ladder.run.span_probe import (
     FrozenSpanProbe,
     SpanProbeManifest,
     SpanProbeReport,
@@ -29,7 +32,7 @@ from entropic_substrate.sentence_prediction.span_probe import (
     score_span_probe,
     validate_span_states,
 )
-from entropic_substrate.sentence_prediction.span_states import SpanProbePosition, SpanStateSet
+from entropic_substrate.ladder.run.span_states import SpanProbePosition, SpanStateSet
 
 
 @dataclass(frozen=True)

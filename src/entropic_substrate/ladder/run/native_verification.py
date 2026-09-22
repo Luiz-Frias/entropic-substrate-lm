@@ -9,18 +9,18 @@ from uuid import uuid4
 
 import torch
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.ladder.run.worker.hardware import measure_hardware
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.trace_capture import (
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.trace_capture import (
     inspect_model_custody,
     read_model_trace,
 )
+from entropic_substrate.ladder.run.worker.hardware import measure_hardware
 
 SCOPE = "native-model-source-rng-and-numerical-readers"
 

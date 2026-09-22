@@ -8,17 +8,17 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.execution import batch_coordinates
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.sampling import SamplingSpec, SentenceSampler
-from entropic_substrate.sentence_prediction.scoring import importance_statistics
-from entropic_substrate.sentence_prediction.seals import read_seal
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.core.sentence.scoring import importance_statistics
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.execution import batch_coordinates
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.seals import read_seal
 
 
 def _real(value: object) -> float:

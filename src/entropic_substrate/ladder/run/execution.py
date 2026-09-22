@@ -8,36 +8,36 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_meter_runtime import (
+from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
+from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
+from entropic_substrate.__legacy.evidence.resource_meter_runtime import (
     TorchCudaPeakMemory,
     TorchCudaPhaseTimer,
     build_torch_cuda_adapters,
 )
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.checkpoint import load_checkpoint
-from entropic_substrate.sentence_prediction.corpus import CorpusSplit
-from entropic_substrate.sentence_prediction.mechanism_evidence import collect_mechanism
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.objective import (
+from entropic_substrate.__legacy.sentence_prediction.checkpoint import load_checkpoint
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.corpus import CorpusSplit
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.objective import (
     SentenceLoss,
     codec_warmup_loss,
     prediction_loss,
 )
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.rollout import SentenceRollout
-from entropic_substrate.sentence_prediction.runtime_precision import require_execution_precision
-from entropic_substrate.sentence_prediction.sampling import (
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.rollout import SentenceRollout
+from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
+from entropic_substrate.core.sentence.sampling import (
     SamplingSpec,
     SentenceBatch,
     SentenceSampler,
 )
-from entropic_substrate.sentence_prediction.scoring import importance_evaluate
-from entropic_substrate.sentence_prediction.spine import CarrierBlock
-from entropic_substrate.sentence_prediction.training import (
+from entropic_substrate.core.sentence.scoring import importance_evaluate
+from entropic_substrate.core.sentence.spine import CarrierBlock
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.mechanism_evidence import collect_mechanism
+from entropic_substrate.ladder.run.training import (
     SentencePhase,
     apply_sentence_step,
     build_sentence_optimizer,

@@ -7,18 +7,18 @@ adapters must enforce the request's object-byte cap before streaming any body.
 import hashlib
 from pathlib import Path
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, parse_probe_request
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
 
 
 def publish_verified_object(

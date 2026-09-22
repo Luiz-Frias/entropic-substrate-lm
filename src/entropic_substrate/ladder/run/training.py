@@ -8,7 +8,7 @@ from typing import Literal, TypedDict
 import torch
 from torch import nn
 
-from entropic_substrate.sentence_prediction.model import SentencePredictor
+from entropic_substrate.core.sentence.model import SentencePredictor
 
 type SentencePhase = Literal["codec_warmup", "prediction"]
 

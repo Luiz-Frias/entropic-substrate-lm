@@ -15,7 +15,6 @@ from entropic_substrate.__legacy.d1_artifact_snapshot import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
-from entropic_substrate.__legacy.sentence_prediction.worker_command import build_worker_objects
 from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
 from entropic_substrate.ladder.run.h_probe_process import (
     WatchdogProcessConfig,
@@ -26,6 +25,7 @@ from entropic_substrate.ladder.run.worker.h_probe_controller import (
     ProbeControllerFailure,
     run_probe_controller,
 )
+from entropic_substrate.ladder.run.worker_command import build_worker_objects
 
 
 def _parser() -> argparse.ArgumentParser:

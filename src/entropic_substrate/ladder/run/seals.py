@@ -7,28 +7,28 @@ from pathlib import Path
 
 import torch
 
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.checkpoint import (
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.__legacy.sentence_prediction.checkpoint import (
     checkpoint_binding,
     checkpoint_metadata,
     save_checkpoint,
 )
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.journal import (
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.journal import (
     artifact_reference,
     read_journal,
     read_json,
     write_journal,
     write_json,
 )
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.sampling import SamplingSpec, SentenceSampler
-from entropic_substrate.sentence_prediction.training import SentencePhase, build_sentence_optimizer
+from entropic_substrate.ladder.run.training import SentencePhase, build_sentence_optimizer
 
 
 @dataclass(frozen=True)

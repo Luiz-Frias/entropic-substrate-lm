@@ -5,15 +5,15 @@ from typing import Protocol
 from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
 from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
 from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.__legacy.sentence_prediction.worker_transport import (
-    read_published_probe_request,
-)
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
 from entropic_substrate.ladder.run.h_runpod_transport import (
     ProbeAccount,
     ProbePod,
     ProbeProviderError,
+)
+from entropic_substrate.ladder.run.worker_transport import (
+    read_published_probe_request,
 )
 
 

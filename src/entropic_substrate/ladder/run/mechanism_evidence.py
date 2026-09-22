@@ -4,9 +4,9 @@ import math
 
 import torch
 
-from entropic_substrate.sentence_prediction.model import SentenceReadout
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.core.sentence.model import SentenceReadout
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
 
 SCHEMA = "h-mechanism-evidence-v1"
 

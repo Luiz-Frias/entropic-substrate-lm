@@ -11,20 +11,20 @@ from entropic_substrate.__legacy.d1_artifact_snapshot import (
 )
 from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
 from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.__legacy.sentence_prediction.journal import read_json, write_json
-from entropic_substrate.__legacy.sentence_prediction.worker_completion import (
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.h_probe_events import ObservedProbeEvent, read_probe_event
+from entropic_substrate.ladder.run.journal import read_json, write_json
+from entropic_substrate.ladder.run.worker_completion import (
     admit_worker_runtime,
     receive_worker_completion,
 )
-from entropic_substrate.__legacy.sentence_prediction.worker_request import (
+from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     worker_artifact,
 )
-from entropic_substrate.__legacy.sentence_prediction.worker_snapshot import (
+from entropic_substrate.ladder.run.worker_snapshot import (
     materialize_worker_snapshot,
 )
-from entropic_substrate.core.sentence.recovery_state import recovery_record
-from entropic_substrate.ladder.run.h_probe_events import ObservedProbeEvent, read_probe_event
 
 
 def collect_probe_terminal(

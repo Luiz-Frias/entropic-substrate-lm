@@ -5,19 +5,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_operator_values import require_d1_pod_id
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
+from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.native_verification import read_native_verification
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, worker_artifact
-from entropic_substrate.sentence_prediction.worker_snapshot import materialize_worker_snapshot
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.native_verification import read_native_verification
+from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
+from entropic_substrate.ladder.run.worker_snapshot import materialize_worker_snapshot
 
 
 def admit_worker_runtime(

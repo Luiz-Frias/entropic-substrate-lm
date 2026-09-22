@@ -5,10 +5,10 @@ from random import Random
 
 import torch
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.corpus import CorpusSplit
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
+from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
+from entropic_substrate.core.sentence.corpus import CorpusSplit
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.execution import SentenceExecution
 
 
 @dataclass(frozen=True, slots=True)

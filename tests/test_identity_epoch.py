@@ -108,6 +108,54 @@ values replaced,
 (CI), are retracted here, not silently overwritten. Label still does not
 bump until rung 3.
 
+p4 re-pin #4 (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 1 batch (c) "ladder.run: 21 leaves + capture.py"):
+this batch ``git mv``'d the 21 remaining non-checkpoint ``sentence_prediction``
+leaves (evaluation_records, execution, generation, journal,
+mechanism_evidence, native_verification, object_worker, runner, seals,
+span_diagnostics, span_probe, span_probe_artifacts, span_states,
+trace_capture, training, worker_command, worker_completion, worker_execution,
+worker_request, worker_snapshot, worker_transport) to flat
+``entropic_substrate.ladder.run.*``, plus ``capture.py`` to
+``entropic_substrate.ladder.capture.capture`` (mapping.json's dest for
+``sentence_prediction.capture`` is the package-level ``ladder.capture``;
+leaf restated per fragment-author convention, same as batch (b)'s
+``core.probe.score_gain``). ``checkpoint.py`` itself stays in
+``__legacy/sentence_prediction/`` this batch (conductor ruling 2026-09-22:
+its ``_reader_identity()`` resolves ``package = Path(__file__).parent``, so
+moving it before rewriting that glob to an explicit tuple would silently
+widen the swept set to everything under its new directory; the rewrite and
+the move both land together at rung 3). Both composed regime rows change:
+(1) h-checkpoint-reader-v1 changes because ``checkpoint.py``'s
+``package.glob("*.py")`` sweep of ``sentence_prediction/`` now sees 6 files
+(``__init__.py``, ``checkpoint.py``, and the 4 CLI modules) instead of 28;
+(2) h-source-reader-v2 changes because ``capture`` -- one of its seven fixed
+members -- physically left ``sentence_prediction/`` (its digest is now read
+from the landed file's bytes, which differ from the old ones by the import
+rewrites above, including a second pass that caught this same batch's own
+old-prefix imports of ``evidence.lifecycle``/``d1_artifact_snapshot`` --
+``entropic_substrate.evidence.lifecycle``/``entropic_substrate.
+d1_artifact_snapshot`` resolve through the root-level compat shim rather
+than the explicit ``entropic_substrate.__legacy.*`` address, which
+``tests/test_no_old_prefix.py`` caught RED across all 22 files this batch
+lands, not only ``capture.py`` -- rewritten to the explicit form, per the
+zero-old-prefix invariant); the ``sentence_prediction`` package member and
+``d1_artifact_snapshot``/``evidence.lifecycle`` are untouched this batch
+(rail modules move last, per the same rung-3 ordering). Both rows were
+recomputed with ``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch
+2.13.0 --pysbd 0.3.4``; CI: ``--python 3.12.14 --torch 2.13.0+cpu --pysbd
+0.3.4``), and the values they replace --
+``9d08ecb44633e6a45b23049d635af9202db21138ec1582b3620d00fa8c2565e3``
+(checkpoint, local),
+``23fa1e8919bc9f35477aad0ba480d630257c41c16bc306c6e6c2176474726777``
+(checkpoint, CI),
+``701d2b5b85906b906242f1e6bbfbcbec88e3faefb6f639a5e89df27811dedfa4``
+(source, local) and
+``f8354ee1916c9e85a9e2f8dc8ce05e355881e2f1a5c9630bf2d526f3e3c13610``
+(source, CI) -- are retracted here, not silently overwritten. The label
+itself still does not bump until this phase's identity-pin commit (rung 3),
+per plan.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -185,22 +233,22 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "9d08ecb44633e6a45b23049d635af9202db21138ec1582b3620d00fa8c2565e3",  # pragma: allowlist secret
+    ): "49e9a1b11dbde1097c65dc11ef62621fb3e7b6173ca677bafdfa6cb6aef92f6d",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "23fa1e8919bc9f35477aad0ba480d630257c41c16bc306c6e6c2176474726777",  # pragma: allowlist secret
+    ): "e6d01c13dd3f0d36c922be5528b1921e0d7553d8b36f3ea082c959c627e90aed",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "701d2b5b85906b906242f1e6bbfbcbec88e3faefb6f639a5e89df27811dedfa4",  # pragma: allowlist secret
+    ): "b78ad25a7d1865c6e0923acc55f5988f5e77a2382e74633cbd769e32efeb87d8",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "f8354ee1916c9e85a9e2f8dc8ce05e355881e2f1a5c9630bf2d526f3e3c13610",  # pragma: allowlist secret
+    ): "c63ffeb3ad285f841ea3bbf31b54ad02b2da28c48f10c78478006a1139b34427",  # pragma: allowlist secret
 }
 
 

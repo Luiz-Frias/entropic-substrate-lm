@@ -6,16 +6,16 @@ from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
 
-from entropic_substrate.d1_artifact_snapshot import normalize_d1_artifact_root
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.sentence_prediction.evaluation_records import read_evaluation
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.seals import read_seal, resume_seal, seal_step
+from entropic_substrate.__legacy.d1_artifact_snapshot import normalize_d1_artifact_root
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.evaluation_records import read_evaluation
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.seals import read_seal, resume_seal, seal_step
 
 
 @dataclass(frozen=True)

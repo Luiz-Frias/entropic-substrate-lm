@@ -5,21 +5,21 @@ import time
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
-from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
-from entropic_substrate.d1_operator_values import require_d1_pod_id
-from entropic_substrate.d1_predecessor_loader import verified_git_bundle
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.__legacy.d1_artifact_snapshot import read_d1_artifact_bytes
+from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
+from entropic_substrate.__legacy.d1_predecessor_loader import verified_git_bundle
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.__legacy.paths import source_root
+from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
+from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.journal import artifact_reference
+from entropic_substrate.ladder.run.native_verification import verify_native_capture
+from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
+from entropic_substrate.ladder.run.span_diagnostics import run_span_diagnostics
+from entropic_substrate.ladder.run.trace_capture import capture_model_trace
 from entropic_substrate.ladder.run.worker.hardware import measure_hardware, verify_source_tree
-from entropic_substrate.paths import source_root
-from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
-from entropic_substrate.sentence_prediction.generation import run_probe_generation
-from entropic_substrate.sentence_prediction.journal import artifact_reference
-from entropic_substrate.sentence_prediction.native_verification import verify_native_capture
-from entropic_substrate.sentence_prediction.runner import read_training_progress, run_probe_training
-from entropic_substrate.sentence_prediction.runtime_precision import require_execution_precision
-from entropic_substrate.sentence_prediction.span_diagnostics import run_span_diagnostics
-from entropic_substrate.sentence_prediction.trace_capture import capture_model_trace
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
 
 
 def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[str, object]:
@@ -27,7 +27,7 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
 
     The remote-worker guard is layout-invariant (E-3/DN-8): the "actual"
     side is the installed ``entropic_substrate`` package's own resolved
-    location (``entropic_substrate.paths.source_root()``), not this
+    location (``entropic_substrate.__legacy.paths.source_root()``), not this
     module's own ``__file__`` depth, so relocating a copy of this module
     elsewhere does not by itself make a legitimately bound tree read as
     unbound.
