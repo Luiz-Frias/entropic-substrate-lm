@@ -169,6 +169,12 @@ pc-ci base=env("PC_CI_BASE", "origin/dev"):
     echo "→ Running prek hooks on ${changed} file(s) changed vs {{base}} (${from_ref:0:7}..HEAD)..."
     prek run --from-ref "${from_ref}" --to-ref HEAD
     prek run --stage pre-push --from-ref "${from_ref}" --to-ref HEAD
+    # FOR-1536 (MEASURED 2026-09-21): prek range runs cover the pre-commit and
+    # pre-push stages only; gitlint lives in the commit-msg stage, so a commit
+    # made with hooks skipped reached submit with an 84-char title. Lint every
+    # message in the range with the same tool the hook pins.
+    echo "→ gitlint over ${from_ref:0:7}..HEAD..."
+    uv run gitlint --commits "${from_ref}..HEAD"
     echo "✓ All prek gates passed on the branch diff"
 
 # ---------------------------------------------------------------------------
