@@ -582,7 +582,12 @@
         "tests/test_h_lane_live.py",
         "tools/regime_rows.py",
         "tests/test_regime_rows.py",
-        "tests/test_worker_source_anchor.py"
+        "tests/test_worker_source_anchor.py",
+        "src/entropic_substrate/composition/capture_cli.py",
+        "src/entropic_substrate/composition/cli.py",
+        "src/entropic_substrate/composition/source_cli.py",
+        "src/entropic_substrate/composition/span_cli.py",
+        "src/entropic_substrate/composition/__init__.py"
       ],
       "conflict_edges": [
         {
