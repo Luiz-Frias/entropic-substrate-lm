@@ -6,18 +6,18 @@ from typing import cast
 import torch
 from torch import nn
 
-from entropic_substrate.predictive_state.dynamics import (
+from entropic_substrate.__legacy.predictive_state.dynamics import (
     DEFAULT_SOLVER_CONFIG,
     SolverConfig,
     SolverDiagnostics,
 )
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.codec import CodecSpec, NeuralSentenceCodec
-from entropic_substrate.sentence_prediction.consumer import ConsumerMode, SentenceConsumer
-from entropic_substrate.sentence_prediction.head import SentenceLawHead
-from entropic_substrate.sentence_prediction.law import DirectionalMagnitudeLaw, LawSpec
-from entropic_substrate.sentence_prediction.numerics import apply_interface, checked_coordinates
-from entropic_substrate.sentence_prediction.spine import SentenceSpine, SpineSpec
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.codec import CodecSpec, NeuralSentenceCodec
+from entropic_substrate.core.sentence.consumer import ConsumerMode, SentenceConsumer
+from entropic_substrate.core.sentence.head import SentenceLawHead
+from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
+from entropic_substrate.core.sentence.numerics import apply_interface, checked_coordinates
+from entropic_substrate.core.sentence.spine import SentenceSpine, SpineSpec
 
 
 @dataclass(frozen=True)

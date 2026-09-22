@@ -10,7 +10,7 @@ from typing import Protocol
 
 from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
 from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
-from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.ladder.run.h_probe_control import own_probe_role, read_probe_control
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_runpod_transport import (

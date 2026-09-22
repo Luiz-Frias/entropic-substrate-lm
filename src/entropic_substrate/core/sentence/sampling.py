@@ -4,13 +4,13 @@ from dataclasses import dataclass
 
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.corpus import (
     CorpusSplit,
     PreparedCorpus,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.records import SentenceSpan, content_identity
+from entropic_substrate.core.sentence.records import SentenceSpan, content_identity
 
 
 @dataclass(frozen=True, slots=True)

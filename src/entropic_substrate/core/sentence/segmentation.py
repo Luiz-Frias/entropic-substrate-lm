@@ -6,7 +6,7 @@ from typing import ClassVar, Literal
 
 from pysbd import Segmenter
 
-from entropic_substrate.sentence_prediction.records import (
+from entropic_substrate.core.sentence.records import (
     SentenceSpan,
     SourceDocument,
     content_identity,

@@ -57,6 +57,37 @@ untouched: none of the seven ``h-source-reader-v2`` member files
 ``corpus``, ``capture``, ``d1_artifact_snapshot``, ``evidence.lifecycle``)
 were touched by this split, confirmed by re-measuring both rows unchanged.
 
+p4 re-pin #2 (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 1 batch (a) "core.sentence: 18 leaves"): this
+batch ``git mv``'d 18 of ``sentence_prediction``'s leaves (boundary, codec,
+consumer, corpus, head, law, model, numerics, objective, profile, records,
+recovery_state, rollout, runtime_precision, sampling, scoring, segmentation,
+spine) to ``entropic_substrate.core.sentence.*`` and rewrote their import
+lines onto the landed or ``__legacy`` addresses (never the old prefix, per
+the zero-old-prefix invariant). Both composed regime rows change: (1)
+h-checkpoint-reader-v1 changes because ``checkpoint.py``'s
+``package.glob("*.py")`` sweep of ``sentence_prediction/`` now sees 29
+files instead of 47 (the 18 moved leaves no longer live there); (2)
+h-source-reader-v2 changes because three of its seven fixed members --
+``records``, ``segmentation`` and ``corpus`` -- are in this batch's 18 and
+their bytes changed (import rewrites). The ``sentence_prediction`` package
+member and ``capture``/``d1_artifact_snapshot``/``evidence.lifecycle`` are
+untouched this batch (capture.py moves in a later batch, the rail modules
+move last); ``_FROZEN_SOURCE_READER_MODULES`` below is therefore still
+byte-identical -- only the SOURCE BYTES behind three of its entries moved,
+not the tuple of dotted names itself, so this fixture's frozen-tuple
+assertion needed no edit. Both rows were recomputed with
+``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch 2.13.0 --pysbd
+0.3.4``; CI: ``--python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4``), and the
+values they replace --
+``04af5bd2e34b3ee050f9f13938115268f26266cceb8499ef028f7e555772b140``
+(checkpoint, local), ``bc09822a7d2fa55a50d43de7a8227b9a26a9c9b160e21344110811973bd830e9``
+(checkpoint, CI), ``da8205c91989bfc09feafcd56ff46d6fd6c2b366f452308e8353e425cfeae8be``
+(source, local) and ``8e973c8702bd20d9c8cfc25331346674c7070dd7cbb9e4b6488a1881f1b25165``
+(source, CI) -- are retracted here, not silently overwritten. The label
+itself still does not bump (h-checkpoint-reader-v1, h-source-reader-v2)
+until this phase's identity-pin commit (rung 3), per plan.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -134,19 +165,22 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "04af5bd2e34b3ee050f9f13938115268f26266cceb8499ef028f7e555772b140",  # pragma: allowlist secret
+    ): "5a3cd776bd8a8cbc8add95c772e01f259a8f00f31d95b26bd5a2283e6bb7855f",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "bc09822a7d2fa55a50d43de7a8227b9a26a9c9b160e21344110811973bd830e9",  # pragma: allowlist secret
+    ): "2a66a7b1758d1b370d851a333e882b29c85426025fe501d20bceb9d89fd751c3",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
-    ("3.12.13", "0.3.4"): "da8205c91989bfc09feafcd56ff46d6fd6c2b366f452308e8353e425cfeae8be",
+    (
+        "3.12.13",
+        "0.3.4",
+    ): "701d2b5b85906b906242f1e6bbfbcbec88e3faefb6f639a5e89df27811dedfa4",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "8e973c8702bd20d9c8cfc25331346674c7070dd7cbb9e4b6488a1881f1b25165",  # pragma: allowlist secret
+    ): "f8354ee1916c9e85a9e2f8dc8ce05e355881e2f1a5c9630bf2d526f3e3c13610",  # pragma: allowlist secret
 }
 
 

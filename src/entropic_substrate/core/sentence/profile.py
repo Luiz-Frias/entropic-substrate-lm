@@ -8,15 +8,15 @@ from dataclasses import asdict, dataclass
 from inspect import signature
 from typing import Literal, Self, cast
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.predictive_state.dynamics import SolverConfig
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.codec import CodecSpec
-from entropic_substrate.sentence_prediction.consumer import ConsumerMode
-from entropic_substrate.sentence_prediction.law import LawSpec
-from entropic_substrate.sentence_prediction.records import content_identity
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.spine import SpineSpec
+from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
+from entropic_substrate.__legacy.predictive_state.dynamics import SolverConfig
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.consumer import ConsumerMode
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.spine import SpineSpec
 
 
 def _numbers(values: tuple[float, ...]) -> None:

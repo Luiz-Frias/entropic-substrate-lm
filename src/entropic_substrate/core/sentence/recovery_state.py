@@ -5,10 +5,10 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.numerics import checked_coordinates
-from entropic_substrate.sentence_prediction.rollout import (
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.numerics import checked_coordinates
+from entropic_substrate.core.sentence.rollout import (
     SentenceEmission,
     SentenceRollout,
 )

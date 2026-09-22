@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.predictive_state.metric import finite_tensor
-from entropic_substrate.sentence_prediction.numerics import InterfaceMode, checked_coordinates
+from entropic_substrate.__legacy.predictive_state.metric import finite_tensor
+from entropic_substrate.core.sentence.numerics import InterfaceMode, checked_coordinates
 
 type SpineConsumer = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 

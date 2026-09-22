@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from entropic_substrate.sentence_prediction.records import content_identity
+from entropic_substrate.core.sentence.records import content_identity
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,10 +7,10 @@ from typing import Literal
 import torch
 import torch.nn.functional as F
 
-from entropic_substrate.predictive_state.metric import finite_tensor
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.codec import teacher_forcing_prefix
-from entropic_substrate.sentence_prediction.model import SentencePredictor, SentenceReadout
+from entropic_substrate.__legacy.predictive_state.metric import finite_tensor
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
+from entropic_substrate.core.sentence.model import SentencePredictor, SentenceReadout
 
 
 @dataclass(frozen=True)

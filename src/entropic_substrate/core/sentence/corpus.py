@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from itertools import islice
 from typing import Literal
 
-from entropic_substrate.sentence_prediction.records import SourceDocument, content_identity
-from entropic_substrate.sentence_prediction.segmentation import (
+from entropic_substrate.core.sentence.records import SourceDocument, content_identity
+from entropic_substrate.core.sentence.segmentation import (
     OversizeDocument,
     SegmentationPolicy,
     SentenceSegmentation,

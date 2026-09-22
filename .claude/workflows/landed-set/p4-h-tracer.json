@@ -40,7 +40,79 @@
     "entropic_substrate.h_runpod_transport": {
       "target": "entropic_substrate.ladder.run.h_runpod_transport",
       "landed": true
+    },
+    "entropic_substrate.sentence_prediction.boundary": {
+      "target": "entropic_substrate.core.sentence.boundary",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.codec": {
+      "target": "entropic_substrate.core.sentence.codec",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.consumer": {
+      "target": "entropic_substrate.core.sentence.consumer",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.corpus": {
+      "target": "entropic_substrate.core.sentence.corpus",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.head": {
+      "target": "entropic_substrate.core.sentence.head",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.law": {
+      "target": "entropic_substrate.core.sentence.law",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.model": {
+      "target": "entropic_substrate.core.sentence.model",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.numerics": {
+      "target": "entropic_substrate.core.sentence.numerics",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.objective": {
+      "target": "entropic_substrate.core.sentence.objective",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.profile": {
+      "target": "entropic_substrate.core.sentence.profile",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.records": {
+      "target": "entropic_substrate.core.sentence.records",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.recovery_state": {
+      "target": "entropic_substrate.core.sentence.recovery_state",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.rollout": {
+      "target": "entropic_substrate.core.sentence.rollout",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.runtime_precision": {
+      "target": "entropic_substrate.core.sentence.runtime_precision",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.sampling": {
+      "target": "entropic_substrate.core.sentence.sampling",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.scoring": {
+      "target": "entropic_substrate.core.sentence.scoring",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.segmentation": {
+      "target": "entropic_substrate.core.sentence.segmentation",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.spine": {
+      "target": "entropic_substrate.core.sentence.spine",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 39
+  "legacy_edge_budget": 44
 }

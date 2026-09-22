@@ -16,7 +16,7 @@ from entropic_substrate.__legacy.d1_artifact_snapshot import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
 
 

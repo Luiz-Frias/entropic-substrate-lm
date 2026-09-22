@@ -4,16 +4,16 @@ from typing import Literal, cast
 
 import torch
 
-from entropic_substrate.predictive_state.dynamics import (
+from entropic_substrate.__legacy.predictive_state.dynamics import (
     DEFAULT_SOLVER_CONFIG,
     SolverConfig,
     SolverDiagnostics,
     euclidean_residual,
     inverse_fisher_residual,
 )
-from entropic_substrate.predictive_state.metric import numerical_pair
-from entropic_substrate.sentence_prediction.head import SentenceLawHead
-from entropic_substrate.sentence_prediction.numerics import (
+from entropic_substrate.__legacy.predictive_state.metric import numerical_pair
+from entropic_substrate.core.sentence.head import SentenceLawHead
+from entropic_substrate.core.sentence.numerics import (
     InterfaceMode,
     checked_coordinates,
     coordinate_map,

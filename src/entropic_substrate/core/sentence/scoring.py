@@ -6,9 +6,9 @@ from typing import Literal
 
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.codec import teacher_forcing_prefix
-from entropic_substrate.sentence_prediction.model import SentencePredictor
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
+from entropic_substrate.core.sentence.model import SentencePredictor
 
 
 @dataclass(frozen=True)

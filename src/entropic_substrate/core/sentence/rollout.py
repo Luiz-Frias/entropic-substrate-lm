@@ -5,9 +5,9 @@ from typing import Literal
 
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.numerics import apply_interface
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.numerics import apply_interface
 
 type RolloutStatus = Literal[
     "active", "document_end", "empty_sentence", "invalid_utf8", "length_limit", "context_limit"

@@ -7,9 +7,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.predictive_state.metric import finite_tensor
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.law import DirectionalMagnitudeLaw, LawSpec
+from entropic_substrate.__legacy.predictive_state.metric import finite_tensor
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,11 +8,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields
 from typing import cast
 
-from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
 from entropic_substrate.__legacy.sentence_prediction.worker_request import (
     ProbeRequest,
     parse_probe_request,
 )
+from entropic_substrate.core.sentence.recovery_state import recovery_record
 
 RUNPODCTL_VERSION = "runpodctl 2.14.0-dd55bcf"
 RUNPODCTL_SHA256 = (
