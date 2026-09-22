@@ -30,7 +30,7 @@ def test_pc_ci_recipe_lints_the_commit_range_with_gitlint() -> None:
     recipe = recipe[: recipe.index("\n\n")]
     # 2026-09-22: lints the UNPUBLISHED commits only (a published ancestor with a bad
     # message is past the point this gate exists for and may never be rewritten).
-    assert 'git rev-list HEAD --not --remotes' in recipe, recipe
+    assert "git rev-list HEAD --not --remotes" in recipe, recipe
     assert re.search(r'uv run gitlint --commit "\$\{sha\}"', recipe), recipe
 
 

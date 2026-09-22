@@ -34,6 +34,7 @@ from entropic_substrate.ladder.run.worker_command import (
     build_worker_objects as build_worker_objects,
 )
 from entropic_substrate.ladder.run.worker_command import cast as cast
+from entropic_substrate.ladder.run.worker_command import configure_logging as configure_logging
 from entropic_substrate.ladder.run.worker_command import json as json
 from entropic_substrate.ladder.run.worker_command import (
     load_d1_dvc_s3_remote as load_d1_dvc_s3_remote,

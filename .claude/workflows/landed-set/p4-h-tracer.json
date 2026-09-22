@@ -228,5 +228,8 @@
     "entropic_substrate.composition.cli",
     "entropic_substrate.composition.source_cli",
     "entropic_substrate.composition.span_cli"
+  ],
+  "conforming_entrypoints": [
+    "entropic_substrate.sentence_prediction.worker_command"
   ]
 }
