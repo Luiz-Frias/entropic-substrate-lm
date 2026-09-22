@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -60,20 +61,95 @@ print({marker!r} if identical else "COLD_IMPORT_DIFFERENT")
 """
 
 
-def _run_cold_import(facade: str, child: str) -> subprocess.CompletedProcess[str]:
+def _run_cold_import(
+    facade: str, child: str, *, package_root: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     old_dotted = f"entropic_substrate.{facade}.{child}"
     legacy_dotted = f"entropic_substrate.__legacy.{facade}.{child}"
     code = _COLD_IMPORT_CHILD_TEMPLATE.format(
         old_dotted=old_dotted, legacy_dotted=legacy_dotted, marker=_MARKER
     )
+    env = os.environ.copy()
+    if package_root is not None:
+        # PYTHONPATH is consulted before site-packages (and so before the
+        # editable install's __editable__*.pth entry for src/), so this root
+        # SHADOWS the committed tree for the child only. Bytecode writing is
+        # off so the overlay's mutated module can never deposit a .pyc in a
+        # __pycache__ that the committed tree shares.
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{package_root}{os.pathsep}{existing}" if existing else str(package_root)
+        )
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
     return subprocess.run(
         [sys.executable, "-c", code],
-        env=os.environ.copy(),
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
         cwd=str(REPO_ROOT),
     )
+
+
+def _overlay_with_planted_facade_body(root: Path, facade: str, body: str) -> Path:
+    """Mirror `src/` as a symlink farm in which ONE file is a real, rewritten
+    file: `entropic_substrate/__legacy/<facade>/__init__.py`.
+
+    Only the directories on the path to that file are materialised; every
+    other entry at every level is a symlink to the committed tree, so the
+    overlay costs a handful of symlinks rather than a copy of the package.
+    `__pycache__` is never linked, so nothing the child imports can write
+    bytecode into the committed tree through this farm.
+    """
+    overlay = root / "overlay"
+    overlay.mkdir()
+    src_dir, dst_dir = SRC, overlay
+    for name in ("entropic_substrate", "__legacy", facade):
+        for entry in src_dir.iterdir():
+            if entry.name not in (name, "__pycache__"):
+                (dst_dir / entry.name).symlink_to(entry)
+        src_dir, dst_dir = src_dir / name, dst_dir / name
+        dst_dir.mkdir()
+    for entry in src_dir.iterdir():
+        if entry.name not in ("__init__.py", "__pycache__"):
+            (dst_dir / entry.name).symlink_to(entry)
+    (dst_dir / "__init__.py").write_text(body)
+    return overlay
+
+
+@pytest.fixture
+def committed_legacy_facades_untouched() -> Generator[None]:
+    """Regression pin (FOR-1542): no test in this file may write into the
+    committed tree.
+
+    MEASURED 2026-09-22 at 1c10969: the facade-retraction guard tooth below
+    used to plant the original re-export body directly in
+    `src/entropic_substrate/__legacy/data/__init__.py` and revert it in a
+    `finally`. Because `pytest -m unit -n auto --dist loadfile` gives every
+    xdist worker the SAME working tree, any cold import in another worker
+    that landed inside that window hit the deliberately planted cycle:
+    `ImportError: cannot import name 'Corpus' from partially initialized
+    module 'entropic_substrate.data.batching'`, reproduced frame-for-frame
+    from `entropic_substrate.d1_billing_finalization_values`.
+
+    Bytes alone cannot see that defect -- the write was reverted -- so this
+    pins `st_mtime_ns` as well, which the write-then-revert pair does change.
+    """
+    watched = sorted(
+        SRC / "entropic_substrate" / "__legacy" / facade / "__init__.py"
+        for facade in FACADE_CHILDREN
+    )
+    before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in watched}
+    yield
+    for path, (payload, mtime_ns) in before.items():
+        assert path.read_bytes() == payload, (
+            f"{path} was rewritten by this test; every xdist worker shares this "
+            "one working tree, so a concurrent cold import sees the mutation"
+        )
+        assert path.stat().st_mtime_ns == mtime_ns, (
+            f"{path} was written and reverted by this test; the bytes match again "
+            "but the window was open to every other xdist worker meanwhile"
+        )
 
 
 @pytest.mark.parametrize("facade,child", sorted(FACADE_CHILDREN.items()))
@@ -113,23 +189,28 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
 
 # ---------------------------------------------------------------------------
 # Guard tooth (house rule 5, negative arm): restoring one moved facade
-# copy's ORIGINAL bytes under __legacy/<pkg>/__init__.py must make a COLD
+# copy's ORIGINAL bytes at __legacy/<pkg>/__init__.py must make a COLD
 # import of one of its children raise ImportError on a partially
-# initialized module. Performed against the REAL committed tree and
-# reverted in a `finally`, snapshot-based so a failure mid-test cannot
-# leave the working tree dirty.
+# initialized module. The planted bytes go in an ISOLATED OVERLAY, never in
+# the committed tree -- see `committed_legacy_facades_untouched` for the
+# measurement that forced that (FOR-1542).
 # ---------------------------------------------------------------------------
 
 
-def test_restoring_one_facade_original_bytes_breaks_cold_import_RED_case() -> None:
+def test_restoring_one_facade_original_bytes_breaks_cold_import_RED_case(
+    tmp_path: Path, committed_legacy_facades_untouched: None
+) -> None:
     """RED-first, both arms in one test (house rule 5): the retracted
     docstring-only file at __legacy/data/__init__.py is what MAKES the
     cold import above pass; putting the ORIGINAL re-export body back at
     that __legacy path (the exact state the design-gate ruling retracted)
     must reintroduce the partially-initialized-module ImportError this
-    phase's facade-emptying ruling exists to prevent. The GREEN case (the
-    committed, emptied file) is proven by the parametrized test above,
-    which runs first in file order against the real, unmutated tree."""
+    phase's facade-emptying ruling exists to prevent.
+
+    Both arms run in the SAME interpreter-per-arm shape, differing only in
+    which package root the child resolves `entropic_substrate` from: the
+    RED arm resolves it from an overlay whose only real file is the planted
+    facade, the GREEN control from the committed tree."""
     facade = "data"
     child = "batching"
     legacy_init = SRC / "entropic_substrate" / "__legacy" / facade / "__init__.py"
@@ -141,21 +222,20 @@ def test_restoring_one_facade_original_bytes_breaks_cold_import_RED_case() -> No
         "emptied docstring form, or the old-path copy no longer carries "
         "the original re-export body -- this test's precondition is stale"
     )
-    try:
-        legacy_init.write_text(original_body)
-        result = _run_cold_import(facade, child)
-        assert result.returncode != 0, (
-            "restoring the facade's original bytes was supposed to break "
-            f"the cold import, but it still exited 0: {result.stdout!r}"
-        )
-        assert "partially initialized module" in result.stderr, result.stderr
-        assert "ImportError" in result.stderr, result.stderr
-    finally:
-        legacy_init.write_text(emptied_snapshot)
-    # Sanity: the revert actually landed, so the suite's OWN tree is clean
-    # for every test that runs after this one (including the parametrized
-    # GREEN case if pytest ever reorders).
-    assert legacy_init.read_text() == emptied_snapshot
-    post_revert = _run_cold_import(facade, child)
-    assert post_revert.returncode == 0, post_revert.stderr
-    assert _MARKER in post_revert.stdout
+    overlay = _overlay_with_planted_facade_body(tmp_path, facade, original_body)
+    assert (overlay / "entropic_substrate" / "__legacy" / facade / "__init__.py").read_text() == (
+        original_body
+    ), "the overlay did not actually receive the planted facade body"
+    result = _run_cold_import(facade, child, package_root=overlay)
+    assert result.returncode != 0, (
+        "restoring the facade's original bytes was supposed to break "
+        f"the cold import, but it still exited 0: {result.stdout!r}"
+    )
+    assert "partially initialized module" in result.stderr, result.stderr
+    assert "ImportError" in result.stderr, result.stderr
+    # Control for the instrument: the same child, resolving the SAME package
+    # from the committed tree, must still pass. Without this, a broken
+    # overlay (wrong PYTHONPATH, missing symlink) would read as a guard hit.
+    control = _run_cold_import(facade, child)
+    assert control.returncode == 0, control.stderr
+    assert _MARKER in control.stdout
