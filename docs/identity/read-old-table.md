@@ -64,7 +64,7 @@ survive.
 **`h-checkpoint-reader-v1` → `v2`.** `sentence_prediction/checkpoint.py` `_reader_identity()` globs
 `sentence_prediction/*.py` plus four named siblings, and hashes `path.relative_to(package.parent)`
 into the identity string `[M, checkpoint.py:45-64]`. Once `package.parent` is `ladder/run`, the glob
-**RAISES rather than changing value**: there is no valid root. p4 therefore rewrites it to an
+**RAISES rather than changing value** (MEASURED 2026-09-22 by the p4 validator on the glob form left in place after the move: the four rail siblings resolved relative to `package.parent` no longer exist at the new root, and the reader raises `D1ArtifactSnapshotError` before any digest is composed). p4 therefore rewrites it to an
 explicit dotted-name tuple, the idiom `capture.py` already uses, now living at
 `ladder/run/checkpoint.py`.
 
