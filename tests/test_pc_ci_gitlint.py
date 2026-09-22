@@ -26,7 +26,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_pc_ci_recipe_lints_the_commit_range_with_gitlint() -> None:
     text = (REPO / "justfile").read_text()
-    recipe = text[text.index("pc-ci base="):]
+    recipe = text[text.index("pc-ci base=") :]
     recipe = recipe[: recipe.index("\n\n")]
     assert re.search(r'uv run gitlint --commits "\$\{from_ref\}\.\.HEAD"', recipe), recipe
 
@@ -57,7 +57,9 @@ def test_gitlint_over_a_range_judges_titles(tmp_path: Path, title: str, expect_o
     (repo / "a").write_text("1\n")
     _git(repo, "add", "a", env=env)
     _git(repo, "commit", "-q", "-m", "chore: base", env=env)
-    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, env=env, check=True, capture_output=True, text=True).stdout.strip()
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, env=env, check=True, capture_output=True, text=True
+    ).stdout.strip()
     (repo / "a").write_text("2\n")
     _git(repo, "add", "a", env=env)
     _git(repo, "commit", "-q", "-m", title + "\n\nbody line under eighty characters.", env=env)
