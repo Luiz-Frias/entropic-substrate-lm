@@ -36,7 +36,23 @@
     "entropic_substrate.evidence.d1_types": {
       "target": "entropic_substrate.kernel.verdict.d1_types",
       "landed": true
+    },
+    "entropic_substrate.checkpoint": {
+      "target": "entropic_substrate.kernel.runtime.checkpoint",
+      "landed": true
+    },
+    "entropic_substrate.config": {
+      "target": "entropic_substrate.kernel.runtime.config",
+      "landed": true
+    },
+    "entropic_substrate.paths": {
+      "target": "entropic_substrate.kernel.runtime.paths",
+      "landed": true
+    },
+    "entropic_substrate.shared_attempt": {
+      "target": "entropic_substrate.kernel.runtime.shared_attempt",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 57
+  "legacy_edge_budget": 56
 }

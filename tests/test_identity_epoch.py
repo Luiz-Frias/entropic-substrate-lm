@@ -198,6 +198,36 @@ local), ``af9268d28f5cd62db26d6b78800c86ef84141e57af967afbf94163e7ddeff5a1``
 (source, CI) -- are retracted here, not silently overwritten. Neither value
 changes later (ACCEPTANCE).
 
+RETRACTION (house rule 4, p5-kernel): the sentence above, "Neither value
+changes later (ACCEPTANCE)", is WRONG against ruling R-PIN (conductor,
+2026-09-22, precedent p1 AMENDED 2026-09-19: "frozen_after freezes label +
+shape, not digest values"). What is frozen after p4 is the LABEL
+(``h-checkpoint-reader-v2``) and the module-set SHAPE (the 51-member
+``_READER_MODULES`` tuple) -- not the composed digest VALUE, which
+re-measures whenever a later phase rewrites one member's bytes. This is not
+a new exception; p1's own re-pin (above) already changed a composed value
+under the still-``-v1``-labelled reader before p4 bumped the label. The
+retracted sentence is not carried forward.
+
+p5 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p5-kernel, kernel/runtime rung): this phase's runtime commit
+rewrites ``ladder/run/worker_execution.py`` line 10 (and its line-31
+docstring mention) from ``entropic_substrate.__legacy.paths`` to
+``entropic_substrate.kernel.runtime.paths`` -- the one landed->``__legacy``
+edge among the 14 p5-kernel modules (MEASURED 2026-09-22, ruling R-PIN).
+``worker_execution`` is one of ``_READER_MODULES``' 51 members, so its
+changed bytes move the composed h-checkpoint-reader-v2 digest; label and
+membership are unchanged (R-PIN). Both rows recomputed with
+``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch 2.13.0``; CI:
+``--python 3.12.14 --torch 2.13.0+cpu``); the OLD values they replace,
+``8e4ca5a3840e5c2efa7c4e0f0a1521af576e54139588cef76169021276b8eaf3``
+(local) and
+``ea85d18b278423bc7de7095b8292ce224b6c7aa50428eecf443dec828eb1602a``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE``
+is untouched: ``worker_execution`` was never one of h-source-reader-v3's
+seven fixed members, confirmed by re-measuring both source rows unchanged
+via the same tool invocation (with ``--pysbd 0.3.4``).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -275,11 +305,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "8e4ca5a3840e5c2efa7c4e0f0a1521af576e54139588cef76169021276b8eaf3",  # pragma: allowlist secret
+    ): "d4bde6d4bb4c0f6c154450b070a2336a1a34c5b4a949bb4fefaa322522dcaf42",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "ea85d18b278423bc7de7095b8292ce224b6c7aa50428eecf443dec828eb1602a",  # pragma: allowlist secret
+    ): "d7c521786523b3aa0855e14413c830cf4cb7cf031b6914412041fbfa0853199f",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
