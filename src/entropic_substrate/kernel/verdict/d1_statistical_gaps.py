@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
-from entropic_substrate.d1_evaluation_values import D1CosineGap, parse_d1_cosine
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap, parse_d1_cosine
 
 
 @dataclass(frozen=True, slots=True)

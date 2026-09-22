@@ -16,6 +16,26 @@
     "entropic_substrate.evidence.resource_provenance_codec": {
       "target": "entropic_substrate.kernel.evidence_class.resource_provenance_codec",
       "landed": true
+    },
+    "entropic_substrate.d1_evaluation_values": {
+      "target": "entropic_substrate.kernel.verdict.d1_evaluation_values",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_contract": {
+      "target": "entropic_substrate.kernel.verdict.d1_contract",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_parsing": {
+      "target": "entropic_substrate.kernel.verdict.d1_parsing",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_statistical_gaps": {
+      "target": "entropic_substrate.kernel.verdict.d1_statistical_gaps",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_types": {
+      "target": "entropic_substrate.kernel.verdict.d1_types",
+      "landed": true
     }
   },
   "legacy_edge_budget": 57

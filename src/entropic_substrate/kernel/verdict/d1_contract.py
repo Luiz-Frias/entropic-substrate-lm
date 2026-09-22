@@ -12,8 +12,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from entropic_substrate.evidence.d1_parsing import freeze_json
-from entropic_substrate.evidence.d1_types import (
+from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_parsing import freeze_json
+from entropic_substrate.kernel.verdict.d1_types import (
     CLAUSE_STATUS,
     CONTRAST_KINDS,
     D1_ARM_IDS,
@@ -21,7 +22,6 @@ from entropic_substrate.evidence.d1_types import (
     D1FamilyIdentity,
     JsonValue,
 )
-from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
 
 
 @dataclass(frozen=True)
