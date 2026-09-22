@@ -46,9 +46,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -391,3 +393,59 @@ class TestRunExitGateIsolation:
         )
         assert status == 0
         assert payload["cert"]["certifiedTip"] == wt_tip
+
+
+# ─── FOR-1528: a timed-out gate must not orphan its process tree ────────────
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+class TestRunExitGateTimeoutKillsTheGroup:
+    """FOR-1528 (measured 2026-09-21 in a p3 L2 lane): ``subprocess.run(...,
+    timeout=)`` kills only the direct ``sh`` child on ``TimeoutExpired``, so
+    ``just -> prek -> pytest -> xdist`` survived a 900 s timeout as 11
+    orphans that raced the retry. The runner must spawn the gate in its own
+    process group and terminate the WHOLE group on timeout. Black-box like
+    every other case here: a real runner child, a real grandchild."""
+
+    def test_timeout_terminates_the_gates_grandchildren(self, repo: Path, tmp_path: Path) -> None:
+        pid_file = tmp_path / "grandchild.pid"
+        # `sleep` is a grandchild of the runner (runner -> sh -> sleep); `wait`
+        # keeps sh alive so the runner's timeout is what ends the gate.
+        cmd = f"sleep 300 & echo $! > {pid_file}; wait"
+        code, payload = _run_runner(repo, ["--cmd", cmd, "--timeout-s", "1"])
+        try:
+            assert code == 1
+            assert payload["ok"] is False
+            assert payload["error"]["kind"] == "RUNNER_ERROR"
+            assert "timed out" in payload["error"]["message"]
+            pid = int(pid_file.read_text().strip())
+            # Give a terminated grandchild a moment to be reaped by init.
+            deadline = time.monotonic() + 2.0
+            while _pid_alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert not _pid_alive(pid), (
+                f"grandchild sleep (pid {pid}) survived the runner's timeout"
+            )
+        finally:
+            # Never leak the grandchild from the RED arm.
+            if pid_file.exists():
+                try:
+                    os.kill(int(pid_file.read_text().strip()), signal.SIGKILL)
+                except (ProcessLookupError, ValueError):
+                    pass
+
+    def test_timeout_s_flag_rejects_non_positive_values(self, repo: Path) -> None:
+        code, payload = _run_runner(repo, ["--cmd", "true", "--timeout-s", "0"])
+        assert code == 1
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "RUNNER_ERROR"
+        assert "--timeout-s" in payload["error"]["message"]
