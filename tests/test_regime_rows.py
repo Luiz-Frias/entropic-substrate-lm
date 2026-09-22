@@ -22,7 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import regime_rows
 
-from entropic_substrate.sentence_prediction import capture, checkpoint
+from entropic_substrate.ladder.capture import capture
+from entropic_substrate.ladder.run import checkpoint
 
 pytestmark = pytest.mark.unit
 

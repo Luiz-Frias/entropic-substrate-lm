@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.__legacy.predictive_state.metric import finite_tensor
+from entropic_substrate.core.latent.metric import finite_tensor
 from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
 from entropic_substrate.core.sentence.numerics import (
     UndefinedDirection,

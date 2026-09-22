@@ -5,8 +5,8 @@ from random import Random
 
 import torch
 
-from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
 from entropic_substrate.core.sentence.corpus import CorpusSplit
+from entropic_substrate.kernel.lifecycle import ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import SentenceExecution
 

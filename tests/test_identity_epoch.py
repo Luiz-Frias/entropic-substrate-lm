@@ -176,6 +176,28 @@ two regimes as above); the values replaced,
 (checkpoint, CI), are retracted here, not silently overwritten. Label still
 does not bump until rung 3.
 
+p4 identity pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 3, the LAST code commit): both labels bump here.
+``ladder/run/checkpoint.py``'s glob (which by this point resolved only
+``__init__.py``/``checkpoint.py`` in ``sentence_prediction/``, per re-pin #5
+above) is rewritten to an explicit ``_READER_MODULES`` tuple of 51 landed
+dotted names (ruling "checkpoint glob"; faithful restatement, ruling E-2) --
+label bumps ``h-checkpoint-reader-v1`` -> ``-v2``. ``ladder/capture/capture.py``'s
+``_READER_MODULES`` tuple is rewritten from its 7 old-prefix/``__legacy``-prefixed
+names to their 7 landed dotted names (the package member now ``core.sentence``,
+resolving to its own minimal ``__init__.py``, not the pre-move bare
+``sentence_prediction`` name) -- label bumps ``h-source-reader-v2`` -> ``-v3``.
+Both rows recomputed with ``tools/regime_rows.py`` (local: ``--python 3.12.13
+--torch 2.13.0 --pysbd 0.3.4``; CI: ``--python 3.12.14 --torch 2.13.0+cpu
+--pysbd 0.3.4``); the OLD (still-``-v1``/``-v2``-labelled) values they
+replace --
+``d9be9f47178a557263ad64b0a397049db94a6554e8d877a39eba4237c6bcde6d`` (checkpoint,
+local), ``af9268d28f5cd62db26d6b78800c86ef84141e57af967afbf94163e7ddeff5a1``
+(checkpoint, CI), ``b78ad25a7d1865c6e0923acc55f5988f5e77a2382e74633cbd769e32efeb87d8``
+(source, local) and ``c63ffeb3ad285f841ea3bbf31b54ad02b2da28c48f10c78478006a1139b34427``
+(source, CI) -- are retracted here, not silently overwritten. Neither value
+changes later (ACCEPTANCE).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -199,17 +221,17 @@ import pytest
 import torch
 
 from entropic_substrate.checkpoint import _TAU_ERAS, CHECKPOINT_FORMAT_VERSION
-from entropic_substrate.observation.byte_codec import ByteObservationCodec
-from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
-from entropic_substrate.sentence_prediction.capture import (
+from entropic_substrate.ladder.capture.capture import (
     _READER_MODULES as _SOURCE_READER_MODULES,
 )
-from entropic_substrate.sentence_prediction.capture import (
+from entropic_substrate.ladder.capture.capture import (
     _reader_identity as _source_reader_identity,
 )
-from entropic_substrate.sentence_prediction.checkpoint import (
+from entropic_substrate.ladder.run.checkpoint import (
     _reader_identity as _checkpoint_reader_identity,
 )
+from entropic_substrate.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
 
 pytestmark = pytest.mark.unit
 
@@ -219,13 +241,13 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 _FROZEN_SOURCE_READER_MODULES = (
-    "sentence_prediction",
-    "sentence_prediction.records",
-    "sentence_prediction.segmentation",
-    "sentence_prediction.corpus",
-    "sentence_prediction.capture",
-    "d1_artifact_snapshot",
-    "evidence.lifecycle",
+    "core.sentence",
+    "core.sentence.records",
+    "core.sentence.segmentation",
+    "core.sentence.corpus",
+    "ladder.capture.capture",
+    "kernel.artifacts",
+    "kernel.lifecycle",
 )
 
 _FROZEN_CHECKPOINT_FORMAT_VERSION = 1
@@ -253,22 +275,22 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "d9be9f47178a557263ad64b0a397049db94a6554e8d877a39eba4237c6bcde6d",  # pragma: allowlist secret
+    ): "8e4ca5a3840e5c2efa7c4e0f0a1521af576e54139588cef76169021276b8eaf3",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "af9268d28f5cd62db26d6b78800c86ef84141e57af967afbf94163e7ddeff5a1",  # pragma: allowlist secret
+    ): "ea85d18b278423bc7de7095b8292ce224b6c7aa50428eecf443dec828eb1602a",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "b78ad25a7d1865c6e0923acc55f5988f5e77a2382e74633cbd769e32efeb87d8",  # pragma: allowlist secret
+    ): "a6075295436de193087160f65fa2558fc28054115118946e53ecbdd4f22d510f",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "c63ffeb3ad285f841ea3bbf31b54ad02b2da28c48f10c78478006a1139b34427",  # pragma: allowlist secret
+    ): "214730ac2b370a7b67fc24a43077c49ecdcc59291505d80f249f235aaccf0467",  # pragma: allowlist secret
 }
 
 
@@ -306,7 +328,7 @@ class TestComposedDigestsPerMeasuredRegime:
         expected = _CHECKPOINT_REGIME_TABLE.get(regime)
         if expected is None:
             pytest.fail(
-                f"h-checkpoint-reader-v1 has no fixture row for regime {regime!r}. "
+                f"h-checkpoint-reader-v2 has no fixture row for regime {regime!r}. "
                 "Add the row: measure _reader_identity() under this exact "
                 "(python_version, torch.__version__) pair and pin it in "
                 "_CHECKPOINT_REGIME_TABLE -- do not skip this test."
@@ -318,7 +340,7 @@ class TestComposedDigestsPerMeasuredRegime:
         expected = _SOURCE_REGIME_TABLE.get(regime)
         if expected is None:
             pytest.fail(
-                f"h-source-reader-v2 has no fixture row for regime {regime!r}. "
+                f"h-source-reader-v3 has no fixture row for regime {regime!r}. "
                 "Add the row: measure _reader_identity() under this exact "
                 "(python_version, pysbd version) pair and pin it in "
                 "_SOURCE_REGIME_TABLE -- do not skip this test."
@@ -336,7 +358,7 @@ class TestUnmeasuredRegimeFailsLoudNeverSkips:
         with pytest.raises(AssertionError):
             expected = _CHECKPOINT_REGIME_TABLE.get(bogus_regime)
             assert expected is not None, (
-                f"h-checkpoint-reader-v1 has no fixture row for regime {bogus_regime!r}"
+                f"h-checkpoint-reader-v2 has no fixture row for regime {bogus_regime!r}"
             )
 
     def test_source_regime_absent_from_table_raises_named_failure(self) -> None:
@@ -345,7 +367,7 @@ class TestUnmeasuredRegimeFailsLoudNeverSkips:
         with pytest.raises(AssertionError):
             expected = _SOURCE_REGIME_TABLE.get(bogus_regime)
             assert expected is not None, (
-                f"h-source-reader-v2 has no fixture row for regime {bogus_regime!r}"
+                f"h-source-reader-v3 has no fixture row for regime {bogus_regime!r}"
             )
 
 

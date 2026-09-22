@@ -6,7 +6,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from entropic_substrate.__legacy.predictive_state.dynamics import (
+from entropic_substrate.core.latent.dynamics import (
     DEFAULT_SOLVER_CONFIG,
     SolverConfig,
     SolverDiagnostics,

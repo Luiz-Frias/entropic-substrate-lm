@@ -8,14 +8,12 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
 from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.__legacy.evidence.resource_meter_runtime import (
     TorchCudaPeakMemory,
     TorchCudaPhaseTimer,
     build_torch_cuda_adapters,
 )
-from entropic_substrate.__legacy.sentence_prediction.checkpoint import load_checkpoint
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import CorpusSplit
 from entropic_substrate.core.sentence.model import SentencePredictor
@@ -35,7 +33,9 @@ from entropic_substrate.core.sentence.sampling import (
 )
 from entropic_substrate.core.sentence.scoring import importance_evaluate
 from entropic_substrate.core.sentence.spine import CarrierBlock
+from entropic_substrate.kernel.lifecycle import ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.checkpoint import load_checkpoint
 from entropic_substrate.ladder.run.mechanism_evidence import collect_mechanism
 from entropic_substrate.ladder.run.training import (
     SentencePhase,

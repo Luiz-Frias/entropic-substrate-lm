@@ -9,14 +9,14 @@ from inspect import signature
 from pathlib import PurePosixPath
 
 from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.__legacy.d1_artifact_snapshot import normalize_d1_relative_artifact_path
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     artifact_from_mapping,
     artifact_mapping,
 )
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 
 
 def worker_artifact(value: object, section: str) -> ArtifactIdentity:

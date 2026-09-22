@@ -9,7 +9,7 @@ import stat
 from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 
 __all__ = [
     "D1ArtifactSnapshotError",

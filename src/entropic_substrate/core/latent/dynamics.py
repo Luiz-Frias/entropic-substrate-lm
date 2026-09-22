@@ -7,7 +7,7 @@ from typing import Protocol, cast
 
 import torch
 
-from entropic_substrate.predictive_state.metric import (
+from entropic_substrate.core.latent.metric import (
     FisherNumericalError,
     MeanMap,
     finite_tensor,

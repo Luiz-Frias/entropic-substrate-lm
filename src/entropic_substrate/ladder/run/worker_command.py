@@ -11,7 +11,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import TextIO, cast
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import read_d1_artifact_bytes
 from entropic_substrate.__legacy.d1_dvc_remote_config import load_d1_dvc_s3_remote
 from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
 from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
@@ -21,6 +20,7 @@ from entropic_substrate.__legacy.d1_trainer_s3_object_adapter import (
     D1S3ClientPort,
     D1TrainerS3ObjectError,
 )
+from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor

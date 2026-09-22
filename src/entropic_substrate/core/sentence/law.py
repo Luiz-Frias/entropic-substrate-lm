@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import torch
 
-from entropic_substrate.__legacy.predictive_state.metric import FisherNumericalError, finite_tensor
+from entropic_substrate.core.latent.metric import FisherNumericalError, finite_tensor
 from entropic_substrate.core.sentence.numerics import (
     InterfaceMode,
     checked_coordinates,

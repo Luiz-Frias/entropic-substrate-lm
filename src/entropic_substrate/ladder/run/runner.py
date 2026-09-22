@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import normalize_d1_artifact_root
 from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution

@@ -7,7 +7,7 @@ from typing import Literal
 import torch
 import torch.nn.functional as F
 
-from entropic_substrate.__legacy.predictive_state.metric import finite_tensor
+from entropic_substrate.core.latent.metric import finite_tensor
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
 from entropic_substrate.core.sentence.model import SentencePredictor, SentenceReadout

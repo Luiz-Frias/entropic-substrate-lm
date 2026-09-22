@@ -10,13 +10,13 @@ import torch
 
 from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
 from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import CorpusSplit, PreparedCorpus
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json

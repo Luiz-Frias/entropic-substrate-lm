@@ -10,13 +10,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
 
 

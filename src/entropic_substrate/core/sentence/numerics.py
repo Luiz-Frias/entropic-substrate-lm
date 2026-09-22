@@ -4,7 +4,7 @@ from typing import Literal, NamedTuple, cast
 
 import torch
 
-from entropic_substrate.__legacy.predictive_state.metric import FisherNumericalError, finite_tensor
+from entropic_substrate.core.latent.metric import FisherNumericalError, finite_tensor
 
 type InterfaceMode = Literal["sphere", "magnitude"]
 

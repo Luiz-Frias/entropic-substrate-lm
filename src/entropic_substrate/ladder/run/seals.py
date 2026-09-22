@@ -8,18 +8,18 @@ from pathlib import Path
 import torch
 
 from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.__legacy.sentence_prediction.checkpoint import (
-    checkpoint_binding,
-    checkpoint_metadata,
-    save_checkpoint,
-)
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.model import SentencePredictor
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.run.checkpoint import (
+    checkpoint_binding,
+    checkpoint_metadata,
+    save_checkpoint,
+)
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import (
     artifact_reference,

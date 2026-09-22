@@ -10,11 +10,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
 from entropic_substrate.ladder.run.h_probe_process import (
     WatchdogProcessConfig,

@@ -4,19 +4,19 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
-    normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
-    publish_d1_atomic_bytes,
-    read_d1_artifact_bytes,
-)
 from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
 from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.__legacy.evidence.lifecycle import ContentHash
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import (
+    normalize_d1_artifact_root,
+    normalize_d1_relative_artifact_path,
+    publish_d1_atomic_bytes,
+    read_d1_artifact_bytes,
+)
+from entropic_substrate.kernel.lifecycle import ContentHash
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
 from entropic_substrate.ladder.run.worker_transport import publish_verified_object
 

@@ -11,12 +11,7 @@ from zipfile import ZipFile
 
 import torch
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
-    publish_d1_atomic_bytes,
-    read_d1_artifact_bytes,
-)
 from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
@@ -32,6 +27,11 @@ from entropic_substrate.core.sentence.rollout import (
     advance_rollout,
     begin_rollout,
 )
+from entropic_substrate.kernel.artifacts import (
+    publish_d1_atomic_bytes,
+    read_d1_artifact_bytes,
+)
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress

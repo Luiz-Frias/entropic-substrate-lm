@@ -6,11 +6,6 @@ from pathlib import Path
 from platform import python_version
 from typing import cast
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
-    publish_d1_atomic_bytes,
-    read_d1_artifact_bytes,
-)
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     PreparedCorpus,
@@ -19,17 +14,26 @@ from entropic_substrate.core.sentence.corpus import (
 )
 from entropic_substrate.core.sentence.records import SourceDocument, content_identity
 from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
+from entropic_substrate.kernel.artifacts import (
+    publish_d1_atomic_bytes,
+    read_d1_artifact_bytes,
+)
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 
 _VERSION = "h-source-capture-v2"
 _FILENAME = "prepared-corpus.json"
+# Faithful restatement (ruling E-2) of the pre-move member set at their
+# landed dotted names: the package member resolves to core.sentence (its
+# own __init__.py) per the p4 design-gate package-member constraint, not
+# the pre-move bare "sentence_prediction" name.
 _READER_MODULES = (
-    "sentence_prediction",
-    "sentence_prediction.records",
-    "sentence_prediction.segmentation",
-    "sentence_prediction.corpus",
-    "sentence_prediction.capture",
-    "d1_artifact_snapshot",
-    "evidence.lifecycle",
+    "core.sentence",
+    "core.sentence.records",
+    "core.sentence.segmentation",
+    "core.sentence.corpus",
+    "ladder.capture.capture",
+    "kernel.artifacts",
+    "kernel.lifecycle",
 )
 
 
@@ -44,7 +48,7 @@ def _reader_identity() -> str:
         _, _, digest = read_d1_artifact_bytes(source.parent, source.name, label="H source reader")
         digests.append(f"{name}:{digest}")
     return content_identity(
-        ("h-source-reader-v2", python_version(), metadata.version("pysbd"), *digests)
+        ("h-source-reader-v3", python_version(), metadata.version("pysbd"), *digests)
     )
 
 

@@ -5,13 +5,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
 )
-from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.h_probe_events import ObservedProbeEvent, read_probe_event
 from entropic_substrate.ladder.run.journal import read_json, write_json
 from entropic_substrate.ladder.run.worker_completion import (

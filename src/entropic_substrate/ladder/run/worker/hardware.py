@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import read_d1_artifact_bytes
+from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 
 SOURCE_PREFIXES = (
     "src/entropic_substrate",

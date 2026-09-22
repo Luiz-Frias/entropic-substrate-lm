@@ -208,7 +208,7 @@
     },
     {
       "path": "entropic_substrate/d1_artifact_snapshot.py",
-      "target": "entropic_substrate.__legacy.d1_artifact_snapshot",
+      "target": "entropic_substrate.kernel.artifacts",
       "entrypoint": false
     },
     {
@@ -948,7 +948,7 @@
     },
     {
       "path": "entropic_substrate/evidence/lifecycle.py",
-      "target": "entropic_substrate.__legacy.evidence.lifecycle",
+      "target": "entropic_substrate.kernel.lifecycle",
       "entrypoint": false
     },
     {
@@ -1263,7 +1263,7 @@
     },
     {
       "path": "entropic_substrate/predictive_state/dynamics.py",
-      "target": "entropic_substrate.__legacy.predictive_state.dynamics",
+      "target": "entropic_substrate.core.latent.dynamics",
       "entrypoint": false
     },
     {
@@ -1293,7 +1293,7 @@
     },
     {
       "path": "entropic_substrate/predictive_state/metric.py",
-      "target": "entropic_substrate.__legacy.predictive_state.metric",
+      "target": "entropic_substrate.core.latent.metric",
       "entrypoint": false
     },
     {
@@ -1363,7 +1363,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/checkpoint.py",
-      "target": "entropic_substrate.__legacy.sentence_prediction.checkpoint",
+      "target": "entropic_substrate.ladder.run.checkpoint",
       "entrypoint": false
     },
     {
@@ -1769,7 +1769,7 @@
     },
     {
       "path": "entropic_substrate/d1_artifact_snapshot.pyi",
-      "target": "entropic_substrate.__legacy.d1_artifact_snapshot"
+      "target": "entropic_substrate.kernel.artifacts"
     },
     {
       "path": "entropic_substrate/d1_billing_finalization_values.pyi",
@@ -2361,7 +2361,7 @@
     },
     {
       "path": "entropic_substrate/evidence/lifecycle.pyi",
-      "target": "entropic_substrate.__legacy.evidence.lifecycle"
+      "target": "entropic_substrate.kernel.lifecycle"
     },
     {
       "path": "entropic_substrate/evidence/resource_billing.pyi",
@@ -2613,7 +2613,7 @@
     },
     {
       "path": "entropic_substrate/predictive_state/dynamics.pyi",
-      "target": "entropic_substrate.__legacy.predictive_state.dynamics"
+      "target": "entropic_substrate.core.latent.dynamics"
     },
     {
       "path": "entropic_substrate/predictive_state/ema_schedules.pyi",
@@ -2637,7 +2637,7 @@
     },
     {
       "path": "entropic_substrate/predictive_state/metric.pyi",
-      "target": "entropic_substrate.__legacy.predictive_state.metric"
+      "target": "entropic_substrate.core.latent.metric"
     },
     {
       "path": "entropic_substrate/predictive_state/objective.pyi",
@@ -2693,7 +2693,7 @@
     },
     {
       "path": "entropic_substrate/sentence_prediction/checkpoint.pyi",
-      "target": "entropic_substrate.__legacy.sentence_prediction.checkpoint"
+      "target": "entropic_substrate.ladder.run.checkpoint"
     },
     {
       "path": "entropic_substrate/sentence_prediction/cli.pyi",

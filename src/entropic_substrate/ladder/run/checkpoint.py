@@ -3,6 +3,7 @@
 import copy
 import json
 from dataclasses import asdict, dataclass
+from importlib import import_module
 from io import BytesIO
 from pathlib import Path
 from platform import python_version
@@ -11,20 +12,20 @@ from zipfile import BadZipFile, ZipFile
 
 import torch
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes, read_d1_artifact_bytes
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.records import content_identity
-from entropic_substrate.sentence_prediction.recovery_state import (
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.core.sentence.recovery_state import (
     capture_rng,
     recovery_record,
     restore_rng,
     rollout_from_payload,
     rollout_to_payload,
 )
-from entropic_substrate.sentence_prediction.rollout import SentenceRollout
-from entropic_substrate.sentence_prediction.sampling import SentenceSampler
-from entropic_substrate.sentence_prediction.training import (
+from entropic_substrate.core.sentence.rollout import SentenceRollout
+from entropic_substrate.core.sentence.sampling import SentenceSampler
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes, read_d1_artifact_bytes
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.training import (
     SentencePhase,
     require_sentence_adamw_contract,
     sentence_roles,
@@ -43,24 +44,82 @@ def _measurement_digest(value: ContentHash | None) -> str | None:
     return value.digest
 
 
+# Faithful restatement (ruling E-2) of the pre-move member set at their landed
+# dotted names: the 45 already-landed sentence_prediction.* leaves (the H
+# domain's 18 core.sentence modules, 22 ladder.run modules, 1 ladder.capture
+# module, 4 composition CLI modules, 1 core.probe module), this reader's own
+# file (ladder.run.checkpoint), the landed package member (core.sentence,
+# resolving to its own __init__.py rather than the pre-move bare
+# "sentence_prediction" name, per the p4 design-gate package-member
+# constraint), and the 4 reader-closure rail modules (kernel.artifacts,
+# kernel.lifecycle, core.latent.metric, core.latent.dynamics). 51 members,
+# reconciled against tools/mapping.json and docs/identity/read-old-table.md.
+_READER_MODULES = (
+    "composition.capture_cli",
+    "composition.cli",
+    "composition.source_cli",
+    "composition.span_cli",
+    "core.latent.dynamics",
+    "core.latent.metric",
+    "core.probe.score_gain",
+    "core.sentence",
+    "core.sentence.boundary",
+    "core.sentence.codec",
+    "core.sentence.consumer",
+    "core.sentence.corpus",
+    "core.sentence.head",
+    "core.sentence.law",
+    "core.sentence.model",
+    "core.sentence.numerics",
+    "core.sentence.objective",
+    "core.sentence.profile",
+    "core.sentence.records",
+    "core.sentence.recovery_state",
+    "core.sentence.rollout",
+    "core.sentence.runtime_precision",
+    "core.sentence.sampling",
+    "core.sentence.scoring",
+    "core.sentence.segmentation",
+    "core.sentence.spine",
+    "kernel.artifacts",
+    "kernel.lifecycle",
+    "ladder.capture.capture",
+    "ladder.run.checkpoint",
+    "ladder.run.evaluation_records",
+    "ladder.run.execution",
+    "ladder.run.generation",
+    "ladder.run.journal",
+    "ladder.run.mechanism_evidence",
+    "ladder.run.native_verification",
+    "ladder.run.object_worker",
+    "ladder.run.runner",
+    "ladder.run.seals",
+    "ladder.run.span_diagnostics",
+    "ladder.run.span_probe",
+    "ladder.run.span_probe_artifacts",
+    "ladder.run.span_states",
+    "ladder.run.trace_capture",
+    "ladder.run.training",
+    "ladder.run.worker_command",
+    "ladder.run.worker_completion",
+    "ladder.run.worker_execution",
+    "ladder.run.worker_request",
+    "ladder.run.worker_snapshot",
+    "ladder.run.worker_transport",
+)
+
+
 def _reader_identity() -> str:
-    package = Path(__file__).parent
-    paths = [
-        *package.glob("*.py"),
-        *(package.parent / "predictive_state" / name for name in ("metric.py", "dynamics.py")),
-        package.parent / "d1_artifact_snapshot.py",
-        package.parent / "evidence/lifecycle.py",
-    ]
+    digests = []
+    for name in _READER_MODULES:
+        module = import_module(f"entropic_substrate.{name}")
+        if module.__file__ is None:
+            raise RuntimeError(f"checkpoint reader cannot bind module {name}")
+        source = Path(module.__file__)
+        _, _, digest = read_d1_artifact_bytes(source.parent, source.name, label="checkpoint reader")
+        digests.append(f"{name}:{digest}")
     return content_identity(
-        (
-            "h-checkpoint-reader-v1",
-            python_version(),
-            str(torch.__version__),
-            *(
-                f"{path.relative_to(package.parent)}:{read_d1_artifact_bytes(path.parent, path.name, label='checkpoint reader')[2]}"
-                for path in sorted(paths)
-            ),
-        )
+        ("h-checkpoint-reader-v2", python_version(), str(torch.__version__), *digests)
     )
 
 

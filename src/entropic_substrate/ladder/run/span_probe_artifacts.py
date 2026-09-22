@@ -17,12 +17,12 @@ from zipfile import ZipFile
 import torch
 
 from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import (
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.run.journal import artifact_reference
 from entropic_substrate.ladder.run.span_probe import (
     FrozenSpanProbe,

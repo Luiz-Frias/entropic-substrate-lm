@@ -220,9 +220,29 @@
     "entropic_substrate.sentence_prediction.worker_transport": {
       "target": "entropic_substrate.ladder.run.worker_transport",
       "landed": true
+    },
+    "entropic_substrate.d1_artifact_snapshot": {
+      "target": "entropic_substrate.kernel.artifacts",
+      "landed": true
+    },
+    "entropic_substrate.evidence.lifecycle": {
+      "target": "entropic_substrate.kernel.lifecycle",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.metric": {
+      "target": "entropic_substrate.core.latent.metric",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.dynamics": {
+      "target": "entropic_substrate.core.latent.dynamics",
+      "landed": true
+    },
+    "entropic_substrate.sentence_prediction.checkpoint": {
+      "target": "entropic_substrate.ladder.run.checkpoint",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 118,
+  "legacy_edge_budget": 57,
   "print_allowlist": [
     "entropic_substrate.composition.capture_cli",
     "entropic_substrate.composition.cli",

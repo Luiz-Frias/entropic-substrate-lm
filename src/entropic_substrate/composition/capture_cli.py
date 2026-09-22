@@ -6,15 +6,15 @@ import argparse
 import json
 from pathlib import Path
 
-from entropic_substrate.__legacy.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.core.sentence.profile import HProfile
-from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 from entropic_substrate.ladder.run.trace_capture import (
     capture_model_trace,
