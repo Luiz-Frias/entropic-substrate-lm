@@ -3,6 +3,7 @@
 from entropic_substrate.ladder.run.worker_execution import ArtifactIdentity as ArtifactIdentity
 from entropic_substrate.ladder.run.worker_execution import Callable as Callable
 from entropic_substrate.ladder.run.worker_execution import ContentHash as ContentHash
+from entropic_substrate.ladder.run.worker_execution import MetricSink as MetricSink
 from entropic_substrate.ladder.run.worker_execution import Path as Path
 from entropic_substrate.ladder.run.worker_execution import ProbeRequest as ProbeRequest
 from entropic_substrate.ladder.run.worker_execution import PurePosixPath as PurePosixPath

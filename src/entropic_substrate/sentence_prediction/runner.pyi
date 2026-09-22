@@ -4,6 +4,7 @@ from entropic_substrate.ladder.run.runner import ArtifactIdentity as ArtifactIde
 from entropic_substrate.ladder.run.runner import Callable as Callable
 from entropic_substrate.ladder.run.runner import HProfile as HProfile
 from entropic_substrate.ladder.run.runner import Literal as Literal
+from entropic_substrate.ladder.run.runner import MetricSink as MetricSink
 from entropic_substrate.ladder.run.runner import Path as Path
 from entropic_substrate.ladder.run.runner import SentenceExecution as SentenceExecution
 from entropic_substrate.ladder.run.runner import TrainingProgress as TrainingProgress

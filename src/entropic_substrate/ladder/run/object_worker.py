@@ -12,6 +12,7 @@ from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_m
 from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.native_verification import read_native_verification
 from entropic_substrate.ladder.run.runner import read_training_progress
@@ -145,12 +146,19 @@ def run_object_worker(
     *,
     max_request_bytes: int,
     repo_root: Path | None = None,
+    sink: MetricSink | None = None,
 ) -> D1TrainerMailboxObjectIdentity:
     """Publish terminal status only after its snapshot is externally readable.
 
     Invalid request markers are not trusted enough to select a response namespace.
     Once a request is admitted, failure publication preserves partial owned outputs.
     This function never provisions a pod or authorizes another experiment.
+
+    ``sink``, when given, is threaded to
+    :func:`~entropic_substrate.ladder.run.worker_execution.execute_probe_request`
+    unchanged -- an additive observability mirror (RUNG 2b), never part of
+    this function's own custody/snapshot contract. Its lifecycle (including
+    ``finish()``) belongs to the caller that built it.
     """
     request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
     maximum = request.limits.max_object_bytes
@@ -212,7 +220,12 @@ def run_object_worker(
 
         stage = "execution"
         result = execute_probe_request(
-            request, root, repo_root=repo_root, on_checkpoint=checkpoint, on_start=start
+            request,
+            root,
+            repo_root=repo_root,
+            on_checkpoint=checkpoint,
+            on_start=start,
+            sink=sink,
         )
         result = _admit_result(root, request, result)
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)

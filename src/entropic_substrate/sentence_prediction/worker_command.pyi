@@ -13,11 +13,17 @@ from entropic_substrate.ladder.run.worker_command import (
 from entropic_substrate.ladder.run.worker_command import (
     D1TrainerS3ObjectError as D1TrainerS3ObjectError,
 )
+from entropic_substrate.ladder.run.worker_command import (
+    HTrainingStepExtractor as HTrainingStepExtractor,
+)
 from entropic_substrate.ladder.run.worker_command import Mapping as Mapping
 from entropic_substrate.ladder.run.worker_command import Path as Path
 from entropic_substrate.ladder.run.worker_command import ProbeRequest as ProbeRequest
 from entropic_substrate.ladder.run.worker_command import Sequence as Sequence
 from entropic_substrate.ladder.run.worker_command import TextIO as TextIO
+from entropic_substrate.ladder.run.worker_command import (
+    TrackingRunDescriptor as TrackingRunDescriptor,
+)
 from entropic_substrate.ladder.run.worker_command import (
     UnresolvedWorkerCredentials as UnresolvedWorkerCredentials,
 )
@@ -30,6 +36,7 @@ from entropic_substrate.ladder.run.worker_command import (
 from entropic_substrate.ladder.run.worker_command import annotations as annotations
 from entropic_substrate.ladder.run.worker_command import argparse as argparse
 from entropic_substrate.ladder.run.worker_command import asdict as asdict
+from entropic_substrate.ladder.run.worker_command import build_sink_for_run as build_sink_for_run
 from entropic_substrate.ladder.run.worker_command import (
     build_worker_objects as build_worker_objects,
 )

@@ -9,6 +9,7 @@ from entropic_substrate.ladder.run.object_worker import (
 from entropic_substrate.ladder.run.object_worker import (
     D1TrainerMailboxObjectPort as D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.object_worker import MetricSink as MetricSink
 from entropic_substrate.ladder.run.object_worker import Path as Path
 from entropic_substrate.ladder.run.object_worker import ProbeRequest as ProbeRequest
 from entropic_substrate.ladder.run.object_worker import SpanPopulationGap as SpanPopulationGap

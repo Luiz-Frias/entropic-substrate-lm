@@ -12,6 +12,7 @@ from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity, Con
 from entropic_substrate.__legacy.paths import source_root
 from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.generation import run_probe_generation
 from entropic_substrate.ladder.run.journal import artifact_reference
 from entropic_substrate.ladder.run.native_verification import verify_native_capture
@@ -78,11 +79,16 @@ def execute_probe_request(
     repo_root: Path | None = None,
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
     on_start: Callable[[dict[str, object]], None] | None = None,
+    sink: MetricSink | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
 
     Completion means the requested engineering workload and readers finished.
     It does not claim useful generation, a scientific verdict, or a new launch grant.
+
+    ``sink``, when given, is threaded to :func:`~entropic_substrate.ladder.run.runner.run_probe_training`
+    unchanged -- see that function's docstring. This function neither
+    constructs nor finishes it.
     """
     started = time.perf_counter()
     request.__post_init__()
@@ -121,6 +127,7 @@ def execute_probe_request(
         if request.pause is None
         else lambda phase, step: (phase, step) == request.pause,
         on_checkpoint=checkpoint if on_checkpoint is not None else None,
+        sink=sink,
     )
     training = read_training_progress(
         output,

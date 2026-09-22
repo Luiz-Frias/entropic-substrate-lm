@@ -12,6 +12,7 @@ from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
@@ -161,12 +162,20 @@ def run_probe_training(
     resume: ArtifactIdentity | None = None,
     stop_after_seal: Callable[[str, int], bool] | None = None,
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
+    sink: MetricSink | None = None,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
 
     Checkpoint/evaluation failures retain partial evidence and propagate. A
     stop callback is observed only after a durable seal and evaluation receipt.
     Scientific adapters and successor remote probes require separate authority.
+
+    ``sink``, when given, observes every committed training-step row exactly
+    as :mod:`entropic_substrate.ladder.run.journal` receives it -- an
+    ADDITIVE observability mirror (RUNG 2b), never a substitute for the D1
+    journal's authoritative, content-addressed record. This function never
+    constructs a sink and never calls ``sink.finish()``; the caller that
+    built it owns its lifecycle.
     """
     if profile.run_class not in ("local_tiny", "remote_tiny") or (
         profile.run_class == "remote_tiny" and profile.stage != "H0"
@@ -209,7 +218,10 @@ def run_probe_training(
                 and execution.step == profile.schedule.warmup_steps
             ):
                 execution.begin_prediction()
-            pending.append(execution.advance())
+            step_row = execution.advance()
+            pending.append(step_row)
+            if sink is not None:
+                sink.log(step_row)
             final = execution.step == (
                 profile.schedule.warmup_steps
                 if execution.phase == "codec_warmup"

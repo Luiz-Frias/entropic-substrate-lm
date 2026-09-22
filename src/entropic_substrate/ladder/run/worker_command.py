@@ -22,6 +22,9 @@ from entropic_substrate.__legacy.d1_trainer_s3_object_adapter import (
     D1TrainerS3ObjectError,
 )
 from entropic_substrate.kernel.runtime.logging import configure_logging
+from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.object_worker import run_object_worker
 from entropic_substrate.ladder.run.worker_completion import receive_worker_completion
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
@@ -139,14 +142,41 @@ def run_worker_command(
             _scope(request, args.local_tiny, args.max_object_bytes, args.max_objects)
             if not args.local_tiny:
                 require_d1_pod_id(environ.get("RUNPOD_POD_ID"))
-            stage = "worker_execution"
-            result = run_object_worker(
-                selected,
-                marker,
-                args.workspace_root,
-                max_request_bytes=args.max_object_bytes,
-                repo_root=args.repo_root,
+            stage = "sink_construction"
+            # A SIBLING of the workspace root, never a path under it:
+            # run_object_worker's own materialize_probe_request step requires
+            # the workspace root be completely empty at call time (worker_transport.py,
+            # normalize_d1_artifact_root's any(target.iterdir()) check) --
+            # constructing JsonlSink under the workspace root would mkdir()
+            # it into existence first and turn that admission check RED on
+            # every run. MEASURED (RUNG 2b): this is exactly the "D1 root
+            # is directory-scanned" risk this module's own history flags --
+            # confirmed by a direct reproduction before landing this fix.
+            observability_root = (
+                args.workspace_root.parent / f"{args.workspace_root.name}.observability"
             )
+            sink = build_sink_for_run(
+                TrackingRunDescriptor(
+                    run_name=f"h-worker-{request.profile.identity}",
+                    tiny=True,
+                    params={"run_class": request.profile.run_class},
+                    tags={"schema": "h-probe-worker-result-v1"},
+                ),
+                results_path=observability_root / "metrics.jsonl",
+                metric_extractor=HTrainingStepExtractor(),
+            )
+            try:
+                stage = "worker_execution"
+                result = run_object_worker(
+                    selected,
+                    marker,
+                    args.workspace_root,
+                    max_request_bytes=args.max_object_bytes,
+                    repo_root=args.repo_root,
+                    sink=sink,
+                )
+            finally:
+                sink.finish()
             response = {
                 "status": "worker_returned",
                 "scientific_authority": "none",
