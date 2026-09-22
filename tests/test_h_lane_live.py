@@ -17,6 +17,18 @@ Drives the smallest CPU-feasible H path: the same fast profile
 ``CompositeSink`` under a ``TrackingRunDescriptor``, and asserts the
 resulting server-side run actually carries an H metric -- proving
 ``HTrainingStepExtractor`` (RUNG 2b), not just that a run object exists.
+
+The run id is written to ``results/h-lane-live-run-id.txt`` (gitignored,
+same convention as every other ``results/*`` artifact -- CLAUDE.md's Data
+flow section) in ADDITION to being printed. MEASURED: the container gate
+(``scripts/run_container_test.sh``, outside this phase's envelope) invokes
+phase 1 as ``pytest -m integration -q --disable-warnings``, and
+``pyproject.toml``'s ``addopts`` carries no ``-r`` report-chars flag, so
+pytest's default report NEVER surfaces a passing test's captured stdout --
+a bare ``print()`` is invisible in that gate's own output on the (expected)
+happy path. The file write is the only way this test's run id actually
+reaches whoever writes the PR body after a green `just container-test`,
+run byte-for-byte as configured.
 """
 
 from __future__ import annotations
@@ -33,6 +45,8 @@ from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtrac
 from entropic_substrate.ladder.run.runner import run_probe_training
 
 MLFLOW_TRACKING_ENV = "MLFLOW_TRACKING_URI"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RUN_ID_FILE = REPO_ROOT / "results" / "h-lane-live-run-id.txt"
 
 pytestmark = [
     pytest.mark.integration,
@@ -85,4 +99,6 @@ def test_live_h_training_steps_reach_a_real_mlflow_run(tmp_path: Path) -> None:
     metric_keys = sorted(run.data.metrics)
     print(f"live H run id: {mlflow_sink.run_id}")
     print(f"live H metric keys ({len(metric_keys)} total): {metric_keys}")
+    RUN_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RUN_ID_FILE.write_text(f"{mlflow_sink.run_id}\n")
     assert {"objective", "aggregate_norm", "decoder_ce"} & set(metric_keys), metric_keys
