@@ -10,14 +10,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.h_probe_launch import H0ProbeLaunch, parse_probe_launch
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
 
 
 def _root(root: Path) -> Path:

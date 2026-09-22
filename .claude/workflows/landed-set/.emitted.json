@@ -1128,52 +1128,52 @@
     },
     {
       "path": "entropic_substrate/h_probe_allocation.py",
-      "target": "entropic_substrate.__legacy.h_probe_allocation",
+      "target": "entropic_substrate.ladder.run.worker.h_probe_allocation",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_collection.py",
-      "target": "entropic_substrate.__legacy.h_probe_collection",
+      "target": "entropic_substrate.ladder.run.h_probe_collection",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_command.py",
-      "target": "entropic_substrate.__legacy.h_probe_command",
+      "target": "entropic_substrate.ladder.run.worker.h_probe_command",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_control.py",
-      "target": "entropic_substrate.__legacy.h_probe_control",
+      "target": "entropic_substrate.ladder.run.h_probe_control",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_controller.py",
-      "target": "entropic_substrate.__legacy.h_probe_controller",
+      "target": "entropic_substrate.ladder.run.worker.h_probe_controller",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_events.py",
-      "target": "entropic_substrate.__legacy.h_probe_events",
+      "target": "entropic_substrate.ladder.run.h_probe_events",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_launch.py",
-      "target": "entropic_substrate.__legacy.h_probe_launch",
+      "target": "entropic_substrate.ladder.run.h_probe_launch",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_process.py",
-      "target": "entropic_substrate.__legacy.h_probe_process",
+      "target": "entropic_substrate.ladder.run.h_probe_process",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_probe_watchdog.py",
-      "target": "entropic_substrate.__legacy.h_probe_watchdog",
+      "target": "entropic_substrate.ladder.run.h_probe_watchdog",
       "entrypoint": false
     },
     {
       "path": "entropic_substrate/h_runpod_transport.py",
-      "target": "entropic_substrate.__legacy.h_runpod_transport",
+      "target": "entropic_substrate.ladder.run.h_runpod_transport",
       "entrypoint": false
     },
     {
@@ -2505,43 +2505,43 @@
     },
     {
       "path": "entropic_substrate/h_probe_allocation.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_allocation"
+      "target": "entropic_substrate.ladder.run.worker.h_probe_allocation"
     },
     {
       "path": "entropic_substrate/h_probe_collection.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_collection"
+      "target": "entropic_substrate.ladder.run.h_probe_collection"
     },
     {
       "path": "entropic_substrate/h_probe_command.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_command"
+      "target": "entropic_substrate.ladder.run.worker.h_probe_command"
     },
     {
       "path": "entropic_substrate/h_probe_control.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_control"
+      "target": "entropic_substrate.ladder.run.h_probe_control"
     },
     {
       "path": "entropic_substrate/h_probe_controller.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_controller"
+      "target": "entropic_substrate.ladder.run.worker.h_probe_controller"
     },
     {
       "path": "entropic_substrate/h_probe_events.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_events"
+      "target": "entropic_substrate.ladder.run.h_probe_events"
     },
     {
       "path": "entropic_substrate/h_probe_launch.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_launch"
+      "target": "entropic_substrate.ladder.run.h_probe_launch"
     },
     {
       "path": "entropic_substrate/h_probe_process.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_process"
+      "target": "entropic_substrate.ladder.run.h_probe_process"
     },
     {
       "path": "entropic_substrate/h_probe_watchdog.pyi",
-      "target": "entropic_substrate.__legacy.h_probe_watchdog"
+      "target": "entropic_substrate.ladder.run.h_probe_watchdog"
     },
     {
       "path": "entropic_substrate/h_runpod_transport.pyi",
-      "target": "entropic_substrate.__legacy.h_runpod_transport"
+      "target": "entropic_substrate.ladder.run.h_runpod_transport"
     },
     {
       "path": "entropic_substrate/init/fisher.pyi",

@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from entropic_substrate.d1_operator_ports import D1CommandResult, D1CommandRunner
-from entropic_substrate.d1_operator_values import require_d1_pod_id
-from entropic_substrate.h_probe_launch import (
+from entropic_substrate.__legacy.d1_operator_ports import D1CommandResult, D1CommandRunner
+from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
+from entropic_substrate.ladder.run.h_probe_launch import (
     RUNPODCTL_SHA256,
     RUNPODCTL_VERSION,
     H0ProbeLaunch,

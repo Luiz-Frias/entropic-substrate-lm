@@ -1,5 +1,46 @@
 {
   "phase": "p4-h-tracer",
-  "modules": {},
-  "legacy_edge_budget": 3
+  "modules": {
+    "entropic_substrate.h_probe_allocation": {
+      "target": "entropic_substrate.ladder.run.worker.h_probe_allocation",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_collection": {
+      "target": "entropic_substrate.ladder.run.h_probe_collection",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_command": {
+      "target": "entropic_substrate.ladder.run.worker.h_probe_command",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_control": {
+      "target": "entropic_substrate.ladder.run.h_probe_control",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_controller": {
+      "target": "entropic_substrate.ladder.run.worker.h_probe_controller",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_events": {
+      "target": "entropic_substrate.ladder.run.h_probe_events",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_launch": {
+      "target": "entropic_substrate.ladder.run.h_probe_launch",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_process": {
+      "target": "entropic_substrate.ladder.run.h_probe_process",
+      "landed": true
+    },
+    "entropic_substrate.h_probe_watchdog": {
+      "target": "entropic_substrate.ladder.run.h_probe_watchdog",
+      "landed": true
+    },
+    "entropic_substrate.h_runpod_transport": {
+      "target": "entropic_substrate.ladder.run.h_runpod_transport",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 39
 }

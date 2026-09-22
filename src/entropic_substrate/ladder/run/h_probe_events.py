@@ -6,14 +6,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.__legacy.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
-from entropic_substrate.sentence_prediction.worker_completion import admit_worker_runtime
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, worker_artifact
+from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
+from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.__legacy.sentence_prediction.worker_completion import admit_worker_runtime
+from entropic_substrate.__legacy.sentence_prediction.worker_request import (
+    ProbeRequest,
+    worker_artifact,
+)
 
 _COMMON = "schema request_sha256 run_identity scientific_authority at status snapshot"
 _FIELDS = {

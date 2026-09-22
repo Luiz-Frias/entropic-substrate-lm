@@ -16,18 +16,18 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from entropic_substrate.d1_artifact_snapshot import normalize_d1_artifact_root
-from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.h_probe_control import (
+from entropic_substrate.__legacy.d1_artifact_snapshot import normalize_d1_artifact_root
+from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
+from entropic_substrate.__legacy.evidence.lifecycle import ArtifactIdentity
+from entropic_substrate.__legacy.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.ladder.run.h_probe_control import (
     ProbeControlPublisher,
     own_probe_role,
     read_probe_control,
 )
-from entropic_substrate.h_probe_launch import H0ProbeLaunch, parse_probe_launch
-from entropic_substrate.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
-from entropic_substrate.h_runpod_transport import HRunpodTransport
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
+from entropic_substrate.ladder.run.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
+from entropic_substrate.ladder.run.h_runpod_transport import HRunpodTransport
 
 
 @dataclass(frozen=True, slots=True)
