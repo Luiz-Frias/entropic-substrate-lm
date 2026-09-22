@@ -8,8 +8,8 @@ from pathlib import Path, PurePosixPath
 from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
 from entropic_substrate.d1_operator_values import require_d1_pod_id
 from entropic_substrate.d1_predecessor_loader import verified_git_bundle
-from entropic_substrate.d_ladder_worker_runtime import measure_hardware, verify_source_tree
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.worker.hardware import measure_hardware, verify_source_tree
 from entropic_substrate.paths import source_root
 from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
 from entropic_substrate.sentence_prediction.generation import run_probe_generation

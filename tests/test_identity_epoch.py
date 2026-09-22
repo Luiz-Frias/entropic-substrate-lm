@@ -33,6 +33,30 @@ sweeps ``sentence_prediction/*.py`` by content, and this lane edited
 therefore every regime row's digest. ``_SOURCE_REGIME_TABLE`` is untouched:
 the source reader's fixed module tuple never included ``worker_execution``.
 
+p4 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p4-h-tracer, rung 1 sub-commit "split d_ladder_worker_runtime"):
+this commit's D-E split rewrote the import lines of
+``sentence_prediction/worker_execution.py`` and
+``sentence_prediction/native_verification.py`` (now importing
+``measure_hardware``/``verify_source_tree`` from the newly landed
+``entropic_substrate.ladder.run.worker.hardware`` instead of the old
+top-level ``entropic_substrate.d_ladder_worker_runtime`` name) -- changing
+those two files' bytes and therefore, via ``checkpoint.py``'s
+``package.glob("*.py")`` sweep of ``sentence_prediction/``, every
+h-checkpoint-reader-v1 COMPOSED regime row (same mechanism p1 already
+recorded above; the label itself still does not bump until this phase's
+identity-pin commit, per plan). Both rows below were recomputed with
+``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch 2.13.0``; CI:
+``--python 3.12.14 --torch 2.13.0+cpu``) and the OLD values they replace,
+``5cef5371d10a6136ef466a7454efaecf1c0054ecd4fcdafacb1caf85343cff46``
+(local) and
+``cdf8cd5e7cecc5866f160c1776de78d0c09f7314a1e9b06a21e8251a872a57e6`` (CI),
+are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: none of the seven ``h-source-reader-v2`` member files
+(``sentence_prediction`` package, ``records``, ``segmentation``,
+``corpus``, ``capture``, ``d1_artifact_snapshot``, ``evidence.lifecycle``)
+were touched by this split, confirmed by re-measuring both rows unchanged.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -110,11 +134,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "5cef5371d10a6136ef466a7454efaecf1c0054ecd4fcdafacb1caf85343cff46",  # pragma: allowlist secret
+    ): "04af5bd2e34b3ee050f9f13938115268f26266cceb8499ef028f7e555772b140",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "cdf8cd5e7cecc5866f160c1776de78d0c09f7314a1e9b06a21e8251a872a57e6",  # pragma: allowlist secret
+    ): "bc09822a7d2fa55a50d43de7a8227b9a26a9c9b160e21344110811973bd830e9",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

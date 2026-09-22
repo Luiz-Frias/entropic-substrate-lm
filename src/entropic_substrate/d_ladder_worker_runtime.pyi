@@ -17,7 +17,6 @@ from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     D1TrainerMailboxObjectRead as D1TrainerMailboxObjectRead,
 )
 from entropic_substrate.__legacy.d_ladder_worker_runtime import Path as Path
-from entropic_substrate.__legacy.d_ladder_worker_runtime import Protocol as Protocol
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     RemoteLadderRequest as RemoteLadderRequest,
 )
@@ -30,12 +29,6 @@ from entropic_substrate.__legacy.d_ladder_worker_runtime import (
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     TemporaryDirectory as TemporaryDirectory,
 )
-from entropic_substrate.__legacy.d_ladder_worker_runtime import (
-    _GitTree as _GitTree,  # pyright: ignore[reportPrivateUsage]
-)
-from entropic_substrate.__legacy.d_ladder_worker_runtime import (
-    _Hardware as _Hardware,  # pyright: ignore[reportPrivateUsage]
-)
 from entropic_substrate.__legacy.d_ladder_worker_runtime import annotations as annotations
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     build_torch_cuda_adapters as build_torch_cuda_adapters,
@@ -44,13 +37,9 @@ from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     build_worker_factory as build_worker_factory,
 )
 from entropic_substrate.__legacy.d_ladder_worker_runtime import canonical_digest as canonical_digest
-from entropic_substrate.__legacy.d_ladder_worker_runtime import cast as cast
 from entropic_substrate.__legacy.d_ladder_worker_runtime import measure_hardware as measure_hardware
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     publish_d1_atomic_bytes as publish_d1_atomic_bytes,
-)
-from entropic_substrate.__legacy.d_ladder_worker_runtime import (
-    read_d1_artifact_bytes as read_d1_artifact_bytes,
 )
 from entropic_substrate.__legacy.d_ladder_worker_runtime import source_root as source_root
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
