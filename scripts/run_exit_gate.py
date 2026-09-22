@@ -200,9 +200,21 @@ def _terminate_process_group(proc: subprocess.Popen[str]) -> list[int]:
 def _group_survivors(pgid: int) -> list[int]:
     # nosec B603 B607 -- fixed argv, no shell; pgrep resolved from PATH under
     # the same quarantined env as every other subprocess here.
-    scan = subprocess.run(  # nosec B603 B607
-        ["pgrep", "-g", str(pgid)], capture_output=True, text=True, env=_SAFE_ENV
-    )
+    # Bounded by the same grace the group kill uses (CodeRabbit, PR #291,
+    # 2026-09-22): an unbounded scan could keep the timeout path from ever
+    # returning, and a scan that did not finish must never read as "no
+    # survivors" -- that is a fail-open answer on a measurement path.
+    try:
+        scan = subprocess.run(  # nosec B603 B607
+            ["pgrep", "-g", str(pgid)],
+            capture_output=True,
+            text=True,
+            env=_SAFE_ENV,
+            timeout=_GROUP_KILL_GRACE_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"pgrep -g {pgid} did not return within {_GROUP_KILL_GRACE_S} s; survivors unknown"
+        raise _RunnerError(msg) from exc
     return [int(line) for line in scan.stdout.split() if line.isdigit()]
 
 

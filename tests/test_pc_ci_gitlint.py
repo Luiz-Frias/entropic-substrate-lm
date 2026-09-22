@@ -66,8 +66,12 @@ def test_gitlint_over_a_range_judges_titles(tmp_path: Path, title: str, expect_o
     (repo / "a").write_text("2\n")
     _git(repo, "add", "a", env=env)
     _git(repo, "commit", "-q", "-m", title + "\n\nbody line under eighty characters.", env=env)
+    tip = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, env=env, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    assert tip != base
     result = subprocess.run(
-        [str(Path(sys.executable).parent / "gitlint"), "--commits", f"{base}..HEAD"],
+        [str(Path(sys.executable).parent / "gitlint"), "--commit", tip],
         cwd=repo,
         env=env,
         capture_output=True,

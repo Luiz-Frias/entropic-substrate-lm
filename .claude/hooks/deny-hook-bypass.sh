@@ -12,6 +12,10 @@
 # whose text merely MENTIONED the override key.
 cmd="$(jq -r '.tool_input.command // ""' 2>/dev/null)"
 [ -z "$cmd" ] && exit 0
+# CodeRabbit on PR #291 (2026-09-22): a quoted or backslash-escaped flag hid
+# from the raw-text match while git still received it. Strip shell quoting
+# before matching; the same simple-command rule then applies to the result.
+cmd="$(printf '%s' "$cmd" | tr -d "'\"\\\\")"
 if printf '%s' "$cmd" | grep -Eq '(^|[[:space:];&|(])git([[:space:]]+-[^[:space:];&|()]+)*[[:space:]]+(commit|push)([[:space:]]+[^[:space:];&|()]+)*[[:space:]]+(--no-verify|-n)([[:space:]]|$)|(^|[[:space:];&|(])git([[:space:]]+[^[:space:];&|()]+)*[[:space:]]+-c[[:space:]]*core\.hooksPath='; then
   printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"FOR-1536: commits and pushes run with the repo hooks on; --no-verify / -n / core.hooksPath are refused. If a hook stalls, wait for it (the unit suite takes ~3 min) or report a DECISION."}}'
   exit 0

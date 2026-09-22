@@ -449,3 +449,27 @@ class TestRunExitGateTimeoutKillsTheGroup:
         assert payload["ok"] is False
         assert payload["error"]["kind"] == "RUNNER_ERROR"
         assert "--timeout-s" in payload["error"]["message"]
+
+    def test_bounds_the_survivor_scan_when_pgrep_hangs(self, repo: Path, tmp_path: Path) -> None:
+        """CodeRabbit on PR #291 (2026-09-22): ``_group_survivors`` ran ``pgrep``
+        with no timeout, so a hung scan could keep the timeout path from ever
+        returning. A PATH-shadowed ``pgrep`` that sleeps stands in for the hang;
+        the runner must come back inside its own grace budget with a RUNNER_ERROR
+        that names the scan, never a silent ``[]`` (no survivors) claim."""
+        shadow = tmp_path / "bin"
+        shadow.mkdir()
+        fake = shadow / "pgrep"
+        fake.write_text("#!/bin/sh\nsleep 25\n")
+        fake.chmod(0o755)
+        env = _git_safe_env(repo)
+        env["PATH"] = f"{shadow}{os.pathsep}{env['PATH']}"
+        started = time.monotonic()
+        code, payload = _run_runner(repo, ["--cmd", "sleep 300", "--timeout-s", "1"], env=env)
+        elapsed = time.monotonic() - started
+        assert code == 1
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "RUNNER_ERROR"
+        assert "pgrep" in payload["error"]["message"]
+        assert "survivors unknown" in payload["error"]["message"]
+        # 1 s gate timeout + at most two 2 s grace waits + one bounded scan.
+        assert elapsed < 15, f"runner took {elapsed:.1f}s: the pgrep scan was not bounded"
