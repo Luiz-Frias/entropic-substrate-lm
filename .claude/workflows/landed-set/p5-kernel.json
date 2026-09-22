@@ -52,6 +52,10 @@
     "entropic_substrate.shared_attempt": {
       "target": "entropic_substrate.kernel.runtime.shared_attempt",
       "landed": true
+    },
+    "entropic_substrate.git_environment": {
+      "target": "entropic_substrate.kernel.runtime.git_environment",
+      "landed": true
     }
   },
   "legacy_edge_budget": 56
