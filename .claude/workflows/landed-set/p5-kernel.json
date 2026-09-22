@@ -1,0 +1,14 @@
+{
+  "phase": "p5-kernel",
+  "modules": {
+    "entropic_substrate.experiments.d1_primitives": {
+      "target": "entropic_substrate.kernel.identity.d1_primitives",
+      "landed": true
+    },
+    "entropic_substrate.factory_attestation": {
+      "target": "entropic_substrate.kernel.identity.factory_attestation",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 57
+}
