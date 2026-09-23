@@ -40,7 +40,7 @@ R-rails: consumed-before-owned is a topological violation and a generation-time 
 below is LANDED before this phase launches.
 
 - kernel addresses (p4, p5): MEASURED, the 19 moved modules import exactly six landed kernel
-  addresses — `kernel.identity.d1_primitives` (13 lines), `kernel.runtime.config` (3),
+  addresses — `kernel.identity.d1_primitives` (15 lines; the Landed table below cites all 15, 13 was a typed count retracted 2026-09-23), `kernel.runtime.config` (3),
   `kernel.verdict.d1_contract` (3), `kernel.verdict.d1_types` (3), `kernel.lifecycle` (2),
   `kernel.evidence_class.resource_provenance` (1)
 - **p6 core addresses** (the reason this phase follows p6 serially): `core.observation.byte_codec`,

@@ -1,5 +1,5 @@
-"""RED-first guard-teeth for the cold-import hazard rewrite-on-arrival closes
-(p7-register-gate brief ACCEPTANCE: "Cold import at the NEW address, fresh
+"""ACCEPTANCE instrument, not a guard-teeth row (brief Q-3 ruling): cold import
+at every landed address, fresh interpreter per leaf (p7-register-gate brief ACCEPTANCE: "Cold import at the NEW address, fresh
 interpreter per moved leaf"). Same discipline as p6-core's
 ``tests/test_core_cold_import.py``: this file imports each of the 19
 ``entropic_substrate.ladder.register.*`` / ``entropic_substrate.ladder.gate.*``

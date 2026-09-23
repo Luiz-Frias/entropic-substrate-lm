@@ -11,14 +11,15 @@ Architect constraint (design gate 2026-09-23): every OTHER field is
 OTHERWISE-VALID -- a real sha256 ``family_digest``, a real ``D1Arm``, a
 nonnegative int ``seed``, a nonempty ``logical_run_id``,
 ``registered_design_digest=None`` -- so ``RunClass.SMOKE`` is the ONLY
-reason construction can raise. If any other field were invalid, the
-unmutated code would raise at ``:71`` first for the wrong reason (five
-further raise sites follow it: ``require_sha256`` on ``family_digest``, the
-``D1Arm`` ``TypeError``, the seed check, ``require_nonempty_string`` on
-``logical_run_id``, and the ``:80``/``:86`` digest arms), and a later
-mutation that drops ``RunClass.SMOKE`` from the rejected set would raise a
-DIFFERENT ``ValueError`` whose message still fails the ``match=`` -- RED for
-a reason that has nothing to do with the refusal this test pins.
+reason construction can raise, and a raise at ``:71`` is attributable to
+the refusal alone. Five further raise sites follow ``:71`` in
+``__post_init__`` (``require_sha256`` on ``family_digest``, the ``D1Arm``
+``TypeError``, the seed check, ``require_nonempty_string`` on
+``logical_run_id``, the ``:80``/``:86`` digest arms). If any other field were
+invalid, the mutated code (``RunClass.SMOKE`` dropped from the rejected set)
+would still raise, from one of those later sites, and the test could stay
+RED for a reason unrelated to the refusal it pins. Valid other fields make
+the mutation arm GREEN-on-construct, which is what proves the tooth.
 """
 
 from __future__ import annotations
