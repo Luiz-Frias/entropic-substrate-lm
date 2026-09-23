@@ -60,7 +60,7 @@ class LMOutput:
     # field encoder exists at all — absent channel is absent, the same
     # convention ``aux_loss``/``kappa_stats`` already use for features most
     # arms do not carry. AMBIENT dtype, not fp32: see
-    # :class:`~entropic_substrate.models.field_encoder.FieldEncoding` for
+    # :class:`~entropic_substrate.core.substrate.field_encoder.FieldEncoding` for
     # why the cast belongs to the consumer.
     field_logits: torch.Tensor | None = None
 
