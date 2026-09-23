@@ -2590,3 +2590,31 @@ def test_importer_scan_roots_are_out_dir_and_its_tests_sibling(tmp_path: Path) -
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
     assert gen_shims.importer_scan_roots(out_dir) == [out_dir, tests_dir]
+
+
+def test_package_form_import_of_a_legacy_submodule_makes_the_forwarder_appear(
+    tmp_path: Path,
+) -> None:
+    """MEASURED 2026-09-23 (p9 brief review B3): tests/test_d1_training_step_split.py:35
+    imports the torch halves in PACKAGE form, ``from entropic_substrate.__legacy import
+    (d1_calibration, d1_training_step, ...)``. The scan recorded only ``node.module``
+    (the bare package), so the forwarder predicate never matched the leaf address and
+    the move would have broken the test with no forwarder. A package-form ``from``
+    import whose alias names a submodule counts as importing that submodule."""
+    mapping_path, frags_dir, out_dir, _manifest_path = _landed_row_no_importer(tmp_path)
+    merged = resolve(frags_dir, mapping_path)
+    # The real tree keeps the `__legacy` package DIRECTORY after its leaves move
+    # (measured: `__legacy/models/`, `__legacy/observation/` are empty dirs at
+    # 79d8228); the expansion keys on that directory, so the fixture mirrors it.
+    (out_dir / "entropic_substrate" / "__legacy").mkdir(parents=True, exist_ok=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "test_pkg_form.py").write_text(
+        "from entropic_substrate.__legacy import moved_thing\n\nUSES = moved_thing\n"
+    )
+    assert "entropic_substrate.__legacy.moved_thing" in gen_shims.collect_legacy_importers(
+        gen_shims.importer_scan_roots(out_dir)
+    )
+    assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {
+        "entropic_substrate/__legacy/moved_thing.py": "entropic_substrate.core.geometry.moved_thing"
+    }

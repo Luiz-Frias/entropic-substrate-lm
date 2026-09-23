@@ -973,6 +973,15 @@ def collect_legacy_importers(roots: list[Path]) -> set[str]:
                     imported.update(a.name for a in node.names)
                 elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                     imported.add(node.module)
+                    # Package form (MEASURED 2026-09-23, p9 review B3): `from
+                    # entropic_substrate.__legacy import d1_calibration` imports the
+                    # SUBMODULE; recording only node.module never matched a leaf
+                    # address. Expanded only when the module is a package
+                    # DIRECTORY under a scan root (directories outlive their moved
+                    # leaves), so `from <leaf> import Name` never records a symbol.
+                    rel = Path(*node.module.split("."))
+                    if any((r / rel).is_dir() for r in roots):
+                        imported.update(f"{node.module}.{a.name}" for a in node.names)
     return {
         name for name in imported if name == LEGACY_PREFIX or name.startswith(LEGACY_PREFIX + ".")
     }
