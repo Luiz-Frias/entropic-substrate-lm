@@ -27,9 +27,28 @@ from pathlib import Path
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT / "tools") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+import gen_shims  # noqa: E402
+
 pytestmark = pytest.mark.unit
 
-_SRC = Path(__file__).resolve().parents[1] / "src"
+_SRC = REPO_ROOT / "src"
+_OLD = "entropic_substrate.data.build"
+
+
+def _current_address(old: str) -> str:
+    """The module's address TODAY, derived live from the landed set (never typed): its
+    ``__legacy`` address while quarantined, its landed target once a phase moves it (p8
+    moves build.py; ruled P8 gate D-4, 2026-09-23: this test must follow the move, not
+    pin the quarantine address)."""
+    mapping = gen_shims.load_mapping(REPO_ROOT / "tools" / "mapping.json")
+    fragments = gen_shims.load_fragments(REPO_ROOT / ".claude" / "workflows" / "landed-set")
+    merged = gen_shims.merge_fragments(fragments, mapping)
+    resolved = gen_shims.resolve_all_modules(merged, mapping)
+    entry = resolved[old]
+    return entry["target"] if entry.get("landed") else gen_shims.legacy_address(old)
 
 
 def _cold_import_first(dotted: str) -> subprocess.CompletedProcess[str]:
@@ -45,13 +64,14 @@ def _cold_import_first(dotted: str) -> subprocess.CompletedProcess[str]:
 def test_legacy_data_build_imports_cold_when_entered_first() -> None:
     """The quarantined module is importable at its own address with nothing warming the
     old-path facade first -- the exact entry order a rewritten landed consumer produces."""
-    result = _cold_import_first("entropic_substrate.__legacy.data.build")
+    address = _current_address(_OLD)
+    result = _cold_import_first(address)
     assert result.returncode == 0, result.stderr[-1200:]
-    assert result.stdout.strip() == "entropic_substrate.__legacy.data.build"
+    assert result.stdout.strip() == address
 
 
 def test_old_name_entry_still_resolves_to_the_same_module_GREEN_control() -> None:
     """Control: the shim path is untouched by the rewrite."""
-    result = _cold_import_first("entropic_substrate.data.build")
+    result = _cold_import_first(_OLD)
     assert result.returncode == 0, result.stderr[-1200:]
-    assert result.stdout.strip() == "entropic_substrate.__legacy.data.build"
+    assert result.stdout.strip() == _current_address(_OLD)
