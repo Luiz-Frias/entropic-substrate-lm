@@ -176,6 +176,58 @@ mitigate it" -- that is no longer true and is retracted, not overwritten.
 It now mitigates the hazard structurally, by refusing to ever emit the
 package shim that could trigger it.**
 
+**Forwarders (FOR-1547, D-WAVES r3 option A, 2026-09-23).** WHY: wave lanes
+run in parallel worktrees off one parent tip. A lane that needs a symbol from
+a module a SIBLING lane is landing cannot import the sibling's final address
+(it does not exist on this lane's branch) and must not import the old prefix
+(the root-level compat shim is forbidden to landed code --
+``tests/test_no_old_prefix.py``). The sanctioned address is the explicit
+``entropic_substrate.__legacy.<x>`` one, which the sibling's ``git mv``
+DELETES. So for every resolved row with ``landed: true`` this generator also
+writes a FORWARDER at exactly that vacated ``__legacy`` path: the SAME
+exact-form static-import shim as a leaf shim (``shim_source``, so a
+``--verify`` and a ``verify_shim_source`` arm cannot tell the two apart, and
+``entrypoint: true`` carries through unchanged), plus the same AST-derived
+``.pyi`` stub. So a lane's ``__legacy`` import keeps resolving, to the SAME
+module object as the landed address, across the zip restack.
+
+LIFECYCLE: emitted at landing (here), consumed by sibling lanes' explicit
+``__legacy`` imports, and retired by the rewrite that removes the LAST
+importer -- emission is DERIVED, never declared (RULING 1, 2026-09-23). The
+second half of the predicate is a measured fact about the tree:
+``collect_legacy_importers`` statically scans every non-generated ``.py``
+under ``out_dir`` and its sibling ``tests/`` for ``import
+entropic_substrate.__legacy.<x>`` / ``from entropic_substrate.__legacy.<x>
+import ...``, and a row is forwarded only while its own address appears
+there. Generated shims and forwarders are skipped in that scan, or every
+forwarder would be its own justification and none could ever retire.
+Consequences: ``generate()``, ``compute_expected_forwarder_map`` and
+``--preflight`` share the predicate, so generate stays idempotent; a
+forwarder whose last importer is gone is DELETED by the next
+``generate()`` (keyed off the previous manifest's own ``forwarders`` list,
+and only ever when the file is still an exact-form shim --
+``delete_stale_forwarders``); and ``--verify`` names any STALE forwarder
+loudly, with its path, for the case where the importer was removed without
+regenerating. p12's ``__legacy``-empty postcondition is the backstop, no
+longer the mechanism.
+
+NOT a forwarder: **package facades.** A package key is never shimmable and
+never forwarded (see the package-key section above); its moved
+``__legacy/<pkg>/__init__.py`` stays the docstring-only file the
+emptied-facade ruling made it. Nor is a row that is not ``landed`` -- its
+``__legacy`` address IS its real source, so there is nothing to forward to
+(no forwarder, no error). A ``landed`` row whose ``__legacy`` address holds
+REAL (non-shim) source is a defect, not a skip: two live copies of one
+module. ``find_forwarder_conflicts`` FAILS LOUD on it before the first
+write, the exact mirror of ``find_unmoved_sources`` (STOP over silent
+fallback -- a skip there would be invisible on the sanctioned
+generate-then-``--verify`` path, because generate rewrites the manifest).
+Forwarders are listed in the emitted manifest under their own
+``forwarders`` key (path + target; their ``.pyi`` siblings ride the same
+``stubs`` list as every other stub), ``--verify`` checks them exactly as it
+checks shims, ``find_manifest_drift`` covers them, and ``--preflight``
+reports how many forwarders the tree would gain.
+
 **Disjointness (fail loud, not a warning):** a module named in TWO OR MORE
 fragments is a merge error -- exactly the "disjoint fragment" property the
 plan's R-parallel rule depends on (two wave lanes both claiming the same
@@ -850,6 +902,115 @@ def find_pending_present(modules: dict, out_dir: Path) -> list[str]:
     return present
 
 
+def legacy_address(old: str) -> str:
+    """The quarantine address a module occupies (or occupied) while under
+    ``__legacy`` -- the same pure, lossless rename ``resolve_all_modules``
+    uses for the derived legacy default, restated once here so the forwarder
+    path and that default can never spell it two ways."""
+    return f"{LEGACY_PREFIX}.{old.removeprefix(f'{ROOT_PACKAGE}.')}"
+
+
+def forwarder_output_path(out_dir: Path, old: str) -> Path:
+    """Where a landed row's FORWARDER lands: the leaf path of its
+    ``__legacy`` address (FOR-1547). Reuses ``shim_output_path`` so a
+    forwarder and a leaf shim cannot disagree about path construction."""
+    return shim_output_path(out_dir, legacy_address(old))
+
+
+def _forwardable_row(entry: dict) -> bool:
+    """The ROW-CLASS half of the forwarder predicate: landed, not retired,
+    not pending. A non-landed row's ``__legacy`` address is its own real
+    source, so it is never forwarded (module docstring, "NOT a forwarder").
+    The second half (is that address still imported?) is derived from the
+    tree by ``collect_legacy_importers`` -- see ``_forwards``."""
+    return (
+        bool(entry.get("landed", False))
+        and not entry.get("retired", False)
+        and not entry.get("pending")
+    )
+
+
+def importer_scan_roots(out_dir: Path) -> list[Path]:
+    """Where ``collect_legacy_importers`` looks for consumers: the source
+    tree itself and its sibling ``tests`` directory (for ``out_dir == src``,
+    the repo's own ``src`` + ``tests``). Non-existent roots are dropped, so a
+    unit-test fixture with no ``tests`` sibling scans only its out_dir."""
+    return [p for p in (out_dir, out_dir.parent / "tests") if p.is_dir()]
+
+
+def collect_legacy_importers(roots: list[Path]) -> set[str]:
+    """Every ``entropic_substrate.__legacy.<x>`` dotted name STATICALLY
+    imported by a real (non-generated) module under ``roots`` -- the
+    measured half of the forwarder predicate (RULING 1, 2026-09-23:
+    emission is DERIVED from live consumers, never declared by a flag).
+
+    A file whose whole body is an exact-form shim (``verify_shim_source``)
+    is skipped: leaf shims and the forwarders themselves are this
+    generator's OWN output, so counting them would make every forwarder its
+    own justification -- self-sustaining by construction, never retiring.
+    Files are prefiltered on the literal ``__legacy`` substring before the
+    AST parse (most of the tree has none), and a file that does not parse is
+    skipped rather than failing the whole scan: an unparseable file cannot
+    be a live importer, and the gate's own syntax check is not this
+    function's job."""
+    imported: set[str] = set()
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            try:
+                text = path.read_text()
+            except OSError:
+                continue
+            if LEGACY_PREFIX not in text:
+                continue
+            if verify_shim_source(text)[0]:
+                continue  # this generator's own emission, not a consumer
+            try:
+                tree = ast.parse(text)
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(a.name for a in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    imported.add(node.module)
+    return {
+        name for name in imported if name == LEGACY_PREFIX or name.startswith(LEGACY_PREFIX + ".")
+    }
+
+
+def _forwards(entry: dict, old: str, imported: set[str]) -> bool:
+    """The full forwarder predicate (RULING 1): a forwardable ROW whose own
+    ``__legacy`` address is still imported somewhere in the tree -- exactly,
+    or as a dotted parent of an imported name (forwarders are always leaves,
+    so the second arm is defensive, never load-bearing today)."""
+    if not _forwardable_row(entry):
+        return False
+    address = legacy_address(old)
+    return any(name == address or name.startswith(address + ".") for name in imported)
+
+
+def find_forwarder_conflicts(modules: dict, out_dir: Path) -> list[str]:
+    """Landed rows whose ``__legacy`` address still holds REAL, non-shim
+    source -- two live copies of one module. Exact mirror of
+    ``find_unmoved_sources``: emitting would overwrite real source with a
+    three-line forwarder, so generate() refuses before its first write and
+    ``--verify`` refuses too (FOR-1547)."""
+    bad: list[str] = []
+    for old, entry in sorted(modules.items()):
+        # ROW-CLASS predicate only, deliberately NOT the importer half: two
+        # live copies of one module is a defect whether or not anything still
+        # imports the __legacy address (RULING 2, 2026-09-23).
+        if not _forwardable_row(entry):
+            continue
+        existing = module_file(out_dir, legacy_address(old))
+        if existing is not None and not _is_shim_file(existing):
+            bad.append(
+                f"{old}: landed=true but real (non-shim) source still sits at its "
+                f"forwarder address {existing}"
+            )
+    return bad
+
+
 def _check_sources(modules: dict, out_dir: Path) -> None:
     stale_pending = find_pending_present(modules, out_dir)
     if stale_pending:
@@ -871,6 +1032,37 @@ def _check_sources(modules: dict, out_dir: Path) -> None:
             f"{len(unmoved)} module(s) still hold real source at the old dotted path -- "
             "refusing to overwrite source with a shim (run the move first): " + "; ".join(unmoved)
         )
+    conflicts = find_forwarder_conflicts(modules, out_dir)
+    if conflicts:
+        raise ManifestError(
+            f"{len(conflicts)} landed row(s) still hold real source at their __legacy "
+            "forwarder address -- refusing to overwrite source with a forwarder (two live "
+            "copies of one module; resolve by ruling, never by skipping): " + "; ".join(conflicts)
+        )
+
+
+def delete_stale_forwarders(prev_doc: dict, out_dir: Path, keep: set[str]) -> list[Path]:
+    """Unlinks every forwarder (and its ``.pyi`` sibling) the PREVIOUS
+    emitted-files manifest lists that the fresh resolution no longer expects
+    -- the retirement half of RULING 1's derived lifecycle. Only a file whose
+    body is still an exact-form shim is removed; anything else at that path is
+    left alone and reported by ``find_forwarder_conflicts`` /
+    ``--verify`` instead. Returns the paths actually deleted."""
+    deleted: list[Path] = []
+    for entry in prev_doc.get("forwarders", []):
+        relpath = entry["path"]
+        if relpath in keep:
+            continue
+        p = out_dir / relpath
+        if not p.is_file() or not _is_shim_file(p):
+            continue
+        p.unlink()
+        deleted.append(p)
+        stub = p.with_suffix(".pyi")
+        if stub.is_file():
+            stub.unlink()
+            deleted.append(stub)
+    return deleted
 
 
 def generate(
@@ -883,9 +1075,14 @@ def generate(
     _check_sources(modules, out_dir)  # before the first write: all-or-nothing
     written: list[Path] = []
     manifest_entries: list[dict] = []
+    forwarder_entries: list[dict] = []
     stub_entries: list[dict] = []
     raw_texts: dict[str, str] = {}  # relpath -> raw text, BOTH shims and stubs
     out_paths: dict[str, Path] = {}
+    # ONE importer scan per generate() run (RULING 1): the forwarder set is
+    # derived from who still imports each __legacy address, so it is measured
+    # once here and reused for every row -- never re-walked per row.
+    imported = collect_legacy_importers(importer_scan_roots(out_dir))
     for old, entry in sorted(modules.items()):
         if entry.get("retired", False):
             continue  # old name fully retired (p13, or deleted before its move): no shim
@@ -933,6 +1130,33 @@ def generate(
         raw_texts[stub_relpath] = stub_source_raw(target, target_file.read_text(), source_label)
         out_paths[stub_relpath] = stub_path
         stub_entries.append({"path": stub_relpath, "target": target})
+        # FORWARDER (FOR-1547, predicate amended by RULING 1): the old
+        # `__legacy` address the move vacated gets the SAME exact-form shim
+        # for as long as something still imports that address (entrypoint form
+        # included, unchanged
+        # -- it is a fact about the module, not about which address reaches
+        # it) plus the SAME derived stub, so a sibling wave lane's explicit
+        # `entropic_substrate.__legacy.<x>` import keeps resolving, to the
+        # same module object. `_check_sources` already refused any landed row
+        # whose `__legacy` address holds real source, so nothing here can
+        # overwrite a module.
+        if not _forwards(entry, old, imported):
+            continue
+        fwd_path = forwarder_output_path(out_dir, old)
+        fwd_relpath = str(fwd_path.relative_to(out_dir))
+        raw_texts[fwd_relpath] = shim_source(
+            legacy_address(old), target, source_label, is_entrypoint=is_entrypoint
+        )
+        out_paths[fwd_relpath] = fwd_path
+        written.append(fwd_path)
+        forwarder_entries.append(
+            {"path": fwd_relpath, "target": target, "entrypoint": is_entrypoint}
+        )
+        fwd_stub_path = fwd_path.with_suffix(".pyi")
+        fwd_stub_relpath = str(fwd_stub_path.relative_to(out_dir))
+        raw_texts[fwd_stub_relpath] = stub_source_raw(target, target_file.read_text(), source_label)
+        out_paths[fwd_stub_relpath] = fwd_stub_path
+        stub_entries.append({"path": fwd_stub_relpath, "target": target})
     # ONE canonicalization pass over BOTH the shim `.py` and stub `.pyi`
     # raw text, so the whole typed pair is a ruff fixed point by
     # construction and nothing mid-gate (`ruff check . --fix`, `ruff
@@ -942,11 +1166,32 @@ def generate(
         p = out_paths[relpath]
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
+    # SELF-RETIRING (RULING 1, chosen behaviour): a forwarder this generator
+    # emitted for an address nothing imports any more is DELETED here, keyed
+    # off the PREVIOUS manifest's own `forwarders` list -- the only record of
+    # what this generator owns. Chosen over "report only and let a human
+    # delete" because the rewrite that removes the last importer is exactly
+    # the rung that should retire the forwarder, and a per-row declaration
+    # would be a fragment-schema change (a door). `--verify` still reports a
+    # stale forwarder loudly, for the case where the importer was removed
+    # WITHOUT regenerating. Only an exact-form shim is ever unlinked, so a
+    # real module at that path is never deleted.
+    if manifest_path is not None and manifest_path.is_file():
+        delete_stale_forwarders(
+            _load_json(manifest_path, "emitted-files manifest"),
+            out_dir,
+            {e["path"] for e in forwarder_entries},
+        )
     if manifest_path is not None:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
             json.dumps(
-                {"out_dir": str(out_dir), "shims": manifest_entries, "stubs": stub_entries},
+                {
+                    "out_dir": str(out_dir),
+                    "shims": manifest_entries,
+                    "forwarders": forwarder_entries,
+                    "stubs": stub_entries,
+                },
                 indent=2,
             )
         )
@@ -1133,15 +1378,20 @@ def load_emitted_manifest(manifest_path: Path) -> dict:
     return _load_json(manifest_path, "emitted-files manifest")
 
 
-def verify_shims_from_manifest(doc: dict, out_dir: Path) -> list[tuple[Path, str]]:
+def verify_shims_from_manifest(
+    doc: dict, out_dir: Path, key: str = "shims"
+) -> list[tuple[Path, str]]:
     """Returns a list of (path, reason) for every shim the emitted-files
     manifest lists that is missing or not in the exact required form. Empty
-    list == everything verified. Deliberately never walks out_dir -- a real
+    list == everything verified. ``key`` selects the manifest list: ``shims``
+    (default) or ``forwarders`` -- a forwarder is byte-for-byte the same
+    exact-form shim at the vacated ``__legacy`` address (FOR-1547), so it is
+    checked by exactly this predicate, not a second one. Deliberately never walks out_dir -- a real
     production module or a restored package __init__.py living in the same
     tree, but never emitted by this generator, is not this function's
     concern (DEFECT 8)."""
     failures: list[tuple[Path, str]] = []
-    for shim in doc.get("shims", []):
+    for shim in doc.get(key, []):
         p = out_dir / shim["path"]
         if not p.is_file():
             failures.append((p, "listed in emitted-files manifest but file is missing"))
@@ -1161,6 +1411,26 @@ def compute_expected_shim_map(modules: dict, out_dir: Path) -> dict[str, str]:
         if entry.get("retired", False) or entry.get("pending"):
             continue
         out_path = shim_output_path(out_dir, old)
+        expected[str(out_path.relative_to(out_dir))] = entry["target"]
+    return expected
+
+
+def compute_expected_forwarder_map(modules: dict, out_dir: Path) -> dict[str, str]:
+    """The {path -> target} set generate() WOULD write as FORWARDERS right now
+    (FOR-1547) -- one per landed, non-retired, non-pending row, at the
+    ``__legacy`` address its move vacated. Same shape as
+    ``compute_expected_shim_map``, so ``find_manifest_drift`` consumes it
+    unchanged, and so a caller deriving "every emitted static-import shim"
+    (tests/test_legacy_coupling.py) can union the two. Uses the SAME derived
+    predicate generate() does, importer scan included (RULING 1), so
+    generate() stays idempotent and self-retiring: what it writes, this
+    expects, and nothing else."""
+    imported = collect_legacy_importers(importer_scan_roots(out_dir))
+    expected: dict[str, str] = {}
+    for old, entry in modules.items():
+        if not _forwards(entry, old, imported):
+            continue
+        out_path = forwarder_output_path(out_dir, old)
         expected[str(out_path.relative_to(out_dir))] = entry["target"]
     return expected
 
@@ -1206,14 +1476,21 @@ def find_manifest_drift(manifest_shims: list[dict], expected: dict[str, str]) ->
 def compute_expected_stub_map(modules: dict, out_dir: Path) -> dict[str, str]:
     """The {path -> target} set generate() WOULD produce for stubs right now
     -- same shape as compute_expected_shim_map, reused directly by
-    find_manifest_drift (both lists share the {"path", "target"} schema)."""
+    find_manifest_drift (both lists share the {"path", "target"} schema).
+    Covers BOTH stub classes, because generate() writes them into one
+    ``stubs`` list: the leaf shim's stub at the old address, and (FOR-1547)
+    the forwarder's stub at the vacated ``__legacy`` address."""
     expected: dict[str, str] = {}
+    forwarders = compute_expected_forwarder_map(modules, out_dir)
     for old, entry in modules.items():
         if entry.get("retired", False) or entry.get("pending"):
             continue
         out_path = shim_output_path(out_dir, old)
         stub_path = out_path.with_suffix(".pyi")
         expected[str(stub_path.relative_to(out_dir))] = entry["target"]
+        fwd_rel = str(forwarder_output_path(out_dir, old).relative_to(out_dir))
+        if fwd_rel in forwarders:
+            expected[fwd_rel.removesuffix(".py") + ".pyi"] = entry["target"]
     return expected
 
 
@@ -1256,6 +1533,16 @@ def verify_stubs_from_manifest(
                 (p, "stub content does not match a fresh re-derivation from its target's AST")
             )
     return failures
+
+
+def find_stale_forwarders(manifest_forwarders: list[dict], expected: dict[str, str]) -> list[str]:
+    """Forwarders the manifest lists that the fresh, importer-derived
+    resolution no longer expects (RULING 1(b)): the last consumer of that
+    ``__legacy`` address was rewritten onto the landed address, so the
+    forwarder is dead weight and the reconciliation rung deletes it. Reported
+    as its OWN named failure, paths listed, rather than folded into
+    ``find_manifest_drift``'s generic EXTRA wording."""
+    return sorted({s["path"] for s in manifest_forwarders} - set(expected))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1351,11 +1638,20 @@ def main(argv: list[str] | None = None) -> int:
         excluded = sum(1 for e in resolved.values() if e.get("retired", False) or e.get("pending"))
         checked = len(resolved) - excluded
         unmoved = len(find_unmoved_sources(resolved, args.out_dir))
+        # FOR-1547: how many __legacy forwarders this tree WOULD gain. Split
+        # into expected total and not-yet-on-disk so "would gain" is
+        # unambiguous (a re-run over an already-forwarded tree gains none).
+        expected_forwarders = compute_expected_forwarder_map(resolved, args.out_dir)
+        absent_forwarders = sum(
+            1 for rel in expected_forwarders if not (args.out_dir / rel).is_file()
+        )
         print(
             f"preflight ok: {checked} row(s) resolve to source on disk under "
             f"{args.out_dir} ({unmoved} still at the old path, "
             f"{checked - unmoved} at the target; {excluded} retired/pending row(s) "
-            f"not checked) from {len(fragments)} fragment(s)"
+            f"not checked) from {len(fragments)} fragment(s); "
+            f"{len(expected_forwarders)} __legacy forwarder(s) expected, "
+            f"{absent_forwarders} not yet on disk"
         )
         return 0
 
@@ -1392,11 +1688,33 @@ def main(argv: list[str] | None = None) -> int:
             doc = load_emitted_manifest(manifest_path)
             expected = compute_expected_shim_map(resolved, args.out_dir)
             drift = find_manifest_drift(doc.get("shims", []), expected)
+            expected_forwarders = compute_expected_forwarder_map(resolved, args.out_dir)
+            manifest_forwarders = doc.get("forwarders", [])
+            stale = find_stale_forwarders(manifest_forwarders, expected_forwarders)
+            if stale:
+                drift.append(
+                    f"{len(stale)} STALE forwarder(s) -- nothing imports their __legacy "
+                    "address any more; regenerate (generate() deletes them) or delete by "
+                    "hand: " + ", ".join(stale)
+                )
+            # The stale set is excluded from the generic drift check so each
+            # dead forwarder is named ONCE, by the message that explains it.
+            drift += find_manifest_drift(
+                [s for s in manifest_forwarders if s["path"] not in set(stale)],
+                expected_forwarders,
+            )
             expected_stubs = compute_expected_stub_map(resolved, args.out_dir)
             drift += find_manifest_drift(doc.get("stubs", []), expected_stubs)
             if drift:
                 raise ManifestError("; ".join(drift))
+            conflicts = find_forwarder_conflicts(resolved, args.out_dir)
+            if conflicts:
+                raise ManifestError(
+                    f"{len(conflicts)} landed row(s) hold real source at their __legacy "
+                    "forwarder address: " + "; ".join(conflicts)
+                )
             failures = verify_shims_from_manifest(doc, args.out_dir)
+            failures += verify_shims_from_manifest(doc, args.out_dir, key="forwarders")
             failures += verify_stubs_from_manifest(doc, args.out_dir, str(args.fragments_dir))
             stale_pending = find_pending_present(resolved, args.out_dir)
             if stale_pending:
@@ -1421,7 +1739,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"verified: fragments are disjoint, no package key was named, merged manifest is "
             f"landed/target-consistent, the manifest matches the freshly resolved module set, "
-            f"every shim in {manifest_path} is exact-form, every stub re-derives byte-for-byte "
+            f"every shim and __legacy forwarder in {manifest_path} is exact-form, "
+            f"every stub re-derives byte-for-byte "
             f"from its target's AST, and every target has source on disk"
         )
         return 0
@@ -1433,7 +1752,13 @@ def main(argv: list[str] | None = None) -> int:
     except ManifestError as exc:
         print(f"FATAL: {exc}", file=sys.stderr)
         return 1
-    print(f"wrote {len(written)} shim(s) under {args.out_dir} from {len(fragments)} fragment(s)")
+    # `written` carries both classes (FOR-1547), so name them separately
+    # rather than reporting a single inflated shim count.
+    forwarders = len(compute_expected_forwarder_map(resolved, args.out_dir))
+    print(
+        f"wrote {len(written) - forwarders} shim(s) and {forwarders} __legacy forwarder(s) "
+        f"under {args.out_dir} from {len(fragments)} fragment(s)"
+    )
     return 0
 
 
