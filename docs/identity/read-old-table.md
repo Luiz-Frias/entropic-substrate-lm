@@ -168,3 +168,16 @@ as "h-source-reader-v3 is untouched forever" it is now WRONG. p5b-ladder-campaig
 RULING 2026-09-22, wf_d8e28935-075, D-A), so this phase's own row above re-measures and moves
 that table too. This is the same "frozen_after freezes label + shape, not digest values"
 ruling (R-PIN) applying to a reader that, until now, no structural phase had happened to touch.
+
+| 2026-09-23 | p7b-freeze-and-verify | `44c3dc56beec9cb8c93c5e44eb2d2ad64f4ec3d0` (parent tip at which the re-pin was measured; the landing commit's SHA does not exist yet) | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged; 1 of the 51 members is touched this phase: `ladder.run.checkpoint`, the reader's own file) | `ladder.run.checkpoint` (the inline `"h-checkpoint-reader-v2"` literal inside `_reader_identity()` extracted into a named `_READER_IDENTITY_LABEL` constant, plus its comment, so `tests/test_identity_epoch.py` can pin the LABEL half of the door and not only the composed digest, FOR-1550; the label VALUE and the module-set shape are unchanged, per ruling R-PIN) | local `(3.12.13, 2.13.0)` = `992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3`; CI `(3.12.14, 2.13.0+cpu)` = `f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758` | local `(3.12.13, 2.13.0)` = `60be32fe3164363a4520394aca47da9e755f63d0705e1efc8507df21d6520c71`; CI `(3.12.14, 2.13.0+cpu)` = `cf155d5ef2908424ab0f657e0266736971dc6daa009280ad161f48733ae805ff` |
+
+h-source-reader-v3 is untouched by p7b-freeze-and-verify: `ladder.run.checkpoint` is not one
+of its seven fixed members (`core.sentence`, `core.sentence.records`,
+`core.sentence.segmentation`, `core.sentence.corpus`, `ladder.capture.capture`,
+`kernel.artifacts`, `kernel.lifecycle`), confirmed by re-measuring both `_SOURCE_REGIME_TABLE`
+rows unchanged with the same `tools/regime_rows.py` invocation (local `(3.12.13, 0.3.4)` =
+`aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`, CI `(3.12.14, 0.3.4)` =
+`5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84` — both byte-identical to
+the values already on record). The measurement was taken AFTER `just fmt`/`just lint` ran to a
+fixed point, per the p6-core lesson recorded above; both reported no change on this tree, so
+no intermediate value needs retracting this time.

@@ -305,6 +305,28 @@ ships. Lesson recorded, not just fixed: a `_READER_MODULES` member's
 regime row must be measured only after `just check`'s formatting/lint
 step has run to a fixed point, never immediately after a hand rewrite.
 
+p7b re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p7b-freeze-and-verify, FOR-1550): this phase extracts the checkpoint
+reader's label into a named constant, ``ladder/run/checkpoint.py::
+_READER_IDENTITY_LABEL``, and pins BOTH halves of the door here
+(``_FROZEN_CHECKPOINT_READER_IDENTITY_LABEL``,
+``_FROZEN_CHECKPOINT_READER_MODULES``). The label VALUE is unchanged
+(``h-checkpoint-reader-v2``) and the 51-member tuple is unchanged, so the door
+itself does not move -- but ``ladder.run.checkpoint`` is member 30 of its OWN
+``_READER_MODULES``, so extracting the constant changes that member's bytes and
+therefore the composed digest (ruling R-PIN: "frozen_after freezes label +
+shape, not digest values"). Both rows recomputed with ``tools/regime_rows.py``
+AFTER ``just fmt``/``just lint`` ran to a fixed point (the p6-core lesson
+directly above; measured here: both reported no change, so the pre-lint and
+post-lint values coincide this time). The OLD values they replace,
+``992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3``
+(local) and
+``f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: ``ladder.run.checkpoint`` is not one of h-source-reader-v3's seven
+fixed members, confirmed by re-measuring both source rows unchanged with the
+same tool invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -335,6 +357,12 @@ from entropic_substrate.ladder.capture.capture import (
     _reader_identity as _source_reader_identity,
 )
 from entropic_substrate.ladder.run.checkpoint import (
+    _READER_IDENTITY_LABEL as _CHECKPOINT_READER_IDENTITY_LABEL,
+)
+from entropic_substrate.ladder.run.checkpoint import (
+    _READER_MODULES as _CHECKPOINT_READER_MODULES,
+)
+from entropic_substrate.ladder.run.checkpoint import (
     _reader_identity as _checkpoint_reader_identity,
 )
 from entropic_substrate.observation.byte_codec import ByteObservationCodec
@@ -355,6 +383,68 @@ _FROZEN_SOURCE_READER_MODULES = (
     "ladder.capture.capture",
     "kernel.artifacts",
     "kernel.lifecycle",
+)
+
+# FOR-1550: the h-checkpoint-reader-v2 DOOR itself -- label + module-set shape,
+# the two things docs/identity/read-old-table.md freezes after p4 (ruling R-PIN:
+# "frozen_after freezes label + shape, not digest values"). Until this phase the
+# checkpoint reader's label lived only as an inline literal inside
+# _reader_identity() and its 51-member tuple had no frozen counterpart here, so
+# the source reader's shape was pinned and the checkpoint reader's was not.
+_FROZEN_CHECKPOINT_READER_IDENTITY_LABEL = "h-checkpoint-reader-v2"
+
+_FROZEN_CHECKPOINT_READER_MODULES = (
+    "composition.capture_cli",
+    "composition.cli",
+    "composition.source_cli",
+    "composition.span_cli",
+    "core.latent.dynamics",
+    "core.latent.metric",
+    "core.probe.score_gain",
+    "core.sentence",
+    "core.sentence.boundary",
+    "core.sentence.codec",
+    "core.sentence.consumer",
+    "core.sentence.corpus",
+    "core.sentence.head",
+    "core.sentence.law",
+    "core.sentence.model",
+    "core.sentence.numerics",
+    "core.sentence.objective",
+    "core.sentence.profile",
+    "core.sentence.records",
+    "core.sentence.recovery_state",
+    "core.sentence.rollout",
+    "core.sentence.runtime_precision",
+    "core.sentence.sampling",
+    "core.sentence.scoring",
+    "core.sentence.segmentation",
+    "core.sentence.spine",
+    "kernel.artifacts",
+    "kernel.lifecycle",
+    "ladder.capture.capture",
+    "ladder.run.checkpoint",
+    "ladder.run.evaluation_records",
+    "ladder.run.execution",
+    "ladder.run.generation",
+    "ladder.run.journal",
+    "ladder.run.mechanism_evidence",
+    "ladder.run.native_verification",
+    "ladder.run.object_worker",
+    "ladder.run.runner",
+    "ladder.run.seals",
+    "ladder.run.span_diagnostics",
+    "ladder.run.span_probe",
+    "ladder.run.span_probe_artifacts",
+    "ladder.run.span_states",
+    "ladder.run.trace_capture",
+    "ladder.run.training",
+    "ladder.run.worker_command",
+    "ladder.run.worker_completion",
+    "ladder.run.worker_execution",
+    "ladder.run.worker_request",
+    "ladder.run.worker_snapshot",
+    "ladder.run.worker_transport",
 )
 
 _FROZEN_CHECKPOINT_FORMAT_VERSION = 1
@@ -382,11 +472,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3",  # pragma: allowlist secret
+    ): "60be32fe3164363a4520394aca47da9e755f63d0705e1efc8507df21d6520c71",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758",  # pragma: allowlist secret
+    ): "cf155d5ef2908424ab0f657e0266736971dc6daa009280ad161f48733ae805ff",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
@@ -429,6 +519,17 @@ class TestComposedDigestsPerMeasuredRegime:
     """The composed H digests key on DIFFERENT regime inputs (measured):
     checkpoint reader keys on (python, torch); source reader keys on
     (python, pysbd). Neither shares a key with the other."""
+
+    def test_checkpoint_reader_label_and_module_set_are_frozen(self) -> None:
+        """Carries NO regime key, deliberately, and sits next to the digest row
+        it governs (FOR-1550): the door frozen after p4 is the LABEL and the
+        module-set SHAPE, while the composed digest below re-measures on every
+        phase that edits a member's bytes (ruling R-PIN). Pinning the two here
+        is what makes a silent label bump or a dropped/added member a named
+        failure instead of a digest mismatch indistinguishable from an
+        ordinary byte move."""
+        assert _CHECKPOINT_READER_IDENTITY_LABEL == _FROZEN_CHECKPOINT_READER_IDENTITY_LABEL
+        assert _CHECKPOINT_READER_MODULES == _FROZEN_CHECKPOINT_READER_MODULES
 
     def test_checkpoint_reader_digest_matches_measured_regime_row(self) -> None:
         regime = (platform.python_version(), str(torch.__version__))

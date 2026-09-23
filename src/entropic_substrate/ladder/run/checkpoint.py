@@ -44,6 +44,14 @@ def _measurement_digest(value: ContentHash | None) -> str | None:
     return value.digest
 
 
+# The reader identity's LABEL, named once (FOR-1550). It was an inline literal
+# inside _reader_identity() below, which left the door
+# docs/identity/read-old-table.md freezes after p4 -- label + module-set shape,
+# never the digest values (ruling R-PIN) -- with no importable name for its
+# label half, so tests/test_identity_epoch.py could pin the composed digest but
+# not the label that composes it.
+_READER_IDENTITY_LABEL = "h-checkpoint-reader-v2"
+
 # Faithful restatement (ruling E-2) of the pre-move member set at their landed
 # dotted names: the 45 already-landed sentence_prediction.* leaves (the H
 # domain's 18 core.sentence modules, 22 ladder.run modules, 1 ladder.capture
@@ -119,7 +127,7 @@ def _reader_identity() -> str:
         _, _, digest = read_d1_artifact_bytes(source.parent, source.name, label="checkpoint reader")
         digests.append(f"{name}:{digest}")
     return content_identity(
-        ("h-checkpoint-reader-v2", python_version(), str(torch.__version__), *digests)
+        (_READER_IDENTITY_LABEL, python_version(), str(torch.__version__), *digests)
     )
 
 
