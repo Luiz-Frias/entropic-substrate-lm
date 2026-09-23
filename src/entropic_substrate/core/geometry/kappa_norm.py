@@ -27,7 +27,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from entropic_substrate.geometry.kappa import (
+from entropic_substrate.core.geometry.kappa import (
     KAPPA_MAX,
     KAPPA_MIN,
     clamp_kappa,

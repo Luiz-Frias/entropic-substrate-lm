@@ -31,6 +31,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
+TOOLS = REPO_ROOT / "tools"
+if str(TOOLS) not in sys.path:  # tools/ is not a package; import the measurement oracle directly
+    sys.path.insert(0, str(TOOLS))
+import gen_shims  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -47,16 +51,40 @@ FACADE_CHILDREN = {
     "predictive_state": "future_law",
 }
 
+
+def _resolve_child_targets() -> dict[tuple[str, str], str]:
+    """The LANDED target address for each facade child, derived from the
+    landed set + mapping.json (p6-core Q-1 ruling / architect constraint,
+    design gate 2026-09-23: never a hardcoded ``entropic_substrate.__legacy.
+    <facade>.<child>`` literal here -- as each child moves out of quarantine
+    that address stops existing, and a literal would go stale at exactly the
+    commit that lands it). Before a child moves this resolves to its
+    ``__legacy`` address (the derived default `resolve_all_modules` fills in
+    for any module no fragment names yet); after it moves this resolves to
+    its real ``core.*``/``kernel.*`` landing address -- both read live, never
+    typed."""
+    mapping = gen_shims.load_mapping(REPO_ROOT / "tools" / "mapping.json")
+    fragments = gen_shims.load_fragments(REPO_ROOT / ".claude" / "workflows" / "landed-set")
+    merged = gen_shims.merge_fragments(fragments, mapping)
+    resolved = gen_shims.resolve_all_modules(merged, mapping)
+    return {
+        (facade, child): resolved[f"entropic_substrate.{facade}.{child}"]["target"]
+        for facade, child in FACADE_CHILDREN.items()
+    }
+
+
+FACADE_CHILD_TARGETS = _resolve_child_targets()
+
 _MARKER = "COLD_IMPORT_IDENTICAL"
 
 _COLD_IMPORT_CHILD_TEMPLATE = """
 import sys
 old_dotted = {old_dotted!r}
-legacy_dotted = {legacy_dotted!r}
+target_dotted = {target_dotted!r}
 import importlib
 old = importlib.import_module(old_dotted)
-legacy = importlib.import_module(legacy_dotted)
-identical = sys.modules[old_dotted] is sys.modules[legacy_dotted]
+target = importlib.import_module(target_dotted)
+identical = sys.modules[old_dotted] is sys.modules[target_dotted]
 print({marker!r} if identical else "COLD_IMPORT_DIFFERENT")
 """
 
@@ -65,9 +93,9 @@ def _run_cold_import(
     facade: str, child: str, *, package_root: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     old_dotted = f"entropic_substrate.{facade}.{child}"
-    legacy_dotted = f"entropic_substrate.__legacy.{facade}.{child}"
+    target_dotted = FACADE_CHILD_TARGETS[(facade, child)]
     code = _COLD_IMPORT_CHILD_TEMPLATE.format(
-        old_dotted=old_dotted, legacy_dotted=legacy_dotted, marker=_MARKER
+        old_dotted=old_dotted, target_dotted=target_dotted, marker=_MARKER
     )
     env = os.environ.copy()
     if package_root is not None:
