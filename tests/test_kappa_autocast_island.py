@@ -44,7 +44,9 @@ def test_dist_k_from_cos_island_disables_autocast_before_calling_inner() -> None
     seen: list[bool] = []
     original = kappa_module.dist_k_from_inner
 
-    def spy(dot: torch.Tensor, x_sqnorm: torch.Tensor, y_sqnorm: torch.Tensor, kap: torch.Tensor):
+    def spy(
+        dot: torch.Tensor, x_sqnorm: torch.Tensor, y_sqnorm: torch.Tensor, kap: torch.Tensor
+    ) -> torch.Tensor:
         seen.append(torch.is_autocast_enabled("cpu"))
         return original(dot, x_sqnorm, y_sqnorm, kap)
 
