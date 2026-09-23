@@ -56,14 +56,6 @@
     "entropic_substrate.git_environment": {
       "target": "entropic_substrate.kernel.runtime.git_environment",
       "landed": true
-    },
-    "entropic_substrate.d1_training_step_records": {
-      "target": "entropic_substrate.__legacy.d1_training_step_records",
-      "landed": false
-    },
-    "entropic_substrate.d1_calibration_records": {
-      "target": "entropic_substrate.__legacy.d1_calibration_records",
-      "landed": false
     }
   },
   "legacy_edge_budget": 56
