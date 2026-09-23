@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, canonical_digest
 
 __all__ = [
     "PAIRWISE_COSINE_SEMANTIC",

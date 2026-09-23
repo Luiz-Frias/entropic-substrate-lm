@@ -6,9 +6,9 @@ import math
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 
-from entropic_substrate.experiments.d1_family import D1DraftSpec
-from entropic_substrate.experiments.d1_primitives import canonical_digest, require_sha256
-from entropic_substrate.predictive_state.dynamics import SolverConfig
+from entropic_substrate.core.latent.dynamics import SolverConfig
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.ladder.register.d1_family import D1DraftSpec
 
 
 class Rung(StrEnum):

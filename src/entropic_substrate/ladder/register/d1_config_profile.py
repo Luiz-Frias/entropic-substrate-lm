@@ -13,24 +13,9 @@ from typing import Final, cast
 
 import yaml
 
-from entropic_substrate.config import DataConfig, TrainConfig, config_from_dict
-from entropic_substrate.experiments.d1_execution import (
-    BaselineSampling,
-    CalibrationSplit,
-    D1AmpPolicy,
-    D1BaselineCalibrationSpec,
-    D1BatchingSpec,
-    D1EvaluationSpec,
-    D1ExecutionProtocol,
-    D1OptimizationSpec,
-    D1ResourceProtocol,
-)
-from entropic_substrate.experiments.d1_family import (
-    D1DraftSpec,
-    D1ExperimentFamily,
-    build_d1_experiment_family,
-)
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.kernel.identity.d1_primitives import (
     CausalEncoderSpec,
     CovarianceNormalization,
     D1Arm,
@@ -48,14 +33,30 @@ from entropic_substrate.experiments.d1_primitives import (
     canonical_digest,
     default_d1_encoder_initialization_identity,
 )
-from entropic_substrate.experiments.d1_stabilization import (
+from entropic_substrate.kernel.runtime.config import DataConfig, TrainConfig, config_from_dict
+from entropic_substrate.ladder.register.d1_execution import (
+    BaselineSampling,
+    CalibrationSplit,
+    D1AmpPolicy,
+    D1BaselineCalibrationSpec,
+    D1BatchingSpec,
+    D1EvaluationSpec,
+    D1ExecutionProtocol,
+    D1OptimizationSpec,
+    D1ResourceProtocol,
+)
+from entropic_substrate.ladder.register.d1_family import (
+    D1DraftSpec,
+    D1ExperimentFamily,
+    build_d1_experiment_family,
+)
+from entropic_substrate.ladder.register.d1_stabilization import (
     CollapseParameters,
     D1GeometrySpec,
     D1TargetSpec,
     EMAParameters,
     FutureLawSpec,
 )
-from entropic_substrate.observation import ByteObservationCodec, CodecIdentity
 
 _PROFILE_ORDER: Final = ("d1-none", "d1-sg", "d1-ac", "d1-both")
 _EXPECTED_ARMS: Final = dict(zip(_PROFILE_ORDER, D1Arm, strict=True))

@@ -14,15 +14,15 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, cast
 
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_family import D1ExperimentFamily
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
     require_commit,
     require_nonempty_string,
     require_sha256,
 )
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
 
 D1_REGISTERED_DESIGN_SCHEMA: Final = "d1-registered-design-v1"
 _DESIGN_ATTESTATION: Final = object()

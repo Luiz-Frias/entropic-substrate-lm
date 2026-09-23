@@ -4,9 +4,9 @@ import json
 from dataclasses import dataclass
 from typing import Self, cast
 
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.records import content_identity
-from entropic_substrate.sentence_prediction.recovery_state import recovery_record
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.core.sentence.recovery_state import recovery_record
 
 _AXES = (
     ("magnitude", "magnitude"),

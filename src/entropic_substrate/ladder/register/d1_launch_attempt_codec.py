@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import NoReturn, cast
 
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1_LAUNCH_ATTEMPT_SCHEMA,
     D1_LAUNCH_LEDGER_SCHEMA,
     D1LaunchAttemptEvent,
@@ -16,7 +17,6 @@ from entropic_substrate.experiments.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 _LEDGER_KEYS = frozenset({"events", "schema_version"})
 _EVENT_KEYS = frozenset({"event_seq", "identity", "observed_at", "reason", "status"})

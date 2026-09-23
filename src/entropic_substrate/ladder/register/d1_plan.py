@@ -5,9 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.config import TrainConfig
-from entropic_substrate.experiments.d1_config import D1LaunchProfile, D1LaunchScale
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     EvidenceClass,
     RunClass,
@@ -16,7 +14,9 @@ from entropic_substrate.experiments.d1_primitives import (
     require_nonempty_string,
     require_sha256,
 )
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.kernel.runtime.config import TrainConfig
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, D1LaunchScale
+from entropic_substrate.ladder.register.d1_provenance import (
     CodeIdentity,
     ContainerIdentity,
     DataIdentity,
@@ -24,7 +24,7 @@ from entropic_substrate.experiments.d1_provenance import (
     ExecutionIdentity,
     PreregistrationIdentity,
 )
-from entropic_substrate.experiments.d1_runs import (
+from entropic_substrate.ladder.register.d1_runs import (
     ConfirmatoryD1RunSpec,
     D1RunSpec,
     PilotD1RunSpec,

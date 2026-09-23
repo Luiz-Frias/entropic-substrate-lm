@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
     canonical_digest,

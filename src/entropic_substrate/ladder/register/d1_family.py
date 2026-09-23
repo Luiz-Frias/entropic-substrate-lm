@@ -7,11 +7,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
-from entropic_substrate.experiments.d1_execution import (
-    D1ExecutionProtocol,
-    default_d1_execution_protocol,
-)
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.kernel.identity.d1_primitives import (
     CONSTRUCTION_SCHEMA,
     FAMILY_SCHEMA,
     CausalEncoderSpec,
@@ -27,23 +24,26 @@ from entropic_substrate.experiments.d1_primitives import (
     canonical_digest,
     default_d1_encoder_initialization_identity,
 )
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.register.d1_execution import (
+    D1ExecutionProtocol,
+    default_d1_execution_protocol,
+)
+from entropic_substrate.ladder.register.d1_provenance import (
     DataIdentity,
     EvidenceEnvelope,
     ExecutionIdentity,
     PreregistrationIdentity,
 )
-from entropic_substrate.experiments.d1_stabilization import (
+from entropic_substrate.ladder.register.d1_stabilization import (
     CollapseParameters,
     D1GeometrySpec,
     D1TargetSpec,
     EMAParameters,
     FutureLawSpec,
 )
-from entropic_substrate.observation import CodecIdentity
 
 if TYPE_CHECKING:
-    from entropic_substrate.experiments.d1_runs import D1RunSpec
+    from entropic_substrate.ladder.register.d1_runs import D1RunSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +174,7 @@ class D1DraftSpec:
         data: DataIdentity | None = None,
     ) -> D1RunSpec:
         """Construct a validated smoke run; it cannot be confirmatory evidence."""
-        from entropic_substrate.experiments.d1_runs import SmokeD1RunSpec
+        from entropic_substrate.ladder.register.d1_runs import SmokeD1RunSpec
 
         return SmokeD1RunSpec(
             draft=self,
@@ -193,7 +193,7 @@ class D1DraftSpec:
         data: DataIdentity | None = None,
     ) -> D1RunSpec:
         """Construct a validated, explicitly excluded pilot run."""
-        from entropic_substrate.experiments.d1_runs import PilotD1RunSpec
+        from entropic_substrate.ladder.register.d1_runs import PilotD1RunSpec
 
         return PilotD1RunSpec(
             draft=self,
@@ -335,7 +335,7 @@ class D1ExperimentFamily:
         preregistration: PreregistrationIdentity,
     ) -> D1RunSpec:
         """Construct one confirmatory run bound to this preregistered family."""
-        from entropic_substrate.experiments.d1_runs import ConfirmatoryD1RunSpec
+        from entropic_substrate.ladder.register.d1_runs import ConfirmatoryD1RunSpec
 
         return ConfirmatoryD1RunSpec(
             draft=self.draft_for(arm),

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from entropic_substrate.experiments.d1_family import D1DraftSpec, D1ExperimentFamily
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     AGGREGATION_SCHEMA,
     EXECUTION_SCHEMA,
     RunClass,
     canonical_digest,
 )
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.register.d1_family import D1DraftSpec, D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_provenance import (
     DataIdentity,
     EvidenceEnvelope,
     ExecutionIdentity,

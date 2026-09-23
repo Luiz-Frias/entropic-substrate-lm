@@ -1,0 +1,73 @@
+{
+  "phase": "p7-register-gate",
+  "modules": {
+    "entropic_substrate.experiments.d1": {
+      "target": "entropic_substrate.ladder.register.d1",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_config": {
+      "target": "entropic_substrate.ladder.register.d1_config",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_config_profile": {
+      "target": "entropic_substrate.ladder.register.d1_config_profile",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_confirmatory_matrix": {
+      "target": "entropic_substrate.ladder.register.d1_confirmatory_matrix",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_execution": {
+      "target": "entropic_substrate.ladder.register.d1_execution",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_family": {
+      "target": "entropic_substrate.ladder.register.d1_family",
+      "landed": true,
+      "note": "SCC with d1_runs (ruled 2026-09-17, measurement amended 2026-09-23): moves in the SAME commit as d1_runs. Acyclic at module-init time -- d1_runs.py:7 is the only module-scope edge; the reverse edges are TYPE_CHECKING (:45) or function-local (:177, :196, :338)."
+    },
+    "entropic_substrate.experiments.d1_launch_attempt_codec": {
+      "target": "entropic_substrate.ladder.register.d1_launch_attempt_codec",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_launch_attempts": {
+      "target": "entropic_substrate.ladder.register.d1_launch_attempts",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_plan": {
+      "target": "entropic_substrate.ladder.register.d1_plan",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_provenance": {
+      "target": "entropic_substrate.ladder.register.d1_provenance",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_registered_design": {
+      "target": "entropic_substrate.ladder.register.d1_registered_design",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_registration_codec": {
+      "target": "entropic_substrate.ladder.register.d1_registration_codec",
+      "landed": true
+    },
+    "entropic_substrate.experiments.d1_runs": {
+      "target": "entropic_substrate.ladder.register.d1_runs",
+      "landed": true,
+      "note": "SCC with d1_family (see that row's note); moves in the same commit."
+    },
+    "entropic_substrate.experiments.d1_stabilization": {
+      "target": "entropic_substrate.ladder.register.d1_stabilization",
+      "landed": true
+    },
+    "entropic_substrate.experiments.h_preservation": {
+      "target": "entropic_substrate.ladder.register.h_preservation",
+      "landed": true
+    },
+    "entropic_substrate.experiments.ladder": {
+      "target": "entropic_substrate.ladder.register.ladder",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 35,
+  "note": "PARTIAL (register only, first of two module-landing commits -- architect constraint 1, design gate 2026-09-23). 16 ladder.register.* leaves land here; ladder.gate's 3 leaves follow in a later commit on this same branch, which also raises this fragment's legacy_edge_budget. MEASURED with tools/import_graph.py at this commit: 35, unchanged from the parent tip (mythwave/p6-core, 861d015) -- register adds and removes zero landed->__legacy edges (all 30 intra-set + 31 landed-address import lines this commit rewrites resolve inside the landed layers; zero explicit __legacy lines). d1_family/d1_runs SCC lands together per the ruled granularity rule; the plan's claimed collection-time ImportError RED arm does NOT follow from a module-init-acyclic pair and is not claimed (see PR body for the retraction)."
+}
