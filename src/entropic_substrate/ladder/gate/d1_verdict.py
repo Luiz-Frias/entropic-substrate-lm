@@ -8,19 +8,6 @@ stable import surface while the Graphite stack lands those seams independently.
 
 from __future__ import annotations
 
-from entropic_substrate.__legacy.evidence.d1_filing import (
-    REQUIRED_D1_FILING_ARTIFACTS,
-    D1DetachedFiling,
-    D1FilingManifest,
-    D1FilingValidationError,
-    validate_d1_filing_manifest,
-)
-from entropic_substrate.__legacy.evidence.d1_filing_graph import (
-    ValidatedD1Filing,
-    verify_d1_filing,
-)
-from entropic_substrate.__legacy.evidence.d1_gate import decide_filed_verdict
-from entropic_substrate.__legacy.evidence.d1_validator import ValidatedD1Verdict
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract, D1DecisionRule
 from entropic_substrate.kernel.verdict.d1_types import (
     D1_ARM_IDS,
@@ -44,6 +31,19 @@ from entropic_substrate.kernel.verdict.d1_types import (
     JsonValue,
     PreregistrationIdentity,
 )
+from entropic_substrate.ladder.file.d1_filing import (
+    REQUIRED_D1_FILING_ARTIFACTS,
+    D1DetachedFiling,
+    D1FilingManifest,
+    D1FilingValidationError,
+    validate_d1_filing_manifest,
+)
+from entropic_substrate.ladder.file.d1_filing_graph import (
+    ValidatedD1Filing,
+    verify_d1_filing,
+)
+from entropic_substrate.ladder.file.d1_gate import decide_filed_verdict
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 __all__ = [
     "D1_ARM_IDS",
