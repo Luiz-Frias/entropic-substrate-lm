@@ -9,7 +9,7 @@ from typing import ClassVar
 
 import torch
 
-from entropic_substrate.observation.contracts import CodecIdentity
+from entropic_substrate.core.observation.contracts import CodecIdentity
 
 __all__ = ["ByteObservationCodec"]
 

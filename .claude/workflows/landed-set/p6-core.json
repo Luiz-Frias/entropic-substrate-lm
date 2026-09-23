@@ -29,6 +29,22 @@
     "entropic_substrate.models.field_encoder": {
       "target": "entropic_substrate.core.substrate.field_encoder",
       "landed": true
+    },
+    "entropic_substrate.observation.contracts": {
+      "target": "entropic_substrate.core.observation.contracts",
+      "landed": true
+    },
+    "entropic_substrate.observation.byte_codec": {
+      "target": "entropic_substrate.core.observation.byte_codec",
+      "landed": true
+    },
+    "entropic_substrate.observation.modules": {
+      "target": "entropic_substrate.core.observation.modules",
+      "landed": true
+    },
+    "entropic_substrate.observation.permuted_byte_codec": {
+      "target": "entropic_substrate.core.observation.permuted_byte_codec",
+      "landed": true
     }
   },
   "legacy_edge_budget": 42,

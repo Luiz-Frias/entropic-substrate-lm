@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from entropic_substrate.observation.contracts import CodecIdentity, EncodedObservations
+from entropic_substrate.core.observation.contracts import CodecIdentity, EncodedObservations
 
 __all__ = ["LanguageReadout", "LearnedObservationAdapter"]
 
