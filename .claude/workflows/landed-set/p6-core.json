@@ -13,6 +13,22 @@
       "target": "entropic_substrate.core.geometry.kappa_norm",
       "landed": true,
       "note": "DN-18/graft-5 RETRACTED and PLACEMENT CORRECTED (conductor 2026-09-23): the 'dead end' filing is retracted -- UnitNorm is live in build_norm; placement is core.geometry.kappa_norm per tools/mapping.json (the machine truth), not core/substrate as v1 of this brief wrongly stated (house rule 4, not overwritten)."
+    },
+    "entropic_substrate.init.fisher": {
+      "target": "entropic_substrate.core.substrate.fisher",
+      "landed": true
+    },
+    "entropic_substrate.models.backbone": {
+      "target": "entropic_substrate.core.substrate.backbone",
+      "landed": true
+    },
+    "entropic_substrate.models.blocks": {
+      "target": "entropic_substrate.core.substrate.blocks",
+      "landed": true
+    },
+    "entropic_substrate.models.field_encoder": {
+      "target": "entropic_substrate.core.substrate.field_encoder",
+      "landed": true
     }
   },
   "legacy_edge_budget": 42,

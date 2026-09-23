@@ -70,10 +70,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.checkpoint import normalize_checkpoint
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.init.fisher import semi_orthogonal_lift
-from entropic_substrate.models.blocks import build_block, build_norm
+from entropic_substrate.core.substrate.blocks import build_block, build_norm
+from entropic_substrate.core.substrate.fisher import semi_orthogonal_lift
+from entropic_substrate.kernel.runtime.checkpoint import normalize_checkpoint
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = ["FieldCalibrationAccumulator", "FieldEncoder", "FieldEncoding"]
 
