@@ -5,13 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from entropic_substrate.evidence.d1_lifecycle_values import (
-    D1LifecycleEvent,
-    D1ProblemKind,
-    D1ProcessEventKind,
-    D1ProcessState,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorRole,
     ArtifactIdentity,
     FiledVerdictEvidence,
@@ -20,6 +14,12 @@ from entropic_substrate.evidence.lifecycle import (
     LifecycleRecord,
     LifecycleTransitionError,
     transition,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
+    D1LifecycleEvent,
+    D1ProblemKind,
+    D1ProcessEventKind,
+    D1ProcessState,
 )
 
 

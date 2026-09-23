@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final, cast
 
-from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
@@ -17,6 +16,7 @@ from entropic_substrate.evidence.lifecycle import (
     LifecycleContractError,
     SuccessorAuthorization,
 )
+from entropic_substrate.kernel.verdict.d1_types import D1_STABILIZATION_ARM_IDS
 
 D1_LIFECYCLE_EVENT_SCHEMA: Final = "d1-lifecycle-event/v2"
 _EVENT_FIELDS: Final = frozenset(

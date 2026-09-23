@@ -10,13 +10,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1LifecycleEvent,
     D1LifecycleValueError,
     canonical_lifecycle_event_line,
     parse_lifecycle_event_line,
 )
-from entropic_substrate.evidence.lifecycle import ContentHash
 
 
 class D1LifecycleGapCode(StrEnum):

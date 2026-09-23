@@ -4,30 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from entropic_substrate.evidence.d1_lifecycle_repository import (
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ArtifactIdentity,
+    LifecycleState,
+    SuccessorAuthorization,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import (
     D1LifecycleCorruptionError,
     D1LifecycleHistory,
     D1LifecycleRepository,
     D1LifecycleRepositoryGap,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1LifecycleEvent,
     D1ProblemKind,
     D1ProcessEventKind,
     D1ProcessState,
 )
-from entropic_substrate.evidence.d1_process_replay import (
+from entropic_substrate.ladder.capture.ledger.d1_process_replay import (
     D1ProcessReplay,
     D1ProcessTransitionError,
     advance_d1_process,
     reject_transition,
     replay_d1_process,
-)
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ArtifactIdentity,
-    LifecycleState,
-    SuccessorAuthorization,
 )
 
 

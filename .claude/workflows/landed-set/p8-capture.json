@@ -1,0 +1,22 @@
+{
+  "phase": "p8-capture",
+  "modules": {
+    "entropic_substrate.evidence.d1_lifecycle_repository": {
+      "target": "entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_lifecycle_values": {
+      "target": "entropic_substrate.ladder.capture.ledger.d1_lifecycle_values",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_process_manager": {
+      "target": "entropic_substrate.ladder.capture.ledger.d1_process_manager",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_process_replay": {
+      "target": "entropic_substrate.ladder.capture.ledger.d1_process_replay",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 45
+}
