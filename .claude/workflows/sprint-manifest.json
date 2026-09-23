@@ -813,7 +813,7 @@
       ],
       "conflict_edges": [],
       "parallel_group": null,
-      "status": "queued",
+      "status": "active",
       "notes": "ADDED 2026-09-22 by operator ruling D-WAVES r2 (keep the waves). MEASURED at 1c10969: evidence.ladder_campaign's artifact half (mapping: split -> kernel.artifacts) had 14 landed importers, all inside h-checkpoint-reader-v2, and no owning phase; any wave lane taking it would reach into both waves' slices. Landing it serially here makes w1 and w2 file-disjoint under the slice rule (tools/lane_slices.py). The gate half stays quarantined for p7. DESIGN-GATE RULING 2026-09-22 (wf_d8e28935-075): D-A both readers re-pin (kernel.artifacts is a member of both; 15/51 checkpoint members + 1/7 source members change bytes); D-B d1_artifact_snapshot.pyi admitted as a generator output.",
       "engine_mode": "arch"
     },
