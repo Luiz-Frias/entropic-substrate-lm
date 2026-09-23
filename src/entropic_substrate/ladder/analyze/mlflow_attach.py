@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from entropic_substrate.logging import logger
-from entropic_substrate.mlflow_aggregate import find_parent_run
+from entropic_substrate.__legacy.mlflow_aggregate import find_parent_run
+from entropic_substrate.kernel.runtime.logging import logger
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure

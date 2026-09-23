@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 
-from entropic_substrate.d1_inspect_values import D1_INSPECT_MAX_EVALUATIONS
-from entropic_substrate.experiments.d1_primitives import RunClass, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_sha256
+from entropic_substrate.ladder.analyze.d1_inspect_values import D1_INSPECT_MAX_EVALUATIONS
 
 __all__ = [
     "D1_INSPECT_MAX_JOURNAL_BYTES",

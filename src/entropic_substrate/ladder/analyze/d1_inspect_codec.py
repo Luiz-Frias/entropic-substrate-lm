@@ -5,7 +5,20 @@ from __future__ import annotations
 import json
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.d1_inspect_values import (
+from entropic_substrate.__legacy.d1_numerical_defect import terminal_numerical_defect_from_mapping
+from entropic_substrate.__legacy.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.__legacy.evidence.resource_work_codec import (
+    ResourceWorkCodecGap,
+    resource_snapshot_from_mapping,
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
+    ResourceProvenanceCodecGap,
+    run_start_from_mapping,
+    run_start_to_mapping,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1InspectCheckpoint,
     D1InspectComplete,
     D1InspectCompletion,
@@ -23,19 +36,6 @@ from entropic_substrate.d1_inspect_values import (
     D1InspectTrainerAborted,
     D1InspectView,
 )
-from entropic_substrate.d1_numerical_defect import terminal_numerical_defect_from_mapping
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_provenance_codec import (
-    ResourceProvenanceCodecGap,
-    run_start_from_mapping,
-    run_start_to_mapping,
-)
-from entropic_substrate.evidence.resource_work_codec import (
-    ResourceWorkCodecGap,
-    resource_snapshot_from_mapping,
-    resource_snapshot_to_mapping,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 __all__ = [
     "D1_INSPECT_MAX_RESULT_BYTES",

@@ -9,19 +9,19 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_factorial import (
+from entropic_substrate.__legacy.evidence.d1_telemetry_values import (
+    D1_REPORT_ONLY_METRICS,
+    D1_SCALAR_METRICS,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract, D1RegisteredEndpoint
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EndpointGap
+from entropic_substrate.kernel.verdict.d1_types import D1_STABILIZATION_ARM_IDS
+from entropic_substrate.ladder.analyze.d1_factorial import (
     D1AnalysisCell,
     D1FactorialAnalysis,
     d1_cell_endpoint,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract, D1RegisteredEndpoint
-from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap
-from entropic_substrate.evidence.d1_telemetry_values import (
-    D1_REPORT_ONLY_METRICS,
-    D1_SCALAR_METRICS,
-)
-from entropic_substrate.evidence.d1_types import D1_STABILIZATION_ARM_IDS
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
     "D1ArmClauseResult",

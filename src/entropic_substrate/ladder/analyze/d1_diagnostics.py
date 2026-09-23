@@ -10,10 +10,10 @@ from itertools import pairwise
 from types import MappingProxyType
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
 
 __all__ = [
     "D1DiagnosticPolicy",
@@ -152,7 +152,7 @@ def _reached(policy: D1DiagnosticPolicy, value: float) -> bool:
 
 
 def _identity(run: object) -> tuple[D1Arm, int]:
-    from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
+    from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
 
     if type(run) is not D1RunEvidence:
         raise TypeError("D1 report diagnostic requires D1RunEvidence")
@@ -168,7 +168,7 @@ def _identity(run: object) -> tuple[D1Arm, int]:
 
 
 def _target(run: object, policy: D1DiagnosticPolicy) -> D1QualityTargetResult:
-    from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
+    from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
 
     if type(run) is not D1RunEvidence:
         raise TypeError("D1 report diagnostic requires D1RunEvidence")

@@ -1,0 +1,95 @@
+{
+  "phase": "p11-analyze-review-file",
+  "modules": {
+    "entropic_substrate.analysis.charts": {
+      "target": "entropic_substrate.ladder.analyze.charts",
+      "landed": true
+    },
+    "entropic_substrate.analysis.codec_equivariance": {
+      "target": "entropic_substrate.ladder.analyze.codec_equivariance",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_analysis_receipt_codec": {
+      "target": "entropic_substrate.ladder.analyze.d1_analysis_receipt_codec",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_capture": {
+      "target": "entropic_substrate.ladder.analyze.d1_capture",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_clause_policy": {
+      "target": "entropic_substrate.ladder.analyze.d1_clause_policy",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_diagnostics": {
+      "target": "entropic_substrate.ladder.analyze.d1_diagnostics",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_factorial": {
+      "target": "entropic_substrate.ladder.analyze.d1_factorial",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_machine_analysis": {
+      "target": "entropic_substrate.ladder.analyze.d1_machine_analysis",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_machine_analysis_codec": {
+      "target": "entropic_substrate.ladder.analyze.d1_machine_analysis_codec",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_output_access": {
+      "target": "entropic_substrate.ladder.analyze.d1_output_access",
+      "landed": true
+    },
+    "entropic_substrate.analysis.embedding_geometry": {
+      "target": "entropic_substrate.ladder.analyze.embedding_geometry",
+      "landed": true
+    },
+    "entropic_substrate.analysis.field_head_audit": {
+      "target": "entropic_substrate.ladder.analyze.field_head_audit",
+      "landed": true
+    },
+    "entropic_substrate.analysis.ladder_analysis": {
+      "target": "entropic_substrate.ladder.analyze.ladder_analysis",
+      "landed": true
+    },
+    "entropic_substrate.analysis.ladder_registration": {
+      "target": "entropic_substrate.ladder.analyze.ladder_registration",
+      "landed": true
+    },
+    "entropic_substrate.analysis.mlflow_attach": {
+      "target": "entropic_substrate.ladder.analyze.mlflow_attach",
+      "landed": true
+    },
+    "entropic_substrate.analysis.palette": {
+      "target": "entropic_substrate.ladder.analyze.palette",
+      "landed": true
+    },
+    "entropic_substrate.analysis.seed_sizing": {
+      "target": "entropic_substrate.ladder.analyze.seed_sizing",
+      "landed": true
+    },
+    "entropic_substrate.analysis.series": {
+      "target": "entropic_substrate.ladder.analyze.series",
+      "landed": true
+    },
+    "entropic_substrate.d1_inspect_codec": {
+      "target": "entropic_substrate.ladder.analyze.d1_inspect_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_inspect_projection": {
+      "target": "entropic_substrate.ladder.analyze.d1_inspect_projection",
+      "landed": true
+    },
+    "entropic_substrate.d1_inspect_request": {
+      "target": "entropic_substrate.ladder.analyze.d1_inspect_request",
+      "landed": true
+    },
+    "entropic_substrate.d1_inspect_values": {
+      "target": "entropic_substrate.ladder.analyze.d1_inspect_values",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 77,
+  "note": "COMMIT 1 (FOR-1478): ladder/analyze (22 leaves, the acyclic SINK group, W2-SCC) landed with git mv, imports rewritten once on arrival (intra-set onto ladder.analyze.*, already-landed onto their kernel/core/ladder.register/ladder.gate addresses, sibling p8/p9 targets and other-quarantined onto explicit entropic_substrate.__legacy.<x> addresses per the r3 sibling-target ruling), tests/test_analyze_review_file_cold_import.py RED-first captured (22 collected ModuleNotFoundError cases at ladder.analyze.* addresses before the move, all 24 cases green after). legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 77 = 45 (baseline) + 32 new distinct (landed module, __legacy module) pairs this commit's 22 analyze leaves add. Direction INCREASING (BUDGET-MONOTONE strict-decrease retracted, 795f8e6). The evidence.ladder_campaign split at ladder_analysis.py:29 (7 imported names) is hand-split per the ruled mapping: artifact_from_mapping/artifact_mapping/object_fields/read_bound_artifact/read_json_artifact -> kernel.artifacts (in kernel/artifacts.py's __all__); actor_from_mapping/read_campaign_design stay on entropic_substrate.__legacy.evidence.ladder_campaign (not in kernel/artifacts.py's __all__, gate half quarantined pending p5b's landed:false row)."
+}

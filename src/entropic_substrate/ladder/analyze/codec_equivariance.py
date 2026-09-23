@@ -16,9 +16,9 @@ from types import MappingProxyType
 
 import torch
 
-from entropic_substrate.analysis.embedding_geometry import procrustes_align
-from entropic_substrate.analysis.field_head_audit import realized_spectrum
-from entropic_substrate.observation import CodecIdentity
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.ladder.analyze.embedding_geometry import procrustes_align
+from entropic_substrate.ladder.analyze.field_head_audit import realized_spectrum
 
 
 class CodecComparisonMode(StrEnum):

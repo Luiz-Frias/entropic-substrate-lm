@@ -8,18 +8,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_clause_policy import D1ClauseAnalysis
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EndpointGap
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.analyze.d1_clause_policy import D1ClauseAnalysis
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1DiagnosticPolicy,
     D1ReportRunDiagnostic,
     parse_d1_diagnostic_policy,
 )
-from entropic_substrate.analysis.d1_factorial import D1FactorialAnalysis
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap
-from entropic_substrate.experiments.d1_primitives import D1Arm, require_sha256
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.analyze.d1_factorial import D1FactorialAnalysis
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1RegisteredDesign,
     decision_contract_digest,
 )
@@ -176,7 +176,7 @@ def _condition_manifest(
     value: object,
     contrast_aliases: Mapping[str, str],
 ) -> dict[str, object]:
-    from entropic_substrate.analysis.d1_clause_policy import D1ConditionResult
+    from entropic_substrate.ladder.analyze.d1_clause_policy import D1ConditionResult
 
     if type(value) is not D1ConditionResult:
         raise TypeError("aliased clause serialization requires D1ConditionResult")

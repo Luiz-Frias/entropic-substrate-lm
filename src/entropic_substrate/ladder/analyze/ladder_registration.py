@@ -14,7 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from entropic_substrate.analysis.seed_sizing import (
+from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     DualConfidenceReport,
     PairedSeed,
@@ -24,13 +27,10 @@ from entropic_substrate.analysis.seed_sizing import (
     plan_seed_count,
     validate_hypothesis,
 )
-from entropic_substrate.data.batching import DATA_ORDER_DIGEST_BATCHES
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import require_sha256
 
 if TYPE_CHECKING:
-    from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-    from entropic_substrate.d1_excluded_capture import D1ExcludedCaptureReceipt
+    from entropic_substrate.__legacy.d1_excluded_capture import D1ExcludedCaptureReceipt
+    from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,10 +377,10 @@ def prepare_registration(
     This first adapter admits FULL D1 pilots only. D2-D5 smoke construction
     coverage is not a source of pilot variance and receives no fallback path.
     """
-    from entropic_substrate.d1_excluded_capture import D1ExcludedCaptureReceipt
-    from entropic_substrate.experiments.d1_config import D1LaunchScale
-    from entropic_substrate.experiments.d1_primitives import RunClass
-    from entropic_substrate.telemetry import read_d1_run_evidence_bytes
+    from entropic_substrate.__legacy.d1_excluded_capture import D1ExcludedCaptureReceipt
+    from entropic_substrate.__legacy.telemetry import read_d1_run_evidence_bytes
+    from entropic_substrate.kernel.identity.d1_primitives import RunClass
+    from entropic_substrate.ladder.register.d1_config import D1LaunchScale
 
     design = read_statistical_design(rule_bytes, expected_sha256=expected_rule_sha256)
     if design.run_class != "pilot" or type(receipts) is not tuple or not receipts:
@@ -433,10 +433,13 @@ def report_registered_contrasts(
     This initial adapter requires complete seeds; it refuses an exclusion case
     rather than quietly changing the declared population or multiplicity.
     """
-    from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-    from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactRole, verify_d1_artifact
-    from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest
-    from entropic_substrate.telemetry import read_d1_run_evidence_bytes
+    from entropic_substrate.__legacy.evidence.d1_capture_artifacts import (
+        D1ArtifactRole,
+        verify_d1_artifact,
+    )
+    from entropic_substrate.__legacy.telemetry import read_d1_run_evidence_bytes
+    from entropic_substrate.kernel.identity.d1_primitives import RunClass, canonical_digest
+    from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
 
     design = read_statistical_design(rule_bytes, expected_sha256=expected_rule_sha256)
     if type(capture) is not D1AdmittedAnalysisCapture or design.run_class != "confirmatory":

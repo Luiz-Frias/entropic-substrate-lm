@@ -27,7 +27,9 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from entropic_substrate.analysis.palette import (
+from entropic_substrate.__legacy.telemetry import max_kappa_spread
+from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+from entropic_substrate.ladder.analyze.palette import (
     OKABE_ITO,
     SeriesStyle,
     control_style,
@@ -36,9 +38,12 @@ from entropic_substrate.analysis.palette import (
     fisher_style,
     head_style,
 )
-from entropic_substrate.analysis.series import T_0_9875, EvalSeriesRun, TrainSeriesRun, Verdict
-from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
-from entropic_substrate.telemetry import max_kappa_spread
+from entropic_substrate.ladder.analyze.series import (
+    T_0_9875,
+    EvalSeriesRun,
+    TrainSeriesRun,
+    Verdict,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -51,7 +56,7 @@ if TYPE_CHECKING:
     # config, data.build, models.backbone, ...) into every caller of this
     # module, exactly the dependency-footprint hazard this module's own
     # docstring documents for matplotlib itself.
-    from entropic_substrate.analysis.embedding_geometry import GramRetention
+    from entropic_substrate.ladder.analyze.embedding_geometry import GramRetention
 
 __all__ = [
     "fig_e1_log_steps_washout",

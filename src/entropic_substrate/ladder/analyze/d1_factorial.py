@@ -17,16 +17,20 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, cast
 
-from entropic_substrate.d1_evaluation_values import D1CosineGap
-from entropic_substrate.evidence.d1_contract import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import (
     D1DecisionContract,
     D1RegisteredContrast,
     D1RegisteredEndpoint,
 )
-from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap, D1EstimateGap, D1GapCell
-from entropic_substrate.evidence.d1_types import D1ContrastTerm
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
+    D1EndpointGap,
+    D1EstimateGap,
+    D1GapCell,
+)
+from entropic_substrate.kernel.verdict.d1_types import D1ContrastTerm
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1RegisteredDesign,
     decision_contract_digest,
 )

@@ -51,11 +51,11 @@ from pathlib import Path
 
 import torch
 
-from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
-from entropic_substrate.models.field_encoder import (
+from entropic_substrate.core.substrate.field_encoder import (
     _PROB_EPS,  # pyright: ignore[reportPrivateUsage]  # see PROB_FLOOR below
     FieldEncoder,
 )
+from entropic_substrate.kernel.runtime.checkpoint import CheckpointFormatError, normalize_checkpoint
 
 __all__ = [
     "PROB_FLOOR",
