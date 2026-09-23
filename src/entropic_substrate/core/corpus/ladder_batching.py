@@ -2,8 +2,8 @@
 
 from dataclasses import replace
 
-from entropic_substrate.data.batching import PredictiveBatch, SequenceSampler
-from entropic_substrate.observation import ObservationAlignment
+from entropic_substrate.core.corpus.batching import PredictiveBatch, SequenceSampler
+from entropic_substrate.core.observation.contracts import ObservationAlignment
 
 
 def paired_predictive_batch(

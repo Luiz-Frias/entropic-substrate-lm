@@ -45,6 +45,18 @@
     "entropic_substrate.observation.permuted_byte_codec": {
       "target": "entropic_substrate.core.observation.permuted_byte_codec",
       "landed": true
+    },
+    "entropic_substrate.data.batching": {
+      "target": "entropic_substrate.core.corpus.batching",
+      "landed": true
+    },
+    "entropic_substrate.data.ladder_batching": {
+      "target": "entropic_substrate.core.corpus.ladder_batching",
+      "landed": true
+    },
+    "entropic_substrate.data.ladder_source_order": {
+      "target": "entropic_substrate.core.corpus.ladder_source_order",
+      "landed": true
     }
   },
   "legacy_edge_budget": 42,

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from entropic_substrate.observation import ObservationAlignment
+from entropic_substrate.core.observation.contracts import ObservationAlignment
 
 __all__ = [
     "DATA_ORDER_DIGEST_BATCHES",
