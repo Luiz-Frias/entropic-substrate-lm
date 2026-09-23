@@ -200,6 +200,14 @@
     "entropic_substrate.telemetry": {
       "target": "entropic_substrate.ladder.capture.reader.telemetry",
       "landed": true
+    },
+    "entropic_substrate.d1_observability": {
+      "target": "entropic_substrate.ladder.capture.adapters.d1_observability",
+      "landed": true
+    },
+    "entropic_substrate.d1_tracking": {
+      "target": "entropic_substrate.ladder.capture.adapters.d1_tracking",
+      "landed": true
     }
   },
   "legacy_edge_budget": 45,
