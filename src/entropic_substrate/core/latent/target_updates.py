@@ -9,13 +9,13 @@ from typing import Protocol, runtime_checkable
 import torch
 from torch import nn
 
-from entropic_substrate.predictive_state.ema_schedules import (
+from entropic_substrate.core.latent.ema_schedules import (
     CosineEmaDecaySchedule,
     EmaDecaySchedule,
     FixedEmaDecaySchedule,
     schedule_from_state,
 )
-from entropic_substrate.predictive_state.target_values import FutureTarget, StabilizedTargets
+from entropic_substrate.core.latent.target_values import FutureTarget, StabilizedTargets
 
 __all__ = [
     "OnlineTargetUpdate",
