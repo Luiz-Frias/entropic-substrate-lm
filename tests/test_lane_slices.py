@@ -33,6 +33,11 @@ def _tree(tmp_path: Path, importer_lines: dict[str, list[str]]) -> tuple[Path, P
         p = src / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("\n".join(lines) + "\n")
+    for leaf in ("alpha", "beta"):
+        q = src / "entropic_substrate" / "__legacy" / f"{leaf}.py"
+        if not q.exists():
+            q.parent.mkdir(parents=True, exist_ok=True)
+            q.write_text("X = 1\n")
     mapping = tmp_path / "mapping.json"
     mapping.write_text(
         json.dumps(
@@ -150,3 +155,72 @@ def test_malformed_lane_never_reads_as_an_empty_slice(tmp_path: Path, lane: str)
 def test_unmapped_target_is_refused(tmp_path: Path) -> None:
     src, mapping = _tree(tmp_path, {})
     assert lane_slices.main([str(src), str(mapping), "p6=entropic_substrate.ghost"]) == 2
+
+
+@pytest.mark.unit
+def test_a_moved_module_importing_a_sibling_target_is_a_dependency_RED(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D-WAVES r3 (measured 2026-09-23: w2's p9 and p11 each import 50 of p8's targets).
+    File-disjoint lanes are still illegal when a moved module imports a sibling's target."""
+    src, mapping = _tree(tmp_path, {})
+    (src / "entropic_substrate" / "__legacy" / "alpha.py").write_text(
+        "from entropic_substrate.beta import Y\n"
+    )
+    rc = lane_slices.main([str(src), str(mapping), f"p6={_A}", f"p7={_B}"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "DEPENDS p6 -> p7: 1" in out
+    assert (
+        lane_slices.main([str(src), str(mapping), f"p6={_A}", f"p7={_B}", "--allow-dependencies"])
+        == 0
+    )
+
+
+@pytest.mark.unit
+def test_an_import_of_a_facade_package_depends_on_the_lane_moving_its_leaves(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """p7's d1_config_profile imports `entropic_substrate.observation` (the facade) while p6
+    moves observation.byte_codec: the facade import must count as a dependency on p6."""
+    src, mapping = _tree(tmp_path, {})
+    doc = json.loads(mapping.read_text())
+    doc["modules"]["entropic_substrate.obs"] = {
+        "dest": "entropic_substrate.core.obs",
+        "layer": "core",
+        "action": "split",
+    }
+    doc["modules"]["entropic_substrate.obs.leaf"] = {
+        "dest": "entropic_substrate.core.obs",
+        "layer": "core",
+        "action": "move",
+    }
+    mapping.write_text(json.dumps(doc))
+    leaf = src / "entropic_substrate" / "__legacy" / "obs" / "leaf.py"
+    leaf.parent.mkdir(parents=True)
+    leaf.write_text("Z = 1\n")
+    (src / "entropic_substrate" / "__legacy" / "obs" / "__init__.py").write_text('"""facade"""\n')
+    (src / "entropic_substrate" / "__legacy" / "beta.py").write_text(
+        "from entropic_substrate.obs import Z\n"
+    )
+    rc = lane_slices.main([str(src), str(mapping), "p6=entropic_substrate.obs.leaf", f"p7={_B}"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "DEPENDS p7 -> p6: 1" in out
+
+
+@pytest.mark.unit
+def test_a_package_key_is_refused_as_a_lane_target(tmp_path: Path) -> None:
+    """gen_shims fails loud on a fragment row naming a package key; the slice tool must not
+    silently derive phantom `__legacy/<pkg>.py` paths for one (the p6 touch set carried 18)."""
+    src, mapping = _tree(tmp_path, {})
+    doc = json.loads(mapping.read_text())
+    doc["modules"]["entropic_substrate.pkg"] = {
+        "dest": "entropic_substrate.core.pkg",
+        "layer": "core",
+        "action": "split",
+    }
+    mapping.write_text(json.dumps(doc))
+    (src / "entropic_substrate" / "__legacy" / "pkg").mkdir(parents=True)
+    (src / "entropic_substrate" / "__legacy" / "pkg" / "__init__.py").write_text('"""facade"""\n')
+    assert lane_slices.main([str(src), str(mapping), "p6=entropic_substrate.pkg"]) == 2
