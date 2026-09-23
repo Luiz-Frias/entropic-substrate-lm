@@ -12,29 +12,29 @@ from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import NoReturn, Protocol, SupportsIndex
 
-from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+from entropic_substrate.__legacy.evidence.d1_capture_artifacts import D1DvcBindingState
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA,
     D1AnalysisExecutionReceipt,
     D1AnalysisFilingBindings,
     canonical_d1_analysis_receipt_bytes,
     parse_d1_analysis_execution_receipt,
 )
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.analyze.d1_machine_analysis import (
+    D1AliasedMachineAnalysis,
+    D1ArmAliasMap,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,
     encode_d1_external_analysis_request_v2,
     encode_d1_external_analysis_worker_response_v2,
 )
-from entropic_substrate.analysis.d1_machine_analysis import (
-    D1AliasedMachineAnalysis,
-    D1ArmAliasMap,
-)
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
     D1VerifiedMachineAnalysis,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import D1DvcBindingState
-from entropic_substrate.experiments.d1_primitives import canonical_digest, require_sha256
 
 __all__ = [
     "D1AnalysisExecutionReceipt",

@@ -6,43 +6,45 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.analysis.d1_capture import (
+from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_capture import (
     D1AdmittedAnalysisCapture,
     admit_d1_analysis_capture,
     issue_d1_factorial_exclusion_authority,
 )
-from entropic_substrate.analysis.d1_clause_policy import (
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
     D1ClauseAnalysis,
     evaluate_d1_clauses,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1ReportRunDiagnostic,
     build_d1_report_diagnostics,
     parse_d1_diagnostic_policy,
 )
-from entropic_substrate.analysis.d1_execution_receipt import (
+from entropic_substrate.ladder.analyze.d1_factorial import (
+    D1FactorialAnalysis,
+    compute_d1_factorial,
+)
+from entropic_substrate.ladder.analyze.d1_machine_analysis import (
+    D1AliasedMachineAnalysis,
+    D1ArmAliasMap,
+    build_d1_aliased_machine_analysis,
+)
+from entropic_substrate.ladder.register.d1_registered_design import (
+    D1RegisteredDesign,
+    decision_contract_digest,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1AnalysisExecutionReceipt,
     D1AnalysisImplementationIdentity,
     D1ExternalIsolationAttestation,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
-)
-from entropic_substrate.analysis.d1_factorial import (
-    D1FactorialAnalysis,
-    compute_d1_factorial,
-)
-from entropic_substrate.analysis.d1_machine_analysis import (
-    D1AliasedMachineAnalysis,
-    D1ArmAliasMap,
-    build_d1_aliased_machine_analysis,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import (
-    D1RegisteredDesign,
-    decision_contract_digest,
 )
 
 __all__ = [

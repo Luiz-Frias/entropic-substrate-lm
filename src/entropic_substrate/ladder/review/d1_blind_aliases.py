@@ -10,9 +10,9 @@ from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Protocol
 
-from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
-from entropic_substrate.evidence.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1ArmAliasMap
 
 __all__ = [
     "D1AliasArtifactReceipt",

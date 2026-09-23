@@ -9,44 +9,44 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import NoReturn, SupportsIndex, cast
 
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
-    D1VerifiedMachineAnalysis,
-    verify_d1_machine_analysis,
-)
-from entropic_substrate.analysis.d1_review_execution import (
-    D1ExecutedBlindReview,
-    D1ReleasedAliasReveal,
-)
-from entropic_substrate.analysis.d1_review_packet import D1ValidatedBlindReviewPacket
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_filing import canonical_machine_verdict_bytes
-from entropic_substrate.evidence.d1_filing_graph import (
-    D1RecomputedIntegrity,
-    recompute_capture_integrity,
-)
-from entropic_substrate.evidence.d1_filing_receipts import parse_alias_reveal
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1ReviewAdjudicationSurface,
-    parse_d1_major_findings,
-    parse_d1_review_execution_receipt,
-)
-from entropic_substrate.evidence.d1_statistical_gaps import (
-    D1EstimateGap,
-    D1GapCell,
-    parse_estimate_gap,
-)
-from entropic_substrate.evidence.d1_types import (
-    D1_STABILIZATION_ARM_IDS,
-    VERDICTS,
-)
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
-from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
     thaw_for_digest,
 )
-from entropic_substrate.factory_attestation import FactoryAttestation
+from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
+from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
+    D1EstimateGap,
+    D1GapCell,
+    parse_estimate_gap,
+)
+from entropic_substrate.kernel.verdict.d1_types import (
+    D1_STABILIZATION_ARM_IDS,
+    VERDICTS,
+)
+from entropic_substrate.ladder.file.d1_filing import canonical_machine_verdict_bytes
+from entropic_substrate.ladder.file.d1_filing_graph import (
+    D1RecomputedIntegrity,
+    recompute_capture_integrity,
+)
+from entropic_substrate.ladder.file.d1_filing_receipts import parse_alias_reveal
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
+    D1VerifiedMachineAnalysis,
+    verify_d1_machine_analysis,
+)
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1ReviewAdjudicationSurface,
+    parse_d1_major_findings,
+    parse_d1_review_execution_receipt,
+)
+from entropic_substrate.ladder.review.d1_review_execution import (
+    D1ExecutedBlindReview,
+    D1ReleasedAliasReveal,
+)
+from entropic_substrate.ladder.review.d1_review_packet import D1ValidatedBlindReviewPacket
 
 
 @dataclass(frozen=True, slots=True)

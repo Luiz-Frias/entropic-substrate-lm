@@ -15,14 +15,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.analysis.d1_external_analysis_control import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
+from entropic_substrate.ladder.register.d1_registration_codec import (
+    D1PreregistrationByteEvidence,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
     D1ExternalAnalysisInputControl,
     decode_d1_external_analysis_input_control,
-)
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
-from entropic_substrate.experiments.d1_registration_codec import (
-    D1PreregistrationByteEvidence,
 )
 
 __all__ = [

@@ -14,24 +14,24 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_analysis_api import (
+from entropic_substrate.__legacy.evidence.d1_capture_aggregate_codec import (
+    hydrate_d1_capture_aggregate,
+)
+from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog
+from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_registration_codec import (
+    D1PreregistrationByteEvidence,
+    hydrate_registered_design,
+)
+from entropic_substrate.ladder.review.d1_analysis_api import (
     D1AnalysisCompositionRequest,
     compose_d1_analysis,
 )
-from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.ladder.review.d1_execution_receipt import D1IsolationRequest
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     D1ExternalAnalysisWorkerResponseV2,
     decode_d1_external_analysis_request_v2,
     encode_d1_external_analysis_worker_response_v2,
-)
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
-    hydrate_d1_capture_aggregate,
-)
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_family import D1ExperimentFamily
-from entropic_substrate.experiments.d1_registration_codec import (
-    D1PreregistrationByteEvidence,
-    hydrate_registered_design,
 )
 
 __all__ = [

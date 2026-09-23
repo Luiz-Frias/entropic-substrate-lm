@@ -9,62 +9,62 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-from entropic_substrate.analysis.d1_analysis_receipt_codec import (
-    D1AnalysisExecutionReceipt,
-    canonical_d1_analysis_receipt_bytes,
-)
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
-    D1VerifiedMachineAnalysis,
-)
-from entropic_substrate.analysis.d1_real_arm_verdict import (
-    D1AssembledRealArmVerdict,
-    D1VerdictDecision,
-    assemble_d1_real_arm_verdict,
-)
-from entropic_substrate.analysis.d1_review_execution import (
-    D1ExecutedBlindReview,
-    D1ReleasedAliasReveal,
-)
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.__legacy.evidence.d1_process_manager import D1ProcessManager
+from entropic_substrate.kernel.artifacts import (
     D1ArtifactSnapshotError,
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.d1_filing import (
-    REQUIRED_D1_FILING_ARTIFACTS,
-    D1FilingManifest,
-    validate_d1_filing_manifest,
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ArtifactIdentity,
+    ContentHash,
 )
-from entropic_substrate.evidence.d1_filing_assembly import (
-    D1FilingArtifactMaterial,
-    assemble_d1_filing_manifest,
-    assemble_d1_narrative,
-)
-from entropic_substrate.evidence.d1_filing_graph import (
-    ValidatedD1Filing,
-    verify_d1_filing,
-)
-from entropic_substrate.evidence.d1_filing_receipts import (
-    D1FilingGitPort,
-    D1FilingRevisions,
-)
-from entropic_substrate.evidence.d1_gate import decide_filed_verdict
-from entropic_substrate.evidence.d1_process_filing import file_d1_verdict
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1ReviewAdjudicationSurface,
-)
-from entropic_substrate.evidence.d1_types import (
+from entropic_substrate.kernel.verdict.d1_types import (
     FiledGateAuthorization,
     FiledGateRetirement,
     FiledGateValidNegative,
 )
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ArtifactIdentity,
-    ContentHash,
+from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
+    D1AnalysisExecutionReceipt,
+    canonical_d1_analysis_receipt_bytes,
+)
+from entropic_substrate.ladder.file.d1_filing import (
+    REQUIRED_D1_FILING_ARTIFACTS,
+    D1FilingManifest,
+    validate_d1_filing_manifest,
+)
+from entropic_substrate.ladder.file.d1_filing_assembly import (
+    D1FilingArtifactMaterial,
+    assemble_d1_filing_manifest,
+    assemble_d1_narrative,
+)
+from entropic_substrate.ladder.file.d1_filing_graph import (
+    ValidatedD1Filing,
+    verify_d1_filing,
+)
+from entropic_substrate.ladder.file.d1_filing_receipts import (
+    D1FilingGitPort,
+    D1FilingRevisions,
+)
+from entropic_substrate.ladder.file.d1_gate import decide_filed_verdict
+from entropic_substrate.ladder.file.d1_process_filing import file_d1_verdict
+from entropic_substrate.ladder.file.d1_real_arm_verdict import (
+    D1AssembledRealArmVerdict,
+    D1VerdictDecision,
+    assemble_d1_real_arm_verdict,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
+    D1VerifiedMachineAnalysis,
+)
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1ReviewAdjudicationSurface,
+)
+from entropic_substrate.ladder.review.d1_review_execution import (
+    D1ExecutedBlindReview,
+    D1ReleasedAliasReveal,
 )
 
 __all__ = [

@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol, cast
 
-from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1AnalysisExecutionReceipt,
     parse_d1_analysis_execution_receipt,
 )
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1ReviewExecutionReceiptV2,
     parse_d1_review_execution_receipt,
 )

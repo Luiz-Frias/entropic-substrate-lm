@@ -7,26 +7,26 @@ import json
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_capture import (
+from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.analyze.d1_capture import (
     D1AppliedExclusion,
     derive_d1_analysis_exclusions,
 )
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1DiagnosticPolicy,
     D1TargetOperator,
     parse_d1_diagnostic_policy,
 )
-from entropic_substrate.analysis.d1_external_analysis_control import (
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
     D1ExternalAnalysisInputControl,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
     D1ContractBoundMachineAnalysis,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
     "D1MachineAnalysisVerificationError",

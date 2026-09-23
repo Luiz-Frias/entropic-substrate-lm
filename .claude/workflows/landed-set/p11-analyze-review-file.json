@@ -88,8 +88,109 @@
     "entropic_substrate.d1_inspect_values": {
       "target": "entropic_substrate.ladder.analyze.d1_inspect_values",
       "landed": true
+    },
+    "entropic_substrate.analysis.d1_analysis_api": {
+      "target": "entropic_substrate.ladder.review.d1_analysis_api",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_blind_aliases": {
+      "target": "entropic_substrate.ladder.review.d1_blind_aliases",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_execution_receipt": {
+      "target": "entropic_substrate.ladder.review.d1_execution_receipt",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_external_analysis_adapter": {
+      "target": "entropic_substrate.ladder.review.d1_external_analysis_adapter",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_external_analysis_codec": {
+      "target": "entropic_substrate.ladder.review.d1_external_analysis_codec",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_external_analysis_control": {
+      "target": "entropic_substrate.ladder.review.d1_external_analysis_control",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_external_review_adapter": {
+      "target": "entropic_substrate.ladder.review.d1_external_review_adapter",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_external_worker": {
+      "target": "entropic_substrate.ladder.review.d1_external_worker",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_machine_analysis_binding": {
+      "target": "entropic_substrate.ladder.review.d1_machine_analysis_binding",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_machine_analysis_verification": {
+      "target": "entropic_substrate.ladder.review.d1_machine_analysis_verification",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_review_execution": {
+      "target": "entropic_substrate.ladder.review.d1_review_execution",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_review_packet": {
+      "target": "entropic_substrate.ladder.review.d1_review_packet",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_review_adjudication": {
+      "target": "entropic_substrate.ladder.review.d1_review_adjudication",
+      "landed": true
+    },
+    "entropic_substrate.analysis.d1_real_arm_verdict": {
+      "target": "entropic_substrate.ladder.file.d1_real_arm_verdict",
+      "landed": true
+    },
+    "entropic_substrate.analysis.ladder_filing": {
+      "target": "entropic_substrate.ladder.file.ladder_filing",
+      "landed": true
+    },
+    "entropic_substrate.d1_filing_application": {
+      "target": "entropic_substrate.ladder.file.d1_filing_application",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_decision_validation": {
+      "target": "entropic_substrate.ladder.file.d1_decision_validation",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_filing": {
+      "target": "entropic_substrate.ladder.file.d1_filing",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_filing_assembly": {
+      "target": "entropic_substrate.ladder.file.d1_filing_assembly",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_filing_edges": {
+      "target": "entropic_substrate.ladder.file.d1_filing_edges",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_filing_graph": {
+      "target": "entropic_substrate.ladder.file.d1_filing_graph",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_filing_receipts": {
+      "target": "entropic_substrate.ladder.file.d1_filing_receipts",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_gate": {
+      "target": "entropic_substrate.ladder.file.d1_gate",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_process_filing": {
+      "target": "entropic_substrate.ladder.file.d1_process_filing",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_validator": {
+      "target": "entropic_substrate.ladder.file.d1_validator",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 77,
-  "note": "COMMIT 1 (FOR-1478): ladder/analyze (22 leaves, the acyclic SINK group, W2-SCC) landed with git mv, imports rewritten once on arrival (intra-set onto ladder.analyze.*, already-landed onto their kernel/core/ladder.register/ladder.gate addresses, sibling p8/p9 targets and other-quarantined onto explicit entropic_substrate.__legacy.<x> addresses per the r3 sibling-target ruling), tests/test_analyze_review_file_cold_import.py RED-first captured (22 collected ModuleNotFoundError cases at ladder.analyze.* addresses before the move, all 24 cases green after). legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 77 = 45 (baseline) + 32 new distinct (landed module, __legacy module) pairs this commit's 22 analyze leaves add. Direction INCREASING (BUDGET-MONOTONE strict-decrease retracted, 795f8e6). The evidence.ladder_campaign split at ladder_analysis.py:29 (7 imported names) is hand-split per the ruled mapping: artifact_from_mapping/artifact_mapping/object_fields/read_bound_artifact/read_json_artifact -> kernel.artifacts (in kernel/artifacts.py's __all__); actor_from_mapping/read_campaign_design stay on entropic_substrate.__legacy.evidence.ladder_campaign (not in kernel/artifacts.py's __all__, gate half quarantined pending p5b's landed:false row)."
+  "legacy_edge_budget": 99,
+  "print_allowlist": ["entropic_substrate.ladder.review.d1_external_worker"],
+  "note": "COMMIT 1 (FOR-1478): ladder/analyze (22 leaves, the acyclic SINK group, W2-SCC) landed with git mv, imports rewritten once on arrival (intra-set onto ladder.analyze.*, already-landed onto their kernel/core/ladder.register/ladder.gate addresses, sibling p8/p9 targets and other-quarantined onto explicit entropic_substrate.__legacy.<x> addresses per the r3 sibling-target ruling), tests/test_analyze_review_file_cold_import.py RED-first captured (22 collected ModuleNotFoundError cases at ladder.analyze.* addresses before the move, all 24 cases green after). legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 77 = 45 (baseline) + 32 new distinct (landed module, __legacy module) pairs this commit's 22 analyze leaves add. Direction INCREASING (BUDGET-MONOTONE strict-decrease retracted, 795f8e6). The evidence.ladder_campaign split at ladder_analysis.py:29 (7 imported names) is hand-split per the ruled mapping: artifact_from_mapping/artifact_mapping/object_fields/read_bound_artifact/read_json_artifact -> kernel.artifacts (in kernel/artifacts.py's __all__); actor_from_mapping/read_campaign_design stay on entropic_substrate.__legacy.evidence.ladder_campaign (not in kernel/artifacts.py's __all__, gate half quarantined pending p5b's landed:false row). COMMIT 2 (FOR-1479+FOR-1480+FOR-1482 absorbed): ladder/review (13) and ladder/file (12) land as ONE commit (W2-SCC: review<->file is a cycle, 2 review->file + 9 file->review edges). ladder_filing.py's evidence.ladder_campaign import (10 names) is hand-split identically to ladder_analysis.py: the same five names -> kernel.artifacts, the other five (_TOKEN, FiledLadderGate, actor_from_mapping, read_campaign_design, validate_ladder_phase_transition) stay on __legacy.evidence.ladder_campaign. print_allowlist carries d1_external_worker's landed address (ruling P11-WORKER-PINNED): its two stderr prints (:363,:366 pre-move) stay raw because main() is the in-container D1 external-analysis entrypoint (--network none --read-only --cap-drop ALL) and its stderr is content-addressed into evidence (stderr_sha256) -- configure_logging() would make that digest wall-clock dependent and its JSON sink would mkdir on a read-only rootfs. No configure_logging call and no conforming_entrypoints key: the worker stays NOT-YET-CONFORMED (derived), operator ratification of this third pinned site is PENDING. tests/test_d1_external_worker.py carries the ONE ruled P11-WORKER-TEST-CARVEOUT edit riding this commit. legacy_edge_budget re-MEASURED with tools/import_graph.py at this commit: 99 = 77 + 22 new distinct pairs (14 from review, 8 from file)."
 }

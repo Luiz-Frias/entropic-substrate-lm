@@ -8,7 +8,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_clause_policy import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import (
+    D1DecisionContract,
+    D1RegisteredContrast,
+    D1RegisteredEndpoint,
+)
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
+    D1EstimateGap,
+    D1GapCell,
+    parse_endpoint_gap,
+)
+from entropic_substrate.kernel.verdict.d1_types import D1ContrastTerm
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
     D1ClausePolicy,
     D1ConditionSource,
     D1ConditionStatus,
@@ -16,27 +28,15 @@ from entropic_substrate.analysis.d1_clause_policy import (
     classify_d1_condition_status,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    D1ExternalAnalysisInputControl,
-)
-from entropic_substrate.analysis.d1_factorial import d1_factorial_effect_terms
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
-from entropic_substrate.analysis.d1_machine_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_factorial import d1_factorial_effect_terms
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.analyze.d1_machine_analysis_codec import (
     decode_d1_machine_analysis_declaration,
 )
-from entropic_substrate.evidence.d1_contract import (
-    D1DecisionContract,
-    D1RegisteredContrast,
-    D1RegisteredEndpoint,
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    D1ExternalAnalysisInputControl,
 )
-from entropic_substrate.evidence.d1_statistical_gaps import (
-    D1EstimateGap,
-    D1GapCell,
-    parse_endpoint_gap,
-)
-from entropic_substrate.evidence.d1_types import D1ContrastTerm
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 __all__ = [
     "D1ContractBoundMachineAnalysis",

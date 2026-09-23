@@ -11,7 +11,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NoReturn, SupportsIndex, cast
 
-from entropic_substrate.factory_attestation import FactoryAttestation
+from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 
 __all__ = [
     "D1_NO_MAJOR_OUTCOME",

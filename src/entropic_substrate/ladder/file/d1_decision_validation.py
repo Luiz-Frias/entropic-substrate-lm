@@ -6,14 +6,15 @@ import re
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from entropic_substrate.evidence.d1_contract import D1DecisionContract, constants_match
-from entropic_substrate.evidence.d1_parsing import (
+from entropic_substrate.kernel.lifecycle import ContentHash, SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract, constants_match
+from entropic_substrate.kernel.verdict.d1_parsing import (
     error,
     object_exact,
     sha256_digest,
     string,
 )
-from entropic_substrate.evidence.d1_types import (
+from entropic_substrate.kernel.verdict.d1_types import (
     D1_STABILIZATION_ARM_IDS,
     D1ArmEvidence,
     D1Clause,
@@ -25,7 +26,6 @@ from entropic_substrate.evidence.d1_types import (
     D1Successor,
     JsonValue,
 )
-from entropic_substrate.evidence.lifecycle import ContentHash, SuccessorAuthorization
 
 _MAJOR_ID = re.compile(r"MAJOR-[1-9][0-9]*")
 

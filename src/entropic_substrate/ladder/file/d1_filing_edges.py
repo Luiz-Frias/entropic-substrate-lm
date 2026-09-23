@@ -10,18 +10,25 @@ from itertools import pairwise
 from types import MappingProxyType
 from typing import NoReturn, cast
 
-from entropic_substrate.analysis.d1_analysis_receipt_codec import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_types import (
+    D1_ARM_IDS,
+    D1_OPAQUE_ARM_ALIAS_IDS,
+    D1_STABILIZATION_ARM_IDS,
+)
+from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1AnalysisExecutionReceipt,
 )
-from entropic_substrate.analysis.d1_machine_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_machine_analysis_codec import (
     D1MachineAnalysisCodecError,
     decode_d1_machine_analysis_declaration,
 )
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,
 )
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1EvidenceGap,
     D1EvidenceGapError,
     D1FilingGitPort,
@@ -32,15 +39,8 @@ from entropic_substrate.evidence.d1_filing_receipts import (
     parse_analysis_receipt,
     parse_review_receipt,
 )
-from entropic_substrate.evidence.d1_review_adjudication import parse_d1_major_findings
-from entropic_substrate.evidence.d1_types import (
-    D1_ARM_IDS,
-    D1_OPAQUE_ARM_ALIAS_IDS,
-    D1_STABILIZATION_ARM_IDS,
-)
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
-from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
+from entropic_substrate.ladder.review.d1_review_adjudication import parse_d1_major_findings
 
 
 @dataclass(frozen=True, slots=True)

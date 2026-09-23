@@ -9,27 +9,29 @@ from pathlib import Path
 from stat import S_ISDIR, S_ISREG
 from typing import Final, NoReturn, Protocol
 
-import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
-from entropic_substrate.analysis.d1_execution_receipt import (
+import entropic_substrate.ladder.review.d1_execution_receipt as execution_receipt_module
+from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1ExternalIsolationAttestation,
     D1IsolationExecutionEvidence,
     D1IsolationRequest,
 )
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,
     decode_d1_external_analysis_worker_response_v2,
     encode_d1_external_analysis_request_v2,
 )
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
     bind_d1_machine_analysis_contract,
 )
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
     D1VerifiedMachineAnalysis,
     verify_d1_machine_analysis,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import D1HeterogeneousCaptureAggregate
-from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 _PLATFORM: Final = "linux/amd64"
 _ANALYSIS_NAME: Final = "blinded-analysis.json"
