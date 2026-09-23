@@ -12,11 +12,11 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from entropic_substrate.config import DataConfig
-from entropic_substrate.data.batching import Corpus, CorpusMeta, TokenSplit
-from entropic_substrate.data.enwik8 import load_enwik8_bytes
-from entropic_substrate.data.fineweb import fineweb_text, stream_fineweb_bytes
-from entropic_substrate.data.synthetic import synthetic_text
+from entropic_substrate.__legacy.data.enwik8 import load_enwik8_bytes
+from entropic_substrate.__legacy.data.fineweb import fineweb_text, stream_fineweb_bytes
+from entropic_substrate.__legacy.data.synthetic import synthetic_text
+from entropic_substrate.core.corpus.batching import Corpus, CorpusMeta, TokenSplit
+from entropic_substrate.kernel.runtime.config import DataConfig
 
 __all__ = ["build_corpus", "corpus_byte_stream", "gpt2_encoding"]
 
