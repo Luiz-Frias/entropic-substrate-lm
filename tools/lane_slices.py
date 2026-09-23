@@ -13,8 +13,8 @@ Files declared ``zip_owned_regenerable`` (the checkpoint regime-row fixtures and
 member of the checkpoint reader set re-pins the same rows, and the zip regenerates them on
 the integrated tip in one rung (see docs/plans/src-hexagonal-refactor.plan.md, D-WAVES r2).
 
-DEPENDENCIES (D-WAVES r3, MEASURED 2026-09-23: w2's p9 and p11 each import 50 of p8's
-targets from their own moved modules): a lane's moved module that imports a sibling lane's
+DEPENDENCIES (D-WAVES r3, MEASURED 2026-09-23: w2's p11 imports 50 and p9 41 of p8's
+targets from their own moved modules; measured 50/50 at 3e9ffa2 before p9's target set was corrected): a lane's moved module that imports a sibling lane's
 target has NO valid address in the lane's own worktree (the old dotted name is forbidden in
 landed packages, the explicit ``__legacy`` address is deleted by the sibling, the sibling's
 new address does not exist until the zip), so file-disjoint lanes can still be illegal. The

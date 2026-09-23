@@ -1,158 +1,820 @@
-# p9-run-lower — `ladder/run` lower stack (values, transport, provider, resource, training, construction)
+# p9-run-lower — the lower run stack lands in `ladder/run/{values,transport,provider,resource,training,construction}`
 
-Authoritative brief for one `td-phase-lifecycle.cascade` lane. Written 2026-09-17 against the approved plan `docs/plans/src-hexagonal-refactor.plan.md`. The lane's `acceptance` arg reads "Per the brief's ACCEPTANCE section"; this file is where that section lives.
+Authoritative brief for one `td-phase-lifecycle.cascade` LANE inside wave `w2`. v2, written
+2026-09-23, superseding the 2026-09-17 v1 under the conductor's ruling D-WAVES r3 (operator,
+2026-09-23). Plan: `docs/plans/src-hexagonal-refactor.plan.md` (§p9, §D, conductor-rulings table).
+Every count below is MEASURED at `1d97033` (+ tooling `79d8228`) on `mythwave/p7-register-gate`,
+with the command recorded beside it, or explicitly labelled `[PREDICTED]` with its arithmetic
+shown. Never both in one table. The lane's `acceptance` arg reads "Per the brief's ACCEPTANCE
+section"; this file is where that section lives.
 
 ## Branch
 
-| field                                        | value                                                                                                                                                                               |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| branch                                       | `mythwave/p9-run-lower`                                                                                                                                                             |
-| parent                                       | `mythwave/p6-core` (CORRECTED 2026-09-18: the w1 zip order is p7 (20) then p6 (33), so the integration tip is `mythwave/p6-core`, not the zip's bottom `mythwave/p7-register-gate`) |
-| mode (sprint manifest, parallel eligibility) | `ratchet`                                                                                                                                                                           |
-| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                          |
+| field                                        | value                                                                                                                                                                                                                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| branch                                       | `mythwave/p9-run-lower`                                                                                                                                                                                                                                                              |
+| parent                                       | `mythwave/p7-register-gate` @ `79d8228`. **RETRACTION (house rule 4):** v1 line 10 says `mythwave/p6-core` with the reasoning "the w1 zip order is p7 then p6". w1 ran SERIAL (p6 → p7 → landed); w2 forks off the p7 tip. Retracted, not overwritten.                               |
+| mode (sprint manifest, parallel eligibility) | `ratchet` (the schema's enum description reads "ratchet = known set (parallel-eligible)"; this phase IS parallel-eligible, so `ratchet` is correct here, unlike p6/p7 which are `tracer`)                                                                                            |
+| cascade `phase.mode` (model tier)            | `arch`. Always explicit, never derived. Feeding the manifest `mode` here yields a silent `normal` and no Opus design gate.                                                                                                                                                           |
+| engine_mode                                  | `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)                                                                                                                                                                                                       |
+| wave                                         | `w2`, PARALLEL: p8-capture ∥ p9-run-lower ∥ p11-analyze-review-file (D-WAVES r3)                                                                                                                                                                                                     |
+| `gates.liveRequired`                         | `false`                                                                                                                                                                                                                                                                              |
+| live gate                                    | DEFERRED to the zip. ONE `just ship-it` on the integrated tip, never K concurrent podman stacks (house rule 2, the VM is 4 vCPU / 4 GB). `gates.liveDeferred` in the sprint manifest names the zip as re-certification owner.                                                        |
+| gates (lifecycle arg)                        | `{"offline":"just check","exit":"just pc-ci"}`. The lane adds no gate vocabulary. The sprint-manifest `gates` object carries only `{"liveRequired": false, "liveDeferred": "<zip>"}` — the schema sets `additionalProperties: false` and admits nothing else.                        |
+| `policy.publishMode`                         | `'defer'`. The lane ends **CERTIFIED** and publishes NOTHING. `gt submit` inside the lane is a defect, not a note.                                                                                                                                                                   |
+| launch                                       | WAVE MEMBER: this phase is ONE ticket `{id,title,scope,acceptance}` inside the single `mass-patch-fanout` invocation for `w2`. The overlay plans, provisions and drives the lane; there is no per-lane session and no hand-written wave script.                                      |
+| lane worktree                                | NESTED at `<checkout>/.claude/worktrees/p9-run-lower`, never a sibling of the conductor's worktree. Measured law from the 2026-08-27 pilot: a sibling lane is unreachable to workers (`EnterWorktree` reports success, Bash then refuses); a nested path is reachable by plain `cd`. |
+| lane isolation                               | `cd` to the lane worktree FIRST in every stage, never `EnterWorktree`. Verify `pwd` AND `git rev-parse --abbrev-ref HEAD` before acting, FREEZE on mismatch: harness-carved isolation worktrees have landed under the wrong lane when several nested worktrees coexist.              |
+| `repoToplevel`                               | `/Users/luizfrias/CursorAI/entropic-substrate-lm` (the conductor's MAIN checkout; the lane's own cwd is the nested worktree above)                                                                                                                                                   |
+| trunk                                        | `refactor/hexagonal-redesign`                                                                                                                                                                                                                                                        |
 
-- **engine_mode:** `arch` (manifest field, machine-read by the launch composer; ruled 2026-09-18)
-  | wave | `w2` |
-  | `gates.liveRequired` | `false` |
-  | live gate | DEFERRED. `gates.liveDeferred` names the wave zip as re-certification owner: one `just ship-it` on the integrated tip, never K concurrent podman stacks (house rule 2, 4 vCPU VM). |
-  | gates | The fanout takes `{"offline":"just check","exit":"just pc-ci"}` and adds no gate vocabulary of its own. `liveRequired:false` is the ported cascade's default under `publishMode:'defer'`; `gates.liveDeferred` lives in the sprint manifest, not in the fanout args. |
-  | launch | WAVE MEMBER: this phase is ONE TICKET `{id,title,scope,acceptance}` inside the single `mass-patch-fanout` invocation for wave `w2`. The overlay plans, provisions and drives the lane; there is no per-lane session and no hand-written wave script. `cascadeScriptPath` is the repo's ported `.claude/workflows/td-phase-lifecycle.cascade.js`. |
-  | zip order | The fanout planner's `zipOrder` is AUTHORITATIVE and is validated as an exact permutation of the admitted lanes BEFORE any lane launches. The parent above is the ratified manifest's prediction; a non-permutation halts the wave with DECISION-NEEDED. |
-  | lane worktree | NESTED at `<checkout>/.claude/worktrees/p9-run-lower`, never a sibling of the conductor's worktree. Measured law from the 2026-08-27 pilot: a sibling lane is unreachable to workers (`EnterWorktree` reports success, Bash then refuses), a nested path is reachable by plain `cd`. |
-  | lane isolation | `cd` to the lane worktree FIRST in every stage, never `EnterWorktree`. Verify `pwd` and branch before acting and FREEZE on mismatch: harness-carved isolation worktrees have landed under the wrong lane when several nested worktrees coexist. |
-  | `policy.publishMode` | `'defer'` (ruling O-1). The lane ends CERTIFIED and publishes nothing. The wave's zip publishes once. |
-  | trunk | `refactor/hexagonal-redesign` |
+## Wave w2 mechanics
+
+Written out because every v1 sentence about the wave was drafted before D-WAVES r3 and before
+FOR-1547 existed.
+
+- **Parent for all three lanes is `mythwave/p7-register-gate`.** Nested worktrees off that one tip.
+- **Zip order: p8 → p9 → p11** (D-WAVES r3, dependency-ordered). Inbound dependency mass MEASURED
+  at THIS tip (`79d8228`) by running the slice command below: p8 receives **41** (p9) + **50** (p11)
+  = **91**; p9 receives 4 (p8) + 1 (p11) = 5; p11 receives 0. **96** cross-lane edges total. Landing
+  p8 first converts 91 of the 96 into real forwarders before either consumer restacks.
+  EPOCH NOTE, stated here rather than 600 lines later (house rule 4, recorded not overwritten): the
+  w2 audit measured `p9 → p8 = 39` at `331dc1e`, and the plan's D-WAVES r3 row quotes ~105 edges
+  wave-wide at `3e9ffa2`. The tool reports **41** at `79d8228`; the two extra edges are
+  `d1_calibration.py:17` and `d1_training_step.py:21`, the record-half lines already on explicit
+  `__legacy` addresses, which the FOR-1547 tooling counts as sibling-target dependencies and the
+  older tooling did not. 41 is both the import-LINE count and the tool's own figure at this tip; 39
+  was correct at its tip. Neither number is retracted; the epoch differs. The
+  fanout planner's own `zipOrder` is AUTHORITATIVE and is validated as an exact permutation of the
+  admitted lanes BEFORE any lane launches; a non-permutation halts the wave with DECISION-NEEDED.
+- **`zipRestackHook`** (`14c587a`, `mass-patch-fanout.js`): an optional `args.zipRestackHook` string
+  inserted at the head of zip step (5), run by the zip agent at EVERY restacked tip BEFORE
+  re-certifying it. WHY it exists: a forwarder for a sibling's target materialises only once the
+  sibling's move sits in the same tree, so the zip must regenerate and commit forwarders before the
+  offline gate, or the restacked tip is red for a reason no lane can fix.
+- **Forwarders (FOR-1547, `e9e5897`).** `tools/gen_shims.py` writes a forwarder at the vacated
+  `entropic_substrate.__legacy.<x>` path of every `landed: true` row **whose own `__legacy` address
+  still appears in a real importer** (emission is DERIVED, never declared; `collect_legacy_importers`
+  skips generated shims and forwarders, so no forwarder is its own justification). Form: the SAME
+  exact static-import shim as a leaf shim plus the AST-derived `.pyi`. So p9's explicit `__legacy`
+  imports of p8's targets keep resolving, to the same module object, across the zip restack.
+- **After the zip: ONE serial reconciliation rung (conductor, not this lane)** rewrites the
+  sibling-target imports to their final `ladder.capture.*` addresses (worklist =
+  `tools/lane_slices.py --allow-dependencies`, ~105 edges wave-wide MEASURED at `3e9ffa2`), deletes
+  the forwarders, regenerates shims, re-pins regime rows and re-certifies.
+- **What this lane must NOT do:** publish; run `just ship-it` or `gt submit`; run a podman container;
+  touch a file in p8's or p11's slice; touch
+  `src/entropic_substrate/ladder/gate/ladder_predecessor.py` (RUNG-OWNED, p8 ∩ p11 — see *Already
+  ruled*, row `rung-owned`); rewrite a sibling-target import to a `ladder.capture.*` address that
+  does not exist on this branch; edit `tools/mapping.json`, `.importlinter`, the manifest, briefs,
+  plan docs, engine scripts, CI, or any EXISTING test.
 
 ## Contract surface owned
 
-| contract                                                                          | kind     | frozen_after |
-| --------------------------------------------------------------------------------- | -------- | ------------ |
-| `ladder/run/{values,transport,provider,resource,training,construction}` addresses | contract | p13          |
-| the `run/construction` named deviation, recorded in `docs/architecture.md`        | contract | p9           |
+| contract                                                                                                 | kind     | frozen_after |
+| -------------------------------------------------------------------------------------------------------- | -------- | ------------ |
+| the 42 `ladder.run.{values,transport,provider,resource,training,construction}.*` addresses under *Scope* | contract | p13          |
+| destination package `__init__.py` shape for each of the six sub-packages: DOCSTRING-ONLY, no re-exports  | contract | p13          |
+| `ladder/run/construction` as a SECOND composition site (ruling E-9, accepted named deviation)            | contract | p9           |
+
+E-9 is recorded here for architecture: the factory returns a runnable, which is the RUN stage's
+product, so a second composition site is accepted rather than refused. **The prose edit to
+`docs/architecture.md` rides the conductor's docs sweep, NOT this lane** — v1 put
+`docs/architecture.md` in Allowed files; that is retracted (see *Already ruled*, row `E-9`).
 
 ## Contracts consumed
 
-R-rails: consumed-before-owned is a topological violation and a generation-time HALT. Every item below is LANDED before this lane launches.
+R-rails: consumed-before-owned is a topological violation and a generation-time HALT. Every item
+below is LANDED on the parent tip.
 
-- kernel (p4, p5), core (p6)
-- `ladder/run/{worker,transport,journal}` skeleton (p4)
-- the `d1_training_step` / `d1_calibration` SPLIT CONTRACT (p5), already landed under `__legacy/`
-- `ladder/capture/ports/metric_sink.py` (p3b)
+- kernel (p4, p5, p5b), core (p6), `ladder/register.*` + `ladder/gate.*` (p7) — MEASURED, the 42
+  moved modules import **112** landed-address lines across **29** distinct addresses -- the
+  *Landed* table below tabulates 108 across 27, and the CORRECTION immediately after it adds the 4
+  `entropic_substrate.observation` lines and the 2 addresses they resolve to. Never read one of
+  those figures without the other
+- `ladder/run/{worker,journal,transport}` skeleton and the 51-member `h-checkpoint-reader-v2` reader
+  identity (p4, `src/entropic_substrate/ladder/run/checkpoint.py:57-109`)
+- the `d1_training_step` / `d1_calibration` SPLIT CONTRACT (p5), both halves still under `__legacy/`
+- `ladder/capture/ports/metric_sink.py` (p3b) — available; MEASURED to have no work in this phase
+- `tools/gen_shims.py` (+ forwarders, `--verify`, `--preflight`), `tools/lane_slices.py`
+  (+ `--rung-owned`), `tools/regime_rows.py`, `tools/import_graph.py`. **NOT** `tools/remap_check.py` — unusable on this
+  tree, ruling P9-REMAP (FOR-1549)
+- `tests/test_legacy_coupling.py` (EQUALITY arm), `tests/test_no_old_prefix.py`,
+  `tests/test_identity_epoch.py`, `tests/test_regime_rows.py`,
+  `tests/test_observability_conformance.py` + `tests/observability_conformance_config.py`
 
 ## Sacred invariants
 
-The five below are quoted verbatim from `CLAUDE.md` (North star and
-*Non-negotiable numerics*). They bind every phase without exception. `SI-*` ids are local to this
-brief set; the text is the contract.
+The five below are quoted verbatim from `CLAUDE.md` (North star and *Non-negotiable numerics*).
+They bind every phase without exception. `SI-*` ids are local to this brief set; the text is the
+contract.
 
-| id   | verbatim invariant                                                                                                          | tripwire                                                                                                         | guard-teeth recipe (house rule 5, both arms)                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SI-1 | "all geometric math runs in FP32 inside `torch.amp.autocast(enabled=False)` blocks regardless of surrounding bf16 autocast" | This phase moves no numerics file: `touch_set ∩ core/geometry = ∅`. The numerics tests must stay byte-identical. | CORRECTED 2026-09-19 (p0 round-C measurement, FOR-1517): for `geometry/kappa.py` the dtype assertion is VACUOUS (`_geometry_dtype()` floors to fp32 regardless of autocast state), so the load-bearing arm is an autocast-STATE spy inside the island, as `tests/test_kappa_norm.py` proves for `kappa_norm.py`; that test fix is FOR-1517's. A phase that moves a numerics module records the state-spy arm for it, never the dtype arm. |
-| SI-2 | "κ is clamped and inputs are projected into the component domain with a boundary epsilon before any map"                    | `touch_set ∩ core/geometry = ∅`; the κ clamp and its test move only under a phase that owns `core/`.             | Widen the κ clamp bound by one ulp and feed a boundary input; the κ-domain test must go RED. Revert in-branch.                                                                                                                                                                                                                                                                                                                            |
-| SI-3 | "the load-balance loss must stay finite and gradients must reach κ (unit-tested)"                                           | `touch_set ∩ core/substrate = ∅`; the load-balance test must stay byte-identical.                                | Detach κ from the load-balance term; the gradient-reaches-κ unit test must go RED. Revert in-branch.                                                                                                                                                                                                                                                                                                                                      |
-| SI-4 | "A magnitude-preserving carrier must not contain a hidden final UnitNorm or RMS overwrite."                                 | `touch_set ∩ core/sentence = ∅`; carrier code is untouched by this phase.                                        | Append a `UnitNorm` to the magnitude-preserving carrier's output; the carrier magnitude test must go RED. Revert in-branch.                                                                                                                                                                                                                                                                                                               |
-| SI-5 | "No probability-floor/square-root substitution is permitted in the main latent path."                                       | `touch_set ∩ core/latent = ∅`; the latent law is untouched by this phase.                                        | Substitute a `sqrt(p + eps)` for the latent law in the main path; the latent-path law test must go RED. Revert in-branch.                                                                                                                                                                                                                                                                                                                 |
+| id   | verbatim invariant                                                                                                          | tripwire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | guard-teeth recipe (house rule 5, both arms)                                                                                                                                                                                                                                                                                                                                       |
+| ---- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SI-1 | "all geometric math runs in FP32 inside `torch.amp.autocast(enabled=False)` blocks regardless of surrounding bf16 autocast" | MEASURED: `touch_set ∩ src/entropic_substrate/core/** = ∅`. This phase moves NO numerics module; it only IMPORTS **36** `core.*` lines (40 counting the `observation` correction). RETRACTION (house rule 4): the first v2 draft said 18; that number was never measured and is struck. Breakdown from the *Landed* table: 9 `data.batching` to `core.corpus.batching`; 26 `predictive_state.*` to `core.latent.*` (target_updates 4, initialization 3, future_law 3, objective 3, stabilization 3, state 3, target_values 3, coarse_graining 1, dynamics 1, horizons 1, ema_schedules 1); 1 `observation.permuted_byte_codec` to `core.observation.permuted_byte_codec`; plus the 4 corrected `entropic_substrate.observation` lines to `core.observation.{contracts,modules}`. | The load-bearing arm is p6's autocast-STATE spy (`tests/test_kappa_autocast_island.py`), never a dtype arm (`_geometry_dtype()` floors to fp32 regardless of autocast state — p0 round-C, FOR-1517). This lane records the arm UNTOUCHED: `git diff mythwave/p7-register-gate -- src/entropic_substrate/core/ tests/test_kappa_autocast_island.py` is EMPTY.                       |
+| SI-2 | "κ is clamped and inputs are projected into the component domain with a boundary epsilon before any map"                    | `touch_set ∩ core/geometry = ∅`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Widen the κ clamp bound by one ulp and feed a boundary input; `tests/test_kappa_geometry.py`'s κ-domain arm must go RED. Revert in-branch.                                                                                                                                                                                                                                         |
+| SI-3 | "the load-balance loss must stay finite and gradients must reach κ (unit-tested)"                                           | `touch_set ∩ core/substrate = ∅`. `d1_training_step.py` and `d1_optimizer.py` move and consume the loss; not one loss line may change bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Detach κ from the load-balance term; the gradient-reaches-κ unit test must go RED. Revert in-branch.                                                                                                                                                                                                                                                                               |
+| SI-4 | "A magnitude-preserving carrier must not contain a hidden final UnitNorm or RMS overwrite."                                 | `touch_set ∩ core/sentence = ∅`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Append a `UnitNorm` to the magnitude-preserving carrier's output; the carrier magnitude test must go RED. Revert in-branch.                                                                                                                                                                                                                                                        |
+| SI-5 | "No probability-floor/square-root substitution is permitted in the main latent path."                                       | `touch_set ∩ core/latent = ∅`. `predictive_state/{runtime,runtime_components,runtime_construction,ladder_runtime}.py` move and import the latent law by landed address; the law itself is untouched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | **EXHIBIT OR RETRACT.** Substitute a `sqrt(p + eps)` for the latent law in the main path; a latent-path law test must go RED. p8 MEASURED that no such NAMED instrument exists in `tests/`, so the lane either names the test it made go RED or retracts this arm with the grep showing it absent — it must not report the mutation as proven from this wording. Revert in-branch. |
 
 House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
 
-| id   | verbatim house rule                                                            | tripwire                                                                                                                                                                                    | guard-teeth recipe                                                                                                                                     |
-| ---- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| HR-1 | "Publish with `just ship-it`, never a bare `gt submit`."                       | Wave lane under `publishMode:'defer'`: the lane ends CERTIFIED and NEVER publishes. `just ship-it` runs once, at the zip, on the integrated tip. A `gt submit` inside the lane is a defect. | Inspect the lane transcript for any `gt submit` not reached through `just ship-it`; presence is a BLOCKED verdict, not a note.                         |
-| HR-2 | "Probe sequentially. Never draw a conclusion from concurrent containers."      | The podman VM is 4 vCPU / 4 GB; two MLflow stacks at once make even a control appear hung.                                                                                                  | Any container conclusion in this phase must name the single container it came from. Two concurrent stacks in the transcript invalidate the conclusion. |
-| HR-3 | "Never fix flakiness by raising a timeout or a retry budget."                  | A gate that goes green only after a timeout bump.                                                                                                                                           | A diff that raises any timeout or retry constant is a BLOCKED verdict unless it carries the measurement showing the cause was found.                   |
-| HR-4 | "Comments record measurements, with the measurement."                          | A comment in this phase's diff stating a fact with no measurement attached.                                                                                                                 | A wrong measured claim is retracted explicitly, in the commit that fixes it. Silent overwrite is a defect.                                             |
-| HR-5 | "TDD is non-negotiable, and guard-teeth prove both arms."                      | A guard landed without its RED arm demonstrated.                                                                                                                                            | Every guard in this phase carries the mutation listed under *Guard teeth by mutation*, performed and reverted in-branch, evidence in the PR body.      |
-| HR-6 | "Secrets never enter git."                                                     | gitleaks runs at pre-commit and pre-push.                                                                                                                                                   | No credential, token or `.env` value in any diff of this phase.                                                                                        |
-| HR-7 | "Upgrading an existing venv across the mlflow → mlflow-skinny swap breaks it." | `import mlflow` raising `ModuleNotFoundError` in a lane worktree.                                                                                                                           | Fix with `uv sync --all-groups --reinstall-package mlflow-skinny`, never by pinning around it.                                                         |
+| id   | verbatim house rule                                                            | tripwire                                                                                                  | guard-teeth recipe                                                                                                                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HR-1 | "Publish with `just ship-it`, never a bare `gt submit`."                       | A wave lane under `publishMode:'defer'` that publishes anything. `just ship-it` runs ONCE, at the zip.    | Inspect the lane transcript for any `gt submit` or `just ship-it`; presence is a BLOCKED verdict, not a note.                                                                                                                                |
+| HR-2 | "Probe sequentially. Never draw a conclusion from concurrent containers."      | Three lanes live on a 4 vCPU / 4 GB podman VM; two MLflow stacks at once make even a control appear hung. | The lane runs ZERO containers. Any container conclusion in the lane transcript invalidates itself.                                                                                                                                           |
+| HR-3 | "Never fix flakiness by raising a timeout or a retry budget."                  | A gate that goes green only after a timeout bump.                                                         | A diff that raises any timeout or retry constant is a BLOCKED verdict unless it carries the measurement showing the cause was found.                                                                                                         |
+| HR-4 | "Comments record measurements, with the measurement."                          | A comment in this phase's diff stating a fact with no measurement attached.                               | A wrong measured claim is retracted explicitly, in the commit that fixes it. Silent overwrite is a defect. This brief's FIFTEEN retractions are enumerated in *Retractions in this brief*, which is the auditable list; a bare count is not. |
+| HR-5 | "TDD is non-negotiable, and guard-teeth prove both arms."                      | A guard landed without its RED arm demonstrated.                                                          | Every guard carries the mutation listed under *Guard teeth by mutation*, performed and reverted in-branch, evidence in the certification record.                                                                                             |
+| HR-6 | "Secrets never enter git."                                                     | gitleaks runs at pre-commit and pre-push.                                                                 | No credential, token or `.env` value in any diff of this phase.                                                                                                                                                                              |
+| HR-7 | "Upgrading an existing venv across the mlflow → mlflow-skinny swap breaks it." | `import mlflow` raising `ModuleNotFoundError` in a fresh lane worktree.                                   | Fix with `uv sync --all-groups --reinstall-package mlflow-skinny`, never by pinning around it. A fresh worktree needs `uv sync --all-groups` before the first gate.                                                                          |
 
 ## Scope
 
-Lower half of the run stack, decomposed by measured DAG depth rather than by name: values (the 7 promoted value/port modules), transport 15, provider 9, resource 1, training 20, construction 5. Moves the torch halves of p5's two symbol splits; p8 takes the record halves, so no file is shared. Sub-package membership is validated with remap_check before the first git mv. Detail: plan §D.
+The lower run stack: **42 leaf modules**, MEASURED as the `tools/mapping.json` rows whose `dest` is
+`entropic_substrate.ladder.run`, whose legacy source is a leaf `.py` under
+`src/entropic_substrate/__legacy/`, which no landed-set fragment marks `landed: true`, and whose
+mapping `note` names the training/eval transaction, the mailbox transport, the provider ports, the
+resource plane, the terminal/dual failure vocabulary, a declared SPLIT **of a torch/record symbol
+pair** (`d1_training_step`, `d1_calibration`, plus the `predictive_state` facade split), or a
+"composition root". Zero behaviour change.
+
+The note-keyword rule needs FIVE p10 exclusions, not four. **BLOCKING CORRECTION (house rule 4),
+found by arm-blind review 2026-09-23:** the first v2 draft's reproducer printed **43**, not 42,
+because `entropic_substrate.d_ladder_worker_runtime`'s note begins `SPLIT: measure_hardware/...` and
+its split target is `ladder.run.worker` -- p10's. A bare "declared SPLIT" criterion admits it. 43 is
+retracted, not overwritten; the criterion above now says *torch/record symbol pair* and the
+reproducer below carries the fifth exclusion explicitly.
+
+MEASURING COMMAND (reproduces 42 exactly; run from the repo root):
+
+```bash
+python3 - <<'EOF'
+import json, os, glob
+m = json.load(open('tools/mapping.json'))['modules']
+landed = {k for f in glob.glob('.claude/workflows/landed-set/*.json')
+            for k, v in (json.load(open(f)).get('modules') or {}).items() if v.get('landed')}
+out = []
+for k, v in m.items():
+    if v.get('dest') != 'entropic_substrate.ladder.run' or k in landed:
+        continue
+    if not os.path.exists('src/entropic_substrate/__legacy/' + k[len('entropic_substrate.'):].replace('.', '/') + '.py'):
+        continue
+    # Five p10 note-groups. The fifth was added by the arm-blind review:
+    # 'SPLIT: measure_hardware' is d_ladder_worker_runtime, whose split target is
+    # ladder.run.worker (p10's), not a torch/record pair. Without it this prints 43.
+    if v.get('note', '').startswith(('campaign lifecycle', 'per-attempt run closure',
+                                     'run-side capture coordination', 'pod-side worker',
+                                     'SPLIT: measure_hardware')):
+        continue
+    out.append(k)
+print(len(out))
+EOF
+```
+
+RUN at `79d8228`. True stdout: `42`.
+
+**RETRACTIONS (house rule 4), five counts from v1, struck rather than overwritten:**
+
+1. v1 *Scope* "values (the 7 promoted value/port modules), transport 15, provider 9, resource 1,
+   training 20, construction 5" — sum **57**. WRONG. Retracted.
+2. v1 *Allowed files* "the 52 D1 modules mapped to the lower run stack". WRONG. Retracted.
+3. The plan's §p9 row in the phase table says **52**. WRONG at this tip. Retracted.
+4. v1 treated all SEVEN plan-§p9 DAG-depth promotions as p9's. MEASURED: only **THREE** are p9's
+   (`d1_operator_ports`, `d1_resource_activation`, `d1_r2_runtime_composition`).
+   `sentence_prediction.journal` LANDED at p4 (`p4-h-tracer.json`, target `ladder.run.journal`);
+   `d1_operator_values` and `d1_operator_evidence` carry the note "campaign lifecycle" and are
+   **p10's**; `d1_runpod_billing_parser` carries "per-attempt run closure" and is **p10's** (its
+   note false-matches the word "provider").
+5. v1's Scope included the six closure rows and `d_ladder_worker_runtime`; the manifest touch_set
+   additionally carries p10's five ckptsync rows. All are p10's and are OUT.
+
+**Destination placement.** Rule: plan §p9's promotion table WHERE IT NAMES THE MODULE, otherwise the
+mapping note-group. The fragment restates the fully-qualified target verbatim (`gen_shims` derives
+nothing for a named row), so all 42 are enumerated:
+
+| sub-package             | n  | modules (legacy leaf name under `src/entropic_substrate/__legacy/`)                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | -- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run/values`            | 1  | `d1_operator_ports` (plan §p9 promotion, 4 violating edges, was `provider`)                                                                                                                                                                                                                                                                                                                                                       |
+| `run/resource`          | 1  | `d1_resource_activation` (plan §p9 promotion, 4 violating edges, was `provider`)                                                                                                                                                                                                                                                                                                                                                  |
+| `run/provider`          | 6  | `d1_build_cloud_adapter`, `d1_command_runner`, `d1_git_provenance_adapter`, `d1_runpod_adapter`, `d1_system_runtime_probe`, `provider_launch`                                                                                                                                                                                                                                                                                     |
+| `run/transport`         | 11 | `d1_dvc_remote_config`, `d1_trainer_evidence_adapter`, `d1_trainer_handoff`, `d1_trainer_handoff_codec`, `d1_trainer_mailbox_contracts`, `d1_trainer_mailbox_worker`, `d1_trainer_object_transport`, `d1_trainer_output_publication`, `d1_trainer_process_contracts`, `d1_trainer_request_codec`, `d1_trainer_s3_object_adapter`                                                                                                  |
+| `run/training`          | 15 | `d1_calibration` (SPLIT torch half), `d1_training_step` (SPLIT torch half), `d1_evaluation`, `d1_evaluation_codec`, `d1_fresh_trainer`, `d1_optimizer`, `d1_resume_runtime`, `d1_resume_trainer`, `d1_segment_engine`, `d1_trainer_runtime`, `d1_trainer_stage`, `predictive_state/checkpoint_envelope`, `predictive_state/checkpoint_repository`, `predictive_state/checkpoint_validation`, `predictive_state/checkpoint_values` |
+| `run/construction`      | 6  | `d1_r2_runtime_composition` (plan §p9 promotion, 3 violating edges, was `transport`), `experiments/ladder_matching`, `predictive_state/ladder_runtime`, `predictive_state/runtime`, `predictive_state/runtime_components`, `predictive_state/runtime_construction`                                                                                                                                                                |
+| **placement undecided** | 2  | `d1_dual_failure`, `d1_terminal_failure` — mapping note "typed terminal/dual trainer failure (reaches resource + plan vocabulary)", NO plan §p9 row. A `DECISION` for the design gate between `run/training` and `run/resource`. Ruling P9-REMAP (FOR-1549) removes the cycle-count argument, so the argument is the two modules' own measured import sets.                                                                       |
+
+**Split rows (p5 precedent, `p5-kernel.json`).** p9 moves the TORCH halves only:
+`__legacy/d1_training_step.py` and `__legacy/d1_calibration.py`. The RECORD halves
+(`__legacy/d1_training_step_records.py`, `__legacy/d1_calibration_records.py`) are p8's targets;
+p9 shares no file with them. They are `landed: false` rows in `p5-kernel.json`, and MEASURED both
+ARE keys of `tools/mapping.json` (dest `entropic_substrate.ladder.capture.records`) — the w2 audit's
+"no mapping row" claim is WRONG and is retracted here. **RULED P8-FRAG (conductor 2026-09-23), so this is no longer an open
+DECISION:** `__legacy/d1_training_step.py:21` and `__legacy/d1_calibration.py:17` import the record
+halves by their explicit `__legacy` address, so when p8 `git mv`s them a forwarder must exist. The
+two rows therefore LEAVE `p5-kernel.json` and ENTER `p8-capture.json` in p8's own move commit — the
+one sanctioned fragment migration, and p8 is the ONLY w2 lane editing either fragment, so
+disjointness holds at every tip. p9 is unaffected: it edits neither fragment and changes neither
+line's address.
+
+**Package key.** `entropic_substrate.predictive_state` is a PACKAGE KEY: never a fragment row
+(`tools/gen_shims.py::merge_fragments` raises `ManifestError`; `tools/lane_slices.py::parse_lane`
+exits 2), never shimmed, never forwarded. MEASURED: `src/entropic_substrate/__legacy/predictive_state/__init__.py`
+is already the p3 "Retracted facade body" docstring-only one-liner, and the live old-path facade
+`src/entropic_substrate/predictive_state/__init__.py` holds the verbatim original. p9 touches
+NEITHER. Its mapping row describes the p13 end state.
+
+### Landed (108 lines / 27 addresses as tabulated; **112 / 29 after the CORRECTION below**) — rewrite-on-arrival
+
+MEASURED with `tools/lane_slices.py` over the 42 legacy sources. Paths are relative to
+`src/entropic_substrate/__legacy/`.
+
+| n  | old import                                                                    | becomes                                                              | file:line                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 16 | `entropic_substrate.experiments.d1_primitives`                                | `entropic_substrate.kernel.identity.d1_primitives`                   | `d1_calibration.py:19` `d1_git_provenance_adapter.py:21` `d1_optimizer.py:12` `d1_r2_runtime_composition.py:37` `d1_trainer_evidence_adapter.py:39` `d1_trainer_mailbox_contracts.py:14` `d1_trainer_mailbox_worker.py:31` `d1_trainer_object_transport.py:36` `d1_trainer_process_contracts.py:15` `d1_trainer_request_codec.py:38` `d1_training_step.py:31` `predictive_state/checkpoint_validation.py:20` `predictive_state/checkpoint_values.py:20` `predictive_state/runtime.py:14` `predictive_state/runtime_construction.py:7` `provider_launch.py:6` |
+| 12 | `entropic_substrate.evidence.resource_provenance`                             | `entropic_substrate.kernel.evidence_class.resource_provenance`       | `d1_fresh_trainer.py:42` `d1_operator_ports.py:30` `d1_resource_activation.py:26` `d1_resume_runtime.py:41` `d1_resume_trainer.py:46` `d1_runpod_adapter.py:36` `d1_terminal_failure.py:11` `d1_trainer_handoff.py:16` `d1_trainer_output_publication.py:28` `d1_trainer_request_codec.py:18` `d1_trainer_runtime.py:21` `d1_trainer_stage.py:20`                                                                                                                                                                                                            |
+| 9  | `entropic_substrate.data.batching`                                            | `entropic_substrate.core.corpus.batching`                            | `d1_calibration.py:18` `d1_evaluation.py:18` `d1_trainer_runtime.py:15` `d1_training_step.py:29` `predictive_state/checkpoint_repository.py:17` `predictive_state/checkpoint_validation.py:10` `predictive_state/checkpoint_values.py:15` `predictive_state/ladder_runtime.py:14` `predictive_state/runtime.py:12`                                                                                                                                                                                                                                           |
+| 9  | `entropic_substrate.d1_artifact_snapshot`                                     | `entropic_substrate.kernel.artifacts`                                | `d1_git_provenance_adapter.py:12` `d1_trainer_evidence_adapter.py:9` `d1_trainer_handoff_codec.py:12` `d1_trainer_mailbox_contracts.py:12` `d1_trainer_mailbox_worker.py:12` `d1_trainer_object_transport.py:13` `d1_trainer_output_publication.py:10` `d1_trainer_process_contracts.py:13` `d1_trainer_s3_object_adapter.py:10`                                                                                                                                                                                                                             |
+| 7  | `entropic_substrate.experiments.d1_plan`                                      | `entropic_substrate.ladder.register.d1_plan`                         | `d1_fresh_trainer.py:44` `d1_resume_runtime.py:46` `d1_resume_trainer.py:51` `d1_terminal_failure.py:12` `d1_trainer_request_codec.py:28` `d1_trainer_runtime.py:25` `d1_trainer_stage.py:21`                                                                                                                                                                                                                                                                                                                                                                |
+| 6  | `entropic_substrate.experiments.d1_execution`                                 | `entropic_substrate.ladder.register.d1_execution`                    | `d1_evaluation.py:19` `d1_optimizer.py:11` `d1_training_step.py:30` `predictive_state/checkpoint_repository.py:18` `predictive_state/checkpoint_validation.py:19` `predictive_state/checkpoint_values.py:19`                                                                                                                                                                                                                                                                                                                                                 |
+| 4  | `entropic_substrate.evidence.resource_provenance_codec`                       | `entropic_substrate.kernel.evidence_class.resource_provenance_codec` | `d1_fresh_trainer.py:43` `d1_resume_runtime.py:45` `d1_trainer_handoff_codec.py:40` `d1_trainer_request_codec.py:22`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 4  | `entropic_substrate.evidence.lifecycle`                                       | `entropic_substrate.kernel.lifecycle`                                | `d1_trainer_evidence_adapter.py:37` `d1_trainer_mailbox_worker.py:30` `d1_trainer_output_publication.py:27` `d1_trainer_stage.py:19`                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 4  | `entropic_substrate.predictive_state.target_updates`                          | `entropic_substrate.core.latent.target_updates`                      | `d1_training_step.py:35` `predictive_state/ladder_runtime.py:36` `predictive_state/runtime.py:37` `predictive_state/runtime_construction.py:17`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 3  | `entropic_substrate.predictive_state.initialization`                          | `entropic_substrate.core.latent.initialization`                      | `d1_trainer_runtime.py:26` `predictive_state/ladder_runtime.py:31` `predictive_state/runtime.py:22`                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 3  | `entropic_substrate.experiments.d1_runs`                                      | `entropic_substrate.ladder.register.d1_runs`                         | `predictive_state/checkpoint_repository.py:19` `predictive_state/checkpoint_validation.py:21` `predictive_state/checkpoint_values.py:21`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 3  | `entropic_substrate.experiments.d1_family`                                    | `entropic_substrate.ladder.register.d1_family`                       | `predictive_state/ladder_runtime.py:15` `predictive_state/runtime.py:13` `predictive_state/runtime_construction.py:6`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 3  | `entropic_substrate.predictive_state.future_law` (p6-LANDED, never a sibling) | `entropic_substrate.core.latent.future_law`                          | `predictive_state/ladder_runtime.py:21` `predictive_state/runtime.py:18` `predictive_state/runtime_components.py:11`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 3  | `entropic_substrate.predictive_state.objective`                               | `entropic_substrate.core.latent.objective`                           | `predictive_state/ladder_runtime.py:32` `predictive_state/runtime.py:26` `predictive_state/runtime_components.py:12`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 3  | `entropic_substrate.predictive_state.stabilization`                           | `entropic_substrate.core.latent.stabilization`                       | `predictive_state/ladder_runtime.py:34` `predictive_state/runtime_components.py:13` `predictive_state/runtime_construction.py:13`                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 3  | `entropic_substrate.predictive_state.state`                                   | `entropic_substrate.core.latent.state`                               | `predictive_state/ladder_runtime.py:35` `predictive_state/runtime.py:36` `predictive_state/runtime_components.py:14`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 3  | `entropic_substrate.predictive_state.target_values`                           | `entropic_substrate.core.latent.target_values`                       | `predictive_state/ladder_runtime.py:37` `predictive_state/runtime.py:42` `predictive_state/runtime_components.py:15`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2  | `entropic_substrate.d1_evaluation_values`                                     | `entropic_substrate.kernel.verdict.d1_evaluation_values`             | `d1_evaluation.py:11` `d1_evaluation_codec.py:9`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2  | `entropic_substrate.experiments.d1_config`                                    | `entropic_substrate.ladder.register.d1_config`                       | `d1_trainer_evidence_adapter.py:38` `d1_trainer_request_codec.py:27`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2  | `entropic_substrate.experiments.ladder`                                       | `entropic_substrate.ladder.register.ladder`                          | `experiments/ladder_matching.py:8` `predictive_state/ladder_runtime.py:16`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 1  | `entropic_substrate.git_environment`                                          | `entropic_substrate.kernel.runtime.git_environment`                  | `d1_git_provenance_adapter.py:22`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 1  | `entropic_substrate.observation.permuted_byte_codec`                          | `entropic_substrate.core.observation.permuted_byte_codec`            | `predictive_state/ladder_runtime.py:18`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 1  | `entropic_substrate.predictive_state.coarse_graining`                         | `entropic_substrate.core.latent.coarse_graining`                     | `predictive_state/ladder_runtime.py:19`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 1  | `entropic_substrate.predictive_state.dynamics`                                | `entropic_substrate.core.latent.dynamics`                            | `predictive_state/ladder_runtime.py:20`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 1  | `entropic_substrate.predictive_state.horizons`                                | `entropic_substrate.core.latent.horizons`                            | `predictive_state/ladder_runtime.py:26`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 1  | `entropic_substrate.config`                                                   | `entropic_substrate.kernel.runtime.config`                           | `predictive_state/runtime_construction.py:5`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 1  | `entropic_substrate.predictive_state.ema_schedules`                           | `entropic_substrate.core.latent.ema_schedules`                       | `predictive_state/runtime_construction.py:12`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+**CORRECTION to the measured pack (house rule 4).** The pack and the w2 audit both bucket FOUR
+`from entropic_substrate.observation import ...` lines as "other still-quarantined". They are NOT:
+MEASURED at this tip, every name they import is DEFINED in a p6-landed leaf — `CodecIdentity` and
+`ObservationAlignment` at `src/entropic_substrate/core/observation/contracts.py:27,78`,
+`LearnedObservationAdapter` and `LanguageReadout` at `core/observation/modules.py:20,69`. They
+rewrite to LANDED addresses, exactly as p7 handled `d1_config_profile.py:58`. So the landed count is
+**112 lines** across **29 addresses**, and the still-quarantined count is **20 lines**, not 24:
+
+| line                                        | old import                                                                                         | becomes                                                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `predictive_state/ladder_runtime.py:17`     | `entropic_substrate.observation` (`CodecIdentity`, `ObservationAlignment`)                         | `entropic_substrate.core.observation.contracts`                                                             |
+| `predictive_state/runtime.py:17`            | `entropic_substrate.observation` (`CodecIdentity`, `LanguageReadout`, `LearnedObservationAdapter`) | **SPLITS** into `core.observation.contracts` (`CodecIdentity`) + `core.observation.modules` (the other two) |
+| `predictive_state/runtime.py:324`           | `entropic_substrate.observation` (`ObservationAlignment`, function-local import)                   | `entropic_substrate.core.observation.contracts`                                                             |
+| `predictive_state/runtime_components.py:10` | `entropic_substrate.observation` (`CodecIdentity`, `LearnedObservationAdapter`)                    | **SPLITS** into `core.observation.contracts` + `core.observation.modules`                                   |
+
+### Intra-set (90 lines) — rewrite to the sibling's own new `ladder.run.<sub>.<leaf>` address
+
+`d1_build_cloud_adapter.py:11,12` · `d1_calibration.py:20` · `d1_command_runner.py:17` ·
+`d1_evaluation.py:23,24` · `d1_evaluation_codec.py:8` · `d1_fresh_trainer.py:10,11,12,17,21,22,28` ·
+`d1_git_provenance_adapter.py:16` · `d1_operator_ports.py:24` · `d1_optimizer.py:13` ·
+`d1_r2_runtime_composition.py:18,24,25,38` · `d1_resume_runtime.py:14,19,24,47,48` ·
+`d1_resume_trainer.py:9,10,15,17,20,25,26,31,52` · `d1_runpod_adapter.py:12,13,29,40` ·
+`d1_segment_engine.py:11,12,13,14,15,25,26` · `d1_trainer_evidence_adapter.py:20,21,29` ·
+`d1_trainer_handoff.py:9,13,21` · `d1_trainer_handoff_codec.py:18,19,23,24,50` ·
+`d1_trainer_mailbox_worker.py:18,27` · `d1_trainer_object_transport.py:19,29,30` ·
+`d1_trainer_output_publication.py:22,23` · `d1_trainer_request_codec.py:14,16,17` ·
+`d1_trainer_runtime.py:14,27` · `d1_trainer_s3_object_adapter.py:11` ·
+`d1_trainer_stage.py:10,12,18` · `d1_training_step.py:28,32,33,34` ·
+`experiments/ladder_matching.py:9` · `predictive_state/checkpoint_envelope.py:3,4` ·
+`predictive_state/checkpoint_repository.py:20,21` ·
+`predictive_state/checkpoint_validation.py:9,22,33` · `predictive_state/checkpoint_values.py:14,22` ·
+`predictive_state/ladder_runtime.py:33` · `predictive_state/runtime.py:27,31`
+
+RETRACTION (house rule 4): the first v2 draft said "25 of these are the self-imports of the eight
+`predictive_state.*` leaves". 25 is not a reading of anything and is struck. The two TRUE readings,
+both MEASURED over these 90 lines: **12** lines whose SOURCE file is a
+`__legacy/predictive_state/*.py` leaf, and **27** lines whose TARGET is a `predictive_state.<leaf>`
+p9 target. The two sets overlap and neither is 25. The cold-import hazard set is named by its own
+measurement in ACCEPTANCE, not by either count.
+
+### Sibling-target (41 lines → p8) — rewrite to the explicit `__legacy` address
+
+Ruling 2 (D-WAVES r3 + FOR-1547): each line becomes `entropic_substrate.__legacy.<x>`, a REAL file
+in this worktree today; after the zip `tools/gen_shims.py` emits a forwarder there; the post-zip
+reconciliation rung rewrites them to `ladder.capture.*`. This lane NEVER writes a `ladder.capture.*`
+address. Two lines (`d1_calibration.py:17`, `d1_training_step.py:21`) ALREADY carry the explicit
+address and are left byte-identical. All 41, as `file:line old-dotted → __legacy address`:
+
+- `d1_calibration.py:17` — already `entropic_substrate.__legacy.d1_calibration_records` (no edit)
+- `d1_training_step.py:21` — already `entropic_substrate.__legacy.d1_training_step_records` (no edit)
+- `d1_evaluation.py:17` `d1_numerical_defect` → `__legacy.d1_numerical_defect`
+- `d1_terminal_failure.py:5` `d1_numerical_defect` → `__legacy.d1_numerical_defect`
+- `d1_resume_runtime.py:15` and `d1_resume_trainer.py:16` `d1_observability` → `__legacy.d1_observability`
+- `d1_trainer_runtime.py:16` `data.build` → `__legacy.data.build`
+- `d1_fresh_trainer.py:35` `evidence.d1_journal` → `__legacy.evidence.d1_journal`
+- `d1_fresh_trainer.py:36` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_operator_ports.py:25` `evidence.resource_billing` → `__legacy.evidence.resource_billing`
+- `d1_r2_runtime_composition.py:28` `evidence.d1_capture_ports` → `__legacy.evidence.d1_capture_ports`
+- `d1_r2_runtime_composition.py:33` `evidence.d1_capture_subprocess` → `__legacy.evidence.d1_capture_subprocess`
+- `d1_resource_activation.py:10` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `d1_resource_activation.py:16` `evidence.resource_meter_models` → `__legacy.evidence.resource_meter_models`
+- `d1_resource_activation.py:20` `evidence.resource_meter_strategy` → `__legacy.evidence.resource_meter_strategy`
+- `d1_resume_runtime.py:29` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_resume_runtime.py:34` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `d1_resume_runtime.py:38` `evidence.resource_ledger_codec` → `__legacy.evidence.resource_ledger_codec`
+- `d1_resume_trainer.py:36` `evidence.d1_journal` → `__legacy.evidence.d1_journal`
+- `d1_resume_trainer.py:37` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_resume_trainer.py:43` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `d1_resume_trainer.py:50` `evidence.resource_work` → `__legacy.evidence.resource_work`
+- `d1_runpod_adapter.py:30` `evidence.resource_billing` → `__legacy.evidence.resource_billing`
+- `d1_segment_engine.py:16` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_segment_engine.py:22` `evidence.resource_meter_models` → `__legacy.evidence.resource_meter_models`
+- `d1_segment_engine.py:23` `evidence.resource_work` → `__legacy.evidence.resource_work`
+- `d1_segment_engine.py:24` `evidence.resource_work_codec` → `__legacy.evidence.resource_work_codec`
+- `d1_terminal_failure.py:10` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `d1_trainer_handoff.py:14` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_trainer_handoff.py:15` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `d1_trainer_handoff.py:20` `evidence.resource_work` → `__legacy.evidence.resource_work`
+- `d1_trainer_handoff_codec.py:29` `evidence.d1_journal` → `__legacy.evidence.d1_journal`
+- `d1_trainer_handoff_codec.py:30` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `d1_trainer_handoff_codec.py:35` `evidence.resource_ledger_codec` → `__legacy.evidence.resource_ledger_codec`
+- `d1_trainer_handoff_codec.py:45` `evidence.resource_work_codec` → `__legacy.evidence.resource_work_codec`
+- `d1_trainer_runtime.py:17` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `predictive_state/checkpoint_validation.py:11` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `predictive_state/checkpoint_validation.py:15` `evidence.resource_ledger_codec` → `__legacy.evidence.resource_ledger_codec`
+- `predictive_state/checkpoint_values.py:16` `evidence.d1_journal_values` → `__legacy.evidence.d1_journal_values`
+- `predictive_state/checkpoint_values.py:17` `evidence.resource_ledger` → `__legacy.evidence.resource_ledger`
+- `predictive_state/checkpoint_values.py:18` `evidence.resource_ledger_codec` → `__legacy.evidence.resource_ledger_codec`
+
+### Other still-quarantined (20 lines, all p10 rows) — explicit `__legacy`, no forwarder
+
+These rows are NOT moving in w2, so no forwarder is involved; they are ordinary quarantine edges
+that p10 will rewrite.
+
+`d1_operator_values` ×13: `d1_build_cloud_adapter.py:16` · `d1_operator_ports.py:16` ·
+`d1_r2_runtime_composition.py:23` · `d1_runpod_adapter.py:20` · `d1_system_runtime_probe.py:10` ·
+`d1_trainer_evidence_adapter.py:19` · `d1_trainer_mailbox_contracts.py:13` ·
+`d1_trainer_mailbox_worker.py:17` · `d1_trainer_object_transport.py:18` ·
+`d1_trainer_process_contracts.py:14` · `d1_trainer_request_codec.py:15` · `d1_trainer_stage.py:11` ·
+`provider_launch.py:5` — all → `entropic_substrate.__legacy.d1_operator_values`.
+
+`d1_operator_evidence` ×4: `d1_operator_ports.py:11` · `d1_trainer_evidence_adapter.py:10` ·
+`d1_trainer_output_publication.py:17` · `d1_trainer_stage.py:5`.
+
+`d1_r2_runtime_composition.py:11` → `__legacy.d1_checkpoint_dvc_recovery`;
+`d1_r2_runtime_composition.py:14` → `__legacy.d1_checkpoint_dvc_sync`;
+`d1_runpod_adapter.py:25` → `__legacy.d1_runpod_billing_parser`.
+
+### Landed importers — 12 files, **21 import lines** (**seven** carry more than one), R-PIN OWED for 5
+
+MEASURED with `tools/lane_slices.py`; the edge count is
+`grep -o 'entropic_substrate\.__legacy\.[a-z_]*' <the 12 files> | filter to the 42 targets | sort -u`.
+**Seven** of the twelve carry MORE than one line — `h_probe_events`, `object_worker`,
+`h_probe_allocation`, `worker_command`, `worker_completion`, `worker_snapshot`, `worker_transport` —
+so the per-file figure is the table's, never "one line each". RETRACTION (house rule 4): fix round 1
+said nine; the measured count is seven.
+
+| landed importer                               | reader set                 | edges | targets imported                                                                                                      |
+| --------------------------------------------- | -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------- |
+| `ladder/run/h_probe_collection.py:8`          | —                          | 1     | `d1_trainer_object_transport`                                                                                         |
+| `ladder/run/h_probe_events.py:9,13`           | —                          | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+| `ladder/run/h_probe_process.py:19`            | —                          | 1     | `d1_command_runner`                                                                                                   |
+| `ladder/run/h_runpod_transport.py:11`         | —                          | 1     | `d1_operator_ports`                                                                                                   |
+| `ladder/run/object_worker.py:9,10`            | **h-checkpoint-reader-v2** | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+| `ladder/run/worker/h_probe_allocation.py:6,7` | —                          | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+| `ladder/run/worker/h_probe_command.py:13`     | —                          | 1     | `d1_command_runner`                                                                                                   |
+| `ladder/run/worker/h_probe_controller.py:10`  | —                          | 1     | `d1_trainer_object_transport`                                                                                         |
+| `ladder/run/worker_command.py:14,16,17,18`    | **h-checkpoint-reader-v2** | 4     | `d1_dvc_remote_config`, `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`, `d1_trainer_s3_object_adapter` |
+| `ladder/run/worker_completion.py:9,13`        | **h-checkpoint-reader-v2** | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+| `ladder/run/worker_snapshot.py:7,11`          | **h-checkpoint-reader-v2** | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+| `ladder/run/worker_transport.py:10,14`        | **h-checkpoint-reader-v2** | 2     | `d1_trainer_mailbox_contracts`, `d1_trainer_object_transport`                                                         |
+
+### R-PIN (OWED)
+
+Ruling R-PIN (p5, p5b, p6 precedent; conductor 2026-09-22): rewriting a `_READER_MODULES` member
+re-pins the affected reader's regime rows in the SAME commit, tool-measured, label and module set
+UNCHANGED. MEASURED at this tip: FIVE of the 12 landed importers are members of
+`h-checkpoint-reader-v2`'s 51-module tuple (`src/entropic_substrate/ladder/run/checkpoint.py:57-109`)
+— `ladder.run.object_worker` (:94), `worker_command` (:103), `worker_completion` (:104),
+`worker_snapshot` (**:107**), `worker_transport` (**:108**). RETRACTION (house rule 4): the first v2 draft cited `:106` and `:107` for the last two; the measured lines are `:107` and `:108`. So:
+
+- p9 re-pins `_CHECKPOINT_REGIME_TABLE` with `tools/regime_rows.py` in the same commit as the
+  importer rewrite. The LABEL stays `h-checkpoint-reader-v2` and the 51-member SET is unchanged —
+  only the composed digests move. `docs/identity/read-old-table.md` gains a dated p9 row naming the
+  5 touched checkpoint members of 51 and the 0 touched source members of 7.
+- **Control:** `h-source-reader-v3`'s seven-module tuple
+  (`src/entropic_substrate/ladder/capture/capture.py:29-37`) has ZERO members in this slice; both
+  `_SOURCE_REGIME_TABLE` rows are re-measured with the same tool and recorded UNCHANGED (p6-core
+  pattern). An unchanged control is an assertion, not an omission.
+- **Both p8 and p9 re-pin, each in its OWN worktree**, because each lane's own hooks must be green
+  locally. The five identity files are `zip_owned_regenerable`: the zip REGENERATES them ONCE on the
+  integrated tip in one rung and never hand-merges them. Two lanes writing the same digest is
+  expected, not a conflict.
+
+### Fragment rows per landing commit (WAVE RULE, from the p11 arm-blind review)
+
+`tests/test_module_identity.py` reverse-maps a moved module's NEW dotted name back to its old key
+through the landed-set fragments' `target` field (`_canonical_sentinel_key`, which loads
+`tools/mapping.json` and the fragments dir). Consequence, binding here: **every landing commit must
+carry the fragment rows for the modules IT lands.** The fragment GROWS per commit; only the
+`legacy_edge_budget` number is set once, at the LAST commit of the phase, when the measured total is
+final. A commit that moves modules without its rows leaves those modules unmapped for the reverse
+lookup and is a defect, not a tidy-up deferred to the end.
+
+MEASURED, so the sentinel arm is not left as an open question: `_FROZEN_SENTINEL_MAP` in
+`tests/test_module_identity.py:196-215` (19 keys, frozen at 18 sentinels in 18 modules) contains
+**ZERO of p9's 42 targets**. Its keys are p7's (`experiments.d1_confirmatory_matrix`,
+`experiments.d1_registered_design`), p8's (`evidence.*`), p10's (`d1_campaign_*`,
+`d1_operator_evidence`, `d1_billing_finalization_values`, `d1_excluded_capture`) and p11's
+(`analysis.*`). So no p9 target carries a frozen module-level `object()` sentinel, p9 adds no
+sentinel row, bumps no sentinel count, and that arm is a pass-through control for this phase.
+
+### `legacy_edge_budget` — `[PREDICTED]`, conductor arithmetic
+
+**RETRACTION (house rule 4), first.** BUDGET-MONOTONE strict decrease is RETRACTED (`795f8e6`; the
+p7 fragment records *"Direction is INCREASING, as predicted"*). v1's ACCEPTANCE
+"legacy_edge_budget < p7's" and its guard-teeth row "STRICTLY LESS than the previous phase's" are
+struck. **Second retraction, of this brief's own commissioning note:** the equality arm does NOT
+compare against a SUM of fragments. MEASURED by reading
+`tests/test_legacy_coupling.py:74-82,125-142`: `load_committed_budget` takes the HIGHEST-ORDERED
+fragment present per the real `sprint-manifest.json` `sequence` and asserts
+`measured == that one number`. The committed budgets are CUMULATIVE totals (p3 0 → p3b 2 → p4 57 →
+p5 56 → p5b 42 → p6 35 → p7 45), not deltas.
+
+Arithmetic, all inputs MEASURED, the result `[PREDICTED]`:
+
+| term                                 | value                | basis                                                                                                                                                                                                                             |
+| ------------------------------------ | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| parent tip cumulative count          | **45**               | `p7-register-gate.json`'s committed `legacy_edge_budget`, itself MEASURED with `tools/import_graph.py`. Its 35+10 decomposition is p7's story, not an input here.                                                                 |
+| edges REMOVED                        | **21**               | the 12 landed importers' distinct `(importer, target)` pairs, enumerated above                                                                                                                                                    |
+| edges ADDED, sibling-target          | **41**               | 41 distinct `(p9 module, __legacy module)` pairs, one per line, enumerated above                                                                                                                                                  |
+| edges ADDED, still-quarantined       | **20**               | 20 distinct pairs, enumerated above (NOT 24 — the 4 `observation` lines resolve to landed p6)                                                                                                                                     |
+| note on the 2 pre-existing lines     | counted in the 41    | `d1_training_step.py:21` / `d1_calibration.py:17` already hold the explicit `__legacy` address, but their SOURCE is quarantined today and LANDED after the move, so each becomes a NEW landed→`__legacy` edge. Do not subtract 2. |
+| **p9 fragment `legacy_edge_budget`** | **85** `[PREDICTED]` | 45 − 21 + 61                                                                                                                                                                                                                      |
+
+Direction is **INCREASING**, as for p7 and for the same reason: the moved modules legitimately
+import still-quarantined modules on arrival. The lane MEASURES its own number with
+`tools/import_graph.py` and reproduces NOTHING from this table; a mismatch against 85 is a finding
+to report, never a number to type in.
+
+**Parallel-wave caveat, stated because it changes what "green" means.** Each lane measures in its
+OWN worktree, where the other two lanes' moves do not exist, and in that worktree the lane's own
+fragment is the highest-ordered one present (`sequence`: … p8, p9, p11 …), so `measured == 85` binds
+there. After the zip all three fragments are present and `p11-analyze-review-file.json` becomes the
+highest-ordered — so the INTEGRATED number is p11's to carry, and p9's 85 becomes a per-lane
+certificate that no longer gates. The zip re-measures at every restacked tip.
 
 ## ACCEPTANCE
 
-Machine-checkable, one line each. The lane's `acceptance` arg points here.
+Machine-checkable, one line each, each naming its instrument. The lane's `acceptance` arg points
+here.
 
-- The refined-mapping remap_check run for this phase's boundaries is committed alongside the diff and its intra-run cycle count is no worse than the pre-agreed target. Mutation: move d1_operator_values back into campaign and the committed measurement regenerates with a strictly higher cycle count. legacy_edge_budget < p7's, test_legacy_coupling green. Lane ends CERTIFIED.
-- `just check` green on the lane tip.
-- `just pc-ci` (exit gate) green on the lane tip.
-- `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
-- Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the PR body.
-- The actual diff's file set is a subset of *Allowed files*. Undeclared overlap is a HALT at the zip, not a note.
-- Verdict CERTIFIED (tip SHA + exit-gate JSON). The lane does NOT publish.
-- The lane branch rebases onto its zip parent with ZERO conflicts. A conflict falsifies the wave's edge-disjointness claim and fails the WAVE, not just this lane.
-- The exit gate re-runs at the restacked tip. A restacked tree is a new tree; this lane's pre-zip certificate speaks for a tree that no longer exists.
-- Rollback (Q7 ruled (a)): a failed integrated gate at the zip unwinds to tip N-1 and raises DECISION-NEEDED naming the lane; per-tip re-certification localises the failure.
+- The 42 moved modules exist at the destination addresses enumerated under *Scope*, each shim pair
+  regenerated by `tools/gen_shims.py` with `--verify` byte-comparing a fresh re-derivation
+  (`tests/test_gen_shims.py`); every shim's `_target` is the `ladder.run.<sub>.*` address, never
+  `__legacy`.
+- `git diff -M --stat` shows every moved module as a pure rename plus import-line rewrites only. No
+  admission predicate, no digest literal, no numeric constant changes bytes. Instrument: the
+  rename-detected diff in the certification record.
+- Each of the six destination `__init__.py` files is DOCSTRING-ONLY with zero re-exports (p4/p6/p7
+  precedent, `src/entropic_substrate/core/sentence/__init__.py`, 85 bytes). Instrument: the
+  diff-review arm. `lint-imports` is **EXHIBIT OR RETRACT** here, matching p8 and p11: it fires only
+  on an edge that CROSSES a layer, and a re-export inside `ladder/run/**` of a `kernel.*` / `core.*`
+  / `ladder.*` name crosses nothing, so the linter may stay green while the facade contract is
+  broken. The lane exhibits a RED `lint-imports` run or retracts that half and rests the arm on the
+  diff review.
+- **NO `remap_check` arm. RULED P9-REMAP (conductor 2026-09-23, Linear FOR-1549).** MEASURED:
+  `tools/remap_check.py` cannot run against the post-quarantine tree at all -- its edges carry
+  **328 unmapped modules** (every `entropic_substrate.__legacy.*` dotted name, while
+  `tools/mapping.json` keys the OLD names), and the tool's documented design treats an unmapped
+  module as a hard FATAL, exit 1, before any count is printed. So there is no pre-move run, no
+  post-move run, no committed baseline and no cycle-count acceptance in this lane. **RETRACTED, not
+  overwritten (house rule 4):** v1's ACCEPTANCE bullet "its intra-run cycle count is no worse than
+  the pre-agreed target", v1's guard-teeth row 1, the first v2 draft's pre-move-measurement bullet,
+  its guard row flipping a refined mapping, its commit-1 deliverable, and the artifact path
+  `docs/refactor/p9-run-lower-remap.json` are ALL struck. An edges normalizer that maps `__legacy`
+  names back to their mapping keys is p13-adjacent work, filed as **FOR-1549**; no remap artifact
+  lands in w2.
+- Consequently the placement of `d1_dual_failure` / `d1_terminal_failure` is NOT decided by a
+  measurement in this lane. It is a `DECISION` for the design gate between `run/training` and
+  `run/resource`, argued from the mapping note ("reaches resource + plan vocabulary") and from the
+  two modules' own measured import sets, with no cycle count available either way.
+- **Forwarders for the two torch halves are EMITTED and `tests/test_d1_training_step_split.py`
+  passes UNTOUCHED.** RULED (conductor 2026-09-23, tooling landed this session):
+  `tests/test_d1_training_step_split.py:35` imports the torch halves in PACKAGE form,
+  `from entropic_substrate.__legacy import (d1_calibration, d1_training_step, ...)`, and
+  `tools/gen_shims.py::collect_legacy_importers` now also records `<module>.<name>` for a
+  package-form `from` import (expanded only when the module is a package, so `from <leaf> import
+  Name` never records a symbol). So once p9 moves them, forwarders at `__legacy/d1_calibration.py`
+  and `__legacy/d1_training_step.py` ARE emitted, and a forwarder file is a real submodule, so
+  `from pkg import sub` resolves through it. Instruments, both in the certification record: the
+  emitted manifest lists those two paths under its `forwarders` key after
+  `uv run python tools/gen_shims.py src/entropic_substrate .claude/workflows/landed-set --verify`,
+  and `PYTHONPATH=src uv run pytest -q tests/test_d1_training_step_split.py` passes. The test stays
+  green because of the FORWARDERS, not the old-path shims.
+- **Every landing commit carries its own fragment rows** (WAVE RULE below), checked with
+  `PYTHONPATH=src uv run pytest -q tests/test_module_identity.py -m unit` at EACH commit, not only
+  at the tip. The `legacy_edge_budget` value is written once, at the last commit.
+- **Cold import at the NEW address, fresh interpreter per moved leaf**
+  (`tests/test_run_lower_cold_import.py`, NEW, RED-first; the subprocess-plus-stdout-marker
+  instrument of `tests/test_shim_layer.py` and `tests/test_register_gate_cold_import.py`, never exit
+  code alone): each of the 42 destination addresses imports cleanly with NOTHING warming the chain.
+  MEASURED at this tip, this is a LIVE hazard, not a formality: `PYTHONPATH=src uv run python -c
+  "import entropic_substrate.__legacy.<x>"` in a fresh interpreter FAILS today for **3 of 42** —
+  `predictive_state.runtime`, `predictive_state.runtime_components`,
+  `predictive_state.runtime_construction` — with
+  `ImportError: cannot import name 'D1PredictiveSystem' from partially initialized module`, because
+  the leaf imports a sibling by its OLD dotted name (`runtime.py:18`), the live old-path facade
+  `src/entropic_substrate/predictive_state/__init__.py:10` runs first and imports back into the
+  still-initializing `__legacy` leaf. The other 39 pass (39 ok / 3 fail). Rewrite-on-arrival closes
+  it by construction: after the move those lines are explicit `core.latent.*` addresses and the
+  facade is never entered.
+- `legacy_edge_budget` in `.claude/workflows/landed-set/p9-run-lower.json` equals the MEASURED
+  landed→`__legacy` edge count at the lane tip, measured with `tools/import_graph.py` and never
+  typed, gated by
+  `tests/test_legacy_coupling.py::test_measured_landed_to_legacy_edges_equals_committed_budget`.
+  Direction for this phase: INCREASING (`[PREDICTED]` 85).
+- `tests/test_no_old_prefix.py` green: ZERO landed→old-prefix edges, i.e. no moved module keeps an
+  `entropic_substrate.<pkg>.<leaf>` import.
+- **R-PIN discharged:** `_CHECKPOINT_REGIME_TABLE` re-pinned with `tools/regime_rows.py` in the same
+  commit as the importer rewrite, LABEL and 51-member SET unchanged; `_SOURCE_REGIME_TABLE`
+  re-measured UNCHANGED as the control; `tests/test_identity_epoch.py` and
+  `tests/test_regime_rows.py` green; `docs/identity/read-old-table.md` gains its dated p9 row. Tool
+  output in the certification record.
+- **The two fail-closed allowlists arrive BYTE-IDENTICAL.** MEASURED: `provider_launch.py:32-35`
+  pins the set (its second literal at `:34`) `{"entropic_substrate.d1_trainer_mailbox_command",
+  "entropic_substrate.d_ladder_worker_command"}` and `d1_runpod_adapter.py:345` builds
+  `("python","-m","entropic_substrate.d1_trainer_mailbox_command", …)`. Both are STRING LITERALS,
+  not imports, so rewrite-on-arrival does not reach them and `tests/test_no_old_prefix.py` (which
+  reads `tools/import_graph.py` edges, not literals) cannot see them. Ruling E-4 gives the
+  parameterized entrypoint source to p10. Instrument:
+  `git diff mythwave/p7-register-gate -- <the two moved files> | grep -c 'command'` shows zero
+  literal changes, quoted in the certification record. A stale allowlist fails closed ON A POD, not
+  in CI.
+- `tests/test_observability_conformance.py` green, and its print-ban arm now SCANS these modules:
+  MEASURED, `tests/observability_conformance_config.py`'s `LANDED_LAYER_PREFIXES` includes
+  `entropic_substrate.ladder`, so every file landing under `ladder/run/**` enters arm 1's subject set
+  on arrival. See *Observability conformance* for the measured (empty) subject.
+- `lint-imports` green: ZERO inversions among `kernel < core < ladder < historical < composition`.
+  `__legacy` sits OUTSIDE the contract until p13, so quarantine edges are not linted;
+  `tests/test_legacy_coupling.py` bounds them. MEASURED premise: every non-`__legacy` import in the
+  42 targets resolves to `kernel.*`, `core.*` or `ladder.{register,run}.*` — none above `ladder`.
+- `just check` (offline) and `just pc-ci` (exit gate via the runner) green on the lane tip. The lane
+  does NOT run `just container-test` and does NOT publish.
+- Every mutation under *Guard teeth by mutation* performed and reverted in-branch, both arms in the
+  certification record.
+- The actual diff's file set is a SUBSET of *Allowed files*, and disjoint from p8's and p11's slices.
+  Undeclared overlap is a HALT at the zip, not a note. Instrument: the exact `tools/lane_slices.py`
+  command below, re-run at the lane tip.
+- Verdict **CERTIFIED** (tip SHA + exit-gate JSON). Rebase onto the zip parent with ZERO conflicts —
+  a conflict falsifies the wave's edge-disjointness claim and fails the WAVE, not just this lane.
+  The exit gate RE-RUNS at the restacked tip; a restacked tree is a new tree and the pre-zip
+  certificate speaks for a tree that no longer exists. Rollback (Q7 ruled (a)): a failed integrated
+  gate unwinds to tip N-1 and raises DECISION-NEEDED naming the lane.
 
 ## Non-goals
 
-Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that looks necessary for correctness is a `DECISION`, not an edit.
+Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that looks necessary for
+correctness is a `DECISION`, not an edit.
 
-- Does NOT land `campaign`, `closure` or `ckptsync`. Those consume `values` and `transport` and land at p10.
-- Does NOT re-own the H members of `training` / `transport`; p4 landed them.
-- Does NOT perform either symbol split. p5 did that; this phase only MOVES the torch halves.
-- Does NOT touch the record halves. p8 moves them. p8 and p9 share no file, which is what makes wave 2 legal.
-- Does not resolve the class-level tangle (`d1_trainer_handoff ↔ d1_evaluation`). It is named, measured and scheduled after p13.
-- The plan does NOT promise zero intra-run cycles. It promises the sub-packages exist, are measured, and the residue is named.
+- Does NOT land `campaign` (15), `closure` (6), `ckptsync` (5), `d_ladder_worker_runtime` or the
+  worker rows. All are p10's. Specifically NOT `d1_operator_values`, `d1_operator_evidence`,
+  `d1_runpod_billing_parser`, `d1_checkpoint_dvc_sync`, `d1_checkpoint_dvc_recovery`.
+- Does NOT re-own the H members of `run/{worker,transport,journal}`; p4 landed them. Does NOT re-own
+  `ladder/run/{checkpoint,capture}.py` — they hold the reader tuples and are in NO lane slice.
+- Does NOT touch `src/entropic_substrate/ladder/gate/ladder_predecessor.py`. It carries explicit
+  `__legacy` edges to BOTH p8's and p11's targets, is declared RUNG-OWNED
+  (`tools/lane_slices.py --rung-owned`), leaves every slice, and is rewritten once by the post-zip
+  reconciliation rung. It is p8's and p11's story, not p9's.
+- Does NOT perform either symbol split. p5 did both; this phase only MOVES the torch halves. Does
+  NOT touch the record halves — p8 moves them, and p8 and p9 share no file, which is what makes w2
+  legal.
+- Does NOT resolve the class-level tangle `d1_trainer_handoff ↔ d1_evaluation`. Named, measured,
+  scheduled after p13 with its own ruling. Its gate is NOT `remap_check` (ruling P9-REMAP).
+- Does NOT promise zero intra-run cycles. The plan promises the sub-packages exist, are measured,
+  and the residue is named.
+- Does NOT edit `src/entropic_substrate/__legacy/predictive_state/__init__.py` (already the p3
+  retracted one-liner), `src/entropic_substrate/predictive_state/__init__.py` (verbatim original),
+  or any other facade.
+- Does NOT edit `docs/architecture.md`. E-9's prose rides the conductor's docs sweep (ruling
+  `docs-sweep-off-critical-path`), because the lane's envelope is code and a prose edit inside a
+  hashed reader module re-pins identities.
+- Does NOT edit `tools/mapping.json`, `.importlinter` (p0/p13 only — and there is no
+  `ladder.run` contract in it to invoke), briefs, plan docs, the manifest, engine scripts or CI.
+- Does NOT edit `tests/test_d1_training_step_split.py`, and does not need to. MEASURED: `:35` imports
+  the torch halves in PACKAGE form, `from entropic_substrate.__legacy import (d1_calibration,
+  d1_training_step, ...)`, so the FORWARDERS p9's move causes `gen_shims` to emit keep it resolving
+  (a forwarder file is a real submodule, so `from pkg import sub` resolves through it); the literal
+  paths it pins at `:52-53,:127-128` are the RECORD halves, p8's files, not p9's. RETRACTION (house
+  rule 4): the first v2 draft attributed its greenness to the old-path shims. Wrong mechanism — a
+  package-form `from entropic_substrate.__legacy import d1_calibration` never touches the
+  `entropic_substrate.d1_calibration` shim.
+- Does NOT edit any other EXISTING test.
 
 ## Allowed files
 
-The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output). RETRACTED 2026-09-18 (Q1 ruled (b)): this section previously granted "the run-side tests, for import-path rewrite only" as a prose test grant. Struck — no phase before p13 edits EXISTING tests; shims keep them green under rewrite-on-arrival, and the prose form cannot discharge the ACCEPTANCE subset-of-Allowed-files check anyway.
+The escalation door: if correctness would require touching a contract surface, a file outside this
+envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the
+verification you RAN attached (command + observed output). RETRACTED 2026-09-18 (Q1 ruled (b)):
+this section previously granted "the run-side tests, for import-path rewrite only" as a prose test
+grant. Struck — no phase before p13 edits EXISTING tests, and the prose form cannot discharge the
+subset-of-Allowed-files check anyway.
 
-- `.secrets.baseline` (STANDING RULE, conductor 2026-09-19, generalizing p0's ruling: a mechanical companion of allowed content. detect-secrets regenerates it whenever an allowed file's digest literals move or change, so its diff may contain ONLY line renumbering, removal of orphaned entries, the `generated_at` stamp, and new `Hex High Entropy String` entries whose flagged lines are sha256 / git-SHA literals inside this phase's own Allowed files; the lane verifies that in the PR body. New digest literals in TEST files carry an inline `# pragma: allowlist secret` instead of a baseline entry, so the baseline stops churning; JSON records keep baseline entries. Never a credential.)
-- `.claude/workflows/landed-set/p9-run-lower.json` — THIS phase's disjoint fragment (modules landed, targets, `legacy_edge_budget`). No other phase's fragment. `.importlinter` is NOT in this envelope: it is edited only at p0 and p13.
-- the 52 D1 modules mapped to the lower run stack and their shims
+- the 42 legacy sources enumerated under *Scope* (moved with `git mv`, import lines rewritten once
+  on arrival per the four rewrite tables)
 - `src/entropic_substrate/ladder/run/{values,transport,provider,resource,training,construction}/**`
-- the torch halves of `d1_training_step` and `d1_calibration` (p5 created the seam) and their shims
-- `docs/architecture.md` (record the `run/construction` named deviation)
+  (the 42 moved modules plus a docstring-only `__init__.py` each)
+- the 42 typed shim pairs at the old paths (`.py` + `.pyi`), regenerated by `tools/gen_shims.py`,
+  never hand-edited; plus the FORWARDERS `gen_shims` DERIVES at the vacated `__legacy` paths,
+  including `__legacy/d1_calibration.py` and `__legacy/d1_training_step.py`
+- the 12 landed importers listed above (their 21 import lines — **seven** of the twelve carry more than one, so the per-file figure is the table's, plus that file's docstring if it names
+  an old address, SAME commit under R-PIN)
+- `tests/test_run_lower_cold_import.py` (new, RED-first: fresh interpreter per moved leaf at its NEW
+  address)
+- `.claude/workflows/landed-set/p9-run-lower.json` — THIS phase's disjoint fragment, GROWN per
+  landing commit (the rows for the modules that commit lands, with their fully-qualified
+  `ladder.run.<sub>.*` targets), the MEASURED `legacy_edge_budget` written at the LAST commit, and a
+  `note` recording the retractions. No other phase's fragment.
+- generator outputs (D-B precedent, p5b): any `.pyi` stub whose target this phase edits, listed from
+  `git status --porcelain` after generate + `--verify`. An import-line rewrite does not change a
+  bound name, so each stub changes ONLY in the module path of its `from ... import X as X` lines.
+- **ZIP-OWNED REGENERABLE** (in this envelope because R-PIN fires here, marked so because the zip
+  regenerates them ONCE on the integrated tip and never hand-merges them; an overlap with p8 on
+  these four is expected, not a conflict): `tests/test_identity_epoch.py`, `tools/regime_rows.py`,
+  `tests/test_regime_rows.py`, `docs/identity/read-old-table.md`.
+- `.secrets.baseline` (STANDING RULE, conductor 2026-09-19; also zip-owned regenerable): a
+  mechanical companion of allowed content. detect-secrets regenerates it whenever an allowed file's
+  digest literals move, so its diff may contain ONLY line renumbering, removal of orphaned entries,
+  the `generated_at` stamp, and new `Hex High Entropy String` entries whose flagged lines are
+  sha256 / git-SHA literals inside this phase's own Allowed files; the lane verifies that in the
+  certification record. New digest literals in TEST files carry an inline
+  `# pragma: allowlist secret` instead of a baseline entry; JSON records keep baseline entries.
+  Never a credential.
+- `.claude/workflows/landed-set/.emitted.json` is UNTRACKED derived state (FOR-1539); never
+  `git add` it, never treat it as a companion of an allowed file.
+
+**Deliberately EXCLUDED:** `docs/architecture.md`; `src/entropic_substrate/ladder/gate/ladder_predecessor.py`;
+`src/entropic_substrate/ladder/run/{checkpoint,capture}.py`; `tests/test_shim_layer.py` (its
+hard-coded facade children are p6's, not p9's); **`tests/test_d1_training_step_split.py` (stays
+untouched AND green, via the FORWARDERS — see Non-goals)**; `tests/test_module_identity.py`;
+`.importlinter`; `tools/mapping.json`. A diff touching any of them is a `DECISION`, not an edit.
+
+### The exact slice command (verbatim, from `lane_slices_cmd.sh`)
+
+Re-run at the lane tip; the p9 target list is this brief's Scope, verbatim:
+
+```bash
+python3 tools/lane_slices.py src tools/mapping.json \
+  p8-capture=entropic_substrate.capture_results,entropic_substrate.d1_calibration_records,entropic_substrate.d1_content_addressed_custody,entropic_substrate.d1_journal_snapshot,entropic_substrate.d1_numerical_defect,entropic_substrate.d1_observability,entropic_substrate.d1_tracking,entropic_substrate.d1_training_step_records,entropic_substrate.data.build,entropic_substrate.data.enwik8,entropic_substrate.data.fineweb,entropic_substrate.data.synthetic,entropic_substrate.evidence.d1_abort_evidence,entropic_substrate.evidence.d1_capture_aggregate,entropic_substrate.evidence.d1_capture_aggregate_codec,entropic_substrate.evidence.d1_capture_aggregate_validation,entropic_substrate.evidence.d1_capture_artifacts,entropic_substrate.evidence.d1_capture_bundle,entropic_substrate.evidence.d1_capture_declaration_codec,entropic_substrate.evidence.d1_capture_filesystem,entropic_substrate.evidence.d1_capture_ports,entropic_substrate.evidence.d1_capture_preparation_custody,entropic_substrate.evidence.d1_capture_preparation_custody_repository,entropic_substrate.evidence.d1_capture_roster,entropic_substrate.evidence.d1_capture_service,entropic_substrate.evidence.d1_capture_subprocess,entropic_substrate.evidence.d1_capture_validation,entropic_substrate.evidence.d1_journal,entropic_substrate.evidence.d1_journal_values,entropic_substrate.evidence.d1_lifecycle_repository,entropic_substrate.evidence.d1_lifecycle_values,entropic_substrate.evidence.d1_process_manager,entropic_substrate.evidence.d1_process_replay,entropic_substrate.evidence.d1_telemetry,entropic_substrate.evidence.d1_telemetry_measurements,entropic_substrate.evidence.d1_telemetry_payloads,entropic_substrate.evidence.d1_telemetry_query,entropic_substrate.evidence.d1_telemetry_values,entropic_substrate.evidence.d1_terminal_defect_capture,entropic_substrate.evidence.d1_terminal_defect_query,entropic_substrate.evidence.resource_billing,entropic_substrate.evidence.resource_billing_reconciliation,entropic_substrate.evidence.resource_ledger,entropic_substrate.evidence.resource_ledger_codec,entropic_substrate.evidence.resource_meter_models,entropic_substrate.evidence.resource_meter_runtime,entropic_substrate.evidence.resource_meter_strategy,entropic_substrate.evidence.resource_work,entropic_substrate.evidence.resource_work_codec,entropic_substrate.mlflow_aggregate,entropic_substrate.sinks,entropic_substrate.telemetry \
+  p9-run-lower=entropic_substrate.d1_build_cloud_adapter,entropic_substrate.d1_calibration,entropic_substrate.d1_command_runner,entropic_substrate.d1_dual_failure,entropic_substrate.d1_dvc_remote_config,entropic_substrate.d1_evaluation,entropic_substrate.d1_evaluation_codec,entropic_substrate.d1_fresh_trainer,entropic_substrate.d1_git_provenance_adapter,entropic_substrate.d1_operator_ports,entropic_substrate.d1_optimizer,entropic_substrate.d1_r2_runtime_composition,entropic_substrate.d1_resource_activation,entropic_substrate.d1_resume_runtime,entropic_substrate.d1_resume_trainer,entropic_substrate.d1_runpod_adapter,entropic_substrate.d1_segment_engine,entropic_substrate.d1_system_runtime_probe,entropic_substrate.d1_terminal_failure,entropic_substrate.d1_trainer_evidence_adapter,entropic_substrate.d1_trainer_handoff,entropic_substrate.d1_trainer_handoff_codec,entropic_substrate.d1_trainer_mailbox_contracts,entropic_substrate.d1_trainer_mailbox_worker,entropic_substrate.d1_trainer_object_transport,entropic_substrate.d1_trainer_output_publication,entropic_substrate.d1_trainer_process_contracts,entropic_substrate.d1_trainer_request_codec,entropic_substrate.d1_trainer_runtime,entropic_substrate.d1_trainer_s3_object_adapter,entropic_substrate.d1_trainer_stage,entropic_substrate.d1_training_step,entropic_substrate.experiments.ladder_matching,entropic_substrate.predictive_state.checkpoint_envelope,entropic_substrate.predictive_state.checkpoint_repository,entropic_substrate.predictive_state.checkpoint_validation,entropic_substrate.predictive_state.checkpoint_values,entropic_substrate.predictive_state.ladder_runtime,entropic_substrate.predictive_state.runtime,entropic_substrate.predictive_state.runtime_components,entropic_substrate.predictive_state.runtime_construction,entropic_substrate.provider_launch \
+  p11-analyze-review-file=entropic_substrate.analysis.charts,entropic_substrate.analysis.codec_equivariance,entropic_substrate.analysis.d1_analysis_api,entropic_substrate.analysis.d1_analysis_receipt_codec,entropic_substrate.analysis.d1_blind_aliases,entropic_substrate.analysis.d1_capture,entropic_substrate.analysis.d1_clause_policy,entropic_substrate.analysis.d1_diagnostics,entropic_substrate.analysis.d1_execution_receipt,entropic_substrate.analysis.d1_external_analysis_adapter,entropic_substrate.analysis.d1_external_analysis_codec,entropic_substrate.analysis.d1_external_analysis_control,entropic_substrate.analysis.d1_external_review_adapter,entropic_substrate.analysis.d1_external_worker,entropic_substrate.analysis.d1_factorial,entropic_substrate.analysis.d1_machine_analysis,entropic_substrate.analysis.d1_machine_analysis_binding,entropic_substrate.analysis.d1_machine_analysis_codec,entropic_substrate.analysis.d1_machine_analysis_verification,entropic_substrate.analysis.d1_output_access,entropic_substrate.analysis.d1_real_arm_verdict,entropic_substrate.analysis.d1_review_execution,entropic_substrate.analysis.d1_review_packet,entropic_substrate.analysis.embedding_geometry,entropic_substrate.analysis.field_head_audit,entropic_substrate.analysis.ladder_analysis,entropic_substrate.analysis.ladder_filing,entropic_substrate.analysis.ladder_registration,entropic_substrate.analysis.mlflow_attach,entropic_substrate.analysis.palette,entropic_substrate.analysis.seed_sizing,entropic_substrate.analysis.series,entropic_substrate.d1_filing_application,entropic_substrate.d1_inspect_codec,entropic_substrate.d1_inspect_projection,entropic_substrate.d1_inspect_request,entropic_substrate.d1_inspect_values,entropic_substrate.evidence.d1_decision_validation,entropic_substrate.evidence.d1_filing,entropic_substrate.evidence.d1_filing_assembly,entropic_substrate.evidence.d1_filing_edges,entropic_substrate.evidence.d1_filing_graph,entropic_substrate.evidence.d1_filing_receipts,entropic_substrate.evidence.d1_gate,entropic_substrate.evidence.d1_process_filing,entropic_substrate.evidence.d1_review_adjudication,entropic_substrate.evidence.d1_validator \
+  --regenerable tests/test_identity_epoch.py,tools/regime_rows.py,tests/test_regime_rows.py,docs/identity/read-old-table.md,.secrets.baseline \
+  --rung-owned entropic_substrate/ladder/gate/ladder_predecessor.py --allow-dependencies --json
+```
+
+MEASURED by RUNNING that command at `79d8228` (tool stdout, quoted): `p9-run-lower: 138 files
+(42 targets)`, `RUNG-OWNED entropic_substrate/ladder/gate/ladder_predecessor.py:
+p11-analyze-review-file, p8-capture`, NO `OVERLAP` line, and
+`DEPENDS p9-run-lower -> p8-capture: 41`, `DEPENDS p8-capture -> p9-run-lower: 4`,
+`DEPENDS p11-analyze-review-file -> p9-run-lower: 1`, `DEPENDS p11-analyze-review-file ->
+p8-capture: 50`; `DEPENDS p9 -> p11` is absent, i.e. 0. `--allow-dependencies` is required and is
+legitimate ONLY because of the forwarders.
+
+The `DEPENDS` figures and their epoch delta against the audit's 39 are stated once, under
+*Wave w2 mechanics*; they are not restated here.
 
 ## Already ruled
 
 Settled. The design gate must not re-open any of these as a `DECISION`.
 
-| id                  | status                                        | ruling                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DAG-depth promotion | RULED 2026-09-17                              | Sub-package membership is decomposed by MEASURED DAG depth, not by name. Seven modules are promoted: `d1_operator_values`, `d1_operator_evidence`, `d1_operator_ports` → `run/values`; `sentence_prediction.journal` → `run/journal`; `d1_resource_activation` → `run/resource`; `d1_r2_runtime_composition` → `run/construction`; `d1_runpod_billing_parser` → `run/provider`. |
-| E-9 (was DN-23)     | RATIFIED at sprint-preflight (recommendation) | `run/construction` as a second composition site is an ACCEPTED NAMED DEVIATION: the factory returns a runnable, which is the RUN stage's product. Record it in `docs/architecture.md` in this phase's commit.                                                                                                                                                                   |
-| paper first         | RULED 2026-09-17                              | Sub-package membership is validated with `remap_check` BEFORE the first `git mv`. The measurement is pure and writes nothing, so every decomposition step is a paper exercise first.                                                                                                                                                                                            |
-| O-1                 | RULED 2026-09-17                              | Wave lane. Ends CERTIFIED, never publishes. `liveRequired:false`, zip re-certifies.                                                                                                                                                                                                                                                                                             |
-| P-1                 | RULED 2026-09-17                              | Observability is wired through DURING the refactor on the E-series pattern. Rail phase p3b plus the extended rewrite-on-arrival rule. This is the one permitted behaviour-change class inside a structural phase.                                                                                                                                                               |
-| O-1                 | RULED 2026-09-17                              | `publishMode:'defer'`. Wave lanes end CERTIFIED, the zip publishes once through `just ship-it`, and `/pr-stack-comment-triage` files into the Linear project after every wave publish.                                                                                                                                                                                          |
-| E-4                 | RULED 2026-09-17                              | Edit the scripts, no forwarders. The dotted entrypoint names live in ONE parameterized source consumed by `run_ladder.sh`, the justfile and the worker allowlists.                                                                                                                                                                                                              |
-| rewrite-on-arrival  | RULED 2026-09-17                              | A file's import lines are rewritten exactly once, by the phase that moves it. This phase never rewrites an importer outside its own touch set.                                                                                                                                                                                                                                  |
-| shim form           | RULED 2026-09-17                              | `import entropic_substrate.__legacy.<x> as _target` then `sys.modules[__name__] = _target`. A string-only `importlib.import_module` shim is forbidden: it makes the layers contract vacuously green.                                                                                                                                                                            |
-| skeleton            | RULED 2026-09-17                              | Merged skeleton (proposal C tree + proposal B grafts), layer contract `kernel < core < ladder < historical                                                                                                                                                                                                                                                                      |
+| id                                    | status                                                                                                                                                                                                                        | ruling                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-WAVES r3                            | OPERATOR 2026-09-23                                                                                                                                                                                                           | w2 stays PARALLEL: p8 ∥ p9 ∥ p11 as nested worktrees off `mythwave/p7-register-gate` (parent is that branch, NOT p6). `publishMode:'defer'`, terminal state CERTIFIED, `liveRequired:false`. Zip order p8 → p9 → p11, then ONE serial reconciliation rung (conductor) rewrites the sibling-target imports and retires the forwarders.                                                                               |
+| sibling-target addressing (FOR-1547)  | CONDUCTOR 2026-09-23 (`e9e5897`)                                                                                                                                                                                              | Each of p9's 41 import lines of a p8 target is rewritten to the explicit `entropic_substrate.__legacy.<x>` address, a real file in this worktree. After the zip `tools/gen_shims.py` emits a forwarder there; the rung rewrites them to `ladder.capture.*` later. The 20 other-quarantined lines likewise stay on explicit `__legacy` addresses, with no forwarder — those rows are not moving in w2.               |
+| package-form importer scan            | CONDUCTOR 2026-09-23 (tooling landed this session)                                                                                                                                                                            | `collect_legacy_importers` records `<module>.<name>` for a package-form `from entropic_substrate.__legacy import <leaf>`, so p9's move of the torch halves emits forwarders at `__legacy/d1_{calibration,training_step}.py` and `tests/test_d1_training_step_split.py` stays untouched AND green through the FORWARDERS, not the shims. The first v2 draft's "the shims keep it green" is retracted (house rule 4). |
+| fragment rows per landing commit      | WAVE RULE 2026-09-23 (from the p11 review)                                                                                                                                                                                    | `tests/test_module_identity.py` reverse-maps new dotted names through the fragments' `target` field, so every landing commit carries its own rows; the fragment grows per commit and the budget number is set at the last commit. MEASURED: ZERO p9 target carries a frozen `object()` sentinel in that test's 19-key map, so the sentinel arm is a pass-through control here.                                      |
+| rung-owned                            | CONDUCTOR 2026-09-23 (`79d8228`)                                                                                                                                                                                              | `src/entropic_substrate/ladder/gate/ladder_predecessor.py` carries explicit edges to BOTH p8's and p11's targets, leaves every slice via `--rung-owned`, and belongs to p8/p11's story. p9 never touches it. Teeth on the flag itself: a declared file that fewer than two slices carry is a malformed declaration, exit 2, so the flag cannot decay into an ignore list.                                           |
+| BUDGET-MONOTONE retracted             | CONDUCTOR 2026-09-23 (`795f8e6`)                                                                                                                                                                                              | The strict-decrease arm is RETRACTED. The binding arm is `tests/test_legacy_coupling.py`'s EQUALITY against the HIGHEST-ORDERED committed fragment (cumulative, not a sum of fragments — MEASURED in that file's `load_committed_budget`). Direction is predicted by the conductor and never typed into the lane's reproduction path. In a parallel wave each lane measures in its own worktree.                    |
+| R-PIN (OWED)                          | CONDUCTOR 2026-09-22, MEASURED 2026-09-23                                                                                                                                                                                     | p9 rewrites 5 `h-checkpoint-reader-v2` members → re-pin `_CHECKPOINT_REGIME_TABLE` with `tools/regime_rows.py` in the SAME commit; label and module set unchanged; the read-old table gains dated rows; `h-source-reader-v3` unchanged = the control. Both p8 and p9 re-pin in their own worktrees; the zip regenerates the four identity files plus `.secrets.baseline` ONCE.                                      |
+| DAG-depth promotion (SCOPE CORRECTED) | RULED 2026-09-17, MEASURED 2026-09-23                                                                                                                                                                                         | Sub-package membership is decomposed by MEASURED DAG depth, not by name. CORRECTION: only THREE of the plan's seven promotions are p9's — `d1_operator_ports` → `run/values`, `d1_resource_activation` → `run/resource`, `d1_r2_runtime_composition` → `run/construction`. `sentence_prediction.journal` landed at p4; `d1_operator_values`, `d1_operator_evidence`, `d1_runpod_billing_parser` are p10's.          |
+| ZIP-REMEASURE                         | CONDUCTOR 2026-09-23: the budget equality arm binds to the highest-ordered fragment; the zip's `zipRestackHook` re-measures at every restacked tip and re-pins that fragment's number with a dated note (plan rulings table). |                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| P9-REMAP (supersedes `paper first`)   | CONDUCTOR 2026-09-23, Linear FOR-1549                                                                                                                                                                                         | `tools/remap_check.py` cannot run on the post-quarantine tree: MEASURED 328 unmapped modules, exit 1 before any count. Every `remap_check` acceptance bullet, guard row and artifact is RETRACTED; no remap artifact lands in w2. The 2026-09-17 `paper first` ruling is SUPERSEDED for this phase — its oracle is unusable here, not merely unused. An edges normalizer is p13-adjacent work, FOR-1549.            |
+| E-9 (was DN-23)                       | RATIFIED at sprint-preflight, AMENDED 2026-09-23                                                                                                                                                                              | `run/construction` as a SECOND composition site is an ACCEPTED NAMED DEVIATION: the factory returns a runnable, the RUN stage's product. AMENDMENT: the `docs/architecture.md` prose edit rides the conductor's docs sweep, not this lane; v1's Allowed-files grant for that file is retracted.                                                                                                                     |
+| O-1                                   | RULED 2026-09-17                                                                                                                                                                                                              | Wave lane. Ends CERTIFIED, never publishes; the zip publishes once through `just ship-it`, and `/pr-stack-comment-triage` files into the Linear project after the wave publish.                                                                                                                                                                                                                                     |
+| shim form                             | RULED 2026-09-17, CORRECTED 2026-09-23                                                                                                                                                                                        | `import entropic_substrate.<new.landed.address> as _target` then `sys.modules[__name__] = _target`, as the generator emits it. v1's row said `entropic_substrate.__legacy.<x>` as the `_target` — the pre-p3 form, WRONG for a phase that lands a destination; retracted, not overwritten. A string-only `importlib.import_module` shim is forbidden: it makes the layers contract vacuously green.                 |
+| rewrite-on-arrival                    | RULED 2026-09-17                                                                                                                                                                                                              | A file's import lines are rewritten exactly once, by the phase that moves its target. This phase rewrites exactly the 12 landed importers and its own 42 moved modules, never anything else.                                                                                                                                                                                                                        |
+| P-1                                   | RULED 2026-09-17                                                                                                                                                                                                              | Observability is wired through DURING the refactor on the E-series pattern. Rail phase p3b plus the extended rewrite-on-arrival rule. This is the one permitted behaviour-change class inside a structural phase — and MEASURED, it has an EMPTY subject here.                                                                                                                                                      |
+| E-4                                   | RULED 2026-09-17                                                                                                                                                                                                              | Edit the scripts, no forwarders, for ENTRY POINTS: the dotted entrypoint names live in ONE parameterized source consumed by `run_ladder.sh`, the justfile and the worker allowlists — owned by p10. MEASURED: ZERO of p9's 42 targets is an `entrypoint: true` mapping row, so p9 moves no entry point and leaves both fail-closed allowlists byte-identical.                                                       |
+| skeleton                              | RULED 2026-09-17                                                                                                                                                                                                              | Merged skeleton (proposal C tree + proposal B grafts), layer contract `kernel < core < ladder < historical < composition`.                                                                                                                                                                                                                                                                                          |
+| FOR-1539                              | 2026-09-22                                                                                                                                                                                                                    | `gen_shims`' `.emitted.json` manifest is untracked derived state; no phase commits it and it is never a companion of an allowed file.                                                                                                                                                                                                                                                                               |
+| FOR-1548                              | CONDUCTOR 2026-09-23                                                                                                                                                                                                          | The tooth "point a shim's `_target` at the wrong address and `--verify` goes RED" is RETRACTED and must NOT be claimed by any lane. Not admissible as a guard row here.                                                                                                                                                                                                                                             |
 
 ## Guard teeth by mutation
 
-House rule 5: a guard is proven load-bearing by breaking the guarded thing and showing the test goes RED. The happy path passing does not distinguish "the guard worked" from "the hazard never reached it". Each mutation is performed and reverted in-branch; both arms go in the PR body.
+House rule 5: a guard is proven load-bearing by breaking the guarded thing and showing the test goes
+RED. The happy path passing does not distinguish "the guard worked" from "the hazard never reached
+it". Each mutation is performed and reverted in-branch; **both arms** go in the certification record.
+Every row names an EXISTING test or tool, or carries the label **EXHIBIT OR RETRACT**.
 
-| mutation                                                | must go RED                                                                                                                                                             |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| move `d1_operator_values` back into `campaign`          | the committed `remap_check` output regenerates with a STRICTLY HIGHER cycle count                                                                                       |
-| reintroduce one old-prefix import in a landed package   | `tests/test_no_old_prefix.py`. Separately: this phase's `legacy_edge_budget` must be STRICTLY LESS than the previous phase's, and `tests/test_legacy_coupling.py` green |
-| move a record half in this lane, or edit a file p8 owns | the predicted-vs-actual touch-set diff at the zip, which HALTS the wave on undeclared overlap                                                                           |
+**RETRACTIONS (house rule 4).** v1's row 1, "move `d1_operator_values` back into `campaign`", is
+UNEXECUTABLE — `d1_operator_values` is a p10 campaign module, not one of p9's 42 targets, and cannot
+be moved inside this envelope. Struck. v1's row 2 rider ("`legacy_edge_budget` STRICTLY LESS than the
+previous phase's") is struck per BUDGET-MONOTONE. The v2 draft's replacement row (flip a row in a
+refined mapping, re-run `remap_check`) is struck per P9-REMAP — the tool cannot run on this tree.
+
+| mutation (RED arm, inside p9's own envelope)                                                                                                                               | must go RED (named instrument)                                                                                                                                                                                                                                                                                                                   | GREEN arm                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| re-introduce ONE old-prefix import in a moved module (restore `from entropic_substrate.experiments.d1_primitives import ...` in `ladder/run/training/d1_training_step.py`) | `tests/test_no_old_prefix.py` (landed→old-prefix edge count ≠ 0)                                                                                                                                                                                                                                                                                 | ZERO landed→old-prefix edges at the lane tip, test unedited                                                   |
+| DELETE one forwarder-served `__legacy` file a moved module imports (`src/entropic_substrate/__legacy/evidence/resource_ledger.py`)                                         | `tests/test_run_lower_cold_import.py` (NEW) — **the cold-import arm ONLY**. RESTATED from the v2 draft, which also claimed the `test_legacy_coupling.py` equality arm: in p9's own worktree that file is REAL source, not a forwarder, and `tools/import_graph.py`'s normalisation may leave the edge counted. The equality half is NOT claimed. | all 42 destination addresses cold-import clean in a fresh interpreter                                         |
+| drop ONE rewritten `__legacy` import line, or point it at a name the quarantined module no longer exports                                                                  | `tests/test_legacy_coupling.py::test_measured_landed_to_legacy_edges_equals_committed_budget` (EQUALITY, so an off-by-one either way is the same failure) and `tests/test_run_lower_cold_import.py`                                                                                                                                              | measured == committed at the tip; all 42 cold-import clean                                                    |
+| inflate the committed `legacy_edge_budget` in `p9-run-lower.json` by one                                                                                                   | the same EQUALITY arm — an inflated budget and an uncounted edge are indistinguishable to it, which is why it is the binding arm and not a `<=`                                                                                                                                                                                                  | measured == committed, the number never typed                                                                 |
+| land a rung that moves modules WITHOUT adding their fragment rows                                                                                                          | `tests/test_module_identity.py` (the new dotted name has no `target` to reverse-map through) and `gen_shims --preflight` / `merge_fragments` disjointness                                                                                                                                                                                        | every rung carries its rows (see the 7-rung table); `--preflight` clean                                       |
+| remove the forwarder at `__legacy/d1_training_step.py`, or regenerate with the package-form importer scan disabled                                                         | `PYTHONPATH=src uv run pytest -q tests/test_d1_training_step_split.py` — its `:35` package-form import stops resolving; `tools/gen_shims.py --verify` names the missing/stale file. This is the arm proving the FORWARDER, not the shim, is load-bearing there.                                                                                  | forwarder present in the emitted manifest's `forwarders` key; that pytest green, file UNEDITED                |
+| add a re-export to any of the six destination `__init__.py` files                                                                                                          | the destination-facade contract via the DIFF-REVIEW arm. `lint-imports` is **EXHIBIT OR RETRACT**: it fires only on an edge that CROSSES a layer, and a re-export of a `kernel.*` / `core.*` / `ladder.*` name inside `ladder/run/**` crosses nothing, so the linter can stay green while the contract is broken.                                | all six `__init__.py` docstring-only, `wc -c` in the certification record; `lint-imports` green               |
+| hand-edit a `_CHECKPOINT_REGIME_TABLE` digest instead of re-pinning with `tools/regime_rows.py`                                                                            | `tests/test_identity_epoch.py::TestComposedDigestsPerMeasuredRegime` (composed-digest mismatch) and `tests/test_regime_rows.py`                                                                                                                                                                                                                  | tool-written rows, LABEL and 51-member SET unchanged; `_SOURCE_REGIME_TABLE` re-measured UNCHANGED as control |
+| change one string in `provider_launch.py`'s known-worker set (`:32-35`) or `d1_runpod_adapter.py:345`                                                                      | **EXHIBIT OR RETRACT.** MEASURED: no test in `tests/` reaches that set with a rejected worker name, and the literals are invisible to `tests/test_no_old_prefix.py` (import-graph based, not literal-based). The lane names a failing existing test or reports the tooth ABSENT with the grep. Never claimed as proven from the plan's wording.  | the two files' literals byte-identical in `git diff mythwave/p7-register-gate`                                |
+| move a record half in this lane, or edit a file p8 or p11 owns                                                                                                             | `tools/lane_slices.py` overlap check (exit 1) and the predicted-vs-actual touch-set diff at the zip, which HALTS the wave on undeclared overlap                                                                                                                                                                                                  | `lane_slices` reports 138 files, NO `OVERLAP` line, `ladder_predecessor.py` under `RUNG-OWNED`                |
 
 ## Observability conformance
 
-Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE behaviour-change class permitted inside a structural phase, scoped to log routing, metric routing and entry-point configuration. Measured scientific behaviour (losses, metric values, identities) stays frozen; the identity fixtures and the numerics tests are the tripwire.
+Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE behaviour-change class
+permitted inside a structural phase, scoped to log routing, metric routing and entry-point
+configuration. Measured scientific behaviour (losses, metric values, identities) stays frozen.
 
-- The training transaction emits through the INJECTED `MetricSink` under a `TrackingRunDescriptor`. No direct MLflow call survives in `run/`.
-- Provider and transport adapters log through the substrate; their diagnostic `print(` calls are routed in the commit that moves each file.
-- `run/construction` is a composition SITE, so it may select a concrete sink adapter. It is the named deviation recorded in `docs/architecture.md` and the only place in `run/` allowed to do so.
+**RETRACTION (house rule 4): all three of v1's bullets are struck as unmeasured.** v1 asserted
+"The training transaction emits through the INJECTED `MetricSink` under a `TrackingRunDescriptor`",
+"their diagnostic `print(` calls are routed in the commit that moves each file", and
+"`run/construction` … may select a concrete sink adapter". MEASURED 2026-09-23 across all 42 legacy
+sources with one regex sweep: **ZERO** `print(` sites, ZERO `argparse` references, ZERO `__main__`
+guards, ZERO `def main(`, ZERO `configure_logging` calls, ZERO `logging` / `logger` tokens, ZERO
+`MetricSink` references, ZERO `TrackingRunDescriptor` references and ZERO case-insensitive `mlflow`
+tokens. The rewrite-on-arrival print obligation, the sink-construction obligation and the
+entry-point obligation all have an EMPTY SUBJECT here.
+
+- **Scope confirmation, so the empty subject is not an untested claim.**
+  `tests/observability_conformance_config.py`'s `LANDED_LAYER_PREFIXES` includes
+  `entropic_substrate.ladder`, and `tests/test_observability_conformance.py::test_zero_bare_print_calls_in_landed_packages_outside_the_allowlist`
+  scans every landed file. So `ladder.run.*` enters arm 1's subject set the moment these modules
+  land, and the arm's own GREEN control
+  (`test_print_ban_arm_subject_set_scans_every_landed_file_GREEN_control`) proves the scan is not
+  vacuous. Nothing needs adding.
+- p9's fragment therefore adds NO `print_allowlist` entry, NO `sink_construction_modules` entry and
+  NO `conforming_entrypoints` entry. MEASURED: ZERO of the 42 targets is an `entrypoint: true`
+  mapping row (the seven such rows are `__main__`, `cli`, `telemetry`,
+  `analysis.d1_external_worker`, `d1_trainer_mailbox_command`, `d_ladder_worker_command`,
+  `sentence_prediction.worker_command` — none is p9's), so the 7-row entry-point partition is
+  untouched and `test_entrypoint_partition_covers_all_seven_rows_with_at_least_two_conforming`
+  stays green unchanged as this phase's control.
+- E-9's second composition site is an ARCHITECTURAL fact recorded here; it grants no sink-selection
+  code in this phase, because there is no sink construction in the 42 sources to place.
 
 ## Planned commit branches
 
-One Linear issue per line, inside this phase's milestone in project "entropic-substrate-lm — hexagonal refactor" (team Form_fxn, key FOR). Each is one commit branch in this phase's stack.
+SEVEN rungs, mapped 1:1 onto the seven Linear issues the sprint manifest already assigns to this
+phase — MEASURED from `.claude/workflows/sprint-manifest.json`,
+`phases[p9-run-lower].issues = ["FOR-1471","FOR-1472","FOR-1473","FOR-1474","FOR-1475","FOR-1476","FOR-1477"]`.
+RETRACTION (house rule 4): the earlier drafts said "issue ids are NOT asserted — the FOR range was
+not read"; it has now been read, and that sentence is struck. Each rung is one commit on this lane's
+branch (the lane does not stack PRs; it certifies). **Every rung adds ITS OWN modules' rows to
+`.claude/workflows/landed-set/p9-run-lower.json` in the SAME commit** (WAVE RULE,
+`tests/test_module_identity.py`); no landing commit ever lacks its rows, and the
+`legacy_edge_budget` value is written once, at FOR-1477.
 
-1. Commit the refined remap_check measurement before the first git mv
-2. Land ladder/run/values with the three promoted value modules
-3. Land ladder/run/transport
-4. Land ladder/run/provider with the promoted billing parser
-5. Land ladder/run/resource with the promoted activation module
-6. Land ladder/run/training with p5's two torch split halves
-7. Land ladder/run/construction and record the named deviation
+| rung | FOR      | lands                                                                                                                                                                                                                                                                                     | rows | cum.   | carries                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | FOR-1471 | `run/values` (`d1_operator_ports`) + `run/resource` (`d1_resource_activation`)                                                                                                                                                                                                            | 2    | 2      | `tests/test_run_lower_cold_import.py` NEW and **RED-first** — the two plan-§p9 promotions with the fewest sibling edges are the smallest tree that can prove the instrument before it guards anything bigger                                                                                                                                                     |
+| 2    | FOR-1472 | `run/provider` (6: `d1_build_cloud_adapter`, `d1_command_runner`, `d1_git_provenance_adapter`, `d1_runpod_adapter`, `d1_system_runtime_probe`, `provider_launch`)                                                                                                                         | 6    | 8      | the two fail-closed allowlists (`provider_launch.py:32-35`, `d1_runpod_adapter.py:345`) arrive BYTE-IDENTICAL; the diff shows zero literal changes                                                                                                                                                                                                               |
+| 3    | FOR-1473 | `run/transport` (11)                                                                                                                                                                                                                                                                      | 11   | 19     | **R-PIN discharges HERE** — this rung rewrites `object_worker`, `worker_command`, `worker_completion`, `worker_snapshot`, `worker_transport`, so `_CHECKPOINT_REGIME_TABLE` is re-pinned with `tools/regime_rows.py` in this same commit, `_SOURCE_REGIME_TABLE` recorded UNCHANGED as the control, and `docs/identity/read-old-table.md` gains its dated p9 row |
+| 4    | FOR-1474 | `run/training`, the two p5 SPLIT torch halves only (`d1_training_step`, `d1_calibration`)                                                                                                                                                                                                 | 2    | 21     | the DERIVED forwarders at `__legacy/d1_{training_step,calibration}.py`: the emitted manifest lists both under `forwarders`, and `PYTHONPATH=src uv run pytest -q tests/test_d1_training_step_split.py` passes UNTOUCHED                                                                                                                                          |
+| 5    | FOR-1475 | `run/training` remainder (13: `d1_evaluation`, `d1_evaluation_codec`, `d1_fresh_trainer`, `d1_optimizer`, `d1_resume_runtime`, `d1_resume_trainer`, `d1_segment_engine`, `d1_trainer_runtime`, `d1_trainer_stage`, `predictive_state/checkpoint_{envelope,repository,validation,values}`) | 13   | 34     | the largest sibling-target block: 25 of the 41 explicit `__legacy` rewrites land here                                                                                                                                                                                                                                                                            |
+| 6    | FOR-1476 | `run/construction` (6)                                                                                                                                                                                                                                                                    | 6    | 40     | closes the MEASURED 3-of-42 cold-import hazard (`predictive_state.{runtime,runtime_components,runtime_construction}`), the only rung whose RED arm exists on the parent tip                                                                                                                                                                                      |
+| 7    | FOR-1477 | the two failure-vocabulary modules (`d1_dual_failure`, `d1_terminal_failure`) at the placement the DESIGN GATE rules                                                                                                                                                                      | 2    | **42** | the MEASURED `legacy_edge_budget` written ONCE, the fragment `note` listing every retraction below, and CERTIFY. P9-REMAP means no cycle count argues the placement; the design-gate ruling does.                                                                                                                                                                |
 
-## Wave slice rule (D-WAVES r2, operator 2026-09-22)
+Rows sum to 42, one row per target, no target in two rungs.
 
-This lane's file SLICE = the modules it moves ∪ every LANDED module that imports one of them by its explicit `entropic_substrate.__legacy.<x>` address (rewrite-on-arrival: this lane rewrites those lines once) ∪ the typed shim pair at each old path. The manifest touch set IS that slice, derived by `tools/lane_slices.py` at the p5 gap; a file outside it is a `DECISION`, never an edit, and a lane that touches a sibling lane's slice HALTs the zip. Five files are ZIP-OWNED REGENERABLE (`tests/test_identity_epoch.py`, `tools/regime_rows.py`, `tests/test_regime_rows.py`, `docs/identity/read-old-table.md`, `.secrets.baseline`): if this lane rewrites a member of `_READER_MODULES` it re-pins the checkpoint regime rows with the tool so its own hooks stay green (ruling R-PIN), knowing the zip regenerates those five files on the integrated tip in one rung and never hand-merges them. Cite `tools/lane_slices.py` output for this wave in the PR body.
+## Retractions in this brief (numbered, so the count is auditable)
+
+House rule 4: a wrong measured claim is retracted explicitly, never silently overwritten. FIFTEEN,
+enumerated:
+
+| #  | retracted claim                                                                                                      | source                 | replaced by                                                                         |
+| -- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------- |
+| 1  | parent `mythwave/p6-core`                                                                                            | v1 line 10             | `mythwave/p7-register-gate` @ `79d8228` (w1 ran serial)                             |
+| 2  | Scope sums 7+15+9+1+20+5 = 57                                                                                        | v1                     | 42, with the reproducer                                                             |
+| 3  | "the 52 D1 modules mapped to the lower run stack"                                                                    | v1 Allowed files       | 42                                                                                  |
+| 4  | the plan §p9 phase-table figure 52                                                                                   | plan                   | 42 at this tip                                                                      |
+| 5  | all SEVEN plan-§p9 DAG promotions are p9's                                                                           | v1                     | THREE are (journal is p4's; 3 are p10's)                                            |
+| 6  | shim `_target` is the `__legacy` address                                                                             | v1 Already ruled       | the `ladder.run.<sub>.*` landed address                                             |
+| 7  | `legacy_edge_budget` < p7's / STRICTLY LESS than the predecessor's                                                   | v1 ×2                  | EQUALITY against the measured cumulative count; direction INCREASING                |
+| 8  | the equality arm compares against a SUM of fragments                                                                 | commissioning note     | the HIGHEST-ORDERED fragment's single cumulative number                             |
+| 9  | guard tooth "move `d1_operator_values` back into `campaign`"                                                         | v1                     | unexecutable (p10 module); replaced by in-envelope rows                             |
+| 10 | "intra-run cycle count no worse than the pre-agreed target" + every `remap_check` arm, guard row and artifact        | v1 + v2 draft          | ruling P9-REMAP / FOR-1549 (328 unmapped modules, exit 1)                           |
+| 11 | the three observability bullets (`MetricSink`, routed `print(`, sink selection)                                      | v1                     | MEASURED empty subject on all counts                                                |
+| 12 | `docs/architecture.md` in Allowed files                                                                              | v1                     | E-9 prose rides the conductor's docs sweep                                          |
+| 13 | SI-1 "18 `core.*` lines"; ":266 25 self-imports"; landed 108/27 read without its correction                          | v2 draft ×3            | 36 (40); 12 source / 27 target; 112/29 with the pointer                             |
+| 14 | `checkpoint.py:106/:107`; `d1_runpod_adapter.py:346`; "one import line each"; "nine of twelve"                       | v2 draft + fix round 1 | `:107`/`:108`; `:345`; 21 lines; **seven** of twelve                                |
+| 15 | "the shims keep `test_d1_training_step_split.py` green"; "issue ids are NOT asserted"; the open record-half DECISION | v2 draft + fix round 1 | the FORWARDERS keep it green; FOR-1471..1477 read from the manifest; ruling P8-FRAG |
+
+Also struck, by ruling rather than by measurement: FOR-1548's mispointed-shim tooth (never claimed
+here), and v1's *Wave slice rule* section (superseded by *Wave w2 mechanics* and `--rung-owned`).
