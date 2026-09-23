@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from entropic_substrate.analysis.predictive_score_gain import (
+from entropic_substrate.core.probe.predictive_score_gain import (
     PredictiveScore,
     ScoreBinding,
     ScoreGain,

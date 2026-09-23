@@ -262,6 +262,49 @@ both module-set shapes (``h-checkpoint-reader-v2``, 51 members;
 ("frozen_after freezes label + shape, not digest values"). No metric, loss
 or scientific behaviour changes.
 
+p6-core re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p6-core, FOR-1455): this phase rewrites the six landed importers of
+the two ``core.probe`` targets (``composition/span_cli.py``,
+``ladder/run/{span_probe,span_probe_artifacts,span_diagnostics,
+worker_request}.py``, ``core/probe/score_gain.py`` -- 7 edges,
+``span_probe.py`` imports both) from their ``entropic_substrate.__legacy.
+analysis.*`` addresses to ``entropic_substrate.core.probe.*``, changing all
+six files' bytes. All six are ``h-checkpoint-reader-v2``'s ``_READER_MODULES``
+members (51-member tuple, unchanged shape), so the composed checkpoint digest
+moves; label and membership are unchanged (R-PIN). Both rows recomputed with
+``tools/regime_rows.py`` (local: ``--python 3.12.13 --torch 2.13.0 --pysbd
+0.3.4``; CI: ``--python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4``); the OLD
+values they replace,
+``518eefec27900d62d9469f36fac875b8f0b8c52bec3971c7a14f042a1c366e82``
+(local) and
+``1ee4c5384db632c55222f1a3b2d04d0f4e43e4c8252f2b4c795b9cc54a43f78c``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE``
+is untouched: none of the six importers is one of ``h-source-reader-v3``'s
+seven fixed members (``core.sentence``, ``core.sentence.records``,
+``core.sentence.segmentation``, ``core.sentence.corpus``,
+``ladder.capture.capture``, ``kernel.artifacts``, ``kernel.lifecycle``),
+confirmed by re-measuring both source rows unchanged via the same tool
+invocation.
+
+RETRACTION (house rule 4, p6-core, same commit): the checkpoint values
+first computed above,
+``da5d88e7d19ea7dcd4e5de3f84b20c23abdcc4c99a0ef7916b252bd9a52e34b6``
+(local) and
+``61281588e897462cfc9c8eae4cd0ae9217aaf9d0f0060044595278c6665dbaea``
+(CI), were measured BEFORE ``just lint``'s ``ruff check --fix`` reordered
+``ladder/run/span_diagnostics.py``'s two import lines (a reader-module
+member) into isort order, which moved its bytes and therefore the composed
+digest a SECOND time within this one commit -- caught by ``just test``
+going RED after the gate's lint step ran. The values pinned in
+``_CHECKPOINT_REGIME_TABLE`` above,
+``992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3``
+(local) and
+``f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758``
+(CI), are the values measured AFTER lint, on the tree this commit actually
+ships. Lesson recorded, not just fixed: a `_READER_MODULES` member's
+regime row must be measured only after `just check`'s formatting/lint
+step has run to a fixed point, never immediately after a hand rewrite.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -339,11 +382,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "518eefec27900d62d9469f36fac875b8f0b8c52bec3971c7a14f042a1c366e82",  # pragma: allowlist secret
+    ): "992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "1ee4c5384db632c55222f1a3b2d04d0f4e43e4c8252f2b4c795b9cc54a43f78c",  # pragma: allowlist secret
+    ): "f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

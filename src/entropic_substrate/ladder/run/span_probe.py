@@ -16,8 +16,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.__legacy.analysis.predictive_score_gain import ScoreBinding
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.core.probe.predictive_score_gain import ScoreBinding
 from entropic_substrate.core.probe.score_gain import (
     SpanGainSummary,
     SpanPredictiveScore,

@@ -57,8 +57,17 @@
     "entropic_substrate.data.ladder_source_order": {
       "target": "entropic_substrate.core.corpus.ladder_source_order",
       "landed": true
+    },
+    "entropic_substrate.analysis.predictive_probe": {
+      "target": "entropic_substrate.core.probe.predictive_probe",
+      "landed": true
+    },
+    "entropic_substrate.analysis.predictive_score_gain": {
+      "target": "entropic_substrate.core.probe.predictive_score_gain",
+      "landed": true,
+      "note": "FOR-1455: rewrites the six landed importers (composition/span_cli.py, ladder/run/{span_probe,span_probe_artifacts,span_diagnostics,worker_request}.py, core/probe/score_gain.py -- 7 edges, span_probe.py imports both targets) off their __legacy addresses in this same commit (rewrite-on-arrival). This is the ONE p6-core commit that moves the legacy_edge_budget: all six/seven are h-checkpoint-reader-v2 _READER_MODULES members, so both _CHECKPOINT_REGIME_TABLE rows are re-pinned with tools/regime_rows.py here (R-PIN); none is an h-source-reader-v3 member, so both _SOURCE_REGIME_TABLE rows are re-measured with the same tool and recorded UNCHANGED as the control."
     }
   },
-  "legacy_edge_budget": 42,
+  "legacy_edge_budget": 35,
   "note": "p6-core lands the science layer (core/{geometry,substrate,observation,corpus,probe,latent}, 27 leaves total). This commit: core/geometry only (gram, kappa, kappa_norm). legacy_edge_budget unchanged at 42 -- these three moves add and remove zero landed->__legacy edges (MEASURED: gram.py and kappa.py have no entropic_substrate imports; kappa_norm.py's one import moves from the old-prefix facade entropic_substrate.geometry.kappa to the sibling core.geometry.kappa in this same commit, never touching __legacy). The budget moves only at the probe commit (FOR-1455), the sole commit that rewrites a __legacy-addressed edge. RETRACTION (house rule 4, carried from v1/plan): the plan's per-destination counts ('geometry 5, substrate 6, observation 5') and v1's '33 remaining core.* modules' are WRONG (they counted movable PACKAGE KEYS, never shimmable); the correct counts are geometry 3, substrate 4, observation 4, corpus 3, probe 2, latent 11 = 27 (tools/mapping.json, MEASURED)."
 }

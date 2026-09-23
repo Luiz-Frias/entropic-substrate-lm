@@ -5,7 +5,7 @@ import statistics
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
-from entropic_substrate.__legacy.analysis.predictive_score_gain import ScoreBinding
+from entropic_substrate.core.probe.predictive_score_gain import ScoreBinding
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import torch
 
-from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
 from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import CorpusSplit, PreparedCorpus
 from entropic_substrate.core.sentence.numerics import UndefinedDirection

@@ -16,7 +16,7 @@ from zipfile import ZipFile
 
 import torch
 
-from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import (
     publish_d1_atomic_bytes,
