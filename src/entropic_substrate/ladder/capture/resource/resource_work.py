@@ -8,8 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, Money, execution_segment_id
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    Money,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, canonical_digest
 
 __all__ = [
     "CostReading",

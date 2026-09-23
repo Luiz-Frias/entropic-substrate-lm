@@ -16,6 +16,42 @@
     "entropic_substrate.evidence.d1_process_replay": {
       "target": "entropic_substrate.ladder.capture.ledger.d1_process_replay",
       "landed": true
+    },
+    "entropic_substrate.evidence.resource_billing": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_billing",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_billing_reconciliation": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_billing_reconciliation",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_ledger": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_ledger",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_ledger_codec": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_ledger_codec",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_meter_models": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_meter_models",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_meter_runtime": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_meter_runtime",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_meter_strategy": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_meter_strategy",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_work": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_work",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_work_codec": {
+      "target": "entropic_substrate.ladder.capture.resource.resource_work_codec",
+      "landed": true
     }
   },
   "legacy_edge_budget": 45

@@ -7,13 +7,13 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import cast
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     BillingUnit,
     EvidenceGap,
     Money,
     execution_segment_id,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 
 RESOURCE_BILLING_SCHEMA_VERSION = "resource-billing/v3"
 PROVIDER_BILLING_GAP_FIELDS = (

@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast, runtime_checkable
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     EvidenceGap,
     RunStartProvenance,
     execution_segment_id,
 )
-from entropic_substrate.evidence.resource_work import (
+from entropic_substrate.ladder.capture.resource.resource_work import (
     CostReading,
     ResourceWorkSnapshot,
     ScalarOrGap,

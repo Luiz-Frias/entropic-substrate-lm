@@ -8,20 +8,28 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Protocol, cast, runtime_checkable
 
-from entropic_substrate.evidence.resource_ledger import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    Money,
+    RunStartProvenance,
+)
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
     ResourceLedgerState,
     ResourceMeterSnapshot,
 )
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     PowerSample,
     ResourcePhase,
     continuous_rate_cost,
     integrate_power_samples,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, Money, RunStartProvenance
-from entropic_substrate.evidence.resource_work import CostReading, ReadingMethod, ScalarReading
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_work import (
+    CostReading,
+    ReadingMethod,
+    ScalarReading,
+)
 
 __all__ = [
     "D1ProductionResourceMeter",
