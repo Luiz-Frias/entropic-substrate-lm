@@ -6,7 +6,7 @@
   "ratified": true,
   "generated_by": "docs/plans/src-hexagonal-refactor.plan.md (approved 2026-09-17); sprint-preflight EXECUTIVE BRIEF @ 144a9b5 (refactor-survey-2026-09-17); conductor-ruled corrections applied 2026-09-18 (this manifest); RATIFIED by operator 2026-09-18T16:44:25Z (interview 2026-09-18: Q1 b+enumerate, Q2 b, Q3 engine_mode, Q4 all four on trunk, Q5 a, Q6 p13, Q7 a, Q8 b, Q9 debt, Q10 scripted, Q11 pc-ci diff gate, sealed docs never edited)",
   "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
-  "merge_topology": "Stacked mythwave/<id> branches on refactor/hexagonal-redesign, following the p0-p13(+p3b) sequence below. Rails p0-p3b and p4-p5 land strictly serially (mode:tracer, R-mode forbids parallelism). Wave w1 = {p6-core, p7-register-gate} parents on mythwave/p5-kernel. CORRECTED 2026-09-18 under the plan's own R-train rule (ascending footprint, plan:307-311): sequence LISTS p6 before p7 (the ratified serial-reading order) but the w1 ZIP order is p7 (20) then p6 (33), so sequence position and zip position are NOT the same thing inside a wave - the zip's integration TIP is mythwave/p6-core, the BOTTOM of that zip is mythwave/p7-register-gate. Wave w2 = {p8-capture, p9-run-lower, p11-analyze-review-file}, RULED 2026-09-18 (Q2 ruled (b)) to keep all three members, parented on mythwave/p6-core (w1's tip, not w1's bottom); zip order p11 (49), p9 (52), p8 (53), tip mythwave/p8-capture. p10-run-upper parents on mythwave/p8-capture (w2's tip), which under this lineage (p8 > p9 > p11 > p6 > p5 > ...) DOES contain p9's ladder/run/{values,transport} that p10 consumes - a parent at p11 (the zip's bottom) would provably exclude p9's work, which is the DEFECT 5 failure mode this correction closes. Lanes end CERTIFIED (publishMode:'defer'); the wave ZIP is the single serializing point: the conductor restacks ascending by footprint, RE-RUNS THE EXIT GATE AT EVERY RESTACKED TIP (plan:667-668, the per-tip re-certification the house vocabulary promises - never one gate at the bottom-most tip), then ONE just ship-it on the integrated tip, then gt submit --stack. p10, p12 and p13 are serial phases with their own just ship-it. K is the fan-out's MAXIMUM LANE WIDTH, not a per-wave cardinality (ruling O-3 sets the cap at 3 here, engine hard cap K_MAX=4): w1 launches 2 lanes, w2 launches 3, neither throws nor truncates under that cap. R-PARALLEL READING, stated because the schema wording is ambiguous and the literal reading voids both waves: the schema says a parallel_group needs 'zero conflict edges of either type', but every wave member carries a rails-before edge to a SERIAL phase (p6->p4, p8->p5, p9->p5/p10), so the literal reading admits no wave at all. Applied reading: zero conflict edges to ANOTHER MEMBER OF THE SAME GROUP - edges to serial phases are rail relations discharged by sequence position. Measured under it, w1 and w2 are both clean. The overlay provisioning, driving and zipping the lanes is `mass-patch-fanout.js` (`.claude/workflows/mass-patch-fanout.js`), the repo's ported copy of the helmsman engine; there is no bespoke refactor-wave-overlay.js (plan:599-606). The operator owns every merge and every DECISION ruling.",
+  "merge_topology": "Stacked mythwave/<id> branches on refactor/hexagonal-redesign, following the p0-p13(+p3b) sequence below. Rails p0-p3b and p4-p5 land strictly serially (mode:tracer, R-mode forbids parallelism). Wave w1 = {p6-core, p7-register-gate} parents on mythwave/p5-kernel. CORRECTED 2026-09-18 under the plan's own R-train rule (ascending footprint, plan:307-311): sequence LISTS p6 before p7 (the ratified serial-reading order) but the w1 ZIP order is p7 (20) then p6 (33), so sequence position and zip position are NOT the same thing inside a wave - the zip's integration TIP is mythwave/p6-core, the BOTTOM of that zip is mythwave/p7-register-gate. Wave w2 = {p8-capture, p9-run-lower, p11-analyze-review-file}, RULED 2026-09-18 (Q2 ruled (b)) to keep all three members, parented on mythwave/p6-core (w1's tip, not w1's bottom); zip order p11 (49), p9 (52), p8 (53), tip mythwave/p8-capture. p10-run-upper parents on mythwave/p8-capture (w2's tip), which under this lineage (p8 > p9 > p11 > p6 > p5 > ...) DOES contain p9's ladder/run/{values,transport} that p10 consumes - a parent at p11 (the zip's bottom) would provably exclude p9's work, which is the DEFECT 5 failure mode this correction closes. Lanes end CERTIFIED (publishMode:'defer'); the wave ZIP is the single serializing point: the conductor restacks ascending by footprint, RE-RUNS THE EXIT GATE AT EVERY RESTACKED TIP (plan:667-668, the per-tip re-certification the house vocabulary promises - never one gate at the bottom-most tip), then ONE just ship-it on the integrated tip, then gt submit --stack. p10, p12 and p13 are serial phases with their own just ship-it. K is the fan-out's MAXIMUM LANE WIDTH, not a per-wave cardinality (ruling O-3 sets the cap at 3 here, engine hard cap K_MAX=4): w1 launches 2 lanes, w2 launches 3, neither throws nor truncates under that cap. R-PARALLEL READING, stated because the schema wording is ambiguous and the literal reading voids both waves: the schema says a parallel_group needs 'zero conflict edges of either type', but every wave member carries a rails-before edge to a SERIAL phase (p6->p4, p8->p5, p9->p5/p10), so the literal reading admits no wave at all. Applied reading: zero conflict edges to ANOTHER MEMBER OF THE SAME GROUP - edges to serial phases are rail relations discharged by sequence position. Measured under it, w1 and w2 are both clean. The overlay provisioning, driving and zipping the lanes is `mass-patch-fanout.js` (`.claude/workflows/mass-patch-fanout.js`), the repo's ported copy of the helmsman engine; there is no bespoke refactor-wave-overlay.js (plan:599-606). The operator owns every merge and every DECISION ruling. AMENDED 2026-09-23 (D-WAVES r3): w1 collapses to serial p6 -> p7 (measured import dependency); w2's shape awaits the operator decision (import dependencies p9->p8 50, p11->p8 50, p8->p9 4, p11->p9 1).",
   "sequence": [
     "p0-contract-pin",
     "p1-anchors",
@@ -832,10 +832,9 @@
       "branch": "mythwave/p6-core",
       "parent": "mythwave/p5b-ladder-campaign",
       "brief": ".claude/workflows/briefs/p6-core.md",
-      "mode": "ratchet",
+      "mode": "tracer",
       "gates": {
-        "liveRequired": false,
-        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+        "liveRequired": true
       },
       "cost_class": "build",
       "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
@@ -846,26 +845,33 @@
         }
       ],
       "contracts_consumed": [
-        "kernel addresses (p4, p5)"
+        "kernel addresses (p4, p5): kernel.runtime.config, kernel.runtime.checkpoint, kernel.identity.d1_primitives -- MEASURED as the only landed addresses the 27 moved modules import",
+        "kernel/artifacts.py as extended by p5b, kernel/lifecycle.py",
+        "tools/gen_shims.py + landed-set fragments + tests/test_legacy_coupling.py equality and monotone arms (p3, p5)",
+        "tests/test_no_old_prefix.py (p3b)",
+        "tools/regime_rows.py + tests/test_regime_rows.py + tests/test_identity_epoch.py, ruling R-PIN (p5, p5b)",
+        "ladder/capture/ports/metric_sink.py (p3b), by INJECTION only",
+        "tools/lane_slices.py (conductor, p5 gap): the instrument whose D-WAVES r3 dependency measurement made this phase serial"
       ],
       "touch_set": [
+        "src/entropic_substrate/core/geometry/**",
+        "src/entropic_substrate/core/substrate/**",
+        "src/entropic_substrate/core/observation/**",
+        "src/entropic_substrate/core/corpus/**",
+        "src/entropic_substrate/core/probe/**",
+        "src/entropic_substrate/core/latent/**",
         "src/entropic_substrate/__legacy/analysis/predictive_probe.py",
         "src/entropic_substrate/__legacy/analysis/predictive_score_gain.py",
         "src/entropic_substrate/__legacy/data/batching.py",
         "src/entropic_substrate/__legacy/data/ladder_batching.py",
         "src/entropic_substrate/__legacy/data/ladder_source_order.py",
-        "src/entropic_substrate/__legacy/geometry.py",
         "src/entropic_substrate/__legacy/geometry/gram.py",
         "src/entropic_substrate/__legacy/geometry/kappa.py",
-        "src/entropic_substrate/__legacy/init.py",
         "src/entropic_substrate/__legacy/init/fisher.py",
-        "src/entropic_substrate/__legacy/layers.py",
         "src/entropic_substrate/__legacy/layers/kappa_norm.py",
-        "src/entropic_substrate/__legacy/models.py",
         "src/entropic_substrate/__legacy/models/backbone.py",
         "src/entropic_substrate/__legacy/models/blocks.py",
         "src/entropic_substrate/__legacy/models/field_encoder.py",
-        "src/entropic_substrate/__legacy/observation.py",
         "src/entropic_substrate/__legacy/observation/byte_codec.py",
         "src/entropic_substrate/__legacy/observation/contracts.py",
         "src/entropic_substrate/__legacy/observation/modules.py",
@@ -881,7 +887,6 @@
         "src/entropic_substrate/__legacy/predictive_state/target_updates.py",
         "src/entropic_substrate/__legacy/predictive_state/target_values.py",
         "src/entropic_substrate/__legacy/predictive_state/targets.py",
-        "src/entropic_substrate/__legacy/sentence_prediction.py",
         "src/entropic_substrate/analysis/predictive_probe.py",
         "src/entropic_substrate/analysis/predictive_probe.pyi",
         "src/entropic_substrate/analysis/predictive_score_gain.py",
@@ -894,34 +899,24 @@
         "src/entropic_substrate/data/ladder_batching.pyi",
         "src/entropic_substrate/data/ladder_source_order.py",
         "src/entropic_substrate/data/ladder_source_order.pyi",
-        "src/entropic_substrate/geometry.py",
-        "src/entropic_substrate/geometry.pyi",
         "src/entropic_substrate/geometry/gram.py",
         "src/entropic_substrate/geometry/gram.pyi",
         "src/entropic_substrate/geometry/kappa.py",
         "src/entropic_substrate/geometry/kappa.pyi",
-        "src/entropic_substrate/init.py",
-        "src/entropic_substrate/init.pyi",
         "src/entropic_substrate/init/fisher.py",
         "src/entropic_substrate/init/fisher.pyi",
         "src/entropic_substrate/ladder/run/span_diagnostics.py",
         "src/entropic_substrate/ladder/run/span_probe.py",
         "src/entropic_substrate/ladder/run/span_probe_artifacts.py",
         "src/entropic_substrate/ladder/run/worker_request.py",
-        "src/entropic_substrate/layers.py",
-        "src/entropic_substrate/layers.pyi",
         "src/entropic_substrate/layers/kappa_norm.py",
         "src/entropic_substrate/layers/kappa_norm.pyi",
-        "src/entropic_substrate/models.py",
-        "src/entropic_substrate/models.pyi",
         "src/entropic_substrate/models/backbone.py",
         "src/entropic_substrate/models/backbone.pyi",
         "src/entropic_substrate/models/blocks.py",
         "src/entropic_substrate/models/blocks.pyi",
         "src/entropic_substrate/models/field_encoder.py",
         "src/entropic_substrate/models/field_encoder.pyi",
-        "src/entropic_substrate/observation.py",
-        "src/entropic_substrate/observation.pyi",
         "src/entropic_substrate/observation/byte_codec.py",
         "src/entropic_substrate/observation/byte_codec.pyi",
         "src/entropic_substrate/observation/contracts.py",
@@ -952,14 +947,15 @@
         "src/entropic_substrate/predictive_state/target_values.pyi",
         "src/entropic_substrate/predictive_state/targets.py",
         "src/entropic_substrate/predictive_state/targets.pyi",
-        "src/entropic_substrate/sentence_prediction.py",
-        "src/entropic_substrate/sentence_prediction.pyi",
         ".claude/workflows/landed-set/p6-core.json",
         "tests/test_identity_epoch.py",
         "tools/regime_rows.py",
         "tests/test_regime_rows.py",
         "docs/identity/read-old-table.md",
-        ".secrets.baseline"
+        ".secrets.baseline",
+        "tests/test_kappa_autocast_island.py",
+        "tests/test_core_cold_import.py",
+        "tests/test_shim_layer.py"
       ],
       "conflict_edges": [
         {
@@ -969,9 +965,9 @@
           "resolution": "hub-owner"
         }
       ],
-      "parallel_group": "w1",
+      "parallel_group": null,
       "status": "queued",
-      "notes": "The science layer: geometry 5, substrate 6, observation 5, corpus 3, probe 2, latent 11 (metric+dynamics already landed in p4). Zero algorithm or parameter change — operator-ruled zone; retracts the layers/kappa_norm.py dead-end filing in the moving commit (UnitNorm is live in build_norm). Guard-teeth: add one mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets import to any of the 54 core modules and the forbidden contract goes RED; numerics tests stay byte-identical. Under EAGER rewriting this phase would share 8 importer files with p7 (core.latent × ladder.register) — the wave is legal only because rewrite-on-arrival makes the touch sets disjoint (the survey's phase-decomposition report (retained outside the repo)). TOUCH SET DERIVED 2026-09-22 by tools/lane_slices.py at the p5 gap (slice = targets + landed importers + shim pairs; 105 files; the earlier `*_modules/**` globs were phantoms). The five zip_owned_regenerable files are listed for completeness and are excluded from the zip's overlap check.",
+      "notes": "v2 brief .claude/workflows/briefs/p6-core.v2.md. SERIAL under D-WAVES r3 (2026-09-23): tools/lane_slices.py measured p7 -> p6 import dependencies (2, via the observation facade), and a parallel lane has no valid address for such an import in its own worktree -- so liveRequired:true, just ship-it runs inside the lifecycle (FOR-1541 branch-only fallback as for p5/p5b), no lane worktree, no zip, no CERTIFIED terminal state. TARGETS = 27 (MEASURED 2026-09-23 at 6d35ddd): mapping rows with dest under entropic_substrate.core whose legacy source is a leaf .py under __legacy/ and which no fragment marks landed -- geometry 3, substrate 4, observation 4, corpus 3, probe 2, latent 11. RETRACTION (house rule 4): the earlier 33 counted six PACKAGE KEYS (geometry, init, layers, models, observation, sentence_prediction); tools/gen_shims.py::merge_fragments raises ManifestError on a fragment naming one, and sentence_prediction is already landed at core/sentence by p4. 18 phantom touch_set paths removed (six __legacy/<pkg>.py and twelve old-path <pkg>.py/.pyi -- package keys rendered as file paths, none exists on disk); the six core/<dest>/** destination globs ADDED (p4/p5 style: a git mv diff names the new path, so the ACCEPTANCE subset check fails without them). IMPORTERS = 6 files / 7 import edges (span_probe.py imports two targets); all six are h-checkpoint-reader-v2 members (the earlier audit said five, core.probe.score_gain is the sixth) and NONE is an h-source-reader-v3 member, so R-PIN re-pins both _CHECKPOINT_REGIME_TABLE rows and re-measures both _SOURCE_REGIME_TABLE rows unchanged as the control. Budget: the strictly-less arm is RETRACTED by the conductor; the binding arm is the tests/test_legacy_coupling.py equality arm against a tools/import_graph.py measurement. Zero print( sites in the 27 sources, so observability has no routing work here. Destination package __init__.py is DOCSTRING-ONLY (p4 precedent, core/sentence/__init__.py). OPEN: tests/test_shim_layer.py hard-codes all seven facade children (batching, kappa, fisher, kappa_norm, backbone, byte_codec, future_law) and their __legacy addresses -- every one is a p6 target, so this existing test collides with Q1 ruled (b). DECISION-NEEDED before implement; see p6-notes.md Q-1.",
       "engine_mode": "arch"
     },
     {
@@ -986,7 +982,7 @@
         "FOR-1463"
       ],
       "branch": "mythwave/p7-register-gate",
-      "parent": "mythwave/p5b-ladder-campaign",
+      "parent": "mythwave/p6-core",
       "brief": ".claude/workflows/briefs/p7-register-gate.md",
       "mode": "ratchet",
       "gates": {
@@ -1073,9 +1069,9 @@
         ".secrets.baseline"
       ],
       "conflict_edges": [],
-      "parallel_group": "w1",
+      "parallel_group": null,
       "status": "queued",
-      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied. TOUCH SET DERIVED 2026-09-22 by tools/lane_slices.py at the p5 gap (slice = targets + landed importers + shim pairs; 60 files; the earlier `*_modules/**` globs were phantoms). The five zip_owned_regenerable files are listed for completeness and are excluded from the zip's overlap check.",
+      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied. TOUCH SET DERIVED 2026-09-22 by tools/lane_slices.py at the p5 gap (slice = targets + landed importers + shim pairs; 60 files; the earlier `*_modules/**` globs were phantoms). The five zip_owned_regenerable files are listed for completeness and are excluded from the zip's overlap check. SERIAL 2026-09-23 (D-WAVES r3): p7's moved modules import the observation facade whose leaves p6 moves; parent re-set to mythwave/p6-core.",
       "engine_mode": "arch"
     },
     {
