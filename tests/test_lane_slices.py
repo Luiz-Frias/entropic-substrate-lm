@@ -224,3 +224,62 @@ def test_a_package_key_is_refused_as_a_lane_target(tmp_path: Path) -> None:
     (src / "entropic_substrate" / "__legacy" / "pkg").mkdir(parents=True)
     (src / "entropic_substrate" / "__legacy" / "pkg" / "__init__.py").write_text('"""facade"""\n')
     assert lane_slices.main([str(src), str(mapping), "p6=entropic_substrate.pkg"]) == 2
+
+
+@pytest.mark.unit
+def test_rung_owned_shared_importer_leaves_every_slice(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D-WAVES r3 consequence: a landed importer that carries explicit __legacy edges
+    to TWO lanes' targets is rewritten by neither lane (each lane's generator emits a
+    forwarder for it in that lane's worktree); the post-zip reconciliation rung owns
+    it. Declared, not inferred: the file leaves every slice and the report names it."""
+    src, mapping = _tree(
+        tmp_path,
+        {
+            "entropic_substrate/ladder/gate/both.py": [
+                "from entropic_substrate.__legacy.alpha import x",
+                "from entropic_substrate.__legacy.beta import y",
+            ]
+        },
+    )
+    shared = "entropic_substrate/ladder/gate/both.py"
+    rc = lane_slices.main(
+        [str(src), str(mapping), f"p8={_A}", f"p11={_B}", "--rung-owned", shared, "--json"]
+    )
+    doc = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert doc["overlaps"] == []
+    assert shared not in doc["slices"]["p8"]
+    assert shared not in doc["slices"]["p11"]
+    assert doc["rung_owned"] == [{"file": shared, "lanes": ["p11", "p8"]}]
+
+
+@pytest.mark.unit
+def test_rung_owned_file_that_no_two_lanes_share_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Teeth: --rung-owned is not an ignore list. A file only ONE lane's slice carries
+    (or none) is a malformed declaration, exit 2, named on stderr."""
+    src, mapping = _tree(
+        tmp_path,
+        {
+            "entropic_substrate/ladder/run/only_a.py": [
+                "from entropic_substrate.__legacy.alpha import x"
+            ],
+        },
+    )
+    rc = lane_slices.main(
+        [
+            str(src),
+            str(mapping),
+            f"p8={_A}",
+            f"p11={_B}",
+            "--rung-owned",
+            "entropic_substrate/ladder/run/only_a.py",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "rung-owned" in err
+    assert "entropic_substrate/ladder/run/only_a.py" in err
