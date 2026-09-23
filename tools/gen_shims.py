@@ -1378,6 +1378,65 @@ def verify_shim_source(source: str) -> tuple[bool, str]:
     )
 
 
+def parse_shim_target(source: str) -> str | None:
+    """The dotted name a shim's ``import <x> as _target`` statement ACTUALLY
+    imports -- the one fact ``verify_shim_source`` deliberately does not
+    check. That function is a SHAPE predicate: statement 2 only has to be
+    *an* ``import <anything> as _target``, so a shim re-pointed at a
+    different but syntactically valid address passes it (MEASURED 2026-09-23,
+    FOR-1548: a leaf shim hand-edited onto its own ``__legacy`` address
+    verified GREEN -- shape intact, manifest untouched, and the ``.pyi``
+    sibling untouched because stub verification re-derives from the
+    MANIFEST's target, never from the shim's). Returns None when no such
+    statement exists; that case belongs to the shape check, not here."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Import)
+            and len(node.names) == 1
+            and node.names[0].asname == "_target"
+        ):
+            return node.names[0].name
+    return None
+
+
+def find_shim_target_mismatches(
+    manifest_entries: list[dict], expected: dict[str, str], out_dir: Path
+) -> list[tuple[Path, str]]:
+    """(path, reason) for every emitted file whose on-disk rebind names
+    something other than the target FRESHLY RE-DERIVED from the fragments +
+    mapping.json (FOR-1548). ``expected`` is the same {relpath: target} map
+    ``find_manifest_drift`` consumes -- ``compute_expected_shim_map`` for the
+    ``shims`` list, ``compute_expected_forwarder_map`` for ``forwarders``
+    (a forwarder's expected target is the LANDED address, which is exactly
+    why it exists) -- so the manifest is never the authority on either side
+    of this comparison.
+
+    Two states are skipped because another check already owns them, by name:
+    a path the fresh resolution does not expect (``find_manifest_drift``) and
+    a file missing from disk (``verify_shims_from_manifest``). Reporting them
+    twice would name one defect under two explanations."""
+    failures: list[tuple[Path, str]] = []
+    for entry in manifest_entries:
+        relpath = entry["path"]
+        if relpath not in expected:
+            continue
+        p = out_dir / relpath
+        if not p.is_file():
+            continue
+        actual = parse_shim_target(p.read_text())
+        if actual == expected[relpath]:
+            continue
+        found = "no `import <x> as _target` statement" if actual is None else f"imports {actual!r}"
+        failures.append(
+            (p, f"{found} but the freshly resolved target is {expected[relpath]!r}"),
+        )
+    return failures
+
+
 def load_emitted_manifest(manifest_path: Path) -> dict:
     if not manifest_path.is_file():
         raise ManifestError(
@@ -1724,6 +1783,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             failures = verify_shims_from_manifest(doc, args.out_dir)
             failures += verify_shims_from_manifest(doc, args.out_dir, key="forwarders")
+            # FOR-1548: the SHAPE checks above accept `import <anything> as
+            # _target`, so the dotted name each file actually imports is
+            # compared here against the freshly resolved target -- the same
+            # {relpath: target} maps the drift check used, never the manifest.
+            failures += find_shim_target_mismatches(doc.get("shims", []), expected, args.out_dir)
+            failures += find_shim_target_mismatches(
+                doc.get("forwarders", []), expected_forwarders, args.out_dir
+            )
             failures += verify_stubs_from_manifest(doc, args.out_dir, str(args.fragments_dir))
             stale_pending = find_pending_present(resolved, args.out_dir)
             if stale_pending:
@@ -1739,7 +1806,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if failures:
             print(
-                f"FATAL: {len(failures)} shim/stub file(s) are not in the exact required form:",
+                f"FATAL: {len(failures)} shim/stub file(s) are not in the exact required "
+                "form, do not import the freshly resolved target, or do not re-derive:",
                 file=sys.stderr,
             )
             for p, reason in failures:
@@ -1748,7 +1816,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"verified: fragments are disjoint, no package key was named, merged manifest is "
             f"landed/target-consistent, the manifest matches the freshly resolved module set, "
-            f"every shim and __legacy forwarder in {manifest_path} is exact-form, "
+            f"every shim and __legacy forwarder in {manifest_path} is exact-form and "
+            f"imports the target the fresh resolution expects, "
             f"every stub re-derives byte-for-byte "
             f"from its target's AST, and every target has source on disk"
         )

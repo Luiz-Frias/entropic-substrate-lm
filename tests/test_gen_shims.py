@@ -2618,3 +2618,91 @@ def test_package_form_import_of_a_legacy_submodule_makes_the_forwarder_appear(
     assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {
         "entropic_substrate/__legacy/moved_thing.py": "entropic_substrate.core.geometry.moved_thing"
     }
+
+
+# ---------------------------------------------------------------------------
+# RED-first: --VERIFY CHECKS EACH SHIM'S ACTUAL TARGET (FOR-1548). Until this
+# rung, `verify_shim_source` was a pure SHAPE check -- it accepts `import
+# <anything> as _target` -- and `find_manifest_drift` compared the MANIFEST's
+# recorded target against the fresh resolution, never the dotted name the file
+# on disk actually imports. A shim hand-edited to a different, syntactically
+# valid address therefore verified GREEN: shape intact, manifest untouched,
+# stub (.pyi) untouched because it is re-derived from the manifest's target.
+# Both arms below are paired with the untouched-tree GREEN control that the
+# neighbouring cases use (house rule 5).
+# ---------------------------------------------------------------------------
+
+
+def test_verify_fails_loud_when_a_leaf_shim_imports_the_wrong_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A leaf shim re-pointed at the `__legacy` address it was moved off:
+    still exact-form, still listed in an untouched manifest, so only a
+    comparison against the freshly resolved target can catch it. The failure
+    must name the FILE, the ACTUAL imported name and the EXPECTED one."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    argv = _verify_argv(mapping_path, frags_dir, out_dir, manifest_path)
+    assert gen_shims.main(argv) == 0  # GREEN control arm, before the mutation
+
+    shim = out_dir / "entropic_substrate" / "moved_thing.py"
+    text = shim.read_text()
+    landed = "import entropic_substrate.core.geometry.moved_thing as _target"
+    wrong = "import entropic_substrate.__legacy.moved_thing as _target"
+    assert landed in text
+    shim.write_text(text.replace(landed, wrong))
+    # The shape check still passes -- that is precisely the gap FOR-1548 closes.
+    assert gen_shims.verify_shim_source(shim.read_text())[0] is True
+    assert json.loads(manifest_path.read_text())["shims"] == [
+        {
+            "path": "entropic_substrate/moved_thing.py",
+            "target": "entropic_substrate.core.geometry.moved_thing",
+            "entrypoint": False,
+        }
+    ]  # manifest untouched: nothing else in --verify has anything to disagree with
+
+    assert gen_shims.main(argv) == 1
+    err = capsys.readouterr().err
+    assert "entropic_substrate/moved_thing.py" in err
+    assert "entropic_substrate.__legacy.moved_thing" in err
+    assert "entropic_substrate.core.geometry.moved_thing" in err
+
+
+def test_verify_fails_loud_when_a_forwarder_imports_the_wrong_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Same gap on the FORWARDER half of the typed pair: a forwarder's
+    expected target is the LANDED address (it exists to keep the vacated
+    `__legacy` name resolving to the moved module), so one pointed at a
+    sibling address silently forwards to the wrong module."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    argv = _verify_argv(mapping_path, frags_dir, out_dir, manifest_path)
+    assert gen_shims.main(argv) == 0  # GREEN control arm, before the mutation
+
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    text = fwd.read_text()
+    landed = "import entropic_substrate.core.geometry.moved_thing as _target"
+    wrong = "import entropic_substrate.core.geometry.other_thing as _target"
+    assert landed in text
+    fwd.write_text(text.replace(landed, wrong))
+    assert gen_shims.verify_shim_source(fwd.read_text())[0] is True
+
+    assert gen_shims.main(argv) == 1
+    err = capsys.readouterr().err
+    assert "entropic_substrate/__legacy/moved_thing.py" in err
+    assert "entropic_substrate.core.geometry.other_thing" in err
+    assert "entropic_substrate.core.geometry.moved_thing" in err
+
+
+def test_verify_stays_green_on_an_untouched_generated_tree_GREEN_control(tmp_path: Path) -> None:
+    """The control the two arms above need to mean anything: every emitted
+    shim, forwarder and stub left exactly as generate() wrote it verifies
+    green, so the new comparison cannot be passing by rejecting everything."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    shim = out_dir / "entropic_substrate" / "moved_thing.py"
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    assert (
+        gen_shims.parse_shim_target(shim.read_text())
+        == gen_shims.parse_shim_target(fwd.read_text())
+        == "entropic_substrate.core.geometry.moved_thing"
+    )
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 0
