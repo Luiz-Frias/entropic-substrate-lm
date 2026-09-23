@@ -5,27 +5,32 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.analysis.ladder_analysis import LadderAnalysisInputs, ScientificRunReader
-from entropic_substrate.analysis.ladder_filing import file_ladder_verdict
-from entropic_substrate.d1_predecessor_loader import verified_git_bundle
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.__legacy.analysis.ladder_analysis import (
+    LadderAnalysisInputs,
+    ScientificRunReader,
+)
+from entropic_substrate.__legacy.analysis.ladder_filing import file_ladder_verdict
+from entropic_substrate.__legacy.d1_predecessor_loader import verified_git_bundle
+from entropic_substrate.__legacy.evidence.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1ArtifactRole,
     D1DvcBinding,
     D1DvcBindingState,
 )
-from entropic_substrate.evidence.d1_capture_bundle import D1DvcCaptureHandoff
-from entropic_substrate.evidence.ladder_campaign import (
+from entropic_substrate.__legacy.evidence.d1_capture_bundle import D1DvcCaptureHandoff
+from entropic_substrate.__legacy.evidence.ladder_campaign import (
     FiledLadderGate,
     actor_from_mapping,
+    read_campaign_design,
+    verify_ladder_registration,
+)
+from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     object_fields,
     read_bound_artifact,
-    read_campaign_design,
     read_json_artifact,
-    verify_ladder_registration,
 )
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ArtifactIdentity,
     LifecycleEvent,
     LifecycleEventKind,

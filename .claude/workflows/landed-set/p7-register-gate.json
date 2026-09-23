@@ -66,8 +66,22 @@
     "entropic_substrate.experiments.ladder": {
       "target": "entropic_substrate.ladder.register.ladder",
       "landed": true
+    },
+    "entropic_substrate.evidence.d1_family_adapter": {
+      "target": "entropic_substrate.ladder.gate.d1_family_adapter",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_verdict": {
+      "target": "entropic_substrate.ladder.gate.d1_verdict",
+      "landed": true,
+      "note": "compatibility facade; four of its six import lines are now explicit __legacy edges (d1_filing, d1_filing_graph, d1_gate, d1_validator remain quarantined -- p8/p11/p12 own them)."
+    },
+    "entropic_substrate.evidence.ladder_predecessor": {
+      "target": "entropic_substrate.ladder.gate.ladder_predecessor",
+      "landed": true,
+      "note": "line 18's entropic_substrate.evidence.ladder_campaign import (9 names) SPLITS on arrival: artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact now come from kernel.artifacts (p5b moved them there, identity-preserving re-export); FiledLadderGate, actor_from_mapping, read_campaign_design, verify_ladder_registration stay on the quarantined __legacy.evidence.ladder_campaign gate half (landed:false in p5b-ladder-campaign.json). Five further lines (analysis.ladder_analysis, analysis.ladder_filing, d1_predecessor_loader, evidence.d1_capture_artifacts, evidence.d1_capture_bundle) also become explicit __legacy edges; one line (evidence.lifecycle) becomes kernel.lifecycle."
     }
   },
-  "legacy_edge_budget": 35,
-  "note": "PARTIAL (register only, first of two module-landing commits -- architect constraint 1, design gate 2026-09-23). 16 ladder.register.* leaves land here; ladder.gate's 3 leaves follow in a later commit on this same branch, which also raises this fragment's legacy_edge_budget. MEASURED with tools/import_graph.py at this commit: 35, unchanged from the parent tip (mythwave/p6-core, 861d015) -- register adds and removes zero landed->__legacy edges (all 30 intra-set + 31 landed-address import lines this commit rewrites resolve inside the landed layers; zero explicit __legacy lines). d1_family/d1_runs SCC lands together per the ruled granularity rule; the plan's claimed collection-time ImportError RED arm does NOT follow from a module-init-acyclic pair and is not claimed (see PR body for the retraction)."
+  "legacy_edge_budget": 45,
+  "note": "COMPLETE (both module-landing commits). 16 ladder.register.* leaves plus 3 ladder.gate.* leaves. legacy_edge_budget MEASURED with tools/import_graph.py at this (gate) commit: 45 -- unchanged from register's 35, plus 10 new distinct (landed module, __legacy module) pairs this commit's 3 gate leaves add (4 from d1_verdict.py, 6 from ladder_predecessor.py, one of which is the line-18 split's legacy half). Direction is INCREASING, as predicted (the BUDGET-MONOTONE strict-decrease arm is retracted, landed 795f8e6 -- p7 legitimately imports still-quarantined modules on arrival). Zero of the 51 checkpoint-reader members and zero of the 7 source-reader members are touched by either commit; no R-PIN is owed (control: git diff mythwave/p6-core -- tests/test_identity_epoch.py is empty)."
 }
