@@ -134,6 +134,20 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
     assert _MARKER not in result.stdout
 
 
+def test_cold_import_guard_rejects_an_unmoved_address() -> None:
+    """RED arm, committed (house rule 5, both arms): ``_run_cold_import``
+    itself must fail closed for an address nothing has landed at, not just
+    succeed for addresses this phase moved. The module docstring above
+    already records that this arm was exhibited manually pre-commit --
+    this test is that exhibition, committed, using the same helper the
+    GREEN parametrization above calls, so a helper that silently swallowed
+    an import error would be caught here as well as there."""
+    result = _run_cold_import("entropic_substrate.ladder.capture.__definitely_not_landed__")
+    assert result.returncode != 0
+    assert "ModuleNotFoundError" in result.stderr
+    assert _MARKER not in result.stdout
+
+
 def test_p8_landed_targets_is_nonempty_once_fragment_exists() -> None:
     """Once ``p8-capture.json`` exists (commit 2 onward), an EMPTY collected
     set is a fragments regression, not a vacuous pass, and FAILS rather than
