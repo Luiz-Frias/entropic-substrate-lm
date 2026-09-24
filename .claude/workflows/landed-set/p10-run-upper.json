@@ -16,8 +16,24 @@
     "entropic_substrate.d1_predecessor_loader": {
       "target": "entropic_substrate.ladder.run.worker.d1_predecessor_loader",
       "landed": true
+    },
+    "entropic_substrate.d1_billing_finalizer": {
+      "target": "entropic_substrate.ladder.run.closure.d1_billing_finalizer",
+      "landed": true
+    },
+    "entropic_substrate.d1_finalized_cell_custody": {
+      "target": "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody",
+      "landed": true
+    },
+    "entropic_substrate.d1_finalized_cell_custody_repository": {
+      "target": "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository",
+      "landed": true
+    },
+    "entropic_substrate.d1_runpod_billing_parser": {
+      "target": "entropic_substrate.ladder.run.closure.d1_runpod_billing_parser",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 13,
-  "note": "MEASURED 2026-09-24, commit 1 of 4 (tests/test_legacy_coupling.py's own count_landed_to_legacy_edges(import_graph.build_graph(...)) on the exact post-ruff commit-1 tree): 13, down from the parent baseline 32 (12f9f4a/e5aa9d3) minus the 21 d1_operator_values(19)+d1_predecessor_loader(2) importer-line edges removed by rewrite-on-arrival, plus 2 new landed->legacy edges introduced by this commit: (a) the worker-split leaf's function-scoped back-import of _FACTORY_DIGEST/_PROVIDER from entropic_substrate.__legacy.d_ladder_worker_runtime (SPLIT-CYCLE ruling, static import inside worker_resource_registration's body, visible to tools/import_graph.py's AST walk); (b) d1_predecessor_loader, now landed at entropic_substrate.ladder.run.worker.d1_predecessor_loader, keeps 3 of its 7 evidence.ladder_campaign names (FiledLadderGate, actor_from_mapping, gate_from_d1_filing) imported from entropic_substrate.__legacy.evidence.ladder_campaign per the MOVED-MODULE IMPORT REWRITE SPLIT CASE (a) -- a 4th landed importer of that still-quarantined module (GAP 1, unresolved owner), noted here for that gap's future owner; the other 4 names (artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact) resolve to the landed entropic_substrate.kernel.artifacts and do not count. 32 - 21 + 1 + 1 = 13, independently MEASURED not arithmetic-typed. split_consumption: worker_resource_registration (from entropic_substrate.__legacy.d_ladder_worker_runtime, lines 50-54 at e5aa9d3) landed alone as entropic_substrate.ladder.run.worker.resource_registration; the remainder (build_worker_factory, verify_worker_source) stays action:split, landed:false, not a p10 fragment row."
+  "legacy_edge_budget": 12,
+  "note": "MEASURED 2026-09-24, commit 1 of 4 (tests/test_legacy_coupling.py's own count_landed_to_legacy_edges(import_graph.build_graph(...)) on the exact post-ruff commit-1 tree): 13, down from the parent baseline 32 (12f9f4a/e5aa9d3) minus the 21 d1_operator_values(19)+d1_predecessor_loader(2) importer-line edges removed by rewrite-on-arrival, plus 2 new landed->legacy edges introduced by this commit: (a) the worker-split leaf's function-scoped back-import of _FACTORY_DIGEST/_PROVIDER from entropic_substrate.__legacy.d_ladder_worker_runtime (SPLIT-CYCLE ruling, static import inside worker_resource_registration's body, visible to tools/import_graph.py's AST walk); (b) d1_predecessor_loader, now landed at entropic_substrate.ladder.run.worker.d1_predecessor_loader, keeps 3 of its 7 evidence.ladder_campaign names (FiledLadderGate, actor_from_mapping, gate_from_d1_filing) imported from entropic_substrate.__legacy.evidence.ladder_campaign per the MOVED-MODULE IMPORT REWRITE SPLIT CASE (a) -- a 4th landed importer of that still-quarantined module (GAP 1, unresolved owner), noted here for that gap's future owner; the other 4 names (artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact) resolve to the landed entropic_substrate.kernel.artifacts and do not count. 32 - 21 + 1 + 1 = 13, independently MEASURED not arithmetic-typed. split_consumption: worker_resource_registration (from entropic_substrate.__legacy.d_ladder_worker_runtime, lines 50-54 at e5aa9d3) landed alone as entropic_substrate.ladder.run.worker.resource_registration; the remainder (build_worker_factory, verify_worker_source) stays action:split, landed:false, not a p10 fragment row. COMMIT 2 (2026-09-24, closure minus the peeled exception: d1_billing_finalizer, d1_finalized_cell_custody, d1_finalized_cell_custody_repository, d1_runpod_billing_parser -- FOR-1485 first of two commits): legacy_edge_budget MEASURED 12 (tests/test_legacy_coupling.py's own classifier on the post-ruff commit-2 tree), down from commit 1's 13 by exactly the 1 d1_runpod_billing_parser importer line (d1_runpod_adapter.py) rewritten this commit. No R-PIN member among these 4 modules or this 1 importer (none is one of the 51 _READER_MODULES); _CHECKPOINT_REGIME_TABLE unchanged this commit, per R-PIN ORDER AND CONTROL."
 }
