@@ -142,9 +142,13 @@ def test_cold_import_guard_rejects_an_unmoved_address() -> None:
     this test is that exhibition, committed, using the same helper the
     GREEN parametrization above calls, so a helper that silently swallowed
     an import error would be caught here as well as there."""
-    result = _run_cold_import("entropic_substrate.ladder.capture.__definitely_not_landed__")
+    unmoved = "entropic_substrate.ladder.capture.__definitely_not_landed__"
+    result = _run_cold_import(unmoved)
     assert result.returncode != 0
-    assert "ModuleNotFoundError" in result.stderr
+    assert f"ModuleNotFoundError: No module named {unmoved!r}" in result.stderr, (
+        "expected the REQUESTED address to be the reported missing module, "
+        f"not an unrelated import failure; stderr={result.stderr!r}"
+    )
     assert _MARKER not in result.stdout
 
 
