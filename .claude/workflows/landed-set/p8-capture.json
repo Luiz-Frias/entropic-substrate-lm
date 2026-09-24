@@ -210,7 +210,7 @@
       "landed": true
     }
   },
-  "legacy_edge_budget": 45,
+  "legacy_edge_budget": 38,
   "print_allowlist": [
     "entropic_substrate.ladder.capture.reader.telemetry"
   ]

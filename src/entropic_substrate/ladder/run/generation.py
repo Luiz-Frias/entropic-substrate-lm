@@ -11,7 +11,6 @@ from zipfile import ZipFile
 
 import torch
 
-from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import (
@@ -32,6 +31,7 @@ from entropic_substrate.kernel.artifacts import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress
