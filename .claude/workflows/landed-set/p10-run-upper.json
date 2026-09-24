@@ -1,0 +1,23 @@
+{
+  "phase": "p10-run-upper",
+  "modules": {
+    "entropic_substrate.d1_operator_values": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_values",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_checkpoint": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint",
+      "landed": true
+    },
+    "entropic_substrate.d1_billing_finalization_values": {
+      "target": "entropic_substrate.ladder.run.closure.d1_billing_finalization_values",
+      "landed": true
+    },
+    "entropic_substrate.d1_predecessor_loader": {
+      "target": "entropic_substrate.ladder.run.worker.d1_predecessor_loader",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 13,
+  "note": "MEASURED 2026-09-24, commit 1 of 4 (tests/test_legacy_coupling.py's own count_landed_to_legacy_edges(import_graph.build_graph(...)) on the exact post-ruff commit-1 tree): 13, down from the parent baseline 32 (12f9f4a/e5aa9d3) minus the 21 d1_operator_values(19)+d1_predecessor_loader(2) importer-line edges removed by rewrite-on-arrival, plus 2 new landed->legacy edges introduced by this commit: (a) the worker-split leaf's function-scoped back-import of _FACTORY_DIGEST/_PROVIDER from entropic_substrate.__legacy.d_ladder_worker_runtime (SPLIT-CYCLE ruling, static import inside worker_resource_registration's body, visible to tools/import_graph.py's AST walk); (b) d1_predecessor_loader, now landed at entropic_substrate.ladder.run.worker.d1_predecessor_loader, keeps 3 of its 7 evidence.ladder_campaign names (FiledLadderGate, actor_from_mapping, gate_from_d1_filing) imported from entropic_substrate.__legacy.evidence.ladder_campaign per the MOVED-MODULE IMPORT REWRITE SPLIT CASE (a) -- a 4th landed importer of that still-quarantined module (GAP 1, unresolved owner), noted here for that gap's future owner; the other 4 names (artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact) resolve to the landed entropic_substrate.kernel.artifacts and do not count. 32 - 21 + 1 + 1 = 13, independently MEASURED not arithmetic-typed. split_consumption: worker_resource_registration (from entropic_substrate.__legacy.d_ladder_worker_runtime, lines 50-54 at e5aa9d3) landed alone as entropic_substrate.ladder.run.worker.resource_registration; the remainder (build_worker_factory, verify_worker_source) stays action:split, landed:false, not a p10 fragment row."
+}

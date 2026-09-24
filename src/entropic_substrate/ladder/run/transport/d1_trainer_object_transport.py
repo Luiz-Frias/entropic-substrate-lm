@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
 )
 from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     D1TrainerMailboxObjectIdentity,

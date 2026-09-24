@@ -9,11 +9,6 @@ from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.d1_operator_values import (
-    D1OperatorLaunchIntent,
-    D1PodPlacement,
-    require_d1_pod_id,
-)
 from entropic_substrate.__legacy.d1_runpod_billing_parser import (
     RunpodBillingSchemaError,
     parse_runpodctl_billing_observation,
@@ -27,6 +22,11 @@ from entropic_substrate.ladder.capture.resource.resource_billing import (
     ProviderBillingObservation,
     ProviderBillingPending,
     TerminalProviderBillingEvidence,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
+    D1OperatorLaunchIntent,
+    D1PodPlacement,
+    require_d1_pod_id,
 )
 from entropic_substrate.ladder.run.provider.d1_command_runner import (
     BoundedSubprocessD1CommandRunner,

@@ -10,9 +10,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
-from entropic_substrate.__legacy.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
 from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 
 __all__ = [
     "D1TrainerAdapterPhase",

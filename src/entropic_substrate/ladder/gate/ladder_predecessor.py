@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.__legacy.d1_predecessor_loader import verified_git_bundle
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     FiledLadderGate,
     actor_from_mapping,
@@ -37,6 +36,7 @@ from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
 )
 from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1DvcCaptureHandoff
 from entropic_substrate.ladder.file.ladder_filing import file_ladder_verdict
+from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
 
 
 def _dvc_artifact(value: object) -> D1ArtifactIdentity:

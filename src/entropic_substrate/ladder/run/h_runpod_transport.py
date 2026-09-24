@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
+from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_probe_launch import (
     RUNPODCTL_SHA256,
     RUNPODCTL_VERSION,

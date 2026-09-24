@@ -11,10 +11,6 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.d1_operator_values import (
-    D1OperatorLaunchIntent,
-    D1RuntimeObservation,
-)
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
@@ -39,6 +35,10 @@ from entropic_substrate.ladder.register.d1_plan import (
     parse_d1_confirmatory_plan,
     parse_d1_pilot_plan,
     parse_d1_smoke_plan,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
+    D1OperatorLaunchIntent,
+    D1RuntimeObservation,
 )
 from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations
 from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations

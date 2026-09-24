@@ -21,10 +21,7 @@ from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObje
 from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
 from entropic_substrate.d_ladder_remote_request import RemoteLadderRequest
 from entropic_substrate.evidence.resource_meter_runtime import build_torch_cuda_adapters
-from entropic_substrate.evidence.resource_provenance import (
-    ResourceActivationMode,
-    ResourceActivationRegistration,
-)
+from entropic_substrate.evidence.resource_provenance import ResourceActivationRegistration
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.ladder.run.worker.hardware import (
     SOURCE_PREFIXES as SOURCE_PREFIXES,
@@ -33,6 +30,9 @@ from entropic_substrate.ladder.run.worker.hardware import (
     measure_hardware as measure_hardware,
 )
 from entropic_substrate.ladder.run.worker.hardware import verify_source_tree
+from entropic_substrate.ladder.run.worker.resource_registration import (
+    worker_resource_registration as worker_resource_registration,
+)
 from entropic_substrate.paths import source_root
 
 _PROVIDER = "torch-cuda-events-and-peak-memory-v1"
@@ -45,13 +45,6 @@ _FACTORY_DIGEST = canonical_digest(
         "power": None,
     }
 )
-
-
-def worker_resource_registration() -> ResourceActivationRegistration:
-    """This tracer measures CUDA duration/memory; FLOPs/power remain explicit gaps."""
-    return ResourceActivationRegistration(
-        _FACTORY_DIGEST, ResourceActivationMode.PRODUCTION, _PROVIDER, "cuda:0", None, None
-    )
 
 
 def build_worker_factory(

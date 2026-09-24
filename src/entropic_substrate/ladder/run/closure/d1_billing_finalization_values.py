@@ -6,38 +6,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
-from entropic_substrate.d1_trainer_handoff import (
-    D1FreshRunCompletion,
-    D1TrainerFailureHandoff,
-    D1TrainerTermination,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    validate_execution_segments,
 )
-from entropic_substrate.evidence.d1_journal import JournalTailQuarantineReceipt
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.records.d1_journal import JournalTailQuarantineReceipt
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
     ProviderBilling,
     ProviderBillingPartial,
     TerminalProviderBillingEvidence,
 )
-from entropic_substrate.evidence.resource_billing_reconciliation import (
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
     LogicalBillingMissingCost,
     LogicalBillingOutcome,
     LogicalBillingReconciliation,
 )
-from entropic_substrate.evidence.resource_ledger import ResourceLedgerState
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    validate_execution_segments,
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
+from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
+    D1FreshRunCompletion,
+    D1TrainerFailureHandoff,
+    D1TrainerTermination,
 )
-from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 __all__ = [
     "D1BillingFinalization",

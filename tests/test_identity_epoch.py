@@ -472,11 +472,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "65f5670b152723523197cb0c296f8c9b4b8c870abac5298888d2058ba25fe829",  # pragma: allowlist secret
+    ): "858e1dfe4422c4261ebe3266002a973734eb010b3ca57cc06e61e57f7fe23fec",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "1c774bb502c25a15dcd898e5c79d26e475a86d637895d81155c13f050330248a",  # pragma: allowlist secret
+    ): "297b0494e65a8ae42117d465da260eb3fde131bac6d61e201ce0517ea3949770",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

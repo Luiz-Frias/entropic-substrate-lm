@@ -21,9 +21,6 @@ from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     RemoteLadderRequest as RemoteLadderRequest,
 )
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (
-    ResourceActivationMode as ResourceActivationMode,
-)
-from entropic_substrate.__legacy.d_ladder_worker_runtime import (
     ResourceActivationRegistration as ResourceActivationRegistration,
 )
 from entropic_substrate.__legacy.d_ladder_worker_runtime import (

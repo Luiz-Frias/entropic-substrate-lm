@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 
 __all__ = ["D1RuntimeProbeError", "SystemD1RuntimeProbe"]
 
