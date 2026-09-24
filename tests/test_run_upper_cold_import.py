@@ -170,9 +170,27 @@ def test_cold_import_of_pod_entrypoint_succeeds_entered_first(dotted: str) -> No
     )
 
 
+def test_cold_import_guard_accepts_a_real_import() -> None:
+    """Positive arm: the instrument reports the marker for an importable module."""
+    result = _run_cold_import("json")
+    assert result.returncode == 0
+    assert _MARKER in result.stdout
+
+
+def test_cold_import_guard_rejects_a_failed_import() -> None:
+    """Negative arm: a failed import never prints the marker."""
+    result = _run_cold_import("entropic_substrate.__no_such_module__")
+    assert result.returncode != 0
+    assert _MARKER not in result.stdout
+
+
 def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() -> None:
-    """GREEN control for the instrument itself: a child that exits 0
-    WITHOUT printing the marker must not satisfy this test's own check."""
+    """A child that exits 0 without printing the marker fails the marker check.
+
+    This is the GREEN control for the instrument itself, distinct from the two
+    tests above: those exercise ``_run_cold_import`` end to end (the real guard
+    template), while this one shows the marker-presence assertion alone is not
+    fooled by an unrelated zero-exit child that never ran the template at all."""
     result = subprocess.run(
         [sys.executable, "-c", "pass"],
         env=os.environ.copy(),
