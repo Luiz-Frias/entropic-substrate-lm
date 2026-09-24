@@ -2,9 +2,9 @@
 
 RED-first split (ruling R-parallel; contract C17-p5): the immutable
 attestation type moved to the record half, ``d1_calibration_records.py``,
-still under ``__legacy/``. This module RE-EXPORTS it (never redefines it)
-for the out-of-envelope importers still on this module's old dotted name;
-p8/p9 rewrite those, never this phase.
+now landed at ``ladder.capture.records`` (p8). This module RE-EXPORTS it
+(never redefines it) for the test-file importers still on this module's
+old dotted name; p13 rewrites those.
 """
 
 from __future__ import annotations

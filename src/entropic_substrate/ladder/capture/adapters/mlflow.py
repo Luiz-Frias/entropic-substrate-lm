@@ -21,9 +21,10 @@ bytes the gate parses would change.
 
 **Cycle note (architect constraint, design gate 2026-09-21):** the D1
 ruling keeps ``MlflowStartupError`` and the ``MLFLOW_*_ENV`` constants in
-``entropic_substrate.ladder.capture.reader.sinks`` while this class lands here, and the
-facade (``__legacy/sinks.py``) imports THIS module at module level to
-re-export :class:`MlflowSink` under the old prefix. A module-level import
+``entropic_substrate.ladder.capture.reader.sinks`` while this class lands here, and that
+residue module imports THIS module at module level to re-export
+:class:`MlflowSink` (the ``__legacy/sinks.py`` facade that once did so was
+deleted in 0c94e25). A module-level import
 in both directions would be a genuine Python import cycle, so this module
 imports ``entropic_substrate.ladder.capture.reader.sinks`` ONLY inside function bodies
 (never at module scope), after the facade has finished initialising.

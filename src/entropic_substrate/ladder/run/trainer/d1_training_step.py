@@ -2,13 +2,11 @@
 
 RED-first split (ruling R-parallel; contract C17-p5): the immutable
 evidence types (``D1TrainStepResult`` and friends) moved to the record half,
-``d1_training_step_records.py``, still under ``__legacy/`` -- both halves
-stay quarantined this phase; p8 moves only the record half, p9 only this
-one, so the two future wave lanes share no file. This module RE-EXPORTS
-every record name below (never redefines one) because 7 ``__legacy``
-modules and 4 test files outside this phase's envelope still import them
-by this module's old dotted name; those importers are rewritten by p8/p9,
-never here.
+``d1_training_step_records.py``, now landed at ``ladder.capture.records``
+(p8) while this torch half landed here (p9); the split kept the two w2
+lanes file-disjoint. This module RE-EXPORTS every record name below (never
+redefines one) because test files outside the w2 envelope still import
+them by this module's old dotted name; p13 rewrites those.
 """
 
 from __future__ import annotations

@@ -74,9 +74,9 @@ draft, which said `landed:true` deletes the shim):
   its move (the fragment note names the deleting commit), because the guard
   below would otherwise refuse the whole emission on its behalf.
 * ``pending: "<phase-id>"`` (FINDING 2026-09-20) -- the mapping row names a
-  module that does not exist YET: measured, ``d1_training_step_records`` and
-  ``d1_calibration_records`` are mapped today but only p5 creates them under
-  ``__legacy/``. No shim is emitted while pending, and the guard FAILS LOUD if
+  module that does not exist YET: measured at authoring, ``d1_training_step_records``
+  and ``d1_calibration_records`` were mapped before p5 created them under
+  ``__legacy/`` (they landed at ``ladder.capture.records`` in p8). No shim is emitted while pending, and the guard FAILS LOUD if
   a pending module is in fact present (the creating phase then takes the row
   into its own fragment and drops the flag -- the one sanctioned migration
   between fragments, serial phases only; disjointness still holds at every

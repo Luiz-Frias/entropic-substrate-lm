@@ -154,8 +154,8 @@ def test_review_ring_imports_from_a_relocated_tree(
     ``parents[3]``, re-measured in-branch with both arms below.
 
     Guard-teeth MEASURED 2026-09-20, RE-PROVEN 2026-09-23 at the
-    ``ladder/review/`` depth (mutation performed and reverted in-branch,
-    evidence in the PR body): adding, at module scope near the closure's
+    ``ladder/review/`` depth (captured by the w2 p11 lane's L1 validator, run
+    wf_60b791b4-82a, at lane commit 2b1f117, restacked as c35e51e on PR #300): adding, at module scope near the closure's
     former call site (``d1_external_analysis_control.py:100``), ``_ANCHOR =
     Path(__file__).resolve().parents[3]`` followed by ``if _ANCHOR.name !=
     "src": raise RuntimeError("anchor")`` turns this test RED with that
