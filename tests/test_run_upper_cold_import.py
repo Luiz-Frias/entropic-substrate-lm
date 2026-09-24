@@ -107,6 +107,19 @@ def _run_cold_import(dotted: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _assert_cold_import_ok(result: subprocess.CompletedProcess[str], dotted: str) -> None:
+    """Shared positive-arm assertion (CodeRabbit local review, p10-run-upper phase
+    diff): the cold-import subprocess must exit 0 AND print the marker -- not
+    merely exit 0. Used only by the three subject-driven tests below; the
+    guard-teeth triad at the bottom of this file stays independent of this
+    helper on purpose (each proves the instrument itself, not a subject)."""
+    assert result.returncode == 0, f"cold import of {dotted} failed:\n{result.stderr}"
+    assert _MARKER in result.stdout, (
+        f"child process for {dotted} did not report success; "
+        f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
+    )
+
+
 def test_filesystem_and_fragment_derivations_of_the_landed_set_agree() -> None:
     """The C7 equality arm: two INDEPENDENT derivations of "what p10 has
     landed so far" must agree, with a non-vacuity guard so an empty==empty
@@ -129,12 +142,7 @@ def test_cold_import_of_landed_run_upper_target_succeeds_with_nothing_warming_it
 ) -> None:
     """Fresh interpreter, NOTHING imported first: importing ``dotted``
     directly must succeed and print the marker -- not merely exit 0."""
-    result = _run_cold_import(dotted)
-    assert result.returncode == 0, f"cold import of {dotted} failed:\n{result.stderr}"
-    assert _MARKER in result.stdout, (
-        f"child process for {dotted} did not report success; "
-        f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
-    )
+    _assert_cold_import_ok(_run_cold_import(dotted), dotted)
 
 
 def test_split_leaf_exists_and_is_declared_explicitly_not_via_worker_glob() -> None:
@@ -149,12 +157,7 @@ def test_split_leaf_exists_and_is_declared_explicitly_not_via_worker_glob() -> N
 
 
 def test_cold_import_of_the_worker_split_leaf_succeeds_with_nothing_warming_it() -> None:
-    result = _run_cold_import(SPLIT_LEAF_DOTTED)
-    assert result.returncode == 0, f"cold import of {SPLIT_LEAF_DOTTED} failed:\n{result.stderr}"
-    assert _MARKER in result.stdout, (
-        f"child process for {SPLIT_LEAF_DOTTED} did not report success; "
-        f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
-    )
+    _assert_cold_import_ok(_run_cold_import(SPLIT_LEAF_DOTTED), SPLIT_LEAF_DOTTED)
 
 
 @pytest.mark.parametrize("dotted", POD_ENTRYPOINTS)
@@ -162,12 +165,7 @@ def test_cold_import_of_pod_entrypoint_succeeds_entered_first(dotted: str) -> No
     """The four pod-facing entrypoints (``scripts/entrypoints.env`` pod rows)
     must keep cold-importing cleanly, entered FIRST in a fresh interpreter,
     through every p10 landing commit."""
-    result = _run_cold_import(dotted)
-    assert result.returncode == 0, f"cold import of {dotted} failed:\n{result.stderr}"
-    assert _MARKER in result.stdout, (
-        f"child process for {dotted} did not report success; "
-        f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
-    )
+    _assert_cold_import_ok(_run_cold_import(dotted), dotted)
 
 
 def test_cold_import_guard_accepts_a_real_import() -> None:
