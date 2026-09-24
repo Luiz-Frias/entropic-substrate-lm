@@ -9,22 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.evidence.d1_journal import JournalTailQuarantineReceipt
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
-    D1JournalEvent,
-    JournalCheckpointState,
-    parse_event_line,
-)
-from entropic_substrate.__legacy.evidence.resource_ledger_codec import (
-    ResourceLedgerCodecGap,
-    resource_ledger_state_from_mapping,
-    resource_ledger_state_to_mapping,
-)
-from entropic_substrate.__legacy.evidence.resource_work_codec import (
-    ResourceWorkCodecGap,
-    resource_snapshot_from_mapping,
-    resource_snapshot_to_mapping,
-)
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
@@ -35,6 +19,22 @@ from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     run_start_from_mapping,
     run_start_to_mapping,
+)
+from entropic_substrate.ladder.capture.records.d1_journal import JournalTailQuarantineReceipt
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    JournalCheckpointState,
+    parse_event_line,
+)
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
+    ResourceLedgerCodecGap,
+    resource_ledger_state_from_mapping,
+    resource_ledger_state_to_mapping,
+)
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    ResourceWorkCodecGap,
+    resource_snapshot_from_mapping,
+    resource_snapshot_to_mapping,
 )
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,

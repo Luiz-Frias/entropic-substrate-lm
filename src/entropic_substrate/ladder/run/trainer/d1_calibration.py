@@ -14,9 +14,11 @@ import hashlib
 import numpy as np
 import torch
 
-from entropic_substrate.__legacy.d1_calibration_records import D1BaselineCalibrationAttestation
 from entropic_substrate.core.corpus.batching import PredictiveBatch, SequenceSampler, TokenSplit
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.records.d1_calibration_records import (
+    D1BaselineCalibrationAttestation,
+)
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
 
 __all__ = ["D1BaselineCalibrationAttestation", "D1BaselineCalibrator"]

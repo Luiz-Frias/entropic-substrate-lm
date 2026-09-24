@@ -11,13 +11,13 @@ import numpy as np
 import torch
 from torch import nn
 
-from entropic_substrate.__legacy.evidence.d1_journal_values import JournalCheckpointState
-from entropic_substrate.__legacy.evidence.resource_ledger import ResourceLedgerState
-from entropic_substrate.__legacy.evidence.resource_ledger_codec import (
-    resource_ledger_state_to_mapping,
-)
 from entropic_substrate.core.corpus.batching import SequenceSampler
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalCheckpointState
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
+    resource_ledger_state_to_mapping,
+)
 from entropic_substrate.ladder.register.d1_execution import D1ExecutionProtocol
 from entropic_substrate.ladder.register.d1_runs import D1RunSpec
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem

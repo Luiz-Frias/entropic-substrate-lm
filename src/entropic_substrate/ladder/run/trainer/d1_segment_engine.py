@@ -8,15 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.__legacy.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.__legacy.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.__legacy.evidence.resource_work_codec import resource_snapshot_to_mapping
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
 from entropic_substrate.ladder.run.resource.d1_resource_activation import D1ActiveResourceMeter
 from entropic_substrate.ladder.run.trainer.checkpoint_envelope import build_d1_checkpoint
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (

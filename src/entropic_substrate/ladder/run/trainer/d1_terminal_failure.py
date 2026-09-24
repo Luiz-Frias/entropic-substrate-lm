@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from entropic_substrate.__legacy.d1_numerical_defect import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1DefectCheckpointReference,
     D1NonfiniteMetricError,
     D1TerminalNumericalDefectRecord,
 )
-from entropic_substrate.__legacy.evidence.resource_ledger import ResourceLedgerState
-from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 
 __all__ = ["terminal_numerical_defect_for_failure"]

@@ -11,16 +11,16 @@ from typing import Protocol, cast, runtime_checkable
 import numpy as np
 import torch
 
-from entropic_substrate.__legacy.data.build import build_corpus
-from entropic_substrate.__legacy.evidence.resource_ledger import (
-    ResourceLedger,
-    ResourceMeterStrategy,
-)
 from entropic_substrate.core.corpus.batching import Corpus, SequenceSampler
 from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
+)
+from entropic_substrate.ladder.capture.custody.build import build_corpus
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
+    ResourceLedger,
+    ResourceMeterStrategy,
 )
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem

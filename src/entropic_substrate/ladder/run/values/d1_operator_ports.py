@@ -21,12 +21,12 @@ from entropic_substrate.__legacy.d1_operator_values import (
     D1RuntimeObservation,
     require_d1_pod_id,
 )
-from entropic_substrate.__legacy.evidence.resource_billing import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBillingObservation,
     TerminalProviderBillingEvidence,
 )
-from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
 from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import D1TrainerRequest
 
 

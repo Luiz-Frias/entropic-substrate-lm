@@ -11,27 +11,27 @@ from typing import cast
 import numpy as np
 import torch
 
-from entropic_substrate.__legacy.d1_observability import (
-    D1JournalObserver,
-    ObservedD1Journal,
-)
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
-    FrozenJson,
-    JournalCheckpointState,
-    JournalEventKind,
-)
-from entropic_substrate.__legacy.evidence.resource_ledger import (
-    ResourceLedger,
-    ResourceLedgerState,
-)
-from entropic_substrate.__legacy.evidence.resource_ledger_codec import (
-    resource_ledger_state_from_mapping,
-)
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
 )
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
+    D1JournalObserver,
+    ObservedD1Journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    FrozenJson,
+    JournalCheckpointState,
+    JournalEventKind,
+)
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
+    ResourceLedger,
+    ResourceLedgerState,
+)
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
+    resource_ledger_state_from_mapping,
+)
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 from entropic_substrate.ladder.run.resource.d1_resource_activation import (
     D1ResourceActivation,

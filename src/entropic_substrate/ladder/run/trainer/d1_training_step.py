@@ -18,13 +18,6 @@ import math
 import torch
 from torch import nn
 
-from entropic_substrate.__legacy.d1_training_step_records import (
-    D1ComponentGradientEvidence,
-    D1GradientEvidenceKind,
-    D1GradientReachability,
-    D1TrainStepResult,
-    _require_aggregate_gradient_norm,  # pyright: ignore[reportPrivateUsage]  # shared cross-split invariant, not a public export (ruling C17-p5)
-)
 from entropic_substrate.core.corpus.batching import PredictiveBatch
 from entropic_substrate.core.latent.target_updates import (
     OnlineTargetUpdate,
@@ -32,6 +25,13 @@ from entropic_substrate.core.latent.target_updates import (
     StopGradientEmaUpdate,
 )
 from entropic_substrate.kernel.identity.d1_primitives import TargetUpdateStrategy, canonical_digest
+from entropic_substrate.ladder.capture.records.d1_training_step_records import (
+    D1ComponentGradientEvidence,
+    D1GradientEvidenceKind,
+    D1GradientReachability,
+    D1TrainStepResult,
+    _require_aggregate_gradient_norm,  # pyright: ignore[reportPrivateUsage]  # shared cross-split invariant, not a public export (ruling C17-p5)
+)
 from entropic_substrate.ladder.register.d1_execution import D1AmpPolicy, D1OptimizationSpec
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
 from entropic_substrate.ladder.run.construction.runtime_components import D1PredictiveResult

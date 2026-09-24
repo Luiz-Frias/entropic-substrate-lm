@@ -16,16 +16,16 @@ from entropic_substrate.__legacy.d1_checkpoint_dvc_sync import (
     D1PublishedCheckpointDvcSync,
 )
 from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
-from entropic_substrate.__legacy.evidence.d1_capture_ports import (
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
     D1DvcPullPort,
 )
-from entropic_substrate.__legacy.evidence.d1_capture_subprocess import (
+from entropic_substrate.ladder.capture.custody.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
     SubprocessD1DvcAdapter,
 )
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
 )

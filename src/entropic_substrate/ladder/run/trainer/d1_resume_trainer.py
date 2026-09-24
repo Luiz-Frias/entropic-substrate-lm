@@ -7,22 +7,25 @@ from dataclasses import dataclass
 from typing import cast
 
 import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
-from entropic_substrate.__legacy.d1_observability import D1JournalObserver, ObservedD1Journal
-from entropic_substrate.__legacy.evidence.d1_journal import JournalTailQuarantineReceipt
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
+)
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
+    D1JournalObserver,
+    ObservedD1Journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal import JournalTailQuarantineReceipt
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.__legacy.evidence.resource_ledger import (
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
     ResourceLedger,
 )
-from entropic_substrate.__legacy.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.kernel.evidence_class.resource_provenance import (
-    RunStartProvenance,
-    SegmentStartMode,
-)
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 from entropic_substrate.ladder.run.resource.d1_resource_activation import (
     D1ResourceActivationFactory,

@@ -18,15 +18,15 @@ from entropic_substrate.__legacy.d1_runpod_billing_parser import (
     RunpodBillingSchemaError,
     parse_runpodctl_billing_observation,
 )
-from entropic_substrate.__legacy.evidence.resource_billing import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    PurchaseOption,
+    RunStartProvenance,
+)
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     ExecutionSegmentTermination,
     ProviderBillingObservation,
     ProviderBillingPending,
     TerminalProviderBillingEvidence,
-)
-from entropic_substrate.kernel.evidence_class.resource_provenance import (
-    PurchaseOption,
-    RunStartProvenance,
 )
 from entropic_substrate.ladder.run.provider.d1_command_runner import (
     BoundedSubprocessD1CommandRunner,
