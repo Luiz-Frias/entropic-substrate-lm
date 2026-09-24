@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from entropic_substrate.__legacy.d1_operator_ports import D1CommandResult, D1CommandRunner
 from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_probe_launch import (
     RUNPODCTL_SHA256,
@@ -16,6 +15,7 @@ from entropic_substrate.ladder.run.h_probe_launch import (
     H0ProbeLaunch,
     parse_probe_launch,
 )
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1CommandResult, D1CommandRunner
 
 
 class ProbeProviderError(RuntimeError):

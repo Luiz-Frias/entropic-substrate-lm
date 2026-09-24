@@ -7,13 +7,15 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
-from entropic_substrate.__legacy.d1_trainer_object_transport import D1TrainerMailboxObjectPort
 from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
 from entropic_substrate.ladder.run.h_probe_collection import collect_probe_terminal
 from entropic_substrate.ladder.run.h_probe_control import read_probe_control
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
 from entropic_substrate.ladder.run.h_runpod_transport import ProbePod, ProbeProviderError
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1TrainerMailboxObjectPort,
+)
 from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     ProbeAllocationHandoffError,
     ProbeAllocationProvider,

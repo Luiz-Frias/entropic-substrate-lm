@@ -182,13 +182,13 @@ the values already on record). The measurement was taken AFTER `just fmt`/`just 
 fixed point, per the p6-core lesson recorded above; both reported no change on this tree, so
 no intermediate value needs retracting this time.
 
-| 2026-09-23 | p8-capture | `4413b8b93c5c004a3a605da304fd0869f9985e33` (parent tip at which the re-pin was measured; the landing commit's SHA does not exist yet) | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged; 4 of the 51 members are touched this phase: `composition.source_cli`, `ladder.run.execution`, `ladder.run.generation`, `ladder.run.span_diagnostics`) | the six landed importers' `entropic_substrate.__legacy.{data.fineweb,evidence.resource_meter_models,evidence.resource_meter_runtime}` import lines rewritten to `entropic_substrate.ladder.capture.{custody.fineweb,resource.resource_meter_models,resource.resource_meter_runtime}` (4 reader-set members touched; `adapters/{composite,mlflow}.py` are two of the six importers but are not `_READER_MODULES` members), per ruling R-PIN and FOR-1469 | local `(3.12.13, 2.13.0)` = `60be32fe3164363a4520394aca47da9e755f63d0705e1efc8507df21d6520c71`; CI `(3.12.14, 2.13.0+cpu)` = `cf155d5ef2908424ab0f657e0266736971dc6daa009280ad161f48733ae805ff` | local `(3.12.13, 2.13.0)` = `c3b5c6d423db6abbac168c0952aa920c8e7d3b89feb13ca2a9e4c56f8b3d13bb`; CI `(3.12.14, 2.13.0+cpu)` = `991ae1cad1ecdad7dc303dbf1d21616a683d222f72c45e84e619904789780a10` |
+| 2026-09-24 | p9-run-lower | `47a317136d2748f68cf1015b1e65653440c067a4` (commit 1 tip at which commit 2's re-pin was measured; commit 2's own SHA does not exist yet) | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged; 5 of the 51 members are touched this commit: `ladder.run.object_worker`, `ladder.run.worker_command`, `ladder.run.worker_completion`, `ladder.run.worker_snapshot`, `ladder.run.worker_transport`) | the 5 reader members' explicit `entropic_substrate.__legacy.{d1_dvc_remote_config,d1_trainer_mailbox_contracts,d1_trainer_object_transport,d1_trainer_s3_object_adapter}` import lines rewritten to `entropic_substrate.ladder.run.transport.{d1_dvc_remote_config,d1_trainer_mailbox_contracts,d1_trainer_object_transport,d1_trainer_s3_object_adapter}` (19 of the 21 landed-importer lines rewritten this commit; the remaining 2, both `d1_command_runner`, are p9's own commit 3), per ruling R-PIN and FOR-1472 | local `(3.12.13, 2.13.0)` = `60be32fe3164363a4520394aca47da9e755f63d0705e1efc8507df21d6520c71`; CI `(3.12.14, 2.13.0+cpu)` = `cf155d5ef2908424ab0f657e0266736971dc6daa009280ad161f48733ae805ff` | local `(3.12.13, 2.13.0)` = `46869d6a03352cb37988ed6c5c314765f35b511468f47edc39233d13a0e07aa0`; CI `(3.12.14, 2.13.0+cpu)` = `407083a6694a30c82772fde3d0e625119be4a5f0246b5e20dafff4bf4fcc81bf` |
 
-h-source-reader-v3 is untouched by p8-capture: none of the four touched `_READER_MODULES` members
-is one of its seven fixed members (`core.sentence`, `core.sentence.records`,
-`core.sentence.segmentation`, `core.sentence.corpus`, `ladder.capture.capture`,
-`kernel.artifacts`, `kernel.lifecycle`), confirmed by re-measuring both `_SOURCE_REGIME_TABLE`
-rows unchanged with the same `tools/regime_rows.py` invocation (local `(3.12.13, 0.3.4)` =
-`aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`, CI `(3.12.14, 0.3.4)` =
-`5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84` — both byte-identical to
-the values already on record).
+h-source-reader-v3 is untouched by p9-run-lower's commit 2: none of the five touched
+`_READER_MODULES` members is one of its seven fixed members (`core.sentence`,
+`core.sentence.records`, `core.sentence.segmentation`, `core.sentence.corpus`,
+`ladder.capture.capture`, `kernel.artifacts`, `kernel.lifecycle`), confirmed by re-measuring
+both `_SOURCE_REGIME_TABLE` rows unchanged with the same `tools/regime_rows.py` invocation
+(local `(3.12.13, 0.3.4)` = `aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`,
+CI `(3.12.14, 0.3.4)` = `5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84` — both
+byte-identical to the values already on record).

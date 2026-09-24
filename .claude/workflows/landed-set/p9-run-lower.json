@@ -4,8 +4,148 @@
     "entropic_substrate.d1_resource_activation": {
       "target": "entropic_substrate.ladder.run.resource.d1_resource_activation",
       "landed": true
+    },
+    "entropic_substrate.d1_operator_ports": {
+      "target": "entropic_substrate.ladder.run.values.d1_operator_ports",
+      "landed": true
+    },
+    "entropic_substrate.d1_dvc_remote_config": {
+      "target": "entropic_substrate.ladder.run.transport.d1_dvc_remote_config",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_evidence_adapter": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_evidence_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_handoff": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_handoff",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_handoff_codec": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_handoff_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_mailbox_contracts": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_mailbox_worker": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_object_transport": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_object_transport",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_output_publication": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_output_publication",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_process_contracts": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_process_contracts",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_request_codec": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_request_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_s3_object_adapter": {
+      "target": "entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_calibration": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_calibration",
+      "landed": true
+    },
+    "entropic_substrate.d1_training_step": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_training_step",
+      "landed": true
+    },
+    "entropic_substrate.d1_evaluation": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_evaluation",
+      "landed": true
+    },
+    "entropic_substrate.d1_evaluation_codec": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_evaluation_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_fresh_trainer": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_fresh_trainer",
+      "landed": true
+    },
+    "entropic_substrate.d1_optimizer": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_optimizer",
+      "landed": true
+    },
+    "entropic_substrate.d1_resume_runtime": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_resume_runtime",
+      "landed": true
+    },
+    "entropic_substrate.d1_resume_trainer": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_resume_trainer",
+      "landed": true
+    },
+    "entropic_substrate.d1_segment_engine": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_segment_engine",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_runtime": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_trainer_runtime",
+      "landed": true
+    },
+    "entropic_substrate.d1_trainer_stage": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_trainer_stage",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.checkpoint_envelope": {
+      "target": "entropic_substrate.ladder.run.trainer.checkpoint_envelope",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.checkpoint_repository": {
+      "target": "entropic_substrate.ladder.run.trainer.checkpoint_repository",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.checkpoint_validation": {
+      "target": "entropic_substrate.ladder.run.trainer.checkpoint_validation",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.checkpoint_values": {
+      "target": "entropic_substrate.ladder.run.trainer.checkpoint_values",
+      "landed": true
+    },
+    "entropic_substrate.d1_dual_failure": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_dual_failure",
+      "landed": true
+    },
+    "entropic_substrate.d1_terminal_failure": {
+      "target": "entropic_substrate.ladder.run.trainer.d1_terminal_failure",
+      "landed": true
+    },
+    "entropic_substrate.d1_r2_runtime_composition": {
+      "target": "entropic_substrate.ladder.run.construction.d1_r2_runtime_composition",
+      "landed": true
+    },
+    "entropic_substrate.experiments.ladder_matching": {
+      "target": "entropic_substrate.ladder.run.construction.ladder_matching",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.ladder_runtime": {
+      "target": "entropic_substrate.ladder.run.construction.ladder_runtime",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.runtime": {
+      "target": "entropic_substrate.ladder.run.construction.runtime",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.runtime_components": {
+      "target": "entropic_substrate.ladder.run.construction.runtime_components",
+      "landed": true
+    },
+    "entropic_substrate.predictive_state.runtime_construction": {
+      "target": "entropic_substrate.ladder.run.construction.runtime_construction",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 48,
-  "note": "Commit 1 (FOR-1471), the {resource} SCC group, a pure sink: d1_resource_activation alone. legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 48 -- parent tip 45 plus 3 new (landed, __legacy) pairs this module's 3 sibling-target lines add (evidence.resource_ledger, evidence.resource_meter_models, evidence.resource_meter_strategy, all p8 targets rewritten to explicit __legacy addresses per FOR-1547). Direction INCREASING per BUDGET-MONOTONE retraction (p7 precedent). Ruling BUDGET-PER-COMMIT: every landing commit writes its own measured number; this is not the final value (predicted final 85 after commits 2 and 3)."
+  "legacy_edge_budget": 81,
+  "note": "Commit 2 (FOR-1472/1474/1475/1476/1477 absorbed), the {values, transport, trainer, construction} W2-SCC cyclic group, 35 modules including the two torch-half splits (d1_calibration, d1_training_step) and the two C-5 failure modules (d1_dual_failure, d1_terminal_failure). R-PIN discharged in this commit: the 5 h-checkpoint-reader-v2 importer members (object_worker, worker_command, worker_completion, worker_snapshot, worker_transport) rewritten onto ladder.run.transport.* addresses; _CHECKPOINT_REGIME_TABLE re-pinned with tools/regime_rows.py, label and 51-member set unchanged; _SOURCE_REGIME_TABLE re-measured byte-identical (control). 19 of 21 landed-importer lines rewritten this commit (10 files); 2 remain for commit 3 (h_probe_process.py, worker/h_probe_command.py, both d1_command_runner). Forwarders derived for the two torch halves (__legacy/d1_calibration.py, __legacy/d1_training_step.py); tests/test_d1_training_step_split.py stays green and byte-identical via the forwarders. legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 81 (from commit 1's 48), the net of removing 19 landed->__legacy edges (the rewritten importer lines) and adding this commit's sibling-target and quarantined-target edges from the 35 newly-landed modules' own imports. Direction increasing per BUDGET-MONOTONE retraction; not the final value (commit 3 adds the remaining provider modules and their 2 importer-line rewrites; predicted final [PREDICTED] 85)."
 }
