@@ -7,23 +7,23 @@ from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
 from typing import Protocol, Self, cast, runtime_checkable
 
-from entropic_substrate.evidence.resource_ledger import (
+from entropic_substrate.__legacy.evidence.resource_ledger import (
     ResourceLedgerState,
     ResourceMeterSnapshot,
     ResourceMeterStrategy,
     UnavailableMeterStrategy,
 )
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.__legacy.evidence.resource_meter_models import (
     PositionFlopModel,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_meter_strategy import (
+from entropic_substrate.__legacy.evidence.resource_meter_strategy import (
     D1ProductionResourceMeter,
     DevicePhaseTimerPort,
     PeakMemoryPort,
     PowerSampleSourcePort,
 )
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     PowerSamplingRegistration,
     ResourceActivationMode,
     ResourceActivationRegistration,

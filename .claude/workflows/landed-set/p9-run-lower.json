@@ -1,0 +1,11 @@
+{
+  "phase": "p9-run-lower",
+  "modules": {
+    "entropic_substrate.d1_resource_activation": {
+      "target": "entropic_substrate.ladder.run.resource.d1_resource_activation",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 48,
+  "note": "Commit 1 (FOR-1471), the {resource} SCC group, a pure sink: d1_resource_activation alone. legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 48 -- parent tip 45 plus 3 new (landed, __legacy) pairs this module's 3 sibling-target lines add (evidence.resource_ledger, evidence.resource_meter_models, evidence.resource_meter_strategy, all p8 targets rewritten to explicit __legacy addresses per FOR-1547). Direction INCREASING per BUDGET-MONOTONE retraction (p7 precedent). Ruling BUDGET-PER-COMMIT: every landing commit writes its own measured number; this is not the final value (predicted final 85 after commits 2 and 3)."
+}
