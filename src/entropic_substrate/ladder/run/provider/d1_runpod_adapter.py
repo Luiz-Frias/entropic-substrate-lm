@@ -9,35 +9,39 @@ from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
-from entropic_substrate.d1_operator_ports import (
+from entropic_substrate.__legacy.d1_operator_values import (
+    D1OperatorLaunchIntent,
+    D1PodPlacement,
+    require_d1_pod_id,
+)
+from entropic_substrate.__legacy.d1_runpod_billing_parser import (
+    RunpodBillingSchemaError,
+    parse_runpodctl_billing_observation,
+)
+from entropic_substrate.__legacy.evidence.resource_billing import (
+    ExecutionSegmentTermination,
+    ProviderBillingObservation,
+    ProviderBillingPending,
+    TerminalProviderBillingEvidence,
+)
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    PurchaseOption,
+    RunStartProvenance,
+)
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
+)
+from entropic_substrate.ladder.run.provider.provider_launch import PodLaunchRequest
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+    D1TrainerMailboxWaitPolicy,
+)
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
     D1CommandResult,
     D1CommandRunner,
     D1OperatorTransportError,
     D1PodDeletionAcknowledgedError,
     D1RunPodAuthReceipt,
 )
-from entropic_substrate.d1_operator_values import (
-    D1OperatorLaunchIntent,
-    D1PodPlacement,
-    require_d1_pod_id,
-)
-from entropic_substrate.d1_runpod_billing_parser import (
-    RunpodBillingSchemaError,
-    parse_runpodctl_billing_observation,
-)
-from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
-from entropic_substrate.evidence.resource_billing import (
-    ExecutionSegmentTermination,
-    ProviderBillingObservation,
-    ProviderBillingPending,
-    TerminalProviderBillingEvidence,
-)
-from entropic_substrate.evidence.resource_provenance import (
-    PurchaseOption,
-    RunStartProvenance,
-)
-from entropic_substrate.provider_launch import PodLaunchRequest
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _GO_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? [+-]\d{4} UTC$")

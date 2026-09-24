@@ -10,7 +10,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     read_d1_artifact_bytes,
@@ -21,6 +20,9 @@ from entropic_substrate.ladder.run.h_probe_process import (
     supervise_probe_watchdog,
 )
 from entropic_substrate.ladder.run.h_runpod_transport import HRunpodTransport
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
+)
 from entropic_substrate.ladder.run.worker.h_probe_controller import (
     ProbeControllerFailure,
     run_probe_controller,

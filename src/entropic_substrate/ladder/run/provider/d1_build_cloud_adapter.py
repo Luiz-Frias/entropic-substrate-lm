@@ -8,14 +8,14 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_command_runner import SubprocessD1CommandRunner
-from entropic_substrate.d1_operator_ports import (
-    D1CommandRunner,
-    D1OperatorTransportError,
-)
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.__legacy.d1_operator_values import (
     D1ImageBuildRequest,
     D1ImmutableImage,
+)
+from entropic_substrate.ladder.run.provider.d1_command_runner import SubprocessD1CommandRunner
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
+    D1CommandRunner,
+    D1OperatorTransportError,
 )
 
 

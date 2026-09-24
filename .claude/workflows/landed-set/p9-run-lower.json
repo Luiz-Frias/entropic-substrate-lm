@@ -144,8 +144,32 @@
     "entropic_substrate.predictive_state.runtime_construction": {
       "target": "entropic_substrate.ladder.run.construction.runtime_construction",
       "landed": true
+    },
+    "entropic_substrate.d1_build_cloud_adapter": {
+      "target": "entropic_substrate.ladder.run.provider.d1_build_cloud_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_command_runner": {
+      "target": "entropic_substrate.ladder.run.provider.d1_command_runner",
+      "landed": true
+    },
+    "entropic_substrate.d1_git_provenance_adapter": {
+      "target": "entropic_substrate.ladder.run.provider.d1_git_provenance_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_runpod_adapter": {
+      "target": "entropic_substrate.ladder.run.provider.d1_runpod_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_system_runtime_probe": {
+      "target": "entropic_substrate.ladder.run.provider.d1_system_runtime_probe",
+      "landed": true
+    },
+    "entropic_substrate.provider_launch": {
+      "target": "entropic_substrate.ladder.run.provider.provider_launch",
+      "landed": true
     }
   },
-  "legacy_edge_budget": 81,
-  "note": "Commit 2 (FOR-1472/1474/1475/1476/1477 absorbed), the {values, transport, trainer, construction} W2-SCC cyclic group, 35 modules including the two torch-half splits (d1_calibration, d1_training_step) and the two C-5 failure modules (d1_dual_failure, d1_terminal_failure). R-PIN discharged in this commit: the 5 h-checkpoint-reader-v2 importer members (object_worker, worker_command, worker_completion, worker_snapshot, worker_transport) rewritten onto ladder.run.transport.* addresses; _CHECKPOINT_REGIME_TABLE re-pinned with tools/regime_rows.py, label and 51-member set unchanged; _SOURCE_REGIME_TABLE re-measured byte-identical (control). 19 of 21 landed-importer lines rewritten this commit (10 files); 2 remain for commit 3 (h_probe_process.py, worker/h_probe_command.py, both d1_command_runner). Forwarders derived for the two torch halves (__legacy/d1_calibration.py, __legacy/d1_training_step.py); tests/test_d1_training_step_split.py stays green and byte-identical via the forwarders. legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 81 (from commit 1's 48), the net of removing 19 landed->__legacy edges (the rewritten importer lines) and adding this commit's sibling-target and quarantined-target edges from the 35 newly-landed modules' own imports. Direction increasing per BUDGET-MONOTONE retraction; not the final value (commit 3 adds the remaining provider modules and their 2 importer-line rewrites; predicted final [PREDICTED] 85)."
+  "legacy_edge_budget": 85,
+  "note": "Commit 3 (FOR-1473), the {provider} SCC group, a pure source (zero incoming intra-set edges): d1_build_cloud_adapter, d1_command_runner, d1_git_provenance_adapter, d1_runpod_adapter, d1_system_runtime_probe, provider_launch. Rewrite-on-arrival per the four tables; the remaining 2 of the 21 landed-importer lines (h_probe_process.py, worker/h_probe_command.py, both d1_command_runner) rewritten this commit -- all 21 now discharged. No R-PIN member among the provider modules or these two importers. The two fail-closed allowlists (provider_launch.py:32-38 known-worker set, d1_runpod_adapter.py worker_command literal) verified byte-identical against mythwave/p7b-freeze-and-verify. legacy_edge_budget MEASURED with tools/import_graph.py at this commit: 85 (from commit 2's 81 plus this commit's own sibling-target/quarantined-target edges, minus the 2 importer-line edges removed) -- this is p9's FINAL fragment value; it matches this brief's own [PREDICTED] arithmetic (45 - 21 + 61 = 85) but is independently MEASURED, never typed in. In this lane's own worktree p9's fragment is the highest-ordered one present, so this value binds tests/test_legacy_coupling.py here; after the zip p11-analyze-review-file becomes highest-ordered and the integrated number is p11's to carry (parallel-wave caveat)."
 }

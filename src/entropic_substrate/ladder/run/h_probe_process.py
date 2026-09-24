@@ -16,7 +16,6 @@ from pathlib import Path
 from types import FrameType
 from typing import NoReturn
 
-from entropic_substrate.__legacy.d1_command_runner import BoundedSubprocessD1CommandRunner
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
@@ -28,6 +27,9 @@ from entropic_substrate.ladder.run.h_probe_control import (
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
 from entropic_substrate.ladder.run.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
 from entropic_substrate.ladder.run.h_runpod_transport import HRunpodTransport
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
+)
 
 
 @dataclass(frozen=True, slots=True)

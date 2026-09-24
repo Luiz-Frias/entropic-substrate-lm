@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, NoReturn, cast
 
-from entropic_substrate.d1_operator_ports import D1CommandResult
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1CommandResult
 
 __all__ = [
     "BoundedSubprocessD1CommandRunner",
