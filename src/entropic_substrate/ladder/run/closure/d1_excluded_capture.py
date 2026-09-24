@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
@@ -16,24 +16,33 @@ from entropic_substrate.d1_artifact_snapshot import (
     relative_d1_artifact_path,
     snapshot_d1_artifact,
 )
-from entropic_substrate.d1_excluded_operator import D1ExcludedRunResult
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactRole, identify_d1_artifact
-from entropic_substrate.evidence.d1_capture_filesystem import LocalD1EvidenceExportSource
-from entropic_substrate.evidence.d1_capture_ports import (
+from entropic_substrate.kernel.identity.d1_primitives import (
+    RunClass,
+    canonical_digest,
+    canonical_json,
+)
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactRole,
+    identify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_filesystem import (
+    LocalD1EvidenceExportSource,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
     D1DvcPointerIdentity,
     D1GitPointerStatusVerifierPort,
 )
-from entropic_substrate.evidence.d1_capture_service import read_d1_dvc_pointer
-from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence_bytes
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_launch_attempt_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_service import read_d1_dvc_pointer
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import read_d1_run_evidence_bytes
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.register.d1_launch_attempt_codec import (
     launch_attempt_ledger_from_mapping,
 )
-from entropic_substrate.experiments.d1_plan import ExcludedPilotD1RunPlan, parse_d1_pilot_plan
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest, canonical_json
+from entropic_substrate.ladder.register.d1_plan import ExcludedPilotD1RunPlan, parse_d1_pilot_plan
+from entropic_substrate.ladder.run.campaign.d1_excluded_operator import D1ExcludedRunResult
 
 _RECEIPT_TOKEN = object()
 

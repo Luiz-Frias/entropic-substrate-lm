@@ -9,51 +9,51 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_billing_finalization_values import D1TrainerHandoff
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
-from entropic_substrate.d1_trainer_handoff import (
-    D1FreshRunCompletion,
-    D1TrainerFailureHandoff,
+from entropic_substrate.kernel.evidence_class.resource_provenance import EvidenceGap
+from entropic_substrate.kernel.identity.d1_primitives import (
+    canonical_digest,
+    require_nonempty_string,
+    require_sha256,
 )
-from entropic_substrate.d1_trainer_request_codec import (
-    D1FreshTrainerRequest,
-    D1ResumeTrainerRequest,
-    D1TrainerRequest,
-    d1_trainer_request_sha256,
+from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
+from entropic_substrate.kernel.lifecycle import (
+    ArtifactIdentity,
+    ContentHash,
 )
-from entropic_substrate.evidence.d1_journal import read_journal_bytes
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal_bytes
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     JournalCheckpointState,
     JournalEventKind,
     canonical_event_line,
 )
-from entropic_substrate.evidence.d1_telemetry_query import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import (
     _read_d1_run_evidence,  # pyright: ignore[reportPrivateUsage]
 )
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1RunStatus,
     D1TailQuarantineKind,
 )
-from entropic_substrate.evidence.lifecycle import (
-    ArtifactIdentity,
-    ContentHash,
-)
-from entropic_substrate.evidence.resource_provenance import EvidenceGap
-from entropic_substrate.experiments.d1_primitives import (
-    canonical_digest,
-    require_nonempty_string,
-    require_sha256,
-)
-from entropic_substrate.factory_attestation import FactoryAttestation
-from entropic_substrate.predictive_state.checkpoint_repository import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import D1TrainerHandoff
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     load_checkpoint_candidate,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
+    D1FreshRunCompletion,
+    D1TrainerFailureHandoff,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
+    D1FreshTrainerRequest,
+    D1ResumeTrainerRequest,
+    D1TrainerRequest,
+    d1_trainer_request_sha256,
 )
 
 _RECEIPT_TOKEN: Final = object()

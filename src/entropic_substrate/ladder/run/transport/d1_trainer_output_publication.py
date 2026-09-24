@@ -7,11 +7,6 @@ import json
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.d1_operator_evidence import (
-    D1ExportedTrainerHandoff,
-    D1TrainerExportReceipt,
-    verify_d1_trainer_export,
-)
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
@@ -21,6 +16,11 @@ from entropic_substrate.kernel.artifacts import (
 )
 from entropic_substrate.kernel.evidence_class.resource_provenance import EvidenceGap
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    D1TrainerExportReceipt,
+    verify_d1_trainer_export,
+)
 from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
 from entropic_substrate.ladder.run.transport.d1_trainer_handoff_codec import (
     parse_d1_trainer_handoff,

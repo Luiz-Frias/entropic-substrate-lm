@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_campaign_checkpoint import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
     D1CampaignCheckpoint,
     D1CampaignCheckpointError,
     parse_campaign_checkpoint,

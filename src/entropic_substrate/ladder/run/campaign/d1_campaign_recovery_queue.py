@@ -4,37 +4,37 @@ from __future__ import annotations
 
 from typing import Protocol, cast
 
-from entropic_substrate.d1_campaign_checkpoint import (
-    D1CampaignCheckpoint,
-    D1CampaignCompletedCell,
-    D1CampaignDisposition,
-)
-from entropic_substrate.d1_campaign_checkpoint_repository import (
-    D1CampaignCheckpointReceipt,
-)
-from entropic_substrate.d1_campaign_queue import (
-    D1CampaignQueueHalt,
-    D1CompletedCampaign,
-    validate_d1_campaign_ledger_extension,
-)
-from entropic_substrate.d1_campaign_recovery import (
-    D1CampaignRecoveryHalt,
-    D1HydratedCampaignRecovery,
-    validate_d1_campaign_start,
-)
-from entropic_substrate.d1_operator_controller import D1OperatorRunResult
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.experiments.d1_confirmatory_matrix import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import (
     D1ConfirmatoryLaunch,
     D1GitProvenancePort,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
-from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.register.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.ladder.register.d1_plan import ConfirmatoryD1RunPlan
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
+    D1CampaignCheckpoint,
+    D1CampaignCompletedCell,
+    D1CampaignDisposition,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
+    D1CampaignCheckpointReceipt,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import (
+    D1CampaignQueueHalt,
+    D1CompletedCampaign,
+    validate_d1_campaign_ledger_extension,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery import (
+    D1CampaignRecoveryHalt,
+    D1HydratedCampaignRecovery,
+    validate_d1_campaign_start,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import D1OperatorRunResult
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
 
 
 class D1CampaignCheckpointRepositoryPort(Protocol):
