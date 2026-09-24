@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from entropic_substrate.__legacy.telemetry import (
+from entropic_substrate.ladder.capture.reader.telemetry import (
     EvalRecord,
     TrainRecord,
     final_eval_metric,

@@ -6,15 +6,6 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import cast
 
-from entropic_substrate.__legacy.d1_journal_snapshot import D1JournalSnapshot
-from entropic_substrate.__legacy.evidence.d1_journal_values import D1JournalEvent
-from entropic_substrate.__legacy.evidence.d1_telemetry_values import (
-    D1_REPORT_ONLY_METRICS,
-    D1_SCALAR_METRICS,
-    D1EvalEvidence,
-    D1QualityEvidence,
-    D1RunStatus,
-)
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1_INSPECT_MAX_EVALUATIONS,
@@ -34,6 +25,15 @@ from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1InspectState,
     D1InspectTrainerAborted,
     D1InspectView,
+)
+from entropic_substrate.ladder.capture.reader.d1_journal_snapshot import D1JournalSnapshot
+from entropic_substrate.ladder.capture.records.d1_journal_values import D1JournalEvent
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
+    D1_REPORT_ONLY_METRICS,
+    D1_SCALAR_METRICS,
+    D1EvalEvidence,
+    D1QualityEvidence,
+    D1RunStatus,
 )
 
 __all__ = ["compose_d1_inspect_view"]

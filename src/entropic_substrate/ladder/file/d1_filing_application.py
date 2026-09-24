@@ -9,7 +9,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-from entropic_substrate.__legacy.evidence.d1_process_manager import D1ProcessManager
 from entropic_substrate.kernel.artifacts import (
     D1ArtifactSnapshotError,
     normalize_d1_artifact_root,
@@ -31,6 +30,7 @@ from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1AnalysisExecutionReceipt,
     canonical_d1_analysis_receipt_bytes,
 )
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
 from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,

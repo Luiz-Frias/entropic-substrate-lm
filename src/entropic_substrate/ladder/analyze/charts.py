@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from entropic_substrate.__legacy.telemetry import max_kappa_spread
 from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
 from entropic_substrate.ladder.analyze.palette import (
     OKABE_ITO,
@@ -44,6 +43,7 @@ from entropic_substrate.ladder.analyze.series import (
     TrainSeriesRun,
     Verdict,
 )
+from entropic_substrate.ladder.capture.reader.telemetry import max_kappa_spread
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

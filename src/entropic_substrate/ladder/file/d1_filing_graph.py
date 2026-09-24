@@ -7,18 +7,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import NoReturn
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-    D1ValidatedTerminalDefect,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_bundle import D1ValidatedRunCapture
-from entropic_substrate.__legacy.evidence.d1_capture_roster import (
-    D1PairExclusion,
-    D1PairExclusionReason,
-)
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.kernel.lifecycle import FiledVerdictEvidence
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+    D1ValidatedTerminalDefect,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1ValidatedRunCapture
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1PairExclusion,
+    D1PairExclusionReason,
+)
 from entropic_substrate.ladder.file.d1_filing import D1DetachedFiling, D1FilingManifest
 from entropic_substrate.ladder.file.d1_filing_edges import verify_filing_edges
 from entropic_substrate.ladder.file.d1_filing_receipts import (

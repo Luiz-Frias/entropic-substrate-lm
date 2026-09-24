@@ -12,7 +12,6 @@ from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import NoReturn, Protocol, SupportsIndex
 
-from entropic_substrate.__legacy.evidence.d1_capture_artifacts import D1DvcBindingState
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
 from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA,
@@ -26,6 +25,7 @@ from entropic_substrate.ladder.analyze.d1_machine_analysis import (
     D1AliasedMachineAnalysis,
     D1ArmAliasMap,
 )
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1DvcBindingState
 from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,

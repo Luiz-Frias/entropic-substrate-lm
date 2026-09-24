@@ -14,7 +14,7 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     hydrate_d1_capture_aggregate,
 )
 from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog

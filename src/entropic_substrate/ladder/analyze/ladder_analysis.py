@@ -14,14 +14,10 @@ from typing import Protocol, cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.d1_capture_artifacts import verify_d1_artifact
-from entropic_substrate.__legacy.evidence.d1_capture_bundle import D1DvcCaptureHandoff
-from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1_SCALAR_METRICS, D1RunStatus
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     actor_from_mapping,
     read_campaign_design,
 )
-from entropic_substrate.__legacy.evidence.resource_work_codec import resource_snapshot_from_mapping
 from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
 from entropic_substrate.core.corpus.ladder_source_order import SourceOrderAudit
 from entropic_substrate.kernel.artifacts import (
@@ -45,6 +41,15 @@ from entropic_substrate.ladder.analyze.ladder_registration import (
     paired_contrasts,
 )
 from entropic_substrate.ladder.analyze.seed_sizing import dual_confidence_intervals
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import verify_d1_artifact
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1DvcCaptureHandoff
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
+    D1_SCALAR_METRICS,
+    D1RunStatus,
+)
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_from_mapping,
+)
 
 
 def parse_scientific_data_order(value: object, step: int) -> tuple[str, int] | None:
@@ -93,7 +98,7 @@ class D1RunReader:
         return (artifact,)
 
     def read_run(self, root: Path, artifact: ArtifactIdentity) -> StatisticalRun:
-        from entropic_substrate.__legacy.telemetry import read_d1_run_evidence_bytes
+        from entropic_substrate.ladder.capture.reader.telemetry import read_d1_run_evidence_bytes
 
         run = read_d1_run_evidence_bytes(
             read_bound_artifact(root, artifact), journal_path=Path(artifact.path)

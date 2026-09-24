@@ -152,7 +152,7 @@ def _reached(policy: D1DiagnosticPolicy, value: float) -> bool:
 
 
 def _identity(run: object) -> tuple[D1Arm, int]:
-    from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
+    from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
 
     if type(run) is not D1RunEvidence:
         raise TypeError("D1 report diagnostic requires D1RunEvidence")
@@ -168,7 +168,7 @@ def _identity(run: object) -> tuple[D1Arm, int]:
 
 
 def _target(run: object, policy: D1DiagnosticPolicy) -> D1QualityTargetResult:
-    from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
+    from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
 
     if type(run) is not D1RunEvidence:
         raise TypeError("D1 report diagnostic requires D1RunEvidence")

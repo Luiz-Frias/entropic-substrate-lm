@@ -14,15 +14,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol, cast
 
-from entropic_substrate.__legacy.d1_command_runner import (
-    D1BoundedProcessError,
-    D1BoundedProcessResult,
-    D1BoundedProcessRunner,
-)
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.ladder.review.d1_review_execution import (
     D1CloudReviewRequest,
     D1CloudReviewResponse,
+)
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    D1BoundedProcessError,
+    D1BoundedProcessResult,
+    D1BoundedProcessRunner,
 )
 
 _RUNTIME = "/usr/local/bin/d1-review-sandbox"

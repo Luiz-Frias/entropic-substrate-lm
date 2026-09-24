@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-)
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.analyze.d1_capture import (
@@ -34,6 +31,9 @@ from entropic_substrate.ladder.analyze.d1_machine_analysis import (
     D1AliasedMachineAnalysis,
     D1ArmAliasMap,
     build_d1_aliased_machine_analysis,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
 )
 from entropic_substrate.ladder.register.d1_registered_design import (
     D1RegisteredDesign,
