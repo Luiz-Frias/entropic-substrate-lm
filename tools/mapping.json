@@ -1165,10 +1165,10 @@
       "note": "successor authorization off a filed lineage; never computes a verdict"
     },
     "entropic_substrate.evidence.ladder_campaign": {
-      "dest": "entropic_substrate.kernel.artifacts",
-      "layer": "kernel",
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder",
       "action": "split",
-      "note": "SPLIT: artifact_mapping/artifact_from_mapping/read_bound_artifact/object_fields -> kernel.artifacts (the only symbols 14 sentence_prediction modules import); gate half (RunAuthorization, SuccessorAuthorization, FiledLadderGate, validate_ladder_phase_transition, gate_from_d1_filing, read_campaign_design, verify_ladder_registration, authorize_ladder_run, actor_from_mapping) -> entropic_substrate.ladder.gate.ladder_campaign, RULED P12-GATE-HALF 2026-09-24 (operator; FOR-1557, p12 commit 1); p5b's landed:false row is superseded by p12's fragment row"
+      "note": "SPLIT: artifact_mapping/artifact_from_mapping/read_bound_artifact/object_fields -> kernel.artifacts (the only symbols 14 sentence_prediction modules import); gate half (RunAuthorization, SuccessorAuthorization, FiledLadderGate, validate_ladder_phase_transition, gate_from_d1_filing, read_campaign_design, verify_ladder_registration, authorize_ladder_run, actor_from_mapping) -> entropic_substrate.ladder.gate.ladder_campaign, RULED P12-GATE-HALF 2026-09-24 (operator; FOR-1557, p12 commit 1); p5b's landed:false row is superseded by p12's fragment row DEST AMENDED 2026-09-25 (ruling P12-D2, conductor): dest names the gate half's package (the sentinel arm of tests/test_module_identity.py requires the landed target to start with dest); the artifact half already landed at kernel.artifacts in p5b without a mapping row of its own."
     },
     "entropic_substrate.evidence.ladder_predecessor": {
       "dest": "entropic_substrate.ladder.gate",

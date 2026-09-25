@@ -1,11 +1,6 @@
 {
   "phase": "p5b-ladder-campaign",
-  "modules": {
-    "entropic_substrate.evidence.ladder_campaign": {
-      "target": "entropic_substrate.__legacy.evidence.ladder_campaign",
-      "landed": false,
-      "note": "artifact half split out to entropic_substrate.kernel.artifacts (artifact_mapping, artifact_from_mapping, read_bound_artifact, object_fields, read_json_artifact, plus the private _unique helper); the gate half (RunAuthorization, SuccessorAuthorization, FiledLadderGate, validate_ladder_phase_transition, gate_from_d1_filing, read_campaign_design, verify_ladder_registration, authorize_ladder_run, actor_from_mapping) stays quarantined here and re-exports the five moved names by identity through entropic_substrate.kernel.artifacts (p4 D-E precedent); this shim's own target is unchanged, still __legacy, landed:false -- p7 moves the remainder"
-    }
-  },
-  "legacy_edge_budget": 42
+  "modules": {},
+  "legacy_edge_budget": 42,
+  "note": "ROW MIGRATED 2026-09-25 (ruling P12-D1, conductor): the evidence.ladder_campaign row (target entropic_substrate.__legacy.evidence.ladder_campaign, landed:false) moved out of this fragment so p12's fragment can claim it (merge_fragments admits one claimant per module; the derived legacy default resolves to the identical target). Its former note: artifact half split out to entropic_substrate.kernel.artifacts (artifact_mapping, artifact_from_mapping, read_bound_artifact, object_fields, read_json_artifact, plus the private _unique helper); the gate half (RunAuthorization, SuccessorAuthorization, FiledLadderGate, validate_ladder_phase_transition, gate_from_d1_filing, read_campaign_design, verify_ladder_registration, authorize_ladder_run, actor_from_mapping) stays quarantined here and re-exports the five moved names by identity through entropic_substrate.kernel.artifacts (p4 D-E precedent); this shim's own target is unchanged, still __legacy, landed:false -- p7 moves the remainder"
 }
