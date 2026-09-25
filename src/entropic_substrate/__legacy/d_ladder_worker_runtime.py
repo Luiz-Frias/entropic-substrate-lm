@@ -6,7 +6,12 @@ conductor 2026-09-22, wf_6d1caf7e-2e6: this module's own live importers
 consume only those two names). Re-imported below so this module's other
 consumers -- `__legacy/d_ladder_worker_command.py` and its tests -- keep
 resolving `measure_hardware`/`verify_source_tree`/`SOURCE_PREFIXES` off this
-same dotted name unchanged.
+same dotted name unchanged. p10 (ruling P10-WORKER-SPLIT, 2026-09-24) moved
+`worker_resource_registration` to
+`entropic_substrate.ladder.run.worker.resource_registration`, re-exported here
+by identity; `build_worker_factory` and `verify_worker_source` stay until p12
+because `tests/test_d_ladder_worker_runtime.py` monkeypatches
+`build_torch_cuda_adapters` on this module.
 """
 
 from __future__ import annotations

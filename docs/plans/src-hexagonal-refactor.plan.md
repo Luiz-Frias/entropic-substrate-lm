@@ -374,7 +374,7 @@ plan's own R-train rule (ascending footprint, §307-311 below): `sequence` LISTS
 serial-reading order) and p8/p9/p11 in that order, but the ZIP order inside each wave is the
 opposite of listing order — w1 zips p7 (20) then p6 (33), tip `mythwave/p6-core`; w2 zips p8 (52), p9 (42),
 p11 (47) in dependency order, tip `mythwave/p11-analyze-review-file` (SUPERSEDED 2026-09-23 by
-D-WAVES r3: w1 ran serial p6 then p7, so p8, p9 and p11 all parent on `mythwave/p7b-freeze-and-verify`, the FOR-1550/FOR-1548 hardening PR stacked on p7), and p10 parents on `mythwave/p11-analyze-review-file` (w2's zip
+D-WAVES r3: w1 ran serial p6 then p7, so p8, p9 and p11 all parent on `mythwave/p7b-freeze-and-verify`, the FOR-1550/FOR-1548 hardening PR stacked on p7), and p10 parents on `mythwave/w2-reconcile` (ruling P10-PARENT 2026-09-24; retracted from `mythwave/p11-analyze-review-file`, w2's zip
 tip under D-WAVES r3), which contains p9's `ladder/run/{values,transport}` that p10 consumes — a parent at the
 zip's bottom would provably exclude it (DEFECT 5). Inside a wave the FANOUT PLANNER's `zipOrder` is
 authoritative and is validated as an exact permutation of the admitted lanes before any lane

@@ -224,6 +224,10 @@ reconstructed content, since this drafting session writes no file:
 ```python
 """Worker CUDA-resource registration, split from d_ladder_worker_runtime (RULING D-E)."""
 
+# RETRACTION (docs sweep 2026-09-24): the landed leaf imports these two names INSIDE the
+# function body (see the cycle note in resource_registration.py), not at module level as
+# this [predicted] block shows; and no .pyi stub was owed for the new leaf (it had no
+# prior old-address shim), so the Allowed-files '(+ .pyi, NEW ...)' mention is retracted.
 from entropic_substrate.__legacy.d_ladder_worker_runtime import _FACTORY_DIGEST, _PROVIDER
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     ResourceActivationMode,

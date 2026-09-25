@@ -110,9 +110,11 @@ def _run_cold_import(dotted: str) -> subprocess.CompletedProcess[str]:
 def _assert_cold_import_ok(result: subprocess.CompletedProcess[str], dotted: str) -> None:
     """Shared positive-arm assertion (CodeRabbit local review, p10-run-upper phase
     diff): the cold-import subprocess must exit 0 AND print the marker -- not
-    merely exit 0. Used only by the three subject-driven tests below; the
-    guard-teeth triad at the bottom of this file stays independent of this
-    helper on purpose (each proves the instrument itself, not a subject)."""
+    merely exit 0. Used by the three subject-driven tests below and, since
+    6222adb, by both negative-arm guard-teeth tests (their failure assertions
+    route through it); the positive-arm control at the bottom of this file
+    stays independent of this helper on purpose (it proves the instrument
+    itself, not a subject)."""
     assert result.returncode == 0, f"cold import of {dotted} failed:\n{result.stderr}"
     assert _MARKER in result.stdout, (
         f"child process for {dotted} did not report success; "
