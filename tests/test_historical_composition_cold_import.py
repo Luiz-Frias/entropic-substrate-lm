@@ -164,27 +164,28 @@ def test_every_landed_module_imports_only_legacy_free_resolvable_targets() -> No
         source = Path(spec.origin).read_text(encoding="utf-8")
         tree = ast.parse(source, filename=spec.origin)
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module
-                and node.module.startswith("entropic_substrate.")
-            ):
-                mod = node.module
-            elif isinstance(node, ast.Import):
-                names = [a.name for a in node.names if a.name.startswith("entropic_substrate.")]
-                if not names:
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module == "entropic_substrate":
+                    modules = [f"entropic_substrate.{a.name}" for a in node.names]
+                elif node.module.startswith("entropic_substrate."):
+                    modules = [node.module]
+                else:
                     continue
-                mod = names[0]
+            elif isinstance(node, ast.Import):
+                modules = [a.name for a in node.names if a.name.startswith("entropic_substrate.")]
+                if not modules:
+                    continue
             else:
                 continue
-            assert not mod.startswith("entropic_substrate.__legacy"), (
-                f"{dotted} (line {node.lineno}) imports {mod!r} -- a landed module must "
-                "never import __legacy directly"
-            )
-            target_spec = importlib.util.find_spec(mod)
-            assert target_spec is not None and (
-                target_spec.origin or target_spec.submodule_search_locations
-            ), (
-                f"{dotted} (line {node.lineno}) imports {mod!r}, which does not resolve to "
-                "an existing module file or package in the tree"
-            )
+            for mod in modules:
+                assert not mod.startswith("entropic_substrate.__legacy"), (
+                    f"{dotted} (line {node.lineno}) imports {mod!r} -- a landed module must "
+                    "never import __legacy directly"
+                )
+                target_spec = importlib.util.find_spec(mod)
+                assert target_spec is not None and (
+                    target_spec.origin or target_spec.submodule_search_locations
+                ), (
+                    f"{dotted} (line {node.lineno}) imports {mod!r}, which does not resolve to "
+                    "an existing module file or package in the tree"
+                )
