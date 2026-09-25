@@ -6,35 +6,20 @@ import os
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
-from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError
-from entropic_substrate.d1_campaign_authority_loader import D1CampaignAuthorityLoader
-from entropic_substrate.d1_campaign_capture import D1HeterogeneousCaptureAdapter
-from entropic_substrate.d1_campaign_cli_service import D1CampaignRunCliService
-from entropic_substrate.d1_campaign_controller_factory import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
+    D1CampaignAuthorityLoader,
+)
+from entropic_substrate.composition.wiring.d1_campaign_cli_service import D1CampaignRunCliService
+from entropic_substrate.composition.wiring.d1_campaign_controller_factory import (
     D1CampaignControllerFactory,
     D1CampaignControllerFactoryError,
     D1CampaignControllerRuntimeConfig,
 )
-from entropic_substrate.d1_campaign_request import (
-    D1CampaignCommandRequest,
-    D1CampaignRequestError,
-    parse_d1_campaign_request,
-)
-from entropic_substrate.d1_capture_cli_services import (
+from entropic_substrate.composition.wiring.d1_capture_cli_services import (
     D1CaptureFinalizeCliService,
     D1CapturePrepareCliService,
 )
-from entropic_substrate.d1_capture_finalize_coordinator import (
-    D1CampaignCaptureFinalizationCoordinator,
-)
-from entropic_substrate.d1_capture_finalize_request import (
-    D1CaptureFinalizeRequestError,
-    parse_d1_capture_finalize_request,
-)
-from entropic_substrate.d1_capture_prepare_coordinator import (
-    D1CampaignCapturePreparationCoordinator,
-)
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliApplication,
     D1CliCommand,
     D1CliCommandService,
@@ -43,31 +28,52 @@ from entropic_substrate.d1_cli import (
     D1CliOperatorGap,
     D1CliServiceUnavailable,
 )
-from entropic_substrate.d1_git_provenance_adapter import (
-    D1GitProvenanceAdapterError,
-    SubprocessD1GitProvenance,
-)
-from entropic_substrate.d1_inspect_service import D1InspectCliService
-from entropic_substrate.d1_observability import AuthoritativeJournalOnlyObserver
-from entropic_substrate.d1_trainer_cli_services import (
+from entropic_substrate.composition.wiring.d1_inspect_service import D1InspectCliService
+from entropic_substrate.composition.wiring.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
 )
-from entropic_substrate.evidence.d1_capture_filesystem import LocalD1EvidenceExportSource
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_service import D1CaptureService
-from entropic_substrate.evidence.d1_capture_subprocess import (
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, canonical_json
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
+    AuthoritativeJournalOnlyObserver,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_filesystem import (
+    LocalD1EvidenceExportSource,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_service import D1CaptureService
+from entropic_substrate.ladder.capture.custody.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
     SubprocessD1DvcAdapter,
     SubprocessD1GitPointerStatusVerifier,
 )
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.experiments.d1_config import (
+from entropic_substrate.ladder.register.d1_config import (
     D1LaunchProfile,
     load_d1_execution_catalog,
     load_d1_profile_catalog,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest, canonical_json
+from entropic_substrate.ladder.run.campaign.d1_campaign_capture import D1HeterogeneousCaptureAdapter
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
+    D1CampaignCommandRequest,
+    D1CampaignRequestError,
+    parse_d1_campaign_request,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator import (
+    D1CampaignCaptureFinalizationCoordinator,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request import (
+    D1CaptureFinalizeRequestError,
+    parse_d1_capture_finalize_request,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator import (
+    D1CampaignCapturePreparationCoordinator,
+)
+from entropic_substrate.ladder.run.provider.d1_git_provenance_adapter import (
+    D1GitProvenanceAdapterError,
+    SubprocessD1GitProvenance,
+)
 
 __all__ = ["build_default_d1_cli_application"]
 

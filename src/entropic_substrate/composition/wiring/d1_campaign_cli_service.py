@@ -7,46 +7,46 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
-from entropic_substrate.d1_campaign_authority_loader import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1CampaignAuthorityLoader,
     D1CampaignAuthorityLoaderError,
     D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_campaign_checkpoint_repository import (
+from entropic_substrate.composition.wiring.d1_cli import (
+    D1CliCommand,
+    D1CliInvalidEvidence,
+    D1CliInvocation,
+    D1CliOperatorGap,
+)
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, canonical_json
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1GitProvenancePort
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointRepository,
     D1CampaignCheckpointRepositoryError,
 )
-from entropic_substrate.d1_campaign_queue import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import (
     D1CampaignQueueHalt,
     D1CompletedCampaign,
 )
-from entropic_substrate.d1_campaign_recovery import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery import (
     D1CampaignRecoveryError,
     D1CampaignRecoveryHalt,
     D1CampaignRecoveryStatus,
     D1HydratedCampaignRecovery,
     hydrate_d1_campaign_recovery,
 )
-from entropic_substrate.d1_campaign_recovery_queue import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery_queue import (
     D1RecoverableCampaignQueue,
     D1RecoveryAttemptControllerPort,
 )
-from entropic_substrate.d1_campaign_request import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignRequestError,
     D1FreshCampaignCursor,
     D1PersistedCampaignCursor,
     parse_d1_campaign_request,
 )
-from entropic_substrate.d1_cli import (
-    D1CliCommand,
-    D1CliInvalidEvidence,
-    D1CliInvocation,
-    D1CliOperatorGap,
-)
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
-from entropic_substrate.experiments.d1_primitives import canonical_digest, canonical_json
 
 __all__ = ["D1CampaignRunCliService"]
 

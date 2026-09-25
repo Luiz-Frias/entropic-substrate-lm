@@ -6,19 +6,19 @@ import argparse
 import json
 from collections.abc import Mapping
 
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliApplication,
     D1CliCommand,
     D1CliInvocation,
     D1CliServiceUnavailable,
 )
-from entropic_substrate.d1_trainer_cli_services import D1FreshTrainerCliService
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.composition.wiring.d1_trainer_cli_services import D1FreshTrainerCliService
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, canonical_json
+from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     parse_d1_trainer_request,
 )
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_json
 
 
 class _TinyFreshService:

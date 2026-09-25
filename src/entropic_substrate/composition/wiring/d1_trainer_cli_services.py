@@ -7,44 +7,46 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_billing_finalization_values import D1TrainerHandoff
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
 )
-from entropic_substrate.d1_fresh_trainer import (
-    D1FreshRunFailure,
-    run_d1_fresh,
-)
-from entropic_substrate.d1_observability import D1JournalObserver
-from entropic_substrate.d1_operator_evidence import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.capture.adapters.d1_observability import D1JournalObserver
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     D1TrainerExportReceipt,
     verify_d1_trainer_export,
 )
-from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
-from entropic_substrate.d1_resume_trainer import (
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import D1TrainerHandoff
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import (
+    D1FreshRunFailure,
+    run_d1_fresh,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
     D1ResumeRunFailure,
     run_d1_resume,
 )
-from entropic_substrate.d1_segment_engine import D1CheckpointSyncPort
-from entropic_substrate.d1_trainer_output_publication import (
+from entropic_substrate.ladder.run.trainer.d1_segment_engine import D1CheckpointSyncPort
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
+    D1TrainerClock,
+    SystemD1TrainerClock,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_output_publication import (
     load_d1_published_trainer_output,
     publish_d1_trainer_output,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerRequestError,
     parse_d1_trainer_request,
 )
-from entropic_substrate.d1_trainer_runtime import (
-    D1TrainerClock,
-    SystemD1TrainerClock,
-)
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
 
 __all__ = ["D1FreshTrainerCliService", "D1ResumeTrainerCliService"]
 

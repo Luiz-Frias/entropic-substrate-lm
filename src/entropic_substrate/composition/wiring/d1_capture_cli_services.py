@@ -8,43 +8,43 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
-from entropic_substrate.d1_campaign_authority_loader import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1CampaignAuthorityLoader,
     D1CampaignAuthorityLoaderError,
     D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
-from entropic_substrate.d1_campaign_request import (
-    D1CampaignCommandRequest,
-    D1CampaignRequestError,
-    parse_d1_campaign_request,
-)
-from entropic_substrate.d1_capture_finalize_coordinator import (
-    D1PublishedCaptureFinalization,
-)
-from entropic_substrate.d1_capture_finalize_request import (
-    D1CaptureFinalizeRequest,
-    D1CaptureFinalizeRequestError,
-    parse_d1_capture_finalize_request,
-)
-from entropic_substrate.d1_capture_prepare_coordinator import (
-    D1PublishedCapturePreparation,
-)
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
     D1CliOperatorGap,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_preparation_custody_repository import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, canonical_json
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody_repository import (
     D1CapturePreparationCustodyRepositoryError,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
-from entropic_substrate.experiments.d1_primitives import canonical_digest, canonical_json
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1GitProvenancePort
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import D1CompletedCampaign
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
+    D1CampaignCommandRequest,
+    D1CampaignRequestError,
+    parse_d1_campaign_request,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator import (
+    D1PublishedCaptureFinalization,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request import (
+    D1CaptureFinalizeRequest,
+    D1CaptureFinalizeRequestError,
+    parse_d1_capture_finalize_request,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator import (
+    D1PublishedCapturePreparation,
+)
 
 __all__ = ["D1CaptureFinalizeCliService", "D1CapturePrepareCliService"]
 

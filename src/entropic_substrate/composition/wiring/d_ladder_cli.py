@@ -7,16 +7,19 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from entropic_substrate.experiments.d1_execution import D1AmpPolicy, default_d1_execution_protocol
-from entropic_substrate.experiments.d1_family import build_d1_experiment_family
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.kernel.identity.d1_primitives import (
     CausalEncoderSpec,
     D1Arm,
     MatchedEncoderPairSpec,
     default_d1_encoder_initialization_identity,
 )
-from entropic_substrate.experiments.ladder import CoarseSpec, Rung, RungSpec, Treatment
-from entropic_substrate.observation import ByteObservationCodec
+from entropic_substrate.ladder.register.d1_execution import (
+    D1AmpPolicy,
+    default_d1_execution_protocol,
+)
+from entropic_substrate.ladder.register.d1_family import build_d1_experiment_family
+from entropic_substrate.ladder.register.ladder import CoarseSpec, Rung, RungSpec, Treatment
 
 
 def tiny_rung_spec(experiment: str, *, seed: int) -> RungSpec:
@@ -145,7 +148,10 @@ def _resolve_probe_options(args: argparse.Namespace) -> None:
 
 def cmd_d_probe(args: argparse.Namespace) -> int:
     """Run a real tiny model and emit only a smoke receipt."""
-    from entropic_substrate.d_ladder_execution import SmokeRequest, run_local_smoke
+    from entropic_substrate.historical.d_ladder.d_ladder_execution import (
+        SmokeRequest,
+        run_local_smoke,
+    )
 
     _resolve_probe_options(args)
     if args.tiny != "true":
@@ -153,7 +159,7 @@ def cmd_d_probe(args: argparse.Namespace) -> int:
             "d-probe admits local tiny runs only; scientific runs require registration"
         )
     if args.exp.startswith("d1-"):
-        from entropic_substrate.d1_probe_cli import run_d1_probe
+        from entropic_substrate.composition.wiring.d1_probe_cli import run_d1_probe
 
         return run_d1_probe(args)
     if args.manifest is not None:

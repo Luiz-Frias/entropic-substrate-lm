@@ -10,30 +10,36 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-from entropic_substrate.d1_campaign_authority_loader import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_operator_controller import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.register.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
     D1OperatorClock,
     D1OperatorRunResult,
     D1SequentialOperatorController,
 )
-from entropic_substrate.d1_operator_custody_adapter import D1OperatorCustodyAdapter
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.d1_r2_runtime_composition import (
+from entropic_substrate.ladder.run.campaign.d1_operator_custody_adapter import (
+    D1OperatorCustodyAdapter,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.ladder.run.construction.d1_r2_runtime_composition import (
     build_d1_r2_runtime_composition,
 )
-from entropic_substrate.d1_runpod_adapter import RunpodctlD1Adapter
-from entropic_substrate.d1_trainer_evidence_adapter import D1TrainerEvidenceAdapter
-from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
-from entropic_substrate.d1_trainer_object_transport import (
+from entropic_substrate.ladder.run.provider.d1_runpod_adapter import RunpodctlD1Adapter
+from entropic_substrate.ladder.run.transport.d1_trainer_evidence_adapter import (
+    D1TrainerEvidenceAdapter,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+    D1TrainerMailboxWaitPolicy,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1ObjectMailboxTrainerTransport,
 )
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
-from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 __all__ = [
     "D1CampaignControllerFactory",

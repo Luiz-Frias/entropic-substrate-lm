@@ -7,57 +7,62 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.kernel.artifacts import (
     D1ArtifactSnapshotError,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_campaign_bootstrap import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import (
+    D1LifecycleCorruptionError,
+    D1LifecycleRepository,
+    D1LifecycleRepositoryGap,
+)
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1GitProvenancePort
+from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.register.d1_registration_codec import (
+    D1PreregistrationByteEvidence,
+    D1RegistrationCodecError,
+    hydrate_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_bootstrap import (
     D1CampaignBootstrapError,
     adopt_d1_finalized_cell_after_crash,
     bootstrap_d1_ready_checkpoint,
 )
-from entropic_substrate.d1_campaign_checkpoint import D1CampaignCheckpoint
-from entropic_substrate.d1_campaign_checkpoint_repository import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import D1CampaignCheckpoint
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointReceipt,
     D1CampaignCheckpointRepository,
     D1CampaignCheckpointRepositoryError,
 )
-from entropic_substrate.d1_campaign_queue import D1CampaignQueueHalt, D1CompletedCampaign
-from entropic_substrate.d1_campaign_recovery import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import (
+    D1CampaignQueueHalt,
+    D1CompletedCampaign,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery import (
     D1CampaignRecoveryError,
     D1CampaignRecoveryHalt,
     D1CampaignRecoveryStatus,
     D1HydratedCampaignRecovery,
     hydrate_d1_campaign_recovery,
 )
-from entropic_substrate.d1_campaign_recovery_queue import D1RecoverableCampaignQueue
-from entropic_substrate.d1_campaign_request import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery_queue import (
+    D1RecoverableCampaignQueue,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1FreshCampaignCursor,
     D1PersistedCampaignCursor,
 )
-from entropic_substrate.d1_finalized_cell_custody_repository import (
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import D1OperatorRunResult
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository import (
     D1FinalizedCellCustodyRepository,
     D1FinalizedCellCustodyRepositoryError,
-)
-from entropic_substrate.d1_operator_controller import D1OperatorRunResult
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_lifecycle_repository import (
-    D1LifecycleCorruptionError,
-    D1LifecycleRepository,
-    D1LifecycleRepositoryGap,
-)
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1GitProvenancePort
-from entropic_substrate.experiments.d1_family import D1ExperimentFamily
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
-from entropic_substrate.experiments.d1_primitives import canonical_json
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
-from entropic_substrate.experiments.d1_registration_codec import (
-    D1PreregistrationByteEvidence,
-    D1RegistrationCodecError,
-    hydrate_registered_design,
 )
 
 __all__ = [

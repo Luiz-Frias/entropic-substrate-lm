@@ -7,20 +7,23 @@ import json
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.analysis.ladder_probe import ProbeSource, run_verified_checkpoint_probe
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.ladder_probe import (
+    ProbeSource,
+    run_verified_checkpoint_probe,
+)
+from entropic_substrate.historical.d_ladder.ladder_profile import load_rung_profile
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.evidence.ladder_campaign import (
+from entropic_substrate.ladder.gate.ladder_campaign import (
     artifact_from_mapping,
     artifact_mapping,
     object_fields,
     read_bound_artifact,
 )
-from entropic_substrate.experiments.ladder_profile import load_rung_profile
 
 
 def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -105,9 +108,11 @@ def cmd_score_gain(args: argparse.Namespace) -> int:
     training, heldout = _source(root, row["training"]), _source(root, row["heldout"])
     config = _config(row["probe_config"])
     if native:
-        from entropic_substrate.analysis.d1_probe import run_d1_checkpoint_probe
-        from entropic_substrate.d1_trainer_request_codec import parse_d1_trainer_request
-        from entropic_substrate.experiments.d1_config import load_d1_execution_catalog
+        from entropic_substrate.historical.d_ladder.d1_probe import run_d1_checkpoint_probe
+        from entropic_substrate.ladder.register.d1_config import load_d1_execution_catalog
+        from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
+            parse_d1_trainer_request,
+        )
 
         request = parse_d1_trainer_request(
             read_bound_artifact(root, artifact_from_mapping(row["request"])),

@@ -4,20 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
 )
-from entropic_substrate.d1_inspect_codec import (
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError
+from entropic_substrate.ladder.analyze.d1_inspect_codec import (
     D1InspectCodecError,
     d1_inspect_result_to_mapping,
 )
-from entropic_substrate.d1_inspect_projection import compose_d1_inspect_view
-from entropic_substrate.d1_inspect_request import d1_inspect_request_from_mapping
-from entropic_substrate.d1_journal_snapshot import read_d1_local_journal_snapshot
-from entropic_substrate.evidence.d1_telemetry_values import D1TelemetryGap
+from entropic_substrate.ladder.analyze.d1_inspect_projection import compose_d1_inspect_view
+from entropic_substrate.ladder.analyze.d1_inspect_request import d1_inspect_request_from_mapping
+from entropic_substrate.ladder.capture.reader.d1_journal_snapshot import (
+    read_d1_local_journal_snapshot,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1TelemetryGap
 
 __all__ = ["D1InspectCliService"]
 
