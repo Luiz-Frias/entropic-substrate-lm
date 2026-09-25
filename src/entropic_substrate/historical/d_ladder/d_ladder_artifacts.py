@@ -10,14 +10,14 @@ from typing import TYPE_CHECKING, Any, cast
 
 import torch
 
-from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.ladder import RungSpec
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.register.ladder import RungSpec
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 if TYPE_CHECKING:
-    from entropic_substrate.d_ladder_execution import SmokeRequest
-    from entropic_substrate.d_ladder_request import ScientificRequest
+    from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest
+    from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
 
 
 def _mapping(content: bytes, label: str) -> dict[str, object]:

@@ -7,12 +7,12 @@ from pathlib import Path
 
 import numpy as np
 
-from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
-from entropic_substrate.data.batching import TokenSplit
-from entropic_substrate.evidence.ladder_campaign import RunAuthorization
-from entropic_substrate.experiments.d1_execution import D1ExecutionProtocol
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.ladder import RungSpec
+from entropic_substrate.core.corpus.batching import TokenSplit
+from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.gate.ladder_campaign import RunAuthorization
+from entropic_substrate.ladder.register.d1_execution import D1ExecutionProtocol
+from entropic_substrate.ladder.register.ladder import RungSpec
 
 
 @dataclass(frozen=True, slots=True)

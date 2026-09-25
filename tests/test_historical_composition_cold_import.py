@@ -129,3 +129,62 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
     assert _MARKER not in result.stdout
     with pytest.raises(AssertionError):
         _assert_cold_import_ok(result, "silent zero-exit child")
+
+
+def test_every_landed_module_imports_only_legacy_free_resolvable_targets() -> None:
+    """P12-SCC-TEETH (design-gate ruling, conductor 2026-09-25): basedpyright
+    was measured toothless for the split-SCC mutation (reportMissingImports
+    disabled repo-wide; a positive control still exits 1 under `just check`'s
+    own basedpyright invocation would NOT go RED on a missing forward
+    reference under this repo's pyright config -- the SCC guard-teeth row is
+    re-pointed here instead). For every ``landed: true`` module in p12's own
+    fragment, walk EVERY ``entropic_substrate.*`` import in its AST --
+    module-level, ``TYPE_CHECKING``-guarded, and function-local alike -- and
+    assert (1) no import target is under ``entropic_substrate.__legacy`` and
+    (2) every import target resolves to an existing module file or package
+    under ``src/entropic_substrate``. This is the load-bearing instrument for
+    ``d_ladder_artifacts``/``d_ladder_execution`` landing in ONE commit: if
+    they were split across commits, the not-yet-landed one's forward
+    reference would either point at a nonexistent historical/d_ladder file
+    (assertion 2 fails) or a transiently reintroduced __legacy address
+    (assertion 1 fails). Three mutation arms recorded in the commit message:
+    split with a not-yet-landed historical address -> RED on assertion 2;
+    split with a transient __legacy address -> RED on assertion 1; split
+    with the old flat prefix -> RED on tests/test_no_old_prefix.py; restore
+    -> GREEN on all three."""
+    import ast
+    import importlib.util
+
+    targets = _fragment_landed_targets()
+    assert targets, "no landed:true rows yet -- nothing to walk"
+
+    for dotted in targets:
+        spec = importlib.util.find_spec(dotted)
+        assert spec is not None and spec.origin, f"{dotted} has no resolvable origin"
+        source = Path(spec.origin).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=spec.origin)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("entropic_substrate.")
+            ):
+                mod = node.module
+            elif isinstance(node, ast.Import):
+                names = [a.name for a in node.names if a.name.startswith("entropic_substrate.")]
+                if not names:
+                    continue
+                mod = names[0]
+            else:
+                continue
+            assert not mod.startswith("entropic_substrate.__legacy"), (
+                f"{dotted} (line {node.lineno}) imports {mod!r} -- a landed module must "
+                "never import __legacy directly"
+            )
+            target_spec = importlib.util.find_spec(mod)
+            assert target_spec is not None and (
+                target_spec.origin or target_spec.submodule_search_locations
+            ), (
+                f"{dotted} (line {node.lineno}) imports {mod!r}, which does not resolve to "
+                "an existing module file or package in the tree"
+            )

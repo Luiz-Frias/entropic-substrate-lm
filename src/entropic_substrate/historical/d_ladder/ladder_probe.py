@@ -17,24 +17,24 @@ from typing import Protocol, cast
 
 import torch
 
-from entropic_substrate.analysis.predictive_probe import (
+from entropic_substrate.core.probe.predictive_probe import (
     ProbeConfig,
     StateSequence,
     fit_predictive_probe,
     score_predictive_probe,
 )
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
     snapshot_d1_artifact,
 )
-from entropic_substrate.d_ladder_execution import SmokeRequest
-from entropic_substrate.d_ladder_request import ScientificRequest
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.ladder import RungSpec
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.register.ladder import RungSpec
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,7 +191,7 @@ def run_verified_checkpoint_probe(
     config: ProbeConfig | None = None,
 ) -> CheckpointProbeCapture:
     """Diagnostic CLI entry: exact profile, manifest and checkpoint, without relaunch authority."""
-    from entropic_substrate.d_ladder_artifacts import load_bound_ladder_model
+    from entropic_substrate.historical.d_ladder.d_ladder_artifacts import load_bound_ladder_model
 
     config = ProbeConfig() if config is None else config
     model = load_bound_ladder_model(spec, manifest, checkpoint, expected_sha256=expected_sha256)

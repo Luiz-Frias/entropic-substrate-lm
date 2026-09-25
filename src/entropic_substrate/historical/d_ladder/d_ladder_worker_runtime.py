@@ -19,15 +19,25 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_predecessor_loader import verified_git_bundle
-from entropic_substrate.d1_resource_activation import D1ProductionResourceActivationFactory
-from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectRead
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.d_ladder_remote_request import RemoteLadderRequest
-from entropic_substrate.evidence.resource_meter_runtime import build_torch_cuda_adapters
-from entropic_substrate.evidence.resource_provenance import ResourceActivationRegistration
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.historical.d_ladder.d_ladder_remote_request import RemoteLadderRequest
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    ResourceActivationRegistration,
+)
+from entropic_substrate.kernel.runtime.paths import source_root
+from entropic_substrate.ladder.capture.resource.resource_meter_runtime import (
+    build_torch_cuda_adapters,
+)
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ProductionResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
+    D1TrainerMailboxObjectRead,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
 from entropic_substrate.ladder.run.worker.hardware import (
     SOURCE_PREFIXES as SOURCE_PREFIXES,
 )
@@ -36,19 +46,11 @@ from entropic_substrate.ladder.run.worker.hardware import (
 )
 from entropic_substrate.ladder.run.worker.hardware import verify_source_tree
 from entropic_substrate.ladder.run.worker.resource_registration import (
-    worker_resource_registration as worker_resource_registration,
+    _FACTORY_DIGEST,  # pyright: ignore[reportPrivateUsage]
+    _PROVIDER,  # pyright: ignore[reportPrivateUsage]
 )
-from entropic_substrate.paths import source_root
-
-_PROVIDER = "torch-cuda-events-and-peak-memory-v1"
-_FACTORY_DIGEST = canonical_digest(
-    {
-        "schema": "d-ladder-cuda-resource-factory-v1",
-        "provider": _PROVIDER,
-        "device_scope": "cuda:0",
-        "flops": None,
-        "power": None,
-    }
+from entropic_substrate.ladder.run.worker.resource_registration import (
+    worker_resource_registration as worker_resource_registration,
 )
 
 

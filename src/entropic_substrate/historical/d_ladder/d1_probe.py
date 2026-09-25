@@ -9,20 +9,20 @@ from typing import cast
 import numpy as np
 import torch
 
-from entropic_substrate.analysis.ladder_probe import (
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.ladder_probe import (
     CheckpointProbeCapture,
     ProbeSource,
     run_model_probe,
 )
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_artifact_snapshot import normalize_d1_artifact_root
-from entropic_substrate.d1_optimizer import build_d1_optimizer
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.predictive_state.checkpoint_repository import load_checkpoint_candidate
-from entropic_substrate.predictive_state.checkpoint_validation import validate_d1_checkpoint
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
+from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
+from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import load_checkpoint_candidate
+from entropic_substrate.ladder.run.trainer.checkpoint_validation import validate_d1_checkpoint
+from entropic_substrate.ladder.run.trainer.d1_optimizer import build_d1_optimizer
 
 
 @dataclass(frozen=True, slots=True)

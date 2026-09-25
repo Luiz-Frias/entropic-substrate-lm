@@ -6,19 +6,21 @@ from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from typing import Self, cast
 
-from entropic_substrate.d1_resource_activation import (
-    D1ResourceActivation,
-    D1ResourceActivationFactory,
-)
-from entropic_substrate.evidence.resource_ledger import ResourceLedger
-from entropic_substrate.evidence.resource_ledger_codec import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedger
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
     resource_ledger_state_from_mapping,
     resource_ledger_state_to_mapping,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_meter_runtime import SystemMonotonicClock
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.capture.resource.resource_meter_runtime import SystemMonotonicClock
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ResourceActivation,
+    D1ResourceActivationFactory,
+)
 
 
 class LadderResources:

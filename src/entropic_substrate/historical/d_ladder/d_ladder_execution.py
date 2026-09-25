@@ -18,24 +18,24 @@ from typing import cast
 import numpy as np
 import torch
 
-from entropic_substrate.d_ladder_artifacts import read_ladder_checkpoint
-from entropic_substrate.d_ladder_request import ScientificRequest
-from entropic_substrate.d_ladder_resources import LadderResources
-from entropic_substrate.d_ladder_training import (
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.core.corpus.ladder_batching import paired_predictive_batch
+from entropic_substrate.core.corpus.ladder_source_order import SourceOrderAudit
+from entropic_substrate.historical.d_ladder.d_ladder_artifacts import read_ladder_checkpoint
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderResources
+from entropic_substrate.historical.d_ladder.d_ladder_training import (
     evaluate_ladder,
     ladder_optimizer,
     train_ladder_step,
 )
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.data.ladder_batching import paired_predictive_batch
-from entropic_substrate.data.ladder_source_order import SourceOrderAudit
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_meter_runtime import SystemMonotonicClock
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.experiments.d1_execution import D1AmpPolicy, D1ExecutionProtocol
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.ladder import RungSpec, Treatment
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.capture.resource.resource_meter_runtime import SystemMonotonicClock
+from entropic_substrate.ladder.register.d1_execution import D1AmpPolicy, D1ExecutionProtocol
+from entropic_substrate.ladder.register.ladder import RungSpec, Treatment
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 
 @dataclass(frozen=True, slots=True)

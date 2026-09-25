@@ -17,40 +17,44 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes, read_d1_artifact_bytes
-from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
-from entropic_substrate.d1_trainer_mailbox_contracts import (
-    D1TrainerMailboxObjectIdentity,
-    D1TrainerMailboxObjectRead,
-)
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.d_ladder_remote_request import (
+from entropic_substrate.historical.d_ladder.d_ladder_remote_request import (
     RemoteLadderRequest,
     parse_remote_request,
     serialize_remote_request,
 )
-from entropic_substrate.d_ladder_request import ScientificRequest
-from entropic_substrate.d_ladder_resources import LadderResources
-from entropic_substrate.evidence.ladder_campaign import (
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderResources
+from entropic_substrate.historical.d_ladder.ladder_profile import load_rung_profile
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes, read_d1_artifact_bytes
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.ladder.gate.ladder_campaign import (
     FiledLadderGate,
     authorize_ladder_run,
     object_fields,
     read_bound_artifact,
     read_json_artifact,
 )
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_primitives import canonical_json
-from entropic_substrate.experiments.ladder_profile import load_rung_profile
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
+    D1TrainerMailboxObjectIdentity,
+    D1TrainerMailboxObjectRead,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1TrainerMailboxObjectPort,
+)
 
 
 def load_remote_predecessor(root: Path, request: RemoteLadderRequest) -> FiledLadderGate:
     """Select the actual filing verifier for the immediate predecessor rung."""
     spec = load_rung_profile(root, request.profile)
     if spec.rung.value == "d2":
-        from entropic_substrate.d1_predecessor_loader import load_d1_predecessor
+        from entropic_substrate.ladder.run.worker.d1_predecessor_loader import load_d1_predecessor
 
         return load_d1_predecessor(root, request.predecessor_declaration)
-    from entropic_substrate.evidence.ladder_predecessor import load_ladder_predecessor
+    from entropic_substrate.ladder.gate.ladder_predecessor import load_ladder_predecessor
 
     return load_ladder_predecessor(root, request.predecessor_declaration)
 
@@ -234,7 +238,7 @@ def run_remote_worker(
     A failed dispatch emits a typed, request-bound failure receipt and rethrows;
     it never publishes a completion marker or substitutes a local smoke run.
     """
-    from entropic_substrate.d_ladder_execution import run_ladder
+    from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
 
     request = parse_remote_request(_read(objects, identity))
     try:
@@ -247,7 +251,7 @@ def run_remote_worker(
             if predecessor_loader is None
             else predecessor_loader(root)
         )
-        from entropic_substrate.d1_predecessor_loader import verified_git_bundle
+        from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
 
         git_context = (
             nullcontext(None)

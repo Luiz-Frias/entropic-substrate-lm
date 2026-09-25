@@ -8,19 +8,20 @@ from typing import cast
 
 import yaml
 
-from entropic_substrate.evidence.ladder_campaign import (
+from entropic_substrate.core.latent.dynamics import SolverConfig
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.gate.ladder_campaign import (
     artifact_from_mapping,
     artifact_mapping,
     object_fields,
     read_bound_artifact,
     read_json_artifact,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.experiments.d1_config_profile import (
+from entropic_substrate.ladder.register.d1_config_profile import (
     D1LaunchScale,
     parse_d1_profile_payload,
 )
-from entropic_substrate.experiments.ladder import (
+from entropic_substrate.ladder.register.ladder import (
     CoarseSpec,
     MatchingLane,
     ParameterMatchReference,
@@ -28,7 +29,6 @@ from entropic_substrate.experiments.ladder import (
     RungSpec,
     Treatment,
 )
-from entropic_substrate.predictive_state.dynamics import SolverConfig
 
 _FIELDS = (
     "schema base_profile base_scale rung treatment seed horizons coarse permutation "
