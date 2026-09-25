@@ -176,10 +176,20 @@ def test_cold_import_guard_accepts_a_real_import() -> None:
 
 
 def test_cold_import_guard_rejects_a_failed_import() -> None:
-    """Negative arm: a failed import never prints the marker."""
+    """Negative arm: a failed import never prints the marker.
+
+    Also feeds the same result through ``_assert_cold_import_ok`` (CodeRabbit
+    local review, p10-run-upper phase diff): the three subject-driven tests
+    above only ever call that helper with a PASSING result, so a regression
+    inside the helper itself (e.g. its marker check silently weakening) would
+    not go RED anywhere. This closes that gap without touching the direct
+    assertions above, which independently prove the instrument -- not the
+    helper -- rejects a failed import."""
     result = _run_cold_import("entropic_substrate.__no_such_module__")
     assert result.returncode != 0
     assert _MARKER not in result.stdout
+    with pytest.raises(AssertionError):
+        _assert_cold_import_ok(result, "entropic_substrate.__no_such_module__")
 
 
 def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() -> None:
@@ -188,7 +198,10 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
     This is the GREEN control for the instrument itself, distinct from the two
     tests above: those exercise ``_run_cold_import`` end to end (the real guard
     template), while this one shows the marker-presence assertion alone is not
-    fooled by an unrelated zero-exit child that never ran the template at all."""
+    fooled by an unrelated zero-exit child that never ran the template at all.
+    Also feeds the result through ``_assert_cold_import_ok`` for the same
+    helper-coverage reason as the negative arm above: a zero-exit, markerless
+    process must make the helper raise too, not only the raw assertion."""
     result = subprocess.run(
         [sys.executable, "-c", "pass"],
         env=os.environ.copy(),
@@ -198,3 +211,5 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
     )
     assert result.returncode == 0
     assert _MARKER not in result.stdout
+    with pytest.raises(AssertionError):
+        _assert_cold_import_ok(result, "silent zero-exit child")
