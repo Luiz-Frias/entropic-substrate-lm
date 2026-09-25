@@ -10,12 +10,18 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
+    D1TrainerProcessWorker,
+    D1TrainerStartReportPublisher,
+)
+from entropic_substrate.kernel.artifacts import (
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_operator_values import require_d1_pod_id
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     D1TrainerMailboxErrorReport,
     D1TrainerMailboxObjectIdentity,
@@ -25,24 +31,22 @@ from entropic_substrate.d1_trainer_mailbox_contracts import (
     parse_d1_trainer_mailbox_command,
     serialize_d1_trainer_mailbox_error,
 )
-from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+    D1TrainerMailboxWaitPolicy,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     d1_trainer_request_path,
     d1_trainer_runtime_report_path,
 )
-from entropic_substrate.d1_trainer_process_worker import (
-    D1TrainerProcessWorker,
-    D1TrainerStartReportPublisher,
-)
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     D1TrainerRequest,
     d1_trainer_request_sha256,
     parse_d1_trainer_request,
 )
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_primitives import require_sha256
 
 __all__ = [
     "D1R2CheckpointRecoveryPort",

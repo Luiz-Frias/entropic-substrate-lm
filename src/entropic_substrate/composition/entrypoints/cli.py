@@ -30,11 +30,21 @@ import torch
 import yaml
 
 if TYPE_CHECKING:
-    from entropic_substrate.analysis.embedding_geometry import CheckpointModel
-    from entropic_substrate.d1_cli import D1CliApplication
+    from entropic_substrate.composition.wiring.d1_cli import D1CliApplication
+    from entropic_substrate.ladder.analyze.embedding_geometry import CheckpointModel
 
-from entropic_substrate.checkpoint import CheckpointFormatError, normalize_checkpoint
-from entropic_substrate.config import (
+from entropic_substrate.core.substrate.fisher import build_fisher_init, save_init
+from entropic_substrate.historical.e_series.field_pretrain import (
+    add_field_pretrain_parser,
+    cmd_field_pretrain,
+)
+from entropic_substrate.historical.e_series.train import (
+    Trainer,
+    resolve_device,
+    resolve_results_path,
+)
+from entropic_substrate.kernel.runtime.checkpoint import CheckpointFormatError, normalize_checkpoint
+from entropic_substrate.kernel.runtime.config import (
     EXPERIMENTS,
     Config,
     is_execution_gated,
@@ -42,22 +52,23 @@ from entropic_substrate.config import (
     required_preregistrations,
     resolve_experiment_config,
 )
-from entropic_substrate.data.build import build_corpus
-from entropic_substrate.data.enwik8 import load_enwik8_bytes
-from entropic_substrate.data.fineweb import stream_fineweb_bytes
-from entropic_substrate.data.synthetic import synthetic_text
-from entropic_substrate.field_pretrain import add_field_pretrain_parser, cmd_field_pretrain
-from entropic_substrate.init.fisher import build_fisher_init, save_init
-from entropic_substrate.logging import configure_logging, logger
-from entropic_substrate.mlflow_aggregate import aggregate
-from entropic_substrate.sinks import (
+from entropic_substrate.kernel.runtime.logging import configure_logging, logger
+from entropic_substrate.ladder.capture.custody.build import build_corpus
+from entropic_substrate.ladder.capture.custody.enwik8 import load_enwik8_bytes
+from entropic_substrate.ladder.capture.custody.fineweb import stream_fineweb_bytes
+from entropic_substrate.ladder.capture.custody.synthetic import synthetic_text
+from entropic_substrate.ladder.capture.reader.mlflow_aggregate import aggregate
+from entropic_substrate.ladder.capture.reader.sinks import (
     MLFLOW_TINY_ENV,
     MLFLOW_TRACKING_ENV,
     MlflowStartupError,
     build_sink,
 )
-from entropic_substrate.telemetry import EXIT_TELEMETRY_GAP, TelemetryGap, read_final_kappa
-from entropic_substrate.train import Trainer, resolve_device, resolve_results_path
+from entropic_substrate.ladder.capture.reader.telemetry import (
+    EXIT_TELEMETRY_GAP,
+    TelemetryGap,
+    read_final_kappa,
+)
 
 __all__ = ["build_parser", "main"]
 
@@ -279,31 +290,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_field_pretrain_parser(sub)
 
-    from entropic_substrate.d_ladder_cli import add_d_ladder_parser
+    from entropic_substrate.composition.wiring.d_ladder_cli import add_d_ladder_parser
 
     add_d_ladder_parser(sub)
 
-    from entropic_substrate.d_ladder_probe_cli import add_score_gain_parser
+    from entropic_substrate.composition.wiring.d_ladder_probe_cli import add_score_gain_parser
 
     add_score_gain_parser(sub)
 
-    from entropic_substrate.sentence_prediction.cli import add_sentence_parsers
+    from entropic_substrate.composition.cli import add_sentence_parsers
 
     add_sentence_parsers(sub)
 
-    from entropic_substrate.sentence_prediction.capture_cli import add_capture_parsers
+    from entropic_substrate.composition.capture_cli import add_capture_parsers
 
     add_capture_parsers(sub)
 
-    from entropic_substrate.sentence_prediction.span_cli import add_span_parsers
+    from entropic_substrate.composition.span_cli import add_span_parsers
 
     add_span_parsers(sub)
 
-    from entropic_substrate.sentence_prediction.source_cli import add_source_parsers
+    from entropic_substrate.composition.source_cli import add_source_parsers
 
     add_source_parsers(sub)
 
-    from entropic_substrate.d1_cli import D1CliCommand
+    from entropic_substrate.composition.wiring.d1_cli import D1CliCommand
 
     for command in D1CliCommand:
         d1 = sub.add_parser(
@@ -492,7 +503,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         torch.load(args.ckpt, map_location=device, weights_only=True),
         source=str(args.ckpt),
     )
-    from entropic_substrate.config import config_from_dict
+    from entropic_substrate.kernel.runtime.config import config_from_dict
 
     cfg: Config = config_from_dict(state["config"])
     corpus = build_corpus(cfg.data, cfg.model.tokenizer)
@@ -542,16 +553,15 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
         return 2
     import subprocess  # nosec B404 -- dvc add/push only, fixed argv at the call site below
 
-    import mlflow.tracking
-
-    import entropic_substrate.capture_results as capture_results_mod
-    from entropic_substrate.capture_results import (
+    import entropic_substrate.ladder.capture.reader.capture_results as capture_results_mod
+    from entropic_substrate.ladder.capture.adapters.mlflow import build_mlflow_client
+    from entropic_substrate.ladder.capture.reader.capture_results import (
         capture_checkpoints,
         capture_finished_runs,
         dvc_commands,
     )
 
-    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    client = build_mlflow_client(tracking_uri)
     experiments = args.experiments or [
         os.environ.get("MLFLOW_EXPERIMENT_NAME", "entropic-substrate-lm")
     ]
@@ -601,10 +611,12 @@ def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
             f"mlflow-aggregate: no tracking URI (--tracking-uri or ${MLFLOW_TRACKING_ENV})"
         )
         return 2
-    import mlflow.tracking
-    from mlflow.exceptions import MlflowException
+    from entropic_substrate.ladder.capture.adapters.mlflow import (
+        MlflowException,
+        build_mlflow_client,
+    )
 
-    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    client = build_mlflow_client(tracking_uri)
     try:
         summaries = aggregate(client, experiment_name=args.experiment, n_seeds=args.n_seeds)
     except MlflowException as exc:
@@ -663,8 +675,8 @@ def cmd_charts(args: argparse.Namespace) -> int:
     INVARIANTS: local rendering never depends on the tracking server) —
     only the attach step below is gated on a reachable tracking URI.
     """
-    from entropic_substrate.analysis import charts as chart_fns
-    from entropic_substrate.analysis.series import (
+    from entropic_substrate.ladder.analyze import charts as chart_fns
+    from entropic_substrate.ladder.analyze.series import (
         load_eval_run,
         load_train_run,
         pair_final_metrics,
@@ -744,14 +756,13 @@ def cmd_charts(args: argparse.Namespace) -> int:
         logger.info("charts: no tracking URI — rendered locally only, nothing attached")
         return 0
 
-    import mlflow.tracking
-
-    from entropic_substrate.analysis.mlflow_attach import (
+    from entropic_substrate.ladder.analyze.mlflow_attach import (
         attach_figures_to_run,
         attach_seed_band_to_aggregate,
     )
+    from entropic_substrate.ladder.capture.adapters.mlflow import build_mlflow_client
 
-    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    client = build_mlflow_client(tracking_uri)
 
     by_run_id: dict[str, dict[str, Any]] = {}
     for name, figure in figures.items():
@@ -806,7 +817,7 @@ def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, Checkpoin
     happened to load last with no signal to the operator that the other one
     was ever discarded.
     """
-    from entropic_substrate.analysis.embedding_geometry import load_checkpoint_model
+    from entropic_substrate.ladder.analyze.embedding_geometry import load_checkpoint_model
 
     loaded: dict[int, CheckpointModel] = {}
     for path in paths:
@@ -877,7 +888,7 @@ def _cached_reconstruct_init_table(
     callers holding "the same" cached table must never be able to corrupt
     each other's view by mutating their own copy in place.
     """
-    from entropic_substrate.analysis import embedding_geometry as eg
+    from entropic_substrate.ladder.analyze import embedding_geometry as eg
 
     key = _init_table_cache_key(cfg)
     if key not in cache:
@@ -899,7 +910,7 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
         logger.error("embedding-geometry: --ckpt-a and --ckpt-b must both be given (repeatable)")
         return 2
 
-    from entropic_substrate.analysis import embedding_geometry as eg
+    from entropic_substrate.ladder.analyze import embedding_geometry as eg
 
     try:
         loaded_a = _load_ckpts_by_seed(args.ckpt_a, label="--ckpt-a")
@@ -1028,7 +1039,7 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     for entry in results_payload:
         logger.bind(report=True).info(f"seed {entry['seed']}: {entry}")
 
-    from entropic_substrate.analysis import charts as chart_fns
+    from entropic_substrate.ladder.analyze import charts as chart_fns
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     drift_series = [(f"seed{raw['seed']}-a", raw["drift_a"]) for raw in per_seed_raw] + [
@@ -1056,12 +1067,12 @@ def main(
     """Parse ``argv`` and dispatch. Returns a process exit code."""
     configure_logging()
     args = build_parser().parse_args(argv)
-    from entropic_substrate.d1_cli import D1CliCommand
+    from entropic_substrate.composition.wiring.d1_cli import D1CliCommand
 
     if args.command in {command.value for command in D1CliCommand}:
         command = D1CliCommand(args.command)
         if d1_application is None:
-            from entropic_substrate.d1_cli_composition import (
+            from entropic_substrate.composition.wiring.d1_cli_composition import (
                 build_default_d1_cli_application,
             )
 
@@ -1090,11 +1101,11 @@ def main(
         "field-pretrain": cmd_field_pretrain,
     }
     if args.command == "d-probe":
-        from entropic_substrate.d_ladder_cli import cmd_d_probe
+        from entropic_substrate.composition.wiring.d_ladder_cli import cmd_d_probe
 
         return cmd_d_probe(args)
     if args.command == "d-score-gain":
-        from entropic_substrate.d_ladder_probe_cli import cmd_score_gain
+        from entropic_substrate.composition.wiring.d_ladder_probe_cli import cmd_score_gain
 
         return cmd_score_gain(args)
     if args.command in (
@@ -1103,19 +1114,19 @@ def main(
         "h-generate-probe",
         "h-inspect-generation",
     ):
-        from entropic_substrate.sentence_prediction.cli import cmd_sentence
+        from entropic_substrate.composition.cli import cmd_sentence
 
         return cmd_sentence(args)
     if args.command in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
-        from entropic_substrate.sentence_prediction.capture_cli import cmd_capture
+        from entropic_substrate.composition.capture_cli import cmd_capture
 
         return cmd_capture(args)
     if args.command in ("h-diagnose-spans", "h-inspect-spans"):
-        from entropic_substrate.sentence_prediction.span_cli import cmd_span
+        from entropic_substrate.composition.span_cli import cmd_span
 
         return cmd_span(args)
     if args.command in ("h-prepare-source", "h-inspect-source"):
-        from entropic_substrate.sentence_prediction.source_cli import cmd_source
+        from entropic_substrate.composition.source_cli import cmd_source
 
         return cmd_source(args)
     try:

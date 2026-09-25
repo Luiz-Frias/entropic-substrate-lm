@@ -9,19 +9,26 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError
-from entropic_substrate.d1_cli import D1CliInvalidEvidence
-from entropic_substrate.d1_observability import (
+from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
+    D1TrainerProcessWorker,
+)
+from entropic_substrate.composition.wiring.d1_cli import D1CliInvalidEvidence
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
     AuthoritativeJournalOnlyObserver,
     D1JournalObserver,
 )
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_system_runtime_probe import D1RuntimeProbeError, SystemD1RuntimeProbe
-from entropic_substrate.d1_trainer_process_contracts import d1_trainer_runtime_report_path
-from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
-from entropic_substrate.d1_trainer_request_codec import D1TrainerRequestError
-from entropic_substrate.d1_trainer_runtime import D1TrainerClock
-from entropic_substrate.experiments.d1_config import D1LaunchProfile, load_d1_execution_catalog
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, load_d1_execution_catalog
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.provider.d1_system_runtime_probe import (
+    D1RuntimeProbeError,
+    SystemD1RuntimeProbe,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerClock
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
+    d1_trainer_runtime_report_path,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import D1TrainerRequestError
 
 __all__ = ["main", "run_d1_trainer_worker_command"]
 

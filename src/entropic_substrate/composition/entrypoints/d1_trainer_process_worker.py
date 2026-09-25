@@ -5,21 +5,29 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.composition.wiring.d1_trainer_cli_services import (
+    D1FreshTrainerCliService,
+    D1ResumeTrainerCliService,
+)
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_observability import D1JournalObserver
-from entropic_substrate.d1_operator_evidence import d1_runtime_observation_sha256
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
-from entropic_substrate.d1_segment_engine import D1CheckpointSyncPort
-from entropic_substrate.d1_trainer_cli_services import (
-    D1FreshTrainerCliService,
-    D1ResumeTrainerCliService,
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_nonempty_string
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.adapters.d1_observability import D1JournalObserver
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    d1_runtime_observation_sha256,
 )
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.trainer.d1_segment_engine import D1CheckpointSyncPort
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerClock
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     D1TrainerStartReport,
     d1_trainer_request_path,
     d1_trainer_runtime_report_path,
@@ -29,7 +37,7 @@ from entropic_substrate.d1_trainer_process_contracts import (
     serialize_d1_runtime_report,
     serialize_d1_start_report,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerRequest,
@@ -38,10 +46,6 @@ from entropic_substrate.d1_trainer_request_codec import (
     parse_d1_trainer_request,
     verify_d1_trainer_request_runtime,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerClock
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_primitives import RunClass, require_nonempty_string
 
 __all__ = [
     "D1TrainerCheckpointSyncFactory",

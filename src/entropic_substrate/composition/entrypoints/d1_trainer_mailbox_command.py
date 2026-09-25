@@ -10,23 +10,27 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import NoReturn, Protocol, TextIO, cast
 
-from entropic_substrate.d1_observability import AuthoritativeJournalOnlyObserver
-from entropic_substrate.d1_operator_values import require_d1_pod_id
-from entropic_substrate.d1_r2_runtime_composition import (
-    D1R2RuntimeCompositionError,
-    build_d1_r2_runtime_composition,
-)
-from entropic_substrate.d1_r2_trainer_mailbox_worker import (
+from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker import (
     D1R2TrainerMailboxWorker,
     D1R2TrainerMailboxWorkerError,
 )
-from entropic_substrate.d1_system_runtime_probe import SystemD1RuntimeProbe
-from entropic_substrate.d1_trainer_mailbox_worker import (
+from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
+    D1TrainerProcessWorker,
+)
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
+    AuthoritativeJournalOnlyObserver,
+)
+from entropic_substrate.ladder.register.d1_config import load_d1_execution_catalog
+from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
+from entropic_substrate.ladder.run.construction.d1_r2_runtime_composition import (
+    D1R2RuntimeCompositionError,
+    build_d1_r2_runtime_composition,
+)
+from entropic_substrate.ladder.run.provider.d1_system_runtime_probe import SystemD1RuntimeProbe
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWaitPolicy,
     D1TrainerMailboxWorkerError,
 )
-from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
-from entropic_substrate.experiments.d1_config import load_d1_execution_catalog
 
 __all__ = ["main", "run_d1_trainer_mailbox_command"]
 
