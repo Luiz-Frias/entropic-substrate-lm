@@ -31,19 +31,23 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_checkpoint
-from entropic_substrate.config import Config
-from entropic_substrate.data.batching import (
+from entropic_substrate.core.corpus.batching import (
     DATA_ORDER_DIGEST_BATCHES,
     Corpus,
     SequenceSampler,
 )
-from entropic_substrate.data.build import build_corpus, corpus_byte_stream
-from entropic_substrate.geometry.gram import gram_frobenius_sq, normalized_gram
-from entropic_substrate.logging import logger
-from entropic_substrate.models.backbone import LanguageModel, LMOutput, build_model
-from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator
-from entropic_substrate.sinks import JsonlSink, MetricSink
+from entropic_substrate.core.geometry.gram import gram_frobenius_sq, normalized_gram
+from entropic_substrate.core.substrate.backbone import LanguageModel, LMOutput, build_model
+from entropic_substrate.core.substrate.field_encoder import FieldCalibrationAccumulator
+from entropic_substrate.kernel.runtime.checkpoint import (
+    CHECKPOINT_FORMAT_VERSION,
+    normalize_checkpoint,
+)
+from entropic_substrate.kernel.runtime.config import Config
+from entropic_substrate.kernel.runtime.logging import logger
+from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
+from entropic_substrate.ladder.capture.custody.build import build_corpus, corpus_byte_stream
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 
 __all__ = [
     "EvalResult",
