@@ -9,13 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    _TOKEN,  # pyright: ignore[reportPrivateUsage] -- paired checked factory boundary
-    FiledLadderGate,
-    actor_from_mapping,
-    read_campaign_design,
-    validate_ladder_phase_transition,
-)
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     artifact_mapping,
@@ -45,6 +38,13 @@ from entropic_substrate.ladder.analyze.ladder_registration import (
     paired_contrasts,
 )
 from entropic_substrate.ladder.analyze.seed_sizing import ContrastHypothesis
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    _TOKEN,  # pyright: ignore[reportPrivateUsage] -- paired checked factory boundary
+    FiledLadderGate,
+    actor_from_mapping,
+    read_campaign_design,
+    validate_ladder_phase_transition,
+)
 
 
 def prepare_ladder_blind_packet(

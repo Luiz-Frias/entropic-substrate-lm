@@ -14,10 +14,6 @@ from typing import Protocol, cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    actor_from_mapping,
-    read_campaign_design,
-)
 from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
 from entropic_substrate.core.corpus.ladder_source_order import SourceOrderAudit
 from entropic_substrate.kernel.artifacts import (
@@ -49,6 +45,10 @@ from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
 )
 from entropic_substrate.ladder.capture.resource.resource_work_codec import (
     resource_snapshot_from_mapping,
+)
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    actor_from_mapping,
+    read_campaign_design,
 )
 
 
