@@ -142,23 +142,23 @@ Three swappable components under a standard decoder-only transformer, selected p
 experiment by `configs/*.yaml` (init × block × norm) — `docs/architecture.md` is the
 authoritative version:
 
-1. **Substrate init** (`init/fisher.py`) — √p of Laplace-smoothed next-byte transition
+1. **Substrate init** (`core/substrate/fisher.py`) — √p of Laplace-smoothed next-byte transition
    rows → points on S²⁵⁵ ∩ ℝ₊, lifted 256→`d_model` by a fixed semi-orthogonal QR map.
    Control arm: uniform-random unit vectors. This is the only thing E1 varies.
-2. **Backbone** (`models/blocks.py`) — nGPT-style: all embedding-dim vectors unit-norm,
+2. **Backbone** (`core/substrate/blocks.py`) — nGPT-style: all embedding-dim vectors unit-norm,
    affine-free `Norm()` as the retraction step, residual `h ← Norm(h + α(h_block − h))`
    with learnable eigen-learning-rates. Optimizer stays plain AdamW; geometry lives
    entirely in the forward pass. This is the E2 swap.
-3. **κ-attention** (`models/blocks.py`) — the novel artifact (redesigned 2026-08-11, design
+3. **κ-attention** (`core/substrate/blocks.py`) — the novel artifact (redesigned 2026-08-11, design
    record in `docs/e-3-instruction.md`): per-head attention logits `−d_κ(q,k)²` with one
    learnable clamped curvature per head (init spread −1/0/+1); E2 is the exact κ=0 member
    (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
-   `layers/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
+   `core/geometry/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
    pinned by regression test — curvature is relational and cannot act on a single point at
    a chart origin under a unit-norm contract). The anchored arms `e3-anchor` (per-head κ +
    global asymmetric anchors) and `e3-vantage` (global κ + per-head anchors; attribution
    ablation) are code-ready but execution-gated on the E3 readout: per-head κ divergence.
-   Symmetric anchors are exactly null (isometry) — pinned by test. `geometry/kappa.py` implements the
+   Symmetric anchors are exactly null (isometry) — pinned by test. `core/geometry/kappa.py` implements the
    κ-stereographic primitives directly; the geoopt submodule is a **test-time oracle
    only**, never a runtime dependency.
 
@@ -170,13 +170,14 @@ any map; the load-balance loss must stay finite and gradients must reach κ (uni
 
 **Data flow:** enwik8 is DVC-tracked in `data/` (pointer `.dvc` files are git's half of the
 contract — `data|models|results/*` are gitignored *except* `*.dvc`); FineWeb-Edu is
-streamed, never local. `train.py` writes `results/*.jsonl` (nats/byte, κ trajectories,
-gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via `dvc push`.
-Both are read back through validated readers, because both feed gates: `telemetry.py` is the
-only admissibility predicate for `results/*.jsonl` (shared by the CLI preflight and
-`scripts/run_ladder.sh` — inadmissible telemetry raises, it never returns an empty value),
-and `checkpoint.py` stamps/checks `format_version` on `models/*.pt`. See
-`docs/architecture.md` for why an unversioned `tau` is refused rather than guessed.
+streamed, never local. `historical/e_series/train.py` writes `results/*.jsonl` (nats/byte, κ
+trajectories, gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via
+`dvc push`. Both are read back through validated readers, because both feed gates:
+`ladder/capture/reader/telemetry.py` is the only admissibility predicate for `results/*.jsonl`
+(shared by the CLI preflight and `scripts/run_ladder.sh` — inadmissible telemetry raises, it
+never returns an empty value), and `kernel/runtime/checkpoint.py` stamps/checks
+`format_version` on `models/*.pt`. See `docs/architecture.md` for why an unversioned `tau` is
+refused rather than guessed.
 
 **Tests** (`tests/`, pytest markers `unit` / `integration`) check the vendored κ-math
 against geoopt and pin the numerics invariants above.

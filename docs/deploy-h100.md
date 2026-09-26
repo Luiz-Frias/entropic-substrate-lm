@@ -80,8 +80,8 @@ authentication using a personal access token (classic)"), registered via
 - Run command examples:
 
 ```bash
-python -m entropic_substrate.cli train --exp e1-fisher --device cuda
-python -m entropic_substrate.cli train --exp e3 --device cuda
+python -m entropic_substrate.composition.entrypoints.cli train --exp e1-fisher --device cuda
+python -m entropic_substrate.composition.entrypoints.cli train --exp e3 --device cuda
 bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc push per rung
 ```
 
@@ -91,7 +91,7 @@ bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc 
 - Image: same GHCR image; on-start script:
 
 ```bash
-cd /app && python -m entropic_substrate.cli train --exp e3 --device cuda \
+cd /app && python -m entropic_substrate.composition.entrypoints.cli train --exp e3 --device cuda \
   2>&1 | tee results/e3-console.log
 ```
 
