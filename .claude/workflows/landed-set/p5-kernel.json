@@ -1,0 +1,70 @@
+{
+  "phase": "p5-kernel",
+  "modules": {
+    "entropic_substrate.experiments.d1_primitives": {
+      "target": "entropic_substrate.kernel.identity.d1_primitives",
+      "landed": true
+    },
+    "entropic_substrate.factory_attestation": {
+      "target": "entropic_substrate.kernel.identity.factory_attestation",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_provenance": {
+      "target": "entropic_substrate.kernel.evidence_class.resource_provenance",
+      "landed": true
+    },
+    "entropic_substrate.evidence.resource_provenance_codec": {
+      "target": "entropic_substrate.kernel.evidence_class.resource_provenance_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_evaluation_values": {
+      "target": "entropic_substrate.kernel.verdict.d1_evaluation_values",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_contract": {
+      "target": "entropic_substrate.kernel.verdict.d1_contract",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_parsing": {
+      "target": "entropic_substrate.kernel.verdict.d1_parsing",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_statistical_gaps": {
+      "target": "entropic_substrate.kernel.verdict.d1_statistical_gaps",
+      "landed": true
+    },
+    "entropic_substrate.evidence.d1_types": {
+      "target": "entropic_substrate.kernel.verdict.d1_types",
+      "landed": true
+    },
+    "entropic_substrate.checkpoint": {
+      "target": "entropic_substrate.kernel.runtime.checkpoint",
+      "landed": true
+    },
+    "entropic_substrate.config": {
+      "target": "entropic_substrate.kernel.runtime.config",
+      "landed": true
+    },
+    "entropic_substrate.paths": {
+      "target": "entropic_substrate.kernel.runtime.paths",
+      "landed": true
+    },
+    "entropic_substrate.shared_attempt": {
+      "target": "entropic_substrate.kernel.runtime.shared_attempt",
+      "landed": true
+    },
+    "entropic_substrate.git_environment": {
+      "target": "entropic_substrate.kernel.runtime.git_environment",
+      "landed": true
+    },
+    "entropic_substrate.d1_training_step_records": {
+      "target": "entropic_substrate.__legacy.d1_training_step_records",
+      "landed": false
+    },
+    "entropic_substrate.d1_calibration_records": {
+      "target": "entropic_substrate.__legacy.d1_calibration_records",
+      "landed": false
+    }
+  },
+  "legacy_edge_budget": 56
+}

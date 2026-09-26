@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
-from entropic_substrate.evidence.d1_statistical_gaps import D1EstimateGap
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ContentHash,
     LifecycleContractError,
     SuccessorAuthorization,
 )
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EstimateGap
 
 D1_VERDICT_SCHEMA_VERSION: Final = "d1-verdict/v2"
 D1_ARM_IDS: Final[tuple[str, ...]] = ("none", "sg", "ac", "both")

@@ -38,7 +38,7 @@ from typing import Any
 
 import torch
 
-from entropic_substrate.logging import logger
+from entropic_substrate.kernel.runtime.logging import logger
 
 __all__ = [
     "CHECKPOINT_FORMAT_VERSION",

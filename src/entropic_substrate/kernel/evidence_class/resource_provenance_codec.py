@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import NoReturn, cast
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -24,7 +24,7 @@ from entropic_substrate.evidence.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 
 __all__ = [
     "ResourceProvenanceCodecGap",

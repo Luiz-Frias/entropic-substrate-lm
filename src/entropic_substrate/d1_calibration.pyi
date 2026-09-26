@@ -16,10 +16,8 @@ from entropic_substrate.__legacy.d1_calibration import (
 )
 from entropic_substrate.__legacy.d1_calibration import annotations as annotations
 from entropic_substrate.__legacy.d1_calibration import canonical_digest as canonical_digest
-from entropic_substrate.__legacy.d1_calibration import dataclass as dataclass
 from entropic_substrate.__legacy.d1_calibration import hashlib as hashlib
 from entropic_substrate.__legacy.d1_calibration import np as np
-from entropic_substrate.__legacy.d1_calibration import require_sha256 as require_sha256
 from entropic_substrate.__legacy.d1_calibration import torch as torch
 
 __all__ = ["D1BaselineCalibrationAttestation", "D1BaselineCalibrator"]

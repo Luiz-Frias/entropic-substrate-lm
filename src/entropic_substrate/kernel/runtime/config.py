@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 import yaml
 
-from entropic_substrate.paths import RepoLayoutError, repo_root
+from entropic_substrate.kernel.runtime.paths import RepoLayoutError, repo_root
 
 __all__ = [
     "E15_PREREGISTRATIONS",

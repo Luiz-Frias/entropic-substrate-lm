@@ -102,11 +102,21 @@ is a **scientific** change, not a structural one. It is not offered here.
 |---|---|
 | revert one of the four reader-closure rail modules (`d1_artifact_snapshot`, `evidence.lifecycle`, `predictive_state.metric`, `predictive_state.dynamics`) to `__legacy` | the checkpoint identity test, with a **resolution error**, not a digest mismatch |
 | leave `checkpoint.py`'s package glob in place after the move | the checkpoint identity test raises; this is the failure mode p4 exists to convert into an explicit tuple |
-| change either digest in a phase after p4 | the `frozen_after: p4` assertion on this door |
+| change the LABEL or the module-set SHAPE in a phase after p4 without a ruled bump | the `frozen_after: p4` assertion on this door |
 | fill a `new digest` cell without recomputing it at the p4 tip | the p4 ACCEPTANCE check, which compares the table's cell against a fresh computation |
 
-The third row is the one that matters most for the whole sprint: these two values are frozen after
-p4, and **no later phase may change either**.
+RETRACTION (house rule 4, p5-kernel): the paragraph that followed this table used to say "these two
+values are frozen after p4, and no later phase may change either" and the table's own third row
+used to read "change either digest in a phase after p4". Both are WRONG against ruling R-PIN
+(conductor, 2026-09-22: "frozen_after freezes label + shape, not digest values"), and are corrected
+here rather than silently overwritten -- the file's own opening section already said this
+correctly ("digest VALUES re-measure whenever a later phase rewrites a member module's bytes...
+each such phase appends a dated row below"); the guard-teeth table below simply had not been
+brought into line with it. What is frozen after p4 is the LABEL (`h-checkpoint-reader-v2`,
+`h-source-reader-v3`) and the module-set SHAPE (the two `_READER_MODULES` tuples) -- not the
+composed digest value, which is a pure function of (regime strings, current file bytes) and
+necessarily moves whenever a later phase edits a member file. p5-kernel's own re-pin below is the
+first instance of this since the door closed.
 
 **Row 1 performed (both arms).** Mutated `_READER_MODULES` in `ladder/run/checkpoint.py`,
 replacing `"kernel.artifacts"` with `"__legacy.d1_artifact_snapshot"` (simulating the rail module
@@ -115,3 +125,19 @@ sitting back under quarantine): `uv run pytest tests/test_identity_epoch.py` wen
 `ModuleNotFoundError: No module named 'entropic_substrate.__legacy.d1_artifact_snapshot'` — a
 resolution error, not a digest mismatch, exactly the failure mode the row names. Reverted; the
 same test file re-ran 12 passed, `git diff` on the mutated file empty.
+
+---
+
+## Re-pin log (post-p4)
+
+Dated rows, one per phase whose rewrite of a `_READER_MODULES` member moves a composed digest
+(ruling R-PIN). Label and module-set shape are restated unchanged on every row; only the digest
+values move.
+
+| date | phase | tip commit | reader | member changed | old value(s) | new value(s) |
+|---|---|---|---|---|---|---|
+| 2026-09-22 | p5-kernel | `ba89b98083be3ea8b6be02db285a67b6ff659ef3` | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged) | `ladder.run.worker_execution` (line 10 + line-31 docstring: `entropic_substrate.__legacy.paths` → `entropic_substrate.kernel.runtime.paths`, the phase's one landed→`__legacy` edge, per ruling R-PIN) | local `(3.12.13, 2.13.0)` = `8e4ca5a3840e5c2efa7c4e0f0a1521af576e54139588cef76169021276b8eaf3`; CI `(3.12.14, 2.13.0+cpu)` = `ea85d18b278423bc7de7095b8292ce224b6c7aa50428eecf443dec828eb1602a` | local `(3.12.13, 2.13.0)` = `d4bde6d4bb4c0f6c154450b070a2336a1a34c5b4a949bb4fefaa322522dcaf42`; CI `(3.12.14, 2.13.0+cpu)` = `d7c521786523b3aa0855e14413c830cf4cb7cf031b6914412041fbfa0853199f` |
+
+h-source-reader-v3 is untouched by p5-kernel: `worker_execution` was never one of its seven fixed
+members, confirmed by re-measuring both `_SOURCE_REGIME_TABLE` rows unchanged with the same
+`tools/regime_rows.py` invocation (`--pysbd 0.3.4`).

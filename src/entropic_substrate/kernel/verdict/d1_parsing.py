@@ -6,15 +6,15 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
-from entropic_substrate.evidence.d1_types import (
-    CLAUSE_STATUS,
-    D1VerdictValidationError,
-    JsonValue,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ArtifactIdentity,
     ContentHash,
     LifecycleContractError,
+)
+from entropic_substrate.kernel.verdict.d1_types import (
+    CLAUSE_STATUS,
+    D1VerdictValidationError,
+    JsonValue,
 )
 
 

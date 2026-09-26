@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, canonical_digest
 
 __all__ = [
     "RESOURCE_TELEMETRY_SCHEMA_VERSION",
