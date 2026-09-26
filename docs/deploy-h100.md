@@ -5,15 +5,25 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-9a6300a.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-88d1a25.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:12ed163429a1de87566788956573b0fe7f0e4d7230487f65b46debc6afce4986
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:6b4e68fa7b0f7a4ba379c13d198f5c8b00f2ad96d3d9c8620ba7fe921c81dbcb
 ```
 
-Runtime source matches commit `9a6300a20eddd3cbe5c00f01abc1ee25f5c0b128` exactly.
+Runtime source matches commit `88d1a25c62ffa15db03e2b9becea5a1638060da3` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-09-26 (p13-sweep commit F, ruling P13-IMAGE, operator go-ahead OP-3): the
+previous pin (`12ed1634...`, source `9a6300a`) is superseded; its capture
+`results/h-image-publication-9a6300a.dvc` remains historical evidence. This publication's
+verifier imports only landed addresses (`kernel.lifecycle`, `ladder.capture.capture`,
+`ladder.run.worker.*`, `ladder.run.transport.*`, `ladder.run.worker_command`), which is itself
+the packaging proof that the retired dotted namespace is gone from the image. The source
+replay uses a fresh `h-prepare-source` capture (same manifest: 512 candidates, `sample-10BT`,
+pinned FineWeb revision, split seed 42; 491 admitted / 1,954,698 bytes, corpus identity
+identical to the 9a6300a-era capture) because the p4 reader-identity bump makes the earlier
+capture unreadable by the current reader, by design.
 Requests must bind their code commit and bundle to this publication, not a later
 host-only controller commit. Earlier publication captures remain historical evidence.
 The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
