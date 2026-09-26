@@ -153,39 +153,74 @@ def test_every_landed_module_imports_only_legacy_free_resolvable_targets() -> No
     with the old flat prefix -> RED on tests/test_no_old_prefix.py; restore
     -> GREEN on all three."""
     import ast
+    import importlib
     import importlib.util
 
     targets = _fragment_landed_targets()
     assert targets, "no landed:true rows yet -- nothing to walk"
+
+    def _is_package(mod: str) -> bool:
+        spec = importlib.util.find_spec(mod)
+        return spec is not None and bool(spec.submodule_search_locations)
+
+    def _resolves(mod: str) -> bool:
+        spec = importlib.util.find_spec(mod)
+        return spec is not None and bool(spec.origin or spec.submodule_search_locations)
+
+    def _import_targets(node: ast.AST, importer: str, importer_is_pkg: bool) -> list[str]:
+        """Every dotted target an import statement binds, resolved the way the
+        interpreter resolves it (validator finding F1, 2026-09-26): a relative
+        import is anchored on the importer's package, and ``from PKG import
+        name`` binds ``PKG.name`` when ``name`` is a submodule of a package --
+        so a not-yet-landed sibling named through its package, or through a
+        relative import, is a dangling target, not a symbol."""
+        if isinstance(node, ast.Import):
+            return [a.name for a in node.names if a.name.startswith("entropic_substrate.")]
+        if not isinstance(node, ast.ImportFrom):
+            return []
+        if node.level:
+            package = importer if importer_is_pkg else importer.rpartition(".")[0]
+            for _ in range(node.level - 1):
+                package = package.rpartition(".")[0]
+            base = f"{package}.{node.module}" if node.module else package
+        else:
+            base = node.module or ""
+        if not base.startswith("entropic_substrate"):
+            return []
+        if not _is_package(base):
+            return [base]
+        # ``from <package> import name``: a submodule binds ``base.name``; anything
+        # else must be an attribute the package itself exports.
+        out = [base]
+        pkg = (
+            None
+            if base.startswith("entropic_substrate.__legacy")
+            else importlib.import_module(base)
+        )
+        for alias in node.names:
+            child = f"{base}.{alias.name}"
+            if _resolves(child):
+                out.append(child)
+            elif pkg is not None and hasattr(pkg, alias.name):
+                continue  # a symbol the package exports, not a submodule
+            else:
+                out.append(child)  # dangling: neither submodule nor package attribute
+        return out
 
     for dotted in targets:
         spec = importlib.util.find_spec(dotted)
         assert spec is not None and spec.origin, f"{dotted} has no resolvable origin"
         source = Path(spec.origin).read_text(encoding="utf-8")
         tree = ast.parse(source, filename=spec.origin)
+        importer_is_pkg = bool(spec.submodule_search_locations)
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                if node.module == "entropic_substrate":
-                    modules = [f"entropic_substrate.{a.name}" for a in node.names]
-                elif node.module.startswith("entropic_substrate."):
-                    modules = [node.module]
-                else:
-                    continue
-            elif isinstance(node, ast.Import):
-                modules = [a.name for a in node.names if a.name.startswith("entropic_substrate.")]
-                if not modules:
-                    continue
-            else:
-                continue
+            modules = _import_targets(node, dotted, importer_is_pkg)
             for mod in modules:
                 assert not mod.startswith("entropic_substrate.__legacy"), (
                     f"{dotted} (line {node.lineno}) imports {mod!r} -- a landed module must "
                     "never import __legacy directly"
                 )
-                target_spec = importlib.util.find_spec(mod)
-                assert target_spec is not None and (
-                    target_spec.origin or target_spec.submodule_search_locations
-                ), (
+                assert _resolves(mod), (
                     f"{dotted} (line {node.lineno}) imports {mod!r}, which does not resolve to "
                     "an existing module file or package in the tree"
                 )
