@@ -54,7 +54,7 @@
           "frozen_after": true
         },
         {
-          "name": "tests/test_identity_epoch.py :: h-source-reader-v2, h-checkpoint-reader-v1, 52-entry D1 closure manifest, CHECKPOINT_FORMAT_VERSION, both codec construction_digests, every *-v1/*-v2 literal",
+          "name": "tests/test_identity_epoch.py :: h-source-reader-v2, h-checkpoint-reader-v1, 73-entry D1 closure manifest (52 retracted at p0), CHECKPOINT_FORMAT_VERSION, both codec construction_digests, every *-v1/*-v2 literal",
           "kind": "door",
           "frozen_after": true
         },
@@ -90,7 +90,10 @@
         "src/entropic_substrate/ladder/__init__.py",
         "src/entropic_substrate/historical/__init__.py",
         "src/entropic_substrate/composition/__init__.py",
-        ".github/workflows/ci.yaml"
+        ".github/workflows/ci.yaml",
+        ".secrets.baseline",
+        "tools/regime_rows.py",
+        "tests/test_regime_rows.py"
       ],
       "conflict_edges": [
         {
@@ -102,7 +105,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict.\n\nDESIGN-GATE RULINGS 2026-09-18 (wf_5a1887ce-db2): D1 epoch record = docs/plans/measurements/p0-epoch.json (graph dirs never committed); D2 mapping.json layers = kernel,core,ladder,historical,composition with the 13 legacy-lane modules re-routed to historical.*; five empty layer-package markers are the only src edit; identity fixture asserts source-derived components exactly and composed digests per measured regime. OPERATOR RULING 2026-09-18: p0 adds a lint-imports step to .github/workflows/ci.yaml (CI gate change approved).",
+      "notes": "Rail, zero src edits (the survey's phase-decomposition report (retained outside the repo)). Re-derives the import graph at bbe7976: 332 files, 326 edge-bearing modules, 1783 edges (baseline 142 inversions / 11 cycles unchanged from the survey epoch; two new H-lane modules since the survey — h_probe_command.py, h_probe_controller.py — are mapped to p4's touch_set, dest ladder/run/worker). Guard-teeth (both arms): import boto3 in core turns lint-imports forbidden contract RED; flip one byte in a closure member turns the identity fixture RED; load one module under a second name turns the sentinel-singleton test RED. justfile is also touched by p12 — recorded there as a hub conflict.\n\nDESIGN-GATE RULINGS 2026-09-18 (wf_5a1887ce-db2): D1 epoch record = docs/plans/measurements/p0-epoch.json (graph dirs never committed); D2 mapping.json layers = kernel,core,ladder,historical,composition with the 13 legacy-lane modules re-routed to historical.*; five empty layer-package markers are the only src edit; identity fixture asserts source-derived components exactly and composed digests per measured regime. OPERATOR RULING 2026-09-18: p0 adds a lint-imports step to .github/workflows/ci.yaml (CI gate change approved). CONDUCTOR RULING 2026-09-18 (gate-check halt wf_1e9deec4-d4a): .secrets.baseline is a mechanical companion of allowed content (6 digest-literal entries verified, no credential); D1 closure count RETRACTED 52 -> 73 (installed_d1_reader_source_files() measured at the lane tip, reproduced by the conductor). CONDUCTOR RULING 2026-09-19: three exact-match predicates (packaging tuple, literal-site paths, sentinel map keys) generalized inside p0 so p3+ never need these test files (hub avoidance); frozen_after freezes label + shape, not digest values; tools/regime_rows.py + its control test added for regime-row re-pins.",
       "engine_mode": "arch"
     },
     {
@@ -146,7 +149,9 @@
         "tests/test_worker_source_anchor.py",
         "tests/test_config.py",
         "tests/test_sinks.py",
-        ".claude/workflows/landed-set/p1-anchors.json"
+        ".claude/workflows/landed-set/p1-anchors.json",
+        "tests/test_identity_epoch.py",
+        "tools/mapping.json"
       ],
       "conflict_edges": [
         {
@@ -170,7 +175,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently.",
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge. CONDUCTOR RULING 2026-09-19: tools/mapping.json enters the touch set for exactly one added row (entropic_substrate.paths -> kernel.runtime); p0's mapping-coverage predicate is generalized to nodes outside landed layers modulo a __legacy. prefix, so no later phase needs the mapping for landed-layer modules. AMENDED 2026-09-19: p1 re-pins both _CHECKPOINT_REGIME_TABLE rows (worker_execution.py is swept by the checkpoint reader); CI row via tools/regime_rows.py.",
       "engine_mode": "arch"
     },
     {
@@ -215,7 +220,8 @@
         "tests/test_d1_reader_source_closure.py",
         "tests/test_d1_external_worker.py",
         "tests/test_review_packet.py",
-        ".claude/workflows/landed-set/p2-d1-closure.json"
+        ".claude/workflows/landed-set/p2-d1-closure.json",
+        "tests/test_identity_epoch.py"
       ],
       "conflict_edges": [
         {
@@ -227,7 +233,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED.",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge.",
       "engine_mode": "arch"
     },
     {
@@ -415,7 +421,8 @@
         "src/entropic_substrate/ladder/capture/adapters/jsonl.py",
         "src/entropic_substrate/ladder/capture/adapters/composite.py",
         "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
-        ".claude/workflows/landed-set/p3b-observability-rail.json"
+        ".claude/workflows/landed-set/p3b-observability-rail.json",
+        ".importlinter"
       ],
       "conflict_edges": [
         {
@@ -439,7 +446,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "PRIORITY AMENDMENT (ruled 2026-09-17, P-1): lands the E-series observability seam FIRST, ahead of the H tracer, so p4 consumes landed addresses rather than old-prefix shims (a per-phase no-old-prefix test would otherwise fail on core/sentence at p4). D1's D1JournalObserver/D1MlflowObserver protocols in d1_observability.py are re-based as adapters of the one MetricSink port — no second port survives. E entry points keep working through shims; the p3b `just ship-it` live gate proves the moved MLflow path end to end for the first time. Teeth (added to .importlinter and this phase's test set, both arms by mutation): add `import mlflow` in core/sentence → RED; add one bare print() outside the two pinned sites (telemetry final-eval, cli eval --json) → RED; drop configure_logging from worker_command → RED. Rewrite-on-arrival is extended for every subsequent phase: print() routed through logger, metric emission routed through MetricSink, every -m entry point calls configure_logging at entry — the one permitted behaviour-change class inside structural phases (measured scientific behaviour stays frozen, guarded by the identity fixtures).",
+      "notes": "PRIORITY AMENDMENT (ruled 2026-09-17, P-1): lands the E-series observability seam FIRST, ahead of the H tracer, so p4 consumes landed addresses rather than old-prefix shims (a per-phase no-old-prefix test would otherwise fail on core/sentence at p4). D1's D1JournalObserver/D1MlflowObserver protocols in d1_observability.py are re-based as adapters of the one MetricSink port — no second port survives. E entry points keep working through shims; the p3b `just ship-it` live gate proves the moved MLflow path end to end for the first time. Teeth (added to .importlinter and this phase's test set, both arms by mutation): add `import mlflow` in core/sentence → RED; add one bare print() outside the two pinned sites (telemetry final-eval, cli eval --json) → RED; drop configure_logging from worker_command → RED. Rewrite-on-arrival is extended for every subsequent phase: print() routed through logger, metric emission routed through MetricSink, every -m entry point calls configure_logging at entry — the one permitted behaviour-change class inside structural phases (measured scientific behaviour stays frozen, guarded by the identity fixtures). CONDUCTOR RULING 2026-09-19 (DN-P1 amended): p3b adds exactly one forbidden contract to .importlinter (mlflow only from ladder.capture.adapters.mlflow); serial rail, not a hub.",
       "engine_mode": "arch"
     },
     {

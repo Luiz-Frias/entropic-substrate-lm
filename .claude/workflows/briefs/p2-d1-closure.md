@@ -68,7 +68,7 @@ Retire the D1 reader source closure per the operator ruling. Forced earlier than
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
-- just check green with the review ring importable. Mutation: reintroduce a parents[2] anchor anywhere in the closure's former call path and the new test that imports the review ring from a relocated tree goes RED. Identity fixture drops the 52-entry manifest row and records the retraction (house rule 4).
+- just check green with the review ring importable. Mutation: reintroduce a parents[2] anchor anywhere in the closure's former call path and the new test that imports the review ring from a relocated tree goes RED. Identity fixture drops the 73-entry manifest row (73 measured at p0; the survey's 52 was retracted 2026-09-18) and records the retraction (house rule 4).
 - `just check` green on the lane tip.
 - `just pc-ci` (exit gate) green on the lane tip.
 - `lint-imports` green: ZERO inversions among the landed layers `kernel < core < ladder < historical < composition`. `__legacy` sits OUTSIDE the contract until p13, so edges to and from the quarantine are not linted; `tests/test_legacy_coupling.py` bounds them instead.
@@ -95,6 +95,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_d1_reader_source_closure.py`
 - `tests/test_d1_external_worker.py`
 - `tests/test_review_packet.py`
+- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, p0 review B-integration: drop the 73-entry D1 closure manifest rows with their retraction measurement; every other fixture value stays byte-identical to p0/p1)
 
 ## Already ruled
 
@@ -124,7 +125,7 @@ House rule 5: a guard is proven load-bearing by breaking the guarded thing and s
 
 Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE behaviour-change class permitted inside a structural phase, scoped to log routing, metric routing and entry-point configuration. Measured scientific behaviour (losses, metric values, identities) stays frozen; the identity fixtures and the numerics tests are the tripwire.
 
-- The retraction itself is recorded as a measured claim under house rule 4: the identity fixture drops the 52-entry manifest row IN THIS COMMIT, with the measurement that zero stored envelopes carried the field.
+- The retraction itself is recorded as a measured claim under house rule 4: the identity fixture drops the 73-entry manifest row (p0-measured; 52 retracted) IN THIS COMMIT, with the measurement that zero stored envelopes carried the field.
 - No routing change. The D lane still emits nothing through the substrate; p3b lands the rail.
 
 ## Planned commit branches
@@ -135,4 +136,4 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 2. Drop the reader_source manifest arm from the control envelope
 3. Drop the closure verification from the external worker
 4. Delete d1_reader_source_closure.py and its test
-5. Retract the 52-entry manifest fixture row with its measurement
+5. Retract the 73-entry manifest fixture row (p0-measured count) with its measurement

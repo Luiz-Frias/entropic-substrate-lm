@@ -113,6 +113,19 @@ audit:
     uv run deptry src notebooks
     uv run bandit -c pyproject.toml -q -r src
 
+# p0-contract-pin (D2/DN-P1): the layers contract over the LANDED layers
+# kernel < core < ladder < historical < composition, `__legacy` deliberately
+# OUTSIDE it until p13. `--no-sync`: a bare `uv run` re-syncs the env and
+# would replace the CPU-only torch wheel CI pins with the CUDA build (see
+# every other `--no-sync` step in ci.yaml for the same measured reason).
+# Echoes the resolved package location so the scanned tree is evidenced, not
+# assumed — a stale editable install pointing elsewhere would otherwise pass
+# silently.
+lint-imports:
+    @echo "→ Checking import layers (kernel < core < ladder < historical < composition)..."
+    @uv run --no-sync python -c "import entropic_substrate; print('scanning', entropic_substrate.__file__)"
+    uv run --no-sync lint-imports
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -131,9 +144,9 @@ test-all:
 # Quality gates
 # ---------------------------------------------------------------------------
 
-# Standard quality gate: fmt-check + lint + typecheck + unit tests.
+# Standard quality gate: fmt-check + lint + typecheck + unit tests + import layers.
 # This is the gate CI runs on every push/PR and prek runs pre-push.
-check: fmt-check lint typecheck test
+check: fmt-check lint typecheck test lint-imports
     @echo "✓ All quality checks passed"
 
 # CI parity gate — runs prek hooks (commit + push stages).

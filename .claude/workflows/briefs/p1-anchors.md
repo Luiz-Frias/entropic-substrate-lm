@@ -66,7 +66,7 @@ Rewrite five depth-derived path sites onto one resolver anchored on the package 
 
 ## ACCEPTANCE
 
-- Closure MEMBERSHIP may change, not only content: if `config.py` imports the new `paths.py`, the D1 reader closure grows 52 -> 53 members; the fixture re-pin in this phase covers membership and per-file digests, and the PR body states the new count.
+- Closure MEMBERSHIP may change, not only content: if `config.py` imports the new `paths.py`, the D1 reader closure grows 73 -> 74 members (73 measured at p0, retracting the survey's 52); the fixture re-pin in this phase covers membership and per-file digests, and the PR body states the new count.
 
 Machine-checkable, one line each. The lane's `acceptance` arg points here.
 
@@ -93,6 +93,7 @@ Thoroughness beyond the stated ACCEPTANCE is NOT welcome. Anything below that lo
 The escalation door: if correctness would require touching a contract surface, a file outside this envelope, or contradicting a SACRED INVARIANT, DO NOT EDIT. Return status `DECISION` with the verification you RAN attached (command + observed output).
 
 - `src/entropic_substrate/paths.py`
+- `tools/mapping.json` (CONDUCTOR RULING 2026-09-19, p0 gate-check integration: ADD exactly one row for the new module, `"entropic_substrate.paths": {"dest": "entropic_substrate.kernel.runtime", "layer": "kernel", "action": "move", "note": "added at p1; layout-invariant repo_root resolver (E-3/DN-8)"}`; no other row changes, so p0's mapping-coverage contract stays green when `paths.py` appears in the graph)
 - `src/entropic_substrate/config.py`
 - `src/entropic_substrate/sinks.py`
 - `src/entropic_substrate/analysis/d1_reader_source_closure.py`
@@ -101,6 +102,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `tests/test_worker_source_anchor.py`
 - `tests/test_config.py`
 - `tests/test_sinks.py`
+- `tests/test_identity_epoch.py` (CONDUCTOR RULING 2026-09-18, amended 2026-09-19 after the p0 fixer's reproduction: re-pin the D1 closure count/digest rows that the `paths.py` membership change moves AND both `_CHECKPOINT_REGIME_TABLE` composed rows, because `sentence_prediction/checkpoint.py::_reader_identity()` sweeps `sentence_prediction/*.py` and this phase edits `worker_execution.py` in that package. The local row is measured in the lane; the CI row `("3.12.14", "2.13.0+cpu")` is computed with `uv run --no-sync python tools/regime_rows.py --python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4` (its control test pins that the tool reproduces the repo's identity functions). `_SOURCE_REGIME_TABLE` rows stay byte-identical: the source reader's fixed module tuple is untouched by this phase, and the identity LABELS (`h-checkpoint-reader-v1`, `h-source-reader-v2`) do not bump before p4.)
 
 ## Already ruled
 

@@ -1,0 +1,54 @@
+; p0-contract-pin (design-gate rulings D1/D2, DN-P1 2026-09-17).
+;
+; This is a create-only file at p0 and, per DN-P1, is edited ONLY here and at
+; p13 (which adds `__legacy` and turns on full enforcement). From p3b through
+; p12 it names the LANDED layers and deliberately leaves `__legacy` outside
+; the contract -- quarantine coupling is bounded instead by
+; tests/test_legacy_coupling.py's legacy_edge_budget, never by an ignore list
+; here (there is no ignore list, by ruling).
+;
+; At p0 both contracts below are vacuous by construction: the five layer
+; packages are empty and core/* does not exist yet, so both pass over an
+; empty domain. Non-vacuity plus the string-only-shim hazard were measured
+; directly against this tree at 2eaa372 (not recorded in any commit; per
+; house rule 5 and this brief's ACCEPTANCE, the arms belong in the lane's PR
+; body once it is opened), each mutation applied then reverted in-branch:
+;   1. `import boto3` in entropic_substrate/core/__init__.py ->
+;      `uv run --no-sync lint-imports` exits 1, core-forbids-external-io
+;      BROKEN;
+;   2. `import entropic_substrate.ladder` in
+;      entropic_substrate/kernel/__init__.py -> exits 1, landed-layers
+;      BROKEN;
+;   3. the same kernel -> ladder edge as a string-only
+;      `importlib.import_module("entropic_substrate.ladder")` shim -> exits
+;      0, landed-layers KEPT -- the layers contract is GREEN-BLIND to this
+;      form, which is why the "shim form" ruling in the brief forbids it.
+
+[importlinter]
+root_packages =
+    entropic_substrate
+include_external_packages = True
+
+[importlinter:contract:landed-layers]
+name = Landed layer contract: kernel < core < ladder < historical < composition
+type = layers
+layers =
+    entropic_substrate.composition
+    entropic_substrate.historical
+    entropic_substrate.ladder
+    entropic_substrate.core
+    entropic_substrate.kernel
+
+[importlinter:contract:core-forbids-external-io]
+name = core.* never imports mlflow, boto3, botocore, dvc, runpod, huggingface_hub or datasets directly (p0 door, frozen_after p0; the mlflow-only-from-adapter door is a separate, not-yet-implemented p3b contract)
+type = forbidden
+source_modules =
+    entropic_substrate.core
+forbidden_modules =
+    mlflow
+    boto3
+    botocore
+    dvc
+    runpod
+    huggingface_hub
+    datasets

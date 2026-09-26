@@ -81,6 +81,10 @@ dev = [
   "alembic!=1.10.0,<2",
   "jsonschema>=4.26.0",
   "pytest-xdist>=3.6",
+  # p0-contract-pin (E-8 ratified at sprint-preflight): the layers contract
+  # over kernel/core/ladder/historical/composition, __legacy deliberately
+  # outside it until p13 (DN-P1). `just check` runs it as `lint-imports`.
+  "import-linter>=1.0",
 ]
 
 [build-system]
