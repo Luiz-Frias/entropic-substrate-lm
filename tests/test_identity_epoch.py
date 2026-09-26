@@ -349,7 +349,9 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.checkpoint import _TAU_ERAS, CHECKPOINT_FORMAT_VERSION
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.core.observation.permuted_byte_codec import PermutedByteObservationCodec
+from entropic_substrate.kernel.runtime.checkpoint import _TAU_ERAS, CHECKPOINT_FORMAT_VERSION
 from entropic_substrate.ladder.capture.capture import (
     _READER_MODULES as _SOURCE_READER_MODULES,
 )
@@ -365,8 +367,6 @@ from entropic_substrate.ladder.run.checkpoint import (
 from entropic_substrate.ladder.run.checkpoint import (
     _reader_identity as _checkpoint_reader_identity,
 )
-from entropic_substrate.observation.byte_codec import ByteObservationCodec
-from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
 
 pytestmark = pytest.mark.unit
 
