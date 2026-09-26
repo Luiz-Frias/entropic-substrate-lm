@@ -497,7 +497,11 @@ def test_apply_never_rewrites_a_module_docstring_GREEN_control(tmp_path: Path) -
 
 def test_apply_skips_a_ruled_b2_line_in_an_in_scope_file(tmp_path: Path) -> None:
     """scripts/assemble_review_packet.py:635/636/737/864 stay byte-identical
-    at B1 even though the rest of the file is in scope (RULED_B2_SITES)."""
+    at B1 even though the rest of the file is in scope (RULED_B2_SITES): an
+    UNRULED old-address import elsewhere in the same file still gets
+    rewritten, proving the skip is line-scoped rather than a whole-file
+    no-op (guard teeth: the ruled lines and the rest of the file are two
+    distinguishable arms)."""
     root = _apply_tree(tmp_path)
     script = root / "scripts" / "assemble_review_packet.py"
     lines = ["x = 1\n"] * 634
@@ -505,12 +509,14 @@ def test_apply_skips_a_ruled_b2_line_in_an_in_scope_file(tmp_path: Path) -> None
     lines.append(
         "import entropic_substrate.old_leaf as leaf\n"
     )  # line 636 (unrelated form, still ruled)
+    lines.append("import entropic_substrate.telemetry as tel\n")  # line 637 (unruled)
     _write(script, "".join(lines))
     rc = rta.main(["apply", "--root", str(root), str(script)])
     assert rc == 0
     out = script.read_text().splitlines()
     assert out[634] == 'RULED = "entropic_substrate.old_leaf"'
     assert out[635] == "import entropic_substrate.old_leaf as leaf"
+    assert out[636] == "import entropic_substrate.ladder.capture.telemetry as tel"
 
 
 # ---------------------------------------------------------------------------
@@ -519,13 +525,21 @@ def test_apply_skips_a_ruled_b2_line_in_an_in_scope_file(tmp_path: Path) -> None
 
 
 def test_apply_never_touches_a_skip_listed_file_even_when_targeted_directly(tmp_path: Path) -> None:
+    """The skip list filters out one named file, never the whole scope: a
+    second, ordinary file passed in the SAME invocation is still rewritten
+    (guard teeth -- distinguishes "this file is filtered" from "apply
+    no-opped on the whole call")."""
     root = _apply_tree(tmp_path)
     test_file = root / "tests" / "test_no_old_prefix.py"
     original = "import entropic_substrate.old_leaf as leaf\n"
     _write(test_file, original)
-    rc = rta.main(["apply", "--root", str(root), str(test_file)])
-    assert rc == 0  # nothing to scan: the file was filtered out entirely
-    assert test_file.read_text() == original
+    normal_file = root / "tests" / "test_ordinary.py"
+    normal_original = "import entropic_substrate.old_leaf as leaf\n"
+    _write(normal_file, normal_original)
+    rc = rta.main(["apply", "--root", str(root), str(test_file), str(normal_file)])
+    assert rc == 0
+    assert test_file.read_text() == original  # skip-listed: untouched
+    assert normal_file.read_text() == "import entropic_substrate.ladder.run.old_leaf as leaf\n"
 
 
 def test_apply_is_all_or_nothing_across_the_whole_scope_RED(tmp_path: Path) -> None:
