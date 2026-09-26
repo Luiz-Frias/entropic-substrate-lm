@@ -5,8 +5,9 @@ RULING D-E, conductor 2026-09-22, wf_6d1caf7e-2e6): this is exactly the two
 names p4's own moved importers consume, `measure_hardware` and
 `verify_source_tree`, plus the `SOURCE_PREFIXES` constant and the two
 Protocol helpers each one needs. `build_worker_factory` and
-`verify_worker_source` stay in the `__legacy` remainder until p12 moves them
-to `historical/d_ladder`; `worker_resource_registration` moved to
+`verify_worker_source` moved to `historical/d_ladder/d_ladder_worker_runtime.py`
+in p12 (commit `0177d60`, FOR-1490, P12-WORKER-REMAINDER, 2026-09-25);
+`worker_resource_registration` moved to
 `entropic_substrate.ladder.run.worker.resource_registration` in p10 (ruling
 P10-WORKER-SPLIT, 2026-09-24). The remainder re-exports that name and the
 three names below by identity, so its own module-level consumers resolve

@@ -147,7 +147,8 @@ def test_every_landed_module_imports_only_legacy_free_resolvable_targets() -> No
     they were split across commits, the not-yet-landed one's forward
     reference would either point at a nonexistent historical/d_ladder file
     (assertion 2 fails) or a transiently reintroduced __legacy address
-    (assertion 1 fails). Three mutation arms recorded in the commit message:
+    (assertion 1 fails). Three mutation arms recorded in PR #303's body and the `3bb96ce`
+    commit message (not merely "the commit message" -- the fuller account is in the PR body):
     split with a not-yet-landed historical address -> RED on assertion 2;
     split with a transient __legacy address -> RED on assertion 1; split
     with the old flat prefix -> RED on tests/test_no_old_prefix.py; restore
@@ -169,7 +170,9 @@ def test_every_landed_module_imports_only_legacy_free_resolvable_targets() -> No
 
     def _import_targets(node: ast.AST, importer: str, importer_is_pkg: bool) -> list[str]:
         """Every dotted target an import statement binds, resolved the way the
-        interpreter resolves it (validator finding F1, 2026-09-26): a relative
+        interpreter resolves it (validator finding F1, 2026-09-26 UTC -- dates in this suite are
+        recorded in UTC at the commit timestamp, not the operator's local time zone; this is the
+        one dating convention used throughout, stated here once): a relative
         import is anchored on the importer's package, and ``from PKG import
         name`` binds ``PKG.name`` when ``name`` is a submodule of a package --
         so a not-yet-landed sibling named through its package, or through a
