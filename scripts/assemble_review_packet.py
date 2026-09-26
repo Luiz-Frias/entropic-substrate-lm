@@ -644,8 +644,11 @@ _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
 def _is_shim_source(source: str) -> bool:
     """True if ``source`` is (structurally) a generated alias shim: the
     ``import <target> as _target`` / ``sys.modules[__name__] = _target``
-    rebind ``tools/gen_shims.py`` emits, with or without its leading
-    entrypoint ``if __name__ == "__main__":`` guard.
+    rebind the pre-p13 shim generator emitted (the generator and every
+    emitted shim retired in p13's breaking commit; this guard still
+    recognizes the shape on sight, in case a future move reintroduces it),
+    with or without its leading entrypoint ``if __name__ == "__main__":``
+    guard.
 
     A reader built from a source this shallow degrades to a no-op that
     still "succeeds" (FOR-1524, MEASURED 2026-09-20: p3-quarantine's move
@@ -897,10 +900,12 @@ def main() -> int:
 
     telemetry_path = args.telemetry
     if telemetry_path is None:
-        # Resolve THROUGH the module, never a literal repo path: the
-        # sys.modules rebind (tools/gen_shims.py) makes __file__ the real
-        # target module wherever it actually lives, and stays correct
-        # across a later structural move (FOR-1524).
+        # Resolve THROUGH the module, never a literal repo path: this
+        # stays correct across a later structural move on its own, and
+        # historically (pre-p13) also followed the shim generator's
+        # sys.modules rebind to wherever the real target module lived
+        # (FOR-1524). The shim generator retired in p13; resolving through
+        # the module is kept as the general-case default regardless.
         import entropic_substrate.ladder.capture.reader.telemetry as _telemetry
 
         telemetry_path = Path(_telemetry.__file__)
