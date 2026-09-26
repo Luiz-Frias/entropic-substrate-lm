@@ -2,7 +2,7 @@
 run-descriptor door's single construction seam, :func:`build_sink_for_run`.
 
 Landed at p3b from ``entropic_substrate.sinks`` (quarantined
-``entropic_substrate.__legacy.sinks``): ``CompositeSink`` was ``sinks.py:640``,
+``entropic_substrate.ladder.capture.reader.sinks``): ``CompositeSink`` was ``sinks.py:640``,
 ``build_sink_for_run`` was ``sinks.py:737``.
 
 ``build_sink_for_run`` physically lives HERE, not in
@@ -17,7 +17,7 @@ included) consumes.
 
 **Cycle note:** ``build_sink_for_run`` reads ``mlflow_enabled``,
 ``MLFLOW_TRACKING_ENV``, ``MLFLOW_EXPERIMENT_ENV`` and the default experiment
-name from ``entropic_substrate.__legacy.sinks`` (residue, p8) -- imported
+name from ``entropic_substrate.ladder.capture.reader.sinks`` (residue, p8) -- imported
 inside the function body, never at module scope, for the same reason
 ``adapters/mlflow.py`` does: the facade (``__legacy/sinks.py``) imports this
 module at module level to re-export both names under the old prefix, so a
@@ -27,7 +27,7 @@ module-level import back would be a real cycle.
 2026-09-21):** the run-descriptor door's freeze covers ``TrackingRunDescriptor``'s
 and ``build_sink_for_run``'s SIGNATURE and documented raise/abort semantics --
 never the residue names their bodies still reach into
-``entropic_substrate.__legacy.sinks`` for. The full p8-owned relocation set,
+``entropic_substrate.ladder.capture.reader.sinks`` for. The full p8-owned relocation set,
 across both files this door's construction path touches:
 
 * HERE (``build_sink_for_run``, function-scope import above): ``_DEFAULT_EXPERIMENT``,
@@ -111,16 +111,16 @@ def build_sink_for_run(
 ) -> MetricSink:
     """Compose one authoritative JSONL sink plus an optional tracking mirror.
 
-    Raises :class:`entropic_substrate.__legacy.sinks.MlflowStartupError` when
+    Raises :class:`entropic_substrate.ladder.capture.reader.sinks.MlflowStartupError` when
     MLflow is enabled but the tracking server is unreachable/misconfigured —
     callers must let this abort BEFORE constructing a ``Trainer`` (see the
     CLI's ``cmd_train``), so a bad ``MLFLOW_TRACKING_URI`` never burns GPU
     hours.
     """
-    # entropic_substrate.__legacy.sinks residue (MLFLOW_*_ENV, mlflow_enabled,
+    # entropic_substrate.ladder.capture.reader.sinks residue (MLFLOW_*_ENV, mlflow_enabled,
     # the default experiment name) -- function-scope import, see module
     # docstring's cycle note.
-    from entropic_substrate.__legacy.sinks import (
+    from entropic_substrate.ladder.capture.reader.sinks import (
         _DEFAULT_EXPERIMENT,  # pyright: ignore[reportPrivateUsage]
         MLFLOW_EXPERIMENT_ENV,
         MLFLOW_TRACKING_ENV,

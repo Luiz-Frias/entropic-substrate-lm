@@ -1,13 +1,13 @@
 """``MlflowSink`` -- the BEST-EFFORT AFTER STARTUP :class:`~entropic_substrate.ladder.capture.ports.metric_sink.MetricSink` adapter.
 
 Landed at p3b from ``entropic_substrate.sinks:341`` (quarantined
-``entropic_substrate.__legacy.sinks``). **The only module in the tree
+``entropic_substrate.ladder.capture.reader.sinks``). **The only module in the tree
 allowed to import ``mlflow``** (``.importlinter``'s forbidden contract,
 p3b door, ``frozen_after: p13``). Never authoritative, never gated on.
 
 Construction performs a STARTUP PROBE against the tracking server: an
 unreachable host or bad credentials raises :class:`MlflowStartupError`
-(kept in ``entropic_substrate.__legacy.sinks`` -- residue, p8) before any
+(kept in ``entropic_substrate.ladder.capture.reader.sinks`` -- residue, p8) before any
 training work happens. Once construction succeeds, every later call is
 wrapped in a broad ``except`` -- a mid-run blip is caught, counted, and
 reported once at :meth:`finish`; it never raises past this class and never
@@ -21,11 +21,11 @@ bytes the gate parses would change.
 
 **Cycle note (architect constraint, design gate 2026-09-21):** the D1
 ruling keeps ``MlflowStartupError`` and the ``MLFLOW_*_ENV`` constants in
-``entropic_substrate.__legacy.sinks`` while this class lands here, and the
+``entropic_substrate.ladder.capture.reader.sinks`` while this class lands here, and the
 facade (``__legacy/sinks.py``) imports THIS module at module level to
 re-export :class:`MlflowSink` under the old prefix. A module-level import
 in both directions would be a genuine Python import cycle, so this module
-imports ``entropic_substrate.__legacy.sinks`` ONLY inside function bodies
+imports ``entropic_substrate.ladder.capture.reader.sinks`` ONLY inside function bodies
 (never at module scope), after the facade has finished initialising.
 """
 
@@ -137,11 +137,11 @@ def _system_metrics_logging_enabled() -> bool:
     best-effort (garbage -> disabled) rather than mlflow's own raise-on-garbage
     ``.get()``; see the ``MLFLOW_SYSTEM_METRICS_ENV`` constant's comment.
 
-    ``MLFLOW_SYSTEM_METRICS_ENV`` stays in ``entropic_substrate.__legacy.sinks``
+    ``MLFLOW_SYSTEM_METRICS_ENV`` stays in ``entropic_substrate.ladder.capture.reader.sinks``
     (residue, p8) -- imported here at function scope, never at module scope,
     per this module's cycle note.
     """
-    from entropic_substrate.__legacy.sinks import MLFLOW_SYSTEM_METRICS_ENV
+    from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_SYSTEM_METRICS_ENV
 
     return os.environ.get(MLFLOW_SYSTEM_METRICS_ENV, "").strip().lower() in {"true", "1"}
 
@@ -256,10 +256,10 @@ class MlflowSink:
         system_metrics_monitor_factory: Callable[[str, str], _SystemMetricsMonitorLike]
         | None = None,
     ) -> None:
-        # MlflowStartupError stays in entropic_substrate.__legacy.sinks
+        # MlflowStartupError stays in entropic_substrate.ladder.capture.reader.sinks
         # (residue, p8) -- imported here at function scope, never at module
         # scope, per this module's cycle note.
-        from entropic_substrate.__legacy.sinks import MlflowStartupError
+        from entropic_substrate.ladder.capture.reader.sinks import MlflowStartupError
 
         self._failed_writes = 0
         self._finished = False
@@ -481,7 +481,7 @@ class MlflowSink:
         aliased ``champion-<config_hash>`` so re-running the same config
         repoints the alias to this run's citation rather than accumulating
         duplicates (``config_hash`` is deliberately seed-invariant — see
-        :func:`entropic_substrate.__legacy.sinks.config_hash`). A no-op, not
+        :func:`entropic_substrate.ladder.capture.reader.sinks.config_hash`). A no-op, not
         an error, when this sink was built without a ``config_hash`` (e.g. a
         bare :class:`MlflowSink` in a test that never threads one through).
 

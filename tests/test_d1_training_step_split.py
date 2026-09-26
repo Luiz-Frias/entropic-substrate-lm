@@ -49,8 +49,8 @@ from entropic_substrate.__legacy.d1_training_step_records import (
 
 pytestmark = pytest.mark.unit
 
-_TRAINING_STEP_RECORD_MODULE = "entropic_substrate.__legacy.d1_training_step_records"
-_CALIBRATION_RECORD_MODULE = "entropic_substrate.__legacy.d1_calibration_records"
+_TRAINING_STEP_RECORD_MODULE = "entropic_substrate.ladder.capture.records.d1_training_step_records"
+_CALIBRATION_RECORD_MODULE = "entropic_substrate.ladder.capture.records.d1_calibration_records"
 
 _TRAINING_STEP_RECORD_NAMES = (
     "D1ComponentGradientEvidence",
@@ -124,8 +124,8 @@ def test_record_halves_declare_no_torch_or_numpy_import() -> None:
     from pathlib import Path
 
     for relpath in (
-        "src/entropic_substrate/__legacy/d1_training_step_records.py",
-        "src/entropic_substrate/__legacy/d1_calibration_records.py",
+        "src/entropic_substrate/ladder/capture/records/d1_training_step_records.py",
+        "src/entropic_substrate/ladder/capture/records/d1_calibration_records.py",
     ):
         source = (Path(__file__).resolve().parents[1] / relpath).read_text()
         tree = ast.parse(source)

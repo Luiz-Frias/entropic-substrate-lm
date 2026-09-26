@@ -7,7 +7,6 @@ import json
 from contextlib import closing
 from pathlib import Path
 
-from entropic_substrate.__legacy.data.fineweb import FINEWEB_REVISION
 from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     SplitPolicy,
@@ -26,6 +25,7 @@ from entropic_substrate.ladder.capture.capture import (
     read_prepared_corpus,
     write_prepared_corpus,
 )
+from entropic_substrate.ladder.capture.custody.fineweb import FINEWEB_REVISION
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 
 
@@ -96,7 +96,7 @@ def cmd_source(args: argparse.Namespace) -> int:
             )
             if any(output.iterdir()):
                 raise ValueError("source preparation requires an empty owned output directory")
-            from entropic_substrate.__legacy.data.fineweb import stream_fineweb_documents
+            from entropic_substrate.ladder.capture.custody.fineweb import stream_fineweb_documents
 
             stage = "execution"
             with closing(

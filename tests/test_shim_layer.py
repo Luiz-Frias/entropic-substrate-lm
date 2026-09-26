@@ -215,55 +215,24 @@ def test_cold_import_guard_is_not_fooled_by_a_process_that_silently_exits_0() ->
     assert _MARKER not in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Guard tooth (house rule 5, negative arm): restoring one moved facade
-# copy's ORIGINAL bytes at __legacy/<pkg>/__init__.py must make a COLD
-# import of one of its children raise ImportError on a partially
-# initialized module. The planted bytes go in an ISOLATED OVERLAY, never in
-# the committed tree -- see `committed_legacy_facades_untouched` for the
-# measurement that forced that (FOR-1542).
-# ---------------------------------------------------------------------------
-
-
-def test_restoring_one_facade_original_bytes_breaks_cold_import_RED_case(
-    tmp_path: Path, committed_legacy_facades_untouched: None
-) -> None:
-    """RED-first, both arms in one test (house rule 5): the retracted
-    docstring-only file at __legacy/data/__init__.py is what MAKES the
-    cold import above pass; putting the ORIGINAL re-export body back at
-    that __legacy path (the exact state the design-gate ruling retracted)
-    must reintroduce the partially-initialized-module ImportError this
-    phase's facade-emptying ruling exists to prevent.
-
-    Both arms run in the SAME interpreter-per-arm shape, differing only in
-    which package root the child resolves `entropic_substrate` from: the
-    RED arm resolves it from an overlay whose only real file is the planted
-    facade, the GREEN control from the committed tree."""
-    facade = "data"
-    child = "batching"
-    legacy_init = SRC / "entropic_substrate" / "__legacy" / facade / "__init__.py"
-    old_init = SRC / "entropic_substrate" / facade / "__init__.py"
-    emptied_snapshot = legacy_init.read_text()
-    original_body = old_init.read_text()
-    assert emptied_snapshot != original_body, (
-        "fixture assumption violated: the __legacy copy is no longer the "
-        "emptied docstring form, or the old-path copy no longer carries "
-        "the original re-export body -- this test's precondition is stale"
-    )
-    overlay = _overlay_with_planted_facade_body(tmp_path, facade, original_body)
-    assert (overlay / "entropic_substrate" / "__legacy" / facade / "__init__.py").read_text() == (
-        original_body
-    ), "the overlay did not actually receive the planted facade body"
-    result = _run_cold_import(facade, child, package_root=overlay)
-    assert result.returncode != 0, (
-        "restoring the facade's original bytes was supposed to break "
-        f"the cold import, but it still exited 0: {result.stdout!r}"
-    )
-    assert "partially initialized module" in result.stderr, result.stderr
-    assert "ImportError" in result.stderr, result.stderr
-    # Control for the instrument: the same child, resolving the SAME package
-    # from the committed tree, must still pass. Without this, a broken
-    # overlay (wrong PYTHONPATH, missing symlink) would read as a guard hit.
-    control = _run_cold_import(facade, child)
-    assert control.returncode == 0, control.stderr
-    assert _MARKER in control.stdout
+# RETRACTION (house rule 4, ruling P8-SHIM-LAYER-RETIRE, conductor
+# 2026-09-23), 2026-09-23: `test_restoring_one_facade_original_bytes_
+# breaks_cold_import_RED_case` (facade "data", child "batching") planted a
+# cycle that was reachable only while the `data/{build,enwik8,fineweb,
+# synthetic}.py` shims imported quarantined `__legacy/data/*` leaves. p8's
+# SCC commit moves all four into `ladder/capture/custody/`, so
+# `__legacy/data/` now holds no leaf module and the cycle cannot form.
+# MEASURED at this lane's tip: the RED case's own RED arm now fails --
+# `result.returncode` is 0 (not the expected nonzero) and stdout reads
+# `COLD_IMPORT_IDENTICAL`, where the control arm (pre-move) recorded rc=1
+# with "partially initialized module 'entropic_substrate.data.build'" and
+# the post-move emulation recorded rc=0 with the same marker this lane now
+# measures directly. The hazard the test proved load-bearing is therefore
+# unreachable, and the test is retired here rather than re-homed: the only
+# other `FACADE_CHILDREN` facade with quarantined leaves,
+# `predictive_state` (8, all mapped to `ladder.run`), would re-break the
+# same way once that lane moves them, so re-homing would only relocate a
+# test destined to go RED again. `_overlay_with_planted_facade_body` (this
+# file) and the fixture `committed_legacy_facades_untouched` lose their
+# only consumer here and are reported as orphaned for the p13 sweep, not
+# deleted.

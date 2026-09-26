@@ -634,6 +634,8 @@ _PACKET_READER_EXCLUDED_FUNCTIONS = {
 _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
     "entropic_substrate.d1_",
     "entropic_substrate.evidence.d1_",
+    "entropic_substrate.ladder.capture.reader.d1_",
+    "entropic_substrate.ladder.capture.records.d1_",
 )
 
 
@@ -733,6 +735,10 @@ def build_reader(telemetry_source: str, *, source_path: Path | None = None) -> s
     code = ast.unparse(tree)
     code = code.replace(
         "from entropic_substrate.logging import configure_logging, logger",
+        _LOGGING_SHIM,
+    )
+    code = code.replace(
+        "from entropic_substrate.kernel.runtime.logging import configure_logging, logger",
         _LOGGING_SHIM,
     )
     return _READER_HEADER + code + "\n"
