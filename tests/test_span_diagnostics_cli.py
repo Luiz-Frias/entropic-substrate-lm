@@ -9,12 +9,12 @@ from tests.test_sentence_rollout import scripted_tokens
 from tests.test_span_probe import config
 from tests.test_span_state_collection import model
 
-from entropic_substrate.cli import main
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.sentence_prediction.generation import run_probe_generation
-from entropic_substrate.sentence_prediction.journal import artifact_reference, read_json, write_json
-from entropic_substrate.sentence_prediction.runner import run_probe_training
-from entropic_substrate.sentence_prediction.trace_capture import (
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
+from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.trace_capture import (
     capture_model_trace,
     read_model_trace,
 )

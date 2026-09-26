@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_excluded_capture import D1ExcludedCaptureService
-from entropic_substrate.evidence.d1_capture_ports import D1GitPointerCommitEvidence
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1GitPointerCommitEvidence
+from entropic_substrate.ladder.run.closure.d1_excluded_capture import D1ExcludedCaptureService
 
 from .test_d1_excluded_operator import pilot_case
 

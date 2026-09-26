@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_content_addressed_custody as repository_module
-from entropic_substrate.d1_finalized_cell_custody_repository import (
+import entropic_substrate.ladder.capture.custody.d1_content_addressed_custody as repository_module
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository import (
     D1FinalizedCellCustodyRepository,
     D1FinalizedCellCustodyRepositoryError,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 from .test_d1_finalized_cell_custody_values import _attest, _finalized_case
 

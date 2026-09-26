@@ -7,12 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_resource_activation import UnavailableResourceActivationFactory
-from entropic_substrate.d_ladder_remote import publish_remote_request
-from entropic_substrate.d_ladder_remote_request import serialize_remote_request
-from entropic_substrate.d_ladder_worker_command import run_worker_command
-from entropic_substrate.d_ladder_worker_runtime import worker_resource_registration
+from entropic_substrate.historical.d_ladder.d_ladder_remote import publish_remote_request
+from entropic_substrate.historical.d_ladder.d_ladder_remote_request import serialize_remote_request
+from entropic_substrate.historical.d_ladder.d_ladder_worker_command import run_worker_command
+from entropic_substrate.historical.d_ladder.d_ladder_worker_runtime import (
+    worker_resource_registration,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    UnavailableResourceActivationFactory,
+)
 
 from .test_d1_trainer_object_transport import _ObjectStore
 from .test_d_ladder_remote_request import request_fixture
@@ -45,7 +49,7 @@ def test_serve_bootstraps_then_uses_measured_origin_and_actual_remote_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import entropic_substrate.d_ladder_worker_command as command
+    import entropic_substrate.historical.d_ladder.d_ladder_worker_command as command
 
     source = tmp_path / "source"
     source.mkdir()
@@ -139,12 +143,14 @@ def test_serve_bootstraps_then_uses_measured_origin_and_actual_remote_dispatch(
 def test_bounded_wait_does_not_republish_or_synthesize_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import entropic_substrate.d_ladder_worker_command as command
+    import entropic_substrate.historical.d_ladder.d_ladder_worker_command as command
 
     clock = iter([0.0, 1.0, 2.0])
     monkeypatch.setattr(command.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(command.time, "sleep", lambda _: None)
-    from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
+    from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+        D1TrainerMailboxWaitPolicy,
+    )
 
     with pytest.raises(TimeoutError):
         command.wait_object(_ObjectStore(), "missing", D1TrainerMailboxWaitPolicy(1.0, 0.1))

@@ -7,18 +7,18 @@ from dataclasses import replace
 import pytest
 
 from d1_launch_admission_fixtures import SEEDS, contract
-from entropic_substrate.analysis.d1_clause_policy import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
     D1ClausePolicyError,
     D1ConditionStatus,
     evaluate_d1_clauses,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_factorial import (
+from entropic_substrate.ladder.analyze.d1_factorial import (
     D1FactorialAnalysis,
     compute_d1_factorial,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from .test_d1_factorial_analysis import (
     _authority,

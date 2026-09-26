@@ -7,18 +7,18 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import InterruptedD1Case, origin
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
-from entropic_substrate.d1_calibration import D1BaselineCalibrationAttestation
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_trainer_runtime import D1FreshComponents
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.checkpoint_repository import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
 )
+from entropic_substrate.ladder.run.trainer.d1_calibration import D1BaselineCalibrationAttestation
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1FreshComponents
 
 
 def hard_crash_tail_case(

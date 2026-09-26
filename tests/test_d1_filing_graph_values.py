@@ -8,23 +8,23 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_types import D1FamilyIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     build_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1PairExclusion,
     D1PairExclusionReason,
 )
-from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_filing_graph import (
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import build_d1_capture_bundle
+from entropic_substrate.ladder.file.d1_filing_graph import (
     ValidatedD1Filing,
     recompute_capture_integrity,
 )
-from entropic_substrate.evidence.d1_types import D1FamilyIdentity
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .d1_capture_fixtures import capture_family

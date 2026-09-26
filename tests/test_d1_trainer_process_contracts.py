@@ -11,25 +11,27 @@ import pytest
 
 from d1_resume_fixtures import resume_start
 from d1_trainer_fixtures import ORIGIN_NS, micro_plan, run_start
-from entropic_substrate.d1_operator_evidence import d1_runtime_observation_sha256
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_plan import SmokeD1RunPlan
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    d1_runtime_observation_sha256,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     D1TrainerStartReport,
     parse_d1_runtime_report,
     parse_d1_start_report,
     serialize_d1_runtime_report,
     serialize_d1_start_report,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1TrainerRequest,
     build_d1_trainer_request,
     d1_trainer_command_sha256,
     d1_trainer_request_sha256,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 POD, ATTEMPT = "pod-123", "a" * 64

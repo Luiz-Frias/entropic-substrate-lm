@@ -9,36 +9,43 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_operator_controller as controller_module
+import entropic_substrate.ladder.run.campaign.d1_operator_controller as controller_module
 from d1_billing_finalizer_fixtures import billing_gap, provider_bill
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
-from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
-from entropic_substrate.d1_operator_controller import (
-    D1OperatorQueueHalt,
-    D1ResumeOperatorHistory,
-    D1SequentialOperatorController,
-)
-from entropic_substrate.d1_operator_evidence import (
-    D1ExportedTrainerHandoff,
-    verify_d1_trainer_export,
-)
-from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
-from entropic_substrate.d1_trainer_handoff import (
-    D1FreshRunCompletion,
-    D1TrainerFailureHandoff,
-)
-from entropic_substrate.evidence.resource_billing import BillingGap, ExecutionSegmentTermination
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    BillingGap,
+    ExecutionSegmentTermination,
+)
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
+    D1OperatorQueueHalt,
+    D1ResumeOperatorHistory,
+    D1SequentialOperatorController,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    verify_d1_trainer_export,
+)
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
+    D1BillingFinalization,
+)
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
+    D1FinalizedCellCustodyRecord,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
+    D1FreshRunCompletion,
+    D1TrainerFailureHandoff,
+)
 
 from .test_d1_finalized_cell_custody_values import _attest, _finalized_case
 from .test_d1_operator_controller import (
@@ -89,13 +96,13 @@ def _running(case: object, tmp_path: Path):
 
 
 def _actor_operator():
-    from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
+    from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
 
     return ActorIdentity("operator", "operator-session", ActorRole.OPERATOR)
 
 
 def _actor_automation():
-    from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
+    from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
 
     return ActorIdentity("automation", "automation-session", ActorRole.AUTOMATION)
 

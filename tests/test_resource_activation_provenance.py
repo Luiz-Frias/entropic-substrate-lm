@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     PowerIntegrationMethod,
     PowerSamplingRegistration,
     ResourceActivationMode,

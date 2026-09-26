@@ -9,43 +9,43 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import family
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_clause_policy import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
     evaluate_d1_clauses,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1QualityTargetResult,
     D1ReportRunDiagnostic,
     D1TrajectoryPoint,
     parse_d1_diagnostic_policy,
 )
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    decode_d1_external_analysis_input_control,
-)
-from entropic_substrate.analysis.d1_factorial import (
+from entropic_substrate.ladder.analyze.d1_factorial import (
     D1AnalysisCell,
     D1MetricPoint,
     compute_d1_factorial,
 )
-from entropic_substrate.analysis.d1_machine_analysis import (
+from entropic_substrate.ladder.analyze.d1_machine_analysis import (
     D1AliasedMachineAnalysis,
     build_d1_aliased_machine_analysis,
 )
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
-    D1ContractBoundMachineAnalysis,
-    D1MachineAnalysisBindingError,
-    bind_d1_machine_analysis_contract,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     serialize_decision_contract,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    decode_d1_external_analysis_input_control,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
+    D1ContractBoundMachineAnalysis,
+    D1MachineAnalysisBindingError,
+    bind_d1_machine_analysis_contract,
 )
 
 from .test_d1_analysis_api import _decision

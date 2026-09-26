@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_trainer_output_publication as publication_module
+import entropic_substrate.ladder.run.transport.d1_trainer_output_publication as publication_module
 from d1_billing_finalizer_fixtures import completed_case
-from entropic_substrate.d1_operator_evidence import D1ExportedTrainerHandoff
-from entropic_substrate.d1_trainer_output_publication import (
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import D1ExportedTrainerHandoff
+from entropic_substrate.ladder.run.transport.d1_trainer_output_publication import (
     load_d1_published_trainer_output,
     publish_d1_trainer_output,
 )

@@ -5,10 +5,10 @@ import math
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.metric import fisher_action
-from entropic_substrate.sentence_prediction.head import SentenceLawHead
-from entropic_substrate.sentence_prediction.law import LawSpec
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
+from entropic_substrate.core.latent.metric import fisher_action
+from entropic_substrate.core.sentence.head import SentenceLawHead
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
 
 pytestmark = pytest.mark.unit
 

@@ -897,7 +897,7 @@ def main() -> int:
         # sys.modules rebind (tools/gen_shims.py) makes __file__ the real
         # target module wherever it actually lives, and stays correct
         # across a later structural move (FOR-1524).
-        import entropic_substrate.telemetry as _telemetry
+        import entropic_substrate.ladder.capture.reader.telemetry as _telemetry
 
         telemetry_path = Path(_telemetry.__file__)
 

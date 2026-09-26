@@ -10,24 +10,32 @@ from typing import Any, cast
 
 import pytest
 
-import entropic_substrate.evidence.d1_telemetry_query as query_module
-from entropic_substrate.d1_training_step import D1GradientEvidenceKind, D1TrainStepResult
-from entropic_substrate.evidence.d1_abort_evidence import D1TrainerAbortEvidence
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind, canonical_event_line
-from entropic_substrate.evidence.d1_telemetry_query import (
+import entropic_substrate.ladder.capture.records.d1_telemetry_query as query_module
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass, canonical_digest
+from entropic_substrate.ladder.capture.records.d1_abort_evidence import D1TrainerAbortEvidence
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    JournalEventKind,
+    canonical_event_line,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import (
     final_d1_eval_metric,
     read_d1_eval_series,
     read_d1_run_evidence,
 )
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1EvalEvidence,
     D1RunEvidence,
     D1RunStatus,
     D1TailQuarantineKind,
     D1TelemetryGap,
 )
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.ladder.run.trainer.d1_training_step import (
+    D1GradientEvidenceKind,
+    D1TrainStepResult,
+)
 
 from .d1_telemetry_fixtures import (
     IDENTITY,

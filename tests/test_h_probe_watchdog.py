@@ -8,14 +8,18 @@ import pytest
 from tests.test_h_probe_control import root
 from tests.test_h_probe_launch import launch
 
-from entropic_substrate.h_probe_control import (
+from entropic_substrate.ladder.run.h_probe_control import (
     ProbeControlPublisher,
     own_probe_role,
     read_probe_control,
 )
-from entropic_substrate.h_probe_launch import H0ProbeLaunch
-from entropic_substrate.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
-from entropic_substrate.h_runpod_transport import ProbeAccount, ProbePod, ProbeProviderError
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
+from entropic_substrate.ladder.run.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
+from entropic_substrate.ladder.run.h_runpod_transport import (
+    ProbeAccount,
+    ProbePod,
+    ProbeProviderError,
+)
 
 pytestmark = pytest.mark.unit
 

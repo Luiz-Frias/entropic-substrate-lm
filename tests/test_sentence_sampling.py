@@ -5,15 +5,15 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     PreparedCorpus,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.records import SourceDocument
-from entropic_substrate.sentence_prediction.sampling import SamplingSpec, SentenceSampler
-from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
+from entropic_substrate.core.sentence.records import SourceDocument
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
 
 pytestmark = pytest.mark.unit
 

@@ -9,10 +9,15 @@ from typing import cast
 import pytest
 from tests.test_h_probe_launch import launch
 
-from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
-from entropic_substrate.h_probe_controller import ProbeControllerFailure, run_probe_controller
-from entropic_substrate.h_probe_process import ProbeWatchdogProcess
-from entropic_substrate.h_runpod_transport import ProbeAccount, ProbePod
+from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
+from entropic_substrate.ladder.run.h_runpod_transport import ProbeAccount, ProbePod
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.worker.h_probe_controller import (
+    ProbeControllerFailure,
+    run_probe_controller,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -118,10 +123,14 @@ def setup(
             raise outcome
         return outcome
 
-    monkeypatch.setattr("entropic_substrate.h_probe_controller.allocate_probe_once", allocate)
-    monkeypatch.setattr("entropic_substrate.h_probe_controller.collect_probe_terminal", collect)
     monkeypatch.setattr(
-        "entropic_substrate.h_probe_controller.read_probe_control",
+        "entropic_substrate.ladder.run.worker.h_probe_controller.allocate_probe_once", allocate
+    )
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.collect_probe_terminal", collect
+    )
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.read_probe_control",
         lambda _root, _spec, _role, name, **_kw: guard.control.records.get(name),
     )
     destination = tmp_path / "capture"
@@ -244,7 +253,9 @@ def test_guardian_death_attempts_owned_cleanup_but_never_claims_guard_success(
     def failed_join(**_kwargs: object) -> dict[str, object]:
         raise ValueError("guardian exited without result")
 
-    monkeypatch.setattr("entropic_substrate.h_probe_controller.collect_probe_terminal", lost_guard)
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.collect_probe_terminal", lost_guard
+    )
     monkeypatch.setattr(guard, "wait_result", failed_join)
     with pytest.raises(ProbeControllerFailure) as caught:
         run()
@@ -263,7 +274,9 @@ def test_changed_allocation_record_cannot_redirect_stop_or_emergency_cleanup(
         guard.control.records["allocation"] = {"pod_id": "foreign-pod"}
         return {"workload_verified": True, "capture_status": "native_completion_receipt_verified"}
 
-    monkeypatch.setattr("entropic_substrate.h_probe_controller.collect_probe_terminal", changed)
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.collect_probe_terminal", changed
+    )
     with pytest.raises(ProbeControllerFailure):
         run()
     assert "stop" not in guard.control.records and provider.deleted == ["owned-pod"]

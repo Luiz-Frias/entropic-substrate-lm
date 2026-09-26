@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from tests.test_h_probe_launch import launch
 
-from entropic_substrate.h_probe_command import run_probe_command
-from entropic_substrate.h_probe_controller import ProbeControllerFailure
-from entropic_substrate.h_probe_launch import H0ProbeLaunch
-from entropic_substrate.h_probe_process import WatchdogProcessConfig
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
+from entropic_substrate.ladder.run.h_probe_process import WatchdogProcessConfig
+from entropic_substrate.ladder.run.worker.h_probe_command import run_probe_command
+from entropic_substrate.ladder.run.worker.h_probe_controller import ProbeControllerFailure
 
 pytestmark = pytest.mark.unit
 
@@ -107,10 +107,19 @@ def test_command_connects_one_manifest_to_guard_and_controller(
             raise ProbeControllerFailure(report, (ValueError("private detail"),))
         return report
 
-    monkeypatch.setattr("entropic_substrate.h_probe_command.HRunpodTransport", lambda **_: provider)
-    monkeypatch.setattr("entropic_substrate.h_probe_command.build_worker_objects", object_factory)
-    monkeypatch.setattr("entropic_substrate.h_probe_command.supervise_probe_watchdog", supervise)
-    monkeypatch.setattr("entropic_substrate.h_probe_command.run_probe_controller", controller)
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport",
+        lambda **_: provider,
+    )
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.build_worker_objects", object_factory
+    )
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.supervise_probe_watchdog", supervise
+    )
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.run_probe_controller", controller
+    )
     stdout, stderr = io.StringIO(), io.StringIO()
     code = run_probe_command(
         argv, environ={"FIXTURE": "not-credentials"}, stdout=stdout, stderr=stderr
@@ -143,7 +152,9 @@ def test_invalid_launch_never_reaches_provider_or_guard(
     def forbidden(**_kwargs: object) -> None:
         pytest.fail("invalid input reached provider construction")
 
-    monkeypatch.setattr("entropic_substrate.h_probe_command.HRunpodTransport", forbidden)
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport", forbidden
+    )
     stdout, stderr = io.StringIO(), io.StringIO()
     assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) != 0
     assert stdout.getvalue() == ""

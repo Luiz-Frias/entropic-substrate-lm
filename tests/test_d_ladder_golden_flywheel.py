@@ -10,11 +10,11 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.ladder_analysis import analyze_ladder_sources
-from entropic_substrate.analysis.ladder_filing import decide_ladder_outcome
-from entropic_substrate.analysis.seed_sizing import ContrastHypothesis
-from entropic_substrate.evidence.ladder_campaign import authorize_ladder_run
-from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
+from entropic_substrate.ladder.analyze.ladder_analysis import analyze_ladder_sources
+from entropic_substrate.ladder.analyze.seed_sizing import ContrastHypothesis
+from entropic_substrate.ladder.file.ladder_filing import decide_ladder_outcome
+from entropic_substrate.ladder.gate.ladder_campaign import authorize_ladder_run
 
 from .d_ladder_golden_fixtures import (
     ANALYST,

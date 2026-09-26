@@ -8,10 +8,10 @@ import torch
 from tests.test_sentence_profile import profile
 from tests.test_sentence_sampling import corpus
 
-from entropic_substrate.sentence_prediction.capture import write_prepared_corpus
-from entropic_substrate.sentence_prediction.checkpoint import save_checkpoint
-from entropic_substrate.sentence_prediction.corpus import SplitPolicy, prepare_documents
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
+from entropic_substrate.core.sentence.corpus import SplitPolicy, prepare_documents
+from entropic_substrate.ladder.capture.capture import write_prepared_corpus
+from entropic_substrate.ladder.run.checkpoint import save_checkpoint
+from entropic_substrate.ladder.run.execution import SentenceExecution
 
 pytestmark = pytest.mark.unit
 
@@ -164,7 +164,7 @@ def test_postcommit_resource_failure_is_not_a_committed_evidence_row(tmp_path: P
 def test_zero_direction_gap_is_retained_without_infrastructure_reclassification(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
 
     run = engine(tmp_path)
 
@@ -181,7 +181,7 @@ def test_zero_direction_gap_is_retained_without_infrastructure_reclassification(
 
 
 def test_rejected_resume_cannot_train_a_frozen_unwarmed_model(tmp_path: Path) -> None:
-    from entropic_substrate.evidence.lifecycle import ContentHash
+    from entropic_substrate.kernel.lifecycle import ContentHash
 
     run = engine(tmp_path)
     with pytest.raises(ValueError):
@@ -197,7 +197,7 @@ def test_rejected_resume_cannot_train_a_frozen_unwarmed_model(tmp_path: Path) ->
 
 
 def test_engine_resume_retains_checkpointed_generation_feedback(tmp_path: Path) -> None:
-    from entropic_substrate.sentence_prediction.rollout import advance_rollout, begin_rollout
+    from entropic_substrate.core.sentence.rollout import advance_rollout, begin_rollout
 
     run = engine(tmp_path)
     run.advance()

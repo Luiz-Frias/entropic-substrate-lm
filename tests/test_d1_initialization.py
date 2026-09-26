@@ -8,7 +8,10 @@ import pytest
 import torch
 from torch import nn
 
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.core.latent.state import CausalStateEncoder
+from entropic_substrate.core.observation.modules import LearnedObservationAdapter
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1_ENCODER_INITIALIZATION_DIGEST,
     D1_ENCODER_INITIALIZATION_MANIFEST,
     D1_ENCODER_INITIALIZATION_NAME,
@@ -16,10 +19,7 @@ from entropic_substrate.experiments.d1_primitives import (
     canonical_digest,
     default_d1_encoder_initialization_identity,
 )
-from entropic_substrate.observation import LearnedObservationAdapter
-from entropic_substrate.predictive_state import CausalStateEncoder
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime_components import D1StateBranch
+from entropic_substrate.ladder.run.construction.runtime_components import D1StateBranch
 from predictive_state_helpers import model_config
 
 pytestmark = pytest.mark.unit

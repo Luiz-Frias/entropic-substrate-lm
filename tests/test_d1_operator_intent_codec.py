@@ -7,7 +7,7 @@ import json
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_operator_intent_codec import (
+from entropic_substrate.ladder.run.campaign.d1_operator_intent_codec import (
     D1OperatorIntentCodecError,
     parse_d1_confirmatory_operator_intent,
     serialize_d1_operator_intent,

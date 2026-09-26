@@ -4,13 +4,13 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.d1_factorial import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap
+from entropic_substrate.ladder.analyze.d1_factorial import (
     D1DiagnosticGapPoint,
     D1MetricPoint,
     compute_d1_factorial,
 )
-from entropic_substrate.d1_evaluation_values import D1CosineGap
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from .test_d1_clause_policy import _contract_with_policy, _policy
 from .test_d1_factorial_analysis import _authority, _cells, _design

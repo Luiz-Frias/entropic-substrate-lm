@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch import nn
 
-from entropic_substrate.observation import ObservationCodecPort
-from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
+from entropic_substrate.core.observation.contracts import ObservationCodecPort
+from entropic_substrate.core.observation.permuted_byte_codec import PermutedByteObservationCodec
 
 pytestmark = pytest.mark.unit
 

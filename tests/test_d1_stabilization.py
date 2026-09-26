@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 import pytest
 
-from entropic_substrate.experiments.d1_primitives import EncoderShape, StateConstructionSpec
-from entropic_substrate.experiments.d1_stabilization import D1TargetSpec, FutureLawSpec
+from entropic_substrate.kernel.identity.d1_primitives import EncoderShape, StateConstructionSpec
+from entropic_substrate.ladder.register.d1_stabilization import D1TargetSpec, FutureLawSpec
 
 pytestmark = pytest.mark.unit
 

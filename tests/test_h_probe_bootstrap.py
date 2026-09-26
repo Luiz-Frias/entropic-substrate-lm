@@ -223,7 +223,7 @@ def test_git_guard_cleanup_survives_a_refused_or_missing_group_kill(
 
 
 def test_bootstrap_inventory_matches_native_worker_verification() -> None:
-    from entropic_substrate.d_ladder_worker_runtime import SOURCE_PREFIXES
+    from entropic_substrate.historical.d_ladder.d_ladder_worker_runtime import SOURCE_PREFIXES
 
     assert bootstrap.PREFIXES == SOURCE_PREFIXES
 

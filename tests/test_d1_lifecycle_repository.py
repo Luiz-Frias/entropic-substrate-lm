@@ -6,22 +6,22 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_lifecycle_repository import (
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import (
     D1LifecycleCorruptionError,
     D1LifecycleGapCode,
     D1LifecyclePrefix,
     D1LifecycleRepository,
     D1LifecycleRepositoryGap,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1LifecycleEvent,
     D1ProcessEventKind,
-)
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ActorRole,
-    ArtifactIdentity,
-    ContentHash,
 )
 
 
@@ -117,7 +117,9 @@ def test_load_fails_hard_on_partial_or_noncanonical_event(tmp_path: Path) -> Non
 def test_load_fails_hard_on_sequence_fork(tmp_path: Path) -> None:
     repository = D1LifecycleRepository(tmp_path / "d1.jsonl")
     first = repository.append(_event(0), expected_prefix=None)
-    from entropic_substrate.evidence.d1_lifecycle_values import canonical_lifecycle_event_line
+    from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
+        canonical_lifecycle_event_line,
+    )
 
     repository.path.write_bytes(
         repository.path.read_bytes() + canonical_lifecycle_event_line(_event(0, artifact_index=9))

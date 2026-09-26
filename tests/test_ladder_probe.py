@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.analysis.ladder_probe import ProbeSource, run_checkpoint_probe
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_execution import SmokeRequest, run_local_smoke
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest, run_local_smoke
+from entropic_substrate.historical.d_ladder.ladder_probe import ProbeSource, run_checkpoint_probe
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 pytestmark = pytest.mark.unit
 

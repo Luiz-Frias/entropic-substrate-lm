@@ -11,11 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import entropic_substrate.d1_trainer_mailbox_command as command_module
-from entropic_substrate.d1_trainer_mailbox_command import (
+import entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command as command_module
+from entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command import (
     run_d1_trainer_mailbox_command,
 )
-from entropic_substrate.d1_trainer_mailbox_worker import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWaitPolicy,
     D1TrainerMailboxWorkerError,
 )

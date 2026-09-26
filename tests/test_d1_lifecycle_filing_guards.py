@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,

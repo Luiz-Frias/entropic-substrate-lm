@@ -6,19 +6,21 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.d1_resource_activation import UnavailableResourceActivationFactory
-from entropic_substrate.d_ladder_remote import (
+from entropic_substrate.historical.d_ladder.d_ladder_remote import (
     materialize_remote_output,
     materialize_remote_request,
     publish_remote_request,
     run_remote_worker,
 )
-from entropic_substrate.d_ladder_remote_request import RemoteLadderRequest
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_config import d1_configs_dir, load_d1_profile
-from entropic_substrate.experiments.ladder import Rung, RungSpec, Treatment
-from entropic_substrate.experiments.ladder_profile import rung_profile_mapping
+from entropic_substrate.historical.d_ladder.d_ladder_remote_request import RemoteLadderRequest
+from entropic_substrate.historical.d_ladder.ladder_profile import rung_profile_mapping
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.ladder.register.ladder import Rung, RungSpec, Treatment
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    UnavailableResourceActivationFactory,
+)
 
 from . import ladder_campaign_fixtures
 from .test_d1_trainer_object_transport import _ObjectStore
@@ -129,9 +131,9 @@ def test_worker_dispatches_real_scientific_tiny_with_actual_filing_gate(
             rung_profile_mapping(spec, base_profile=base, base_scale="full", predecessor=None)
         ).encode(),
     )
-    from entropic_substrate.d1_artifact_snapshot import read_d1_artifact_bytes
-    from entropic_substrate.evidence.ladder_campaign import authorize_ladder_run
-    from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+    from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
+    from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+    from entropic_substrate.ladder.gate.ladder_campaign import authorize_ladder_run
 
     design = json.loads((source / "campaign.json").read_bytes())
     design["statistics"]["path"] = "statistics.json"

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_service import read_d1_dvc_pointer
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_service import read_d1_dvc_pointer
 
 pytestmark = pytest.mark.unit
 

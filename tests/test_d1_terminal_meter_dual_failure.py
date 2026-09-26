@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
     ORIGIN_NS,
@@ -18,33 +18,36 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_dual_failure import (
-    D1PrimarySecondaryFailure,
-    secondary_failure_from_mapping,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    unavailable_resource_activation_registration,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1NonfiniteMetricError,
     d1_nonfinite_metric_error,
     terminal_numerical_defect_from_mapping,
 )
-from entropic_substrate.d1_resource_activation import D1ResourceActivation
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_trainer_handoff import D1FreshRunFailure
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.resource_ledger import (
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
     ResourceLedgerState,
     ResourceMeterSnapshot,
     UnavailableMeterStrategy,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    unavailable_resource_activation_registration,
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.run.resource.d1_resource_activation import D1ResourceActivation
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
+    D1PrimarySecondaryFailure,
+    secondary_failure_from_mapping,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunFailure
 
 pytestmark = pytest.mark.unit
 

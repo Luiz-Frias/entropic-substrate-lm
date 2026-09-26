@@ -7,14 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_meter_models import (
-    PositionFlopModel,
-    PowerSample,
-    ResourcePhase,
-    continuous_rate_cost,
-    integrate_power_samples,
-)
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     BillingRoundingPolicy,
     BillingUnit,
     Money,
@@ -22,8 +15,15 @@ from entropic_substrate.evidence.resource_provenance import (
     RateScope,
     RoundingMode,
 )
-from entropic_substrate.evidence.resource_work import ReadingMethod, ScalarReading
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
+    PositionFlopModel,
+    PowerSample,
+    ResourcePhase,
+    continuous_rate_cost,
+    integrate_power_samples,
+)
+from entropic_substrate.ladder.capture.resource.resource_work import ReadingMethod, ScalarReading
 
 pytestmark = pytest.mark.unit
 

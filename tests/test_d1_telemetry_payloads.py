@@ -6,12 +6,12 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_telemetry_payloads import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.records.d1_telemetry_payloads import (
     parse_baseline_event,
     parse_run_start_event,
 )
-from entropic_substrate.evidence.d1_telemetry_values import D1TelemetryGap
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1TelemetryGap
 
 from .d1_telemetry_fixtures import replace_payload, valid_events
 

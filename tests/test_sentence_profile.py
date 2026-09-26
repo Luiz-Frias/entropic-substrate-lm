@@ -4,12 +4,12 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.predictive_state.dynamics import SolverConfig
-from entropic_substrate.sentence_prediction.codec import CodecSpec
-from entropic_substrate.sentence_prediction.law import LawSpec
-from entropic_substrate.sentence_prediction.profile import HProfile, OptimizationSpec, RunSchedule
-from entropic_substrate.sentence_prediction.records import content_identity
-from entropic_substrate.sentence_prediction.spine import SpineSpec
+from entropic_substrate.core.latent.dynamics import SolverConfig
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.profile import HProfile, OptimizationSpec, RunSchedule
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.core.sentence.spine import SpineSpec
 
 pytestmark = pytest.mark.unit
 

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import torch
 
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.data.ladder_batching import paired_predictive_batch
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.core.corpus.ladder_batching import paired_predictive_batch
 
 pytestmark = pytest.mark.unit
 

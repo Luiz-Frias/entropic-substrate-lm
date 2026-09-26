@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.observation import EncodedObservations, ObservationAlignment
-from entropic_substrate.predictive_state.future_law import MeanDisplacementBaseline
-from entropic_substrate.predictive_state.horizons import (
+from entropic_substrate.core.latent.future_law import MeanDisplacementBaseline
+from entropic_substrate.core.latent.horizons import (
     HorizonFutureLaw,
     horizon_displacement,
 )
-from entropic_substrate.predictive_state.state import LatentTrajectory, TargetEncoder
-from entropic_substrate.predictive_state.target_values import one_step_displacement
+from entropic_substrate.core.latent.state import LatentTrajectory, TargetEncoder
+from entropic_substrate.core.latent.target_values import one_step_displacement
+from entropic_substrate.core.observation.contracts import EncodedObservations, ObservationAlignment
 from predictive_state_helpers import codec_identity, encoded, model_config
 
 pytestmark = pytest.mark.unit

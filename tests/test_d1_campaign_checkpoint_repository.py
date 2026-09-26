@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_campaign_checkpoint_repository as repository_module
-from entropic_substrate.d1_campaign_checkpoint import D1CampaignDisposition
-from entropic_substrate.d1_campaign_checkpoint_repository import (
+import entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository as repository_module
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import D1CampaignDisposition
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
     D1CampaignCheckpointRepository,
     D1CampaignCheckpointRepositoryError,
 )

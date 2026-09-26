@@ -8,7 +8,7 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_request import request
 
-from entropic_substrate.sentence_prediction.worker_snapshot import (
+from entropic_substrate.ladder.run.worker_snapshot import (
     materialize_worker_snapshot,
     publish_worker_snapshot,
 )

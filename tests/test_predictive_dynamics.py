@@ -3,12 +3,12 @@
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.dynamics import (
+from entropic_substrate.core.latent.dynamics import (
     SolverConfig,
     euclidean_residual,
     inverse_fisher_residual,
 )
-from entropic_substrate.predictive_state.metric import FisherNumericalError
+from entropic_substrate.core.latent.metric import FisherNumericalError
 
 pytestmark = pytest.mark.unit
 

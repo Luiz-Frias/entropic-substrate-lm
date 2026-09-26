@@ -5,8 +5,8 @@ from datetime import timedelta
 
 import pytest
 
-from entropic_substrate.d_ladder_remote import materialize_remote_output
-from entropic_substrate.experiments.d1_primitives import canonical_json
+from entropic_substrate.historical.d_ladder.d_ladder_remote import materialize_remote_output
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 
 from .test_d1_trainer_object_transport import _ObjectStore
 from .test_d_ladder_remote_request import request_fixture

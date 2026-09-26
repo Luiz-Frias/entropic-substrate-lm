@@ -5,9 +5,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.observation import CodecIdentity, EncodedObservations
-from entropic_substrate.predictive_state import FutureTarget, MeanDisplacementBaseline
+from entropic_substrate.core.latent.future_law import MeanDisplacementBaseline
+from entropic_substrate.core.latent.targets import FutureTarget
+from entropic_substrate.core.observation.contracts import CodecIdentity, EncodedObservations
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = [
     "CompositeTargetBranch",

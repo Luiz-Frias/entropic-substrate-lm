@@ -8,12 +8,13 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_journal import (
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.records.d1_journal import (
     AuthoritativeRunJournal,
     JournalTailQuarantineReceipt,
     read_journal,
 )
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
     JournalCheckpointState,
@@ -21,7 +22,6 @@ from entropic_substrate.evidence.d1_journal_values import (
     canonical_event_line,
     parse_event_line,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass
 
 pytestmark = pytest.mark.unit
 _CHECKPOINT_SHA256 = "a" * 64

@@ -9,25 +9,29 @@ import pytest
 
 import d1_launch_admission_fixtures as fixtures
 from d1_resume_fixtures import captured_step_one_case, origin, resume_start
-from entropic_substrate.cli import main
-from entropic_substrate.d1_campaign_bootstrap import (
-    adopt_d1_finalized_cell_after_crash,
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker import (
+    D1R2TrainerMailboxWorker,
 )
-from entropic_substrate.d1_campaign_cli_service import D1CampaignRunCliService
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_campaign_cli_service import D1CampaignRunCliService
+from entropic_substrate.composition.wiring.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliApplication,
     D1CliCommand,
     D1CliExitCode,
     D1CliServiceUnavailable,
 )
-from entropic_substrate.d1_r2_trainer_mailbox_worker import D1R2TrainerMailboxWorker
-from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.run.campaign.d1_campaign_bootstrap import (
+    adopt_d1_finalized_cell_after_crash,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+    D1TrainerMailboxWaitPolicy,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
 
 from .test_d1_campaign_bootstrap_adoption import _bootstrapped
 from .test_d1_campaign_cli_service import _case as _campaign_case

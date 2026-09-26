@@ -9,15 +9,15 @@ from typing import cast
 import pytest
 import torch
 
-from entropic_substrate.d1_evaluation import D1Evaluator
-from entropic_substrate.d1_evaluation_codec import (
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap
+from entropic_substrate.ladder.capture.records.d1_telemetry_measurements import parse_quality
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1Evaluator
+from entropic_substrate.ladder.run.trainer.d1_evaluation_codec import (
     d1_evaluation_from_mapping,
     d1_evaluation_to_mapping,
     parse_d1_evaluation,
     serialize_d1_evaluation,
 )
-from entropic_substrate.d1_evaluation_values import D1CosineGap
-from entropic_substrate.evidence.d1_telemetry_measurements import parse_quality
 from test_d1_evaluation import _sampler, _system
 
 pytestmark = pytest.mark.unit
@@ -102,7 +102,7 @@ def test_gap_payload_refuses_unknown_or_invalid_counts(mutation: dict[str, objec
 
 
 def test_tracking_preserves_gap_counts_without_emitting_numeric_cosine() -> None:
-    from entropic_substrate.d1_tracking import D1MetricExtractor
+    from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
     from test_d1_tracking import _event
 
     event = _event()
@@ -119,7 +119,7 @@ def test_tracking_preserves_gap_counts_without_emitting_numeric_cosine() -> None
 
 
 def test_analysis_retains_gap_population_while_admitting_other_metrics(tmp_path: Path) -> None:
-    from entropic_substrate.analysis.d1_capture import _cell
+    from entropic_substrate.ladder.analyze.d1_capture import _cell
 
     from .test_d1_analysis_capture import _analysis_case
 
@@ -143,7 +143,7 @@ def test_analysis_retains_gap_population_while_admitting_other_metrics(tmp_path:
     assert "mean_pairwise_cosine_distance" not in cell.metrics
     assert len(cell.diagnostic_gaps["mean_pairwise_cosine_distance"]) == len(run.evals)
     assert "effective_rank" in cell.metrics and "nats_per_byte" in cell.metrics
-    from entropic_substrate.analysis.d1_clause_policy import (
+    from entropic_substrate.ladder.analyze.d1_clause_policy import (
         D1ConditionSource,
         D1RegisteredCondition,
         D1ThresholdOperator,
@@ -163,9 +163,9 @@ def test_analysis_retains_gap_population_while_admitting_other_metrics(tmp_path:
 
 
 def test_complete_collapsed_journal_is_read_by_authoritative_reader(tmp_path: Path) -> None:
-    from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-    from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
-    from entropic_substrate.telemetry import read_d1_run_evidence
+    from entropic_substrate.ladder.capture.reader.telemetry import read_d1_run_evidence
+    from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+    from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunStatus
 
     from .d1_telemetry_fixtures import valid_events, write_events
 

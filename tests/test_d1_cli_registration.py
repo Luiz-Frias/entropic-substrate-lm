@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_cli_composition as composition_module
-from entropic_substrate.cli import build_parser, main
-from entropic_substrate.d1_cli import (
+import entropic_substrate.composition.wiring.d1_cli_composition as composition_module
+from entropic_substrate.composition.entrypoints.cli import build_parser, main
+from entropic_substrate.composition.wiring.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliApplication,
     D1CliCommand,
@@ -140,7 +140,7 @@ def test_default_shell_fresh_command_reaches_real_trainer(
 ) -> None:
     manifest, request = _trainer_manifest(tmp_path)
     monkeypatch.setattr(
-        "entropic_substrate.d1_cli_composition.load_d1_execution_catalog",
+        "entropic_substrate.composition.wiring.d1_cli_composition.load_d1_execution_catalog",
         lambda: (request.plan.profile,),
     )
 
@@ -164,7 +164,7 @@ def test_default_shell_resume_command_reaches_real_service_validation(
     value["payload"]["command"] = D1CliCommand.RUN_RESUME.value
     manifest.write_text(json.dumps(value), encoding="utf-8")
     monkeypatch.setattr(
-        "entropic_substrate.d1_cli_composition.load_d1_execution_catalog",
+        "entropic_substrate.composition.wiring.d1_cli_composition.load_d1_execution_catalog",
         lambda: (request.plan.profile,),
     )
 

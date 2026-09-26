@@ -6,19 +6,19 @@ import pytest
 import torch
 
 from d1_runtime_fixtures import fit_runtime_baseline, runtime_batch, runtime_system
-from entropic_substrate.d1_optimizer import build_d1_optimizer
-from entropic_substrate.d1_training_step import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_optimizer import build_d1_optimizer
+from entropic_substrate.ladder.run.trainer.d1_training_step import (
     D1ComponentGradientEvidence,
     D1GradientEvidenceKind,
     apply_d1_training_step,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 
 
 def test_new_gradient_semantics_have_a_distinct_construction_epoch() -> None:
-    from entropic_substrate.experiments.d1_primitives import CONSTRUCTION_SCHEMA
+    from entropic_substrate.kernel.identity.d1_primitives import CONSTRUCTION_SCHEMA
 
     assert CONSTRUCTION_SCHEMA == "d1-construction-v4"
 

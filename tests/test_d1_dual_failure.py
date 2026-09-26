@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.d1_dual_failure import (
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
     D1PrimarySecondaryFailure,
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,

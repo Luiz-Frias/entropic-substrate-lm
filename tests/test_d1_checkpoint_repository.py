@@ -10,10 +10,10 @@ from typing import Protocol, cast
 
 import pytest
 
-import entropic_substrate.predictive_state.checkpoint_repository as repository
+import entropic_substrate.ladder.run.trainer.checkpoint_repository as repository
 from d1_checkpoint_fixtures import CheckpointCase, checkpoint_state, set_path
-from entropic_substrate.predictive_state.checkpoint_envelope import D1CheckpointError
-from entropic_substrate.predictive_state.checkpoint_repository import (
+from entropic_substrate.ladder.run.trainer.checkpoint_envelope import D1CheckpointError
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
     D1CheckpointRepositoryError,
     load_and_validate,

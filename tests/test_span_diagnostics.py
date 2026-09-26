@@ -9,11 +9,11 @@ import torch
 from tests.test_span_probe import config
 from tests.test_span_state_collection import model
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.sentence_prediction.journal import read_json, write_json
-from entropic_substrate.sentence_prediction.profile import HProfile
-from entropic_substrate.sentence_prediction.runner import run_probe_training
-from entropic_substrate.sentence_prediction.span_diagnostics import (
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run.journal import read_json, write_json
+from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.span_diagnostics import (
     read_span_diagnostics,
     run_span_diagnostics,
 )
@@ -158,8 +158,8 @@ def test_outer_receipt_preserves_the_registered_replay_tolerance(lineage: Lineag
 def test_failure_receipts_distinguish_zero_geometry_from_defects(
     lineage: Lineage, monkeypatch: pytest.MonkeyPatch, zero: bool
 ) -> None:
-    from entropic_substrate.sentence_prediction import span_diagnostics
-    from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run import span_diagnostics
 
     error = UndefinedDirection(3) if zero else RuntimeError("injected observer defect")
 

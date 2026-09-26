@@ -8,25 +8,27 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_authority_loader import D1LoadedCampaignAuthority
-from entropic_substrate.d1_campaign_checkpoint_repository import (
-    D1CampaignCheckpointRepository,
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
+    D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_campaign_cli_service import D1CampaignRunCliService
-from entropic_substrate.d1_campaign_request import (
-    D1CampaignCommandRequest,
-    D1FreshCampaignCursor,
-    D1PersistedCampaignCursor,
-)
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_campaign_cli_service import D1CampaignRunCliService
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
     D1CliOperatorGap,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     parse_registered_design_declaration,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
+    D1CampaignCheckpointRepository,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
+    D1CampaignCommandRequest,
+    D1FreshCampaignCursor,
+    D1PersistedCampaignCursor,
 )
 
 from .test_d1_campaign_recovery_queue import _ready, _RecoveryController

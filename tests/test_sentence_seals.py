@@ -8,10 +8,10 @@ import pytest
 import torch
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.seals import read_seal, resume_seal, seal_step
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.seals import read_seal, resume_seal, seal_step
 
 pytestmark = pytest.mark.unit
 LIMIT = 10_000_000

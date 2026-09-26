@@ -14,14 +14,14 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_command_runner as runner_module
-from entropic_substrate.d1_command_runner import (
+import entropic_substrate.ladder.run.provider.d1_command_runner as runner_module
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
     BoundedSubprocessD1CommandRunner,
     D1BoundedProcessError,
     D1BoundedProcessRunner,
     SubprocessD1CommandRunner,
 )
-from entropic_substrate.d1_operator_ports import D1CommandResult
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1CommandResult
 
 pytestmark = pytest.mark.unit
 

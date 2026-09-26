@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_content_addressed_custody import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.custody.d1_content_addressed_custody import (
     D1ContentAddressedCustodyError,
     D1ContentAddressedCustodyStore,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 pytestmark = pytest.mark.unit
 

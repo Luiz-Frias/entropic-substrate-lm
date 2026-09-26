@@ -8,15 +8,15 @@ from types import MappingProxyType
 
 import pytest
 
-from entropic_substrate.d1_evaluation import D1ChannelMoments
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1QualityEvidence,
     D1RunStatus,
     D1TailQuarantineEvidence,
     D1TailQuarantineKind,
     D1TelemetryGap,
 )
-from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.ladder.register.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1ChannelMoments
 
 pytestmark = pytest.mark.unit
 

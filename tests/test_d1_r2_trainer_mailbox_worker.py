@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 
 from d1_resume_fixtures import captured_step_one_case, origin, resume_start
-from entropic_substrate.d1_r2_trainer_mailbox_worker import (
+from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker import (
     D1R2TrainerMailboxWorker,
     D1R2TrainerMailboxWorkerError,
 )
-from entropic_substrate.d1_trainer_evidence_adapter import D1TrainerEvidenceAdapter
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_evidence_adapter import (
+    D1TrainerEvidenceAdapter,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     d1_trainer_mailbox_attempt_prefix,
     d1_trainer_mailbox_command_path,
@@ -21,9 +23,13 @@ from entropic_substrate.d1_trainer_mailbox_contracts import (
     parse_d1_trainer_mailbox_error,
     serialize_d1_trainer_mailbox_command,
 )
-from entropic_substrate.d1_trainer_mailbox_worker import D1TrainerMailboxWaitPolicy
-from entropic_substrate.d1_trainer_object_transport import D1ObjectMailboxTrainerTransport
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
+    D1TrainerMailboxWaitPolicy,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1ObjectMailboxTrainerTransport,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
     d1_trainer_request_sha256,

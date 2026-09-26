@@ -8,12 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-import entropic_substrate.analysis.d1_probe as native_probe
-import entropic_substrate.experiments.d1_config as config_module
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.cli import main
-from entropic_substrate.d1_trainer_request_codec import serialize_d1_trainer_request
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+import entropic_substrate.historical.d_ladder.d1_probe as native_probe
+import entropic_substrate.ladder.register.d1_config as config_module
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
+    serialize_d1_trainer_request,
+)
 
 from .test_d1_trainer_request_codec import _fresh
 

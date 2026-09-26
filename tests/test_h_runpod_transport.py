@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from tests.test_h_probe_launch import launch
 
-from entropic_substrate.d1_operator_ports import D1CommandResult
-from entropic_substrate.h_probe_launch import H0ProbeLaunch
-from entropic_substrate.h_runpod_transport import HRunpodTransport, ProbeProviderError
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
+from entropic_substrate.ladder.run.h_runpod_transport import HRunpodTransport, ProbeProviderError
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1CommandResult
 
 pytestmark = pytest.mark.unit
 
@@ -55,7 +55,7 @@ def transport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: Runner) -
     binary.write_bytes(b"test-only executable identity; runner is injected")
     binary.chmod(0o700)
     monkeypatch.setattr(
-        "entropic_substrate.h_runpod_transport.RUNPODCTL_SHA256",
+        "entropic_substrate.ladder.run.h_runpod_transport.RUNPODCTL_SHA256",
         hashlib.sha256(binary.read_bytes()).hexdigest(),
     )
     return HRunpodTransport(

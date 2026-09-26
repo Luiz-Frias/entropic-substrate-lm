@@ -11,49 +11,53 @@ from typing import cast
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_authority_loader import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1CampaignAuthorityLoader,
     D1CampaignAuthorityLoaderError,
     D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_campaign_bootstrap import bootstrap_d1_ready_checkpoint
-from entropic_substrate.d1_campaign_checkpoint import (
-    D1CampaignCheckpoint,
-    D1CampaignCompletedCell,
-    D1CampaignDisposition,
-)
-from entropic_substrate.d1_campaign_checkpoint_repository import D1CampaignCheckpointRepository
-from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
-from entropic_substrate.d1_campaign_recovery import (
-    D1CampaignRecoveryStatus,
-    D1HydratedCampaignRecovery,
-    hydrate_d1_campaign_recovery,
-)
-from entropic_substrate.d1_campaign_request import (
-    D1CampaignCommandRequest,
-    D1CampaignLocations,
-    D1FreshCampaignCursor,
-    D1PersistedCampaignCursor,
-)
-from entropic_substrate.d1_finalized_cell_custody_repository import (
-    D1FinalizedCellCustodyRepository,
-)
-from entropic_substrate.evidence.lifecycle import ActorRole
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import ActorRole
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     parse_registered_design_declaration,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_bootstrap import (
+    bootstrap_d1_ready_checkpoint,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
+    D1CampaignCheckpoint,
+    D1CampaignCompletedCell,
+    D1CampaignDisposition,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
+    D1CampaignCheckpointRepository,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import D1CompletedCampaign
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery import (
+    D1CampaignRecoveryStatus,
+    D1HydratedCampaignRecovery,
+    hydrate_d1_campaign_recovery,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
+    D1CampaignCommandRequest,
+    D1CampaignLocations,
+    D1FreshCampaignCursor,
+    D1PersistedCampaignCursor,
+)
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository import (
+    D1FinalizedCellCustodyRepository,
 )
 
 from .test_d1_campaign_evidence_assembler import _record

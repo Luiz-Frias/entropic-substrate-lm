@@ -9,14 +9,14 @@ from collections.abc import Callable
 import pytest
 
 from d1_launch_admission_fixtures import PREREG_COMMIT, PREREG_PATH, SEEDS, contract, family
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     D1RegistrationCodecError,
     hydrate_registered_design,

@@ -7,22 +7,22 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    D1ExternalAnalysisControlError,
-    parse_d1_capture_receipt_control,
-    parse_d1_preregistration_control,
-)
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     parse_d1_capture_aggregate_declaration,
     serialize_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     build_d1_capture_aggregate,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     parse_registered_design_declaration,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    D1ExternalAnalysisControlError,
+    parse_d1_capture_receipt_control,
+    parse_d1_preregistration_control,
 )
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family

@@ -18,13 +18,16 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.capture_results import (
+from entropic_substrate.kernel.runtime.checkpoint import (
+    CHECKPOINT_FORMAT_VERSION,
+    CheckpointFormatError,
+)
+from entropic_substrate.ladder.capture.reader.capture_results import (
     capture_checkpoints,
     capture_finished_runs,
     dvc_commands,
 )
-from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, CheckpointFormatError
-from entropic_substrate.telemetry import TelemetryGap
+from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 
 pytestmark = pytest.mark.unit
 
@@ -346,8 +349,8 @@ def test_cli_capture_results_unknown_experiment_is_a_controlled_refusal(
     tracking-URI check just above it)."""
     import mlflow.tracking
 
-    from entropic_substrate.cli import main
-    from entropic_substrate.sinks import MLFLOW_TRACKING_ENV
+    from entropic_substrate.composition.entrypoints.cli import main
+    from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV
 
     class _FakeMlflowClient:
         def __init__(self, *, tracking_uri: str) -> None:
@@ -423,7 +426,7 @@ class _FakeDvcProc:
 
 
 def test_verify_cloud_sync_accepts_an_empty_status(tmp_path: Path) -> None:
-    from entropic_substrate.capture_results import verify_cloud_sync
+    from entropic_substrate.ladder.capture.reader.capture_results import verify_cloud_sync
 
     dest = tmp_path / "captured"
     Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
@@ -438,7 +441,7 @@ def test_verify_cloud_sync_accepts_an_empty_status(tmp_path: Path) -> None:
 
 
 def test_verify_cloud_sync_raises_on_out_of_sync_remote(tmp_path: Path) -> None:
-    from entropic_substrate.capture_results import verify_cloud_sync
+    from entropic_substrate.ladder.capture.reader.capture_results import verify_cloud_sync
 
     dest = tmp_path / "captured"
     Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
@@ -451,7 +454,7 @@ def test_verify_cloud_sync_raises_on_out_of_sync_remote(tmp_path: Path) -> None:
 
 
 def test_verify_cloud_sync_raises_on_unparseable_dvc_output(tmp_path: Path) -> None:
-    from entropic_substrate.capture_results import verify_cloud_sync
+    from entropic_substrate.ladder.capture.reader.capture_results import verify_cloud_sync
 
     dest = tmp_path / "captured"
     Path(f"{dest}.dvc").write_text("outs: []\n", encoding="utf-8")
@@ -464,7 +467,7 @@ def test_verify_cloud_sync_raises_on_unparseable_dvc_output(tmp_path: Path) -> N
 
 
 def test_verify_cloud_sync_requires_the_pointer_file(tmp_path: Path) -> None:
-    from entropic_substrate.capture_results import verify_cloud_sync
+    from entropic_substrate.ladder.capture.reader.capture_results import verify_cloud_sync
 
     with pytest.raises(RuntimeError, match="\\.dvc"):
         verify_cloud_sync(tmp_path / "never-added", runner=lambda *a, **k: _FakeDvcProc("{}"))
@@ -477,9 +480,9 @@ def test_cli_success_path_runs_the_cloud_gate_after_push(
 
     import mlflow.tracking
 
-    import entropic_substrate.capture_results as capture_mod
-    from entropic_substrate.cli import main
-    from entropic_substrate.sinks import MLFLOW_TRACKING_ENV
+    import entropic_substrate.ladder.capture.reader.capture_results as capture_mod
+    from entropic_substrate.composition.entrypoints.cli import main
+    from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV
 
     fake = _client()
     monkeypatch.setattr(mlflow.tracking, "MlflowClient", lambda *, tracking_uri: fake)

@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.coarse_graining import (
+from entropic_substrate.core.latent.coarse_graining import (
     CausalCoarseGrainer,
     CoarseGrainingResult,
 )

@@ -6,8 +6,11 @@ from types import MappingProxyType
 
 import pytest
 
-from entropic_substrate.d1_evaluation_values import TARGET_PREDICTED_EXACT_MATCH_SEMANTIC
-from entropic_substrate.d1_inspect_values import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.kernel.verdict.d1_evaluation_values import (
+    TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
+)
+from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1_INSPECT_MAX_EVALUATIONS,
     D1InspectEvaluation,
     D1InspectEvaluationWindow,
@@ -19,14 +22,13 @@ from entropic_substrate.d1_inspect_values import (
     D1InspectRun,
     D1InspectView,
 )
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1_REPORT_ONLY_METRICS,
     D1_SCALAR_METRICS,
     D1RunStatus,
 )
-from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.register.d1_execution import PAIRWISE_COSINE_SEMANTIC
 
 from .d1_telemetry_fixtures import IDENTITY, LOGICAL_RUN_ID, resource, start_provenance
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import (
     RecordingObserver,
     captured_step_one_case,
@@ -20,24 +20,29 @@ from d1_resume_fixtures import (
 )
 from d1_resume_hard_crash_fixture import hard_crash_tail_case
 from d1_trainer_fixtures import ORIGIN_NS, micro_plan, run_start
-from entropic_substrate.d1_cli import D1CliCommand, D1CliInvocation
-from entropic_substrate.d1_operator_evidence import (
-    attest_d1_trainer_start,
-    d1_runtime_observation_sha256,
-)
-from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
-from entropic_substrate.d1_trainer_cli_services import (
+from entropic_substrate.composition.wiring.d1_cli import D1CliCommand, D1CliInvocation
+from entropic_substrate.composition.wiring.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
 )
-from entropic_substrate.d1_trainer_evidence_adapter import D1TrainerEvidenceAdapter
-from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_plan import SmokeD1RunPlan
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    attest_d1_trainer_start,
+    d1_runtime_observation_sha256,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
+from entropic_substrate.ladder.run.transport.d1_trainer_evidence_adapter import (
+    D1TrainerEvidenceAdapter,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1TrainerFailureHandoff
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     D1TrainerAdapterPhase,
     D1TrainerArtifactReadback,
     d1_trainer_request_path,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
     D1TrainerRequest,
@@ -46,9 +51,6 @@ from entropic_substrate.d1_trainer_request_codec import (
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
 )
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from . import test_d1_trainer_process_contracts as contract_fixtures
 

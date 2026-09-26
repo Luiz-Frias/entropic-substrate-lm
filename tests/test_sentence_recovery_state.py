@@ -8,14 +8,14 @@ import torch
 from tests.test_sentence_model import tiny_model
 from tests.test_sentence_rollout import scripted_tokens
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.recovery_state import (
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.recovery_state import (
     capture_rng,
     restore_rng,
     rollout_from_payload,
     rollout_to_payload,
 )
-from entropic_substrate.sentence_prediction.rollout import advance_rollout, begin_rollout
+from entropic_substrate.core.sentence.rollout import advance_rollout, begin_rollout
 
 pytestmark = pytest.mark.unit
 

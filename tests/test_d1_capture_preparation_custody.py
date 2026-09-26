@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_preparation_custody import (
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody import (
     D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA,
     D1CampaignCaptureAuthority,
     D1CapturePreparationCustodyError,
@@ -20,7 +20,7 @@ from entropic_substrate.evidence.d1_capture_preparation_custody import (
     parse_d1_capture_preparation_custody,
     serialize_d1_capture_preparation_custody,
 )
-from entropic_substrate.evidence.d1_capture_service import D1CapturePreparationStatus
+from entropic_substrate.ladder.capture.custody.d1_capture_service import D1CapturePreparationStatus
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .test_d1_capture_service import _service

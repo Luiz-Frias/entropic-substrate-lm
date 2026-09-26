@@ -7,16 +7,16 @@ import pytest
 import torch
 from tests.test_sentence_profile import profile
 
-from entropic_substrate.sentence_prediction.capture import write_prepared_corpus
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     SplitPolicy,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.records import SourceDocument
-from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
-from entropic_substrate.sentence_prediction.span_states import collect_span_states
+from entropic_substrate.core.sentence.records import SourceDocument
+from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
+from entropic_substrate.ladder.capture.capture import write_prepared_corpus
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.span_states import collect_span_states
 
 pytestmark = pytest.mark.unit
 

@@ -8,32 +8,32 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.d1_campaign_checkpoint import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, canonical_digest
+from entropic_substrate.kernel.lifecycle import (
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProblemKind
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
     D1CampaignCheckpoint,
     D1CampaignCompletedCell,
     D1CampaignDisposition,
 )
-from entropic_substrate.d1_campaign_recovery import (
+from entropic_substrate.ladder.run.campaign.d1_campaign_recovery import (
     D1CampaignRecoveryError,
     D1CampaignRecoveryHalt,
     D1CampaignRecoveryStatus,
     D1HydratedCampaignRecovery,
     hydrate_d1_campaign_recovery,
 )
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
-from entropic_substrate.evidence.lifecycle import (
-    ActorRole,
-    ArtifactIdentity,
-    ContentHash,
-)
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import RunClass, canonical_digest
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
 
 from .test_d1_campaign_queue import _campaign
 from .test_d1_operator_controller import _manager

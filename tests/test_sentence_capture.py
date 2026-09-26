@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.capture import (
-    read_prepared_corpus,
-    write_prepared_corpus,
-)
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     PreparedCorpus,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.records import SourceDocument
+from entropic_substrate.core.sentence.records import SourceDocument
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.capture.capture import (
+    read_prepared_corpus,
+    write_prepared_corpus,
+)
 
 pytestmark = pytest.mark.unit
 

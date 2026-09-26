@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -16,23 +16,26 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_resource_activation import (
-    D1ProductionResourceActivationFactory,
-    PowerSamplingRegistration,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    PowerIntegrationMethod,
 )
-from entropic_substrate.d1_tracking import D1MetricExtractor
-from entropic_substrate.d1_trainer_handoff import D1FreshRunFailure
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     PowerSample,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, PowerIntegrationMethod
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ProductionResourceActivationFactory,
+    PowerSamplingRegistration,
+)
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunFailure
 
 pytestmark = pytest.mark.unit
 

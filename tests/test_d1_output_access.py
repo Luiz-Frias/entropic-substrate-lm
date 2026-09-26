@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.d1_output_access import (
+from entropic_substrate.ladder.analyze.d1_output_access import (
     D1AclCommandResult,
     D1OutputAccessError,
     D1SetfaclOutputAccess,

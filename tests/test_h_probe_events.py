@@ -8,10 +8,10 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
-from entropic_substrate.h_probe_events import read_probe_event
-from entropic_substrate.sentence_prediction.object_worker import run_object_worker
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
-from entropic_substrate.sentence_prediction.worker_transport import publish_probe_request
+from entropic_substrate.ladder.run.h_probe_events import read_probe_event
+from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
 

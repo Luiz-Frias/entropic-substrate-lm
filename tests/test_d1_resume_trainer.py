@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 import torch
 
-import entropic_substrate.d1_resume_runtime as runtime_module
+import entropic_substrate.ladder.run.trainer.d1_resume_runtime as runtime_module
 from d1_resume_assertions import assert_nested_equal
 from d1_resume_fixtures import (
     RecordingObserver,
@@ -20,13 +20,15 @@ from d1_resume_fixtures import (
 )
 from d1_resume_hard_crash_fixture import hard_crash_tail_case
 from d1_trainer_fixtures import DeterministicTrainerClock
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import run_d1_resume
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import read_d1_run_evidence
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import run_d1_resume
 
 pytestmark = pytest.mark.unit
 

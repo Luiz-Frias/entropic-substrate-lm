@@ -5,8 +5,8 @@ import torch
 import yaml
 
 from d1_runtime_fixtures import runtime_batch, runtime_system
-from entropic_substrate.experiments.d1_config import d1_configs_dir, load_d1_profile
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
 
 pytestmark = pytest.mark.unit
 

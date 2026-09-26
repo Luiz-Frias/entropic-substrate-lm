@@ -7,21 +7,21 @@ from dataclasses import replace
 import pytest
 
 from d1_telemetry_fixtures import STARTED_AT, start_provenance
-from entropic_substrate.d1_resource_activation import (
-    D1ProductionResourceActivationFactory,
-    PowerSamplingRegistration,
-    UnavailableResourceActivationFactory,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    PowerIntegrationMethod,
+    ResourceActivationMode,
 )
-from entropic_substrate.evidence.resource_ledger import ResourceLedger
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedger
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     PowerSample,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_provenance import (
-    EvidenceGap,
-    PowerIntegrationMethod,
-    ResourceActivationMode,
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ProductionResourceActivationFactory,
+    PowerSamplingRegistration,
+    UnavailableResourceActivationFactory,
 )
 
 pytestmark = pytest.mark.unit

@@ -11,19 +11,19 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.d1_blind_aliases import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1ArmAliasMap
+from entropic_substrate.ladder.review.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
     prepare_d1_blind_aliases,
 )
-from entropic_substrate.analysis.d1_external_analysis_control import (
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
     D1AliasApplicationControl,
     D1ExternalAnalysisControlError,
     decode_d1_alias_application_control,
     parse_d1_alias_commitment_control,
     parse_d1_alias_reveal_control,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1ArmAliasMap
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from .test_d1_blind_alias_custody import _DeterministicCrypto
 

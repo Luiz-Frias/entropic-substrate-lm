@@ -7,8 +7,8 @@ import math
 import pytest
 import torch
 
-from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
-from entropic_substrate.layers.kappa_norm import GatedKappaNorm, UnitNorm
+from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+from entropic_substrate.core.geometry.kappa_norm import GatedKappaNorm, UnitNorm
 
 pytestmark = pytest.mark.unit
 

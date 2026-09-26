@@ -92,7 +92,7 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     dropped silently, which is the correct behavior for teardown-window
     noise (the message has already served its purpose or never mattered).
     """
-    from entropic_substrate.logging import configure_logging
+    from entropic_substrate.kernel.runtime.logging import configure_logging
 
     configure_logging(json_path=None)
     yield
@@ -102,6 +102,6 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
 @pytest.fixture
 def sample_bytes() -> bytes:
     """A small, structured byte corpus for transition counting."""
-    from entropic_substrate.data.synthetic import synthetic_text
+    from entropic_substrate.ladder.capture.custody.synthetic import synthetic_text
 
     return synthetic_text(60_000, seed=7).encode("utf-8")

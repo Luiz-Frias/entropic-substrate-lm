@@ -7,13 +7,13 @@ from typing import Any, cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_telemetry_measurements import (
+from entropic_substrate.kernel.identity.d1_primitives import TargetUpdateStrategy
+from entropic_substrate.ladder.capture.records.d1_telemetry_measurements import (
     parse_eval_event,
     parse_quality,
     parse_train_event,
 )
-from entropic_substrate.evidence.d1_telemetry_values import D1TelemetryGap
-from entropic_substrate.experiments.d1_primitives import TargetUpdateStrategy
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1TelemetryGap
 
 from .d1_telemetry_fixtures import replace_payload, valid_events
 

@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from entropic_substrate.analysis.mlflow_attach import (
+from entropic_substrate.ladder.analyze.mlflow_attach import (
     attach_figures_to_run,
     attach_seed_band_to_aggregate,
 )
-from entropic_substrate.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
+from entropic_substrate.ladder.capture.reader.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
 from test_sinks import FakeMlflowClient
 
 if TYPE_CHECKING:

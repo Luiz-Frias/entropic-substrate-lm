@@ -8,8 +8,8 @@ import pytest
 import torch
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.journal import read_journal, write_journal
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.run.journal import read_journal, write_journal
 
 pytestmark = pytest.mark.unit
 
@@ -94,7 +94,7 @@ def test_prediction_journal_keeps_absent_encoder_and_active_future_loss(tmp_path
 def test_nonfinite_json_and_rehashed_source_forgery_are_rejected(tmp_path: Path) -> None:
     import json
 
-    from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+    from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 
     run = engine(tmp_path)
     artifact = write_journal(
@@ -117,7 +117,7 @@ def test_nonfinite_json_and_rehashed_source_forgery_are_rejected(tmp_path: Path)
 
 
 def test_duplicate_json_keys_and_incomplete_step_prefix_are_refused(tmp_path: Path) -> None:
-    from entropic_substrate.evidence.lifecycle import ArtifactIdentity
+    from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 
     run = engine(tmp_path)
     rows = (run.advance(), run.advance())
@@ -141,7 +141,7 @@ def test_duplicate_json_keys_and_incomplete_step_prefix_are_refused(tmp_path: Pa
 def test_swapped_in_memory_corpus_cannot_override_the_bound_capture(tmp_path: Path) -> None:
     from tests.test_sentence_sampling import corpus
 
-    from entropic_substrate.sentence_prediction.sampling import SentenceSampler
+    from entropic_substrate.core.sentence.sampling import SentenceSampler
 
     run = engine(tmp_path)
     run.corpus = corpus()

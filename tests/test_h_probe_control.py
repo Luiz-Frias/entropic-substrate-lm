@@ -9,10 +9,12 @@ from pathlib import Path
 import pytest
 from tests.test_h_probe_launch import launch
 
-from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
-from entropic_substrate.d1_operator_ports import D1CommandResult
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.h_probe_control import own_probe_role, read_probe_control
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run.h_probe_control import own_probe_role, read_probe_control
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
+)
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1CommandResult
 
 pytestmark = pytest.mark.unit
 
@@ -134,8 +136,8 @@ def test_separate_process_cannot_take_an_owned_role_and_can_take_a_released_role
     directory, spec = root(tmp_path), launch()
     code = """from pathlib import Path
 import sys
-from entropic_substrate.h_probe_launch import parse_probe_launch
-from entropic_substrate.h_probe_control import own_probe_role
+from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
+from entropic_substrate.ladder.run.h_probe_control import own_probe_role
 root = Path(sys.argv[1])
 launch = parse_probe_launch((root / 'launch.json').read_bytes(), max_bytes=10000)
 with own_probe_role(root, launch, 'controller'):
@@ -165,7 +167,7 @@ def test_replaced_manifest_invalidates_existing_control_records(tmp_path: Path) 
 def test_manifest_publication_holds_a_shared_cross_process_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate import h_probe_control as control
+    from entropic_substrate.ladder.run import h_probe_control as control
 
     directory, spec = root(tmp_path), launch()
     original = control.publish_d1_atomic_bytes
@@ -203,8 +205,8 @@ def test_two_processes_can_initialize_different_roles_in_one_fresh_directory(
     directory, spec = root(tmp_path), launch()
     code = """import os, sys
 from pathlib import Path
-from entropic_substrate.h_probe_launch import parse_probe_launch
-from entropic_substrate.h_probe_control import own_probe_role
+from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
+from entropic_substrate.ladder.run.h_probe_control import own_probe_role
 launch = parse_probe_launch(sys.stdin.buffer.read(), max_bytes=10000)
 with own_probe_role(Path(sys.argv[1]), launch, sys.argv[2]) as role:
     role.write('entered', {'pid': os.getpid()}, max_bytes=10000)
@@ -230,8 +232,8 @@ def test_abrupt_owner_exit_releases_lock_but_preserves_intent(tmp_path: Path) ->
     directory, spec = root(tmp_path), launch()
     code = """import os, sys
 from pathlib import Path
-from entropic_substrate.h_probe_launch import parse_probe_launch
-from entropic_substrate.h_probe_control import own_probe_role
+from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
+from entropic_substrate.ladder.run.h_probe_control import own_probe_role
 launch = parse_probe_launch(sys.stdin.buffer.read(), max_bytes=10000)
 with own_probe_role(Path(sys.argv[1]), launch, 'controller') as writer:
     writer.write('create-intent', {'case': 'crash-fixture'}, max_bytes=10000)

@@ -8,19 +8,19 @@ import pytest
 import torch
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.sentence_prediction import execution as runtime
-from entropic_substrate.sentence_prediction import mechanism_evidence
-from entropic_substrate.sentence_prediction.checkpoint import save_checkpoint
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.journal import (
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.ladder.run import execution as runtime
+from entropic_substrate.ladder.run import mechanism_evidence
+from entropic_substrate.ladder.run.checkpoint import save_checkpoint
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.journal import (
     artifact_reference,
     read_journal,
     read_json,
     write_journal,
     write_json,
 )
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.seals import read_seal
+from entropic_substrate.ladder.run.seals import read_seal
 
 pytestmark = pytest.mark.unit
 

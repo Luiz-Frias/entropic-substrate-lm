@@ -5,9 +5,9 @@ from dataclasses import replace
 import pytest
 
 from d1_runtime_fixtures import runtime_family
-from entropic_substrate.experiments.d1 import D1Arm
-from entropic_substrate.experiments.ladder import CoarseSpec, Rung, RungSpec, Treatment
-from entropic_substrate.observation import ByteObservationCodec
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.ladder.register.d1 import D1Arm
+from entropic_substrate.ladder.register.ladder import CoarseSpec, Rung, RungSpec, Treatment
 
 pytestmark = pytest.mark.unit
 

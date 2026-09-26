@@ -8,8 +8,8 @@ import pytest
 import torch
 from tests.test_span_probe import Samples, config, probe_samples
 
-from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError, publish_d1_atomic_bytes
-from entropic_substrate.sentence_prediction.span_probe_artifacts import (
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError, publish_d1_atomic_bytes
+from entropic_substrate.ladder.run.span_probe_artifacts import (
     capture_span_probes,
     read_span_probes,
 )
@@ -127,7 +127,7 @@ def test_capture_refuses_invalid_budget_and_unmatched_inputs(
 def test_too_small_budget_refuses_before_fitting(
     tmp_path: Path, samples: Samples, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction import span_probe_artifacts as artifacts
+    from entropic_substrate.ladder.run import span_probe_artifacts as artifacts
 
     def forbidden(*args: object, **kwargs: object) -> None:
         raise AssertionError("fitting started despite impossible byte budget")
@@ -152,7 +152,7 @@ def test_serialization_limit_keeps_partial_output_unpublished(
 
 
 def test_output_buffer_never_accepts_bytes_past_its_limit() -> None:
-    from entropic_substrate.sentence_prediction.span_probe_artifacts import _LimitedBuffer
+    from entropic_substrate.ladder.run.span_probe_artifacts import _LimitedBuffer
 
     with _LimitedBuffer(4) as stream:
         assert stream.write(b"1234") == 4

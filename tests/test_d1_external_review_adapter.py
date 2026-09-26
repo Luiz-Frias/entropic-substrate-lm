@@ -17,26 +17,26 @@ from typing import Any, cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_external_review_adapter as review_adapter_module
-from entropic_substrate.analysis.d1_external_review_adapter import (
+import entropic_substrate.ladder.review.d1_external_review_adapter as review_adapter_module
+from entropic_substrate.ladder.review.d1_external_review_adapter import (
     D1BoundedSubprocessRunner,
     D1ExternalReviewError,
     D1ExternalReviewSubprocessAdapter,
     D1ReviewSandboxIdentity,
 )
-from entropic_substrate.analysis.d1_review_execution import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
+from entropic_substrate.ladder.review.d1_review_execution import (
     D1CloudReviewerFake,
     D1CloudReviewRequest,
     D1ExecutedBlindReview,
     D1InMemoryReviewReceiptStoreFake,
     execute_d1_blind_review,
 )
-from entropic_substrate.analysis.d1_review_packet import (
+from entropic_substrate.ladder.review.d1_review_packet import (
     D1BlindReviewPacket,
     D1FactorialReviewerPrompt,
-)
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1_NO_MAJOR_PROMPT_DIRECTIVE,
 )
 
 pytestmark = pytest.mark.unit

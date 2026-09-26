@@ -6,14 +6,14 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     CausalEncoderSpec,
     D1BoundaryStateSpec,
     EncoderInitializationIdentity,
     FutureActivation,
     MatchedEncoderPairSpec,
 )
-from entropic_substrate.experiments.d1_stabilization import FutureLawSpec
+from entropic_substrate.ladder.register.d1_stabilization import FutureLawSpec
 
 pytestmark = pytest.mark.unit
 

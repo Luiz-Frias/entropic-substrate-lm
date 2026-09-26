@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from entropic_substrate.analysis.charts import (
+from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+from entropic_substrate.ladder.analyze.charts import (
     fig_e1_log_steps_washout,
     fig_e1_paired_loss_curves,
     fig_e2_spike_variance_texture,
@@ -23,15 +24,14 @@ from entropic_substrate.analysis.charts import (
     fig_e3_kappa_trajectories,
     fig_e3_loss_separation_vs_e2,
 )
-from entropic_substrate.analysis.palette import OKABE_ITO
-from entropic_substrate.analysis.series import (
+from entropic_substrate.ladder.analyze.palette import OKABE_ITO
+from entropic_substrate.ladder.analyze.series import (
     EvalSeriesRun,
     PairedFinalMetric,
     TrainSeriesRun,
     paired_verdict,
 )
-from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
-from entropic_substrate.telemetry import EvalRecord, TrainRecord
+from entropic_substrate.ladder.capture.reader.telemetry import EvalRecord, TrainRecord
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

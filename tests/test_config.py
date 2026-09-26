@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.config import (
+from entropic_substrate.core.substrate.backbone import build_model, vocab_size_for
+from entropic_substrate.kernel.runtime.config import (
     EXPERIMENTS,
     Config,
     DataConfig,
@@ -21,7 +22,6 @@ from entropic_substrate.config import (
     merge_dicts,
     resolve_experiment_config,
 )
-from entropic_substrate.models.backbone import build_model, vocab_size_for
 
 pytestmark = pytest.mark.unit
 
@@ -105,8 +105,8 @@ def test_configs_dir_falls_back_to_cwd_when_repo_root_raises(
     resolver must not propagate out of configs_dir() -- it must fall through
     to the pre-existing CWD-relative candidate, same as an unresolvable
     anchor did before this phase."""
-    import entropic_substrate.config as config_module
-    from entropic_substrate.paths import RepoLayoutError
+    import entropic_substrate.kernel.runtime.config as config_module
+    from entropic_substrate.kernel.runtime.paths import RepoLayoutError
 
     def _raise() -> Path:
         raise RepoLayoutError("mutated for test")

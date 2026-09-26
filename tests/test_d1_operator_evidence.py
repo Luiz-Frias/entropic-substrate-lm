@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_operator_evidence as operator_module
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.campaign.d1_operator_evidence as operator_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_billing_finalizer_fixtures import completed_case
 from d1_resume_fixtures import (
     InterruptedD1Case,
@@ -27,28 +27,31 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_operator_evidence import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     D1TrainerExportReceipt,
     verify_d1_trainer_export,
     verify_d1_trainer_export_for_request,
 )
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_trainer_handoff import (
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
     D1FreshRunFailure,
     D1TrainerFailureHandoff,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

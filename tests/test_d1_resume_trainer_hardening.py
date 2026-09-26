@@ -7,15 +7,21 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations, open_d1_resume
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import (
+    D1ResumeRunLocations,
+    open_d1_resume,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
+)
 
 pytestmark = pytest.mark.unit
 

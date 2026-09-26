@@ -5,16 +5,18 @@ from __future__ import annotations
 import pytest
 
 from d1_telemetry_fixtures import STARTED_AT, start_provenance
-from entropic_substrate.evidence.resource_ledger import ResourceLedger
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import EvidenceGap
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedger
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     PowerSample,
     ResourcePhase,
 )
-from entropic_substrate.evidence.resource_meter_strategy import D1ProductionResourceMeter
-from entropic_substrate.evidence.resource_provenance import EvidenceGap
-from entropic_substrate.evidence.resource_work import CostReading
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_meter_strategy import (
+    D1ProductionResourceMeter,
+)
+from entropic_substrate.ladder.capture.resource.resource_work import CostReading
 
 pytestmark = pytest.mark.unit
 

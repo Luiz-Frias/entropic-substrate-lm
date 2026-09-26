@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.predictive_score_gain import (
+from entropic_substrate.core.probe.predictive_score_gain import (
     PredictiveScore,
     ScoreBinding,
     pair_score_gain,
