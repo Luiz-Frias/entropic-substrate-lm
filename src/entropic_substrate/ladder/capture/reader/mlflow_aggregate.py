@@ -12,6 +12,10 @@ retired ``entropic_substrate.sinks`` address; they now read
 imports from. Comment/docstring text only, no code line changed. Verified this module is
 not identity-hashed: it does not appear in either ``_READER_MODULES`` tuple in
 ``ladder/run/checkpoint.py`` or ``ladder/capture/capture.py``.
+RESTATED 2026-09-26 (same sweep, follow-up): ``find_parent_run``'s docstring named the
+retired ``entropic_substrate.analysis.mlflow_attach``; it now reads
+``entropic_substrate.ladder.analyze.mlflow_attach`` (``git ls-files`` at db23213 places the
+module at ``src/entropic_substrate/ladder/analyze/mlflow_attach.py``). Docstring text only.
 
 NO PARENT WITHOUT A COMPLETE AGGREGATE: a parent's absence for an
 in-progress ``config_hash`` IS the loud signal that the ladder is not done —
