@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from entropic_substrate.evidence.d1_types import D1FamilyIdentity
-from entropic_substrate.experiments.d1 import D1Arm, D1ExperimentFamily
+from entropic_substrate.kernel.verdict.d1_types import D1FamilyIdentity
+from entropic_substrate.ladder.register.d1 import D1Arm, D1ExperimentFamily
 
 
 def family_identity_from_experiment(family: D1ExperimentFamily) -> D1FamilyIdentity:

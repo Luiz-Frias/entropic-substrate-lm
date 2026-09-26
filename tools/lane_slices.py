@@ -13,14 +13,21 @@ Files declared ``zip_owned_regenerable`` (the checkpoint regime-row fixtures and
 member of the checkpoint reader set re-pins the same rows, and the zip regenerates them on
 the integrated tip in one rung (see docs/plans/src-hexagonal-refactor.plan.md, D-WAVES r2).
 
-DEPENDENCIES (D-WAVES r3, MEASURED 2026-09-23: w2's p9 and p11 each import 50 of p8's
-targets from their own moved modules): a lane's moved module that imports a sibling lane's
+DEPENDENCIES (D-WAVES r3, MEASURED 2026-09-23: w2's p11 imports 50 and p9 41 of p8's
+targets from their own moved modules; measured 50/50 at 3e9ffa2 before p9's target set was corrected): a lane's moved module that imports a sibling lane's
 target has NO valid address in the lane's own worktree (the old dotted name is forbidden in
 landed packages, the explicit ``__legacy`` address is deleted by the sibling, the sibling's
 new address does not exist until the zip), so file-disjoint lanes can still be illegal. The
 check reads each target's legacy source, resolves every ``entropic_substrate.*`` import to
 its mapping row (a facade package counts as every lane that moves one of its leaves) and
 reports ``DEPENDS a -> b: n``; any dependency exits 1 unless ``--allow-dependencies``.
+
+``--rung-owned`` (D-WAVES r3 consequence, 2026-09-23): a landed importer carrying explicit
+``__legacy`` edges to TWO lanes' targets is rewritten by neither lane; each lane's
+``gen_shims`` emits a forwarder for it in that lane's worktree and the post-zip
+reconciliation rung rewrites it once. Such a file is declared here, leaves every slice, and
+is reported under ``RUNG-OWNED``. Teeth: a declared file that fewer than two slices carry is
+a malformed declaration (exit 2), so the flag cannot decay into an ignore list.
 
 PACKAGE KEYS (``entropic_substrate.<pkg>`` rows whose legacy source is a package directory,
 not a leaf ``.py``) are never lane targets: tools/gen_shims.py fails loud on a fragment row
@@ -105,6 +112,23 @@ def slice_for(targets: set[str], edges: dict[str, set[str]]) -> set[str]:
         files.update(shim_pair(t))
         files.update(edges.get(t, ()))
     return files
+
+
+def rung_owned_split(
+    slices: dict[str, set[str]], declared: set[str]
+) -> tuple[dict[str, set[str]], list[tuple[str, list[str]]]]:
+    """Remove each declared file from every slice; refuse one fewer than two slices carry."""
+    report: list[tuple[str, list[str]]] = []
+    for f in sorted(declared):
+        lanes = sorted(lane for lane, files in slices.items() if f in files)
+        if len(lanes) < 2:
+            raise LaneSlicesError(
+                f"rung-owned file {f!r} is carried by {len(lanes)} slice(s) {lanes}; "
+                "only a landed importer shared by two or more lanes may be declared"
+            )
+        report.append((f, lanes))
+    trimmed = {lane: files - declared for lane, files in slices.items()}
+    return trimmed, report
 
 
 def overlaps(
@@ -202,6 +226,12 @@ def main(argv: list[str] | None = None) -> int:
         help="comma-separated repo-relative files excluded from the overlap check",
     )
     ap.add_argument(
+        "--rung-owned",
+        default="",
+        help="comma-separated repo-relative landed importers shared by >=2 lanes; "
+        "removed from every slice, rewritten by the reconciliation rung (exit 2 if not shared)",
+    )
+    ap.add_argument(
         "--allow-dependencies",
         action="store_true",
         help="report import dependencies between lanes without failing on them",
@@ -221,6 +251,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     edges = landed_legacy_edges(args.src)
     slices = {lane: slice_for(ts, edges) for lane, ts in lanes.items()}
+    try:
+        slices, rung_owned = rung_owned_split(slices, {f for f in args.rung_owned.split(",") if f})
+    except LaneSlicesError as exc:
+        print(f"lane_slices: {exc}", file=sys.stderr)
+        return 2
     regen = {f for f in args.regenerable.split(",") if f}
     shared = overlaps(slices, regen)
     deps = dependencies(args.src, lanes, mapping)
@@ -231,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "slices": {k: sorted(v) for k, v in slices.items()},
                     "overlaps": [{"a": a, "b": b, "files": f} for a, b, f in shared],
+                    "rung_owned": [{"file": f, "lanes": ls} for f, ls in rung_owned],
                     "dependencies": [
                         {"a": a, "b": b, "edges": [list(e) for e in es]} for a, b, es in deps
                     ],
@@ -241,6 +277,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for lane, files in slices.items():
             print(f"{lane}: {len(files)} files ({len(lanes[lane])} targets)")
+        for f, ls in rung_owned:
+            print(f"RUNG-OWNED {f}: {', '.join(ls)}")
         for a, b, f in shared:
             print(f"OVERLAP {a} x {b}: {len(f)} files")
             for x in f:

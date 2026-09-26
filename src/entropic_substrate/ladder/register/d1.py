@@ -6,14 +6,7 @@ family lifecycle concerns. Existing callers keep importing this module.
 
 from __future__ import annotations
 
-from entropic_substrate.experiments.d1_family import (
-    D1DraftSpec,
-    D1ExperimentFamily,
-    build_d1_experiment_family,
-    build_four_arm_drafts,
-    strategies_for_arm,
-)
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     CausalEncoderSpec,
     CollapseStrategy,
     CovarianceNormalization,
@@ -34,7 +27,14 @@ from entropic_substrate.experiments.d1_primitives import (
     StateLiftPosture,
     TargetUpdateStrategy,
 )
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.register.d1_family import (
+    D1DraftSpec,
+    D1ExperimentFamily,
+    build_d1_experiment_family,
+    build_four_arm_drafts,
+    strategies_for_arm,
+)
+from entropic_substrate.ladder.register.d1_provenance import (
     CodeIdentity,
     ContainerIdentity,
     DataIdentity,
@@ -43,8 +43,8 @@ from entropic_substrate.experiments.d1_provenance import (
     ExecutionIdentity,
     PreregistrationIdentity,
 )
-from entropic_substrate.experiments.d1_runs import D1RunSpec
-from entropic_substrate.experiments.d1_stabilization import (
+from entropic_substrate.ladder.register.d1_runs import D1RunSpec
+from entropic_substrate.ladder.register.d1_stabilization import (
     CollapseParameters,
     D1GeometrySpec,
     D1TargetSpec,

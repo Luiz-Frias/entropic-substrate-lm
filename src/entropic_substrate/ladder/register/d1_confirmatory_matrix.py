@@ -7,20 +7,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Final, Protocol
 
-from entropic_substrate.evidence.resource_provenance import RunStartProvenance
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
     canonical_digest,
     require_sha256,
 )
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.register.d1_plan import ConfirmatoryD1RunPlan
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
 
 D1_CONFIRMATORY_MATRIX_SCHEMA: Final = "d1-confirmatory-matrix-v2"
 _MATRIX_ATTESTATION: Final = object()

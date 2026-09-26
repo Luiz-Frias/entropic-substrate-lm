@@ -335,9 +335,19 @@ def test_landed_module_still_gets_a_shim_at_new_home(tmp_path: Path) -> None:
     merged = resolve(frags_dir, mapping_path)
     written = gen_shims.generate(merged, str(frags_dir), out_dir)
     out = out_dir / "entropic_substrate" / "old_thing.py"
+    # AMENDED by FOR-1547: a landed row now also gets a FORWARDER at the
+    # __legacy address its move vacated, so `written` carries both paths (the
+    # shim first, then its forwarder). The subject of this test is unchanged
+    # -- the shim at the OLD name still exists and points at the new home,
+    # with no __legacy in its own body.
     assert written == [out]
     assert "entropic_substrate.ladder.run.new_thing" in out.read_text()
     assert "__legacy" not in out.read_text()
+    # AMENDED AGAIN by RULING 1 (2026-09-23): a landed row gets a forwarder
+    # only while something still imports its `__legacy` address, and this
+    # fixture has no importer at all -- so `written` is the shim alone, and
+    # the forwarder cases below plant an importer explicitly.
+    assert not (out_dir / "entropic_substrate" / "__legacy" / "old_thing.py").exists()
 
 
 def test_retired_module_gets_no_shim(tmp_path: Path) -> None:
@@ -1285,6 +1295,13 @@ def test_stale_verify_passes_after_regenerate_GREEN_control(tmp_path: Path) -> N
             }
         },
     )
+    # AMENDED by FOR-1547: the flip has to model the `git mv` it stands for.
+    # Leaving the planted __legacy source in place while flipping the row to
+    # landed is the "two live copies of one module" state
+    # find_forwarder_conflicts now refuses (and that refusal has its own
+    # arms); this control's subject is manifest drift after a regenerate, so
+    # it removes the moved-from file exactly as the real move does.
+    (out_dir / "entropic_substrate" / "__legacy" / "old_thing.py").unlink()
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir)])
     assert rc == 0
     rc = gen_shims.main([str(frags_dir), str(mapping_path), str(out_dir), "--verify"])
@@ -2169,3 +2186,435 @@ def test_emitted_manifest_is_untracked() -> None:
         ["git", "ls-files", "--", str(canonical)], cwd=repo, capture_output=True, text=True
     )
     assert tracked.stdout.strip() == "", f"{canonical} is still tracked: {tracked.stdout}"
+
+
+# ---------------------------------------------------------------------------
+# RED-first: __LEGACY FORWARDERS (FOR-1547, D-WAVES r3 option A, 2026-09-23).
+# A landed row's `git mv` vacates its `entropic_substrate.__legacy.<x>`
+# address, which is the one address a PARALLEL wave lane may import a sibling
+# lane's module by. generate() therefore writes the same exact-form shim
+# there, plus its derived stub, listed under the manifest's own `forwarders`
+# key. Every case below is paired with a control proving the rule does not
+# fire on the row class it must leave alone (house rule 5).
+# ---------------------------------------------------------------------------
+
+
+def plant_legacy_importer(tmp_path: Path, legacy_dotted: str, name: str = "test_importer") -> Path:
+    """A real (non-generated) consumer of a `__legacy` address, under the
+    `tests/` sibling `importer_scan_roots` looks at -- the measured half of
+    the forwarder predicate (RULING 1). Without one, no forwarder is emitted
+    for any row, which is the point of the RED case below."""
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    p = tests_dir / f"{name}.py"
+    p.write_text(f"import {legacy_dotted}\n\nUSES = {legacy_dotted}\n")
+    return p
+
+
+def _landed_forwarder_fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """One landed row WITH a live `__legacy` importer, generated once:
+    mapping, fragments dir, out_dir and manifest for the forwarder cases
+    below."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.moved_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p6-core",
+        {
+            "entropic_substrate.moved_thing": {
+                "target": "entropic_substrate.core.geometry.moved_thing",
+                "landed": True,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.core.geometry.moved_thing")
+    plant_legacy_importer(tmp_path, "entropic_substrate.__legacy.moved_thing")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    return mapping_path, frags_dir, out_dir, manifest_path
+
+
+def _verify_argv(mapping_path: Path, frags_dir: Path, out_dir: Path, manifest: Path) -> list[str]:
+    return [
+        str(frags_dir),
+        str(mapping_path),
+        str(out_dir),
+        "--verify",
+        "--manifest-out",
+        str(manifest),
+    ]
+
+
+def test_landed_row_with_a_vacated_legacy_address_gets_a_forwarder(tmp_path: Path) -> None:
+    """(a) The core case: the module moved, so nothing sits at its __legacy
+    address any more -- a forwarder in the exact static-import form lands
+    there, with a .pyi sibling, and BOTH are in the manifest (the forwarder
+    under `forwarders`, its stub alongside every other stub)."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.moved_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p6-core",
+        {
+            "entropic_substrate.moved_thing": {
+                "target": "entropic_substrate.core.geometry.moved_thing",
+                "landed": True,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.core.geometry.moved_thing")
+    plant_legacy_importer(tmp_path, "entropic_substrate.__legacy.moved_thing")
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    written = gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    assert fwd in written
+    text = fwd.read_text()
+    assert "import entropic_substrate.core.geometry.moved_thing as _target" in text
+    assert "sys.modules[__name__] = _target" in text
+    ok, reason = gen_shims.verify_shim_source(text)
+    assert ok is True, reason
+
+    fwd_stub = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.pyi"
+    assert fwd_stub.is_file()
+    assert (
+        "from entropic_substrate.core.geometry.moved_thing import PLANTED as PLANTED"
+        in fwd_stub.read_text()
+    )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["forwarders"] == [
+        {
+            "path": "entropic_substrate/__legacy/moved_thing.py",
+            "target": "entropic_substrate.core.geometry.moved_thing",
+            "entrypoint": False,
+        }
+    ]
+    assert "entropic_substrate/__legacy/moved_thing.pyi" in {s["path"] for s in manifest["stubs"]}
+
+
+def test_not_landed_row_gets_no_forwarder_GREEN_control(tmp_path: Path) -> None:
+    """(b) Control: a row that has NOT landed still holds its real source at
+    its __legacy address -- there is nothing to forward to, so no forwarder
+    is written and no error is raised. Without this control the rule above
+    could not be distinguished from "always write a file under __legacy"."""
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.still_here"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p3-quarantine",
+        {
+            "entropic_substrate.still_here": {
+                "target": "entropic_substrate.__legacy.still_here",
+                "landed": False,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    (real,) = plant(out_dir, "entropic_substrate.__legacy.still_here")
+    payload = real.read_bytes()
+    manifest_path = tmp_path / "emitted.json"
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert real.read_bytes() == payload  # real source untouched, never overwritten
+    assert json.loads(manifest_path.read_text())["forwarders"] == []
+    assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {}
+
+
+def test_verify_fails_loud_on_a_hand_edited_forwarder(tmp_path: Path) -> None:
+    """(c), first arm: a forwarder rewritten into a string-only importlib
+    shim (the form grimp cannot see) must fail --verify, exactly as a
+    hand-edited leaf shim does."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    argv = _verify_argv(mapping_path, frags_dir, out_dir, manifest_path)
+    assert gen_shims.main(argv) == 0  # GREEN control arm, before the mutation
+
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    fwd.write_text(
+        "import importlib, sys\n"
+        "sys.modules[__name__] = importlib.import_module("
+        '"entropic_substrate.core.geometry.moved_thing")\n'
+    )
+    assert gen_shims.main(argv) == 1
+
+
+def test_verify_fails_loud_when_a_manifest_listed_forwarder_is_missing(tmp_path: Path) -> None:
+    """(c), second arm: delete the forwarder file and leave the manifest
+    listing it -- --verify must fail, never treat an absent forwarder as
+    'nothing to check'."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    argv = _verify_argv(mapping_path, frags_dir, out_dir, manifest_path)
+    assert gen_shims.main(argv) == 0
+
+    (out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py").unlink()
+    assert gen_shims.main(argv) == 1
+
+
+def test_real_source_back_at_a_forwarder_address_fails_loud(tmp_path: Path) -> None:
+    """(d) Two live copies of one module: the landed target exists AND real,
+    non-shim source sits at the __legacy address the forwarder owns.
+    generate() refuses before its first write (the mirror of
+    find_unmoved_sources) and --verify refuses too -- never a silent skip,
+    which on the sanctioned generate-then---verify path would be invisible
+    because generate rewrites the manifest."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    real_body = '"""real source that came back"""\n\nPLANTED = True\n'
+    fwd.write_text(real_body)
+    merged = resolve(frags_dir, mapping_path)
+    assert gen_shims.find_forwarder_conflicts(merged, out_dir)
+    with pytest.raises(gen_shims.ManifestError, match="forwarder address"):
+        gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert fwd.read_text() == real_body  # refused BEFORE the first write
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 1
+
+
+def test_regenerating_over_an_existing_forwarder_is_not_a_conflict_GREEN_control(
+    tmp_path: Path,
+) -> None:
+    """Control for (d): the forwarder this generator wrote is itself a shim,
+    not real source, so a second generate() re-points it instead of refusing
+    -- idempotency, without which every lane's second run would fail loud."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    merged = resolve(frags_dir, mapping_path)
+    assert gen_shims.find_forwarder_conflicts(merged, out_dir) == []
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 0
+
+
+def test_cold_import_through_a_forwarder_is_the_same_module_object(tmp_path: Path) -> None:
+    """(e) The instrument tests/test_shim_layer.py uses, applied to a
+    forwarder: a FRESH interpreter imports `entropic_substrate.__legacy.<x>`
+    FIRST (nothing warms the landed address ahead of it) and the CHILD itself
+    reports whether sys.modules holds ONE object for both addresses. Asserted
+    on the child's stdout marker AND its return code -- an exit code alone is
+    green for a child that never ran the comparison.
+
+    HERMETIC, not the real tree (RULING 1, 2026-09-23): the live forwarder
+    set is derived from who still imports each `__legacy` address, and on the
+    real tree today that set is EMPTY (measured: every landed row's `__legacy`
+    importers were already rewritten on arrival), so a real-tree arm would
+    have nothing to exercise and would go RED for a reason that is not about
+    forwarders resolving. The tmp tree is a REGULAR package (explicit
+    `__init__.py` at every level) so the PYTHONPATH entry wins over the
+    editable install's own `entropic_substrate`; bytecode writing is off so
+    the child deposits nothing."""
+    mapping_path, frags_dir, out_dir, _manifest = _landed_forwarder_fixture(tmp_path)
+    forwarder = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    assert forwarder.is_file(), "fixture did not emit the forwarder this test is about"
+    for pkg_dir in (
+        out_dir / "entropic_substrate",
+        out_dir / "entropic_substrate" / "__legacy",
+        out_dir / "entropic_substrate" / "core",
+        out_dir / "entropic_substrate" / "core" / "geometry",
+    ):
+        (pkg_dir / "__init__.py").write_text("")
+
+    legacy = "entropic_substrate.__legacy.moved_thing"
+    target = "entropic_substrate.core.geometry.moved_thing"
+    code = (
+        "import importlib, sys\n"
+        f"importlib.import_module({legacy!r})\n"
+        f"importlib.import_module({target!r})\n"
+        f"print('FORWARDER_IDENTICAL' if sys.modules[{legacy!r}] is sys.modules[{target!r}] "
+        "else 'FORWARDER_DIFFERENT')\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(out_dir)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, f"cold import of {legacy} failed:\n{result.stderr[-2000:]}"
+    assert "FORWARDER_IDENTICAL" in result.stdout, (
+        f"{legacy} did not resolve to the same module object as {target}; "
+        f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
+    )
+    assert mapping_path.is_file() and frags_dir.is_dir()  # fixture inputs, untouched
+
+
+# ---------------------------------------------------------------------------
+# RED-first: FORWARDER EMISSION IS DERIVED, NEVER DECLARED (RULING 1,
+# conductor, 2026-09-23). A forwarder exists for exactly as long as some real
+# (non-generated) module under src/ or tests/ still imports its `__legacy`
+# address. Both arms of the predicate get teeth: zero importers -> no
+# forwarder; one importer -> forwarder; importer removed -> --verify STALE and
+# the next generate() deletes it.
+# ---------------------------------------------------------------------------
+
+
+def _landed_row_no_importer(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    mapping_path = write_mapping(tmp_path, ["entropic_substrate.moved_thing"])
+    frags_dir = tmp_path / "landed-set"
+    write_fragment(
+        frags_dir,
+        "p6-core",
+        {
+            "entropic_substrate.moved_thing": {
+                "target": "entropic_substrate.core.geometry.moved_thing",
+                "landed": True,
+            }
+        },
+    )
+    out_dir = tmp_path / "out"
+    plant(out_dir, "entropic_substrate.core.geometry.moved_thing")
+    return mapping_path, frags_dir, out_dir, tmp_path / "emitted.json"
+
+
+def test_landed_row_with_no_legacy_importer_gets_no_forwarder(tmp_path: Path) -> None:
+    """RED-first for RULING 1: nothing imports `__legacy.moved_thing`, so the
+    forwarder is dead weight and is never written -- the expected map, the
+    manifest and the disk all agree on that, and --verify is green."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_row_no_importer(tmp_path)
+    merged = resolve(frags_dir, mapping_path)
+    assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {}
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert not (out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py").exists()
+    assert json.loads(manifest_path.read_text())["forwarders"] == []
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 0
+
+
+def test_adding_one_legacy_importer_makes_the_forwarder_appear(tmp_path: Path) -> None:
+    """The other arm of the SAME predicate, on the SAME tree: add one
+    importer line under tests/ and the forwarder appears -- proving the
+    absence above is caused by the missing importer, not by the writer being
+    broken (house rule 5, both arms)."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_row_no_importer(tmp_path)
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    assert not fwd.exists()
+
+    plant_legacy_importer(tmp_path, "entropic_substrate.__legacy.moved_thing")
+    assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {
+        "entropic_substrate/__legacy/moved_thing.py": "entropic_substrate.core.geometry.moved_thing"
+    }
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert fwd.is_file()
+    ok, reason = gen_shims.verify_shim_source(fwd.read_text())
+    assert ok is True, reason
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 0
+
+
+def test_removing_the_last_importer_makes_verify_report_the_forwarder_stale(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """RULING 1(b): the rewrite that removes the last importer leaves a
+    forwarder nothing needs. Without a regenerate, --verify must name it
+    STALE with its path -- never pass quietly, and never report it only as
+    generic drift."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    argv = _verify_argv(mapping_path, frags_dir, out_dir, manifest_path)
+    assert gen_shims.main(argv) == 0  # GREEN control arm, importer still present
+
+    (tmp_path / "tests" / "test_importer.py").unlink()
+    assert gen_shims.main(argv) == 1
+    err = capsys.readouterr().err
+    assert "STALE forwarder" in err
+    assert "entropic_substrate/__legacy/moved_thing.py" in err
+
+
+def test_generate_deletes_a_stale_forwarder_it_owns(tmp_path: Path) -> None:
+    """RULING 1(b), chosen behaviour: generate() retires the forwarder itself,
+    keyed off the previous manifest's own `forwarders` list -- the .py and its
+    .pyi both go, and --verify is green again with no hand editing."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    stub = fwd.with_suffix(".pyi")
+    assert fwd.is_file() and stub.is_file()
+
+    (tmp_path / "tests" / "test_importer.py").unlink()
+    merged = resolve(frags_dir, mapping_path)
+    gen_shims.generate(merged, str(frags_dir), out_dir, manifest_path=manifest_path)
+    assert not fwd.exists()
+    assert not stub.exists()
+    assert json.loads(manifest_path.read_text())["forwarders"] == []
+    assert gen_shims.main(_verify_argv(mapping_path, frags_dir, out_dir, manifest_path)) == 0
+
+
+def test_delete_stale_forwarders_never_unlinks_a_non_shim_file_GREEN_control(
+    tmp_path: Path,
+) -> None:
+    """Control for the deletion above: if real source is sitting at that path
+    (the two-live-copies defect), delete_stale_forwarders leaves it alone --
+    the fail-loud conflict guard owns that state, not a silent unlink."""
+    mapping_path, frags_dir, out_dir, manifest_path = _landed_forwarder_fixture(tmp_path)
+    fwd = out_dir / "entropic_substrate" / "__legacy" / "moved_thing.py"
+    body = '"""real source that came back"""\n\nPLANTED = True\n'
+    fwd.write_text(body)
+    doc = json.loads(manifest_path.read_text())
+    deleted = gen_shims.delete_stale_forwarders(doc, out_dir, keep=set())
+    assert deleted == []
+    assert fwd.read_text() == body
+    assert mapping_path.is_file() and frags_dir.is_dir()
+
+
+def test_importer_scan_ignores_generated_shims_and_forwarders(tmp_path: Path) -> None:
+    """The scan's load-bearing exclusion: a generated shim (and so a
+    forwarder) that imports a `__legacy` address is this generator's OWN
+    output, not a consumer. Counting it would make every forwarder its own
+    justification -- self-sustaining by construction, never retiring. RED arm:
+    the shim-shaped file is NOT collected; GREEN control: the identical import
+    inside an ordinary module IS."""
+    root = tmp_path / "src"
+    (root / "pkg").mkdir(parents=True)
+    shim = root / "pkg" / "generated_shim.py"
+    shim.write_text(
+        gen_shims.shim_source(
+            "entropic_substrate.thing", "entropic_substrate.__legacy.thing", "fragments/"
+        )
+    )
+    assert gen_shims.verify_shim_source(shim.read_text())[0] is True
+    assert gen_shims.collect_legacy_importers([root]) == set()
+
+    ordinary = root / "pkg" / "ordinary_consumer.py"
+    ordinary.write_text("from entropic_substrate.__legacy.thing import Name\n\nVALUE = Name\n")
+    assert gen_shims.collect_legacy_importers([root]) == {"entropic_substrate.__legacy.thing"}
+
+
+def test_importer_scan_roots_are_out_dir_and_its_tests_sibling(tmp_path: Path) -> None:
+    """Pins WHERE the scan looks, so a consumer under tests/ counts (the wave
+    lanes' own arms live there) and a non-existent root is simply dropped."""
+    out_dir = tmp_path / "src"
+    out_dir.mkdir()
+    assert gen_shims.importer_scan_roots(out_dir) == [out_dir]
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    assert gen_shims.importer_scan_roots(out_dir) == [out_dir, tests_dir]
+
+
+def test_package_form_import_of_a_legacy_submodule_makes_the_forwarder_appear(
+    tmp_path: Path,
+) -> None:
+    """MEASURED 2026-09-23 (p9 brief review B3): tests/test_d1_training_step_split.py:35
+    imports the torch halves in PACKAGE form, ``from entropic_substrate.__legacy import
+    (d1_calibration, d1_training_step, ...)``. The scan recorded only ``node.module``
+    (the bare package), so the forwarder predicate never matched the leaf address and
+    the move would have broken the test with no forwarder. A package-form ``from``
+    import whose alias names a submodule counts as importing that submodule."""
+    mapping_path, frags_dir, out_dir, _manifest_path = _landed_row_no_importer(tmp_path)
+    merged = resolve(frags_dir, mapping_path)
+    # The real tree keeps the `__legacy` package DIRECTORY after its leaves move
+    # (measured: `__legacy/models/`, `__legacy/observation/` are empty dirs at
+    # 79d8228); the expansion keys on that directory, so the fixture mirrors it.
+    (out_dir / "entropic_substrate" / "__legacy").mkdir(parents=True, exist_ok=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "test_pkg_form.py").write_text(
+        "from entropic_substrate.__legacy import moved_thing\n\nUSES = moved_thing\n"
+    )
+    assert "entropic_substrate.__legacy.moved_thing" in gen_shims.collect_legacy_importers(
+        gen_shims.importer_scan_roots(out_dir)
+    )
+    assert gen_shims.compute_expected_forwarder_map(merged, out_dir) == {
+        "entropic_substrate/__legacy/moved_thing.py": "entropic_substrate.core.geometry.moved_thing"
+    }

@@ -278,7 +278,13 @@ def test_every_emitted_shim_is_the_static_import_form_not_string_only() -> None:
     mapping = gen_shims.load_mapping(REPO_ROOT / "tools" / "mapping.json")
     merged = gen_shims.merge_fragments(gen_shims.load_fragments(fragments_dir), mapping)
     out_dir = REPO_ROOT / "src"
+    # FOR-1547: the emitted static-import set now also includes the FORWARDER
+    # each landed row gets at the `__legacy` address its move vacated. Same
+    # exact form, so it belongs in this arm; forwarders come only from landed
+    # rows, and a landed row is always fragment-named (the derived default is
+    # landed:false), so `merged` is the complete input for both maps.
     expected = gen_shims.compute_expected_shim_map(merged, out_dir)
+    expected |= gen_shims.compute_expected_forwarder_map(merged, out_dir)
     assert expected, "the fragments resolve to zero shims -- nothing is quarantined?"
     bad: list[tuple[str, str]] = []
     for rel in sorted(expected):

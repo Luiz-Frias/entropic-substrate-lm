@@ -6,18 +6,18 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
 
-from entropic_substrate.config import configs_dir, merge_dicts
-from entropic_substrate.experiments.d1_config_profile import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.runtime.config import configs_dir, merge_dicts
+from entropic_substrate.ladder.register.d1_config_profile import (
     D1LaunchProfile,
     D1LaunchScale,
     parse_d1_profile_payload,
     read_d1_profile_mapping,
     require_d1_exact_keys,
 )
-from entropic_substrate.experiments.d1_config_profile import (
+from entropic_substrate.ladder.register.d1_config_profile import (
     load_d1_profile as _load_full_profile,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 __all__ = [
     "D1LaunchProfile",
