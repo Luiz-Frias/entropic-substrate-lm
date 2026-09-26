@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 import stat
@@ -13,10 +14,15 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 
 __all__ = [
     "D1ArtifactSnapshotError",
+    "artifact_from_mapping",
+    "artifact_mapping",
     "normalize_d1_artifact_root",
     "normalize_d1_relative_artifact_path",
+    "object_fields",
     "publish_d1_atomic_bytes",
+    "read_bound_artifact",
     "read_d1_artifact_bytes",
+    "read_json_artifact",
     "relative_d1_artifact_path",
     "snapshot_d1_artifact",
 ]
@@ -298,3 +304,49 @@ def publish_d1_atomic_bytes(
                 pass
         if directory_fd is not None:
             os.close(directory_fd)
+
+
+def read_bound_artifact(root: Path, artifact: ArtifactIdentity) -> bytes:
+    """Read and hash the same no-follow descriptor; never trust a caller summary."""
+    if type(artifact) is not ArtifactIdentity or artifact.content_hash.algorithm != "sha256":
+        raise ValueError("ladder artifacts require exact SHA-256 identities")
+    name = artifact.path
+    if Path(name).is_absolute():
+        name = relative_d1_artifact_path(root, Path(name), label="ladder artifact")
+    _, data, observed = read_d1_artifact_bytes(root, name, label="ladder artifact")
+    if observed != artifact.content_hash.digest:
+        raise ValueError("ladder artifact digest mismatch")
+    return data
+
+
+def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate ladder JSON key")
+        result[key] = value
+    return result
+
+
+def object_fields(value: object, fields: str) -> dict[str, object]:
+    if type(value) is not dict or set(value) != set(fields.split()):
+        raise ValueError("ladder artifact fields must be exact")
+    return cast(dict[str, object], value)
+
+
+def read_json_artifact(root: Path, artifact: ArtifactIdentity) -> dict[str, object]:
+    value = json.loads(read_bound_artifact(root, artifact), object_pairs_hook=_unique)
+    if type(value) is not dict:
+        raise ValueError("ladder artifact must be a JSON object")
+    return cast(dict[str, object], value)
+
+
+def artifact_from_mapping(value: object) -> ArtifactIdentity:
+    row = object_fields(value, "path sha256")
+    if type(row["path"]) is not str or type(row["sha256"]) is not str:
+        raise ValueError("artifact path and sha256 must be strings")
+    return ArtifactIdentity(row["path"], ContentHash("sha256", row["sha256"]))
+
+
+def artifact_mapping(value: ArtifactIdentity) -> dict[str, str]:
+    return {"path": value.path, "sha256": value.content_hash.digest}

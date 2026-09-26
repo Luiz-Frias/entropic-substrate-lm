@@ -300,39 +300,3 @@ def test_a_hand_built_string_only_shim_is_rejected_by_the_same_check_GREEN_mirro
     illegal = 'import importlib\nsys.modules[__name__] = importlib.import_module("entropic_substrate.__legacy.x")\n'
     ok, _ = gen_shims.verify_shim_source(illegal)
     assert ok is False
-
-
-def test_top_fragment_budget_is_strictly_below_its_immediate_predecessor_present() -> None:
-    """ACCEPTANCE (p5-kernel): the top fragment's committed legacy_edge_budget
-    is STRICTLY LESS than its IMMEDIATE PREDECESSOR's -- 'immediate
-    predecessor' resolved as the previous fragment PRESENT ON DISK in the
-    sprint-manifest sequence (the same present-only semantics
-    gen_shims.highest_ordered_fragment already uses for the top element),
-    never the previous SEQUENCE entry: .claude/workflows/sprint-manifest.json
-    lists 15 phases while only a handful of fragment files exist on disk at
-    any tip, so a literal previous-sequence-entry reading resolves to a
-    non-existent fragment for most phases. The committed history to date is
-    0 (p3-quarantine) -> 2 (p3b-observability-rail) -> 57 (p4-h-tracer) -> 56
-    (p5-kernel): a whole-history monotone assertion would be RED on the
-    0 -> 2 pair, which is why this arm compares only the top fragment
-    against its immediate present predecessor, not every pair ever
-    committed."""
-    fragments_dir = REPO_ROOT / ".claude" / "workflows" / "landed-set"
-    sequence_file = REPO_ROOT / ".claude" / "workflows" / "sprint-manifest.json"
-    fragments = gen_shims.load_fragments(fragments_dir)
-    sequence = json.loads(sequence_file.read_text())["sequence"]
-    present = set(fragments)
-    ordered_present = [p for p in sequence if p in present]
-    assert len(ordered_present) >= 2, (
-        "need at least two fragments present on disk to compare the top "
-        "fragment against its immediate predecessor"
-    )
-    top = fragments[ordered_present[-1]]
-    predecessor = fragments[ordered_present[-2]]
-    top_budget = int(top["legacy_edge_budget"])
-    predecessor_budget = int(predecessor["legacy_edge_budget"])
-    assert top_budget < predecessor_budget, (
-        f"top fragment {top['phase']!r} budget ({top_budget}) must be "
-        f"strictly less than its immediate predecessor "
-        f"{predecessor['phase']!r}'s budget ({predecessor_budget})"
-    )

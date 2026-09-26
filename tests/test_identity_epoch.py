@@ -228,6 +228,40 @@ is untouched: ``worker_execution`` was never one of h-source-reader-v3's
 seven fixed members, confirmed by re-measuring both source rows unchanged
 via the same tool invocation (with ``--pysbd 0.3.4``).
 
+p5b re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p5b-ladder-campaign, DESIGN-GATE RULING 2026-09-22, wf_d8e28935-075,
+D-A): this phase appends five functions (``artifact_mapping``,
+``artifact_from_mapping``, ``read_bound_artifact``, ``object_fields``,
+``read_json_artifact``, plus the private ``_unique`` helper) to
+``kernel/artifacts.py``, changing that module's bytes.
+``entropic_substrate.kernel.artifacts`` is a member of BOTH composed
+readers' fixed module tuples -- 1 of h-source-reader-v3's 7
+(``_FROZEN_SOURCE_READER_MODULES`` below) and 1 of h-checkpoint-reader-v2's
+51 (``_READER_MODULES`` in ``ladder/run/checkpoint.py``, unchanged in shape)
+-- so BOTH composed digests move this phase, not only the checkpoint row as
+every prior re-pin paragraph in this file recorded. RETRACTION (house rule
+4): the pattern in every re-pin paragraph above this one, "``_SOURCE_REGIME_TABLE``
+is untouched", was true for EACH of those phases' own specific mutated
+member (``worker_execution``, ``score_gain``, the four CLI modules, and so
+on -- none of which was ever one of h-source-reader-v3's seven fixed
+members) -- it was never a standing guarantee that no future phase could
+move the source row, and this phase is the first to touch a member common
+to both tuples. Both rows recomputed with ``tools/regime_rows.py`` (local:
+``--python 3.12.13 --torch 2.13.0 --pysbd 0.3.4``; CI: ``--python 3.12.14
+--torch 2.13.0+cpu --pysbd 0.3.4``); the OLD values they replace,
+``d4bde6d4bb4c0f6c154450b070a2336a1a34c5b4a949bb4fefaa322522dcaf42``
+(checkpoint, local),
+``d7c521786523b3aa0855e14413c830cf4cb7cf031b6914412041fbfa0853199f``
+(checkpoint, CI),
+``a6075295436de193087160f65fa2558fc28054115118946e53ecbdd4f22d510f``
+(source, local) and
+``214730ac2b370a7b67fc24a43077c49ecdcc59291505d80f249f235aaccf0467``
+(source, CI) -- are retracted here, not silently overwritten. Label and
+both module-set shapes (``h-checkpoint-reader-v2``, 51 members;
+``h-source-reader-v3``, 7 members) are unchanged, per ruling R-PIN
+("frozen_after freezes label + shape, not digest values"). No metric, loss
+or scientific behaviour changes.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -305,22 +339,22 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "d4bde6d4bb4c0f6c154450b070a2336a1a34c5b4a949bb4fefaa322522dcaf42",  # pragma: allowlist secret
+    ): "518eefec27900d62d9469f36fac875b8f0b8c52bec3971c7a14f042a1c366e82",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "d7c521786523b3aa0855e14413c830cf4cb7cf031b6914412041fbfa0853199f",  # pragma: allowlist secret
+    ): "1ee4c5384db632c55222f1a3b2d04d0f4e43e4c8252f2b4c795b9cc54a43f78c",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "a6075295436de193087160f65fa2558fc28054115118946e53ecbdd4f22d510f",  # pragma: allowlist secret
+    ): "aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "214730ac2b370a7b67fc24a43077c49ecdcc59291505d80f249f235aaccf0467",  # pragma: allowlist secret
+    ): "5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84",  # pragma: allowlist secret
 }
 
 

@@ -8,12 +8,12 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import artifact_from_mapping
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
 from entropic_substrate.core.sentence.scoring import importance_statistics
+from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import batch_coordinates

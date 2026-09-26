@@ -9,7 +9,6 @@ from entropic_substrate.__legacy.evidence.ladder_campaign import ActorRole as Ac
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     ArtifactIdentity as ArtifactIdentity,
 )
-from entropic_substrate.__legacy.evidence.ladder_campaign import ContentHash as ContentHash
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     D1GitProvenancePort as D1GitProvenancePort,
 )
@@ -43,9 +42,6 @@ from entropic_substrate.__legacy.evidence.ladder_campaign import (
     _text as _text,  # pyright: ignore[reportPrivateUsage]
 )
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    _unique as _unique,  # pyright: ignore[reportPrivateUsage]
-)
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
     actor_from_mapping as actor_from_mapping,
 )
 from entropic_substrate.__legacy.evidence.ladder_campaign import annotations as annotations
@@ -66,7 +62,6 @@ from entropic_substrate.__legacy.evidence.ladder_campaign import dataclass as da
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     gate_from_d1_filing as gate_from_d1_filing,
 )
-from entropic_substrate.__legacy.evidence.ladder_campaign import json as json
 from entropic_substrate.__legacy.evidence.ladder_campaign import object_fields as object_fields
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
     read_bound_artifact as read_bound_artifact,
@@ -75,13 +70,7 @@ from entropic_substrate.__legacy.evidence.ladder_campaign import (
     read_campaign_design as read_campaign_design,
 )
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    read_d1_artifact_bytes as read_d1_artifact_bytes,
-)
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
     read_json_artifact as read_json_artifact,
-)
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    relative_d1_artifact_path as relative_d1_artifact_path,
 )
 from entropic_substrate.__legacy.evidence.ladder_campaign import require_sha256 as require_sha256
 from entropic_substrate.__legacy.evidence.ladder_campaign import (
