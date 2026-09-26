@@ -96,3 +96,6 @@ logs/
 # --- Workflow Artifacts ---
 .claude/workflows/*.registry.json
 .claude/workflows/launch-queue.jsonl
+# gen_shims' emitted-files manifest is derived from the fragments + mapping on
+# every generate() run; tracking it made a cross-lane hub (FOR-1539).
+.claude/workflows/landed-set/.emitted.json

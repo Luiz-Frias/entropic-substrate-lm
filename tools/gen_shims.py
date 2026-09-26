@@ -206,7 +206,11 @@ The canonical invocation this repo pins (docs/plans/src-hexagonal-refactor.plan.
 
 Omitting ``--manifest-out`` defaults to exactly that path (``.emitted.json``
 next to the fragments directory), so there is one truth for where it lives,
-not two. That default sits INSIDE the fragments directory ``load_fragments``
+not two. The manifest is DERIVED state and UNTRACKED (gitignored, FOR-1539,
+2026-09-22): it was tracked through p3b and regenerated whole by every
+phase that re-points shims, which made it a same-file hub every wave lane
+would edit. Each lane runs generate() then ``--verify`` in one step; the
+tracked shim files are the durable evidence. That default sits INSIDE the fragments directory ``load_fragments``
 globs -- ``pathlib.Path.glob("*.json")`` matches dotfiles, unlike a shell
 glob (MEASURED 2026-09-18), so ``load_fragments`` explicitly skips
 dot-prefixed files rather than trying, and failing, to parse the manifest

@@ -85,6 +85,7 @@ dev = [
   # over kernel/core/ladder/historical/composition, __legacy deliberately
   # outside it until p13 (DN-P1). `just check` runs it as `lint-imports`.
   "import-linter>=1.0",
+  "gitlint>=0.19.1",
 ]
 
 [build-system]

@@ -258,6 +258,10 @@ uv run python tools/gen_shims.py .claude/workflows/landed-set tools/mapping.json
   --manifest-out .claude/workflows/landed-set/.emitted.json
 ```
 
+The manifest is derived, untracked state (gitignored since 2026-09-22, FOR-1539): every lane
+regenerates it in the step that verifies its shims, and no phase commits it, so the wave lanes
+share no file through the generator.
+
 **Honest caveat on wave legality.** Under eager rewriting, p6 and p7 would share 8 importer files
 `[M, core.latent × ladder.register]` and wave 1 would be illegal. The waves are a consequence of
 rewrite-on-arrival, not of the packages' independence.
@@ -348,7 +352,7 @@ the exact re-count is owed to p0's mapping re-derivation.
 | [p2-d1-closure](#p2) | retire D1 reader source provenance end to end: closure, envelope arm, receipt readers block, filing artifact + binding (E-1 extended 2026-09-20) | tracer | 13 src edits, 1 deletion | ship-it | serial | p1 |
 | [p3-quarantine](#p3) | `git mv` whole tree into `__legacy/`, generate the shim layer, own the landed-set fragment convention and `tests/test_legacy_coupling.py` | tracer | 332 | ship-it | serial | p2 |
 | [**p3b-observability-rail**](#p3b) | loguru substrate → `kernel/runtime/logging.py`; `MetricSink` port → `ladder/capture/ports/`; three sinks → `ladder/capture/adapters/`; run-descriptor door; D1 observers re-based | tracer | 5 | **ship-it (live)** | serial | p3 |
-| [p4-h-tracer](#p4) | H lane out first (55 H modules + `h_probe_command` + `h_probe_controller` + 4 reader-closure rail modules + the `d_ladder_worker_runtime` live half); both H identities bumped | tracer | 63 | ship-it (live) | serial | p3b |
+| [p4-h-tracer](#p4) | H lane out first (55 H modules + `h_probe_command` + `h_probe_controller` + 4 reader-closure rail modules + the `d_ladder_worker_runtime` live half); both H identities bumped | tracer | 62 (55 + 2 + 4 + the live half; 63 was an arithmetic slip, docs sweep 2026-09-22) | ship-it (live) | serial | p3b |
 | [p5-kernel](#p5) | `kernel/{identity,evidence_class,verdict,runtime}` (`kernel.identity`: 123 eager importers); splits `d1_training_step` and `d1_calibration` RED-first under `__legacy/` | ratchet | 14 + 2 splits | ship-it | serial | p4 |
 | [p6-core](#p6) | `core/{geometry,substrate,observation,corpus,probe,latent}`; `kappa_norm` filing retraction | ratchet | 33 | deferred → zip | **w1** | p5 |
 | [p7-register-gate](#p7) | `ladder/register` + `ladder/gate`; `rungs/`, `arms/` scaffolded; `d1_family+d1_runs` SCC as one unit | ratchet | 20 | deferred → zip | **w1** | p5 |
@@ -830,10 +834,12 @@ waves → zip at fan-in → serial).
 | p3b-R1 | 2026-09-21: the D1 observer re-basing is DEFERRED to p8 (`D1MlflowObserver` becomes a STRICT `MetricSink` adapter; `D1JournalObserver` observes journal EVENTS and sits outside the one-METRIC-port rule; `d1_tracking_descriptor` consumes the frozen door). p3b leaves both `__legacy` files untouched; FOR-1432 re-parented to p8. |
 | p3b-entry-arm | 2026-09-21: the conformance test's entry-point arm is defined over the seven `entrypoint: true` rows of `tools/mapping.json`, partitioned by constants in `tests/observability_conformance_config.py` (outside the frozen test); measured conforming today: `cli`, `telemetry`. |
 | p3b-gate-check | 2026-09-21: `tests/test_legacy_coupling.py` takes ONE ruled change (the synthetic-edge control no longer compares against the real budget); the no-old-prefix arm lives in the new `tests/test_no_old_prefix.py`, created by p3b and CONSUMED by p4..p12. |
-| p3b-promotion | 2026-09-21: the conformance config DERIVES its sets from optional landed-set fragment keys (`conforming_entrypoints`, `print_allowlist`, `sink_construction_modules`); each phase promotes through its own disjoint fragment, so the file never enters a wave lane's touch set (w2's p8 and p11 would otherwise share it). p13 inlines the merged sets when it retires the fragments. |
-| ownership-by-SHA | Engine, 2026-09-20: conductor-owned files (briefs, plan docs, manifest, engine scripts, CI workflow, `tools/regime_rows.py`) change only in conductor commits whose SHAs ride in `args.conductorCommits`; the engine checks them by SHA and a lane returns DECISION instead of editing them. |
+| p3b-promotion | 2026-09-21: the conformance config DERIVES its sets from optional landed-set fragment keys (`conforming_entrypoints`, `print_allowlist`, `sink_construction_modules`); each phase promotes through its own disjoint fragment, so the file never enters a wave lane's touch set (w2's p8 and p11 would otherwise share it). p13 inlines the merged sets when it retires the fragments. AMENDED 2026-09-22 (p4 design gate, D-A): `print_allowlist` may also GAIN entries for machine-consumed stdout sites a phase lands (JSON result envelopes with a named parsing consumer); p4 adds the four H CLI modules, so the pinned raw-print set is six modules, not two. |
+| ownership-by-SHA | Engine, 2026-09-20: conductor-owned files (briefs, plan docs, manifest, engine scripts, CI workflow; `tools/regime_rows.py` and its test LEFT the list under ruling Q1 on 2026-09-22 because the tool mirrors the reader identities and the identity owner must re-pin it) change only in conductor commits whose SHAs ride in `args.conductorCommits`; the engine checks them by SHA and a lane returns DECISION instead of editing them. |
+| R-PIN | 2026-09-22: a phase that rewrites a `_READER_MODULES` member re-pins both checkpoint regime rows in the same commit (tool-measured; label and module set unchanged). MEASURED at 0ac49ed: 44 explicit `__legacy` edges inside h-checkpoint-reader-v2 across 20 files, targets moving in p5..p10, so every remaining serial phase re-pins. The wave consequence (w1/w2 lanes share those files and the fixtures) is DECISION D-WAVES-2026-09-22 on the ledger, not ruled here. |
+| FOR-1539 | 2026-09-22: gen_shims' emitted-files manifest is untracked derived state; no phase commits it. |
 
-**Recommendations carried into the sprint-preflight interview (not yet ruled).**
+**Recommendations carried into the sprint-preflight interview (not yet ruled at authoring; RATIFIED as recommended at the interview, 2026-09-18, per the manifest's ratification; the p4 brief's E-2 row says so, this heading lagged it until the 2026-09-22 docs sweep).**
 
 | id | question | recommendation |
 |---|---|---|

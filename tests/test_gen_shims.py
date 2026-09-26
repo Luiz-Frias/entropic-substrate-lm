@@ -2152,3 +2152,20 @@ def test_canonicalize_file_not_found_stays_concise_GREEN_control(
     monkeypatch.setattr(gen_shims.subprocess, "run", _fake_run)
     with pytest.raises(gen_shims.ManifestError, match="ruff stub-canonicalization pipeline failed"):
         gen_shims.canonicalize_python_texts({"x.py": "x = 1\n"}, tmp_path)
+
+
+def test_emitted_manifest_is_untracked() -> None:
+    """FOR-1539 (measured 2026-09-21): the tracked manifest was regenerated
+    whole by every phase that re-points shims, a same-file hub every wave
+    lane would edit. It is derived state: gitignored at its canonical path
+    and absent from the index. RED on the tracked file, GREEN after."""
+    repo = Path(__file__).resolve().parents[1]
+    canonical = Path(".claude/workflows/landed-set") / gen_shims.DEFAULT_MANIFEST_NAME
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", str(canonical)], cwd=repo, capture_output=True
+    )
+    assert ignored.returncode == 0, f"{canonical} is not gitignored"
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", str(canonical)], cwd=repo, capture_output=True, text=True
+    )
+    assert tracked.stdout.strip() == "", f"{canonical} is still tracked: {tracked.stdout}"

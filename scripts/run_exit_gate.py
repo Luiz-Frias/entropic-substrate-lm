@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess  # nosec B404 -- gate cmd via sh -c by design; see _git/_collect_evidence
 import sys
 from dataclasses import dataclass
@@ -96,9 +97,10 @@ class _CliArgs:
     cmd: str | None
     expect_tip: str | None
     out: str | None
+    timeout_s: int
 
 
-_KNOWN_FLAGS: Final = ("--cmd", "--expect-tip", "--out")
+_KNOWN_FLAGS: Final = ("--cmd", "--expect-tip", "--out", "--timeout-s")
 
 
 def _parse_args(argv: list[str]) -> _CliArgs:
@@ -128,7 +130,25 @@ def _parse_args(argv: list[str]) -> _CliArgs:
         cmd=values.get("--cmd"),
         expect_tip=values.get("--expect-tip"),
         out=values.get("--out"),
+        timeout_s=_parse_timeout(values.get("--timeout-s")),
     )
+
+
+def _parse_timeout(raw: str | None) -> int:
+    """``--timeout-s`` overrides :data:`_GATE_TIMEOUT_S` (a positive integer of
+    seconds). It exists so the timeout path is black-box testable in seconds
+    rather than the production 900 s; the harness never passes it."""
+    if raw is None:
+        return _GATE_TIMEOUT_S
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        msg = f"--timeout-s expects a positive integer of seconds, got {raw!r}"
+        raise _RunnerError(msg) from exc
+    if value <= 0:
+        msg = f"--timeout-s expects a positive integer of seconds, got {raw!r}"
+        raise _RunnerError(msg)
+    return value
 
 
 def _git(*args: str) -> str:
@@ -149,7 +169,56 @@ def _git(*args: str) -> str:
     return proc.stdout.strip()
 
 
-def _collect_evidence(cmd: str) -> ExitGateEvidence:
+_GROUP_KILL_GRACE_S: Final = 2.0
+
+
+def _terminate_process_group(proc: subprocess.Popen[str]) -> list[int]:
+    """FOR-1528 (measured 2026-09-21): ``subprocess.run(timeout=)`` kills only
+    the direct ``sh`` child, so ``just -> prek -> pytest -> xdist`` survived a
+    900 s timeout as 11 orphans that raced the retry. The gate is spawned as
+    its own session leader (``start_new_session=True``), so its pgid is
+    ``proc.pid`` and one signal reaches every descendant: SIGTERM, a grace
+    period, then SIGKILL. Returns the pids still alive in the group afterwards
+    (empty when the group is gone), measured with ``pgrep -g`` so the caller
+    names survivors instead of assuming."""
+    pgid = os.getpgid(proc.pid)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            break
+        try:
+            proc.wait(timeout=_GROUP_KILL_GRACE_S)
+        except subprocess.TimeoutExpired:
+            continue
+        if not _group_survivors(pgid):
+            break
+    proc.wait()
+    return _group_survivors(pgid)
+
+
+def _group_survivors(pgid: int) -> list[int]:
+    # nosec B603 B607 -- fixed argv, no shell; pgrep resolved from PATH under
+    # the same quarantined env as every other subprocess here.
+    # Bounded by the same grace the group kill uses (CodeRabbit, PR #291,
+    # 2026-09-22): an unbounded scan could keep the timeout path from ever
+    # returning, and a scan that did not finish must never read as "no
+    # survivors" -- that is a fail-open answer on a measurement path.
+    try:
+        scan = subprocess.run(  # nosec B603 B607
+            ["pgrep", "-g", str(pgid)],
+            capture_output=True,
+            text=True,
+            env=_SAFE_ENV,
+            timeout=_GROUP_KILL_GRACE_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        msg = f"pgrep -g {pgid} did not return within {_GROUP_KILL_GRACE_S} s; survivors unknown"
+        raise _RunnerError(msg) from exc
+    return [int(line) for line in scan.stdout.split() if line.isdigit()]
+
+
+def _collect_evidence(cmd: str, timeout_s: int = _GATE_TIMEOUT_S) -> ExitGateEvidence:
     """Execute the gate and assemble evidence -- every field machine-captured,
     never transcribed by an agent."""
     # cmd is the operator-supplied gate command, run via a shell by design
@@ -158,14 +227,22 @@ def _collect_evidence(cmd: str) -> ExitGateEvidence:
     # quarantined _SAFE_ENV governs resolution the same way it does for
     # _git() above. shell=True is never used; args are a fixed 3-element
     # argv list, never an interpolated shell string.
-    proc = subprocess.run(  # nosec B603 B607
+    proc = subprocess.Popen(  # nosec B603 B607
         ["sh", "-c", cmd],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=_GATE_TIMEOUT_S,
         env=_SAFE_ENV,
+        start_new_session=True,  # FOR-1528: the gate is its own process group
     )
-    combined = f"{proc.stdout}{proc.stderr}"
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_s)
+    except subprocess.TimeoutExpired as exc:
+        survivors = _terminate_process_group(proc)
+        detail = f" (survivors after group kill: {survivors})" if survivors else ""
+        msg = f"Command {['sh', '-c', cmd]!r} timed out after {timeout_s} seconds{detail}"
+        raise _RunnerError(msg) from exc
+    combined = f"{stdout}{stderr}"
     tail = combined[-_TAIL_MAX_CHARS:] if len(combined) > _TAIL_MAX_CHARS else combined
     return ExitGateEvidence(
         cmd=cmd,
@@ -269,7 +346,7 @@ def main(out_path_holder: dict[str, str | None]) -> NoReturn:
             args.out,
         )
 
-    evidence = _collect_evidence(cmd)
+    evidence = _collect_evidence(cmd, args.timeout_s)
     result = certify_exit_gate(evidence, expected_tip)
     # `is True`, not bare truthy: basedpyright only performs discriminated-union
     # narrowing on this Literal[True]/Literal[False] `ok` field for an identity/
