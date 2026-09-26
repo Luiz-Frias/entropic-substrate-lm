@@ -181,19 +181,27 @@ def test_injected_landed_to_legacy_edge_is_counted_RED_at_zero_budget() -> None:
     )
 
 
-def test_no_injected_edge_matches_the_real_zero_budget_GREEN_control() -> None:
-    """Control for the mutation above: with NO fabricated edge, the count
-    is 0 and matches the real committed budget -- proving the RED case
-    above is caused by the injection, not by the equality check being
-    broken in general."""
+def test_no_injected_edge_measures_zero_GREEN_control() -> None:
+    """Control for the mutation above: with NO fabricated edge, the
+    classify-and-count function itself returns 0 -- proving the RED case
+    above is caused by the injection, not by the counting function being
+    broken in general.
+
+    RETRACTION (house rule 4, p3b): this control previously also asserted
+    ``measured == load_committed_budget(...)``, coupling it to the REAL
+    committed fragment's budget rather than to the synthetic input this test
+    actually constructs. That held only by coincidence, while every fragment
+    on disk still carried ``legacy_edge_budget: 0`` (p3-quarantine, before
+    any phase had landed real modules). p3b legitimately measures and commits
+    a non-zero budget (2 -- see
+    ``test_measured_landed_to_legacy_edges_equals_committed_budget``, the
+    ACCEPTANCE-level assertion that already covers the real tree against the
+    real committed value), so re-asserting it here against a synthetic
+    zero-edge input would fail for a reason that has nothing to do with this
+    test's own subject."""
     edges: list[tuple[str, str]] = []
     measured = count_landed_to_legacy_edges(edges)
     assert measured == 0
-    budget = load_committed_budget(
-        REPO_ROOT / ".claude" / "workflows" / "landed-set",
-        REPO_ROOT / ".claude" / "workflows" / "sprint-manifest.json",
-    )
-    assert measured == budget
 
 
 def test_edge_in_the_other_direction_is_not_counted_GREEN_control() -> None:

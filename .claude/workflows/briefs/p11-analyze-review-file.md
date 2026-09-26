@@ -145,6 +145,7 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - Analysis diagnostics route through `logger`. The Okabe-Ito chart lane keeps writing files, not stdout.
 - The two analysis modules that already reach `sinks.py` are re-pointed at p3b's adapters rather than keeping a private path.
 - Neither of the two pinned raw-`print` sites lives in this phase, so ZERO bare `print(` may survive in the 49 moved modules.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `analysis.d1_external_worker` (p11) is promoted through this phase's fragment key `conforming_entrypoints`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present. KEYING (conductor 2026-09-21, disambiguation after p3b's L2): `conforming_entrypoints` entries are keyed by the entry point's `tools/mapping.json` dotted name (the PRE-MOVE name, since mapping.json is read-only until p13 and the frozen partition assertion compares against those seven rows) and are NEVER re-keyed before p13; only `print_allowlist` entries are re-keyed to the LANDED dotted name, because the print-ban arm derives names from file paths under the landed roots.
 
 ## Planned commit branches
 

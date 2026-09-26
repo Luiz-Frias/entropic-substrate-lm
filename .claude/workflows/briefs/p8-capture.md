@@ -66,7 +66,7 @@ House rules from `CLAUDE.md`, verbatim headline, each binding in this phase:
 
 ## Scope
 
-DVC-CAPTURED stage as five measured sub-packages: custody 20, records 10, resource 9, reader 9, ledger 4 (ext fan-in 74/35/46/27/20, measured), landing beside p3b's ports/ and adapters/. Moves the record halves of p5's two symbol splits; p9 takes the torch halves, so no file is shared. telemetry.py stays the only admissible read side. Detail: plan §D.
+DVC-CAPTURED stage as five measured sub-packages: custody 20, records 10, resource 9, reader 9, ledger 4 (ext fan-in 74/35/46/27/20, measured), landing beside p3b's ports/ and adapters/. Moves the record halves of p5's two symbol splits; p9 takes the torch halves, so no file is shared. telemetry.py stays the only admissible read side. Detail: plan §D. Also owns the D1 observer re-basing deferred from p3b (RULING R1, 2026-09-21): see Allowed files and Observability conformance.
 
 ## ACCEPTANCE
 
@@ -103,6 +103,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - the 53 remaining `ladder.capture` modules and their shims
 - `src/entropic_substrate/ladder/capture/{records,reader,custody,resource,ledger}/**`
 - `__legacy/d1_training_step_records.py` and `__legacy/d1_calibration_records.py` (record halves ONLY; p5 created them) and their shims
+- `src/entropic_substrate/__legacy/d1_observability.py`, `src/entropic_substrate/__legacy/d1_tracking.py` and their shim PAIRS, plus `tests/test_d1_observability.py` (RULING R1, conductor 2026-09-21, wf_12821961-8cd; moved here from p3b's envelope by manifest commit 1f3dbb5, brief aligned by the conductor after p3b's B-integration review): p8 re-bases `D1MlflowObserver` as a STRICT adapter of p3b's `MetricSink` port that raises through (a fail-LOUD measurement path, never best-effort); `D1JournalObserver.observe(event)` is a journal-EVENT protocol with seven `__legacy` consumers and stays outside the one-METRIC-port rule; `d1_tracking_descriptor` consumes the frozen run-descriptor door (`TrackingRunDescriptor`, `build_sink_for_run`), never a compat export.
 
 ## Already ruled
 
@@ -137,6 +138,8 @@ Per the PRIORITY AMENDMENT (ruling P-1). Observability conformance is the ONE be
 - Capture is where the metric path LIVES. Every moving emitter resolves its sink through p3b's port; none constructs one.
 - `telemetry.py` and the reader sub-package log through the substrate, EXCEPT `telemetry final-eval`, which is one of the two machine-consumed stdout sites pinned raw at p0 and must stay a raw `print`.
 - Resource and ledger metering emits through `MetricSink` under the run descriptor, replacing any direct write.
+- D1 observers (R1): `D1MlflowObserver` becomes a STRICT `MetricSink` adapter (raises through); `D1JournalObserver` is event-side and untouched by the metric-port rule; `d1_tracking_descriptor` builds its sink through `build_sink_for_run`. Guard teeth: swallow an mlflow error inside the re-based adapter and `tests/test_d1_observability.py` must go RED.
+- Entry-point / allowlist promotion (CONFORMANCE-PROMOTION RULING, conductor 2026-09-21): `telemetry` keeps its conforming entry and its raw-print allowlist entry re-keyed to the LANDED dotted name through this phase's fragment keys `conforming_entrypoints` and `print_allowlist`. `tests/observability_conformance_config.py` stays p3b's file and is NOT in this phase's envelope; it merges every fragment present. KEYING (conductor 2026-09-21, disambiguation after p3b's L2): `conforming_entrypoints` entries are keyed by the entry point's `tools/mapping.json` dotted name (the PRE-MOVE name, since mapping.json is read-only until p13 and the frozen partition assertion compares against those seven rows) and are NEVER re-keyed before p13; only `print_allowlist` entries are re-keyed to the LANDED dotted name, because the print-ban arm derives names from file paths under the landed roots.
 
 ## Planned commit branches
 
@@ -148,4 +151,5 @@ One Linear issue per line, inside this phase's milestone in project "entropic-su
 4. Land ladder/capture/resource
 5. Land ladder/capture/reader with telemetry.py
 6. Land ladder/capture/ledger
-7. Commit the remap_check output for the capture sub-package boundaries
+7. Re-base the D1 observer protocols on p3b's MetricSink port (R1, from p3b)
+8. Commit the remap_check output for the capture sub-package boundaries

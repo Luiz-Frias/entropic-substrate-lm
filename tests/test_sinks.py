@@ -1,4 +1,10 @@
-"""Unit tests for :mod:`entropic_substrate.sinks` — the MetricSink port.
+"""Unit tests for :mod:`entropic_substrate.sinks` — the backward-compat facade.
+
+``entropic_substrate.sinks`` is a re-export facade providing the 18-name compat
+surface for legacy importers; the actual adapter implementations (including
+:class:`MlflowSink`, which holds the MetricSink port contract) landed in
+``entropic_substrate.ladder.capture.adapters`` as part of p3b's architecture
+rewrite.
 
 All tests here run against a FAKE MLflow client (``FakeMlflowClient``,
 implementing just the slice of ``mlflow.tracking.MlflowClient`` the sink
@@ -745,16 +751,24 @@ def test_default_system_metrics_monitor_factory_call_shape_binds_the_real_constr
 
 
 def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
-    """Guard-tooth for the stated invariant: sinks.py must not grow a
-    module-level ``import psutil`` / ``import pynvml`` — either dependency
-    reaches this module ONLY via the lazily-imported mlflow SystemMetricsMonitor,
-    inside the env-gated factory. A module-level import would make training
-    runs without MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING pay an ImportError risk
-    (or a hard dependency) for a feature they never opted into.
+    """Guard-tooth for the stated invariant: the MlflowSink adapter must not
+    grow a module-level ``import psutil`` / ``import pynvml`` — either
+    dependency reaches this module ONLY via the lazily-imported mlflow
+    SystemMetricsMonitor, inside the env-gated factory. A module-level
+    import would make training runs without
+    MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING pay an ImportError risk (or a hard
+    dependency) for a feature they never opted into.
+
+    RE-POINTED at p3b (architect constraint, design gate 2026-09-21):
+    ``_default_system_metrics_monitor_factory`` (the guarded lazy import)
+    landed at ``entropic_substrate.ladder.capture.adapters.mlflow`` along
+    with :class:`MlflowSink`; a guard still reading
+    ``entropic_substrate.sinks.__file__`` (now a facade with a different
+    body) would guard nothing.
 
     Reads the source via the imported module's own ``__file__`` rather than a
-    CWD-relative ``Path("src/entropic_substrate/sinks.py")`` — same rationale
-    as ``test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd``
+    CWD-relative path — same rationale as
+    ``test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd``
     above: a bare relative path only resolves under a CWD that happens to be
     the repo root. MEASURED: from any other CWD it raises
     ``FileNotFoundError`` on ``.read_text()`` — an ERROR, not a silent skip —
@@ -764,9 +778,9 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
     """
     import ast
 
-    import entropic_substrate.sinks as sinks_module
+    import entropic_substrate.ladder.capture.adapters.mlflow as mlflow_adapter_module
 
-    source = Path(sinks_module.__file__).read_text(encoding="utf-8")
+    source = Path(mlflow_adapter_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     banned = {"psutil", "pynvml"}
     # MODULE-LEVEL statements only (tree.body) — a lazy import INSIDE a
@@ -783,6 +797,147 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
         assert not (names & banned), (
             f"sinks.py must not import {names & banned} at module level — line {node.lineno}"
         )
+
+
+def test_mlflow_adapter_module_never_binds_mlflow_at_module_scope() -> None:
+    """Guard-tooth (architect constraint, design gate 2026-09-21): the
+    forbidden-contract door (``.importlinter``'s ``mlflow-only-from-adapter``)
+    is BLIND to a re-export path -- with the single sanctioned edge ignored,
+    a landed module reaching mlflow via
+    ``from entropic_substrate.ladder.capture.adapters.mlflow import mlflow``
+    records only an `other -> adapters.mlflow` edge in the graph, which the
+    contract does not forbid, so ``lint-imports`` would stay green even
+    though the door's whole purpose (confine ``mlflow`` to one module) had
+    been bypassed. No static import-linter check can see this; this test is
+    the only guard. MEASURED at this tip: ``mlflow`` is imported only
+    inside function bodies (module-level AST has zero ``import mlflow`` /
+    ``from mlflow import ...`` statements) and ``__all__`` exports exactly
+    ``MlflowSink`` -- never a submodule alias."""
+    import ast
+
+    import entropic_substrate.ladder.capture.adapters.mlflow as mlflow_adapter_module
+
+    source = Path(mlflow_adapter_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            names = {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            names = {(node.module or "").split(".")[0]}
+        else:
+            continue
+        assert "mlflow" not in names, (
+            f"adapters/mlflow.py must not bind `mlflow` at module level — line {node.lineno} "
+            "would let a landed importer reach mlflow through a re-export the forbidden "
+            "contract's single ignore_imports line does not cover"
+        )
+    assert mlflow_adapter_module.__all__ == ["MlflowSink"], (
+        f"adapters/mlflow.py's __all__ must export ONLY MlflowSink, got "
+        f"{mlflow_adapter_module.__all__!r} — an `mlflow` (or submodule) name in __all__ is "
+        "the same re-export bypass the module-scope-import ban above closes"
+    )
+    assert not hasattr(mlflow_adapter_module, "mlflow"), (
+        "adapters/mlflow.py must not carry a live `mlflow` attribute at module scope"
+    )
+
+
+def test_sinks_facade_all_equals_the_measured_18_names_and_every_name_resolves() -> None:
+    """Guard-tooth for DESIGN-GATE RULING D1's own justification: D1 keeps
+    ``entropic_substrate.sinks`` quarantined (``landed: false``) precisely
+    because out-of-envelope importers consume names from the old prefix, and
+    the brief's ACCEPTANCE item requires the 18-name compat surface be
+    pinned machine-checkably rather than shipped as an unpinned docstring
+    measurement (architect constraint, design gate 2026-09-21: MLFLOW_EXPERIMENT_ENV,
+    LegacyMetricExtractor and MetricExtractor appear in ZERO test files, so a
+    silently dropped re-export would be invisible to every other gate —
+    exactly the false-green class house rule 1 was written about). Import
+    each name explicitly (not just check `__all__`'s membership list) so a
+    name present in `__all__` but missing from the module itself — an
+    AttributeError, not a silent hole — fails loudly here."""
+    import entropic_substrate.sinks as sinks_facade
+
+    expected = frozenset(
+        {
+            "MLFLOW_EXPERIMENT_ENV",
+            "MLFLOW_SYSTEM_METRICS_ENV",
+            "MLFLOW_TINY_ENV",
+            "MLFLOW_TRACKING_ENV",
+            "CompositeSink",
+            "ExtractedMetrics",
+            "JsonlSink",
+            "LegacyMetricExtractor",
+            "MetricExtractor",
+            "MetricSink",
+            "MlflowSink",
+            "MlflowStartupError",
+            "TrackingRunDescriptor",
+            "build_sink",
+            "build_sink_for_run",
+            "config_hash",
+            "git_sha",
+            "mlflow_enabled",
+        }
+    )
+    assert len(expected) == 18
+    actual = frozenset(sinks_facade.__all__)
+    assert actual == expected, (
+        f"entropic_substrate.sinks.__all__ drifted from the measured 18-name compat surface: "
+        f"missing={sorted(expected - actual)}, added={sorted(actual - expected)}"
+    )
+    for name in expected:
+        assert hasattr(sinks_facade, name), (
+            f"entropic_substrate.sinks.__all__ names {name!r} but the facade does not "
+            "resolve it — a dropped re-export, invisible to every offline gate that "
+            "only checks __all__'s membership list"
+        )
+
+
+def test_cold_import_of_mlflow_adapter_adapter_first_succeeds() -> None:
+    """ACCEPTANCE item (design-gate risk, conductor 2026-09-21): a fresh
+    interpreter that imports
+    ``entropic_substrate.ladder.capture.adapters.mlflow`` FIRST -- before any
+    facade (``entropic_substrate.sinks``) or old-prefix
+    (``entropic_substrate.__legacy.sinks``) import has warmed anything --
+    must succeed. A facade-first-only green is not evidence: the facade's
+    own module-level import of this adapter (to re-export ``MlflowSink``
+    under the old prefix) could paper over an import-order hazard the
+    adapter's own cycle-avoidance (function-scope imports back into
+    ``__legacy.sinks``, see ``adapters/composite.py`` and
+    ``adapters/mlflow.py``'s module docstrings) is supposed to prevent.
+    Fresh ``sys.executable`` subprocess (never a hardcoded ``python``,
+    same rationale as ``tests/test_shim_layer.py``'s cold-import guard) so
+    nothing in THIS process's already-imported module cache can mask the
+    hazard."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    code = (
+        "import entropic_substrate.ladder.capture.adapters.mlflow as m\n"
+        "assert 'entropic_substrate.sinks' not in __import__('sys').modules, "
+        "'facade was imported before the adapter -- not adapter-first'\n"
+        "assert 'entropic_substrate.__legacy.sinks' not in __import__('sys').modules, "
+        "'legacy facade target was imported before the adapter -- not adapter-first'\n"
+        "assert m.__all__ == ['MlflowSink']\n"
+        "print('COLD_ADAPTER_FIRST_OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(repo_root),
+    )
+    assert result.returncode == 0, (
+        f"adapter-first cold import failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    assert "COLD_ADAPTER_FIRST_OK" in result.stdout, (
+        f"child process did not report success; stdout={result.stdout!r} "
+        f"stderr={result.stderr[-2000:]!r}"
+    )
 
 
 # --------------------------------------------------------- dataset lineage (b)
@@ -828,13 +983,13 @@ def test_default_enwik8_pointer_falls_back_to_cwd_relative_when_repo_root_raises
 
 
 def test_read_dvc_pointer_digest_returns_none_for_an_absent_pointer(tmp_path: Path) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     assert _read_dvc_pointer_digest(tmp_path / "missing.dvc") is None
 
 
 def test_read_dvc_pointer_digest_reads_the_real_pointer_shape(tmp_path: Path) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     pointer = tmp_path / "enwik8.dvc"
     pointer.write_text(
@@ -862,7 +1017,7 @@ def test_read_dvc_pointer_digest_reads_the_real_pointer_shape(tmp_path: Path) ->
 def test_read_dvc_pointer_digest_raises_on_a_malformed_pointer(
     tmp_path: Path, content: str
 ) -> None:
-    from entropic_substrate.sinks import _read_dvc_pointer_digest
+    from entropic_substrate.ladder.capture.adapters.mlflow import _read_dvc_pointer_digest
 
     pointer = tmp_path / "enwik8.dvc"
     pointer.write_text(content, encoding="utf-8")
@@ -1189,7 +1344,7 @@ class NewConnectionError(Exception):
 
 def test_read_timeout_in_the_cause_chain_is_a_cold_start() -> None:
     """A wrapped read timeout means the server ANSWERED and was slow."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     wrapped = RuntimeError("API request to /experiments/create failed")
     wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
@@ -1203,7 +1358,7 @@ def test_connection_refused_is_not_a_cold_start() -> None:
     whole cold-start budget before failing, which is the opposite of failing
     fast before GPU hours are spent.
     """
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     wrapped = RuntimeError("failed to connect")
     wrapped.__cause__ = NewConnectionError("[Errno 61] Connection refused")
@@ -1212,14 +1367,14 @@ def test_connection_refused_is_not_a_cold_start() -> None:
 
 def test_cold_start_detection_survives_a_broken_cause_chain() -> None:
     """Fallback path: a re-raise that dropped __cause__ still classifies."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     assert _is_cold_start(RuntimeError("HTTPConnectionPool: Read timed out."))
 
 
 def test_cold_start_walk_terminates_on_a_cyclic_cause_chain() -> None:
     """A self-referential chain must not hang the startup path."""
-    from entropic_substrate.sinks import _is_cold_start
+    from entropic_substrate.ladder.capture.adapters.mlflow import _is_cold_start
 
     a = RuntimeError("a")
     b = RuntimeError("b")

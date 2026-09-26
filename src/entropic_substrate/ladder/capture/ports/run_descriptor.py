@@ -1,4 +1,25 @@
-"""Immutable metadata and metric-extraction contracts for tracking mirrors."""
+"""Immutable metadata and metric-extraction contracts for tracking mirrors.
+
+Landed at p3b (docs/plans/src-hexagonal-refactor.plan.md #p3b) from the
+quarantined ``entropic_substrate.tracking_contracts`` -- the whole module
+moved here verbatim (a shim has one target) rather than being split, so this
+file also carries the frozen/editable split for the two classes of symbol it
+now exports (ACCEPTANCE item, design-gate risk, conductor 2026-09-21):
+
+* **FROZEN door** (``kind: door``, ``frozen_after: p3b``): :class:`TrackingRunDescriptor`
+  here, plus :func:`entropic_substrate.ladder.capture.adapters.composite.build_sink_for_run`
+  (physically in ``adapters/composite.py`` -- ``ports/`` never imports
+  ``adapters/``, so the single construction seam cannot live in this file;
+  see that module's docstring). Together they are the run-descriptor door:
+  the one construction seam every later phase (p8's ``d1_tracking_descriptor``
+  included) consumes. Changing either's shape is a ruled, one-way-door event.
+* **Co-resident, editable by p8** (this module's other symbols):
+  :class:`TrackingValue`, :class:`ExtractedMetrics`, :class:`MetricExtractor`,
+  :class:`LegacyMetricExtractor` (with its kappa-metrics derivation). p8 owns
+  the D1 observer re-basing (RULING R1, conductor 2026-09-21, wf_12821961-8cd)
+  and may extend or replace these without touching the frozen door above --
+  a change here is a co-resident edit, not a door violation.
+"""
 
 from __future__ import annotations
 
