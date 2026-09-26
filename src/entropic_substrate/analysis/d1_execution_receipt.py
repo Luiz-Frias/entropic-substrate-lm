@@ -583,6 +583,15 @@ def issue_d1_verified_analysis_receipt(
         raise ValueError("D1 v2 receipt execution response hash differs")
     if evidence.analysis_sha256 != analysis.analysis_digest:
         raise ValueError("D1 v2 receipt execution analysis hash differs")
+    # FOR-1523 (2026-09-20): the implementation identity the caller CLAIMS ran
+    # is bound to the image the attested isolation RECORDED. MEASURED before
+    # this check: every verified-receipt test issued receipts whose claimed
+    # image (sha256:4...4) contradicted the evidence's launch image
+    # (sha256:a...a), so the binding was absent, not merely untested.
+    if evidence.image_digest != implementation.image_digest:
+        raise ValueError(
+            "D1 v2 receipt implementation image_digest differs from execution evidence"
+        )
     admitted = D1AdmittedAnalysisCapture(
         design_digest=request.input_control.design.design_digest,
         decision_contract_digest=request.input_control.design.decision_contract_digest,

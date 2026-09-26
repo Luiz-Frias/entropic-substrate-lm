@@ -60,11 +60,21 @@ def _admitted():
     )
 
 
+# FOR-1523 (2026-09-20): the claimed image must equal the image the attested
+# isolation records. The v2 adapter tests launch with `_IMAGE = ...@sha256:` +
+# 64 x "a" (tests/test_d1_external_analysis_adapter_v2.py), and every
+# verified-receipt test in the four consumer modules shares THIS fixture, so
+# it carries that same digest. MEASURED before the fix: this fixture said
+# sha256:4...4 and 42 tests across these four modules passed only because the issuer
+# never compared the two.
+_LAUNCH_IMAGE_DIGEST = "sha256:" + "a" * 64
+
+
 def _implementation() -> D1AnalysisImplementationIdentity:
     return D1AnalysisImplementationIdentity(
         code_commit="1" * 40,
         repository_digest="2" * 64,
-        image_digest="sha256:" + "4" * 64,
+        image_digest=_LAUNCH_IMAGE_DIGEST,
     )
 
 
@@ -77,7 +87,7 @@ def _execution_evidence() -> D1IsolationExecutionEvidence:
         response_sha256="4" * 64,
         stdout_sha256="5" * 64,
         stderr_sha256="6" * 64,
-        image_digest="sha256:" + "7" * 64,
+        image_digest=_LAUNCH_IMAGE_DIGEST,  # FOR-1523: same image as the claim
         platform="linux/amd64",
     )
 
