@@ -9,15 +9,15 @@ from typing import cast
 import torch
 from torch import nn
 
-from entropic_substrate.observation import ObservationAlignment
-from entropic_substrate.predictive_state.future_law import (
+from entropic_substrate.core.latent.future_law import (
     DiagonalGaussianFutureLaw,
     FutureLaw,
     FutureLawLoss,
     MeanDisplacementBaseline,
 )
-from entropic_substrate.predictive_state.state import LatentTrajectory
-from entropic_substrate.predictive_state.target_values import FutureTarget, StabilizedTargets
+from entropic_substrate.core.latent.state import LatentTrajectory
+from entropic_substrate.core.latent.target_values import FutureTarget, StabilizedTargets
+from entropic_substrate.core.observation.contracts import ObservationAlignment
 
 REGISTERED_HORIZONS = (1, 4, 16, 64)
 

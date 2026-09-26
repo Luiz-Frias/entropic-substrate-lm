@@ -6,8 +6,12 @@ from dataclasses import dataclass
 
 import torch
 
-from entropic_substrate.observation import CodecIdentity, EncodedObservations, ObservationAlignment
-from entropic_substrate.predictive_state.state import LatentTrajectory, TargetEncoder
+from entropic_substrate.core.latent.state import LatentTrajectory, TargetEncoder
+from entropic_substrate.core.observation.contracts import (
+    CodecIdentity,
+    EncodedObservations,
+    ObservationAlignment,
+)
 
 __all__ = [
     "FutureTarget",

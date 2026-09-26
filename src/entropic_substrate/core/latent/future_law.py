@@ -8,9 +8,9 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from entropic_substrate.observation import CodecIdentity
-from entropic_substrate.predictive_state.state import LatentTrajectory
-from entropic_substrate.predictive_state.target_values import FutureTarget, StabilizedTargets
+from entropic_substrate.core.latent.state import LatentTrajectory
+from entropic_substrate.core.latent.target_values import FutureTarget, StabilizedTargets
+from entropic_substrate.core.observation.contracts import CodecIdentity
 
 __all__ = [
     "DiagonalGaussianFutureLaw",

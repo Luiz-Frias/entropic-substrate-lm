@@ -16,7 +16,7 @@ and E1's table origin share one geometry and remain angle-comparable.
 
 :class:`FieldEncoder` is a small, self-contained causal transformer over the
 256-symbol byte alphabet — its own embedding, its own stack of baseline
-blocks (reusing :func:`entropic_substrate.models.blocks.build_block`'s
+blocks (reusing :func:`entropic_substrate.core.substrate.blocks.build_block`'s
 already-causal ``CausalSelfAttention``), its own tied 256-way head — entirely
 separate from the backbone's ``wte``/``lm_head``, which stay in place as the
 OUTPUT classifier only (still Fisher-seeded when ``embedding_init ==
@@ -70,10 +70,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.checkpoint import normalize_checkpoint
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.init.fisher import semi_orthogonal_lift
-from entropic_substrate.models.blocks import build_block, build_norm
+from entropic_substrate.core.substrate.blocks import build_block, build_norm
+from entropic_substrate.core.substrate.fisher import semi_orthogonal_lift
+from entropic_substrate.kernel.runtime.checkpoint import normalize_checkpoint
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = ["FieldCalibrationAccumulator", "FieldEncoder", "FieldEncoding"]
 

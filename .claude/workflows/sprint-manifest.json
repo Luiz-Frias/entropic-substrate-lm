@@ -984,27 +984,32 @@
       "branch": "mythwave/p7-register-gate",
       "parent": "mythwave/p6-core",
       "brief": ".claude/workflows/briefs/p7-register-gate.md",
-      "mode": "ratchet",
+      "mode": "tracer",
       "gates": {
-        "liveRequired": false,
-        "liveDeferred": "deferred to the wave zip's single just ship-it; re-certification owner: conductor"
+        "liveRequired": true
       },
       "cost_class": "build",
       "model_tier": "cascade variant, ARCH mode (phase.mode:'arch' explicit)",
       "contracts_owned": [
         {
-          "name": "ladder/register (17), ladder/gate (3), ladder/register/rungs/, ladder/register/arms/ scaffolding",
+          "name": "ladder/register (16), ladder/gate (3), ladder/register/rungs/, ladder/register/arms/ scaffolding",
           "kind": "contract"
         }
       ],
       "contracts_consumed": [
-        "kernel addresses (p4, p5)"
+        "kernel addresses (p4, p5): kernel.identity.d1_primitives (13 import lines), kernel.runtime.config (3), kernel.verdict.d1_contract (3), kernel.verdict.d1_types (3), kernel.lifecycle (2), kernel.evidence_class.resource_provenance (1)",
+        "core addresses (p6): core.observation.byte_codec, core.observation.contracts, core.latent.dynamics, core.sentence.profile, core.sentence.records, core.sentence.recovery_state -- the measured p7->p6 dependency that made both phases serial (D-WAVES r3)",
+        "kernel.artifacts as extended by p5b (artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact consumed by ladder/gate/ladder_predecessor.py's split import)",
+        "tools/gen_shims.py + the landed-set fragment convention (p3); tests/test_legacy_coupling.py EQUALITY arm (p3, p5 -- the monotone arm is RETRACTED, 795f8e6)",
+        "tests/test_no_old_prefix.py (p3b)",
+        "tools/import_graph.py, tools/lane_slices.py (conductor measurement oracles)",
+        "kernel/runtime/logging.py (p3b) -- available; MEASURED zero work in this phase (no print/argparse/__main__/logger site in the 19 sources)",
+        "tools/regime_rows.py + tests/test_regime_rows.py + tests/test_identity_epoch.py -- READ-ONLY here; no R-PIN is owed (zero reader-set members touched)"
       ],
       "touch_set": [
         "src/entropic_substrate/__legacy/evidence/d1_family_adapter.py",
         "src/entropic_substrate/__legacy/evidence/d1_verdict.py",
         "src/entropic_substrate/__legacy/evidence/ladder_predecessor.py",
-        "src/entropic_substrate/__legacy/experiments.py",
         "src/entropic_substrate/__legacy/experiments/d1.py",
         "src/entropic_substrate/__legacy/experiments/d1_config.py",
         "src/entropic_substrate/__legacy/experiments/d1_config_profile.py",
@@ -1027,8 +1032,6 @@
         "src/entropic_substrate/evidence/d1_verdict.pyi",
         "src/entropic_substrate/evidence/ladder_predecessor.py",
         "src/entropic_substrate/evidence/ladder_predecessor.pyi",
-        "src/entropic_substrate/experiments.py",
-        "src/entropic_substrate/experiments.pyi",
         "src/entropic_substrate/experiments/d1.py",
         "src/entropic_substrate/experiments/d1.pyi",
         "src/entropic_substrate/experiments/d1_config.py",
@@ -1061,18 +1064,19 @@
         "src/entropic_substrate/experiments/h_preservation.pyi",
         "src/entropic_substrate/experiments/ladder.py",
         "src/entropic_substrate/experiments/ladder.pyi",
+        "src/entropic_substrate/ladder/register/**",
+        "src/entropic_substrate/ladder/gate/**",
+        "tests/test_register_gate_cold_import.py",
+        "tests/test_d1_launch_attempts_refusal.py",
         ".claude/workflows/landed-set/p7-register-gate.json",
-        "tests/test_identity_epoch.py",
-        "tools/regime_rows.py",
-        "tests/test_regime_rows.py",
-        "docs/identity/read-old-table.md",
         ".secrets.baseline"
       ],
       "conflict_edges": [],
       "parallel_group": null,
       "status": "queued",
-      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages. Carries the experiments.d1_family + experiments.d1_runs SCC as ONE commit (one of only two module-level SCCs in the repo, Tarjan-confirmed — the survey's phase-decomposition report (retained outside the repo)). Scaffolds rungs/ and arms/ empty so H1's spec has a home before H1 is preregistered. Guard-teeth: move only one half of the d1_family/d1_runs SCC and the import goes RED at collection; experiments/d1_launch_attempts.py's RunClass.PILOT refusal moves unchanged and its test still passes. Zero shared touch-set with p6 (33 vs 20 modules, disjoint by mapping.json's single-valued dest) — R-parallel and R-mode satisfied. TOUCH SET DERIVED 2026-09-22 by tools/lane_slices.py at the p5 gap (slice = targets + landed importers + shim pairs; 60 files; the earlier `*_modules/**` globs were phantoms). The five zip_owned_regenerable files are listed for completeness and are excluded from the zip's overlap check. SERIAL 2026-09-23 (D-WAVES r3): p7's moved modules import the observation facade whose leaves p6 moves; parent re-set to mythwave/p6-core.",
-      "engine_mode": "arch"
+      "notes": "PREREGISTER and SUCCESSOR-AUTHORIZED stages: 19 leaf modules land at ladder/register (16) and ladder/gate (3); rungs/ and arms/ scaffolded EMPTY so H1's spec has a home before H1 is preregistered. SERIAL 2026-09-23 (D-WAVES r3), parent mythwave/p6-core, liveRequired:true, one `just ship-it` INSIDE the lifecycle (FOR-1541 branch-only fallback as for p5/p5b/p6): tools/lane_slices.py MEASURED the p7->p6 dependency (2 edges via the observation facade, d1_config_profile.py:58 and d1_family.py:43). Every wave/lane/zip/publishMode:'defer'/liveDeferred/CERTIFIED construction of the ratified entry is STRUCK. RETRACTION (house rule 4, not overwritten): the target count is 19, not 20 and not 'register (17), gate (3)' -- entropic_substrate.experiments is a PACKAGE KEY (gen_shims merge_fragments raises on a fragment naming one; lane_slices parse_lane exits 2), and __legacy/experiments/__init__.py (286 bytes, docstring + `from __future__ import annotations`, zero re-exports) stays VERBATIM. TOUCH SET MEASURED 2026-09-23 at 861d015 with tools/lane_slices.py: slice = 19 legacy sources + 38 shim-pair files = 57 files, ZERO landed importers -- no reader-set member is touched, so NO regime re-pin is owed (R-PIN does not fire) and the four identity files (tests/test_identity_epoch.py, tools/regime_rows.py, tests/test_regime_rows.py, docs/identity/read-old-table.md) are OUT of the touch set; the control is a byte-identity assertion of both _CHECKPOINT_REGIME_TABLE and _SOURCE_REGIME_TABLE against the parent tip. The four destination __init__.py files, the two RED-first tests, the fragment and .secrets.baseline complete the set; destinations are declared as src/entropic_substrate/ladder/{register,gate}/** globs, p6-core precedent. legacy_edge_budget INCREASES: parent measured 35 (= p6-core.json's committed budget), 0 removed, 10 added (all in ladder/gate: d1_verdict 4, ladder_predecessor 6), predicted 45 [predicted, lane measures its own]; the plan's '~12 added' counted import LINES, two of which rewrite to p6's core.observation.* -- retracted. BUDGET-MONOTONE retracted (795f8e6): the equality arm of tests/test_legacy_coupling.py binds, not strict decrease. Guard-teeth AMENDED: d1_launch_attempts.py's non-PILOT refusal is at :71 (not :70) and MEASURED has NO existing test (grep 'records only pilot or confirmatory' over tests/ finds nothing; test_d1_launch_attempt_ledger.py:73's match='pilot' pins a different branch), so tests/test_d1_launch_attempts_refusal.py lands RED-first; and the d1_family/d1_runs SCC's claimed collection-time ImportError does NOT follow from module-init order (d1_runs.py:7 is the only module-scope edge; d1_family's reverse edges are TYPE_CHECKING :45 and function-local :177/:196/:338), so the lane must EXHIBIT that RED arm or retract the row with the measurement. Observability: MEASURED zero print(/argparse/__main__/def main(/configure_logging/logger sites across the 19 sources -- both P-1 obligations have an empty subject. Generator outputs: exactly the 19 .pyi stubs change (compute_expected_stub_map = 322 rows at the parent tip; a stub re-derives from its target's AST bound names, and only the 19 targets are edited). .emitted.json stays untracked (FOR-1539). MANIFEST-FIELD CORRECTIONS 2026-09-23 (schema-verified): mode ratchet -> tracer (schema enum description: ratchet = 'known set (parallel-eligible)'; a serial phase is tracer, as p6-core is); gates stays {liveRequired:true} because the schema sets additionalProperties:false on that object and admits only liveRequired/liveDeferred -- the offline/exit/live vocabulary is brief-level prose; liveDeferred is REMOVED (nothing is deferred, there is no zip).",
+      "engine_mode": "arch",
+      "_comment": "Fields to REPLACE on the p7-register-gate phase object in .claude/workflows/sprint-manifest.json. MEASURED-CORRECTED 2026-09-23 against p6-core/p5b-ladder-campaign manifest entries and .claude/workflows/sprint-manifest.schema.json: mode enum is {tracer=agent-serial, ratchet=parallel-eligible} so a serial p7 is tracer (p6 made the same switch); the gates object has additionalProperties:false with only liveRequired/liveDeferred, so the full gate vocabulary lives in the BRIEF table, never in the manifest; destination files are declared as ** GLOBS exactly as p6-core does. Every other field of that object (id, title, issues, branch, brief, cost_class, model_tier, contracts_owned, conflict_edges, status, engine_mode) is unchanged. Derived 2026-09-23 at 861d015 on mythwave/p6-core; commands in p7-notes.md."
     },
     {
       "id": "p8-capture",

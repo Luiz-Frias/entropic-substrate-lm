@@ -10,16 +10,16 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.geometry.kappa import clamp_kappa
-from entropic_substrate.init.fisher import (
+from entropic_substrate.core.geometry.kappa import clamp_kappa
+from entropic_substrate.core.geometry.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
+from entropic_substrate.core.substrate.blocks import CausalSelfAttention, build_block, build_norm
+from entropic_substrate.core.substrate.field_encoder import FieldEncoder, FieldEncoding
+from entropic_substrate.core.substrate.fisher import (
     build_fisher_init,
     load_init,
     random_sphere_init,
 )
-from entropic_substrate.layers.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
-from entropic_substrate.models.blocks import CausalSelfAttention, build_block, build_norm
-from entropic_substrate.models.field_encoder import FieldEncoder, FieldEncoding
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = [
     "LMOutput",
@@ -60,7 +60,7 @@ class LMOutput:
     # field encoder exists at all — absent channel is absent, the same
     # convention ``aux_loss``/``kappa_stats`` already use for features most
     # arms do not carry. AMBIENT dtype, not fp32: see
-    # :class:`~entropic_substrate.models.field_encoder.FieldEncoding` for
+    # :class:`~entropic_substrate.core.substrate.field_encoder.FieldEncoding` for
     # why the cast belongs to the consumer.
     field_logits: torch.Tensor | None = None
 

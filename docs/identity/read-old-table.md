@@ -144,6 +144,23 @@ h-source-reader-v3 is untouched by p5-kernel: `worker_execution` was never one o
 members, confirmed by re-measuring both `_SOURCE_REGIME_TABLE` rows unchanged with the same
 `tools/regime_rows.py` invocation (`--pysbd 0.3.4`).
 
+| 2026-09-23 | p6-core | `41e747dd65f613a1dd47d31d5780e2a2f2530874` (parent tip at which the re-pin was measured; the landing commit's SHA does not exist yet) | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged; 6 of the 51 members are touched this phase: `composition.span_cli`, `ladder.run.span_probe`, `ladder.run.span_probe_artifacts`, `ladder.run.span_diagnostics`, `ladder.run.worker_request`, `core.probe.score_gain`) | the six landed importers' `entropic_substrate.__legacy.analysis.{predictive_probe,predictive_score_gain}` import lines rewritten to `entropic_substrate.core.probe.{predictive_probe,predictive_score_gain}` (7 edges, `span_probe.py` imports both targets), per ruling R-PIN and FOR-1455 | local `(3.12.13, 2.13.0)` = `518eefec27900d62d9469f36fac875b8f0b8c52bec3971c7a14f042a1c366e82`; CI `(3.12.14, 2.13.0+cpu)` = `1ee4c5384db632c55222f1a3b2d04d0f4e43e4c8252f2b4c795b9cc54a43f78c` | local `(3.12.13, 2.13.0)` = `992bbd0f199fc1efb3d089ce657d3381974a403bce1285f948bbdad4f4931be3`; CI `(3.12.14, 2.13.0+cpu)` = `f41275db894d927b39d9ff75124d77607a618a6e44bea0da41cb1947651d5758` |
+
+RETRACTION (house rule 4, same phase): an intermediate pin of `da5d88e7d19ea7dcd4e5de3f84b20c23abdcc4c99a0ef7916b252bd9a52e34b6`
+(local) / `61281588e897462cfc9c8eae4cd0ae9217aaf9d0f0060044595278c6665dbaea` (CI) was measured
+BEFORE `just lint`'s `ruff check --fix` reordered `ladder/run/span_diagnostics.py`'s two import
+lines into isort order, moving that reader member's bytes a second time within this commit
+(caught by `just test` going RED after lint ran). The row above is the value measured AFTER
+lint, on the tree this commit ships; the intermediate value above is not carried forward.
+
+h-source-reader-v3 is untouched by p6-core: none of the six rewritten importers is one of its seven
+fixed members (`core.sentence`, `core.sentence.records`, `core.sentence.segmentation`,
+`core.sentence.corpus`, `ladder.capture.capture`, `kernel.artifacts`, `kernel.lifecycle`),
+confirmed by re-measuring both `_SOURCE_REGIME_TABLE` rows unchanged with the same
+`tools/regime_rows.py` invocation (local `(3.12.13, 0.3.4)` = `aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`,
+CI `(3.12.14, 0.3.4)` = `5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84` — both byte-identical to the values
+already on record).
+
 RETRACTION (house rule 4, p5b-ladder-campaign): the sentence directly above is accurate history
 for p5-kernel's own mutation and is not overwritten, but it is not a standing guarantee -- read
 as "h-source-reader-v3 is untouched forever" it is now WRONG. p5b-ladder-campaign appends to

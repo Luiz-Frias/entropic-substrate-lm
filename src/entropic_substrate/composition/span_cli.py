@@ -8,7 +8,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.__legacy.analysis.predictive_probe import ProbeConfig
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record

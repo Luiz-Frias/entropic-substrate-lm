@@ -9,7 +9,7 @@ from typing import ClassVar
 
 import torch
 
-from entropic_substrate.observation.contracts import CodecIdentity
+from entropic_substrate.core.observation.contracts import CodecIdentity
 
 __all__ = ["ByteObservationCodec"]
 
@@ -20,7 +20,7 @@ class ByteObservationCodec:
 
     This class is an observation boundary adapter, not a semantic state
     representation.  Its cardinality is intentionally visible here and absent
-    from :class:`~entropic_substrate.observation.EncodedObservations`.
+    from :class:`~entropic_substrate.core.observation.contracts.EncodedObservations`.
     """
 
     construction_label: str = "identity-byte-v1"

@@ -15,9 +15,9 @@ from typing import Protocol, runtime_checkable
 import torch
 from torch import nn
 
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.models.blocks import build_block
-from entropic_substrate.observation import CodecIdentity, EncodedObservations
+from entropic_substrate.core.observation.contracts import CodecIdentity, EncodedObservations
+from entropic_substrate.core.substrate.blocks import build_block
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = [
     "AffineFreeRMSNorm",

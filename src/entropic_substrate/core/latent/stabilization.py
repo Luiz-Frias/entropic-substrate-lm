@@ -8,7 +8,7 @@ from typing import Protocol, runtime_checkable
 
 import torch
 
-from entropic_substrate.predictive_state.state import LatentTrajectory
+from entropic_substrate.core.latent.state import LatentTrajectory
 
 __all__ = [
     "CollapseDiagnostics",

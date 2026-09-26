@@ -28,15 +28,15 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from entropic_substrate.config import ModelConfig
-from entropic_substrate.geometry.kappa import (
+from entropic_substrate.core.geometry.kappa import (
     clamp_kappa,
     dist_k_from_cos,
     dist_k_from_inner,
     mobius_add,
     projx,
 )
-from entropic_substrate.layers.kappa_norm import GatedKappaNorm, UnitNorm
+from entropic_substrate.core.geometry.kappa_norm import GatedKappaNorm, UnitNorm
+from entropic_substrate.kernel.runtime.config import ModelConfig
 
 __all__ = [
     "MLP",
