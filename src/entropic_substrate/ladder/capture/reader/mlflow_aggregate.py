@@ -1,10 +1,17 @@
 """Idempotent seed aggregation over MLflow child runs, grouped by ``config_hash``.
 
 Seed runs are written FLAT — params ``seed``/``exp``, tag ``config_hash``
-(see :func:`entropic_substrate.sinks.build_sink`). :func:`aggregate` finds
+(see :func:`entropic_substrate.ladder.capture.reader.sinks.build_sink`). :func:`aggregate` finds
 every LEAF run (one without the ``aggregate.is_parent`` tag) that shares a
 ``config_hash``, and creates/updates exactly ONE parent run per group — but
 only once the group has at least ``n_seeds`` members.
+
+RESTATED 2026-09-26 (post-p13 docs sweep): this docstring's cross-references named the
+retired ``entropic_substrate.sinks`` address; they now read
+``entropic_substrate.ladder.capture.reader.sinks``, the landed module this file already
+imports from. Comment/docstring text only, no code line changed. Verified this module is
+not identity-hashed: it does not appear in either ``_READER_MODULES`` tuple in
+``ladder/run/checkpoint.py`` or ``ladder/capture/capture.py``.
 
 NO PARENT WITHOUT A COMPLETE AGGREGATE: a parent's absence for an
 in-progress ``config_hash`` IS the loud signal that the ladder is not done —
@@ -44,7 +51,7 @@ __all__ = ["DEFAULT_METRICS", "PARENT_TAG", "aggregate", "find_parent_run"]
 DEFAULT_METRICS: tuple[str, ...] = ("nats_per_byte", "loss", "bits_per_byte", "perplexity")
 PARENT_TAG = "aggregate.is_parent"
 # Mirrors `entropic_substrate.cli._CONFIG_HASH_RE` exactly: the shape
-# `entropic_substrate.sinks.config_hash()` always produces (12 lowercase hex
+# `entropic_substrate.ladder.capture.reader.sinks.config_hash()` always produces (12 lowercase hex
 # chars). fullmatch, not match/`$`-anchored — MEASURED regression pinned in
 # tests/test_cli_charts.py for the cli.py twin of this contract: `re.match`'s
 # trailing "$" also matches immediately before a single trailing "\n", so
@@ -72,14 +79,14 @@ def _group_by_config_hash(runs: Sequence[Any]) -> dict[str, list[Any]]:
 def find_parent_run(client: Any, experiment_id: str, config_hash: str) -> Any | None:
     """The aggregate PARENT run for ``config_hash``, if one exists yet.
 
-    Public: :mod:`entropic_substrate.analysis.mlflow_attach` also needs this
+    Public: :mod:`entropic_substrate.ladder.analyze.mlflow_attach` also needs this
     lookup (to attach seed-band chart variants), so the rule for "which run
     is the parent" lives in exactly one place rather than a second
     ``search_runs`` filter string drifting from this one.
 
     ``config_hash`` is interpolated directly into an MLflow filter string
     below, so it is boundary-validated here rather than trusted: the
-    contract is the exact shape :func:`entropic_substrate.sinks.config_hash`
+    contract is the exact shape :func:`entropic_substrate.ladder.capture.reader.sinks.config_hash`
     always produces (12 lowercase hex chars). ``entropic_substrate.cli``
     carries the identical ``_CONFIG_HASH_RE`` regex for its user-typed
     ``--config-hash`` flag.
