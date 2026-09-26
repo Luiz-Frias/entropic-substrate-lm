@@ -96,9 +96,16 @@ def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONTROL_SOURCE = (
-    _REPO_ROOT / "src" / "entropic_substrate" / "analysis" / "d1_external_analysis_control.py"
+    _REPO_ROOT
+    / "src"
+    / "entropic_substrate"
+    / "__legacy"
+    / "analysis"
+    / "d1_external_analysis_control.py"
 )
-_WORKER_SOURCE = _REPO_ROOT / "src" / "entropic_substrate" / "analysis" / "d1_external_worker.py"
+_WORKER_SOURCE = (
+    _REPO_ROOT / "src" / "entropic_substrate" / "__legacy" / "analysis" / "d1_external_worker.py"
+)
 
 
 def _load_relocated_copy(source: Path, relocated_dir: Path, module_name: str) -> ModuleType:

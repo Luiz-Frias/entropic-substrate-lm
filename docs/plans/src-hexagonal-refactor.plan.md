@@ -197,9 +197,12 @@ Four consequences, all load-bearing:
    what makes the waves legal at all.
 2. Per-module physical shims beat a single redirect table. One table file would be a hub every
    phase edits, serialising the sprint.
-3. Destination packages ship an **empty `__init__.py`** during structural phases. Justified: the
-   only two re-export facades in the plan (`data/__init__.py`, `predictive_state/__init__.py`)
-   have zero measured inbound edges `[M, arbiter-reproduced]`. Without this rule
+3. Destination packages ship an **empty `__init__.py`** during structural phases, and so does the MOVED copy of each of the seven re-export facades under `__legacy/` (RULED 2026-09-20, p3 design gate: a moved facade body re-enters its sibling leaf shim mid-import, load-order dependent, measured with a control). Justified: the
+   re-export facades have zero measured inbound edges `[M, arbiter-reproduced]`. RETRACTION
+   (house rule 4, conductor, 2026-09-20, p3 design gate): this item previously said "the only two
+   re-export facades in the plan (`data/__init__.py`, `predictive_state/__init__.py`)"; MEASURED
+   at de61455, SEVEN package `__init__.py` files re-export by absolute old-prefix imports (data 5,
+   geometry 1, init 1, layers 1, models 2, observation 3, predictive_state 7 statements). Without this rule
    `ladder/run/worker/__init__.py` would be co-owned by p4 and p10.
 4. **There is NO import-linter ignore list** (DN-P1, ruled). `.importlinter` is edited exactly
    twice: p0 creates it, p13 adds `__legacy` and turns on full enforcement. From p3b to p12 it
@@ -212,7 +215,7 @@ Four consequences, all load-bearing:
    `tests/test_legacy_coupling.py` checks against the AST graph. Two lanes of one wave therefore
    never share a file, and no phase but p0, p3b and p13 touches `.importlinter` (p3b adds exactly one forbidden contract, the mlflow-only-from-adapter door, once its package exists; ruled 2026-09-19, p3b is a serial rail so this is not a hub).
 
-**Shim form (required).**
+**Shim form (required).** AMENDED 2026-09-20 (operator ruling, option (b) of the p3 design-gate DECISION): every leaf shim is a PAIR, the `.py` alias plus a `.pyi` stub of derived explicit `from <target> import <name> as <name>` re-exports (not a star import: it would honour the target's `__all__` and trip ruff F403, measured 2026-09-20), because basedpyright cannot see through the `sys.modules` rebind (measured: 1741 old-prefix from-imports in 296 quarantined files, 80 names in the 7 restored facades); the stub is type-level only, never imported by CPython, invisible to grimp and to `tools/import_graph.py`, and is deleted with its shim at p13.
 
 ```python
 import entropic_substrate.__legacy.<x> as _target
@@ -235,8 +238,11 @@ generator is being redesigned in parallel with this plan:
    the ten-writer hub on p3's fragment that a migrate-on-land contract would otherwise create.
 2. **The generator never rebinds or writes a package `__init__.py`.** Only LEAF modules get the
    3-line `sys.modules` alias shim. p3 restores each original package `__init__.py` at its old
-   (now `__legacy`) location, unmodified, after the wholesale `git mv`; its relative imports resolve
-   through the sibling leaf shims exactly as they did before the move. A multi-destination package
+   (now `__legacy`) location, unmodified, after the wholesale `git mv`; its ABSOLUTE old-prefix re-export
+   imports resolve through the sibling leaf shims exactly as they did before the move (RETRACTION,
+   house rule 4, conductor, 2026-09-20: this sentence previously said "relative imports"; MEASURED at
+   de61455, `grep "^from \.\|^import \." src/entropic_substrate/*/__init__.py` matches nothing --
+   no package `__init__.py` in the tree uses a relative import). A multi-destination package
    key (7 of 12 measured from `tools/mapping.json`) therefore never hits the single-target rebind
    hazard, because no package key is ever rebound at all.
 3. **A fragment naming a package key or the root key fails loud.** `mapping.json` carries the
@@ -805,7 +811,7 @@ epoch printed and every new module mapped. The sprint starts only when H0's line
 | O-2 | Archive the Observability manifest as `sprint-manifest.observability.json` with p1-loguru / p2-mlflow marked `retired` (note: absorbed into p3b + rewrite-on-arrival), then a follow-up commit REMOVES the archived file from disk. Named deviation from the schema's keep-renamed rotation; git history is the archive. |
 | P-1 | **Priority: observability wired through DURING the refactor, on the E-series pattern.** Implemented as rail phase p3b plus the extended rewrite-on-arrival rule and its teeth. The one permitted behaviour-change class inside structural phases. |
 | E-4 | Edit the scripts, no forwarders, and PARAMETERIZE: the dotted entrypoint names live in one source consumed by `run_ladder.sh`, the justfile and the worker allowlists. |
-| DN-P1 | **No import-linter ignore list exists.** `.importlinter` is edited ONLY at p0 (create) and p13 (add `__legacy`, full enforcement). From p3b to p12 it declares the layers contract over the LANDED layers `kernel < core < ladder < historical < composition`, with `__legacy` deliberately OUTSIDE the contract: quarantine edges are not linted, and landed-layer inversions are always ZERO and strictly enforced. Plus the forbidden contracts (`core` ↛ mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets; `mlflow` only from `ladder.capture.adapters.mlflow`, active from p3b). Each phase from p3 on commits ONE disjoint fragment `.claude/workflows/landed-set/<id>.json` carrying modules landed, targets and `legacy_edge_budget`; `tools/gen_shims.py` merges the fragments to emit and re-point shims; `tests/test_legacy_coupling.py` (owned by p3) asserts from the AST graph that landed ↔ `__legacy` edges are ≤ the merged budget and that every shim carries the static-import form. Ruled by the conductor as an implementation seam. |
+| DN-P1 | **No import-linter ignore list exists.** `.importlinter` is edited ONLY at p0 (create) and p13 (add `__legacy`, full enforcement). From p3b to p12 it declares the layers contract over the LANDED layers `kernel < core < ladder < historical < composition`, with `__legacy` deliberately OUTSIDE the contract: quarantine edges are not linted, and landed-layer inversions are always ZERO and strictly enforced. Plus the forbidden contracts (`core` ↛ mlflow/boto3/botocore/dvc/runpod/huggingface_hub/datasets; `mlflow` only from `ladder.capture.adapters.mlflow`, active from p3b). Each phase from p3 on commits ONE disjoint fragment `.claude/workflows/landed-set/<id>.json` carrying modules landed, targets and `legacy_edge_budget`; `tools/gen_shims.py` merges the fragments to emit and re-point shims (since 2026-09-20, FOR-1522, it refuses to emit while any row has no module source on disk: `retired: true` marks a module deleted before its move, `pending: "<phase-id>"` one a later phase creates, and `--preflight` reports the walk without writing; `tools/mapping.json` is never pruned before p13); `tests/test_legacy_coupling.py` (owned by p3) asserts from the AST graph that landed ↔ `__legacy` edges are ≤ the merged budget and that every shim carries the static-import form. Ruled by the conductor as an implementation seam. |
 
 Also ruled in the same session and carried as structural givens: whole-src scope; H lane first
 tracer; merged skeleton (C tree + B grafts); `__legacy` empties with E replay in a governed

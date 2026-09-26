@@ -442,6 +442,19 @@ const P = Object.assign(
   (ARGS && ARGS.policy) || {},
 )
 const RUNNER = P.exitRunner
+// OWNERSHIP TEETH (conductor fix 2026-09-20, axiom 12: structural, not prose). The
+// conductor passes the SHA prefixes of ITS OWN commits on this branch in
+// args.conductorCommits; any other commit touching a conductor-owned path is an
+// ownership breach decided HERE. Measured trigger: lane fixers on p2 authored
+// 39abe5a/80e876f under a docs(refactor): prefix, indistinguishable by prose.
+const CONDUCTOR_COMMITS = (ARGS && Array.isArray(ARGS.conductorCommits) ? ARGS.conductorCommits : []).map((x) => String(x).toLowerCase())
+const CONDUCTOR_OWNED_PATHS = '.claude/workflows/briefs .claude/workflows/sprint-manifest.json .claude/workflows/td-phase-lifecycle.cascade.js .claude/workflows/mass-patch-fanout.js docs/plans .github/workflows/ci.yaml tools/regime_rows.py tests/test_regime_rows.py'
+const OWNERSHIP_STEP =
+  '- OWNERSHIP TRANSCRIPTION (mandatory, machine output only): run `git log --format=%H%x09%s ' + PH.parent + '..' + PH.branch + ' -- ' + CONDUCTOR_OWNED_PATHS + '` and return EVERY line as ownedTouches [{sha, title}] (empty array when the command prints nothing). Do not judge them; the engine decides against the conductor\'s own commit list.\n'
+function ownershipOffenders(list) {
+  return (Array.isArray(list) ? list : []).filter((t) => t && typeof t.sha === 'string' && !CONDUCTOR_COMMITS.some((c) => c.length >= 7 && t.sha.toLowerCase().startsWith(c)))
+}
+const OWNED_NOTE = 'CONDUCTOR-OWNED PATHS (ruling 1, engine-enforced by SHA): ' + CONDUCTOR_OWNED_PATHS + ' — you NEVER edit or commit these, whatever prefix the commit would carry; a change needed there is a DECISION, not a commit.\n'
 const INSTALL = P.installCmd
 
 // ─── cascade control plane: deterministic mode gate + fixer ladder + packets ────
@@ -735,7 +748,7 @@ async function dispatchFixer(stage, phaseTitle, round, findings, sonnetPrompt) {
   let haikuReport = null
   if (tier === 'haiku') {
     // NO effort opt: haiku-4-5 rejects the effort param (capability matrix 2026-07-13).
-    haikuReport = await agent(composePacketWithCeremony(buildFixPacket(PH.id, PH.branch, findings, INVARIANTS, G.offline)), {
+    haikuReport = await agent(OWNED_NOTE + '\n' + composePacketWithCeremony(buildFixPacket(PH.id, PH.branch, findings, INVARIANTS, G.offline)), {
       label: 'fix:' + stage + '#' + round + ':haiku',
       phase: phaseTitle,
       schema: IMPL,
@@ -926,6 +939,18 @@ const ROUND = {
     decision: { type: 'string' },
     evidence: { type: 'string', minLength: 1 },
     notes: { type: 'string' },
+    // OWNERSHIP TEETH (conductor fix 2026-09-20): every commit in parent..branch that
+    // touches a conductor-owned path, transcribed from a fixed git command; the engine
+    // decides against args.conductorCommits (SHA prefixes), never the agent.
+    ownedTouches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { sha: { type: 'string' }, title: { type: 'string' } },
+        required: ['sha', 'title'],
+      },
+    },
   },
   // evidence REQUIRED + non-empty: a gate-check/review verdict with no
   // attached evidence is structurally rejected before any JS control-flow runs on
@@ -954,6 +979,15 @@ const PUB = {
     tip: { type: 'string', pattern: '^[0-9a-f]{40}$' },
     crStatus: { enum: ['CLEAN', 'FINDINGS_APPLIED', 'PENDING', 'FAILED'] },
     actionable: { type: 'number' },
+    // GATES-BEFORE-SUBMIT (conductor fix 2026-09-20, measured on p2 PR #287): the
+    // exit-gate runner JSON and the live-gate record captured BEFORE `gt submit`.
+    exitGate: XGATE,
+    liveGate: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { cmd: { type: 'string' }, exitCode: { type: 'number' }, tail: { type: 'string' } },
+      required: ['cmd', 'exitCode'],
+    },
     notes: { type: 'string' },
   },
   required: ['pr', 'tip', 'crStatus'],
@@ -992,6 +1026,18 @@ const VAL = {
     verifiedTip: { type: 'string', pattern: '^[0-9a-f]{40}$' },
     advisor: { type: 'string' },
     findings: { type: 'array', items: { type: 'string' } },
+    // OWNERSHIP TEETH (conductor fix 2026-09-20): every commit in parent..branch that
+    // touches a conductor-owned path, transcribed from a fixed git command; the engine
+    // decides against args.conductorCommits (SHA prefixes), never the agent.
+    ownedTouches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { sha: { type: 'string' }, title: { type: 'string' } },
+        required: ['sha', 'title'],
+      },
+    },
     reconciledDivergences: {
       type: 'array',
       items: {
@@ -1431,6 +1477,7 @@ const l2Prompts = {
     '- POST-RUN DIRTY-TREE CHECK (independent of the runner’s own dirty flag): immediately AFTER your gate re-runs finish, run `git status --porcelain` yourself — do not rely solely on the runner’s self-reported ok/dirty flag. ANY output (including hook-autofixed-but-uncommitted files the runner might not have caught) is an UNCONDITIONAL FAIL finding; quote it verbatim in evidence. A prek run that mutates the working tree must never silently pass.\n' +
     '- Check /tdd-first-stacked-pr conformance: failing-test-first evidence (tests pin acceptance + edge cases), commit hygiene, scope containment vs the issue.\n' +
     '- Check /gt-stacked-pr-sprint ceremony: branch parentage, one-unit-per-commit, no foreign files.\n' +
+    OWNERSHIP_STEP +
     'FAIL on any gate red or ceremony breach. List findings.\n\n' +
     EVIDENCE_REQUIREMENT +
     RULING,
@@ -1454,6 +1501,8 @@ for (let l2Round = 1; l2Round <= P.maxL2Loops; l2Round++) {
     { key: 'gate', r: gate },
     { key: 'integration', r: integ },
   ]
+  const owned = ownershipOffenders(gate && gate.ownedTouches)
+  if (owned.length) return { verdict: 'DECISION-NEEDED', at: 'gate-check:ownership', decision: 'lane commit(s) touched conductor-owned paths (ruling 1): ' + owned.map((t) => t.sha.slice(0, 7) + ' ' + t.title).join('; ') + ' — conductor drops or adopts each (add adopted SHAs to args.conductorCommits)', findings: (gate && gate.findings) || [], cascade: cascadeStats }
   const dec = both.find((x) => x.r && x.r.verdict === 'DECISION')
   if (dec) return { verdict: 'DECISION-NEEDED', at: 'gate-check:' + dec.key, decision: dec.r.decision, findings: dec.r.findings, cascade: cascadeStats }
   const failed = both.filter((x) => !x.r || x.r.verdict === 'FAIL')
@@ -1472,7 +1521,7 @@ for (let l2Round = 1; l2Round <= P.maxL2Loops; l2Round++) {
     'Gate-check',
     l2Round,
     findings,
-    BRIEF + '\n\nYou are the L3 FIXER (Sonnet). Apply MINIMAL fixes for these verified L2 findings, keep tests pinned, re-run offline gates to green, and land the fix as a FOLLOW-UP COMMIT — FIXERS-NEVER-AMEND (registry invariant, 2026-08-03): git commit --amend and --no-verify are FORBIDDEN in fixer sessions regardless of branch publish state or apparent authorship; the phase commit belongs to the implementer or a prior stage, and a fixer that believes only an amend can work STOPS and reports instead. A predecessor attempt may have left commits or uncommitted state: inspect git status and the branch reflog before acting; commits from prior stages belong to this workflow — never rewrite them. Scope-owned docs are PART OF THE DELIVERABLE — sync them in the same follow-up commit (a code fix with stale docs is an incomplete fix; three review failures in the biome sprint were docs-drift).\n' + JSON.stringify(findings, null, 2) + RULING,
+    BRIEF + '\n\n' + OWNED_NOTE + 'You are the L3 FIXER (Sonnet). Apply MINIMAL fixes for these verified L2 findings, keep tests pinned, re-run offline gates to green, and land the fix as a FOLLOW-UP COMMIT — FIXERS-NEVER-AMEND (registry invariant, 2026-08-03): git commit --amend and --no-verify are FORBIDDEN in fixer sessions regardless of branch publish state or apparent authorship; the phase commit belongs to the implementer or a prior stage, and a fixer that believes only an amend can work STOPS and reports instead. A predecessor attempt may have left commits or uncommitted state: inspect git status and the branch reflog before acting; commits from prior stages belong to this workflow — never rewrite them. Scope-owned docs are PART OF THE DELIVERABLE — sync them in the same follow-up commit (a code fix with stale docs is an incomplete fix; three review failures in the biome sprint were docs-drift).\n' + JSON.stringify(findings, null, 2) + RULING,
   )
   // freeze-queue item j: a fixer DECISION is READ, not discarded — a Sonnet-tier fixer
   // raising a material question halts the phase for the conductor (a haiku-tier
@@ -1569,7 +1618,7 @@ for (let round = 1; round <= P.maxReviewLoops && pendingLenses.length; round++) 
     'Review',
     round,
     findings,
-    BRIEF + '\n\nYou are the L3 FIXER (Sonnet). Apply MINIMAL fixes for these verified review findings, keep gates green, and land the fix as a FOLLOW-UP COMMIT — FIXERS-NEVER-AMEND (registry invariant, 2026-08-03): git commit --amend and --no-verify are FORBIDDEN in fixer sessions regardless of branch publish state or apparent authorship; if you believe only an amend can work, STOP and report instead. A predecessor attempt may have left commits or uncommitted state: inspect git status and the branch reflog before acting; commits from prior stages belong to this workflow — never rewrite them. Scope-owned docs are PART OF THE DELIVERABLE — sync them in the same follow-up commit (a code fix with stale docs is an incomplete fix).\n' + JSON.stringify(findings, null, 2) + RULING,
+    BRIEF + '\n\n' + OWNED_NOTE + 'You are the L3 FIXER (Sonnet). Apply MINIMAL fixes for these verified review findings, keep gates green, and land the fix as a FOLLOW-UP COMMIT — FIXERS-NEVER-AMEND (registry invariant, 2026-08-03): git commit --amend and --no-verify are FORBIDDEN in fixer sessions regardless of branch publish state or apparent authorship; if you believe only an amend can work, STOP and report instead. A predecessor attempt may have left commits or uncommitted state: inspect git status and the branch reflog before acting; commits from prior stages belong to this workflow — never rewrite them. Scope-owned docs are PART OF THE DELIVERABLE — sync them in the same follow-up commit (a code fix with stale docs is an incomplete fix).\n' + JSON.stringify(findings, null, 2) + RULING,
   )
   if (revFx.fix && revFx.fix.status === 'DECISION') return { verdict: 'DECISION-NEEDED', at: 'review:fixer', decision: revFx.fix.decision, findings: findings, rounds: roundsSummary, cascade: cascadeStats }
   revPending = { entry: revFx.entry, keys: failed.map((x) => x.lens.key) }
@@ -1580,7 +1629,7 @@ for (let round = 1; round <= P.maxReviewLoops && pendingLenses.length; round++) 
 phase('LocalCR')
 const cr = await agent(
   BRIEF +
-    '\n\nYou are the LOCAL CODE-REVIEW agent (fresh context). Run the local CodeRabbit review (/coderabbit:code-review or `coderabbit review --plain`) on the phase diff, at most ' + P.maxCrLoops + ' loops:\n' +
+    '\n\n' + OWNED_NOTE + 'You are the LOCAL CODE-REVIEW agent (fresh context). Run the local CodeRabbit review (/coderabbit:code-review or `coderabbit review --plain`) on the phase diff, at most ' + P.maxCrLoops + ' loops:\n' +
     '- APPLY zero-behavior-risk quick-wins as FOLLOW-UP COMMITS on the phase branch (FIXERS-NEVER-AMEND: no git commit --amend, no --no-verify; keep gates green).\n' +
     '- REJECT false positives with empirical evidence (known FP: camelCase Zod-schema naming — AGX convention).\n' +
     '- DEFER heavy/behavior-risk items with a one-line ticket recommendation each.\n' +
@@ -1608,6 +1657,7 @@ const pub = await agent(
         RULING
     : BRIEF +
         '\n\nYou are the PUBLISH agent (fresh context, distinct from all reviewers). Stateful steps, in order:\n' +
+        '0. GATES BEFORE SUBMIT (ship-it semantics, conductor fix 2026-09-20 — a bare submit is a BLOCKED verdict here): verify `git status --porcelain` is empty; run the offline gate verbatim: `' + G.offline + '`; run the exit gate via the deterministic runner `' + RUNNER + ' --cmd ' + JSON.stringify(G.exit) + '` and relay its ENTIRE JSON in your exitGate field; ' + (G.liveRequired ? 'run the live gate `' + G.live + '` and record {cmd, exitCode, tail} in liveGate (HR-2: one container stack at a time); ' : 'the live gate is not required for this phase (record liveGate exitCode 0 with tail "not required"); ') + 'if ANY of these is red or the runner does not certify the current tip, do NOT submit — return crStatus FAILED with the outputs in notes.\n' +
         '1. `gt submit --' + P.submitMode + ' --no-interactive` for ' + PH.branch + '.\n' +
         '2. gt --no-interactive leaves the PR body as the empty template → fill it via `gh api --method PATCH .../pulls/<N> -F body=@file` (summary, Linear ref ' + (PH.issue || '') + ', test plan).\n' +
         '3. Stacked PRs need a trigger: post `@coderabbitai review`.\n' +
@@ -1630,6 +1680,14 @@ const pub = await agent(
   },
 )
 if (!pub) return { verdict: 'BLOCKED', at: 'publish', reason: 'publish agent died' }
+if (P.publishMode !== 'defer') {
+  // GATES-BEFORE-SUBMIT teeth: the engine, not the agent, refuses a publish record
+  // without a certifying exit gate at the published tip (and a green live gate
+  // when required). Measured 2026-09-20: p2 PR #287 was submitted with both unrun.
+  const pubGateBlock = exitGateBlockReason(pub.exitGate, pub.tip, G.exit)
+  if (pubGateBlock) return { verdict: 'BLOCKED', at: 'publish:exit-gate', reason: pubGateBlock, publish: pub, phase: PH.id, branch: PH.branch, cascade: cascadeStats }
+  if (G.liveRequired && !(pub.liveGate && pub.liveGate.exitCode === 0)) return { verdict: 'BLOCKED', at: 'publish:live-gate', reason: 'live gate missing or nonzero before submit', publish: pub, phase: PH.id, branch: PH.branch, cascade: cascadeStats }
+}
 log(
   P.publishMode === 'defer'
     ? 'phase ' + PH.id + ' CERTIFIED (local, no PR) — tip ' + pub.tip + ' on ' + pub.branch
@@ -1652,6 +1710,7 @@ const val = await agent(
         '7. DIVERGENCE RECONCILIATION: re-test EVERY Phase-1 impl divergence below against the DELIVERED tip by reading the code — never trust the report text. Return reconciledDivergences as [{text, status}] with status RESOLVED-BY-FIXER(<7-char sha>) or STILL-OPEN; only STILL-OPEN items become conductor rulings. Impl divergences to reconcile: ' + JSON.stringify(impl.divergences || []) + '\n' +
         '8. STOP-CLASS SCAN: if any reconciled divergence or your own checks reveal a dirty tree, foreign or uncommitted files, or a wrong-checkout state, the verdict CANNOT be VALIDATED — return FAIL carrying it as the finding. GREEN and a STOP-class condition are mutually exclusive.\n' +
         '9. RULING ARTIFACT DUTIES: if a CONDUCTOR RULING is attached below, verify every clause of it that names a publish-time artifact (doc, ticket — there is no PR body in defer mode) is PRESENT on that artifact — quote the artifact excerpt as evidence; an absent duty is a FAIL finding.\n' +
+        OWNERSHIP_STEP.replace('- OWNERSHIP', '9b. OWNERSHIP') +
         '10. FIX DELEGATIONS (cascade): if your verdict is FAIL, ALSO emit delegations — bounded work packets [{tier, files, task, constraints, acceptance}]: tier haiku for mechanical file-local corrections, sonnet for semantic/integration repair. The conductor dispatches them on resume; your judgment must land as finite contracts, not prose. Empty when VALIDATED.\n' +
         'Verdict VALIDATED only if every non-skipped check passes with evidence; any failed check → FAIL with findings.' +
         RULING
@@ -1666,6 +1725,7 @@ const val = await agent(
         '7. DIVERGENCE RECONCILIATION: re-test EVERY Phase-1 impl divergence below against the DELIVERED tip by reading the code — never trust the report text. Return reconciledDivergences as [{text, status}] with status RESOLVED-BY-FIXER(<7-char sha>) or STILL-OPEN; only STILL-OPEN items become conductor rulings. Impl divergences to reconcile: ' + JSON.stringify(impl.divergences || []) + '\n' +
         '8. STOP-CLASS SCAN: if any reconciled divergence or your own checks reveal a dirty tree, foreign or uncommitted files, or a wrong-checkout state, the verdict CANNOT be VALIDATED — return FAIL carrying it as the finding. GREEN and a STOP-class condition are mutually exclusive.\n' +
         '9. RULING ARTIFACT DUTIES: if a CONDUCTOR RULING is attached below, verify every clause of it that names a publish-time artifact (PR body, doc, ticket) is PRESENT on that artifact — quote the artifact excerpt as evidence; an absent duty is a FAIL finding.\n' +
+        OWNERSHIP_STEP.replace('- OWNERSHIP', '9b. OWNERSHIP') +
         '10. FIX DELEGATIONS (cascade): if your verdict is FAIL, ALSO emit delegations — bounded work packets [{tier, files, task, constraints, acceptance}]: tier haiku for mechanical file-local corrections, sonnet for semantic/integration repair. The conductor dispatches them on resume; your judgment must land as finite contracts, not prose. Empty when VALIDATED.\n' +
         'Verdict VALIDATED only if every non-skipped check passes with evidence; any failed check → FAIL with findings.' +
         RULING,
@@ -1674,6 +1734,10 @@ const val = await agent(
 if (!val) return { verdict: 'BLOCKED', at: 'validate', reason: 'validator died', publish: pub }
 if (val.verdict === 'FAIL') {
   return { verdict: 'BLOCKED', at: 'validate', findings: val.findings || [], evidence: val.evidence, delegations: val.delegations || [], publish: pub, phase: PH.id, branch: PH.branch, cascade: cascadeStats }
+}
+const valOwned = ownershipOffenders(val.ownedTouches)
+if (valOwned.length) {
+  return { verdict: 'BLOCKED', at: 'validate:ownership', reason: 'commit(s) outside args.conductorCommits touched conductor-owned paths: ' + valOwned.map((t) => t.sha.slice(0, 7) + ' ' + t.title).join('; '), publish: pub, phase: PH.id, branch: PH.branch, cascade: cascadeStats }
 }
 // the SUBMITTED transition is gated on machine-produced exit-gate evidence
 // certifying the PUBLISHED tip — a VALIDATED verdict with missing, stale-tip,
