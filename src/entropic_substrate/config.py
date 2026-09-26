@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 import yaml
 
+from entropic_substrate.paths import RepoLayoutError, repo_root
+
 __all__ = [
     "E15_PREREGISTRATIONS",
     "Config",
@@ -375,12 +377,17 @@ def load_config(path: str | Path, overlay: Mapping[str, Any] | None = None) -> C
 def configs_dir() -> Path:
     """Locate the repository ``configs/`` directory.
 
-    Works both from a source checkout (``src/entropic_substrate/config.py`` ->
-    ``../../configs``) and from an installed package sitting next to a
-    ``configs/`` folder in the current working directory.
+    Works both from a source checkout (layout-invariant repo-root resolution
+    via ``entropic_substrate.paths.repo_root()`` -- E-3/DN-8, replacing the
+    prior ``Path(__file__).resolve().parents[2]`` depth anchor) and from an
+    installed package sitting next to a ``configs/`` folder in the current
+    working directory.
     """
-    candidate = Path(__file__).resolve().parents[2] / "configs"
-    if candidate.is_dir():
+    try:
+        candidate = repo_root() / "configs"
+    except RepoLayoutError:
+        candidate = None
+    if candidate is not None and candidate.is_dir():
         return candidate
     cwd_candidate = Path.cwd() / "configs"
     if cwd_candidate.is_dir():

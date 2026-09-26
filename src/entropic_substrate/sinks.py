@@ -41,6 +41,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from entropic_substrate.config import Config
 from entropic_substrate.logging import logger
+from entropic_substrate.paths import RepoLayoutError, repo_root
 from entropic_substrate.tracking_contracts import (
     ExtractedMetrics,
     LegacyMetricExtractor,
@@ -130,16 +131,23 @@ def _default_enwik8_dvc_pointer() -> Path:
     """Resolve the enwik8 DVC pointer's default location.
 
     Anchored the same way as ``entropic_substrate.config.configs_dir()``
-    (``__file__`` parents first: src/entropic_substrate/sinks.py -> repo
-    root, same depth as config.py) so the pointer resolves regardless of
-    the caller's CWD, falling back to the plain CWD-relative candidate this
-    constant carried before if the anchored one is not a file. Stays
-    best-effort by construction either way: build_sink's later ``.exists()``
-    check treats a miss on both candidates as an absent pointer, not a
-    startup failure.
+    (layout-invariant repo-root resolution via
+    ``entropic_substrate.paths.repo_root()`` -- E-3/DN-8, replacing the
+    prior ``Path(__file__).resolve().parents[2]`` depth anchor) so the
+    pointer resolves regardless of the caller's CWD, falling back to the
+    plain CWD-relative candidate this constant carried before if the
+    anchored one is not a file. Stays best-effort by construction either
+    way: build_sink's later ``.exists()`` check treats a miss on both
+    candidates as an absent pointer, not a startup failure. The resolver
+    call is guarded so that a ``RepoLayoutError`` (never expected in a
+    normal installed checkout) cannot turn this MODULE-IMPORT-TIME call
+    (``_ENWIK8_DVC_POINTER`` below) into a raising path.
     """
-    anchored = Path(__file__).resolve().parents[2] / "data" / "enwik8.dvc"
-    if anchored.is_file():
+    try:
+        anchored = repo_root() / "data" / "enwik8.dvc"
+    except RepoLayoutError:
+        anchored = None
+    if anchored is not None and anchored.is_file():
         return anchored
     return Path("data/enwik8.dvc")
 

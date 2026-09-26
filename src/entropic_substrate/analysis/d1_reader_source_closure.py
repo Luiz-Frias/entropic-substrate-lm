@@ -10,6 +10,8 @@ from importlib.util import resolve_name
 from pathlib import Path
 from typing import NoReturn
 
+from entropic_substrate.paths import source_root
+
 __all__ = [
     "D1_READER_ROOT_MODULES",
     "D1ReaderSourceClosureError",
@@ -259,6 +261,14 @@ def discover_d1_reader_source_files(
 
 
 def installed_d1_reader_source_files() -> tuple[D1ReaderSourceFile, ...]:
-    """Discover the closure from the installed package's real source tree."""
-    source_root = Path(__file__).resolve().parents[2]
-    return discover_d1_reader_source_files(source_root, roots=D1_READER_ROOT_MODULES)
+    """Discover the closure from the installed package's real source tree.
+
+    Anchored on ``entropic_substrate.paths.source_root()`` (E-3/DN-8): the
+    directory directly containing the installed ``entropic_substrate``
+    package -- one level shallower than ``paths.repo_root()`` and NOT
+    interchangeable with it. ``_source_root()`` below hard-requires
+    ``<root>/entropic_substrate`` to be a real, non-symlink directory;
+    passing the repo root here would raise ``D1ReaderSourceClosureError``
+    for every caller.
+    """
+    return discover_d1_reader_source_files(source_root(), roots=D1_READER_ROOT_MODULES)

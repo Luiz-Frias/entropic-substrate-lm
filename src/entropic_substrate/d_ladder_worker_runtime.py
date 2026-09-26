@@ -18,6 +18,7 @@ from entropic_substrate.evidence.resource_provenance import (
     ResourceActivationRegistration,
 )
 from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.paths import source_root
 
 SOURCE_PREFIXES = (
     "src/entropic_substrate",
@@ -116,8 +117,17 @@ def verify_source_tree(root: Path, commit: str, git: _GitTree) -> None:
 def verify_worker_source(
     objects: D1TrainerMailboxObjectPort, request: RemoteLadderRequest, repo_root: Path
 ) -> None:
-    """Use bound Git evidence even for pilots; environment labels alone are insufficient."""
-    if Path(__file__).resolve().parent != (repo_root / "src/entropic_substrate").resolve():
+    """Use bound Git evidence even for pilots; environment labels alone are insufficient.
+
+    The comparison is layout-invariant (E-3/DN-8): the "actual" side is the
+    installed ``entropic_substrate`` package's own resolved location
+    (``entropic_substrate.paths.source_root()``), not this module's own
+    ``__file__`` depth, so relocating a copy of this module elsewhere does
+    not by itself make a legitimately bound tree read as unbound.
+    """
+    if (source_root() / "entropic_substrate").resolve() != (
+        repo_root / "src/entropic_substrate"
+    ).resolve():
         raise ValueError("worker is not executing the source tree selected for verification")
     bundle = request.registration_git_bundle
     if bundle is None:

@@ -10,6 +10,7 @@ from entropic_substrate.d1_operator_values import require_d1_pod_id
 from entropic_substrate.d1_predecessor_loader import verified_git_bundle
 from entropic_substrate.d_ladder_worker_runtime import measure_hardware, verify_source_tree
 from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.paths import source_root
 from entropic_substrate.sentence_prediction.capture import read_prepared_corpus
 from entropic_substrate.sentence_prediction.generation import run_probe_generation
 from entropic_substrate.sentence_prediction.journal import artifact_reference
@@ -22,6 +23,15 @@ from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
 
 
 def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[str, object]:
+    """Determine execution kind for a probe request.
+
+    The remote-worker guard is layout-invariant (E-3/DN-8): the "actual"
+    side is the installed ``entropic_substrate`` package's own resolved
+    location (``entropic_substrate.paths.source_root()``), not this
+    module's own ``__file__`` depth, so relocating a copy of this module
+    elsewhere does not by itself make a legitimately bound tree read as
+    unbound.
+    """
     precision = require_execution_precision()
     if request.profile.run_class == "local_tiny":
         return {
@@ -35,7 +45,7 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
         repo_root is None
         or request.code_bundle is None
         or request.code_commit is None
-        or Path(__file__).resolve().parent
+        or (source_root() / "entropic_substrate" / "sentence_prediction").resolve()
         != (repo_root / "src/entropic_substrate/sentence_prediction").resolve()
     ):
         raise ValueError("remote worker must execute its bound source tree")

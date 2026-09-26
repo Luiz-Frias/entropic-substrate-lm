@@ -14,10 +14,24 @@ own test function -- never a skip (house rule 1's false-green class).
 
 Retraction (house rule 4, MEASURED under .venv/bin/python 3.12.13): the
 brief's and the plan's "52-entry D1 closure manifest" figure is WRONG against
-this lane's tip. ``installed_d1_reader_source_files()`` returns 73 entries,
-not 52. This file pins 73, the measured value, and this docstring is the
-explicit retraction the ruling requires -- the 52 literal is not carried
-forward anywhere in this fixture.
+p0's tip. ``installed_d1_reader_source_files()`` returned 73 entries there,
+not 52.
+
+p1 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13, lane
+mythwave/p1-anchors): the count above is ALSO now wrong against THIS lane's
+tip. ``config.py`` gained a real, static ``import entropic_substrate.paths``
+(the new layout-invariant repo_root resolver, E-3/DN-8); ``paths.py`` is
+itself reachable from the D1 closure's roots through that one edge, so the
+closure grew 73 -> 74 members with ``entropic_substrate.paths`` the sole
+addition. This file pins 74, the measured value, and this paragraph is the
+explicit retraction the ruling requires -- the 73 literal is not carried
+forward anywhere in this fixture. p1 also re-pins the composed
+h-checkpoint-reader-v1 rows (COMPOSED VALUE ONLY, the label itself does not
+bump before p4): ``sentence_prediction/checkpoint.py::_reader_identity()``
+sweeps ``sentence_prediction/*.py`` by content, and this lane edited
+``worker_execution.py``'s anchor (still E-3/DN-8), changing its bytes and
+therefore every regime row's digest. ``_SOURCE_REGIME_TABLE`` is untouched:
+the source reader's fixed module tuple never included ``worker_execution``.
 """
 
 from __future__ import annotations
@@ -51,7 +65,8 @@ from entropic_substrate.sentence_prediction.checkpoint import (
 pytestmark = pytest.mark.unit
 
 # ---------------------------------------------------------------------------
-# Source-derived components (regime-free): frozen at p0, byte-exact.
+# Source-derived components (regime-free): frozen at p0, byte-exact -- except
+# the D1 closure count/digest below, re-pinned at p1 (see module docstring).
 # ---------------------------------------------------------------------------
 
 _FROZEN_SOURCE_READER_MODULES = (
@@ -67,9 +82,9 @@ _FROZEN_SOURCE_READER_MODULES = (
 _FROZEN_CHECKPOINT_FORMAT_VERSION = 1
 _FROZEN_TAU_ERAS = ("softplus", "temperature")
 
-_FROZEN_D1_CLOSURE_COUNT = 73
+_FROZEN_D1_CLOSURE_COUNT = 74
 _FROZEN_D1_CLOSURE_MANIFEST_DIGEST = (
-    "c66acd6ffa03e5d1dd457d9f7255b9550189b5349d984942367f2399f82c472b"
+    "e4917da4b6a2ad9aaef3249b85ce0317f7765d20b602669e95480cf91d5c404f"  # pragma: allowlist secret
 )
 
 _FROZEN_BYTE_CODEC_IDENTITY_LABEL = "identity-byte-v1"
@@ -91,11 +106,14 @@ _FROZEN_PERMUTED_BYTE_CODEC_CONSTRUCTION_DIGEST = (
 # ---------------------------------------------------------------------------
 
 _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
-    ("3.12.13", "2.13.0"): "42c7ac1087b0c9b1fdbe58d991458c3bf12c9c317fbe46543a44376c56b86cfe",
+    (
+        "3.12.13",
+        "2.13.0",
+    ): "5cef5371d10a6136ef466a7454efaecf1c0054ecd4fcdafacb1caf85343cff46",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "a0bf5cad38047cfaf165bda80cb67b4988525404245cff9cf882dd7bebba7ec0",  # pragma: allowlist secret
+    ): "cdf8cd5e7cecc5866f160c1776de78d0c09f7314a1e9b06a21e8251a872a57e6",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
@@ -128,7 +146,7 @@ class TestSourceDerivedComponentsFrozenAtP0:
     def test_tau_eras_are_frozen(self) -> None:
         assert _TAU_ERAS == _FROZEN_TAU_ERAS
 
-    def test_d1_closure_manifest_is_frozen_at_73_entries(self) -> None:
+    def test_d1_closure_manifest_is_frozen_at_74_entries(self) -> None:
         count, digest = _closure_manifest_digest()
         assert count == _FROZEN_D1_CLOSURE_COUNT
         assert digest == _FROZEN_D1_CLOSURE_MANIFEST_DIGEST
