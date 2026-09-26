@@ -238,7 +238,7 @@ def _argv_v2(launch: D1ExternalAnalysisLaunch) -> tuple[str, ...]:
         *_docker_prefix(launch),
         "python",
         "-m",
-        "entropic_substrate.analysis.d1_external_worker",
+        "entropic_substrate.ladder.review.d1_external_worker",
         "--request",
         "/d1/input/request.json",
         "--capture-root",

@@ -89,6 +89,22 @@ def _find_print_calls(path: Path) -> list[int]:
     return lines
 
 
+def test_print_allowlist_is_the_exact_frozen_ten_name_set() -> None:
+    assert len(occ.PRINT_ALLOWLIST) == 10
+    assert occ.PRINT_ALLOWLIST == {
+        "entropic_substrate.composition.capture_cli",
+        "entropic_substrate.composition.cli",
+        "entropic_substrate.composition.entrypoints.cli",
+        "entropic_substrate.composition.source_cli",
+        "entropic_substrate.composition.span_cli",
+        "entropic_substrate.composition.wiring.d1_probe_cli",
+        "entropic_substrate.composition.wiring.d_ladder_cli",
+        "entropic_substrate.composition.wiring.d_ladder_probe_cli",
+        "entropic_substrate.ladder.capture.reader.telemetry",
+        "entropic_substrate.ladder.review.d1_external_worker",
+    }
+
+
 def test_zero_bare_print_calls_in_landed_packages_outside_the_allowlist() -> None:
     files = _landed_py_files()
     assert files, (
@@ -103,6 +119,16 @@ def test_zero_bare_print_calls_in_landed_packages_outside_the_allowlist() -> Non
         for lineno in _find_print_calls(path):
             offenders.append(f"{mod}:{lineno}")
     assert not offenders, f"bare print( found outside the allowlist: {offenders}"
+
+
+def test_print_allowlist_orphan_detection_every_allowlisted_module_has_a_print() -> None:
+    """Mutation A guard (P13-OBS): an allowlisted module with zero print(
+    sites is an orphan -- the allowlist must never carry dead entries."""
+    files = {_module_dotted_name(p): p for p in _landed_py_files()}
+    orphans = [
+        mod for mod in occ.PRINT_ALLOWLIST if mod not in files or not _find_print_calls(files[mod])
+    ]
+    assert not orphans, f"allowlisted module(s) with no print( site: {orphans}"
 
 
 def test_print_ban_arm_subject_set_scans_every_landed_file_GREEN_control() -> None:
@@ -130,16 +156,32 @@ def _mapping_entrypoints() -> frozenset[str]:
 
 
 def test_entrypoint_partition_covers_all_seven_rows_with_at_least_two_conforming() -> None:
+    """P13-OBS (addendum 2), 2026-09-26: the `:139` equality against
+    ``tools/mapping.json``'s seven OLD-named rows is replaced by an
+    exact-name assertion on the two inlined sets -- `tools/mapping.json`
+    keeps its old-name keys as history (P13-MAPPING), never live addresses,
+    so it can no longer be compared directly against the LANDED partition.
+    The universe-size cross-check against the frozen file stays: it still
+    proves the partition below covers exactly as many entry points as the
+    frozen map ever named."""
     mapping_rows = _mapping_entrypoints()
     assert len(mapping_rows) == 7, (
         f"tools/mapping.json names {len(mapping_rows)} entrypoint:true row(s), expected 7 "
         "-- the partition below is defined over exactly seven rows"
     )
-    partitioned = occ.CONFORMING_ENTRYPOINTS | occ.NOT_YET_CONFORMED_ENTRYPOINTS
-    assert partitioned == mapping_rows, (
-        f"the conformance-config partition {sorted(partitioned)} does not match the real "
-        f"mapping.json entrypoint rows {sorted(mapping_rows)}"
-    )
+    assert occ.CONFORMING_ENTRYPOINTS == {
+        "entropic_substrate.composition.entrypoints.cli",
+        "entropic_substrate.ladder.run.worker_command",
+        "entropic_substrate.ladder.capture.reader.telemetry",
+    }
+    assert occ.NOT_YET_CONFORMED_ENTRYPOINTS == {
+        "entropic_substrate.composition.entrypoints.__main__",
+        "entropic_substrate.ladder.review.d1_external_worker",
+        "entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command",
+        "entropic_substrate.historical.d_ladder.d_ladder_worker_command",
+    }
+    assert set(occ.NOT_YET_CONFORMED_REASONS) == occ.NOT_YET_CONFORMED_ENTRYPOINTS
+    assert all(occ.NOT_YET_CONFORMED_REASONS.values()), "every NOT_YET reason must be non-empty"
     assert not (occ.CONFORMING_ENTRYPOINTS & occ.NOT_YET_CONFORMED_ENTRYPOINTS)
     assert len(occ.CONFORMING_ENTRYPOINTS) + len(occ.NOT_YET_CONFORMED_ENTRYPOINTS) == 7
     assert len(occ.CONFORMING_ENTRYPOINTS) >= 2
@@ -212,6 +254,15 @@ def _find_sink_construction_sites(path: Path) -> list[tuple[int, str]]:
         if name in occ.SINK_IMPLEMENTATION_CLASS_NAMES:
             sites.append((node.lineno, name))
     return sites
+
+
+def test_allowed_sink_construction_modules_is_the_exact_frozen_three_name_set() -> None:
+    assert len(occ.ALLOWED_SINK_CONSTRUCTION_MODULES) == 3
+    assert occ.ALLOWED_SINK_CONSTRUCTION_MODULES == {
+        "entropic_substrate.historical.e_series.field_pretrain",
+        "entropic_substrate.historical.e_series.train",
+        "entropic_substrate.ladder.capture.adapters.composite",
+    }
 
 
 def test_sink_construction_sites_resolve_to_the_single_construction_seam() -> None:

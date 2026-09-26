@@ -33,8 +33,8 @@ class PodLaunchRequest:
         if type(command) is not tuple or len(command) < 3 or command[:2] != ("python", "-m"):
             raise ValueError("provider command must invoke a pinned Python worker module")
         if command[2] not in {
-            "entropic_substrate.d1_trainer_mailbox_command",
-            "entropic_substrate.d_ladder_worker_command",
+            "entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command",
+            "entropic_substrate.historical.d_ladder.d_ladder_worker_command",
         }:
             raise ValueError("provider command must select a known scientific worker")
         if any(

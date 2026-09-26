@@ -632,8 +632,10 @@ _PACKET_READER_EXCLUDED_FUNCTIONS = {
     "read_d1_terminal_defect",
 }
 _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
-    "entropic_substrate.d1_",
-    "entropic_substrate.evidence.d1_",
+    # p13-sweep, B2 row 7 (P12-D5 cut, E-4 door): the two entries this tuple
+    # carried at the old prefix are rewritten to their landed addresses.
+    # They are pinned verbatim by tests/test_cli_surface.py's
+    # _FROZEN_LITERAL_SITES_PATH.
     "entropic_substrate.ladder.capture.reader.d1_",
     "entropic_substrate.ladder.capture.records.d1_",
 )
@@ -733,10 +735,11 @@ def build_reader(telemetry_source: str, *, source_path: Path | None = None) -> s
     ]
     ast.fix_missing_locations(tree)
     code = ast.unparse(tree)
-    code = code.replace(
-        "from entropic_substrate.logging import configure_logging, logger",
-        _LOGGING_SHIM,
-    )
+    # p13-sweep, B2 row 18: the old-spelling strip
+    # ("from entropic_substrate.logging import configure_logging, logger")
+    # retired as dead code -- no source under the retired namespace exists
+    # to produce that string any more. The landed spelling below is the
+    # only one any reader source can carry now.
     code = code.replace(
         "from entropic_substrate.kernel.runtime.logging import configure_logging, logger",
         _LOGGING_SHIM,
@@ -861,7 +864,8 @@ def main() -> int:
         "--telemetry",
         type=Path,
         default=None,
-        help="defaults to the real module behind entropic_substrate.telemetry, "
+        help="defaults to the real module behind "
+        "entropic_substrate.ladder.capture.reader.telemetry, "
         "resolved THROUGH the module (not a literal repo path) so it follows "
         "the sys.modules rebind to wherever the module actually lives "
         "(FOR-1524)",

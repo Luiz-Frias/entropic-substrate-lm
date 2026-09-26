@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_worker_request import request
 
-from entropic_substrate.d1_command_runner import D1BoundedProcessRunner
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.h_probe_launch import H0ProbeLaunch, parse_probe_launch
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
+from entropic_substrate.ladder.run.provider.d1_command_runner import D1BoundedProcessRunner
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
 
 pytestmark = pytest.mark.unit
 
@@ -93,7 +93,7 @@ def test_command_runs_bound_worker_without_ssh_or_shared_volume() -> None:
         "exec",
         "python",
         "-m",
-        "entropic_substrate.sentence_prediction.worker_command",
+        "entropic_substrate.ladder.run.worker_command",
         "run",
     ]
     worker_flags = dict(zip(worker[5::2], worker[6::2], strict=True))
@@ -192,7 +192,7 @@ def test_shell_composition_executes_once_and_preserves_existing_workspace(
     assert result.returncode == 0 and workspace.is_dir()
     assert workspace.stat().st_mode & 0o777 == 0o700
     worker = json.loads(result.stdout)
-    assert worker[:3] == ["-m", "entropic_substrate.sentence_prediction.worker_command", "run"]
+    assert worker[:3] == ["-m", "entropic_substrate.ladder.run.worker_command", "run"]
     assert worker[worker.index("--workspace-root") + 1] == str(workspace)
     retained = workspace / "forensic.txt"
     retained.write_text("must survive")

@@ -38,7 +38,7 @@ def bundle(
         "pyproject.toml": "[project]\nname='fixture'\nversion='0.1.0'\n",
         "uv.lock": "version = 1\n",
         ".dvc/config": "[core]\nremote=r2\n",
-        "src/entropic_substrate/sentence_prediction/worker_command.py": "raise SystemExit(0)\n",
+        "src/entropic_substrate/ladder/run/worker_command.py": "raise SystemExit(0)\n",
         "scripts/example.py": "print('never execute during extraction')\n",
         "private-not-runtime.txt": "must not be exported\n",
     }.items():
@@ -276,3 +276,42 @@ def test_internal_workspaces_remain_private_under_shared_umask(tmp_path: Path) -
         os.umask(original)
     assert stat.S_IMODE((root / "source").stat().st_mode) == 0o700
     assert stat.S_IMODE((root / "proof.git").stat().st_mode) == 0o700
+
+
+def _entrypoints_env() -> dict[str, str]:
+    """P13-BOOTSTRAP-PATH: entrypoints.env is READ AS A FILE, never through
+    os.environ (that is green only under `just` recipes' dotenv-load and
+    raises KeyError under the plain prek/pytest environment)."""
+    env_path = Path(__file__).resolve().parents[1] / "scripts" / "entrypoints.env"
+    values: dict[str, str] = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
+def test_required_h_worker_path_matches_entrypoints_env_h_worker_module() -> None:
+    """P13-BOOTSTRAP-PATH parity pin, RED-first: REQUIRED's worker path must
+    name the same module scripts/entrypoints.env's ENTRYPOINT_H_WORKER
+    value resolves to. The RED arm (recorded, 2026-09-26): before this
+    phase's edit, REQUIRED named
+    'src/entropic_substrate/sentence_prediction/worker_command.py' while
+    ENTRYPOINT_H_WORKER already named the landed dotted address
+    'entropic_substrate.ladder.run.worker_command' -- the two disagreed, and
+    this test failed loud on that disagreement rather than passing
+    vacuously (at the B1 tip, ENTRYPOINT_H_WORKER resolves through its shim
+    to the SAME file REQUIRED already named, which is why a naive
+    ``find_spec(old).origin`` comparison would have been vacuously green
+    there -- this pin compares the two SOURCES OF TRUTH directly instead,
+    by dotted-to-path derivation, never through find_spec)."""
+    dotted = _entrypoints_env()["ENTRYPOINT_H_WORKER"]
+    expected_path = "src/" + dotted.replace(".", "/") + ".py"
+    required_worker_paths = [p for p in bootstrap.REQUIRED if p.endswith("worker_command.py")]
+    assert required_worker_paths == [expected_path], (
+        f"REQUIRED names {required_worker_paths!r} but scripts/entrypoints.env's "
+        f"ENTRYPOINT_H_WORKER ({dotted!r}) resolves to {expected_path!r} -- "
+        "the base-image bootstrap and the pod entrypoint have drifted apart"
+    )

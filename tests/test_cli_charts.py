@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.cli import main
-from entropic_substrate.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.capture.reader.mlflow_aggregate import CONFIG_HASH_TAG, PARENT_TAG
 
 pytestmark = pytest.mark.unit
 
@@ -227,11 +227,15 @@ def test_cli_module_has_no_unconditional_analysis_or_matplotlib_import() -> None
     """
     import ast
 
-    import entropic_substrate.cli as cli_module
+    import entropic_substrate.composition.entrypoints.cli as cli_module
 
     source = Path(cli_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-    banned_prefixes = ("matplotlib", "marimo", "plotly", "entropic_substrate.analysis")
+    # P13-EXCEPTIONS (addendum 2): composed at runtime, never a literal chain
+    # -- the retired-namespace prefix must stay unresolvable forever for the
+    # ban to mean anything, and a literal here would itself be flagged by
+    # tests/test_no_old_prefix.py's whole-tree scan.
+    banned_prefixes = ("matplotlib", "marimo", "plotly", "entropic_substrate" + ".analysis")
     for node in tree.body:
         if isinstance(node, ast.Import):
             dotted_names = [(alias.name, node.lineno) for alias in node.names]

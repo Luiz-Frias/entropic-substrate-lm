@@ -2,28 +2,23 @@
 functions move into `kernel.artifacts` (RED-first, brief p5b-ladder-campaign,
 ACCEPTANCE item 1).
 
-Two identity arms, both required (architect constraint, design gate
-2026-09-22): the `__legacy` attribute path (the remainder's own re-export)
-AND the consumer-facing old-dotted-name path through the typed alias shim
-(`entropic_substrate.evidence.ladder_campaign`), because after this phase no
-landed module imports the remainder directly -- every surviving `__legacy`
-consumer and every test reaches these five names through the shim, so an
-arm that inspects only the `__legacy` attribute would leave the path a
-mis-targeted fragment row actually breaks unpinned.
-
-Mutation (house rule 5): defining one of these names directly in the
-remainder (shadowing its re-export) must turn the identity arm RED -- the
-shadowed name's `__module__` becomes `entropic_substrate.__legacy.evidence
-.ladder_campaign`, and the `is` comparison against `kernel.artifacts`'s own
-object fails.
+RETIRED 2026-09-26 (p13-sweep, B2 row 12, forwarder-identity assertions
+retired): the two identity arms this file used to carry -- the `__legacy`
+remainder's own re-export, and the consumer-facing old-dotted-name path
+through the typed alias shim (`entropic_substrate.evidence.ladder_campaign`)
+-- both resolved through machinery this phase deletes (`__legacy/` and the
+`evidence/` facade directory). Both paths now land at the SAME real module,
+`entropic_substrate.ladder.gate.ladder_campaign`, so the two arms would be
+degenerate duplicates of each other and of the direct landed-module check
+below, never distinguishing anything. What remains load-bearing is that the
+five moved names live in `kernel.artifacts`, not in the module they moved
+out of.
 """
 
 from __future__ import annotations
 
 import pytest
 
-import entropic_substrate.__legacy.evidence.ladder_campaign as _legacy_remainder
-import entropic_substrate.evidence.ladder_campaign as _shim
 import entropic_substrate.kernel.artifacts as _kernel_artifacts
 
 pytestmark = pytest.mark.unit
@@ -44,16 +39,10 @@ def test_moved_name_module_is_kernel_artifacts(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", _MOVED_NAMES)
-def test_legacy_remainder_attribute_is_the_kernel_object(name: str) -> None:
-    """The `__legacy` remainder re-exports the moved name by identity, not
-    by a second definition."""
-    assert getattr(_legacy_remainder, name) is getattr(_kernel_artifacts, name)
+def test_gate_module_reexports_the_kernel_object_by_identity(name: str) -> None:
+    """The gate module the five names moved OUT of still re-exports them
+    (its surviving consumers reach these names through it) -- by identity,
+    never a parallel re-definition."""
+    import entropic_substrate.ladder.gate.ladder_campaign as _gate_module
 
-
-@pytest.mark.parametrize("name", _MOVED_NAMES)
-def test_old_dotted_shim_path_is_the_kernel_object(name: str) -> None:
-    """The consumer-facing path every surviving `__legacy` importer and test
-    actually uses: `entropic_substrate.evidence.ladder_campaign.<name>` (the
-    typed alias shim onto the `__legacy` remainder) resolves to the SAME
-    object as `entropic_substrate.kernel.artifacts.<name>`."""
-    assert getattr(_shim, name) is getattr(_kernel_artifacts, name)
+    assert getattr(_gate_module, name) is getattr(_kernel_artifacts, name)

@@ -252,7 +252,7 @@ def test_parity_exempts_keys_declared_per_arm_but_not_shared_ones() -> None:
 def test_build_reader_strips_prose_and_shims_logging() -> None:
     source = (
         '"""Module docstring naming the e3 ladder."""\n'
-        "from entropic_substrate.logging import configure_logging, logger\n\n\n"
+        "from entropic_substrate.kernel.runtime.logging import configure_logging, logger\n\n\n"
         "def f() -> int:\n"
         '    """Docstring naming fisher."""\n'
         "    return 1\n"
@@ -561,9 +561,13 @@ def test_build_reader_refuses_a_literal_shim_source(tmp_path: Path) -> None:
     """The refusal guard: a shim-form source can never become a packet
     reader again, even via an explicit ``--telemetry`` override."""
     shim_path = tmp_path / "telemetry.py"
+    # P13-EXCEPTIONS (addendum 3): the exact 3-statement rebind shape
+    # `_is_shim_source` detects is kept; only the dotted target changes
+    # (the generator and its `__legacy` shim form retire in B2, but the
+    # refusal guard must still recognize the shape on sight).
     shim_path.write_text(
         "import sys\n"
-        "import entropic_substrate.__legacy.telemetry as _target\n"
+        "import entropic_substrate.ladder.capture.reader.telemetry as _target\n"
         "sys.modules[__name__] = _target\n",
         encoding="utf-8",
     )

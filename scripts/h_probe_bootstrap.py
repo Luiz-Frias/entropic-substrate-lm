@@ -29,7 +29,7 @@ REQUIRED = {
     "pyproject.toml",
     "uv.lock",
     ".dvc/config",
-    "src/entropic_substrate/sentence_prediction/worker_command.py",
+    "src/entropic_substrate/ladder/run/worker_command.py",
 }
 
 

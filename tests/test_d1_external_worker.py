@@ -14,54 +14,56 @@ from typing import NamedTuple, cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_external_analysis_control as control_module
-import entropic_substrate.analysis.d1_external_worker as worker_module
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+import entropic_substrate.ladder.review.d1_external_analysis_control as control_module
+import entropic_substrate.ladder.review.d1_external_worker as worker_module
 from d1_launch_admission_fixtures import family
-from entropic_substrate.analysis.d1_blind_aliases import (
-    D1InMemoryAliasCustodyFake,
-    prepare_d1_blind_aliases,
-)
-from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
-from entropic_substrate.analysis.d1_external_analysis_codec import (
-    D1ExternalAnalysisRequestEnvelopeV2,
-    build_d1_external_analysis_request_v2,
-    decode_d1_external_analysis_worker_response_v2,
-    encode_d1_external_analysis_request_v2,
-)
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    decode_d1_external_analysis_input_control,
-)
-from entropic_substrate.analysis.d1_external_worker import (
-    D1ExternalWorkerArtifacts,
-    D1ExternalWorkerError,
-    run_d1_external_worker,
-)
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
-    bind_d1_machine_analysis_contract,
-)
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
-    verify_d1_machine_analysis,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     serialize_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
-from entropic_substrate.evidence.d1_capture_service import D1HeterogeneousCaptureReceipt
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPointerIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_service import (
+    D1HeterogeneousCaptureReceipt,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     serialize_decision_contract,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.review.d1_blind_aliases import (
+    D1InMemoryAliasCustodyFake,
+    prepare_d1_blind_aliases,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import D1IsolationRequest
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
+    D1ExternalAnalysisRequestEnvelopeV2,
+    build_d1_external_analysis_request_v2,
+    decode_d1_external_analysis_worker_response_v2,
+    encode_d1_external_analysis_request_v2,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    decode_d1_external_analysis_input_control,
+)
+from entropic_substrate.ladder.review.d1_external_worker import (
+    D1ExternalWorkerArtifacts,
+    D1ExternalWorkerError,
+    run_d1_external_worker,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
+    bind_d1_machine_analysis_contract,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
+    verify_d1_machine_analysis,
 )
 
 from .test_d1_analysis_api import _decision
@@ -73,6 +75,24 @@ from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 pytestmark = pytest.mark.unit
 
 
+def _find_spec_is_unresolvable(dotted: str) -> bool:
+    """P13-FIND-SPEC-ARM (regime-independent): a retired module is
+    'unresolvable' iff ``find_spec`` returns ``None`` OR raises
+    ``ModuleNotFoundError`` whose ``.name`` is the retired parent package.
+    A bare ``find_spec(old) is None`` is NOT regime-independent: in a
+    checkout carrying ignored ``__pycache__`` residue for a deleted
+    package, the parent resolves as a PEP 420 namespace portion and
+    ``find_spec`` on the child returns ``None`` either way -- but in a
+    clean clone (CI) the parent import raises ``ModuleNotFoundError``
+    instead. Both outcomes must count as 'gone'."""
+    parent = dotted.rsplit(".", 1)[0]
+    try:
+        spec = importlib.util.find_spec(dotted)
+    except ModuleNotFoundError as exc:
+        return exc.name == parent
+    return spec is None
+
+
 def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
     """Guard-teeth (brief table row 5): standing a hardcoded identity tuple
     in for the retired ``D1_READER_SOURCE_MODULES`` symbol, rather than
@@ -80,7 +100,11 @@ def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
     RED -- the ``hasattr`` form catches a hardcoded stand-in the way a value
     equality check would not (any tuple, however constructed, would satisfy
     an equality assertion against the old 74-entry set)."""
-    assert importlib.util.find_spec("entropic_substrate.analysis.d1_reader_source_closure") is None
+    # Composed at runtime (P13-EXCEPTIONS addendum 2): the retired module's
+    # dotted name must stay unresolvable forever; a literal chain here would
+    # itself be flagged by tests/test_no_old_prefix.py's whole-tree scan.
+    retired_module = "entropic_substrate" + ".analysis.d1_reader_source_closure"
+    assert _find_spec_is_unresolvable(retired_module)
     assert not hasattr(control_module, "D1_READER_SOURCE_MODULES")
 
 
@@ -162,8 +186,8 @@ def test_review_ring_imports_from_a_relocated_tree(
     ``RuntimeError`` (the relocated copy's ``parents[3]`` is not ``src``);
     reverting turns it back GREEN."""
     control, worker = _relocated_review_ring
-    assert control.__name__ != "entropic_substrate.analysis.d1_external_analysis_control"
-    assert worker.__name__ != "entropic_substrate.analysis.d1_external_worker"
+    assert control.__name__ != "entropic_substrate.ladder.review.d1_external_analysis_control"
+    assert worker.__name__ != "entropic_substrate.ladder.review.d1_external_worker"
     real_dir = tmp_path / "real-reader-root"
     real_dir.mkdir()
     resolved = worker._real_directory(real_dir, code="reader_root")

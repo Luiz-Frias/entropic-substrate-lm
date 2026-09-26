@@ -87,7 +87,7 @@ def find_parent_run(client: Any, experiment_id: str, config_hash: str) -> Any | 
     if not _CONFIG_HASH_RE.fullmatch(config_hash):
         msg = (
             "config_hash must be exactly 12 lowercase hex chars "
-            f"(entropic_substrate.sinks.config_hash contract); got {config_hash!r}"
+            f"(entropic_substrate.ladder.capture.reader.sinks.config_hash contract); got {config_hash!r}"
         )
         raise ValueError(msg)
     found = client.search_runs(

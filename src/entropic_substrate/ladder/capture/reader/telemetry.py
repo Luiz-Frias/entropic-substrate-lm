@@ -476,7 +476,7 @@ def read_seed(path: str | Path) -> int:
 # ------------------------------------------------------------------ module CLI
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m entropic_substrate.telemetry",
+        prog="python -m entropic_substrate.ladder.capture.reader.telemetry",
         description="Validated reads of results/*.jsonl (used by scripts/run_ladder.sh)",
     )
     sub = parser.add_subparsers(dest="command", required=True)

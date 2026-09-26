@@ -32,20 +32,17 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.__legacy import (
-    d1_calibration,
-    d1_training_step,
-    d1_training_step_records,
-)
-from entropic_substrate.__legacy.d1_calibration_records import (
+from entropic_substrate.ladder.capture.records import d1_training_step_records
+from entropic_substrate.ladder.capture.records.d1_calibration_records import (
     D1BaselineCalibrationAttestation,
 )
-from entropic_substrate.__legacy.d1_training_step_records import (
+from entropic_substrate.ladder.capture.records.d1_training_step_records import (
     D1ComponentGradientEvidence,
     D1GradientEvidenceKind,
     D1GradientReachability,
     D1TrainStepResult,
 )
+from entropic_substrate.ladder.run.trainer import d1_calibration, d1_training_step
 
 pytestmark = pytest.mark.unit
 
