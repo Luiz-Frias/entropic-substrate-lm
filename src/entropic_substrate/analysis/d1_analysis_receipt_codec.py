@@ -38,9 +38,19 @@ _FILING_BINDING_FIELDS = frozenset(
         "isolation_attestation_sha256",
         "output_sha256",
         "preregistration_sha256",
-        "reader_sha256",
     }
 )
+# Exact wire key set for the receipt "implementation" object. RETRACTED
+# (house rule 4, measured 2026-09-20): _decode previously checked only
+# `type(...) is dict`, so the retired analysis_code_digest,
+# complete_reader_digest, defect_reader_digest and nested "readers" keys
+# (see D1AnalysisImplementationIdentity's docstring in
+# d1_execution_receipt.py) still parsed on the wire unrejected. Zero
+# persisted receipts carry them (brief Scope measurement, conductor grep
+# over docs/, data/, results/), so the compat window closes by
+# measurement rather than a version bump; d1-analysis-execution-receipt-v1
+# stays frozen.
+_IMPLEMENTATION_FIELDS = frozenset({"code_commit", "image_digest", "repository_digest"})
 
 
 def canonical_d1_analysis_receipt_bytes(value: object) -> bytes:
@@ -66,11 +76,18 @@ def _require_sha256(value: object, *, label: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class D1AnalysisFilingBindings:
-    """Exact filed-byte identities issued with an externally verified analysis."""
+    """Exact filed-byte identities issued with an externally verified analysis.
+
+    RETRACTED (house rule 4, measured 2026-09-20): ``reader_sha256`` bound
+    the D1 reader-source provenance closure's manifest bytes, retired this
+    phase alongside the closure module itself. Zero persisted filings
+    (checked via ``git grep`` over tracked source; the field is base64-nested
+    and invisible to a plaintext scan of ``results/``) depended on this
+    binding for anything other than exercising the now-removed closure.
+    """
 
     capture_manifest_sha256: str
     preregistration_sha256: str
-    reader_sha256: str
     isolation_attestation_sha256: str
     output_sha256: str
 
@@ -78,7 +95,6 @@ class D1AnalysisFilingBindings:
         for name in (
             "capture_manifest_sha256",
             "preregistration_sha256",
-            "reader_sha256",
             "isolation_attestation_sha256",
             "output_sha256",
         ):
@@ -91,7 +107,6 @@ class D1AnalysisFilingBindings:
             "isolation_attestation_sha256": self.isolation_attestation_sha256,
             "output_sha256": self.output_sha256,
             "preregistration_sha256": self.preregistration_sha256,
-            "reader_sha256": self.reader_sha256,
         }
 
 
@@ -123,7 +138,6 @@ def _filing_bindings(value: object) -> D1AnalysisFilingBindings:
         return D1AnalysisFilingBindings(
             capture_manifest_sha256=cast(str, root["capture_manifest_sha256"]),
             preregistration_sha256=cast(str, root["preregistration_sha256"]),
-            reader_sha256=cast(str, root["reader_sha256"]),
             isolation_attestation_sha256=cast(str, root["isolation_attestation_sha256"]),
             output_sha256=cast(str, root["output_sha256"]),
         )
@@ -168,8 +182,7 @@ def _decode(payload: str) -> dict[str, object]:
         raise ValueError(
             "D1 analysis execution receipt non-filing result cannot carry filing bindings"
         )
-    if type(root["implementation"]) is not dict:
-        raise ValueError("D1 analysis execution receipt implementation must be an object")
+    _object(root["implementation"], fields=_IMPLEMENTATION_FIELDS, label="implementation")
     if type(root["inputs"]) is not list or not root["inputs"]:
         raise ValueError("D1 analysis execution receipt inputs must be a nonempty array")
     if type(root["isolation"]) is not dict:

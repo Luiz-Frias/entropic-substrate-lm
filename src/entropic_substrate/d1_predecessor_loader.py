@@ -126,7 +126,7 @@ def load_d1_predecessor(
     catalog: tuple[D1LaunchProfile, ...] | None = None,
     git: D1FilingGitPort | None = None,
 ) -> FiledLadderGate:
-    """Hydrate capture, registration, fourteen filing roles, and persisted lifecycle.
+    """Hydrate capture, registration, thirteen filing roles, and persisted lifecycle.
 
     Declaration schema ``d1-predecessor-bundle-v1`` uses artifact references for
     filing_manifest, decision_contract, registered_design and lifecycle. It also

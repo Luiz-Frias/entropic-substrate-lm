@@ -1,4 +1,4 @@
-"""Production D1 narrative and exact fourteen-role filing assembly."""
+"""Production D1 narrative and exact thirteen-role filing assembly."""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def test_manifest_refuses_missing_duplicate_and_unsafe_materials() -> None:
                 (*materials[:-1], object()),
             )
         )
-    with pytest.raises(ValueError, match="exactly fourteen"):
+    with pytest.raises(ValueError, match="exactly thirteen"):
         assemble_d1_filing_manifest(materials[:-1])
     with pytest.raises(ValueError, match="duplicate role"):
         assemble_d1_filing_manifest((*materials, materials[0]))

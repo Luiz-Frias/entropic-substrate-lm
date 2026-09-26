@@ -270,16 +270,6 @@ def _case(
     }
     prereg = b"registered design bytes\n"
     capture = _json(aggregate.manifest)
-    reader_manifest = {
-        "analysis_code_digest": "9" * 64,
-        "complete_reader": "reader.module.complete",
-        "modules": [
-            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
-        ],
-        "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": "reader.module.defect",
-    }
-    reader = _json(reader_manifest)
     isolation_manifest = {
         "execution_evidence": {"analysis_sha256": "6" * 64},
         "executor_kind": "external_enforced",
@@ -350,7 +340,6 @@ def _case(
             "preregistration": prereg,
             "raw_capture_manifest": b'{"wrong":true}' if mutation == "capture" else capture,
             "blinded_analysis": analysis,
-            "analysis_reader": reader,
             "analysis_isolation_attestation": isolation,
             "alias_reveal": reveal,
             "alias_commitment": commitment,
@@ -374,21 +363,12 @@ def _case(
                 "isolation_attestation_sha256": _sha(isolation),
                 "output_sha256": _sha(analysis),
                 "preregistration_sha256": _sha(prereg),
-                "reader_sha256": _sha(reader),
             },
             "filing_eligible": True,
             "implementation": {
-                "analysis_code_digest": reader_manifest["analysis_code_digest"],
-                "readers": {
-                    "complete": {
-                        "identity": "reader.module.complete",
-                        "sha256": "7" * 64,
-                    },
-                    "terminal_defect": {
-                        "identity": "reader.module.defect",
-                        "sha256": "7" * 64,
-                    },
-                },
+                "code_commit": "1" * 40,
+                "image_digest": "sha256:" + "4" * 64,
+                "repository_digest": "9" * 64,
             },
             "inputs": [{"sha256": "8" * 64}],
             "isolation": isolation_manifest,
@@ -401,13 +381,6 @@ def _case(
             "analysis": analysis_manifest,
             "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
             "bindings": analysis_manifest["bindings"],
-            "validated_readers": {
-                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
-                "terminal_defect": {
-                    "identity": "reader.module.defect",
-                    "sha256": "7" * 64,
-                },
-            },
         }
     )
     payloads["review_packet"] = _json(review_packet)
@@ -475,7 +448,6 @@ def _case(
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),

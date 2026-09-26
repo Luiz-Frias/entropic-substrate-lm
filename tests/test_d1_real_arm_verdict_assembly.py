@@ -78,7 +78,7 @@ def _lineage(
         analysis=verified,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(result.request.input_control.reader_source),
+        implementation=_implementation(),
         isolation=result.isolation,
     )
     evidence = tuple(

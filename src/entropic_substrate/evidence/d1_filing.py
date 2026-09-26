@@ -16,6 +16,12 @@ from entropic_substrate.evidence.lifecycle import (
     ContentHash,
 )
 
+# RETRACTED (house rule 4, measured 2026-09-20): this tuple carried an
+# "analysis_reader" role, the filed D1 reader-source provenance closure
+# manifest. The closure is retired this phase; `git grep` over tracked
+# source confirms zero remaining producers or consumers of that role once
+# it is dropped here (evidence/d1_filing_edges.py, d1_filing_application.py
+# and evidence/d1_filing_receipts.py drop it in the same commit).
 REQUIRED_D1_FILING_ARTIFACTS = (
     "narrative",
     "machine_verdict",
@@ -23,7 +29,6 @@ REQUIRED_D1_FILING_ARTIFACTS = (
     "raw_capture_manifest",
     "blinded_analysis",
     "analysis_receipt",
-    "analysis_reader",
     "analysis_isolation_attestation",
     "review_packet",
     "reviewer_prompt",

@@ -1,4 +1,4 @@
-"""Real-arm evidence assembles one exact fourteen-role filing preparation."""
+"""Real-arm evidence assembles one exact thirteen-role filing preparation."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _paths() -> D1FilingArtifactPaths:
     )
 
 
-def test_preparation_derives_exact_fourteen_role_filing_from_attested_lineage(
+def test_preparation_derives_exact_thirteen_role_filing_from_attested_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,7 +210,6 @@ def _filing_git(prepared, revisions: D1FilingRevisions) -> FakeGit:
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),

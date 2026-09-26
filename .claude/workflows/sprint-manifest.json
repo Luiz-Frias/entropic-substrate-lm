@@ -175,7 +175,7 @@
       ],
       "parallel_group": null,
       "status": "active",
-      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge. CONDUCTOR RULING 2026-09-19: tools/mapping.json enters the touch set for exactly one added row (entropic_substrate.paths -> kernel.runtime); p0's mapping-coverage predicate is generalized to nodes outside landed layers modulo a __legacy. prefix, so no later phase needs the mapping for landed-layer modules. AMENDED 2026-09-19: p1 re-pins both _CHECKPOINT_REGIME_TABLE rows (worker_execution.py is swept by the checkpoint reader); CI row via tools/regime_rows.py. LAUNCHED 2026-09-19 off mythwave/p0-contract-pin @ 013e8fd.",
+      "notes": "Rewrites five depth-derived path sites onto one resolver anchored on the package __init__ (config.py:382, sinks.py:141, d1_reader_source_closure.py:263, d_ladder_worker_runtime.py:120, sentence_prediction/worker_execution.py:38 — the survey's phase-decomposition report (retained outside the repo)). Behaviour change to a guard, not structural (E-3/DN-8). Guard-teeth: point the resolver at a wrong root and both relocated-guard tests go RED — today NOTHING goes red (measured). Forced before p3 because the quarantine move breaks both pod source-tree guards silently. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to re-pin the D1 closure rows; serial rail, no parallel-group edge. CONDUCTOR RULING 2026-09-19: tools/mapping.json enters the touch set for exactly one added row (entropic_substrate.paths -> kernel.runtime); p0's mapping-coverage predicate is generalized to nodes outside landed layers modulo a __legacy. prefix, so no later phase needs the mapping for landed-layer modules. AMENDED 2026-09-19: p1 re-pins both _CHECKPOINT_REGIME_TABLE rows (worker_execution.py is swept by the checkpoint reader); CI row via tools/regime_rows.py. LAUNCHED 2026-09-19 off mythwave/p0-contract-pin @ 013e8fd. SUBMITTED 2026-09-20: draft PR #286 (base mythwave/p0-contract-pin) @ 101aba9, one resume; D1 closure count measured 74; status becomes done at merge.",
       "engine_mode": "arch"
     },
     {
@@ -207,6 +207,11 @@
           "name": "analysis/d1_reader_source_closure.py :: retired",
           "kind": "door",
           "frozen_after": true
+        },
+        {
+          "name": "D1 analysis receipt readers block + filing analysis_reader artifact + reader_sha256 binding :: retired (E-1 extended 2026-09-20, HR-4 retraction, zero persisted artifacts)",
+          "kind": "door",
+          "frozen_after": true
         }
       ],
       "contracts_consumed": [
@@ -221,7 +226,32 @@
         "tests/test_d1_external_worker.py",
         "tests/test_review_packet.py",
         ".claude/workflows/landed-set/p2-d1-closure.json",
-        "tests/test_identity_epoch.py"
+        "tests/test_identity_epoch.py",
+        "src/entropic_substrate/analysis/d1_execution_receipt.py",
+        "src/entropic_substrate/analysis/d1_analysis_receipt_codec.py",
+        "src/entropic_substrate/d1_filing_application.py",
+        "src/entropic_substrate/evidence/d1_filing.py",
+        "src/entropic_substrate/evidence/d1_filing_edges.py",
+        "src/entropic_substrate/evidence/d1_filing_receipts.py",
+        "tests/test_d1_reader_source_manifest.py",
+        "tests/test_d1_external_analysis_input.py",
+        "tests/test_d1_analysis_receipt.py",
+        "tests/test_d1_analysis_api.py",
+        "tests/test_d1_blind_review_packet.py",
+        "tests/test_d1_external_analysis_codec_v2.py",
+        "tests/test_d1_external_analysis_adapter_v2.py",
+        "tests/test_d1_machine_analysis_expected_bindings.py",
+        "tests/test_d1_machine_analysis_capture_diagnostics.py",
+        "tests/test_d1_real_arm_verdict_assembly.py",
+        "tests/test_d1_filing_receipts.py",
+        "tests/test_d1_filing_edges.py",
+        "src/entropic_substrate/d1_predecessor_loader.py",
+        "src/entropic_substrate/evidence/d1_filing_assembly.py",
+        "tests/test_d1_filing_assembly.py",
+        "src/entropic_substrate/analysis/d1_review_packet.py",
+        "src/entropic_substrate/analysis/d1_external_analysis_adapter.py",
+        "tests/test_d1_filing_application.py",
+        "tests/test_d1_filing_graph_gate.py"
       ],
       "conflict_edges": [
         {
@@ -232,8 +262,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge.",
+      "status": "active",
+      "notes": "Retires the D1 reader source closure per ruling E-1 (operator: retire the field outright, zero stored envelopes carry it). Forced ahead of the D lane because d1_external_analysis_control.py:100 calls installed_d1_reader_source_files() at MODULE IMPORT, and the two importers land in ladder/review — the ring H1 needs (the survey's phase-decomposition report (retained outside the repo)). Guard-teeth: reintroduce a parents[2] anchor anywhere in the closure's former call path and the relocated-import test goes RED. CONDUCTOR RULING 2026-09-18 (p0 review B-integration): tests/test_identity_epoch.py enters the touch set to drop the D1 closure rows; serial rail, no parallel-group edge. LAUNCHED 2026-09-20 off mythwave/p1-anchors @ 101aba9. OPERATOR RULING 2026-09-20 (widen p2): E-1 extended to the receipt readers block and the filing analysis_reader artifact + reader_sha256 binding; 6 src + 12 test files added to the touch set; serial rail, no parallel edge. GATE-CHECK COMPLETION 2026-09-20: filing-role count 14 -> 13 reaches d1_predecessor_loader.py, evidence/d1_filing_assembly.py, tests/test_d1_filing_assembly.py (added); no landed-set fragment for p2; the stale mapping row is pruned at p3. RETRACTION (house rule 4, fixer 2026-09-20): conductor commit 276901f's message claimed 'Manifest touch set ... updated' for the E-1 COMPLETION round (review packet, worker adapter, filing-application and filing-graph-gate tests) but its diff touched only the brief's Allowed files, not this touch_set; measured via `git diff --name-only mythwave/p1-anchors...mythwave/p2-d1-closure`, which shows 4 of the 5 E-1-COMPLETION-granted files actually edited (tests/test_d1_external_worker_publication.py was granted but never touched); those 4 are added here in this follow-up commit.",
       "engine_mode": "arch"
     },
     {
@@ -351,7 +381,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo).",
+      "notes": "git mv the whole package into __legacy/ with zero byte edits, then generate one alias shim per old dotted path (physical files, not a single finder table, so later phases' touch sets stay disjoint under rewrite-on-arrival). Shim form required: a real `import entropic_substrate.__legacy.<x> as _target` line before the sys.modules rebind, so grimp sees the chain. p0's sentinel-singleton test over all modules under both spellings is p3's EXIT GATE (12 shims are package __init__ files that can leak __path__ and double-load a child). Guard-teeth: emit one shim as `from X import *` and the sentinel test goes RED. Every later phase carries a contract conflict edge on the shim generator + landed-set manifest (rails-before), enumerated on this entry per the survey's phase-decomposition report (retained outside the repo). PRE-FLIGHT 2026-09-20: prune tools/mapping.json rows whose source module was deleted before p3 (d1_reader_source_closure at p2) before generating shims.",
       "engine_mode": "arch"
     },
     {

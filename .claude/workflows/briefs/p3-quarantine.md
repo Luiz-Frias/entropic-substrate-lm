@@ -97,7 +97,7 @@ The escalation door: if correctness would require touching a contract surface, a
 - `src/entropic_substrate/**` (whole-tree `git mv`, zero byte edits)
 - `src/entropic_substrate/__legacy/**`
 - `tools/gen_shims.py`
-- `tools/mapping.json` (the machine input; read, and extended only if p0 left a node unmapped)
+- `tools/mapping.json` (the machine input; read, extended only if p0 left a node unmapped, and PRUNED of rows whose source module no longer exists in the tree: measured at p2, `entropic_substrate.analysis.d1_reader_source_closure` was deleted, and `tools/gen_shims.py` resolves every non-package mapping key into a shim, so a stale row would emit a shim importing a missing `__legacy` module; `retired: true` is p13-only by the generator's own doctrine, so pruning is the p3 act, recorded in the PR body with the row and the measurement)
 - `.claude/workflows/landed-set/p3-quarantine.json` (this phase's fragment) and the fragment convention itself
 - `tests/test_shim_layer.py`
 - `tests/test_legacy_coupling.py`

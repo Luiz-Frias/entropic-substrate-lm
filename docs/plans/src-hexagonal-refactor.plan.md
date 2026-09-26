@@ -79,7 +79,7 @@ means all of them are frozen and test-verified at p0, before a single module mov
 | `h-source-reader-v2` → `v3` | door | p4 | p4 | yes, `tests/test_identity_epoch.py` |
 | `h-checkpoint-reader-v1` → `v2` | door | p4 | p4 | yes |
 | `docs/identity/read-old-table.md` | door | p4 | p4 | yes, digests asserted |
-| D1 reader source closure, 73-entry manifest (52 retracted at p0, measured 2026-09-18; 74 if p1's `paths.py` joins the closure, stated in p1's PR body) | door | p2 (RETIRED) | p2 | yes, until retracted |
+| D1 reader source closure, 74-entry manifest (52 retracted at p0; 73 measured at p0; 74 measured at p1 when `paths.py` joined the closure, PR #286) | door | p2 (RETIRED) | p2 | yes, until retracted |
 | D1 external-analysis control envelope, `reader_source_manifest_base64` | door | p2 (REMOVED) | p2 | yes |
 | `CHECKPOINT_FORMAT_VERSION`, `_TAU_ERAS`, both codec construction digests, every `*-v1`/`*-v2` literal | door | p0 | p0 | yes |
 | sentinel-singleton identity over every dotted path, both spellings | contract | p0 | p3 | yes, `tests/test_module_identity.py` |
@@ -339,7 +339,7 @@ the exact re-count is owed to p0's mapping re-derivation.
 |---|---|---|---|---|---|---|
 | [p0-contract-pin](#p0) | epoch, identity fixtures, sentinel test, CLI/packaging pins, import-linter baselined | tracer | 0 | ship-it | serial | `refactor/hexagonal-redesign` |
 | [p1-anchors](#p1) | layout-invariant `paths.py` resolver at five depth-derived sites, RED-first guard tests | tracer | 5 edits | ship-it | serial | p0 |
-| [p2-d1-closure](#p2) | retire the D1 reader source closure and its envelope arm | tracer | 3 edits | ship-it | serial | p1 |
+| [p2-d1-closure](#p2) | retire D1 reader source provenance end to end: closure, envelope arm, receipt readers block, filing artifact + binding (E-1 extended 2026-09-20) | tracer | 13 src edits, 1 deletion | ship-it | serial | p1 |
 | [p3-quarantine](#p3) | `git mv` whole tree into `__legacy/`, generate the shim layer, own the landed-set fragment convention and `tests/test_legacy_coupling.py` | tracer | 332 | ship-it | serial | p2 |
 | [**p3b-observability-rail**](#p3b) | loguru substrate → `kernel/runtime/logging.py`; `MetricSink` port → `ladder/capture/ports/`; three sinks → `ladder/capture/adapters/`; run-descriptor door; D1 observers re-based | tracer | 5 | **ship-it (live)** | serial | p3 |
 | [p4-h-tracer](#p4) | H lane out first (55 H modules + `h_probe_command` + `h_probe_controller` + 4 reader-closure rail modules + the `d_ladder_worker_runtime` live half); both H identities bumped | tracer | 63 | ship-it (live) | serial | p3b |
@@ -800,7 +800,7 @@ epoch printed and every new module mapped. The sprint starts only when H0's line
 
 | id | ruling |
 |---|---|
-| E-1 | Retire the D1 reader source closure AND the `reader_source_manifest_base64` envelope field outright in p2. Zero stored envelopes carry it. A closure over the new tree, if H1 wants reader-source pinning, is a later separately ruled step. |
+| E-1 | Retire the D1 reader source closure AND the `reader_source_manifest_base64` envelope field outright in p2. Zero stored envelopes carry it. A closure over the new tree, if H1 wants reader-source pinning, is a later separately ruled step. EXTENDED 2026-09-20 (operator, "widen p2", after the p2 design gate measured 9 src + 14 test consumers of the arm's product): the D1 analysis-receipt `readers` block and the filing graph's `analysis_reader` artifact with its `reader_sha256` binding are retired in p2 as well, each with an explicit house-rule-4 retraction; zero persisted receipts or filings carry them. |
 | O-1 | `publishMode:'defer'` in the ported cascade; lanes end CERTIFIED, the zip publishes once via `just ship-it`; every wave publish is followed by `/pr-stack-comment-triage` filing into the Linear project. |
 | O-2 | Archive the Observability manifest as `sprint-manifest.observability.json` with p1-loguru / p2-mlflow marked `retired` (note: absorbed into p3b + rewrite-on-arrival), then a follow-up commit REMOVES the archived file from disk. Named deviation from the schema's keep-renamed rotation; git history is the archive. |
 | P-1 | **Priority: observability wired through DURING the refactor, on the E-series pattern.** Implemented as rail phase p3b plus the extended rewrite-on-arrival rule and its teeth. The one permitted behaviour-change class inside structural phases. |

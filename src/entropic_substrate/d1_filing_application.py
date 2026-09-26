@@ -1,4 +1,4 @@
-"""Prepare the exact D1 verdict and fourteen-role filing bundle without filing authority."""
+"""Prepare the exact D1 verdict and thirteen-role filing bundle without filing authority."""
 
 from __future__ import annotations
 
@@ -95,7 +95,6 @@ class D1FilingArtifactPaths:
     raw_capture_manifest: str
     blinded_analysis: str
     analysis_receipt: str
-    analysis_reader: str
     analysis_isolation_attestation: str
     review_packet: str
     reviewer_prompt: str
@@ -330,6 +329,13 @@ def _require_bytes(value: object, *, label: str) -> bytes:
     return value
 
 
+# RETRACTED (house rule 4, measured 2026-09-20): this function previously
+# also materialized an "analysis_reader" filing artifact from
+# ``verified.expected.reader_source.canonical_bytes`` and bound it via a
+# ``reader_sha256`` filing digest. The D1 reader-source closure that
+# produced ``reader_source`` is retired this phase; `git grep` over tracked
+# source for `reader_sha256`/`analysis_reader` returns no persisted-artifact
+# consumer of either field once this call site is removed.
 def _validate_analysis_materials(
     *,
     verified: D1VerifiedMachineAnalysis,
@@ -341,14 +347,12 @@ def _validate_analysis_materials(
     if filing is None or analysis_receipt.manifest["filing_eligible"] is not True:
         raise ValueError("D1 filing requires a filing-eligible analysis execution receipt")
     raw_capture = _canonical(verified.aggregate.manifest)
-    reader = verified.expected.reader_source.canonical_bytes
     isolation = canonical_d1_analysis_receipt_bytes(analysis_receipt.manifest["isolation"])
     expected = {
         "capture_manifest_sha256": hashlib.sha256(raw_capture).hexdigest(),
         "isolation_attestation_sha256": hashlib.sha256(isolation).hexdigest(),
         "output_sha256": hashlib.sha256(verified.canonical_bytes).hexdigest(),
         "preregistration_sha256": hashlib.sha256(preregistration_bytes).hexdigest(),
-        "reader_sha256": hashlib.sha256(reader).hexdigest(),
     }
     for name, digest in expected.items():
         if getattr(filing, name) != digest:
@@ -360,7 +364,6 @@ def _validate_analysis_materials(
         "raw_capture_manifest": raw_capture,
         "blinded_analysis": verified.canonical_bytes,
         "analysis_receipt": analysis_receipt.canonical_json.encode("utf-8"),
-        "analysis_reader": reader,
         "analysis_isolation_attestation": isolation,
     }
 

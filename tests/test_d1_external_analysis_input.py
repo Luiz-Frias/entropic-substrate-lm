@@ -20,8 +20,6 @@ from entropic_substrate.analysis.d1_external_analysis_control import (
     D1ExternalAnalysisInputControl,
     decode_d1_alias_application_control,
     decode_d1_external_analysis_input_control,
-    derive_d1_analysis_code_digest,
-    parse_d1_reader_source_manifest,
 )
 from entropic_substrate.evidence.d1_capture_aggregate_codec import (
     serialize_d1_capture_aggregate,
@@ -42,7 +40,6 @@ from entropic_substrate.experiments.d1_registration_codec import (
 
 from .test_d1_analysis_capture import _analysis_case
 from .test_d1_blind_alias_custody import _DeterministicCrypto
-from .test_d1_reader_source_manifest import _manifest as reader_manifest
 from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 
 pytestmark = pytest.mark.unit
@@ -115,7 +112,6 @@ def _case(tmp_path: Path):
         "expected_design_digest": design.design_digest,
         "expected_family_digest": design.family_digest,
         "preregistration_control_base64": _b64(_canonical(preregistration_control)),
-        "reader_source_manifest_base64": _b64(_canonical(reader_manifest())),
         "registered_design_base64": _b64(serialize_registered_design(design).encode("utf-8")),
         "schema_version": "d1-external-analysis-input-v1",
     }
@@ -140,7 +136,6 @@ def test_nested_input_decodes_every_strict_control_and_cross_binding(tmp_path: P
     assert control.capture_receipt.aggregate_digest == aggregate.manifest_digest
     assert control.alias_application.aliases.sealed_commitment
     assert control.preregistration.sha256 == evidence.sha256
-    assert control.reader_source.analysis_code_digest == reader_manifest()["analysis_code_digest"]
     assert "nonce" not in repr(control)
     assert manifest["alias_reveal_base64"] not in repr(control)
 
@@ -162,7 +157,6 @@ def test_verified_nested_input_is_factory_only(tmp_path: Path) -> None:
             "capture_receipt",
             "alias_application",
             "preregistration",
-            "reader_source",
         )
     }
     with pytest.raises(TypeError, match="factory-only"):
@@ -179,7 +173,6 @@ def test_verified_nested_input_is_factory_only(tmp_path: Path) -> None:
         "alias_commitment_base64",
         "alias_reveal_base64",
         "preregistration_control_base64",
-        "reader_source_manifest_base64",
     ],
 )
 def test_each_nested_payload_must_be_canonical_and_valid(tmp_path: Path, field: str) -> None:
@@ -260,23 +253,13 @@ def test_nested_encoding_must_be_exact_canonical_base64(tmp_path: Path, value: o
         )
 
 
-def test_token_preserving_copy_cannot_substitute_reader_or_alias_controls(
+def test_token_preserving_copy_cannot_substitute_alias_controls(
     tmp_path: Path,
 ) -> None:
     manifest, evidence, _, _, _ = _case(tmp_path)
     verified = decode_d1_external_analysis_input_control(
         _canonical(manifest), preregistration_evidence=evidence
     )
-
-    other_reader_manifest = reader_manifest()
-    modules = other_reader_manifest["modules"]
-    assert isinstance(modules, list)
-    for index, module in enumerate(modules, start=1):
-        module["sha256"] = f"{index + 100:064x}"
-    other_reader_manifest["analysis_code_digest"] = derive_d1_analysis_code_digest(modules)
-    other_reader = parse_d1_reader_source_manifest(_canonical(other_reader_manifest))
-    with pytest.raises(ValueError, match="canonical"):
-        replace(verified, reader_source=other_reader)
 
     reveal = json.loads(base64.b64decode(manifest["alias_reveal_base64"]))
     reveal["nonce"] = "f" * 64
