@@ -216,3 +216,14 @@ both `_SOURCE_REGIME_TABLE` rows unchanged with the same `tools/regime_rows.py` 
 (local `(3.12.13, 0.3.4)` = `aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`,
 CI `(3.12.14, 0.3.4)` = `5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84` — both
 byte-identical to the values already on record).
+
+| 2026-09-26 | h-exit-gate (commit 2 of the exit-gate lane, branch `mythwave/h-exit-gate`) | `35a70f8` (commit 1 tip at which commit 2's re-pin was measured; commit 2's own SHA does not exist yet) | h-checkpoint-reader-v2 (label unchanged, 51-member `_READER_MODULES` unchanged; 2 of the 51 members are touched this commit: `ladder.run.runner`, `ladder.run.worker_command`) | operator ruling 2026-09-26 ("adding evaluation rows to the sink is a small change"): `runner.py` forwards each sealed `h-predictive-evaluation-v1` report to the metric sink right after its receipt is admitted, and `worker_command.py` constructs `HTrainingStepExtractor(warmup_steps=...)` so the extractor reports the GLOBAL optimizer step across the codec_warmup and prediction phases (the prediction phase restarts `step` at 0); the extractor itself (`ladder.run.h_metric_extractor`, not a reader member) gains the evaluation projection. Both mutation arms proven RED before this row was written (dropping the sink forward, dropping the warmup offset); rows measured AFTER `ruff format` ran to a fixed point (p6-core lesson), per ruling R-PIN | local `(3.12.13, 2.13.0)` = `858e1dfe4422c4261ebe3266002a973734eb010b3ca57cc06e61e57f7fe23fec`; CI `(3.12.14, 2.13.0+cpu)` = `297b0494e65a8ae42117d465da260eb3fde131bac6d61e201ce0517ea3949770` | local `(3.12.13, 2.13.0)` = `300334a9cce05c443e469e68ed1ce3bfd0ac008a2f68ed2f51403a0b2a3794c1`; CI `(3.12.14, 2.13.0+cpu)` = `c42a3d1adba0b4542abb66f6137be53ce5b6a8ca31ea7c00a8e1a576c4069a9f` |
+
+h-source-reader-v3 is untouched by the exit-gate lane's commit 2: neither touched
+`_READER_MODULES` member is one of its seven fixed members (`core.sentence`,
+`core.sentence.records`, `core.sentence.segmentation`, `core.sentence.corpus`,
+`ladder.capture.capture`, `kernel.artifacts`, `kernel.lifecycle`), confirmed by re-measuring
+both `_SOURCE_REGIME_TABLE` rows unchanged with the same `tools/regime_rows.py` invocation
+(local `(3.12.13, 0.3.4)` = `aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08`,
+CI `(3.12.14, 0.3.4)` = `5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84`, both
+byte-identical to the values already on record).

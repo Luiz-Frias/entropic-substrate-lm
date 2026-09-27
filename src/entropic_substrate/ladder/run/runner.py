@@ -259,6 +259,12 @@ def run_probe_training(
                     max_bytes=max_artifact_bytes,
                     max_source_bytes=max_source_bytes,
                 )
+                if sink is not None:
+                    # EXIT-GATE LANE (2026-09-26): the sealed, reader-admitted
+                    # evaluation report reaches the additive mirror too, after
+                    # its receipt and never before; the journal and the
+                    # evaluation artifact above are the authoritative record.
+                    sink.log(report)
                 evaluations.append(
                     {"step": execution.step, "artifact": artifact_reference(root, evaluation)}
                 )

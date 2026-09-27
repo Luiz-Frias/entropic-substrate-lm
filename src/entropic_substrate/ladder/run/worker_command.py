@@ -167,7 +167,9 @@ def run_worker_command(
                     tags={"schema": "h-probe-worker-result-v1"},
                 ),
                 results_path=observability_root / "metrics.jsonl",
-                metric_extractor=HTrainingStepExtractor(),
+                metric_extractor=HTrainingStepExtractor(
+                    warmup_steps=request.profile.schedule.warmup_steps
+                ),
             )
             try:
                 stage = "worker_execution"

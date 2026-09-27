@@ -74,7 +74,9 @@ def test_live_h_training_steps_reach_a_real_mlflow_run(tmp_path: Path) -> None:
     sink = build_sink_for_run(
         descriptor,
         results_path=tmp_path / "metrics.jsonl",
-        metric_extractor=HTrainingStepExtractor(),
+        metric_extractor=HTrainingStepExtractor(
+            warmup_steps=template.profile.schedule.warmup_steps
+        ),
     )
     try:
         result = run_probe_training(

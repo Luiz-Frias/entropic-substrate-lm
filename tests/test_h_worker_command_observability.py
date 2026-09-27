@@ -66,9 +66,17 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     assert metrics_path.exists(), "worker command must build and use a MetricSink"
     records = [json.loads(line) for line in metrics_path.read_text().splitlines() if line]
     assert records, "no committed H training-step rows reached the sink"
-    assert all(r["schema"] == "h-training-step-v2" for r in records)
-    assert all(r["status"] == "committed" for r in records)
-    assert [r["step"] for r in records if r["phase"] == "prediction"]
+    # RESTATED 2026-09-26 (exit-gate lane, operator ruling "adding evaluation
+    # rows to the sink is a small change"): the sink now also mirrors each
+    # sealed evaluation report, so the training assertions filter on their
+    # schema and the evaluation rows are asserted present, not tolerated.
+    training = [r for r in records if r["schema"] == "h-training-step-v2"]
+    evaluations = [r for r in records if r["schema"] == "h-predictive-evaluation-v1"]
+    assert training, "no committed H training-step rows reached the sink"
+    assert evaluations, "no sealed evaluation reports reached the sink"
+    assert len(training) + len(evaluations) == len(records)
+    assert all(r["status"] == "committed" for r in training)
+    assert [r["step"] for r in training if r["phase"] == "prediction"]
 
 
 def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
