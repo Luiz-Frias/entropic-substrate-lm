@@ -5,15 +5,22 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-88d1a25.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-3b93854.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:6b4e68fa7b0f7a4ba379c13d198f5c8b00f2ad96d3d9c8620ba7fe921c81dbcb
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:f2469dc9acc4eea13d63ef91d2f28d753be6d29ebf97602c5cf67cd977986b78
 ```
 
-Runtime source matches commit `88d1a25c62ffa15db03e2b9becea5a1638060da3` exactly.
+Runtime source matches commit `3b93854201bcf05f097e7c1979c0231267367122` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-09-26 (exit-gate lane, branch `mythwave/h-exit-gate`, operator go-ahead for the
+H tiny-probe wave): the previous pin (`6b4e68fa...`, source `88d1a25`) is superseded; its capture
+`results/h-image-publication-88d1a25.dvc` remains historical evidence. This image carries the
+two changes the wave depends on: the worker receives MLflow through the launch template's
+secret references (`h0-probe-launch-v2`) and reports GLOBAL optimizer steps plus evaluation
+rows to the metric sink. Same verifier and manifest as the 88d1a25 publication; the source
+replay's in-image capture admitted 491 documents / 1,954,698 bytes, corpus identity `cf938a0b...`.
 RE-PINNED 2026-09-26 (p13-sweep commit F, ruling P13-IMAGE, operator go-ahead OP-3): the
 previous pin (`12ed1634...`, source `9a6300a`) is superseded; its capture
 `results/h-image-publication-9a6300a.dvc` remains historical evidence. This publication's
