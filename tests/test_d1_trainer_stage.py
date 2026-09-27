@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_operator_evidence import D1ExportedTrainerHandoff
-from entropic_substrate.d1_trainer_stage import stage_and_start_d1_trainer
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import D1ExportedTrainerHandoff
+from entropic_substrate.ladder.run.trainer.d1_trainer_stage import stage_and_start_d1_trainer
 
 from .test_d1_operator_controller import _case, _Trainer
 

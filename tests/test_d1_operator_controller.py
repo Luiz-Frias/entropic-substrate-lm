@@ -15,13 +15,35 @@ import pytest
 import d1_launch_admission_fixtures as launch_fixtures
 from d1_billing_finalizer_fixtures import partial_provider_bill, provider_bill
 from d1_trainer_fixtures import micro_plan
-from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_operator_controller import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+)
+from entropic_substrate.ladder.capture.custody.build import build_corpus
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import D1LifecycleRepository
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.register.d1_config_profile import D1LaunchScale
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.register.d1_registered_design import (
+    D1PreregistrationArtifact,
+    D1RegisteredDesign,
+    D1RegisteredDesignCandidate,
+    admit_d1_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
     D1OperatorQueueHalt,
     D1SequentialOperatorController,
 )
-from entropic_substrate.d1_operator_evidence import (
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     D1StagedTrainerRequestReceipt,
     D1TrainerStartReceipt,
@@ -29,11 +51,7 @@ from entropic_substrate.d1_operator_evidence import (
     attest_d1_trainer_start,
     d1_runtime_observation_sha256,
 )
-from entropic_substrate.d1_operator_ports import (
-    D1PodDeletionAcknowledgedError,
-    D1RunPodAuthReceipt,
-)
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImmutableImage,
@@ -41,8 +59,15 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     D1RuntimeObservation,
 )
-from entropic_substrate.d1_trainer_process_contracts import D1TrainerStartReport
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
+    D1FinalizedCellCustodyRecord,
+)
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
+    D1TrainerStartReport,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1TrainerRequest,
     build_d1_trainer_request,
     d1_trainer_bootstrap_attempt_sha256,
@@ -50,30 +75,9 @@ from entropic_substrate.d1_trainer_request_codec import (
     d1_trainer_request_sha256,
     serialize_d1_trainer_request,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.data.build import build_corpus
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.d1_lifecycle_repository import D1LifecycleRepository
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ActorRole,
-    ArtifactIdentity,
-    ContentHash,
-)
-from entropic_substrate.experiments.d1_config_profile import D1LaunchScale
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import (
-    D1PreregistrationArtifact,
-    D1RegisteredDesign,
-    D1RegisteredDesignCandidate,
-    admit_d1_registered_design,
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
+    D1PodDeletionAcknowledgedError,
+    D1RunPodAuthReceipt,
 )
 
 from .test_d1_process_manager import _actor, _artifact
@@ -288,7 +292,9 @@ class _Provider:
         )
 
     def terminate(self, pod_id: str, *, start: object, trainer_ended_at: datetime):
-        from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
+        from entropic_substrate.ladder.capture.resource.resource_billing import (
+            ExecutionSegmentTermination,
+        )
 
         self.events.append("terminate")
         self.delete_count += 1

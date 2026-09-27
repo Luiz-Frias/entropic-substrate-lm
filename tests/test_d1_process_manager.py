@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_lifecycle_repository import D1LifecycleRepository
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.d1_process_manager import (
-    D1ProcessManager,
-    D1ProcessTransitionError,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
     ContentHash,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import D1LifecycleRepository
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import (
+    D1ProcessManager,
+    D1ProcessTransitionError,
 )
 
 pytestmark = pytest.mark.unit

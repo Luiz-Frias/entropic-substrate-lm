@@ -7,6 +7,16 @@
 ; tests/test_legacy_coupling.py's legacy_edge_budget, never by an ignore list
 ; here (there is no ignore list, by ruling).
 ;
+; SECOND AND LAST EDIT (p13-sweep, P13-IMPORTLINTER, 2026-09-26): `__legacy`
+; joins landed-layers at historical's level, full enforcement. Because this
+; same commit deletes `src/entropic_substrate/__legacy/` outright, the layer
+; is wrapped in parentheses (optional): import-linter 2.13 breaks the
+; contract on a listed layer that does not exist unless it is optional
+; (`.venv/lib/python3.12/site-packages/importlinter/contracts/layers.py:103`,
+; MEASURED against this repo's pinned version). `tests/test_legacy_coupling.py`
+; retires with the generator in the same commit; its legacy_edge_budget arm
+; is superseded by this contract now that `__legacy` is a real layer entry.
+;
 ; At p0 both contracts below are vacuous by construction: the five layer
 ; packages are empty and core/* does not exist yet, so both pass over an
 ; empty domain. Non-vacuity plus the string-only-shim hazard were measured
@@ -30,17 +40,17 @@ root_packages =
 include_external_packages = True
 
 [importlinter:contract:landed-layers]
-name = Landed layer contract: kernel < core < ladder < historical < composition
+name = Landed layer contract: kernel < core < ladder < historical|__legacy < composition
 type = layers
 layers =
     entropic_substrate.composition
-    entropic_substrate.historical
+    entropic_substrate.historical | (entropic_substrate.__legacy)
     entropic_substrate.ladder
     entropic_substrate.core
     entropic_substrate.kernel
 
 [importlinter:contract:core-forbids-external-io]
-name = core.* never imports mlflow, boto3, botocore, dvc, runpod, huggingface_hub or datasets directly (p0 door, frozen_after p0; the mlflow-only-from-adapter door is a separate, not-yet-implemented p3b contract)
+name = core.* never imports mlflow, boto3, botocore, dvc, runpod, huggingface_hub or datasets directly (p0 door, frozen_after p0; the mlflow-only-from-adapter door is p3b's contract, below)
 type = forbidden
 source_modules =
     entropic_substrate.core

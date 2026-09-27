@@ -7,24 +7,26 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     d1_trainer_mailbox_attempt_prefix,
     d1_trainer_mailbox_command_path,
     parse_d1_trainer_mailbox_error,
     serialize_d1_trainer_mailbox_command,
 )
-from entropic_substrate.d1_trainer_mailbox_worker import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWaitPolicy,
     D1TrainerMailboxWorker,
     D1TrainerMailboxWorkerError,
 )
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     d1_trainer_runtime_report_path,
     d1_trainer_start_report_path,
 )
-from entropic_substrate.d1_trainer_request_codec import d1_trainer_request_sha256
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
+    d1_trainer_request_sha256,
+)
 
 from .test_d1_trainer_process_worker import _fresh_request, _stage, _worker
 

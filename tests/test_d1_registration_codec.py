@@ -8,8 +8,8 @@ from collections.abc import Callable
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract
-from entropic_substrate.experiments.d1_registered_design import decision_contract_manifest
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_manifest
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1RegistrationCodecError,
     decision_contract_from_mapping,
     decision_contract_to_mapping,

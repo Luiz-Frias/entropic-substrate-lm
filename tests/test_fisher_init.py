@@ -7,7 +7,7 @@ from itertools import pairwise
 import pytest
 import torch
 
-from entropic_substrate.init.fisher import (
+from entropic_substrate.core.substrate.fisher import (
     build_fisher_init,
     count_transitions,
     fisher_sqrt_simplex_embedding,

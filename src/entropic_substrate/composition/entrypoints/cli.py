@@ -795,7 +795,7 @@ def cmd_charts(args: argparse.Namespace) -> int:
             # --config-hash is never validated — nothing would consume it).
             logger.error(
                 f"charts: --config-hash {args.config_hash!r} is not a 12-char lowercase "
-                "hex digest (entropic_substrate.sinks.config_hash()'s exact shape) — "
+                "hex digest (entropic_substrate.ladder.capture.reader.sinks.config_hash()'s exact shape) — "
                 "refusing to guess which aggregate parent this was meant to reach"
             )
             return 2

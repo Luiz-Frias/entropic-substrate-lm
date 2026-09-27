@@ -8,22 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_filing_application import (
-    D1LocalFilingArtifactStore,
-    prepare_d1_filing_bundle,
-)
-from entropic_substrate.evidence.d1_filing import validate_d1_filing_manifest
-from entropic_substrate.evidence.d1_filing_graph import verify_d1_filing
-from entropic_substrate.evidence.d1_filing_receipts import D1FilingRevisions
-from entropic_substrate.evidence.ladder_campaign import (
-    FiledLadderGate,
-    RunAuthorization,
-    artifact_mapping,
-    authorize_ladder_run,
-    gate_from_d1_filing,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     LifecycleEvent,
@@ -31,8 +18,21 @@ from entropic_substrate.evidence.lifecycle import (
     LifecycleRecord,
     transition,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.ladder import RungSpec, Treatment
+from entropic_substrate.ladder.file.d1_filing import validate_d1_filing_manifest
+from entropic_substrate.ladder.file.d1_filing_application import (
+    D1LocalFilingArtifactStore,
+    prepare_d1_filing_bundle,
+)
+from entropic_substrate.ladder.file.d1_filing_graph import verify_d1_filing
+from entropic_substrate.ladder.file.d1_filing_receipts import D1FilingRevisions
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    FiledLadderGate,
+    RunAuthorization,
+    artifact_mapping,
+    authorize_ladder_run,
+    gate_from_d1_filing,
+)
+from entropic_substrate.ladder.register.ladder import RungSpec, Treatment
 
 from .test_d1_filing_application import _filing_git, _paths
 from .test_d1_real_arm_verdict_assembly import _lineage

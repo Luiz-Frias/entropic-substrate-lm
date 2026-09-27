@@ -14,12 +14,12 @@ from d1_runtime_fixtures import (
     runtime_family,
     runtime_system,
 )
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     default_d1_encoder_initialization_identity,
 )
-from entropic_substrate.predictive_state import D1PredictiveSystem
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
 
 pytestmark = pytest.mark.unit
 

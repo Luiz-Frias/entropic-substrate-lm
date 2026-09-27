@@ -346,7 +346,7 @@ class RunpodctlD1Adapter:
                 (
                     "python",
                     "-m",
-                    "entropic_substrate.d1_trainer_mailbox_command",
+                    "entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command",
                     "--repo-root",
                     self._trainer_repo_root,
                     "--max-mailbox-objects",

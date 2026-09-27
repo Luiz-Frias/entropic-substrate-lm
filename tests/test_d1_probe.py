@@ -13,15 +13,15 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.analysis.d1_probe import run_d1_checkpoint_probe
-from entropic_substrate.analysis.ladder_probe import ProbeSource
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.experiments.d1_plan import create_d1_excluded_pilot_plan
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.d1_probe import run_d1_checkpoint_probe
+from entropic_substrate.historical.d_ladder.ladder_probe import ProbeSource
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.register.d1_plan import create_d1_excluded_pilot_plan
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
 
 pytestmark = pytest.mark.unit
 

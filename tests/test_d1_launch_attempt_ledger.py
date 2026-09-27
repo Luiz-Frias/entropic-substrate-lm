@@ -6,12 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 pytestmark = pytest.mark.unit
 NOW = datetime(2026, 8, 24, 15, 0, tzinfo=UTC)

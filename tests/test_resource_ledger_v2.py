@@ -7,15 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_ledger import (
-    ResourceLedger,
-    ResourceMeterSnapshot,
-)
-from entropic_substrate.evidence.resource_ledger_codec import (
-    resource_ledger_state_from_mapping,
-    resource_ledger_state_to_mapping,
-)
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -30,12 +22,20 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.evidence.resource_work import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
+    ResourceLedger,
+    ResourceMeterSnapshot,
+)
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
+    resource_ledger_state_from_mapping,
+    resource_ledger_state_to_mapping,
+)
+from entropic_substrate.ladder.capture.resource.resource_work import (
     CostReading,
     ReadingMethod,
     ScalarReading,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 pytestmark = pytest.mark.unit
 

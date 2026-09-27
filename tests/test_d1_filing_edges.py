@@ -10,21 +10,21 @@ from itertools import pairwise
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingManifest,
     canonical_machine_verdict_bytes,
 )
-from entropic_substrate.evidence.d1_filing_edges import verify_filing_edges
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_edges import verify_filing_edges
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1EvidenceGapError,
     D1FilingGraphError,
     D1FilingRevisions,
 )
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
 )
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 
 from .test_d1_aliased_analysis import _packet
 

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from entropic_substrate.analysis.d1_machine_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_machine_analysis_codec import (
     D1MachineAnalysisCodecError,
     decode_d1_machine_analysis_declaration,
 )

@@ -6,20 +6,20 @@ import json
 
 import pytest
 
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+    SuccessorAuthorization,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1LifecycleEvent,
     D1LifecycleValueError,
     D1ProblemKind,
     D1ProcessEventKind,
     canonical_lifecycle_event_line,
     parse_lifecycle_event_line,
-)
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ActorRole,
-    ArtifactIdentity,
-    ContentHash,
-    SuccessorAuthorization,
 )
 
 pytestmark = pytest.mark.unit

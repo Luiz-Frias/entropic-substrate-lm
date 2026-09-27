@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from scipy.stats import chi2, nct, t
 
-from entropic_substrate.analysis.seed_sizing import (
+from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     PairedSeed,
     PilotContrast,

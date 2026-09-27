@@ -3,11 +3,11 @@
 import pytest
 import torch
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec as Bytes
-from entropic_substrate.sentence_prediction.codec import CodecSpec
-from entropic_substrate.sentence_prediction.law import LawSpec
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.spine import SpineSpec
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec as Bytes
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.spine import SpineSpec
 
 pytestmark = pytest.mark.unit
 

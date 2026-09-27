@@ -17,26 +17,34 @@ import pytest
 import d1_launch_admission_fixtures as launch
 from d1_resume_fixtures import captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
+    D1TrainerProcessWorker,
+)
+from entropic_substrate.composition.entrypoints.d1_trainer_worker_command import (
+    run_d1_trainer_worker_command,
+)
+from entropic_substrate.kernel.artifacts import (
     D1ArtifactSnapshotError,
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.d1_operator_evidence import d1_runtime_observation_sha256
-from entropic_substrate.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.d1_system_runtime_probe import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    d1_runtime_observation_sha256,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
+from entropic_substrate.ladder.run.provider.d1_system_runtime_probe import (
     D1RuntimeProbeError,
     SystemD1RuntimeProbe,
 )
-from entropic_substrate.d1_trainer_process_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_process_contracts import (
     d1_trainer_request_path,
     d1_trainer_runtime_report_path,
     d1_trainer_start_report_path,
     parse_d1_runtime_report,
     parse_d1_start_report,
 )
-from entropic_substrate.d1_trainer_process_worker import D1TrainerProcessWorker
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
     D1TrainerRequest,
@@ -46,8 +54,6 @@ from entropic_substrate.d1_trainer_request_codec import (
     serialize_d1_trainer_request,
     verify_d1_trainer_request_runtime,
 )
-from entropic_substrate.d1_trainer_worker_command import run_d1_trainer_worker_command
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

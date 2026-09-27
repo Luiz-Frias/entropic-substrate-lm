@@ -5,12 +5,12 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.dynamics import SolverConfig
-from entropic_substrate.predictive_state.metric import FisherNumericalError
-from entropic_substrate.sentence_prediction.consumer import SentenceConsumer
-from entropic_substrate.sentence_prediction.head import SentenceLawHead
-from entropic_substrate.sentence_prediction.law import LawSpec
-from entropic_substrate.sentence_prediction.numerics import coordinate_map
+from entropic_substrate.core.latent.dynamics import SolverConfig
+from entropic_substrate.core.latent.metric import FisherNumericalError
+from entropic_substrate.core.sentence.consumer import SentenceConsumer
+from entropic_substrate.core.sentence.head import SentenceLawHead
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.numerics import coordinate_map
 
 pytestmark = pytest.mark.unit
 

@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d_ladder_remote_request import (
+from entropic_substrate.historical.d_ladder.d_ladder_remote_request import (
     RemoteLadderRequest,
     parse_remote_request,
     serialize_remote_request,
 )
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
 
 from .test_ladder_profile import write_artifact
 from .test_resource_provenance import _start

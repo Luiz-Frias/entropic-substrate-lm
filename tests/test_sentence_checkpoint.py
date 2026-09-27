@@ -8,15 +8,15 @@ import torch
 from tests.test_sentence_model import tiny_model
 from tests.test_sentence_sampling import sampler
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction.checkpoint import load_checkpoint, save_checkpoint
-from entropic_substrate.sentence_prediction.codec import CodecSpec
-from entropic_substrate.sentence_prediction.model import SentencePredictor
-from entropic_substrate.sentence_prediction.objective import prediction_loss
-from entropic_substrate.sentence_prediction.records import content_identity
-from entropic_substrate.sentence_prediction.rollout import advance_rollout, begin_rollout
-from entropic_substrate.sentence_prediction.sampling import SentenceSampler
-from entropic_substrate.sentence_prediction.training import (
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.objective import prediction_loss
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.core.sentence.rollout import advance_rollout, begin_rollout
+from entropic_substrate.core.sentence.sampling import SentenceSampler
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.run.checkpoint import load_checkpoint, save_checkpoint
+from entropic_substrate.ladder.run.training import (
     SentenceStep,
     apply_sentence_step,
     build_sentence_optimizer,

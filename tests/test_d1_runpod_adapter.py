@@ -13,24 +13,26 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import plan, profiles, start
-from entropic_substrate.d1_command_runner import BoundedSubprocessD1CommandRunner
-from entropic_substrate.d1_operator_ports import (
-    D1CommandResult,
-    D1OperatorTransportError,
-    D1PodDeletionAcknowledgedError,
+from entropic_substrate.kernel.evidence_class.resource_provenance import PurchaseOption
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    ProviderBillingPartial,
+    ProviderBillingPending,
 )
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImmutableImage,
     D1OperatorLaunchIntent,
 )
-from entropic_substrate.d1_runpod_adapter import RunpodctlD1Adapter
-from entropic_substrate.evidence.resource_billing import (
-    ProviderBillingPartial,
-    ProviderBillingPending,
+from entropic_substrate.ladder.run.provider.d1_command_runner import (
+    BoundedSubprocessD1CommandRunner,
 )
-from entropic_substrate.evidence.resource_provenance import PurchaseOption
+from entropic_substrate.ladder.run.provider.d1_runpod_adapter import RunpodctlD1Adapter
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
+    D1CommandResult,
+    D1OperatorTransportError,
+    D1PodDeletionAcknowledgedError,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -211,7 +213,7 @@ def test_authentication_and_create_use_json_without_credentials_in_argv() -> Non
         "US-KS-2",
         "--docker-args",
         (
-            "python -m entropic_substrate.d1_trainer_mailbox_command "
+            "python -m entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command "
             "--repo-root /app --max-mailbox-objects 128 "
             "--maximum-wait-seconds 300.0 "
             "--poll-interval-seconds 0.25"

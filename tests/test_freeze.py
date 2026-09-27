@@ -40,8 +40,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.models.backbone import build_model
-from entropic_substrate.train import Trainer
+from entropic_substrate.core.substrate.backbone import build_model
+from entropic_substrate.historical.e_series.train import Trainer
 from helpers import assert_bitwise_equal, tiny_config, tiny_model_config
 
 pytestmark = pytest.mark.unit

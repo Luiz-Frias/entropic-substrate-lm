@@ -12,7 +12,7 @@ def _():
     import marimo as mo
     import plotly.graph_objects as go
 
-    from entropic_substrate.analysis.palette import (
+    from entropic_substrate.ladder.analyze.palette import (
         OKABE_ITO,
         control_style,
         e2_style,
@@ -20,14 +20,14 @@ def _():
         fisher_style,
         head_style,
     )
-    from entropic_substrate.analysis.series import (
+    from entropic_substrate.ladder.analyze.series import (
         T_0_9875,
         load_eval_run,
         load_train_run,
         pair_final_metrics,
         paired_verdict,
     )
-    from entropic_substrate.telemetry import max_kappa_spread
+    from entropic_substrate.ladder.capture.reader.telemetry import max_kappa_spread
 
     def e1_traces(fisher_runs: list, control_runs: list) -> list[go.Scatter]:
         """The E1 fisher/control traces, shared by chart 1 (paired loss curves)
@@ -89,8 +89,8 @@ def _(mo):
     Pulls DVC-captured JSONLs from `results/captured/` (checked out with
     `dvc checkout` beforehand) — or, for a run not yet captured, falls
     back to the MLflow artifacts API. Every JSONL read on this page goes
-    through `entropic_substrate.telemetry` (via
-    `entropic_substrate.analysis.series` — the SAME data-prep layer Lane
+    through `entropic_substrate.ladder.capture.reader.telemetry` (via
+    `entropic_substrate.ladder.analyze.series` — the SAME data-prep layer Lane
     A's matplotlib charts use) — never an ad-hoc `json.loads` of a
     results file. Charts render thresholds/CIs on the figure; they
     never decide — the gates this repo runs on stay sanity+selection,
@@ -399,7 +399,7 @@ def _(OKABE_ITO, e2_run, e2_style, e3_run, e3_style, go, mo):
 
 @app.cell
 def _(OKABE_ITO, e3_run, go, head_style, mo):
-    from entropic_substrate.geometry.kappa import KAPPA_MAX, KAPPA_MIN
+    from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
 
     # matplotlib -> plotly codes for head_style()'s linestyle/marker channels.
     # Deliberately plain-``[]`` lookups (no ``.get(x, default)``): an

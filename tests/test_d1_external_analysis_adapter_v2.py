@@ -13,25 +13,25 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_execution_receipt import (
+import entropic_substrate.ladder.review.d1_execution_receipt as execution_receipt_module
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1ExecutorKind,
     D1ExternalIsolationAttestation,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
     issue_d1_verified_analysis_receipt,
 )
-from entropic_substrate.analysis.d1_external_analysis_adapter import (
+from entropic_substrate.ladder.review.d1_external_analysis_adapter import (
     D1ExternalAnalysisCommandResult,
     D1ExternalAnalysisLaunch,
     D1ExternalAnalysisRunnerRequestV2,
     DockerD1ExternalAnalysisAdapterV2,
 )
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     encode_d1_external_analysis_worker_response_v2,
 )
-from entropic_substrate.analysis.d1_external_worker import run_d1_external_worker
+from entropic_substrate.ladder.review.d1_external_worker import run_d1_external_worker
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_external_worker import _install_reader_fake, _request_case, _WorkerCase

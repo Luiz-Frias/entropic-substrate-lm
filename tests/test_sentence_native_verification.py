@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_custody import LIMITS, build_capture
 
-from entropic_substrate.evidence.lifecycle import ContentHash
-from entropic_substrate.sentence_prediction import native_verification
-from entropic_substrate.sentence_prediction.journal import read_json, write_json
+from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.run import native_verification
+from entropic_substrate.ladder.run.journal import read_json, write_json
 
 pytestmark = pytest.mark.unit
 REQUEST = ContentHash("sha256", "1" * 64)

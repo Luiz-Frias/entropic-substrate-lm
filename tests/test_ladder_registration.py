@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.ladder_registration import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.ladder.analyze.ladder_registration import (
     _d1_runs,
     paired_contrasts,
     prepare_registration,
     read_statistical_design,
     report_registered_contrasts,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
-from entropic_substrate.telemetry import read_d1_run_evidence_bytes
+from entropic_substrate.ladder.capture.reader.telemetry import read_d1_run_evidence_bytes
 
 from .d1_telemetry_fixtures import valid_events
 
@@ -157,8 +157,8 @@ def test_weighted_endpoints_come_through_authoritative_reader() -> None:
 
 
 def test_confirmatory_report_rechecks_bytes_and_keeps_one_population(tmp_path: Path) -> None:
-    from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-    from entropic_substrate.evidence.d1_capture_artifacts import (
+    from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+    from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
         D1ArtifactRole,
         identify_d1_artifact,
     )

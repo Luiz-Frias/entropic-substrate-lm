@@ -2,7 +2,7 @@
 
 import pytest
 
-from entropic_substrate.shared_attempt import AttemptFlow
+from entropic_substrate.kernel.runtime.shared_attempt import AttemptFlow
 
 from .test_d1_operator_controller import _case, _controller
 

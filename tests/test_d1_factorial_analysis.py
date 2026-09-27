@@ -14,17 +14,17 @@ from d1_launch_admission_fixtures import (
     contract,
     family,
 )
-from entropic_substrate.analysis.d1_capture import D1AppliedExclusion
-from entropic_substrate.analysis.d1_factorial import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_capture import D1AppliedExclusion
+from entropic_substrate.ladder.analyze.d1_factorial import (
     D1AnalysisCell,
     D1FactorialExclusionAuthority,
     D1MetricPoint,
     compute_d1_factorial,
     seal_d1_factorial_exclusion_authority,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,

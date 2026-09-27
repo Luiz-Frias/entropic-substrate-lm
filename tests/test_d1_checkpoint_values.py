@@ -7,9 +7,11 @@ from typing import cast
 import pytest
 
 from d1_checkpoint_fixtures import build_checkpoint, checkpoint_case, checkpoint_state
-from entropic_substrate.evidence.resource_ledger_codec import resource_ledger_state_to_mapping
-from entropic_substrate.experiments.d1_runs import D1RunSpec
-from entropic_substrate.predictive_state.checkpoint_values import (
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
+    resource_ledger_state_to_mapping,
+)
+from entropic_substrate.ladder.register.d1_runs import D1RunSpec
+from entropic_substrate.ladder.run.trainer.checkpoint_values import (
     D1_CHECKPOINT_KIND,
     D1_CHECKPOINT_SCHEMA_VERSION,
 )

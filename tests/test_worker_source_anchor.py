@@ -28,7 +28,7 @@ from types import ModuleType
 
 import pytest
 
-from entropic_substrate import paths
+from entropic_substrate.kernel.runtime import paths
 
 pytestmark = pytest.mark.unit
 
@@ -278,8 +278,8 @@ class TestRuntimeGuardRelocated:
 def test_mutating_the_shared_resolver_turns_both_guards_red(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import entropic_substrate.d_ladder_worker_runtime as dlwr
-    import entropic_substrate.sentence_prediction.worker_execution as we
+    import entropic_substrate.historical.d_ladder.d_ladder_worker_runtime as dlwr
+    import entropic_substrate.ladder.run.worker_execution as we
 
     # BEFORE: both guards accept the bound tree and proceed past their own
     # check into a later, distinct failure.

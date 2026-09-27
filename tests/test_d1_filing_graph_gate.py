@@ -11,40 +11,40 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_types import (
+    D1FamilyIdentity,
+    D1VerdictValidationError,
+    FiledGateAuthorization,
+    FiledGateValidNegative,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     build_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
-from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
-from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1CaptureInput
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import build_d1_capture_bundle
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1DetachedFiling,
     canonical_machine_verdict_bytes,
     validate_d1_filing_manifest,
 )
-from entropic_substrate.evidence.d1_filing_graph import (
+from entropic_substrate.ladder.file.d1_filing_graph import (
     recompute_capture_integrity,
     verify_d1_filing,
 )
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1EvidenceGapError,
     D1FilingGraphError,
     D1FilingRevisions,
 )
-from entropic_substrate.evidence.d1_gate import decide_filed_verdict
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.file.d1_gate import decide_filed_verdict
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
-)
-from entropic_substrate.evidence.d1_types import (
-    D1FamilyIdentity,
-    D1VerdictValidationError,
-    FiledGateAuthorization,
-    FiledGateValidNegative,
 )
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family

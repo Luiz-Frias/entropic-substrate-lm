@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from entropic_substrate.data.enwik8 import download_enwik8  # noqa: E402
+from entropic_substrate.ladder.capture.custody.enwik8 import download_enwik8  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

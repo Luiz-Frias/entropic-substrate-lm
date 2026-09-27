@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.metric import FisherNumericalError
-from entropic_substrate.sentence_prediction.numerics import (
+from entropic_substrate.core.latent.metric import FisherNumericalError
+from entropic_substrate.core.sentence.numerics import (
     UndefinedDirection,
     apply_interface,
     checked_coordinates,

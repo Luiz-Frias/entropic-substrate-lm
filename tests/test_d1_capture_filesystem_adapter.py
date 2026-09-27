@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     identify_d1_artifact,
     verify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_capture_filesystem import (
+from entropic_substrate.ladder.capture.custody.d1_capture_filesystem import (
     LocalD1EvidenceExportSource,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
 
 pytestmark = pytest.mark.unit
 

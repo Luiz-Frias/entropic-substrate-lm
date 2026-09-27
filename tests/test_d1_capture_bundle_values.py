@@ -7,17 +7,20 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     identify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_capture_bundle import (
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
     D1AttemptEvidence,
     D1CaptureInput,
     D1CaptureSetProof,
 )
-from entropic_substrate.evidence.d1_capture_roster import D1AttemptLane, D1DeclaredAttempt
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1AttemptLane,
+    D1DeclaredAttempt,
+)
 
 pytestmark = pytest.mark.unit
 

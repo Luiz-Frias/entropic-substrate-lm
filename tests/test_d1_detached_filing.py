@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1DetachedFiling,
     D1FilingValidationError,

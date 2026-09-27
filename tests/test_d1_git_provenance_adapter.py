@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from entropic_substrate.d1_command_runner import D1BoundedProcessResult
-from entropic_substrate.d1_git_provenance_adapter import (
+from entropic_substrate.ladder.run.provider.d1_command_runner import D1BoundedProcessResult
+from entropic_substrate.ladder.run.provider.d1_git_provenance_adapter import (
     D1GitProvenanceAdapterError,
     SubprocessD1GitProvenance,
 )
@@ -82,7 +82,7 @@ def test_explicit_repository_cannot_inherit_git_context(
 ) -> None:
     # Assertion tracebacks can render call arguments: never pass live credentials.
     monkeypatch.setattr(
-        "entropic_substrate.d1_git_provenance_adapter.os",
+        "entropic_substrate.ladder.run.provider.d1_git_provenance_adapter.os",
         SimpleNamespace(
             environ={
                 "GIT_DIR": "foreign-repository",

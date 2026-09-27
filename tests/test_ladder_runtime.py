@@ -6,9 +6,9 @@ import pytest
 import torch
 
 from d1_runtime_fixtures import runtime_batch, runtime_family
-from entropic_substrate.experiments.d1 import D1Arm
-from entropic_substrate.experiments.ladder import Rung, RungSpec, Treatment
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.ladder.register.d1 import D1Arm
+from entropic_substrate.ladder.register.ladder import Rung, RungSpec, Treatment
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 pytestmark = pytest.mark.unit
 

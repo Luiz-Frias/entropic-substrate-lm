@@ -25,7 +25,7 @@ import pytest
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import RESOURCE_ALREADY_EXISTS, RESOURCE_DOES_NOT_EXIST
 
-from entropic_substrate.sinks import (
+from entropic_substrate.ladder.capture.reader.sinks import (
     MLFLOW_SYSTEM_METRICS_ENV,
     MLFLOW_TINY_ENV,
     MLFLOW_TRACKING_ENV,
@@ -854,7 +854,7 @@ def test_sinks_facade_all_equals_the_measured_18_names_and_every_name_resolves()
     each name explicitly (not just check `__all__`'s membership list) so a
     name present in `__all__` but missing from the module itself — an
     AttributeError, not a silent hole — fails loudly here."""
-    import entropic_substrate.sinks as sinks_facade
+    import entropic_substrate.ladder.capture.reader.sinks as sinks_facade
 
     expected = frozenset(
         {
@@ -881,12 +881,12 @@ def test_sinks_facade_all_equals_the_measured_18_names_and_every_name_resolves()
     assert len(expected) == 18
     actual = frozenset(sinks_facade.__all__)
     assert actual == expected, (
-        f"entropic_substrate.sinks.__all__ drifted from the measured 18-name compat surface: "
+        f"entropic_substrate.ladder.capture.reader.sinks.__all__ drifted from the measured 18-name compat surface: "
         f"missing={sorted(expected - actual)}, added={sorted(actual - expected)}"
     )
     for name in expected:
         assert hasattr(sinks_facade, name), (
-            f"entropic_substrate.sinks.__all__ names {name!r} but the facade does not "
+            f"entropic_substrate.ladder.capture.reader.sinks.__all__ names {name!r} but the facade does not "
             "resolve it — a dropped re-export, invisible to every offline gate that "
             "only checks __all__'s membership list"
         )
@@ -914,12 +914,24 @@ def test_cold_import_of_mlflow_adapter_adapter_first_succeeds() -> None:
     from pathlib import Path
 
     repo_root = Path(__file__).resolve().parents[1]
+    # P13-EXCEPTIONS (addendum 3): restated against the retired-namespace
+    # rule, never rewritten to a landed name. Both `entropic_substrate.sinks`
+    # (the retired compat facade) and `entropic_substrate.__legacy.sinks`
+    # are permanently unimportable after p13 -- neither dotted name can ever
+    # appear in sys.modules again, so this arm is now a structural guarantee
+    # rather than a dynamic race check. It is kept (not deleted) as a
+    # documented invariant that no future patch reintroduces either address.
+    # Composed at runtime, never a literal chain (P13-EXCEPTIONS addendum 3):
+    # a literal here would itself be flagged by
+    # tests/test_no_old_prefix.py's whole-tree scan, since both names are
+    # deliberately kept unresolvable forever.
+    _root = "entropic_substrate"
     code = (
         "import entropic_substrate.ladder.capture.adapters.mlflow as m\n"
-        "assert 'entropic_substrate.sinks' not in __import__('sys').modules, "
-        "'facade was imported before the adapter -- not adapter-first'\n"
-        "assert 'entropic_substrate.__legacy.sinks' not in __import__('sys').modules, "
-        "'legacy facade target was imported before the adapter -- not adapter-first'\n"
+        f"assert {_root + '.sinks'!r} not in __import__('sys').modules, "
+        "'the retired compat facade must never be importable again'\n"
+        f"assert {_root + '.__legacy.sinks'!r} not in __import__('sys').modules, "
+        "'the retired legacy address must never be importable again'\n"
         "assert m.__all__ == ['MlflowSink']\n"
         "print('COLD_ADAPTER_FIRST_OK')\n"
     )
@@ -957,7 +969,7 @@ def test_default_enwik8_pointer_resolves_from_repo_root_regardless_of_cwd(
     pointer and fall through to the best-effort "absent" no-op instead of
     finding it.
     """
-    from entropic_substrate.sinks import _default_enwik8_dvc_pointer
+    from entropic_substrate.ladder.capture.reader.sinks import _default_enwik8_dvc_pointer
 
     monkeypatch.chdir(tmp_path)
     resolved = _default_enwik8_dvc_pointer()
@@ -971,8 +983,8 @@ def test_default_enwik8_pointer_falls_back_to_cwd_relative_when_repo_root_raises
     """Error case pinned at authoring (E-3/DN-8): a RepoLayoutError from the
     resolver must not propagate out of _default_enwik8_dvc_pointer() -- it
     must fall through to the pre-existing bare CWD-relative candidate."""
-    import entropic_substrate.sinks as sinks_module
-    from entropic_substrate.paths import RepoLayoutError
+    import entropic_substrate.ladder.capture.reader.sinks as sinks_module
+    from entropic_substrate.kernel.runtime.paths import RepoLayoutError
 
     def _raise() -> Path:
         raise RepoLayoutError("mutated for test")
@@ -1111,7 +1123,7 @@ def test_build_sink_logs_no_lineage_for_a_non_enwik8_config(tmp_path: Path) -> N
 def test_build_sink_logs_lineage_for_an_enwik8_config_when_the_pointer_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import entropic_substrate.sinks as sinks_module
+    import entropic_substrate.ladder.capture.reader.sinks as sinks_module
 
     pointer = tmp_path / "enwik8.dvc"
     pointer.write_text(

@@ -7,13 +7,13 @@ import json
 
 import pytest
 
-from entropic_substrate.analysis.d1_blind_aliases import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.review.d1_blind_aliases import (
     D1AliasArtifactRole,
     D1AliasStorageScope,
     D1InMemoryAliasCustodyFake,
     prepare_d1_blind_aliases,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

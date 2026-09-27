@@ -7,11 +7,11 @@ import pytest
 from tests.test_sentence_generation import trained
 from tests.test_sentence_rollout import scripted_tokens
 
-from entropic_substrate.cli import main
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.sentence_prediction import trace_capture
-from entropic_substrate.sentence_prediction.generation import run_probe_generation
-from entropic_substrate.sentence_prediction.journal import artifact_reference, write_json
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run import trace_capture
+from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.journal import artifact_reference, write_json
 
 pytestmark = pytest.mark.unit
 LIMITS = {

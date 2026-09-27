@@ -6,11 +6,12 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.experiments.d1_config import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, RunClass
+from entropic_substrate.ladder.register.d1_config import (
     D1LaunchProfile,
     load_d1_profile_catalog,
 )
-from entropic_substrate.experiments.d1_plan import (
+from entropic_substrate.ladder.register.d1_plan import (
     ConfirmatoryD1RunPlan,
     D1PlanManifestError,
     ExcludedPilotD1RunPlan,
@@ -19,8 +20,7 @@ from entropic_substrate.experiments.d1_plan import (
     create_d1_smoke_plan,
     parse_d1_confirmatory_plan,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.register.d1_provenance import (
     D1_TELEMETRY_SCHEMA_VERSION,
     DataIdentity,
     EvidenceEnvelope,

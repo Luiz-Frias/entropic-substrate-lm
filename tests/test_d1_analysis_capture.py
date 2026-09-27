@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
 from d1_launch_admission_fixtures import (
     PREREG_BLOB,
     PREREG_COMMIT,
@@ -16,35 +16,35 @@ from d1_launch_admission_fixtures import (
     contract,
     family,
 )
-from entropic_substrate.analysis.d1_capture import (
-    D1AnalysisAdmissionError,
-    admit_d1_analysis_capture,
-    issue_d1_factorial_exclusion_authority,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import (
-    D1CapturePartitionProof,
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
-from entropic_substrate.evidence.d1_capture_bundle import (
-    D1DvcCaptureHandoff,
-    D1ValidatedRunCapture,
-)
-from entropic_substrate.evidence.d1_capture_roster import (
-    D1ExpectedRun,
-    D1LaunchRoster,
-    D1PairExclusion,
-    D1PairExclusionReason,
-)
-from entropic_substrate.evidence.d1_journal_values import JournalIdentity
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
     canonical_digest,
     thaw_for_digest,
 )
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.analyze.d1_capture import (
+    D1AnalysisAdmissionError,
+    admit_d1_analysis_capture,
+    issue_d1_factorial_exclusion_authority,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1CapturePartitionProof,
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
+    D1DvcCaptureHandoff,
+    D1ValidatedRunCapture,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1ExpectedRun,
+    D1LaunchRoster,
+    D1PairExclusion,
+    D1PairExclusionReason,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalIdentity
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,

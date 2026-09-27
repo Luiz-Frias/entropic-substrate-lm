@@ -16,10 +16,15 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.cli import main
-from entropic_substrate.config import configs_dir, resolve_experiment_config
-from entropic_substrate.models.field_encoder import FieldEncoder
-from entropic_substrate.train import Trainer, cosine_lr, resolve_device, seed_everything
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.core.substrate.field_encoder import FieldEncoder
+from entropic_substrate.historical.e_series.train import (
+    Trainer,
+    cosine_lr,
+    resolve_device,
+    seed_everything,
+)
+from entropic_substrate.kernel.runtime.config import configs_dir, resolve_experiment_config
 from helpers import tiny_config
 
 pytestmark = pytest.mark.unit
@@ -118,8 +123,8 @@ def test_checkpoint_roundtrip_resumes_exactly(tmp_path: Path) -> None:
 def test_missing_loss_fails_loud_not_silently() -> None:
     """The invariant used to be an ``assert``, which ``python -O`` strips: the
     eval path is a measurement path and must never fail open."""
-    from entropic_substrate.models.backbone import LMOutput
-    from entropic_substrate.train import _require_loss
+    from entropic_substrate.core.substrate.backbone import LMOutput
+    from entropic_substrate.historical.e_series.train import _require_loss
 
     out = LMOutput(logits=torch.zeros(1, 1, 2))
     with pytest.raises(RuntimeError, match="without targets"):
@@ -286,8 +291,8 @@ def test_cli_train_requires_exp_or_config(capsys) -> None:
 
 
 def test_cli_parser_exposes_the_whole_ladder() -> None:
-    from entropic_substrate.cli import build_parser
-    from entropic_substrate.config import EXPERIMENTS
+    from entropic_substrate.composition.entrypoints.cli import build_parser
+    from entropic_substrate.kernel.runtime.config import EXPERIMENTS
 
     parser = build_parser()
     args = parser.parse_args(["train", "--exp", "e3", "--tiny"])

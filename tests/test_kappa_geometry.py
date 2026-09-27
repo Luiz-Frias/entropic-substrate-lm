@@ -12,7 +12,7 @@ import geoopt
 import pytest
 import torch
 
-from entropic_substrate.geometry.kappa import (
+from entropic_substrate.core.geometry.kappa import (
     KAPPA_MAX,
     KAPPA_MIN,
     TAYLOR_EPS,
@@ -118,7 +118,7 @@ def test_taylor_guard_region_is_finite_and_continuous(kappa: float) -> None:
 @pytest.mark.parametrize("sign", [-1.0, 1.0])
 def test_taylor_branch_agrees_with_closed_form_at_the_seam(sign: float) -> None:
     """At the switchover curvature both branches must give the same answer."""
-    from entropic_substrate.geometry.kappa import _tan_k_taylor
+    from entropic_substrate.core.geometry.kappa import _tan_k_taylor
 
     k = torch.tensor(sign * TAYLOR_EPS * 1.001, dtype=torch.float64)
     x = torch.linspace(-1.5, 1.5, 201, dtype=torch.float64)

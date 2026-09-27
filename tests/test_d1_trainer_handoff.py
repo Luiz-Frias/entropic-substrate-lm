@@ -8,17 +8,17 @@ from datetime import timedelta
 import pytest
 
 from d1_trainer_fixtures import STARTED_AT, micro_plan, run_start
-from entropic_substrate.d1_dual_failure import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalCheckpointState
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
-from entropic_substrate.d1_trainer_handoff import (
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
     D1TrainerFailureHandoff,
     capture_d1_trainer_termination,
 )
-from entropic_substrate.evidence.d1_journal_values import JournalCheckpointState
-from entropic_substrate.evidence.resource_ledger import ResourceLedgerState
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

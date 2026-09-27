@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_subprocess import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
     SubprocessD1DvcAdapter,
     SubprocessD1GitPointerStatusVerifier,

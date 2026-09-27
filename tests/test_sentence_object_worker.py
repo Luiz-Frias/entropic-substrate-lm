@@ -8,11 +8,13 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
-from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
-from entropic_substrate.sentence_prediction import object_worker
-from entropic_substrate.sentence_prediction.object_worker import run_object_worker
-from entropic_substrate.sentence_prediction.worker_snapshot import materialize_worker_snapshot
-from entropic_substrate.sentence_prediction.worker_transport import publish_probe_request
+from entropic_substrate.ladder.run import object_worker
+from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
+    D1TrainerMailboxObjectIdentity,
+)
+from entropic_substrate.ladder.run.worker_snapshot import materialize_worker_snapshot
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
 

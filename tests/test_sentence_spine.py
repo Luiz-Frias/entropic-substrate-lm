@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.sentence_prediction.spine import SentenceSpine, SpineSpec
+from entropic_substrate.core.sentence.spine import SentenceSpine, SpineSpec
 
 pytestmark = pytest.mark.unit
 

@@ -6,26 +6,26 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.experiments.d1_family import (
-    build_d1_experiment_family,
-    build_four_arm_drafts,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, EMAKind
-from entropic_substrate.experiments.d1_stabilization import EMAParameters
-from entropic_substrate.observation import CodecIdentity
-from entropic_substrate.predictive_state.ema_schedules import CosineEmaDecaySchedule
-from entropic_substrate.predictive_state.runtime_construction import (
-    collapse_regularizer_from_draft,
-    encoder_config_from_draft,
-    target_policy_from_draft,
-)
-from entropic_substrate.predictive_state.stabilization import (
+from entropic_substrate.core.latent.ema_schedules import CosineEmaDecaySchedule
+from entropic_substrate.core.latent.stabilization import (
     MomentCollapseRegularizer,
     NoCollapseRegularizer,
 )
-from entropic_substrate.predictive_state.target_updates import (
+from entropic_substrate.core.latent.target_updates import (
     OnlineTargetUpdate,
     StopGradientEmaUpdate,
+)
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EMAKind
+from entropic_substrate.ladder.register.d1_family import (
+    build_d1_experiment_family,
+    build_four_arm_drafts,
+)
+from entropic_substrate.ladder.register.d1_stabilization import EMAParameters
+from entropic_substrate.ladder.run.construction.runtime_construction import (
+    collapse_regularizer_from_draft,
+    encoder_config_from_draft,
+    target_policy_from_draft,
 )
 
 pytestmark = pytest.mark.unit

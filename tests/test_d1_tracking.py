@@ -10,14 +10,7 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.d1_tracking import D1MetricExtractor, d1_tracking_descriptor
-from entropic_substrate.evidence.d1_journal_values import (
-    D1JournalEvent,
-    JournalEventKind,
-    canonical_event_line,
-)
-from entropic_substrate.evidence.d1_telemetry_values import D1_REPORT_ONLY_METRICS
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -32,23 +25,39 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.evidence.resource_work import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.adapters.d1_tracking import (
+    D1MetricExtractor,
+    d1_tracking_descriptor,
+)
+from entropic_substrate.ladder.capture.reader.sinks import (
+    CompositeSink,
+    MlflowSink,
+    build_sink_for_run,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    JournalEventKind,
+    canonical_event_line,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1_REPORT_ONLY_METRICS
+from entropic_substrate.ladder.capture.resource.resource_work import (
     CostReading,
     ReadingMethod,
     ResourceWorkSnapshot,
     ScalarReading,
 )
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_plan import create_d1_excluded_pilot_plan
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog
+from entropic_substrate.ladder.register.d1_plan import create_d1_excluded_pilot_plan
+from entropic_substrate.ladder.register.d1_provenance import (
     CodeIdentity,
     ContainerIdentity,
     DataIdentity,
     EvidenceEnvelope,
 )
-from entropic_substrate.sinks import CompositeSink, MlflowSink, build_sink_for_run
 from test_sinks import FakeMlflowClient
 
 pytestmark = pytest.mark.unit

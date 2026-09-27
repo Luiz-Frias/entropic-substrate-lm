@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.metric import FisherNumericalError, fisher_action
+from entropic_substrate.core.latent.metric import FisherNumericalError, fisher_action
 
 pytestmark = pytest.mark.unit
 

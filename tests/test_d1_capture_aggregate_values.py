@@ -7,24 +7,24 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_numerical_defect import (
-    D1DefectCheckpointReference,
-    D1NonfiniteClassification,
-    D1TerminalNumericalDefectRecord,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1CapturePartitionProof,
     D1HeterogeneousCaptureAggregate,
     D1TerminalDefectInput,
     D1ValidatedTerminalDefect,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     identify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_capture_roster import D1ExpectedRun
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import D1ExpectedRun
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    D1DefectCheckpointReference,
+    D1NonfiniteClassification,
+    D1TerminalNumericalDefectRecord,
+)
 
 pytestmark = pytest.mark.unit
 

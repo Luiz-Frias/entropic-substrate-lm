@@ -14,26 +14,14 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from entropic_substrate.analysis.ladder_analysis import (
-    LadderAnalysisInputs,
-    ScientificRunReader,
-    analyze_ladder_sources,
-)
-from entropic_substrate.analysis.ladder_filing import (
-    file_ladder_verdict,
-    prepare_ladder_blind_packet,
-)
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_git_provenance_adapter import SubprocessD1GitProvenance
-from entropic_substrate.d1_resource_activation import UnavailableResourceActivationFactory
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_execution import run_ladder
-from entropic_substrate.d_ladder_request import ScientificRequest
-from entropic_substrate.d_ladder_resources import LadderResources
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactRole, identify_d1_artifact
-from entropic_substrate.evidence.d1_capture_bundle import D1DvcCaptureHandoff
-from entropic_substrate.evidence.ladder_campaign import artifact_mapping, authorize_ladder_run
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderResources
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
@@ -43,8 +31,27 @@ from entropic_substrate.evidence.lifecycle import (
     LifecycleRecord,
     transition,
 )
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.ladder.analyze.ladder_analysis import (
+    LadderAnalysisInputs,
+    ScientificRunReader,
+    analyze_ladder_sources,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactRole,
+    identify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1DvcCaptureHandoff
+from entropic_substrate.ladder.file.ladder_filing import (
+    file_ladder_verdict,
+    prepare_ladder_blind_packet,
+)
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_mapping, authorize_ladder_run
+from entropic_substrate.ladder.run.provider.d1_git_provenance_adapter import (
+    SubprocessD1GitProvenance,
+)
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    UnavailableResourceActivationFactory,
+)
 
 from .d1_telemetry_fixtures import start_provenance
 from .ladder_campaign_fixtures import d1_gate
@@ -398,7 +405,7 @@ def file_campaign(captured, *, open_major_findings=()):
         machine_path=f"{rung}-verdict.json",
     )
     if isinstance(captured.prepared.git, SubprocessD1GitProvenance):
-        from entropic_substrate.evidence.ladder_predecessor import load_ladder_predecessor
+        from entropic_substrate.ladder.gate.ladder_predecessor import load_ladder_predecessor
 
         bundle_path = root / f"{rung}-registration.bundle"
         subprocess.run(

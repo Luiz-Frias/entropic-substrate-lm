@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.experiments.d1_config import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_config import (
     D1LaunchScale,
     d1_configs_dir,
     load_d1_profile,
     load_d1_profile_catalog,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

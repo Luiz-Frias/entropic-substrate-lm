@@ -10,13 +10,13 @@ from decimal import Decimal
 import pytest
 
 from d1_launch_admission_fixtures import plan, profiles, start
-from entropic_substrate.d1_runpod_billing_parser import (
-    RunpodBillingSchemaError,
-    parse_runpodctl_billing_observation,
-)
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     ProviderBillingPartial,
     ProviderBillingPending,
+)
+from entropic_substrate.ladder.run.closure.d1_runpod_billing_parser import (
+    RunpodBillingSchemaError,
+    parse_runpodctl_billing_observation,
 )
 
 pytestmark = pytest.mark.unit

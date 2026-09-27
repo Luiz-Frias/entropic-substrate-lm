@@ -8,26 +8,26 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
-from entropic_substrate.d1_numerical_defect import (
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactRole,
+    identify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1DefectCheckpointReference,
     D1NonfiniteClassification,
     D1TerminalNumericalDefectRecord,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import (
-    D1ArtifactRole,
-    identify_d1_artifact,
-)
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.d1_terminal_defect_capture import (
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_terminal_defect_capture import (
     D1DefectCaptureError,
     D1TerminalDefectCaptureInput,
     derive_d1_pair_exclusions,
     read_d1_terminal_numerical_defect,
     validate_d1_pair_exclusion_claims,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass
 
 from .d1_capture_fixtures import DVC_POINTER, capture_family
 from .d1_telemetry_fixtures import write_events

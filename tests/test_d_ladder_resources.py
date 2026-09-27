@@ -3,8 +3,10 @@
 import pytest
 
 from d1_telemetry_fixtures import start_provenance
-from entropic_substrate.d1_resource_activation import UnavailableResourceActivationFactory
-from entropic_substrate.d_ladder_resources import LadderResources
+from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderResources
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    UnavailableResourceActivationFactory,
+)
 
 pytestmark = pytest.mark.unit
 

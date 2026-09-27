@@ -9,7 +9,7 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1_NO_MAJOR_OUTCOME,
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
     D1MajorFindingDisposition,

@@ -11,31 +11,33 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import PREREG_COMMIT, PREREG_PATH, contract, family
-from entropic_substrate.analysis.d1_blind_aliases import (
-    D1InMemoryAliasCustodyFake,
-    prepare_d1_blind_aliases,
-)
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    D1ExternalAnalysisControlError,
-    D1ExternalAnalysisInputControl,
-    decode_d1_alias_application_control,
-    decode_d1_external_analysis_input_control,
-)
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     serialize_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
-from entropic_substrate.evidence.d1_capture_service import D1HeterogeneousCaptureReceipt
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPointerIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_service import (
+    D1HeterogeneousCaptureReceipt,
+)
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     serialize_decision_contract,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.review.d1_blind_aliases import (
+    D1InMemoryAliasCustodyFake,
+    prepare_d1_blind_aliases,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    D1ExternalAnalysisControlError,
+    D1ExternalAnalysisInputControl,
+    decode_d1_alias_application_control,
+    decode_d1_external_analysis_input_control,
 )
 
 from .test_d1_analysis_capture import _analysis_case

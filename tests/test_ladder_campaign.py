@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.ladder_campaign import (
-    authorize_ladder_run,
-    validate_ladder_phase_transition,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
     ContentHash,
+)
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    authorize_ladder_run,
+    validate_ladder_phase_transition,
 )
 
 pytestmark = pytest.mark.unit

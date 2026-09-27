@@ -252,7 +252,7 @@ def test_parity_exempts_keys_declared_per_arm_but_not_shared_ones() -> None:
 def test_build_reader_strips_prose_and_shims_logging() -> None:
     source = (
         '"""Module docstring naming the e3 ladder."""\n'
-        "from entropic_substrate.logging import configure_logging, logger\n\n\n"
+        "from entropic_substrate.kernel.runtime.logging import configure_logging, logger\n\n\n"
         "def f() -> int:\n"
         '    """Docstring naming fisher."""\n'
         "    return 1\n"
@@ -557,13 +557,53 @@ def test_default_telemetry_source_resolves_through_the_module(
     assert "TelemetryGap" in reader  # a real telemetry symbol, not a shim
 
 
+def test_build_reader_pre_ruff_output_carries_no_leaked_identity() -> None:
+    """FOR-1556 remedy (P13-FOR-1556): re-point the identity-leak guard to
+    ``build_reader``'s PRE-ruff output, over the REAL telemetry module,
+    resolved the same way ``main()`` resolves it.
+
+    The assertion above (``:556``, over ``packet / "reader.py"`` AFTER
+    ``main()`` runs ``ruff format`` + ``ruff check --fix-only``) is real
+    coverage of the shipped artifact and stays exactly as it is. But it is
+    NOT a guard against every leak class: an ``entropic_substrate.*`` import
+    ``build_reader`` fails to strip (e.g. a ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES``
+    entry that no longer matches a real import) can still leave the packet
+    clean, because the excluded functions (``main``/``_build_parser``/
+    ``read_d1_terminal_defect``) are the only consumers of those D1 imports:
+    once they are stripped, the leaked import is textbook ruff F401
+    "unused import" and ``--fix-only`` silently deletes it before line 556
+    ever reads the file. MEASURED in-branch (mutation reverted, never
+    committed), both instruments, all three FOR-1556 classes -- dropping
+    either ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES`` entry, or neutralizing
+    the ``_LOGGING_SHIM`` substitution, leaves the OLD post-ruff instrument
+    green (blind) while THIS pre-ruff instrument goes RED on every one:
+    no class is left green under the new instrument (P13-TEETH-HONESTY has
+    nothing to retract). The baseline (no mutation) is green under both.
+
+    This is additive: it does not replace or weaken the :556 assertion, and
+    it changes no production behavior -- ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES``
+    and ``_is_shim_source`` are read here, never redefined.
+    """
+    import entropic_substrate.ladder.capture.reader.telemetry as _telemetry
+
+    source = Path(_telemetry.__file__).read_text(encoding="utf-8")
+    reader = _MOD.build_reader(source, source_path=Path(_telemetry.__file__))
+    assert "entropic_substrate" not in reader
+    assert "__legacy" not in reader
+    assert "TelemetryGap" in reader  # a real telemetry symbol, not a shim
+
+
 def test_build_reader_refuses_a_literal_shim_source(tmp_path: Path) -> None:
     """The refusal guard: a shim-form source can never become a packet
     reader again, even via an explicit ``--telemetry`` override."""
     shim_path = tmp_path / "telemetry.py"
+    # P13-EXCEPTIONS (addendum 3): the exact 3-statement rebind shape
+    # `_is_shim_source` detects is kept; only the dotted target changes
+    # (the generator and its `__legacy` shim form retire in B2, but the
+    # refusal guard must still recognize the shape on sight).
     shim_path.write_text(
         "import sys\n"
-        "import entropic_substrate.__legacy.telemetry as _target\n"
+        "import entropic_substrate.ladder.capture.reader.telemetry as _target\n"
         "sys.modules[__name__] = _target\n",
         encoding="utf-8",
     )

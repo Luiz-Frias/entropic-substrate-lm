@@ -11,18 +11,21 @@ import pytest
 
 from d1_billing_finalizer_fixtures import completed_case, provider_bill
 from d1_trainer_fixtures import micro_plan
-from entropic_substrate.d1_billing_finalization_values import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    JournalEventKind,
+)
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
+    reconcile_logical_billing,
+)
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
     D1BillingFinalizationRequest,
     D1TerminalResourceEvidence,
 )
-from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
-from entropic_substrate.evidence.resource_billing_reconciliation import (
-    reconcile_logical_billing,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1TrainerFailureHandoff
 
 pytestmark = pytest.mark.unit
 

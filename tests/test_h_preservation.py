@@ -6,8 +6,8 @@ from dataclasses import replace
 import pytest
 from tests.test_sentence_profile import profile
 
-from entropic_substrate.experiments.h_preservation import H1PreservationBlock
-from entropic_substrate.sentence_prediction.profile import HProfile
+from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.ladder.register.h_preservation import H1PreservationBlock
 
 pytestmark = pytest.mark.unit
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.ladder_predecessor import load_ladder_predecessor
+from entropic_substrate.ladder.gate.ladder_predecessor import load_ladder_predecessor
 
 from .test_ladder_campaign import artifact
 

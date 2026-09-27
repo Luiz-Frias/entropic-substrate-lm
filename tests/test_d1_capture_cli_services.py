@@ -8,31 +8,33 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_authority_loader import (
+from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1LoadedCampaignAuthority,
 )
-from entropic_substrate.d1_campaign_request import D1CampaignCommandRequest
-from entropic_substrate.d1_capture_cli_services import (
+from entropic_substrate.composition.wiring.d1_capture_cli_services import (
     D1CaptureFinalizeCliService,
     D1CapturePrepareCliService,
 )
-from entropic_substrate.d1_capture_finalize_coordinator import (
-    D1PublishedCaptureFinalization,
-)
-from entropic_substrate.d1_capture_finalize_request import D1CaptureFinalizeRequest
-from entropic_substrate.d1_capture_prepare_coordinator import (
-    D1PublishedCapturePreparation,
-)
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1CliCommand,
     D1CliInvalidEvidence,
     D1CliInvocation,
     D1CliOperatorGap,
 )
-from entropic_substrate.evidence.d1_capture_preparation_custody import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody import (
     capture_preparation_custody_from_preparation,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import D1CampaignCommandRequest
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator import (
+    D1PublishedCaptureFinalization,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request import (
+    D1CaptureFinalizeRequest,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator import (
+    D1PublishedCapturePreparation,
+)
 
 from .test_d1_campaign_authority_loader import _loaded_prefix
 from .test_d1_capture_finalize_coordinator import _prepared

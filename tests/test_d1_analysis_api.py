@@ -7,27 +7,27 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
 from d1_launch_admission_fixtures import (
     PREREG_BLOB,
     PREREG_COMMIT,
     PREREG_PATH,
     family,
 )
-from entropic_substrate.analysis.d1_analysis_api import (
-    D1AnalysisCompositionRequest,
-    D1InProcessCompositionRunnerFake,
-    execute_d1_analysis,
-)
-from entropic_substrate.analysis.d1_execution_receipt import (
-    D1IsolationRequest,
-)
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
+)
+from entropic_substrate.ladder.review.d1_analysis_api import (
+    D1AnalysisCompositionRequest,
+    D1InProcessCompositionRunnerFake,
+    execute_d1_analysis,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import (
+    D1IsolationRequest,
 )
 
 from .test_d1_aliased_analysis import _aliases

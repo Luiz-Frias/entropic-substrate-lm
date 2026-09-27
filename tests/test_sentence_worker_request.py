@@ -6,9 +6,9 @@ from dataclasses import replace
 import pytest
 from tests.test_sentence_profile import profile
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.worker_request import (
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     TransferLimits,
     parse_probe_request,

@@ -9,26 +9,26 @@ from typing import cast
 import pytest
 
 from d1_launch_admission_fixtures import SEEDS, contract
-from entropic_substrate.analysis.d1_capture import derive_d1_analysis_exclusions
-from entropic_substrate.analysis.d1_external_analysis_control import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.analyze.d1_capture import derive_d1_analysis_exclusions
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
+    build_d1_capture_aggregate,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
     D1ExternalAnalysisInputControl,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
     bind_d1_machine_analysis_contract,
 )
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
     D1MachineAnalysisVerificationError,
     D1VerifiedMachineAnalysis,
     verify_d1_machine_analysis,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
-    build_d1_capture_aggregate,
-)
-from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .test_d1_external_analysis_input import _case as input_case

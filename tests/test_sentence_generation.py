@@ -9,11 +9,11 @@ import torch
 from tests.test_sentence_execution import engine
 from tests.test_sentence_rollout import scripted_tokens
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.generation import read_generation, run_probe_generation
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.runner import run_probe_training
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.generation import read_generation, run_probe_generation
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.runner import run_probe_training
 
 pytestmark = pytest.mark.unit
 LIMIT = 10_000_000
@@ -221,7 +221,7 @@ def test_unscripted_generation_matches_after_mid_sentence_resume(tmp_path: Path)
 def test_generation_defect_preserves_forensic_state_without_completion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import entropic_substrate.sentence_prediction.generation as generation
+    import entropic_substrate.ladder.run.generation as generation
 
     template, output, training = trained(tmp_path)
 

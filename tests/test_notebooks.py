@@ -52,7 +52,7 @@ def test_notebook_reads_only_through_entropic_substrate_analysis_or_telemetry() 
     notebook must never additionally import/call ``json`` on a results path.
     """
     source = NOTEBOOK.read_text(encoding="utf-8")
-    assert "from entropic_substrate.analysis.series import" in source
+    assert "from entropic_substrate.ladder.analyze.series import" in source
     assert "import json" not in source
     # Calls, not prose: the module docstring/markdown cell mentions
     # "json.loads" BY NAME to explain the invariant, so this checks for an
@@ -135,7 +135,9 @@ def test_notebook_computes_kappa_spread_through_telemetry() -> None:
     identical kappa spreads for the same run, so the arithmetic lives once
     in entropic_substrate.telemetry rather than being re-derived here."""
     source = NOTEBOOK.read_text(encoding="utf-8")
-    assert "from entropic_substrate.telemetry import max_kappa_spread" in source
+    assert (
+        "from entropic_substrate.ladder.capture.reader.telemetry import max_kappa_spread" in source
+    )
     assert "max(max(row) - min(row)" not in source
 
 

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from entropic_substrate.d_ladder_worker_runtime import (
+from entropic_substrate.historical.d_ladder.d_ladder_worker_runtime import (
     SOURCE_PREFIXES,
     build_worker_factory,
     measure_hardware,
@@ -29,7 +29,7 @@ def test_hardware_is_measured_and_cpu_cannot_masquerade_as_gpu() -> None:
 def test_resource_registration_requires_the_existing_cuda_adapters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import entropic_substrate.d_ladder_worker_runtime as module
+    import entropic_substrate.historical.d_ladder.d_ladder_worker_runtime as module
 
     monkeypatch.setattr(module, "build_torch_cuda_adapters", lambda **_: (None, None))
     with pytest.raises(ValueError, match="CUDA"):

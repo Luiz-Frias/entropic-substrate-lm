@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_request import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
+    parse_registered_design_declaration,
+    serialize_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignLocations,
     D1CampaignRequestError,
@@ -17,10 +21,6 @@ from entropic_substrate.d1_campaign_request import (
     D1PersistedCampaignCursor,
     parse_d1_campaign_request,
     serialize_d1_campaign_request,
-)
-from entropic_substrate.experiments.d1_registration_codec import (
-    parse_registered_design_declaration,
-    serialize_registered_design,
 )
 
 from .test_d1_campaign_queue import _campaign

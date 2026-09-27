@@ -8,11 +8,11 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1FilingValidationError,
 )
-from entropic_substrate.evidence.d1_filing_assembly import (
+from entropic_substrate.ladder.file.d1_filing_assembly import (
     D1FilingArtifactMaterial,
     assemble_d1_filing_manifest,
     assemble_d1_narrative,

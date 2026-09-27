@@ -18,14 +18,14 @@ from d1_resume_fixtures import (
 )
 from d1_resume_hard_crash_fixture import hard_crash_tail_case
 from d1_trainer_fixtures import DeterministicTrainerClock
-from entropic_substrate.d1_dual_failure import (
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
 )
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import run_d1_resume
-from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
-from entropic_substrate.d1_trainer_handoff_codec import (
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import run_d1_resume
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1TrainerFailureHandoff
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff_codec import (
     parse_d1_trainer_handoff,
     serialize_d1_trainer_handoff,
     trainer_handoff_from_mapping,

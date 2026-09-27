@@ -11,39 +11,41 @@ import pytest
 
 import d1_launch_admission_fixtures as launch
 from d1_trainer_fixtures import micro_plan
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_excluded_operator import D1ExcludedOperator
-from entropic_substrate.d1_fresh_trainer import run_d1_fresh
-from entropic_substrate.d1_operator_custody_adapter import D1OperatorCustodyAdapter
-from entropic_substrate.d1_operator_evidence import (
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.build import build_corpus
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import read_d1_run_evidence
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.register.d1_plan import (
+    create_d1_excluded_pilot_plan,
+    parse_d1_confirmatory_plan,
+)
+from entropic_substrate.ladder.register.d1_provenance import (
+    CodeIdentity,
+    ContainerIdentity,
+    DataIdentity,
+)
+from entropic_substrate.ladder.run.campaign.d1_excluded_operator import D1ExcludedOperator
+from entropic_substrate.ladder.run.campaign.d1_operator_custody_adapter import (
+    D1OperatorCustodyAdapter,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     attest_d1_staged_trainer_request,
 )
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImmutableImage,
     D1OperatorLaunchIntent,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import run_d1_fresh
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
-)
-from entropic_substrate.data.build import build_corpus
-from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_plan import (
-    create_d1_excluded_pilot_plan,
-    parse_d1_confirmatory_plan,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
-from entropic_substrate.experiments.d1_provenance import (
-    CodeIdentity,
-    ContainerIdentity,
-    DataIdentity,
 )
 
 from .test_d1_operator_controller import _Clock, _Provider, _Trainer, _TrainerClock

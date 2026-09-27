@@ -10,12 +10,12 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.analysis.d1_real_arm_verdict import (
+from entropic_substrate.ladder.file.d1_real_arm_verdict import (
     D1AssembledRealArmVerdict,
     D1VerdictDecision,
     assemble_d1_real_arm_verdict,
 )
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     adjudicate_d1_review,
     parse_d1_major_findings,
 )

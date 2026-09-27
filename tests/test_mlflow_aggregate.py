@@ -20,7 +20,11 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.mlflow_aggregate import PARENT_TAG, aggregate, find_parent_run
+from entropic_substrate.ladder.capture.reader.mlflow_aggregate import (
+    PARENT_TAG,
+    aggregate,
+    find_parent_run,
+)
 from test_sinks import FakeMlflowClient
 
 pytestmark = pytest.mark.unit
@@ -397,7 +401,7 @@ def test_cli_mlflow_aggregate_handles_seed_group_growth_end_to_end(tmp_path: Pat
     """
     import mlflow.tracking
 
-    from entropic_substrate.cli import main
+    from entropic_substrate.composition.entrypoints.cli import main
 
     tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
@@ -427,7 +431,7 @@ def test_cli_mlflow_aggregate_reports_mlflow_exception_as_controlled_refusal(
     """
     from mlflow.exceptions import MlflowException
 
-    import entropic_substrate.cli as cli_module
+    import entropic_substrate.composition.entrypoints.cli as cli_module
 
     def _boom(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
         msg = "simulated server-side rejection"

@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.analysis.predictive_probe import (
+from entropic_substrate.core.probe.predictive_probe import (
     FrozenPredictiveProbe,
     ProbeConfig,
     StateSequence,

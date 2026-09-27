@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
     ORIGIN_NS,
@@ -17,15 +17,15 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import (
     D1FreshRunFailure,
     D1FreshRunLocations,
     run_d1_fresh,
 )
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import run_d1_resume
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import run_d1_resume
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
 
 pytestmark = pytest.mark.unit
 

@@ -6,8 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from entropic_substrate.config import merge_dicts
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -21,15 +20,16 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.experiments.d1_config import d1_configs_dir
-from entropic_substrate.experiments.d1_config_profile import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.kernel.runtime.config import merge_dicts
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir
+from entropic_substrate.ladder.register.d1_config_profile import (
     D1LaunchScale,
     parse_d1_profile_payload,
     read_d1_profile_mapping,
 )
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan, create_d1_smoke_plan
-from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
-from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
+from entropic_substrate.ladder.register.d1_plan import SmokeD1RunPlan, create_d1_smoke_plan
+from entropic_substrate.ladder.register.d1_provenance import EvidenceEnvelope
 
 STARTED_AT = datetime(2026, 8, 23, 20, 1, tzinfo=UTC)
 ORIGIN_NS = 10_000

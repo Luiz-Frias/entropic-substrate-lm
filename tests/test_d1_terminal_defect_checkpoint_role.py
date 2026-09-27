@@ -8,21 +8,21 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.d1_numerical_defect import (
-    D1DefectCheckpointReference,
-    terminal_numerical_defect_from_mapping,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import D1TerminalDefectInput
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     D1CaptureAggregateError,
     build_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     identify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    D1DefectCheckpointReference,
+    terminal_numerical_defect_from_mapping,
+)
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .d1_telemetry_fixtures import write_events

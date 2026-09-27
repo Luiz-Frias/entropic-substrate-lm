@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 import torch
 
-from entropic_substrate.config import DataConfig
-from entropic_substrate.data import enwik8, fineweb
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.data.build import build_corpus, corpus_byte_stream
-from entropic_substrate.data.enwik8 import load_enwik8_bytes
-from entropic_substrate.data.synthetic import synthetic_text
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.kernel.runtime.config import DataConfig
+from entropic_substrate.ladder.capture.custody import enwik8, fineweb
+from entropic_substrate.ladder.capture.custody.build import build_corpus, corpus_byte_stream
+from entropic_substrate.ladder.capture.custody.enwik8 import load_enwik8_bytes
+from entropic_substrate.ladder.capture.custody.synthetic import synthetic_text
 
 pytestmark = pytest.mark.unit
 

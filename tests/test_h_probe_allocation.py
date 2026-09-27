@@ -10,16 +10,23 @@ from tests.test_h_probe_control import root
 from tests.test_h_probe_launch import launch
 from tests.test_h_probe_process import config, fake_policy
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.h_probe_allocation import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.run.h_probe_control import read_probe_control
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
+from entropic_substrate.ladder.run.h_probe_process import (
+    ProbeWatchdogProcess,
+    supervise_probe_watchdog,
+)
+from entropic_substrate.ladder.run.h_runpod_transport import (
+    ProbeAccount,
+    ProbePod,
+    ProbeProviderError,
+)
+from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     ProbeAllocationHandoffError,
     allocate_probe_once,
 )
-from entropic_substrate.h_probe_control import read_probe_control
-from entropic_substrate.h_probe_launch import H0ProbeLaunch
-from entropic_substrate.h_probe_process import ProbeWatchdogProcess, supervise_probe_watchdog
-from entropic_substrate.h_runpod_transport import ProbeAccount, ProbePod, ProbeProviderError
-from entropic_substrate.sentence_prediction.worker_transport import publish_verified_object
+from entropic_substrate.ladder.run.worker_transport import publish_verified_object
 
 pytestmark = pytest.mark.unit
 
@@ -57,7 +64,7 @@ def rig(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Generator[tuple[ProbeWatchdogProcess, Provider, _ObjectStore]]:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
-    monkeypatch.setattr("entropic_substrate.h_probe_process._run_policy", fake_policy)
+    monkeypatch.setattr("entropic_substrate.ladder.run.h_probe_process._run_policy", fake_policy)
     spec, directory = launch(), root(tmp_path)
     objects = _ObjectStore()
     publish_verified_object(objects, f"{spec.request.prefix}/request.json", spec.request.payload)

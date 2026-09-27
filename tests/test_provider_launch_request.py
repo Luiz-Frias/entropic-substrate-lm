@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from entropic_substrate.provider_launch import PodLaunchRequest
+from entropic_substrate.ladder.run.provider.provider_launch import PodLaunchRequest
 
 from .test_d1_runpod_adapter import _adapter, _create_payload, _intent, _result, _Runner
 
@@ -20,7 +20,7 @@ def test_neutral_ladder_worker_uses_same_provider_parser_and_deadline():
         intent.image,
         intent.resource,
         intent.terminate_after_seconds,
-        ("python", "-m", "entropic_substrate.d_ladder_worker_command", "serve"),
+        ("python", "-m", "entropic_substrate.historical.d_ladder.d_ladder_worker_command", "serve"),
         (("D_LADDER_CODE_COMMIT", intent.image.source_commit),),
     )
     result = provider.create_pod(request)
@@ -28,7 +28,8 @@ def test_neutral_ladder_worker_uses_same_provider_parser_and_deadline():
     argv = runner.calls[0][0]
     assert "--terminate-after" in argv
     assert (
-        "entropic_substrate.d_ladder_worker_command serve" in argv[argv.index("--docker-args") + 1]
+        "entropic_substrate.historical.d_ladder.d_ladder_worker_command serve"
+        in argv[argv.index("--docker-args") + 1]
     )
     environment = json.loads(argv[argv.index("--env") + 1])
     assert environment["D_LADDER_CODE_COMMIT"] == intent.image.source_commit
@@ -38,7 +39,11 @@ def test_neutral_ladder_worker_uses_same_provider_parser_and_deadline():
 @pytest.mark.parametrize(
     "deadline, command, message",
     [
-        (0, ("python", "-m", "entropic_substrate.d_ladder_worker_command"), "positive termination"),
+        (
+            0,
+            ("python", "-m", "entropic_substrate.historical.d_ladder.d_ladder_worker_command"),
+            "positive termination",
+        ),
         (60, ("bash",), "pinned Python worker"),
     ],
 )

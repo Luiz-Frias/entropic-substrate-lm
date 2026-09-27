@@ -10,18 +10,48 @@ from typing import NamedTuple, cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_review_packet as review_packet_module
-from entropic_substrate.analysis.d1_blind_aliases import (
+import entropic_substrate.ladder.review.d1_review_packet as review_packet_module
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.identity.d1_primitives import (
+    D1Arm,
+    RunClass,
+    canonical_digest,
+    canonical_json,
+    thaw_for_digest,
+)
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1CapturePartitionProof,
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1AttemptEvidence
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1AttemptLane,
+    D1DeclaredAttempt,
+    D1ExpectedRun,
+    D1LaunchRoster,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import (
+    D1_RUN_IDENTITY_ATTESTATION_PATHS,
+    D1RunIdentityAttestation,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence, D1RunStatus
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
+from entropic_substrate.ladder.review.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
     D1PreparedBlindAliases,
     prepare_d1_blind_aliases,
 )
-from entropic_substrate.analysis.d1_execution_receipt import (
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1AnalysisExecutionReceipt,
     issue_d1_verified_analysis_receipt,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
-from entropic_substrate.analysis.d1_review_packet import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
+from entropic_substrate.ladder.review.d1_review_packet import (
     D1BlindnessLabel,
     D1BlindReviewPacket,
     D1PacketBlindnessError,
@@ -31,36 +61,6 @@ from entropic_substrate.analysis.d1_review_packet import (
     d1_review_roster_alias_order,
     validate_d1_packet_blindness,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import (
-    D1CapturePartitionProof,
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence
-from entropic_substrate.evidence.d1_capture_roster import (
-    D1AttemptLane,
-    D1DeclaredAttempt,
-    D1ExpectedRun,
-    D1LaunchRoster,
-)
-from entropic_substrate.evidence.d1_capture_validation import (
-    D1_RUN_IDENTITY_ATTESTATION_PATHS,
-    D1RunIdentityAttestation,
-)
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1_NO_MAJOR_OUTCOME,
-    D1_NO_MAJOR_PROMPT_DIRECTIVE,
-)
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence, D1RunStatus
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_primitives import (
-    D1Arm,
-    RunClass,
-    canonical_digest,
-    canonical_json,
-    thaw_for_digest,
-)
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_blind_alias_custody import _DeterministicCrypto

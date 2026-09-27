@@ -632,8 +632,10 @@ _PACKET_READER_EXCLUDED_FUNCTIONS = {
     "read_d1_terminal_defect",
 }
 _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
-    "entropic_substrate.d1_",
-    "entropic_substrate.evidence.d1_",
+    # p13-sweep, B2 row 7 (P12-D5 cut, E-4 door): the two entries this tuple
+    # carried at the old prefix are rewritten to their landed addresses.
+    # They are pinned verbatim by tests/test_cli_surface.py's
+    # _FROZEN_LITERAL_SITES_PATH.
     "entropic_substrate.ladder.capture.reader.d1_",
     "entropic_substrate.ladder.capture.records.d1_",
 )
@@ -642,8 +644,11 @@ _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
 def _is_shim_source(source: str) -> bool:
     """True if ``source`` is (structurally) a generated alias shim: the
     ``import <target> as _target`` / ``sys.modules[__name__] = _target``
-    rebind ``tools/gen_shims.py`` emits, with or without its leading
-    entrypoint ``if __name__ == "__main__":`` guard.
+    rebind the pre-p13 shim generator emitted (the generator and every
+    emitted shim retired in p13's breaking commit; this guard still
+    recognizes the shape on sight, in case a future move reintroduces it),
+    with or without its leading entrypoint ``if __name__ == "__main__":``
+    guard.
 
     A reader built from a source this shallow degrades to a no-op that
     still "succeeds" (FOR-1524, MEASURED 2026-09-20: p3-quarantine's move
@@ -733,10 +738,11 @@ def build_reader(telemetry_source: str, *, source_path: Path | None = None) -> s
     ]
     ast.fix_missing_locations(tree)
     code = ast.unparse(tree)
-    code = code.replace(
-        "from entropic_substrate.logging import configure_logging, logger",
-        _LOGGING_SHIM,
-    )
+    # p13-sweep, B2 row 18: the old-spelling strip
+    # ("from entropic_substrate.logging import configure_logging, logger")
+    # retired as dead code -- no source under the retired namespace exists
+    # to produce that string any more. The landed spelling below is the
+    # only one any reader source can carry now.
     code = code.replace(
         "from entropic_substrate.kernel.runtime.logging import configure_logging, logger",
         _LOGGING_SHIM,
@@ -861,7 +867,8 @@ def main() -> int:
         "--telemetry",
         type=Path,
         default=None,
-        help="defaults to the real module behind entropic_substrate.telemetry, "
+        help="defaults to the real module behind "
+        "entropic_substrate.ladder.capture.reader.telemetry, "
         "resolved THROUGH the module (not a literal repo path) so it follows "
         "the sys.modules rebind to wherever the module actually lives "
         "(FOR-1524)",
@@ -893,11 +900,13 @@ def main() -> int:
 
     telemetry_path = args.telemetry
     if telemetry_path is None:
-        # Resolve THROUGH the module, never a literal repo path: the
-        # sys.modules rebind (tools/gen_shims.py) makes __file__ the real
-        # target module wherever it actually lives, and stays correct
-        # across a later structural move (FOR-1524).
-        import entropic_substrate.telemetry as _telemetry
+        # Resolve THROUGH the module, never a literal repo path: this
+        # stays correct across a later structural move on its own, and
+        # historically (pre-p13) also followed the shim generator's
+        # sys.modules rebind to wherever the real target module lived
+        # (FOR-1524). The shim generator retired in p13; resolving through
+        # the module is kept as the general-case default regardless.
+        import entropic_substrate.ladder.capture.reader.telemetry as _telemetry
 
         telemetry_path = Path(_telemetry.__file__)
 

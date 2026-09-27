@@ -8,11 +8,11 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
-from entropic_substrate.h_probe_collection import collect_probe_terminal
-from entropic_substrate.sentence_prediction import object_worker
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.span_states import SpanPopulationGap
-from entropic_substrate.sentence_prediction.worker_transport import publish_probe_request
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.ladder.run import object_worker
+from entropic_substrate.ladder.run.h_probe_collection import collect_probe_terminal
+from entropic_substrate.ladder.run.span_states import SpanPopulationGap
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
 
@@ -185,8 +185,8 @@ def test_pause_cannot_offer_an_uncaptured_resume_artifact(tmp_path: Path) -> Non
 
     from tests.test_h_probe_events import event, store
 
-    from entropic_substrate.sentence_prediction.journal import write_json
-    from entropic_substrate.sentence_prediction.worker_snapshot import publish_worker_snapshot
+    from entropic_substrate.ladder.run.journal import write_json
+    from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
 
     request, _ = prepared(tmp_path, pause=("prediction", 2))
     producer, destination = tmp_path / "producer", tmp_path / "collected"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
 from d1_launch_admission_fixtures import (
     PREREG_BLOB,
     PREREG_COMMIT,
@@ -16,15 +16,15 @@ from d1_launch_admission_fixtures import (
 from d1_launch_admission_fixtures import (
     contract as base_contract,
 )
-from entropic_substrate.analysis.d1_capture import admit_d1_analysis_capture
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_capture import admit_d1_analysis_capture
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1DiagnosticPolicyError,
     build_d1_report_diagnostics,
     parse_d1_diagnostic_policy,
 )
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.experiments.d1_family import D1ExperimentFamily
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,

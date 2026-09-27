@@ -6,8 +6,8 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.metric import FisherNumericalError
-from entropic_substrate.sentence_prediction.law import DirectionalMagnitudeLaw, LawSpec
+from entropic_substrate.core.latent.metric import FisherNumericalError
+from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
 
 pytestmark = pytest.mark.unit
 

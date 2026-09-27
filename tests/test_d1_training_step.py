@@ -10,25 +10,25 @@ import pytest
 import torch
 from torch import nn
 
-import entropic_substrate.d1_training_step as step_module
+import entropic_substrate.ladder.run.trainer.d1_training_step as step_module
 from d1_runtime_fixtures import fit_runtime_baseline, runtime_batch, runtime_family, runtime_system
-from entropic_substrate.d1_optimizer import D1OptimizerBundle, build_d1_optimizer
-from entropic_substrate.d1_training_step import (
+from entropic_substrate.core.latent.ema_schedules import CosineEmaDecaySchedule
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.core.latent.target_updates import (
+    OnlineTargetUpdate,
+    StopGradientEmaUpdate,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EMAKind
+from entropic_substrate.ladder.register.d1_execution import D1AmpPolicy
+from entropic_substrate.ladder.register.d1_stabilization import EMAParameters
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.run.trainer.d1_optimizer import D1OptimizerBundle, build_d1_optimizer
+from entropic_substrate.ladder.run.trainer.d1_training_step import (
     D1GradientEvidenceKind,
     D1GradientReachability,
     D1TrainStepResult,
     apply_d1_training_step,
     d1_learning_rate,
-)
-from entropic_substrate.experiments.d1_execution import D1AmpPolicy
-from entropic_substrate.experiments.d1_primitives import D1Arm, EMAKind
-from entropic_substrate.experiments.d1_stabilization import EMAParameters
-from entropic_substrate.predictive_state.ema_schedules import CosineEmaDecaySchedule
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
-from entropic_substrate.predictive_state.target_updates import (
-    OnlineTargetUpdate,
-    StopGradientEmaUpdate,
 )
 
 pytestmark = pytest.mark.unit

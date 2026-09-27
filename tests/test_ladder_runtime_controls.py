@@ -6,11 +6,12 @@ import pytest
 import torch
 
 from d1_runtime_fixtures import runtime_batch
-from entropic_substrate.data.batching import PredictiveBatch
-from entropic_substrate.experiments.ladder import CoarseSpec, Rung
-from entropic_substrate.observation import ByteObservationCodec, ObservationAlignment
-from entropic_substrate.observation.permuted_byte_codec import PermutedByteObservationCodec
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.core.corpus.batching import PredictiveBatch
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.core.observation.contracts import ObservationAlignment
+from entropic_substrate.core.observation.permuted_byte_codec import PermutedByteObservationCodec
+from entropic_substrate.ladder.register.ladder import CoarseSpec, Rung
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 from test_ladder_runtime import spec
 
 pytestmark = pytest.mark.unit

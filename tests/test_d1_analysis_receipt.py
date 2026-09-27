@@ -6,8 +6,14 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_execution_receipt import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactIdentity,
+    D1ArtifactRole,
+    D1DvcBinding,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1AnalysisExecutionReceipt,
     D1AnalysisFilingBindings,
     D1AnalysisImplementationIdentity,
@@ -19,12 +25,6 @@ from entropic_substrate.analysis.d1_execution_receipt import (
     D1IsolationRequest,
     issue_d1_analysis_receipt,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import (
-    D1ArtifactIdentity,
-    D1ArtifactRole,
-    D1DvcBinding,
-)
-from entropic_substrate.experiments.d1_primitives import canonical_json
 
 from .test_d1_aliased_analysis import _aliases, _packet
 

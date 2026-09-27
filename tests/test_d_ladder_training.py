@@ -4,15 +4,15 @@ import numpy as np
 import pytest
 import torch
 
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_training import (
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.historical.d_ladder.d_ladder_training import (
     evaluate_ladder,
     gradient_measurements,
     ladder_optimizer,
     train_ladder_step,
 )
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.predictive_state.ladder_runtime import LadderPredictiveSystem
+from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPredictiveSystem
 
 pytestmark = pytest.mark.unit
 

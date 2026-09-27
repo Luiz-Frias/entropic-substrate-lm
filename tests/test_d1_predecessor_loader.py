@@ -11,19 +11,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from entropic_substrate.d1_command_runner import D1BoundedProcessResult
-from entropic_substrate.d1_predecessor_loader import load_d1_predecessor, verified_git_bundle
-from entropic_substrate.evidence.ladder_campaign import artifact_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_mapping
+from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     serialize_decision_contract,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.run.provider.d1_command_runner import D1BoundedProcessResult
+from entropic_substrate.ladder.run.worker.d1_predecessor_loader import (
+    load_d1_predecessor,
+    verified_git_bundle,
 )
 
 from . import ladder_campaign_fixtures
@@ -91,7 +94,7 @@ def test_bundle_clone_cannot_inherit_repository_overrides(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "entropic_substrate.d1_predecessor_loader.os",
+        "entropic_substrate.ladder.run.worker.d1_predecessor_loader.os",
         SimpleNamespace(environ={"GIT_DIR": "foreign", "PATH": "/fixture/bin"}),
     )
 
@@ -107,7 +110,8 @@ def test_bundle_clone_cannot_inherit_repository_overrides(
             return D1BoundedProcessResult(1, b"", b"fixture rejection")
 
     monkeypatch.setattr(
-        "entropic_substrate.d1_predecessor_loader.D1BoundedProcessRunner", InspectClone
+        "entropic_substrate.ladder.run.worker.d1_predecessor_loader.D1BoundedProcessRunner",
+        InspectClone,
     )
     bundle = tmp_path / "proof.bundle"
     bundle.write_bytes(b"fake bundle for environment inspection")

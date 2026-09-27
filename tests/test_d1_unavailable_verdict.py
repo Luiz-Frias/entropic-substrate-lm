@@ -4,10 +4,14 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.d1_evaluation_values import D1CosineGap
-from entropic_substrate.evidence.d1_statistical_gaps import D1EndpointGap, D1EstimateGap, D1GapCell
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
-from entropic_substrate.experiments.d1_primitives import thaw_for_digest
+from entropic_substrate.kernel.identity.d1_primitives import thaw_for_digest
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap
+from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
+    D1EndpointGap,
+    D1EstimateGap,
+    D1GapCell,
+)
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 from .d1_verdict_v2_fixtures import decision_contract, machine_verdict
 

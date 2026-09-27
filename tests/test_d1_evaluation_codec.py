@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from entropic_substrate.d1_evaluation import D1ChannelMoments, D1EvalResult
-from entropic_substrate.d1_evaluation_codec import (
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1ChannelMoments, D1EvalResult
+from entropic_substrate.ladder.run.trainer.d1_evaluation_codec import (
     d1_evaluation_from_mapping,
     d1_evaluation_to_mapping,
     parse_d1_evaluation,

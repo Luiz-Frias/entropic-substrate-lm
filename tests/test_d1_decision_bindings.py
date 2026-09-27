@@ -7,8 +7,8 @@ import json
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_types import D1VerdictValidationError
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
+from entropic_substrate.kernel.verdict.d1_types import D1VerdictValidationError
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 pytestmark = pytest.mark.unit
 

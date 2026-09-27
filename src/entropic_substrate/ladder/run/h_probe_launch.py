@@ -164,7 +164,7 @@ class H0ProbeLaunch:
         worker = (
             "python",
             "-m",
-            "entropic_substrate.sentence_prediction.worker_command",
+            "entropic_substrate.ladder.run.worker_command",
             "run",
             "--repo-root",
             "/app",

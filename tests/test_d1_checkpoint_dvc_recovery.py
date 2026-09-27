@@ -9,19 +9,19 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_checkpoint_dvc_recovery import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPointerIdentity
+from entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_recovery import (
     D1CheckpointDvcRecoveryError,
     D1CheckpointDvcRecoveryService,
 )
-from entropic_substrate.d1_checkpoint_dvc_sync import (
+from entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_sync import (
     D1CheckpointDvcSyncReceipt,
     d1_checkpoint_sync_mailbox_path,
 )
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
 
 pytestmark = pytest.mark.unit
 

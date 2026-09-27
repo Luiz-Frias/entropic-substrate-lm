@@ -7,25 +7,25 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_campaign_capture import D1HeterogeneousCaptureAdapter
-from entropic_substrate.d1_capture_finalize_coordinator import (
-    D1CampaignCaptureFinalizationCoordinator,
-    D1PublishedCaptureFinalization,
-)
-from entropic_substrate.d1_capture_prepare_coordinator import (
-    D1CampaignCapturePreparationCoordinator,
-)
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_preparation_custody_repository import (
-    D1CapturePreparationCustodyRepositoryError,
-)
-from entropic_substrate.evidence.d1_lifecycle_repository import D1LifecycleRepository
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ContentHash,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody_repository import (
+    D1CapturePreparationCustodyRepositoryError,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository import D1LifecycleRepository
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.run.campaign.d1_campaign_capture import D1HeterogeneousCaptureAdapter
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator import (
+    D1CampaignCaptureFinalizationCoordinator,
+    D1PublishedCaptureFinalization,
+)
+from entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator import (
+    D1CampaignCapturePreparationCoordinator,
 )
 
 from .test_d1_campaign_evidence_assembler import _case

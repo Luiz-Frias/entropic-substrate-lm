@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from d1_launch_admission_fixtures import IMAGE_DIGEST, plan, profiles, start
-from entropic_substrate.d1_operator_ports import D1RunPodPort, D1TrainerEvidencePort
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImageBuildRequest,
@@ -18,6 +17,10 @@ from entropic_substrate.d1_operator_values import (
     D1PodPlacement,
     D1RuntimeObservation,
     attest_d1_run_start,
+)
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
+    D1RunPodPort,
+    D1TrainerEvidencePort,
 )
 
 pytestmark = pytest.mark.unit

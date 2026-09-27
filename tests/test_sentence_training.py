@@ -4,8 +4,8 @@ import pytest
 import torch
 from tests.test_sentence_model import history, tiny_model
 
-from entropic_substrate.sentence_prediction.objective import codec_warmup_loss, prediction_loss
-from entropic_substrate.sentence_prediction.training import (
+from entropic_substrate.core.sentence.objective import codec_warmup_loss, prediction_loss
+from entropic_substrate.ladder.run.training import (
     SentenceTrainingDefect,
     apply_sentence_step,
     build_sentence_optimizer,

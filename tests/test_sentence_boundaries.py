@@ -4,8 +4,8 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.sentence_prediction.boundary import SentenceByteCodec
-from entropic_substrate.sentence_prediction.records import SentenceSpan, SourceDocument
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
+from entropic_substrate.core.sentence.records import SentenceSpan, SourceDocument
 
 pytestmark = pytest.mark.unit
 

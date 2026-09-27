@@ -9,11 +9,11 @@ import pytest
 import torch
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.sentence_prediction import execution as runtime
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.numerics import UndefinedDirection
-from entropic_substrate.sentence_prediction.runner import run_probe_training
-from entropic_substrate.sentence_prediction.runtime_precision import require_execution_precision
+from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
+from entropic_substrate.ladder.run import execution as runtime
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.runner import run_probe_training
 
 pytestmark = pytest.mark.unit
 

@@ -24,9 +24,9 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.mlflow_aggregate import aggregate
-from entropic_substrate.sinks import MLFLOW_TRACKING_ENV, build_sink
-from entropic_substrate.train import Trainer
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.ladder.capture.reader.mlflow_aggregate import aggregate
+from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV, build_sink
 from helpers import tiny_config
 
 pytestmark = [

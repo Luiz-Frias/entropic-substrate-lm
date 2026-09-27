@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1FilingGraphError,
     D1FilingRevisions,
     parse_alias_commitment,

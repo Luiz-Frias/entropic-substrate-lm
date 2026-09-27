@@ -8,11 +8,11 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_external_worker as worker_module
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+import entropic_substrate.ladder.review.d1_external_worker as worker_module
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     encode_d1_external_analysis_request_v2,
 )
-from entropic_substrate.analysis.d1_external_worker import (
+from entropic_substrate.ladder.review.d1_external_worker import (
     D1ExternalWorkerArtifacts,
     D1ExternalWorkerError,
     main,

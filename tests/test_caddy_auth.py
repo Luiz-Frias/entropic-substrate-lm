@@ -54,8 +54,8 @@ from pathlib import Path
 import pytest
 import requests
 
-from entropic_substrate.sinks import MlflowStartupError, build_sink
-from entropic_substrate.train import Trainer
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.ladder.capture.reader.sinks import MlflowStartupError, build_sink
 from helpers import (
     assert_no_foreign_mlflow_stack,
     capture_container_logs,

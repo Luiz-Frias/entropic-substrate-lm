@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.sinks import (
+from entropic_substrate.ladder.capture.reader.sinks import (
     CompositeSink,
     ExtractedMetrics,
     JsonlSink,

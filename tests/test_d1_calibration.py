@@ -7,9 +7,9 @@ import pytest
 import torch
 
 from d1_runtime_fixtures import runtime_system
-from entropic_substrate.d1_calibration import D1BaselineCalibrator
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.ladder.run.trainer.d1_calibration import D1BaselineCalibrator
 
 pytestmark = pytest.mark.unit
 
