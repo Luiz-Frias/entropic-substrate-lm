@@ -57,6 +57,12 @@ h-inspect-spans *ARGS:
 h-worker *ARGS:
     uv run python -m {{ h_worker }} {{ ARGS }}
 
+# e.g. just h-tiny-trace --profile <remote>/profile.json --corpus <capture> --out results/<dir>
+# Re-seals the capture in this regime; JSONL sink always, MLflow when opted in.
+# Local CPU tracer for a remote tiny H profile (no scientific or spending authority).
+h-tiny-trace *ARGS:
+    uv run python -m entropic_substrate.composition.wiring.h_tiny_tracer {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------
