@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_execution import SmokeRequest, run_local_smoke
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest, run_local_smoke
 
 pytestmark = pytest.mark.unit
 

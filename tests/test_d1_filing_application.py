@@ -1,4 +1,4 @@
-"""Real-arm evidence assembles one exact fourteen-role filing preparation."""
+"""Real-arm evidence assembles one exact thirteen-role filing preparation."""
 
 from __future__ import annotations
 
@@ -9,22 +9,22 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_filing_application as filing_module
-from entropic_substrate.d1_filing_application import (
+import entropic_substrate.ladder.file.d1_filing_application as filing_module
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.kernel.lifecycle import ActorRole
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.file.d1_filing import (
+    REQUIRED_D1_FILING_ARTIFACTS,
+    validate_d1_filing_manifest,
+)
+from entropic_substrate.ladder.file.d1_filing_application import (
     D1FilingArtifactPaths,
     D1LocalFilingArtifactStore,
     finalize_d1_filing,
     prepare_d1_filing_bundle,
 )
-from entropic_substrate.evidence.d1_filing import (
-    REQUIRED_D1_FILING_ARTIFACTS,
-    validate_d1_filing_manifest,
-)
-from entropic_substrate.evidence.d1_filing_graph import verify_d1_filing
-from entropic_substrate.evidence.d1_filing_receipts import D1FilingRevisions
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.lifecycle import ActorRole
-from entropic_substrate.experiments.d1_primitives import canonical_json
+from entropic_substrate.ladder.file.d1_filing_graph import verify_d1_filing
+from entropic_substrate.ladder.file.d1_filing_receipts import D1FilingRevisions
 
 from .test_d1_filing_graph_gate import FakeGit
 from .test_d1_process_manager import _actor, _artifact
@@ -41,7 +41,7 @@ def _paths() -> D1FilingArtifactPaths:
     )
 
 
-def test_preparation_derives_exact_fourteen_role_filing_from_attested_lineage(
+def test_preparation_derives_exact_thirteen_role_filing_from_attested_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,7 +210,6 @@ def _filing_git(prepared, revisions: D1FilingRevisions) -> FakeGit:
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),

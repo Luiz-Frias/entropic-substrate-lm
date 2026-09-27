@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliApplication,
     D1CliCommand,

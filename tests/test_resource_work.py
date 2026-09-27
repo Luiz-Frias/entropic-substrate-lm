@@ -8,15 +8,19 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, Money, execution_segment_id
-from entropic_substrate.evidence.resource_work import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    Money,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_work import (
     CostReading,
     ReadingMethod,
     ResourceWorkSnapshot,
     ScalarReading,
     validate_resource_work_series,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 pytestmark = pytest.mark.unit
 

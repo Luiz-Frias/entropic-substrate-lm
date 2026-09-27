@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_preparation_custody import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody import (
     capture_preparation_custody_from_preparation,
 )
-from entropic_substrate.evidence.d1_capture_preparation_custody_repository import (
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody_repository import (
     D1CapturePreparationCustodyRepository,
     D1CapturePreparationCustodyRepositoryError,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 from .test_d1_capture_preparation_custody import _authority, _case
 

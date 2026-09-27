@@ -87,5 +87,5 @@ ENV PYTHONUNBUFFERED=1
 # Example direct-run on an H100 pod:
 #   podman run --gpus all -v $(pwd)/data:/app/data -v $(pwd)/models:/app/models \
 #     -v $(pwd)/results:/app/results entropic-substrate-lm:latest \
-#     python -m entropic_substrate.cli train --exp e3
+#     python -m entropic_substrate.composition.entrypoints.cli train --exp e3
 CMD ["sleep", "infinity"]

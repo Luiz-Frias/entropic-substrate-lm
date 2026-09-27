@@ -5,24 +5,27 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import D1TerminalDefectInput
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactRole,
+    identify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
+    D1AttemptEvidence,
+    D1CaptureInput,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1AttemptLane,
+    D1LaunchRoster,
+)
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1DefectCheckpointReference,
     D1NonfiniteClassification,
     D1TerminalNumericalDefectRecord,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
-from entropic_substrate.evidence.d1_capture_artifacts import (
-    D1ArtifactRole,
-    identify_d1_artifact,
-)
-from entropic_substrate.evidence.d1_capture_bundle import (
-    D1AttemptEvidence,
-    D1CaptureInput,
-)
-from entropic_substrate.evidence.d1_capture_roster import D1AttemptLane, D1LaunchRoster
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
 
 from .d1_capture_fixtures import _events_for, capture_family
 from .d1_telemetry_fixtures import write_events

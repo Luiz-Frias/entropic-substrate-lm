@@ -13,13 +13,13 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.analysis.series import (
+from entropic_substrate.ladder.analyze.series import (
     load_eval_run,
     load_train_run,
     pair_final_metrics,
     paired_verdict,
 )
-from entropic_substrate.telemetry import TelemetryGap
+from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 
 pytestmark = pytest.mark.unit
 
@@ -128,7 +128,7 @@ def test_paired_verdict_stage1_matches_the_preregistered_t_value() -> None:
     assertion (the verdict strip draws the literal), but pinning the number
     here too keeps this test meaningful in isolation.
     """
-    from entropic_substrate.analysis.series import PairedFinalMetric
+    from entropic_substrate.ladder.analyze.series import PairedFinalMetric
 
     pairs = [
         PairedFinalMetric(seed=s, fisher=1.5, control=1.5 + d)
@@ -145,7 +145,7 @@ def test_paired_verdict_stage1_matches_the_preregistered_t_value() -> None:
 
 def test_paired_verdict_stage2_matches_the_preregistered_t_value() -> None:
     """t_{0.9875,8} = 2.7515 (stage 2, cumulative n=9) — literal, see above."""
-    from entropic_substrate.analysis.series import PairedFinalMetric
+    from entropic_substrate.ladder.analyze.series import PairedFinalMetric
 
     pairs = [PairedFinalMetric(seed=s, fisher=1.5, control=1.6) for s in range(1, 10)]
     verdict = paired_verdict(pairs)
@@ -158,7 +158,7 @@ def test_paired_verdict_on_a_non_preregistered_n_reports_no_ci_rather_than_guess
     """n=3 (df=2) is not a preregistered look — no t-quantile is hardcoded for
     it, and computing one would be an unauthorized-CI violation of the
     binding prereg. The verdict must say so, not silently produce a number."""
-    from entropic_substrate.analysis.series import PairedFinalMetric
+    from entropic_substrate.ladder.analyze.series import PairedFinalMetric
 
     pairs = [PairedFinalMetric(seed=s, fisher=1.5, control=1.6) for s in range(1, 4)]
     verdict = paired_verdict(pairs)

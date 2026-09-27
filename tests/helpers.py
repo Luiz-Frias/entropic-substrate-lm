@@ -10,7 +10,7 @@ from typing import Any
 import torch
 import yaml
 
-from entropic_substrate.config import Config, DataConfig, ModelConfig, TrainConfig
+from entropic_substrate.kernel.runtime.config import Config, DataConfig, ModelConfig, TrainConfig
 
 __all__ = [
     "assert_bitwise_equal",

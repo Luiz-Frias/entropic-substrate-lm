@@ -8,11 +8,13 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_request import request
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObjectIdentity
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
-from entropic_substrate.sentence_prediction.worker_transport import (
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
+    D1TrainerMailboxObjectIdentity,
+)
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_transport import (
     materialize_probe_request,
     publish_probe_request,
 )

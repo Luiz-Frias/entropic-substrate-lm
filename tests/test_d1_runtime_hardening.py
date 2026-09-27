@@ -10,8 +10,8 @@ from d1_runtime_fixtures import (
     runtime_batch,
     runtime_system,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.targets import OptimizationStepCommitted
+from entropic_substrate.core.latent.targets import OptimizationStepCommitted
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

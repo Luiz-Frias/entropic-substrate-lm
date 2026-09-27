@@ -10,7 +10,22 @@ import pytest
 
 import d1_launch_admission_fixtures as launch
 from d1_trainer_fixtures import micro_plan, run_start
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    SegmentStartMode,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.ladder.register.d1_config import (
+    D1LaunchScale,
+    load_d1_profile_catalog,
+)
+from entropic_substrate.ladder.register.d1_plan import (
+    SmokeD1RunPlan,
+    create_d1_smoke_plan,
+)
+from entropic_substrate.ladder.register.d1_provenance import EvidenceEnvelope
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
@@ -18,21 +33,6 @@ from entropic_substrate.d1_trainer_request_codec import (
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.resource_provenance import (
-    SegmentStartMode,
-    execution_segment_id,
-)
-from entropic_substrate.experiments.d1_config import (
-    D1LaunchScale,
-    load_d1_profile_catalog,
-)
-from entropic_substrate.experiments.d1_plan import (
-    SmokeD1RunPlan,
-    create_d1_smoke_plan,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
-from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
 
 pytestmark = pytest.mark.unit
 

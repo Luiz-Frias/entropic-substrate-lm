@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_dvc_remote_config import (
+from entropic_substrate.ladder.run.transport.d1_dvc_remote_config import (
     D1DvcRemoteConfigError,
     load_d1_dvc_s3_remote,
 )

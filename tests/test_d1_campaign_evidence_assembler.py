@@ -8,33 +8,37 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_campaign_capture import (
-    D1CampaignCaptureService,
-    D1HeterogeneousCaptureAdapter,
-)
-from entropic_substrate.d1_campaign_evidence_assembler import D1CampaignEvidenceAssembler
-from entropic_substrate.d1_finalized_cell_custody import parse_d1_finalized_cell_custody
-from entropic_substrate.d1_finalized_cell_custody_repository import (
-    D1FinalizedCellCustodyRepository,
-)
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, RunClass, canonical_json
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactRole
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1DefectCheckpointReference,
     D1NonfiniteClassification,
     D1TerminalNumericalDefectRecord,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactRole
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.experiments.d1_launch_attempt_codec import (
+from entropic_substrate.ladder.register.d1_launch_attempt_codec import (
     launch_attempt_ledger_to_mapping,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass, canonical_json
+from entropic_substrate.ladder.run.campaign.d1_campaign_capture import (
+    D1CampaignCaptureService,
+    D1HeterogeneousCaptureAdapter,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_evidence_assembler import (
+    D1CampaignEvidenceAssembler,
+)
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
+    parse_d1_finalized_cell_custody,
+)
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository import (
+    D1FinalizedCellCustodyRepository,
+)
 
 from .d1_capture_fixtures import _events_for
 from .d1_telemetry_fixtures import write_events

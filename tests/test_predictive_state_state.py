@@ -5,15 +5,16 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.observation import EncodedObservations, LanguageReadout
-from entropic_substrate.predictive_state import (
+from entropic_substrate.core.latent.future_law import DiagonalGaussianFutureLaw
+from entropic_substrate.core.latent.state import (
     AffineFreeRMSNorm,
     CausalStateEncoder,
-    DiagonalGaussianFutureLaw,
     LatentTrajectory,
     TargetEncoder,
     build_encoder_pair,
 )
+from entropic_substrate.core.observation.contracts import EncodedObservations
+from entropic_substrate.core.observation.modules import LanguageReadout
 from predictive_state_helpers import encoded, model_config
 
 pytestmark = pytest.mark.unit

@@ -49,15 +49,15 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.config import Config
-from entropic_substrate.init.fisher import build_fisher_init, semi_orthogonal_lift
-from entropic_substrate.models.backbone import build_model
-from entropic_substrate.models.field_encoder import (
+from entropic_substrate.core.substrate.backbone import build_model
+from entropic_substrate.core.substrate.field_encoder import (
     FieldCalibrationAccumulator,
     FieldEncoder,
     FieldEncoding,
 )
-from entropic_substrate.train import Trainer
+from entropic_substrate.core.substrate.fisher import build_fisher_init, semi_orthogonal_lift
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.kernel.runtime.config import Config
 from helpers import tiny_config, tiny_model_config
 
 pytestmark = pytest.mark.unit

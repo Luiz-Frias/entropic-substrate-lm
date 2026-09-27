@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.sentence_prediction.evaluation_records import read_evaluation
-from entropic_substrate.sentence_prediction.journal import read_json, write_json
-from entropic_substrate.sentence_prediction.runner import run_probe_training
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
+from entropic_substrate.ladder.run.evaluation_records import read_evaluation
+from entropic_substrate.ladder.run.journal import read_json, write_json
+from entropic_substrate.ladder.run.runner import run_probe_training
 
 pytestmark = pytest.mark.unit
 

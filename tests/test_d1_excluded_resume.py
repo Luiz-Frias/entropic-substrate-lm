@@ -9,25 +9,33 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_artifact_snapshot import publish_d1_atomic_bytes
-from entropic_substrate.d1_excluded_capture import D1ExcludedCaptureService
-from entropic_substrate.d1_excluded_operator import D1ExcludedOperator
-from entropic_substrate.d1_observability import AuthoritativeJournalOnlyObserver
-from entropic_substrate.d1_operator_controller import D1ResumeOperatorHistory
-from entropic_substrate.d1_operator_evidence import (
+from entropic_substrate.kernel.artifacts import publish_d1_atomic_bytes
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    SegmentStartMode,
+    execution_segment_id,
+)
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
+    AuthoritativeJournalOnlyObserver,
+)
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    AuthoritativeRunJournal,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.register.d1_launch_attempts import D1LaunchAttemptStatus
+from entropic_substrate.ladder.run.campaign.d1_excluded_operator import D1ExcludedOperator
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import D1ResumeOperatorHistory
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     attest_d1_staged_trainer_request,
 )
-from entropic_substrate.d1_resume_trainer import run_d1_resume
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.closure.d1_excluded_capture import D1ExcludedCaptureService
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import run_d1_resume
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
 )
-from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_provenance import SegmentStartMode, execution_segment_id
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptStatus
 
 from .test_d1_excluded_capture import CapturePorts
 from .test_d1_excluded_operator import LivePilotTrainer, pilot_case

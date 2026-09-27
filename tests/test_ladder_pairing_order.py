@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.analysis.ladder_registration import (
+from entropic_substrate.ladder.analyze.ladder_registration import (
     StatisticalEvaluation,
     StatisticalRun,
     paired_contrasts,

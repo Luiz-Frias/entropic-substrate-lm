@@ -13,25 +13,25 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_execution_receipt as execution_receipt_module
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_execution_receipt import (
+import entropic_substrate.ladder.review.d1_execution_receipt as execution_receipt_module
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1ExecutorKind,
     D1ExternalIsolationAttestation,
     D1IsolationRequest,
     issue_d1_analysis_receipt,
     issue_d1_verified_analysis_receipt,
 )
-from entropic_substrate.analysis.d1_external_analysis_adapter import (
+from entropic_substrate.ladder.review.d1_external_analysis_adapter import (
     D1ExternalAnalysisCommandResult,
     D1ExternalAnalysisLaunch,
     D1ExternalAnalysisRunnerRequestV2,
     DockerD1ExternalAnalysisAdapterV2,
 )
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     encode_d1_external_analysis_worker_response_v2,
 )
-from entropic_substrate.analysis.d1_external_worker import run_d1_external_worker
+from entropic_substrate.ladder.review.d1_external_worker import run_d1_external_worker
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_external_worker import _install_reader_fake, _request_case, _WorkerCase
@@ -369,7 +369,7 @@ def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
         analysis=result.analysis,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(result.request.input_control.reader_source),
+        implementation=_implementation(),
         isolation=result.isolation,
     )
 
@@ -390,28 +390,7 @@ def test_v2_receipt_binds_request_worker_analysis_and_execution_chain(
         ).hexdigest(),
         "output_sha256": result.analysis.analysis_digest,
         "preregistration_sha256": result.request.input_control.preregistration.sha256,
-        "reader_sha256": hashlib.sha256(
-            result.request.input_control.reader_source.canonical_bytes
-        ).hexdigest(),
     }
-
-
-def test_v2_receipt_rejects_implementation_reader_identity_drift(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
-    result = _adapter(launch, runner).run(request)
-    implementation = _implementation(result.request.input_control.reader_source)
-
-    with pytest.raises(ValueError, match="complete reader digest differs"):
-        issue_d1_verified_analysis_receipt(
-            analysis=result.analysis,
-            request=result.request,
-            worker_response=result.worker_response,
-            implementation=replace(implementation, complete_reader_digest="f" * 64),
-            isolation=result.isolation,
-        )
 
 
 def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
@@ -450,7 +429,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
                 analysis=result.analysis,
                 request=result.request,
                 worker_response=drifted,
-                implementation=_implementation(result.request.input_control.reader_source),
+                implementation=_implementation(),
                 isolation=result.isolation,
             )
 
@@ -465,7 +444,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
     object.__setattr__(result.analysis, "aggregate", aggregate)
@@ -481,7 +460,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=other.request,
             worker_response=result.worker_response,
-            implementation=_implementation(other.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
 
@@ -491,7 +470,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
     object.__setattr__(
@@ -511,7 +490,7 @@ def test_v2_receipt_rejects_generic_issuer_and_worker_or_execution_drift(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=result.isolation,
         )
 
@@ -548,7 +527,7 @@ def test_v2_receipt_rejects_each_inconsistent_execution_hash(
             analysis=result.analysis,
             request=result.request,
             worker_response=result.worker_response,
-            implementation=_implementation(result.request.input_control.reader_source),
+            implementation=_implementation(),
             isolation=isolation,
         )
 
@@ -616,3 +595,44 @@ def test_v2_adapter_rejects_symlinked_or_unexpected_output(
     )
     with pytest.raises(error_type, match=message):
         _adapter(launch, runner).run(request)
+
+
+def test_v2_receipt_rejects_implementation_image_digest_differing_from_execution_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOR-1523 (RED-first, 2026-09-20): the verified receipt must bind the
+    implementation identity the caller CLAIMS ran to the image the attested
+    isolation actually recorded in its execution evidence. Before the fix the
+    issuer checked the evidence's request/response/analysis hashes but never
+    its image_digest, so a receipt could name an image the evidence
+    contradicts -- and with the D1 reader-source closure retired in p2 the
+    image digest is the remaining implementation-provenance binding here."""
+    _, launch, runner, request = _adapter_case(tmp_path, monkeypatch)
+    result = _adapter(launch, runner).run(request)
+    evidence = result.isolation.execution_evidence
+    assert evidence is not None
+    # Premise: the adapter mints the evidence from the launch's own image.
+    assert evidence.image_digest == launch.image_digest
+
+    drifted = replace(_implementation(), image_digest="sha256:" + "9" * 64)
+    assert drifted.image_digest != evidence.image_digest
+    with pytest.raises(ValueError, match="image_digest"):
+        issue_d1_verified_analysis_receipt(
+            analysis=result.analysis,
+            request=result.request,
+            worker_response=result.worker_response,
+            implementation=drifted,
+            isolation=result.isolation,
+        )
+
+    # GREEN control: the same receipt issues once the claimed image matches.
+    matching = replace(_implementation(), image_digest=evidence.image_digest)
+    receipt = issue_d1_verified_analysis_receipt(
+        analysis=result.analysis,
+        request=result.request,
+        worker_response=result.worker_response,
+        implementation=matching,
+        isolation=result.isolation,
+    )
+    assert receipt.manifest["implementation"]["image_digest"] == evidence.image_digest  # type: ignore[index]

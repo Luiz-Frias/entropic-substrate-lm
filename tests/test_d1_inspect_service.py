@@ -8,21 +8,21 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.cli import main
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.composition.wiring.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliCommand,
     D1CliExitCode,
     D1CliInvalidEvidence,
     D1CliInvocation,
 )
-from entropic_substrate.d1_inspect_codec import d1_inspect_result_from_mapping
-from entropic_substrate.d1_inspect_request import (
+from entropic_substrate.composition.wiring.d1_inspect_service import D1InspectCliService
+from entropic_substrate.ladder.analyze.d1_inspect_codec import d1_inspect_result_from_mapping
+from entropic_substrate.ladder.analyze.d1_inspect_request import (
     D1_INSPECT_REQUEST_SCHEMA,
     D1InspectRequest,
 )
-from entropic_substrate.d1_inspect_service import D1InspectCliService
-from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunStatus
 
 from .d1_telemetry_fixtures import LOGICAL_RUN_ID, valid_events, write_events
 
@@ -156,7 +156,7 @@ def test_default_main_inspect_is_real_and_never_loads_trainer_catalog(
         raise AssertionError("d1-inspect must not load trainer catalogs")
 
     monkeypatch.setattr(
-        "entropic_substrate.d1_cli_composition.load_d1_profile_catalog",
+        "entropic_substrate.composition.wiring.d1_cli_composition.load_d1_profile_catalog",
         forbidden_catalog,
     )
 

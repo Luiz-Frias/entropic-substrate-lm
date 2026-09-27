@@ -2,7 +2,7 @@
 
 import pytest
 
-from entropic_substrate.data.ladder_source_order import SourceOrderAudit
+from entropic_substrate.core.corpus.ladder_source_order import SourceOrderAudit
 
 pytestmark = pytest.mark.unit
 

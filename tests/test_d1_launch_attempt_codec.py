@@ -7,14 +7,14 @@ from datetime import timedelta
 
 import pytest
 
-from entropic_substrate.experiments.d1_launch_attempt_codec import (
+from entropic_substrate.ladder.register.d1_launch_attempt_codec import (
     D1LaunchAttemptCodecError,
     launch_attempt_ledger_from_mapping,
     launch_attempt_ledger_to_mapping,
     parse_launch_attempt_ledger,
     serialize_launch_attempt_ledger,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )

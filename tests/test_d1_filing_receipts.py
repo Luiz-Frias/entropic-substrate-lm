@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1FilingGraphError,
     D1FilingRevisions,
     parse_alias_commitment,
@@ -42,10 +42,13 @@ def _analysis_receipt() -> dict[str, object]:
             "isolation_attestation_sha256": "4" * 64,
             "output_sha256": "5" * 64,
             "preregistration_sha256": "2" * 64,
-            "reader_sha256": "3" * 64,
         },
         "filing_eligible": True,
-        "implementation": {"analysis_code_digest": "9" * 64},
+        "implementation": {
+            "code_commit": "1" * 40,
+            "image_digest": "sha256:" + "4" * 64,
+            "repository_digest": "9" * 64,
+        },
         "inputs": [{"sha256": "b" * 64}],
         "isolation": {"executor_kind": "external_enforced"},
         "schema_version": "d1-analysis-execution-receipt-v1",
@@ -56,7 +59,6 @@ def test_analysis_receipt_binds_every_required_edge() -> None:
     receipt = parse_analysis_receipt(_json(_analysis_receipt()))
 
     assert receipt.filing_bindings is not None
-    assert receipt.filing_bindings.reader_sha256 == "3" * 64
     assert receipt.filing_bindings.isolation_attestation_sha256 == "4" * 64
     assert receipt.manifest["analysis_digest"] == "5" * 64
 
@@ -75,7 +77,6 @@ def test_analysis_receipt_hard_cuts_synthetic_and_incomplete_schemas() -> None:
                     "isolation_attestation_sha256": "4" * 64,
                     "output_sha256": "5" * 64,
                     "preregistration_sha256": "2" * 64,
-                    "reader_sha256": "3" * 64,
                     "schema_version": "d1-analysis-receipt-v1",
                 }
             )

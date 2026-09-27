@@ -9,16 +9,18 @@ import pytest
 from tests.ladder_campaign_fixtures import authorization
 
 from d1_telemetry_fixtures import start_provenance
-from entropic_substrate.analysis.ladder_analysis import ScientificRunReader
-from entropic_substrate.analysis.ladder_probe import ProbeSource, run_checkpoint_probe
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.d1_resource_activation import UnavailableResourceActivationFactory
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_execution import run_ladder
-from entropic_substrate.d_ladder_request import ScientificRequest
-from entropic_substrate.d_ladder_resources import LadderResources
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderResources
+from entropic_substrate.historical.d_ladder.ladder_probe import ProbeSource, run_checkpoint_probe
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.analyze.ladder_analysis import ScientificRunReader
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    UnavailableResourceActivationFactory,
+)
 
 pytestmark = pytest.mark.unit
 

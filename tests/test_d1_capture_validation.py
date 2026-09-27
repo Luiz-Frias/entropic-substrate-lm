@@ -7,22 +7,22 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
-from entropic_substrate.evidence.d1_capture_artifacts import (
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     identify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1AttemptEvidence
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
     D1LaunchRoster,
 )
-from entropic_substrate.evidence.d1_capture_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import (
     D1CaptureBundleError,
     build_d1_capture_bundle,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 from .d1_capture_fixtures import DVC_POINTER, capture_family
 

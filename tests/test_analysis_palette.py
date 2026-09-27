@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.analysis.palette import OKABE_ITO, head_style
+from entropic_substrate.ladder.analyze.palette import OKABE_ITO, head_style
 
 pytestmark = pytest.mark.unit
 

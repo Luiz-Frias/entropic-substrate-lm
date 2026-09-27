@@ -17,8 +17,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from loguru import logger
 
-import entropic_substrate.logging as est_logging
-from entropic_substrate.logging import configure_logging
+import entropic_substrate.kernel.runtime.logging as est_logging
+from entropic_substrate.kernel.runtime.logging import configure_logging
 
 pytestmark = pytest.mark.unit
 

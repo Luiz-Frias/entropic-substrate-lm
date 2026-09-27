@@ -13,7 +13,7 @@ from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_d1_trainer_s3_object_adapter import _S3Client
 from tests.test_sentence_worker_execution import prepared
 
-from entropic_substrate.sentence_prediction.worker_command import (
+from entropic_substrate.ladder.run.worker_command import (
     build_worker_objects,
     run_worker_command,
 )
@@ -23,7 +23,9 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("field", ["operation", "code", "cause_type"])
 def test_unknown_storage_diagnostic_fields_never_escape_allowlist(field: str) -> None:
-    from entropic_substrate.d1_trainer_s3_object_adapter import D1TrainerS3ObjectError
+    from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
+        D1TrainerS3ObjectError,
+    )
 
     error = D1TrainerS3ObjectError(
         operation="private-value" if field == "operation" else "read",
@@ -87,7 +89,9 @@ def test_request_failure_retains_only_allowlisted_storage_diagnostics(
     http_status: int | None,
     cause_type: str,
 ) -> None:
-    from entropic_substrate.d1_trainer_s3_object_adapter import Boto3D1TrainerMailboxObjectAdapter
+    from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
+        Boto3D1TrainerMailboxObjectAdapter,
+    )
 
     client = _S3Client(fail_get=cause)
     objects = Boto3D1TrainerMailboxObjectAdapter(
@@ -256,7 +260,7 @@ def test_command_refuses_missing_credentials_without_echoing_values(
 ) -> None:
     topology = Mock(side_effect=AssertionError("credential check must precede topology"))
     monkeypatch.setattr(
-        "entropic_substrate.sentence_prediction.worker_command.load_d1_dvc_s3_remote", topology
+        "entropic_substrate.ladder.run.worker_command.load_d1_dvc_s3_remote", topology
     )
     output, error = StringIO(), StringIO()
     status = run_worker_command(
@@ -325,7 +329,7 @@ def test_factory_uses_committed_topology_and_explicit_bounded_client(
 
 
 def test_local_request_cannot_execute_as_remote_by_omitting_flag(tmp_path: Path) -> None:
-    from entropic_substrate.sentence_prediction.worker_transport import publish_probe_request
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
     request, inputs = prepared(tmp_path)
     objects = _ObjectStore()

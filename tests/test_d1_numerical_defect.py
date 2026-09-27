@@ -7,7 +7,8 @@ import json
 import pytest
 
 from d1_trainer_fixtures import micro_plan, run_start
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1CheckpointReferenceKind,
     D1DefectCheckpointReference,
     D1NonfiniteClassification,
@@ -16,7 +17,6 @@ from entropic_substrate.d1_numerical_defect import (
     d1_nonfinite_metric_error,
     terminal_numerical_defect_from_mapping,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
 
 pytestmark = pytest.mark.unit
 

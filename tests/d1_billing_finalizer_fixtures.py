@@ -15,24 +15,24 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_trainer_handoff import D1FreshRunCompletion
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    BillingUnit,
+    EvidenceGap,
+    Money,
+    RunStartProvenance,
+)
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
     ProviderBilledAmountObservation,
     ProviderBilling,
     ProviderBillingPartial,
 )
-from entropic_substrate.evidence.resource_provenance import (
-    BillingUnit,
-    EvidenceGap,
-    Money,
-    RunStartProvenance,
-)
-from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunCompletion
 
 
 @dataclass(frozen=True, slots=True)

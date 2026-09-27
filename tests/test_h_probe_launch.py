@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_worker_request import request
 
-from entropic_substrate.d1_command_runner import D1BoundedProcessRunner
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.h_probe_launch import H0ProbeLaunch, parse_probe_launch
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch, parse_probe_launch
+from entropic_substrate.ladder.run.provider.d1_command_runner import D1BoundedProcessRunner
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +41,10 @@ def launch() -> H0ProbeLaunch:
         container_disk_gb=80,
         r2_access_secret_name="R2_ACCESS",  # pragma: allowlist secret
         r2_private_secret_name="R2_PRIVATE",  # pragma: allowlist secret
+        mlflow_uri_secret_name="MLFLOW_URI",  # pragma: allowlist secret
+        mlflow_username_secret_name="MLFLOW_USER",  # pragma: allowlist secret
+        mlflow_password_secret_name="MLFLOW_PASS",  # pragma: allowlist secret
+        mlflow_s3_endpoint_secret_name="MLFLOW_S3",  # pragma: allowlist secret
         controller_timeout_seconds=3600,
         watchdog_timeout_seconds=3900,
         cost_guard="host_watchdog_tiny_only",
@@ -53,6 +57,7 @@ def test_roundtrip_binds_every_deployment_choice_without_authority() -> None:
     assert value.manifest["scientific_authority"] == "none"
     assert value.manifest["spending_authority"] == "none"
     assert value.manifest["provider_deadline"] is None
+    assert value.manifest["schema"] == "h0-probe-launch-v2"
     assert value.manifest["runpodctl_version"] == "runpodctl 2.14.0-dd55bcf"
     assert len(value.manifest["runpodctl_sha256"]) == 64
     for updated in (
@@ -79,9 +84,20 @@ def test_command_runs_bound_worker_without_ssh_or_shared_volume() -> None:
     assert flags["--name"] == value.pod_name
     assert "--env" not in args
     assert flags["--template-id"] == value.template_id
+    # EXIT-GATE LANE (conductor, operator-cleared 2026-09-26): the worker builds
+    # CompositeSink(JsonlSink, MlflowSink, tiny=True), and sinks.mlflow_enabled
+    # admits MLflow only when MLFLOW_TRACKING_URI is set AND ENTROPIC_MLFLOW_TINY
+    # == "1" (silent JSONL-only otherwise, measured 2026-09-26). The template env
+    # is therefore the R2 pair, the four MLflow secret references and the literal
+    # tiny opt-in -- exactly seven keys, nothing else.
     assert value.template_environment == {
         "AWS_ACCESS_KEY_ID": "{{ RUNPOD_SECRET_R2_ACCESS }}",
         "AWS_SECRET_ACCESS_KEY": "{{ RUNPOD_SECRET_R2_PRIVATE }}",
+        "MLFLOW_TRACKING_URI": "{{ RUNPOD_SECRET_MLFLOW_URI }}",
+        "MLFLOW_TRACKING_USERNAME": "{{ RUNPOD_SECRET_MLFLOW_USER }}",
+        "MLFLOW_TRACKING_PASSWORD": "{{ RUNPOD_SECRET_MLFLOW_PASS }}",
+        "MLFLOW_S3_ENDPOINT_URL": "{{ RUNPOD_SECRET_MLFLOW_S3 }}",
+        "ENTROPIC_MLFLOW_TINY": "1",
     }
     shell, flag, script = shlex.split(flags["--docker-args"])
     assert (shell, flag) == ("/bin/sh", "-c")
@@ -93,7 +109,7 @@ def test_command_runs_bound_worker_without_ssh_or_shared_volume() -> None:
         "exec",
         "python",
         "-m",
-        "entropic_substrate.sentence_prediction.worker_command",
+        "entropic_substrate.ladder.run.worker_command",
         "run",
     ]
     worker_flags = dict(zip(worker[5::2], worker[6::2], strict=True))
@@ -118,6 +134,10 @@ def test_command_runs_bound_worker_without_ssh_or_shared_volume() -> None:
         ("container_disk_gb", True),
         ("r2_access_secret_name", "{{raw-key}}"),
         ("r2_private_secret_name", "R2_ACCESS"),
+        ("mlflow_uri_secret_name", "{{raw-key}}"),
+        ("mlflow_username_secret_name", "R2_ACCESS"),
+        ("mlflow_password_secret_name", "MLFLOW_USER"),
+        ("mlflow_s3_endpoint_secret_name", ""),
         ("controller_timeout_seconds", 0),
         ("controller_timeout_seconds", True),
         ("watchdog_timeout_seconds", 3600),
@@ -192,7 +212,7 @@ def test_shell_composition_executes_once_and_preserves_existing_workspace(
     assert result.returncode == 0 and workspace.is_dir()
     assert workspace.stat().st_mode & 0o777 == 0o700
     worker = json.loads(result.stdout)
-    assert worker[:3] == ["-m", "entropic_substrate.sentence_prediction.worker_command", "run"]
+    assert worker[:3] == ["-m", "entropic_substrate.ladder.run.worker_command", "run"]
     assert worker[worker.index("--workspace-root") + 1] == str(workspace)
     retained = workspace / "forensic.txt"
     retained.write_text("must survive")
@@ -222,6 +242,10 @@ def test_mutated_nested_request_is_revalidated() -> None:
         "disk",
         "volume",
         "registry",
+        "env-missing-mlflow",
+        "env-missing-tiny",
+        "env-tiny-off",
+        "env-r2-only",
     ],
 )
 def test_template_binding_is_checked_not_assumed(mutation: str | None) -> None:
@@ -245,6 +269,22 @@ def test_template_binding_is_checked_not_assumed(mutation: str | None) -> None:
         "disk": ("containerDiskInGb", value.container_disk_gb + 1),
         "volume": ("volumeInGb", 10),
         "registry": ("containerRegistryAuthId", "foreign"),
+        "env-missing-mlflow": (
+            "env",
+            {k: v for k, v in value.template_environment.items() if k != "MLFLOW_TRACKING_URI"},
+        ),
+        "env-missing-tiny": (
+            "env",
+            {k: v for k, v in value.template_environment.items() if k != "ENTROPIC_MLFLOW_TINY"},
+        ),
+        "env-tiny-off": ("env", {**value.template_environment, "ENTROPIC_MLFLOW_TINY": "0"}),
+        "env-r2-only": (
+            "env",
+            {
+                "AWS_ACCESS_KEY_ID": "{{ RUNPOD_SECRET_R2_ACCESS }}",
+                "AWS_SECRET_ACCESS_KEY": "{{ RUNPOD_SECRET_R2_PRIVATE }}",
+            },
+        ),
     }
     if mutation is None:
         value.validate_template(template)
@@ -253,3 +293,22 @@ def test_template_binding_is_checked_not_assumed(mutation: str | None) -> None:
     template[key] = replacement
     with pytest.raises(ValueError, match="template"):
         value.validate_template(template)
+
+
+def test_v1_launch_records_without_mlflow_references_are_refused() -> None:
+    """A pre-exit-gate launch record (schema v1, no MLflow secret names) never parses
+    as a v2 deployment: the MLflow delivery is part of the pinned identity, not a
+    default the parser may fill (house rule: never fill defaults)."""
+    value = launch()
+    row = json.loads(value.payload)
+    row["schema"] = "h0-probe-launch-v1"
+    for key in (
+        "mlflow_uri_secret_name",
+        "mlflow_username_secret_name",
+        "mlflow_password_secret_name",
+        "mlflow_s3_endpoint_secret_name",
+    ):
+        row.pop(key)
+    payload = json.dumps(row, sort_keys=True, separators=(",", ":")).encode()
+    with pytest.raises(ValueError):
+        parse_probe_launch(payload, max_bytes=1_000_000)

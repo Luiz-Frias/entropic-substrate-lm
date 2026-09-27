@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.cli import main
-from entropic_substrate.d_ladder_execution import SmokeRequest, run_local_smoke
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import d1_configs_dir, load_d1_profile
-from entropic_substrate.experiments.ladder import Rung, RungSpec, Treatment
-from entropic_substrate.experiments.ladder_profile import rung_profile_mapping
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest, run_local_smoke
+from entropic_substrate.historical.d_ladder.ladder_profile import rung_profile_mapping
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.ladder.register.ladder import Rung, RungSpec, Treatment
 
 pytestmark = pytest.mark.unit
 

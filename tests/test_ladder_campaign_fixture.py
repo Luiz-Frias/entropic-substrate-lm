@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 def test_scientific_fixture_uses_real_d1_filing_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.d_ladder_cli import tiny_rung_spec
+    from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
 
     from .ladder_campaign_fixtures import authorization
 

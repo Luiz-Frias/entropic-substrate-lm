@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
-from entropic_substrate.d1_resume_runtime import (
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import (
     D1ResumeRunLocations,
     open_d1_resume,
     restore_d1_resume_runtime,
 )
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
 
 pytestmark = pytest.mark.unit
 

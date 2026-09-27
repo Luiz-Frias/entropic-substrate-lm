@@ -10,13 +10,13 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_span_state_collection import model
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.evidence.ladder_campaign import artifact_from_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.worker_execution import execute_probe_request
-from entropic_substrate.sentence_prediction.worker_request import ProbeRequest, TransferLimits
-from entropic_substrate.sentence_prediction.worker_transport import (
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.worker_execution import execute_probe_request
+from entropic_substrate.ladder.run.worker_request import ProbeRequest, TransferLimits
+from entropic_substrate.ladder.run.worker_transport import (
     materialize_probe_request,
     publish_probe_request,
 )

@@ -8,19 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_journal import (
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.records.d1_journal import (
     AuthoritativeRunJournal,
     JournalTailQuarantineReceipt,
     read_journal,
 )
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalError,
     D1JournalEvent,
     JournalCheckpointState,
     JournalEventKind,
     canonical_event_line,
 )
-from entropic_substrate.experiments.d1_primitives import RunClass
 
 pytestmark = pytest.mark.unit
 _CHECKPOINT_SHA256 = "a" * 64
@@ -76,7 +76,7 @@ def _checkpointed(path: Path) -> tuple[AuthoritativeRunJournal, JournalCheckpoin
 def test_fresh_journal_writes_and_syncs_canonical_start_to_missing_or_empty_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import entropic_substrate.evidence.d1_journal as journal_module
+    import entropic_substrate.ladder.capture.records.d1_journal as journal_module
 
     calls: list[int] = []
     monkeypatch.setattr(journal_module.os, "fsync", calls.append)

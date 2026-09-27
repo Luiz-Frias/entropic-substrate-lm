@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.d1_trainer_mailbox_contracts import (
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
     D1TrainerMailboxCommandKind,
     D1TrainerMailboxErrorReport,

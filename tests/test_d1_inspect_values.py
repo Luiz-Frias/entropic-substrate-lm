@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_inspect_projection import compose_d1_inspect_view
-from entropic_substrate.d1_inspect_values import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.ladder.analyze.d1_inspect_projection import compose_d1_inspect_view
+from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1_INSPECT_MAX_EVALUATIONS,
     D1InspectComplete,
     D1InspectEventRef,
@@ -16,17 +17,19 @@ from entropic_substrate.d1_inspect_values import (
     D1InspectRunAborted,
     D1InspectTrainerAborted,
 )
-from entropic_substrate.d1_journal_snapshot import (
+from entropic_substrate.ladder.capture.reader.d1_journal_snapshot import (
     D1JournalSnapshot,
     read_d1_local_journal_snapshot,
 )
-from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    JournalEventKind,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1_REPORT_ONLY_METRICS,
     D1_SCALAR_METRICS,
     D1RunStatus,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
 
 from .d1_telemetry_fixtures import valid_events, write_events
 

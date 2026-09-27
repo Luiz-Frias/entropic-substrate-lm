@@ -4,11 +4,14 @@ import json
 
 import pytest
 
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_clause_policy import evaluate_d1_clauses, parse_d1_clause_policy
-from entropic_substrate.analysis.d1_factorial import compute_d1_factorial
-from entropic_substrate.analysis.d1_machine_analysis import build_d1_aliased_machine_analysis
-from entropic_substrate.analysis.d1_machine_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
+    evaluate_d1_clauses,
+    parse_d1_clause_policy,
+)
+from entropic_substrate.ladder.analyze.d1_factorial import compute_d1_factorial
+from entropic_substrate.ladder.analyze.d1_machine_analysis import build_d1_aliased_machine_analysis
+from entropic_substrate.ladder.analyze.d1_machine_analysis_codec import (
     decode_d1_machine_analysis_declaration,
 )
 
@@ -82,7 +85,7 @@ def test_null_estimate_requires_typed_cell_witness() -> None:
 
 
 def test_binding_rejects_gap_witness_reassigned_to_another_seed() -> None:
-    from entropic_substrate.analysis.d1_machine_analysis_binding import _bind_unavailable
+    from entropic_substrate.ladder.review.d1_machine_analysis_binding import _bind_unavailable
 
     value = gap_packet().manifest
     row = next(row for row in value["contrasts"] if "unavailable" in row)

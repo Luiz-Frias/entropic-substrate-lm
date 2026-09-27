@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.config import (
+from entropic_substrate.core.substrate.backbone import build_model, vocab_size_for
+from entropic_substrate.kernel.runtime.config import (
     EXPERIMENTS,
     Config,
     DataConfig,
@@ -21,7 +22,6 @@ from entropic_substrate.config import (
     merge_dicts,
     resolve_experiment_config,
 )
-from entropic_substrate.models.backbone import build_model, vocab_size_for
 
 pytestmark = pytest.mark.unit
 
@@ -96,6 +96,26 @@ def test_every_experiment_config_exists_and_parses() -> None:
 
 def test_tiny_yaml_exists() -> None:
     assert (configs_dir() / "tiny.yaml").exists()
+
+
+def test_configs_dir_falls_back_to_cwd_when_repo_root_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Error case pinned at authoring (E-3/DN-8): a RepoLayoutError from the
+    resolver must not propagate out of configs_dir() -- it must fall through
+    to the pre-existing CWD-relative candidate, same as an unresolvable
+    anchor did before this phase."""
+    import entropic_substrate.kernel.runtime.config as config_module
+    from entropic_substrate.kernel.runtime.paths import RepoLayoutError
+
+    def _raise() -> Path:
+        raise RepoLayoutError("mutated for test")
+
+    monkeypatch.setattr(config_module, "repo_root", _raise)
+    fake_configs = tmp_path / "configs"
+    fake_configs.mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert config_module.configs_dir() == fake_configs
 
 
 def test_experiment_ladder_wiring() -> None:

@@ -14,7 +14,7 @@ from d1_launch_admission_fixtures import (
     contract,
     family,
 )
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1AdmissionBlocked,
     D1AdmissionField,
     D1AdmissionGap,

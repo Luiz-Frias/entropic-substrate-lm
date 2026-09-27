@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from entropic_substrate.sentence_prediction.records import SentenceSpan, SourceDocument
-from entropic_substrate.sentence_prediction.segmentation import (
+from entropic_substrate.core.sentence.records import SentenceSpan, SourceDocument
+from entropic_substrate.core.sentence.segmentation import (
     OversizeDocument,
     SegmentationPolicy,
     SentenceSegmentation,
@@ -72,7 +72,7 @@ def test_policy_identity_binds_limit_and_engine() -> None:
 
 def test_wrong_installed_engine_version_is_refused(monkeypatch) -> None:
     monkeypatch.setattr(
-        "entropic_substrate.sentence_prediction.segmentation.metadata.version", lambda _: "0.0"
+        "entropic_substrate.core.sentence.segmentation.metadata.version", lambda _: "0.0"
     )
     with pytest.raises(RuntimeError, match="version"):
         segment_document(source("Hello."), SegmentationPolicy())

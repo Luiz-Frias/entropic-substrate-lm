@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d_ladder_cli import tiny_rung_spec
-from entropic_substrate.d_ladder_request import ScientificRequest
+from entropic_substrate.composition.wiring.d_ladder_cli import tiny_rung_spec
+from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
 
 pytestmark = pytest.mark.unit
 

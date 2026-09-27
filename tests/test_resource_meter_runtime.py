@@ -7,8 +7,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_meter_runtime import (
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.capture.resource.resource_meter_runtime import (
     NvmlPowerReader,
     TimestampedPowerSampler,
     TorchCudaPeakMemory,

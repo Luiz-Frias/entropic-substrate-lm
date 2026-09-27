@@ -7,10 +7,10 @@ import pytest
 import torch
 from tests.test_span_state_collection import model
 
-from entropic_substrate.analysis.predictive_probe import ProbeConfig
-from entropic_substrate.sentence_prediction.execution import SentenceExecution
-from entropic_substrate.sentence_prediction.span_probe import fit_span_probe, score_span_probe
-from entropic_substrate.sentence_prediction.span_states import SpanStateSet, collect_span_states
+from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.span_probe import fit_span_probe, score_span_probe
+from entropic_substrate.ladder.run.span_states import SpanStateSet, collect_span_states
 
 pytestmark = pytest.mark.unit
 type Samples = tuple[SentenceExecution, SpanStateSet, SpanStateSet]

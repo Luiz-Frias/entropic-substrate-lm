@@ -8,8 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_operator_custody_adapter import D1OperatorCustodyAdapter
-from entropic_substrate.d1_operator_ports import D1RunPodAuthReceipt
+from entropic_substrate.ladder.run.campaign.d1_operator_custody_adapter import (
+    D1OperatorCustodyAdapter,
+)
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1RunPodAuthReceipt
 
 from .test_d1_finalized_cell_custody_values import _attest, _finalized_case
 

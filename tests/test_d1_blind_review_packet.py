@@ -10,18 +10,48 @@ from typing import NamedTuple, cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_review_packet as review_packet_module
-from entropic_substrate.analysis.d1_blind_aliases import (
+import entropic_substrate.ladder.review.d1_review_packet as review_packet_module
+from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
+from entropic_substrate.kernel.identity.d1_primitives import (
+    D1Arm,
+    RunClass,
+    canonical_digest,
+    canonical_json,
+    thaw_for_digest,
+)
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1CapturePartitionProof,
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1AttemptEvidence
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1AttemptLane,
+    D1DeclaredAttempt,
+    D1ExpectedRun,
+    D1LaunchRoster,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import (
+    D1_RUN_IDENTITY_ATTESTATION_PATHS,
+    D1RunIdentityAttestation,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence, D1RunStatus
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
+from entropic_substrate.ladder.review.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
     D1PreparedBlindAliases,
     prepare_d1_blind_aliases,
 )
-from entropic_substrate.analysis.d1_execution_receipt import (
+from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1AnalysisExecutionReceipt,
     issue_d1_verified_analysis_receipt,
 )
-from entropic_substrate.analysis.d1_machine_analysis import D1AliasedMachineAnalysis
-from entropic_substrate.analysis.d1_review_packet import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
+from entropic_substrate.ladder.review.d1_review_packet import (
     D1BlindnessLabel,
     D1BlindReviewPacket,
     D1PacketBlindnessError,
@@ -31,36 +61,6 @@ from entropic_substrate.analysis.d1_review_packet import (
     d1_review_roster_alias_order,
     validate_d1_packet_blindness,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import (
-    D1CapturePartitionProof,
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence
-from entropic_substrate.evidence.d1_capture_roster import (
-    D1AttemptLane,
-    D1DeclaredAttempt,
-    D1ExpectedRun,
-    D1LaunchRoster,
-)
-from entropic_substrate.evidence.d1_capture_validation import (
-    D1_RUN_IDENTITY_ATTESTATION_PATHS,
-    D1RunIdentityAttestation,
-)
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1_NO_MAJOR_OUTCOME,
-    D1_NO_MAJOR_PROMPT_DIRECTIVE,
-)
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence, D1RunStatus
-from entropic_substrate.evidence.resource_provenance import execution_segment_id
-from entropic_substrate.experiments.d1_primitives import (
-    D1Arm,
-    RunClass,
-    canonical_digest,
-    canonical_json,
-    thaw_for_digest,
-)
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_blind_alias_custody import _DeterministicCrypto
@@ -130,7 +130,7 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _BlindCase:
         analysis=result.analysis,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(result.request.input_control.reader_source),
+        implementation=_implementation(),
         isolation=result.isolation,
     )
     evidence = tuple(
@@ -326,9 +326,6 @@ def test_packet_has_complete_aliased_roster_readers_and_anonymous_run_starts(
         identity = cast(dict[str, bool], row["registered_identity_match"])
         assert set(identity) == {f"I{index:02d}" for index in range(1, 19)}
         assert all(identity.values())
-    readers = manifest["validated_readers"]
-    receipt_implementation = cast(dict[str, object], receipt.manifest["implementation"])
-    assert readers == receipt_implementation["readers"]
     assert manifest["nonblindable_fields"]
     randomized = _randomization(manifest)
     assert randomized["algorithm"] == "sha256-registered-seed-alias-sort-v1"
@@ -744,3 +741,43 @@ def test_packet_refuses_incomplete_all_run_reader_roster(
             aliases=aliases,
             run_evidence=evidence,
         )
+
+
+def test_packet_manifest_exact_key_set_guards_retired_validated_readers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guard-teeth: validated_readers retirement is not re-introducible.
+
+    Reintroducing the retired "validated_readers" key into the packet manifest
+    must cause this test to fail, pinning the exact-key-set assertion.
+    """
+    decision, aggregate, aliases, analysis, receipt, evidence = _case(tmp_path, monkeypatch)
+
+    packet = build_d1_blind_review_packet(
+        decision_contract=decision,
+        aggregate=aggregate,
+        analysis=analysis,
+        analysis_receipt=receipt,
+        aliases=aliases,
+        run_evidence=evidence,
+    )
+
+    # Expected keys in the blind review packet manifest (H0 exit).
+    # Retired: "validated_readers" (D1 closure, measured 2026-09-20).
+    expected_keys = frozenset(
+        {
+            "alias_commitment",
+            "analysis",
+            "analysis_receipt_digest",
+            "bindings",
+            "blindness_label",
+            "capture_roster",
+            "nonblindable_fields",
+            "parity_attestations",
+            "run_attestations",
+            "roster_randomization",
+            "schema_version",
+            "source_artifacts",
+        }
+    )
+    assert frozenset(packet.manifest) == expected_keys

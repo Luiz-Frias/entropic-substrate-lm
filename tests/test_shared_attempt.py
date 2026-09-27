@@ -2,7 +2,7 @@
 
 import pytest
 
-from entropic_substrate.shared_attempt import AttemptFlow
+from entropic_substrate.kernel.runtime.shared_attempt import AttemptFlow
 
 pytestmark = pytest.mark.unit
 

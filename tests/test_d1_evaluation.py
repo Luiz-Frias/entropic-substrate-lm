@@ -9,15 +9,15 @@ import numpy as np
 import pytest
 import torch
 
-import entropic_substrate.d1_evaluation as evaluation_module
+import entropic_substrate.ladder.run.trainer.d1_evaluation as evaluation_module
 from d1_runtime_fixtures import fit_runtime_baseline, runtime_family
-from entropic_substrate.d1_evaluation import D1ChannelMoments, D1Evaluator
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.experiments.d1_execution import D1AmpPolicy
-from entropic_substrate.experiments.d1_family import build_d1_experiment_family
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_execution import D1AmpPolicy
+from entropic_substrate.ladder.register.d1_family import build_d1_experiment_family
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1ChannelMoments, D1Evaluator
 
 pytestmark = pytest.mark.unit
 

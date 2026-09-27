@@ -11,40 +11,40 @@ from pathlib import Path
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_types import (
+    D1FamilyIdentity,
+    D1VerdictValidationError,
+    FiledGateAuthorization,
+    FiledGateValidNegative,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     build_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
-from entropic_substrate.evidence.d1_capture_bundle import D1CaptureInput
-from entropic_substrate.evidence.d1_capture_validation import build_d1_capture_bundle
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_filing import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1CaptureInput
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import build_d1_capture_bundle
+from entropic_substrate.ladder.file.d1_filing import (
     REQUIRED_D1_FILING_ARTIFACTS,
     D1DetachedFiling,
     canonical_machine_verdict_bytes,
     validate_d1_filing_manifest,
 )
-from entropic_substrate.evidence.d1_filing_graph import (
+from entropic_substrate.ladder.file.d1_filing_graph import (
     recompute_capture_integrity,
     verify_d1_filing,
 )
-from entropic_substrate.evidence.d1_filing_receipts import (
+from entropic_substrate.ladder.file.d1_filing_receipts import (
     D1EvidenceGapError,
     D1FilingGraphError,
     D1FilingRevisions,
 )
-from entropic_substrate.evidence.d1_gate import decide_filed_verdict
-from entropic_substrate.evidence.d1_review_adjudication import (
+from entropic_substrate.ladder.file.d1_gate import decide_filed_verdict
+from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
-)
-from entropic_substrate.evidence.d1_types import (
-    D1FamilyIdentity,
-    D1VerdictValidationError,
-    FiledGateAuthorization,
-    FiledGateValidNegative,
 )
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
@@ -270,16 +270,6 @@ def _case(
     }
     prereg = b"registered design bytes\n"
     capture = _json(aggregate.manifest)
-    reader_manifest = {
-        "analysis_code_digest": "9" * 64,
-        "complete_reader": "reader.module.complete",
-        "modules": [
-            {"identity": "reader.module", "path": "reader/module.py", "sha256": "7" * 64},
-        ],
-        "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": "reader.module.defect",
-    }
-    reader = _json(reader_manifest)
     isolation_manifest = {
         "execution_evidence": {"analysis_sha256": "6" * 64},
         "executor_kind": "external_enforced",
@@ -350,7 +340,6 @@ def _case(
             "preregistration": prereg,
             "raw_capture_manifest": b'{"wrong":true}' if mutation == "capture" else capture,
             "blinded_analysis": analysis,
-            "analysis_reader": reader,
             "analysis_isolation_attestation": isolation,
             "alias_reveal": reveal,
             "alias_commitment": commitment,
@@ -374,21 +363,12 @@ def _case(
                 "isolation_attestation_sha256": _sha(isolation),
                 "output_sha256": _sha(analysis),
                 "preregistration_sha256": _sha(prereg),
-                "reader_sha256": _sha(reader),
             },
             "filing_eligible": True,
             "implementation": {
-                "analysis_code_digest": reader_manifest["analysis_code_digest"],
-                "readers": {
-                    "complete": {
-                        "identity": "reader.module.complete",
-                        "sha256": "7" * 64,
-                    },
-                    "terminal_defect": {
-                        "identity": "reader.module.defect",
-                        "sha256": "7" * 64,
-                    },
-                },
+                "code_commit": "1" * 40,
+                "image_digest": "sha256:" + "4" * 64,
+                "repository_digest": "9" * 64,
             },
             "inputs": [{"sha256": "8" * 64}],
             "isolation": isolation_manifest,
@@ -401,13 +381,6 @@ def _case(
             "analysis": analysis_manifest,
             "analysis_receipt_digest": _sha(payloads["analysis_receipt"]),
             "bindings": analysis_manifest["bindings"],
-            "validated_readers": {
-                "complete": {"identity": "reader.module.complete", "sha256": "7" * 64},
-                "terminal_defect": {
-                    "identity": "reader.module.defect",
-                    "sha256": "7" * 64,
-                },
-            },
         }
     )
     payloads["review_packet"] = _json(review_packet)
@@ -475,7 +448,6 @@ def _case(
         revisions.analysis: (
             "blinded_analysis",
             "analysis_receipt",
-            "analysis_reader",
             "analysis_isolation_attestation",
         ),
         revisions.alias_commitment: ("alias_commitment",),

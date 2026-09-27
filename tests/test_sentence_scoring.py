@@ -6,7 +6,7 @@ import pytest
 import torch
 from tests.test_sentence_model import history, tiny_model
 
-from entropic_substrate.sentence_prediction.scoring import (
+from entropic_substrate.core.sentence.scoring import (
     importance_evaluate,
     importance_statistics,
 )

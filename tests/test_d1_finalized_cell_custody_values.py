@@ -12,47 +12,47 @@ from typing import NamedTuple, cast
 import pytest
 
 from d1_billing_finalizer_fixtures import billing_gap, provider_bill
-from entropic_substrate.d1_billing_finalization_values import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import (
+    D1Arm,
+    EvidenceClass,
+    RunClass,
+    canonical_json,
+)
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    D1DefectCheckpointReference,
+    D1NonfiniteClassification,
+    D1TerminalNumericalDefectRecord,
+)
+from entropic_substrate.ladder.capture.resource.resource_billing import ExecutionSegmentTermination
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    verify_d1_trainer_export,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
     attest_durable_d1_finalization,
 )
-from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
-from entropic_substrate.d1_finalized_cell_custody import (
+from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyError,
     D1FinalizedCellCustodyRecord,
     attest_d1_finalized_cell_custody,
     parse_d1_finalized_cell_custody,
     serialize_d1_finalized_cell_custody,
 )
-from entropic_substrate.d1_numerical_defect import (
-    D1DefectCheckpointReference,
-    D1NonfiniteClassification,
-    D1TerminalNumericalDefectRecord,
-)
-from entropic_substrate.d1_operator_evidence import (
-    D1ExportedTrainerHandoff,
-    verify_d1_trainer_export,
-)
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.d1_trainer_handoff import D1FreshRunCompletion
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.evidence.resource_billing import ExecutionSegmentTermination
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    SegmentStartMode,
-    execution_segment_id,
-)
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import (
-    D1Arm,
-    EvidenceClass,
-    RunClass,
-    canonical_json,
-)
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunCompletion
 
 from .test_d1_operator_controller import _case
 

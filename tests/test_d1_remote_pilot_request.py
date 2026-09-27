@@ -8,23 +8,26 @@ from dataclasses import replace
 import pytest
 
 import d1_launch_admission_fixtures as launch
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    SegmentStartMode,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.register.d1_config import load_d1_profile_catalog
+from entropic_substrate.ladder.register.d1_plan import (
+    ExcludedPilotD1RunPlan,
+    create_d1_excluded_pilot_plan,
+    create_d1_smoke_plan,
+    parse_d1_confirmatory_plan,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1ResumeTrainerRequest,
     build_d1_trainer_request,
     d1_trainer_request_sha256,
     parse_d1_trainer_request,
     serialize_d1_trainer_request,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.resource_provenance import SegmentStartMode, execution_segment_id
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_plan import (
-    ExcludedPilotD1RunPlan,
-    create_d1_excluded_pilot_plan,
-    create_d1_smoke_plan,
-    parse_d1_confirmatory_plan,
-)
-from entropic_substrate.experiments.d1_primitives import RunClass
 
 pytestmark = pytest.mark.unit
 

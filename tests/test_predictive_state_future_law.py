@@ -9,13 +9,13 @@ import pytest
 import torch
 from torch import nn
 
-from entropic_substrate.observation import CodecIdentity
-from entropic_substrate.predictive_state import (
+from entropic_substrate.core.latent.future_law import (
     DiagonalGaussianFutureLaw,
-    FutureTarget,
-    LatentTrajectory,
     MeanDisplacementBaseline,
 )
+from entropic_substrate.core.latent.state import LatentTrajectory
+from entropic_substrate.core.latent.targets import FutureTarget
+from entropic_substrate.core.observation.contracts import CodecIdentity
 from predictive_state_helpers import codec_identity, fit_mean_baseline
 
 pytestmark = pytest.mark.unit

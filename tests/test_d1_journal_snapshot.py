@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_journal_snapshot as snapshot_module
-from entropic_substrate.d1_artifact_snapshot import D1ArtifactSnapshotError
-from entropic_substrate.d1_journal_snapshot import (
+import entropic_substrate.ladder.capture.reader.d1_journal_snapshot as snapshot_module
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError
+from entropic_substrate.ladder.capture.reader.d1_journal_snapshot import (
     D1JournalSnapshot,
     read_d1_journal_snapshot,
     read_d1_local_journal_snapshot,
 )
-from entropic_substrate.evidence.d1_telemetry_query import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import (
     read_d1_run_evidence_bytes,
 )
-from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunStatus
 
 from .d1_telemetry_fixtures import LOGICAL_RUN_ID, valid_events, write_events
 

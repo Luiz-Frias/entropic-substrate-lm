@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_campaign_capture import D1HeterogeneousCaptureAdapter
-from entropic_substrate.d1_capture_prepare_coordinator import (
+from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody_repository import (
+    D1CapturePreparationCustodyRepository,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_service import D1CapturePreparationStatus
+from entropic_substrate.ladder.run.campaign.d1_campaign_capture import D1HeterogeneousCaptureAdapter
+from entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator import (
     D1CampaignCapturePreparationCoordinator,
     D1PublishedCapturePreparation,
 )
-from entropic_substrate.evidence.d1_capture_preparation_custody_repository import (
-    D1CapturePreparationCustodyRepository,
-)
-from entropic_substrate.evidence.d1_capture_service import D1CapturePreparationStatus
-from entropic_substrate.evidence.lifecycle import ActorIdentity, ActorRole
 
 from .test_d1_campaign_evidence_assembler import _case
 from .test_d1_capture_service import _service

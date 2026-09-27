@@ -5,14 +5,13 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.observation import ObservationAlignment
-from entropic_substrate.predictive_state import (
+from entropic_substrate.core.latent.state import LatentTrajectory, TargetEncoder
+from entropic_substrate.core.latent.targets import (
     FutureTarget,
-    LatentTrajectory,
-    TargetEncoder,
     one_step_displacement,
     one_step_target_from_context,
 )
+from entropic_substrate.core.observation.contracts import ObservationAlignment
 from predictive_state_helpers import codec_identity, encoded, model_config
 
 pytestmark = pytest.mark.unit

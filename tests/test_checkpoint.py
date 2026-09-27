@@ -16,15 +16,15 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from entropic_substrate.checkpoint import (
+from entropic_substrate.composition.entrypoints.cli import main as cli_main
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.kernel.runtime.checkpoint import (
     CHECKPOINT_FORMAT_VERSION,
     TAU_SEMANTICS_ENV,
     CheckpointFormatError,
     inverse_softplus,
     normalize_checkpoint,
 )
-from entropic_substrate.cli import main as cli_main
-from entropic_substrate.train import Trainer
 from helpers import tiny_config
 
 pytestmark = pytest.mark.unit

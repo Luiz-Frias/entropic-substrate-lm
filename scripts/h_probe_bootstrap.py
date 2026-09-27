@@ -29,7 +29,7 @@ REQUIRED = {
     "pyproject.toml",
     "uv.lock",
     ".dvc/config",
-    "src/entropic_substrate/sentence_prediction/worker_command.py",
+    "src/entropic_substrate/ladder/run/worker_command.py",
 }
 
 
@@ -114,7 +114,11 @@ def _git(root: Path, args: tuple[str, ...], *, timeout: float, max_bytes: int) -
     finally:
         try:
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # FOR-1537 (MEASURED 2026-09-21, p3b exit gate): under xdist churn the
+            # PGID can already belong to another session by the time the guard
+            # fires; the kernel answers EPERM, not ESRCH. Either way the group is
+            # no longer ours to kill; the wait below still reaps our own child.
             pass
         process.wait(timeout=1)
         if process.stdout is not None:

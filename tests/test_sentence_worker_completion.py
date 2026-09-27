@@ -9,13 +9,13 @@ from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_request import request as local_request
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.object_worker import run_object_worker
-from entropic_substrate.sentence_prediction.worker_completion import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.worker_completion import (
     admit_worker_runtime,
     receive_worker_completion,
 )
-from entropic_substrate.sentence_prediction.worker_transport import publish_probe_request
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
 

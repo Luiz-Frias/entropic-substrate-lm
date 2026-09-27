@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from entropic_substrate.d1_inspect_codec import (
+from entropic_substrate.ladder.analyze.d1_inspect_codec import (
     D1_INSPECT_MAX_RESULT_BYTES,
     D1InspectCodecError,
     d1_inspect_result_from_mapping,
@@ -17,7 +17,7 @@ from entropic_substrate.d1_inspect_codec import (
     parse_d1_inspect_result,
     serialize_d1_inspect_result,
 )
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
 
 from .d1_telemetry_fixtures import valid_events
 from .test_d1_inspect_codec import _view

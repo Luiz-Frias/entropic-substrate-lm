@@ -10,39 +10,41 @@ from typing import cast
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
-from entropic_substrate.d1_campaign_queue import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    ExecutionSegmentTermination,
+    ProviderBilling,
+)
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1ConfirmatoryMatrix
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.register.d1_registered_design import (
+    D1PreregistrationArtifact,
+    D1RegisteredDesign,
+    D1RegisteredDesignCandidate,
+    admit_d1_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import (
     D1CampaignQueue,
     D1CampaignQueueHalt,
     D1CompletedCampaign,
 )
-from entropic_substrate.d1_operator_controller import D1OperatorRunResult
-from entropic_substrate.d1_operator_evidence import D1TrainerExportReceipt
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import D1OperatorRunResult
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import D1TrainerExportReceipt
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImmutableImage,
     D1OperatorLaunchIntent,
     D1PodPlacement,
 )
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.evidence.resource_billing import (
-    ExecutionSegmentTermination,
-    ProviderBilling,
-)
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1ConfirmatoryMatrix
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
-from entropic_substrate.experiments.d1_registered_design import (
-    D1PreregistrationArtifact,
-    D1RegisteredDesign,
-    D1RegisteredDesignCandidate,
-    admit_d1_registered_design,
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
+    D1BillingFinalization,
 )
 
 from .test_d1_confirmatory_matrix import FakeGit

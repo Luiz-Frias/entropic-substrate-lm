@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.git_environment import isolated_git_environment
+from entropic_substrate.kernel.runtime.git_environment import isolated_git_environment
 
 pytestmark = pytest.mark.unit
 

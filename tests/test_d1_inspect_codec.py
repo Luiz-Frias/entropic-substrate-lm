@@ -8,19 +8,26 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_inspect_codec import (
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.analyze.d1_inspect_codec import (
     D1_INSPECT_MAX_RESULT_BYTES,
     D1_INSPECT_RESULT_SCHEMA,
     D1InspectCodecError,
     d1_inspect_result_to_mapping,
     serialize_d1_inspect_result,
 )
-from entropic_substrate.d1_inspect_projection import compose_d1_inspect_view
-from entropic_substrate.d1_inspect_values import D1InspectJournal
-from entropic_substrate.d1_journal_snapshot import read_d1_local_journal_snapshot
-from entropic_substrate.evidence.d1_journal_values import D1JournalEvent, JournalEventKind
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
+from entropic_substrate.ladder.analyze.d1_inspect_projection import compose_d1_inspect_view
+from entropic_substrate.ladder.analyze.d1_inspect_values import D1InspectJournal
+from entropic_substrate.ladder.capture.reader.d1_journal_snapshot import (
+    read_d1_local_journal_snapshot,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    JournalEventKind,
+)
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
 
 from .d1_telemetry_fixtures import valid_events, write_events
 

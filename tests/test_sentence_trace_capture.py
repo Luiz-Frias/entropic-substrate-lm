@@ -8,9 +8,9 @@ import pytest
 from tests.test_sentence_generation import trained
 from tests.test_sentence_rollout import scripted_tokens
 
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.sentence_prediction.generation import run_probe_generation
-from entropic_substrate.sentence_prediction.trace_capture import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.trace_capture import (
     capture_model_trace,
     read_model_trace,
 )
@@ -168,7 +168,7 @@ def test_capture_reader_detects_a_missing_referenced_checkpoint(
 def test_capture_includes_the_paused_generation_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction.journal import read_json
+    from entropic_substrate.ladder.run.journal import read_json
 
     template, output, training = trained(tmp_path)
     scripted_tokens(monkeypatch, [65, 46, 257])

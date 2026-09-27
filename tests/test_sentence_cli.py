@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.cli import main
-from entropic_substrate.sentence_prediction.journal import artifact_reference, write_json
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.run.journal import artifact_reference, write_json
 
 pytestmark = pytest.mark.unit
 

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.telemetry import TelemetryGap
+from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 
 pytestmark = pytest.mark.unit
 

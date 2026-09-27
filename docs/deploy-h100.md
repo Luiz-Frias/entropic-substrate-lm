@@ -5,15 +5,32 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-9a6300a.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-3b93854.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:12ed163429a1de87566788956573b0fe7f0e4d7230487f65b46debc6afce4986
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:f2469dc9acc4eea13d63ef91d2f28d753be6d29ebf97602c5cf67cd977986b78
 ```
 
-Runtime source matches commit `9a6300a20eddd3cbe5c00f01abc1ee25f5c0b128` exactly.
+Runtime source matches commit `3b93854201bcf05f097e7c1979c0231267367122` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-09-26 (exit-gate lane, branch `mythwave/h-exit-gate`, operator go-ahead for the
+H tiny-probe wave): the previous pin (`6b4e68fa...`, source `88d1a25`) is superseded; its capture
+`results/h-image-publication-88d1a25.dvc` remains historical evidence. This image carries the
+two changes the wave depends on: the worker receives MLflow through the launch template's
+secret references (`h0-probe-launch-v2`) and reports GLOBAL optimizer steps plus evaluation
+rows to the metric sink. Same verifier and manifest as the 88d1a25 publication; the source
+replay's in-image capture admitted 491 documents / 1,954,698 bytes, corpus identity `cf938a0b...`.
+RE-PINNED 2026-09-26 (p13-sweep commit F, ruling P13-IMAGE, operator go-ahead OP-3): the
+previous pin (`12ed1634...`, source `9a6300a`) is superseded; its capture
+`results/h-image-publication-9a6300a.dvc` remains historical evidence. This publication's
+verifier imports only landed addresses (`kernel.lifecycle`, `ladder.capture.capture`,
+`ladder.run.worker.*`, `ladder.run.transport.*`, `ladder.run.worker_command`), which is itself
+the packaging proof that the retired dotted namespace is gone from the image. The source
+replay uses a fresh `h-prepare-source` capture (same manifest: 512 candidates, `sample-10BT`,
+pinned FineWeb revision, split seed 42; 491 admitted / 1,954,698 bytes, corpus identity
+identical to the 9a6300a-era capture) because the p4 reader-identity bump makes the earlier
+capture unreadable by the current reader, by design.
 Requests must bind their code commit and bundle to this publication, not a later
 host-only controller commit. Earlier publication captures remain historical evidence.
 The H worker imports, pySBD/boto3 are installed, and the committed R2 topology is
@@ -80,8 +97,8 @@ authentication using a personal access token (classic)"), registered via
 - Run command examples:
 
 ```bash
-python -m entropic_substrate.cli train --exp e1-fisher --device cuda
-python -m entropic_substrate.cli train --exp e3 --device cuda
+python -m entropic_substrate.composition.entrypoints.cli train --exp e1-fisher --device cuda
+python -m entropic_substrate.composition.entrypoints.cli train --exp e3 --device cuda
 bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc push per rung
 ```
 
@@ -91,7 +108,7 @@ bash scripts/run_ladder.sh --device cuda   # gated ladder E1 → E2 → E3, dvc 
 - Image: same GHCR image; on-start script:
 
 ```bash
-cd /app && python -m entropic_substrate.cli train --exp e3 --device cuda \
+cd /app && python -m entropic_substrate.composition.entrypoints.cli train --exp e3 --device cuda \
   2>&1 | tee results/e3-console.log
 ```
 

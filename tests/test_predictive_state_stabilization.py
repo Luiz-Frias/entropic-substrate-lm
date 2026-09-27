@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.predictive_state import (
-    LatentTrajectory,
+from entropic_substrate.core.latent.stabilization import (
     MomentCollapseRegularizer,
     NoCollapseRegularizer,
 )
+from entropic_substrate.core.latent.state import LatentTrajectory
 from predictive_state_helpers import codec_identity
 
 pytestmark = pytest.mark.unit

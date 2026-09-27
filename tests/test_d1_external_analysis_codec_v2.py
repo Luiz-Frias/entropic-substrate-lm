@@ -8,8 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
-from entropic_substrate.analysis.d1_external_analysis_codec import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
+from entropic_substrate.ladder.review.d1_execution_receipt import D1IsolationRequest
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
     D1ExternalAnalysisRequestEnvelopeV2,
     D1ExternalAnalysisWorkerResponseV2,
     build_d1_external_analysis_request_v2,
@@ -18,11 +20,9 @@ from entropic_substrate.analysis.d1_external_analysis_codec import (
     encode_d1_external_analysis_request_v2,
     encode_d1_external_analysis_worker_response_v2,
 )
-from entropic_substrate.analysis.d1_external_analysis_control import (
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
     decode_d1_external_analysis_input_control,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import decision_contract_digest
 
 from .test_d1_external_analysis_input import _canonical, _case
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import (
     RecordingObserver,
     captured_step_one_case,
@@ -15,17 +15,20 @@ from d1_resume_fixtures import (
     resume_start,
 )
 from d1_trainer_fixtures import DeterministicTrainerClock
-from entropic_substrate.d1_resource_activation import (
-    D1ProductionResourceActivationFactory,
-)
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_tracking import D1MetricExtractor
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     ResourcePhase,
+)
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ProductionResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
 )
 
 pytestmark = pytest.mark.unit

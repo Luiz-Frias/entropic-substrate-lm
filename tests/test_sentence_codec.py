@@ -5,8 +5,8 @@ from dataclasses import replace
 import pytest
 import torch
 
-from entropic_substrate.sentence_prediction.codec import CodecSpec, NeuralSentenceCodec
-from entropic_substrate.sentence_prediction.law import LawSpec
+from entropic_substrate.core.sentence.codec import CodecSpec, NeuralSentenceCodec
+from entropic_substrate.core.sentence.law import LawSpec
 
 pytestmark = pytest.mark.unit
 

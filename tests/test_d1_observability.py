@@ -8,21 +8,29 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.d1_observability import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
     D1JournalObserver,
     D1MlflowObserver,
     ObservedD1Journal,
 )
-from entropic_substrate.evidence.d1_journal import JournalTailQuarantineReceipt, read_journal
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    JournalTailQuarantineReceipt,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
     JournalEventKind,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, execution_segment_id
-from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -174,7 +182,7 @@ def test_observer_runs_only_after_authoritative_journal_fsync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import entropic_substrate.evidence.d1_journal as journal_module
+    import entropic_substrate.ladder.capture.records.d1_journal as journal_module
 
     calls: list[str] = []
     monkeypatch.setattr(journal_module.os, "fsync", lambda _fd: calls.append("fsync"))

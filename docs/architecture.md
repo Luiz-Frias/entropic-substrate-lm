@@ -484,7 +484,7 @@ the design can support blinding.
 The existing evidence architecture is retained:
 
 - JSONL plus DVC capture is authoritative;
-- `entropic_substrate.telemetry` is the only admissible read side;
+- `entropic_substrate.ladder.capture.reader.telemetry` is the only admissible read side;
 - MLflow is a best-effort operational mirror and never a verdict input;
 - checkpoints carry schema and construction identities; and
 - missing, partial, nonfinite, nonmonotonic, or incompatible evidence fails loudly.
@@ -562,11 +562,11 @@ measured property of the model.
 | Existing asset | Disposition in the pivot |
 |---|---|
 | E0/E1 configs, captures, and verdicts | Preserve unchanged as historical controls and evidence. |
-| `init/fisher.py` | Preserve as the E1 warm-start control; do not promote it to the D-series semantic state. |
+| `core/substrate/fisher.py` | Preserve as the E1 warm-start control; do not promote it to the D-series semantic state. |
 | E1.5-D geometry diagnostics | Reuse as report-only relational observers. |
 | E1.5a/E1.5b freeze/Gram arms | Preserve for attribution history; no automatic D-series carry-forward. |
 | `FieldEncoder` H/P/F paths | Preserve as bridge controls and possible target-encoder components. Do not add another enum member as the pivot architecture. |
-| `analysis/field_head_audit.py` and the frozen-head findings | Complete as exploratory D-entry evidence; use it to refine controls, not as a confirmatory D verdict. |
+| `ladder/analyze/field_head_audit.py` and the frozen-head findings | Complete as exploratory D-entry evidence; use it to refine controls, not as a confirmatory D verdict. |
 | nGPT projection/retraction blocks | Candidate geometry consumer and matched control after D1. |
 | kappa attention | Later relational comparator after the decoder-Fisher tracer; not a substitute for it. |
 | E4 fixed-window code/reference | Reuse as D4 fixed control over latent states. |

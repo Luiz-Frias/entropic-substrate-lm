@@ -3,69 +3,67 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import shutil
-from collections.abc import Callable
+import sys
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, cast
 
 import pytest
 
-import entropic_substrate.analysis.d1_external_worker as worker_module
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+import entropic_substrate.ladder.review.d1_external_analysis_control as control_module
+import entropic_substrate.ladder.review.d1_external_worker as worker_module
 from d1_launch_admission_fixtures import family
-from entropic_substrate.analysis.d1_blind_aliases import (
-    D1InMemoryAliasCustodyFake,
-    prepare_d1_blind_aliases,
-)
-from entropic_substrate.analysis.d1_execution_receipt import D1IsolationRequest
-from entropic_substrate.analysis.d1_external_analysis_codec import (
-    D1ExternalAnalysisRequestEnvelopeV2,
-    build_d1_external_analysis_request_v2,
-    decode_d1_external_analysis_worker_response_v2,
-    encode_d1_external_analysis_request_v2,
-)
-from entropic_substrate.analysis.d1_external_analysis_control import (
-    D1_COMPLETE_READER_IDENTITY,
-    D1_TERMINAL_DEFECT_READER_IDENTITY,
-    decode_d1_external_analysis_input_control,
-    derive_d1_analysis_code_digest,
-)
-from entropic_substrate.analysis.d1_external_worker import (
-    D1ExternalWorkerArtifacts,
-    D1ExternalWorkerError,
-    run_d1_external_worker,
-)
-from entropic_substrate.analysis.d1_machine_analysis_binding import (
-    bind_d1_machine_analysis_contract,
-)
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
-    verify_d1_machine_analysis,
-)
-from entropic_substrate.analysis.d1_reader_source_closure import (
-    installed_d1_reader_source_files,
-)
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     serialize_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_ports import D1DvcPointerIdentity
-from entropic_substrate.evidence.d1_capture_service import D1HeterogeneousCaptureReceipt
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_config import load_d1_profile_catalog
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPointerIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_service import (
+    D1HeterogeneousCaptureReceipt,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
     admit_d1_registered_design,
 )
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     serialize_decision_contract,
     serialize_registered_design,
+)
+from entropic_substrate.ladder.review.d1_blind_aliases import (
+    D1InMemoryAliasCustodyFake,
+    prepare_d1_blind_aliases,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import D1IsolationRequest
+from entropic_substrate.ladder.review.d1_external_analysis_codec import (
+    D1ExternalAnalysisRequestEnvelopeV2,
+    build_d1_external_analysis_request_v2,
+    decode_d1_external_analysis_worker_response_v2,
+    encode_d1_external_analysis_request_v2,
+)
+from entropic_substrate.ladder.review.d1_external_analysis_control import (
+    decode_d1_external_analysis_input_control,
+)
+from entropic_substrate.ladder.review.d1_external_worker import (
+    D1ExternalWorkerArtifacts,
+    D1ExternalWorkerError,
+    run_d1_external_worker,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_binding import (
+    bind_d1_machine_analysis_contract,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
+    verify_d1_machine_analysis,
 )
 
 from .test_d1_analysis_api import _decision
@@ -77,6 +75,125 @@ from .test_d1_registered_design_hydration import _RAW_PREREGISTRATION
 pytestmark = pytest.mark.unit
 
 
+def _find_spec_is_unresolvable(dotted: str) -> bool:
+    """P13-FIND-SPEC-ARM (regime-independent): a retired module is
+    'unresolvable' iff ``find_spec`` returns ``None`` OR raises
+    ``ModuleNotFoundError`` whose ``.name`` is the retired parent package.
+    A bare ``find_spec(old) is None`` is NOT regime-independent: in a
+    checkout carrying ignored ``__pycache__`` residue for a deleted
+    package, the parent resolves as a PEP 420 namespace portion and
+    ``find_spec`` on the child returns ``None`` either way -- but in a
+    clean clone (CI) the parent import raises ``ModuleNotFoundError``
+    instead. Both outcomes must count as 'gone'."""
+    parent = dotted.rsplit(".", 1)[0]
+    try:
+        spec = importlib.util.find_spec(dotted)
+    except ModuleNotFoundError as exc:
+        return exc.name == parent
+    return spec is None
+
+
+def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
+    """Guard-teeth (brief table row 5): standing a hardcoded identity tuple
+    in for the retired ``D1_READER_SOURCE_MODULES`` symbol, rather than
+    leaving it and the closure module gone outright, must turn this test
+    RED -- the ``hasattr`` form catches a hardcoded stand-in the way a value
+    equality check would not (any tuple, however constructed, would satisfy
+    an equality assertion against the old 74-entry set)."""
+    # Composed at runtime (P13-EXCEPTIONS addendum 2): the retired module's
+    # dotted name must stay unresolvable forever; a literal chain here would
+    # itself be flagged by tests/test_no_old_prefix.py's whole-tree scan.
+    retired_module = "entropic_substrate" + ".analysis.d1_reader_source_closure"
+    assert _find_spec_is_unresolvable(retired_module)
+    assert not hasattr(control_module, "D1_READER_SOURCE_MODULES")
+
+
+# ---------------------------------------------------------------------------
+# Guard-teeth (brief table row 1): the retired closure's former call path was
+# d1_external_analysis_control.py:100, which called it at MODULE IMPORT; the
+# two review-ring modules are its only importers. ``_load_relocated_copy``
+# below is a W1 sibling copy of the ~18-line helper defined at
+# ``tests/test_worker_source_anchor.py:52`` (that module is out of this
+# phase's Allowed files and reserved for FOR-1519, so it is copied rather
+# than imported, per the design gate).
+# ---------------------------------------------------------------------------
+
+_CONTROL_SOURCE = Path(cast(str, control_module.__file__))
+_WORKER_SOURCE = Path(cast(str, worker_module.__file__))
+
+
+def _load_relocated_copy(source: Path, relocated_dir: Path, module_name: str) -> ModuleType:
+    """Copy ``source`` into ``relocated_dir`` and import it under a distinct
+    module name, so its own ``__file__`` differs from the installed
+    package's copy while its absolute ``from entropic_substrate...`` imports
+    still resolve to the real installed package (unaffected by the copy)."""
+    relocated_dir.mkdir(parents=True, exist_ok=True)
+    target = relocated_dir / source.name
+    shutil.copy2(source, target)
+    spec = importlib.util.spec_from_file_location(module_name, target)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+@pytest.fixture
+def _relocated_review_ring(tmp_path: Path) -> Iterator[tuple[ModuleType, ModuleType]]:
+    control_name = "test_relocated_d1_external_analysis_control"
+    worker_name = "test_relocated_d1_external_worker"
+    try:
+        elsewhere = tmp_path / "elsewhere"
+        control = _load_relocated_copy(_CONTROL_SOURCE, elsewhere, control_name)
+        worker = _load_relocated_copy(_WORKER_SOURCE, elsewhere, worker_name)
+        yield control, worker
+    finally:
+        sys.modules.pop(control_name, None)
+        sys.modules.pop(worker_name, None)
+
+
+def test_review_ring_imports_from_a_relocated_tree(
+    _relocated_review_ring: tuple[ModuleType, ModuleType],
+    tmp_path: Path,
+) -> None:
+    """Pin: the review ring (``d1_external_analysis_control.py`` and
+    ``d1_external_worker.py``, the closure's only two importers before its
+    retirement) imports cleanly from a relocated copy, and the mounted-root
+    reality check that took over the closure's former call path
+    (``_real_directory``, see the RETRACTED comment in
+    ``d1_external_worker.py``) is anchored on the PATH ARGUMENT it receives,
+    never on the depth of the file that happens to define it.
+
+    RETRACTED (house rule 4, p11-analyze-review-file, ruling
+    P11-WORKER-TEST-CARVEOUT): the paragraph below MEASURED 2026-09-20 a
+    ``parents[2]`` recipe at the pre-p3 depth. MEASURED by the p11 design
+    gate, ``parents[2].name == "entropic_substrate"`` at both the old
+    ``__legacy/analysis/`` path and the new ``ladder/review/`` path this
+    phase lands at, so the pre-p3 recipe would raise for the REAL installed
+    module too and proves nothing at this depth. The re-proven recipe is
+    ``parents[3]``, re-measured in-branch with both arms below.
+
+    Guard-teeth MEASURED 2026-09-20, RE-PROVEN 2026-09-23 at the
+    ``ladder/review/`` depth (captured by the w2 p11 lane's L1 validator, run
+    wf_60b791b4-82a, at lane commit 2b1f117, restacked as c35e51e on PR #300): adding, at module scope near the closure's
+    former call site (``d1_external_analysis_control.py:100``), ``_ANCHOR =
+    Path(__file__).resolve().parents[3]`` followed by ``if _ANCHOR.name !=
+    "src": raise RuntimeError("anchor")`` turns this test RED with that
+    ``RuntimeError`` (the relocated copy's ``parents[3]`` is not ``src``);
+    reverting turns it back GREEN."""
+    control, worker = _relocated_review_ring
+    assert control.__name__ != "entropic_substrate.ladder.review.d1_external_analysis_control"
+    assert worker.__name__ != "entropic_substrate.ladder.review.d1_external_worker"
+    real_dir = tmp_path / "real-reader-root"
+    real_dir.mkdir()
+    resolved = worker._real_directory(real_dir, code="reader_root")
+    assert resolved == real_dir.resolve()
+
+
 class _WorkerCase(NamedTuple):
     request: D1ExternalAnalysisRequestEnvelopeV2
     capture_root: Path
@@ -85,25 +202,17 @@ class _WorkerCase(NamedTuple):
     runs: dict[str, D1RunEvidence]
 
 
-def _reader_manifest() -> dict[str, object]:
-    files = installed_d1_reader_source_files()
-    modules = [item.manifest for item in files]
-    return {
-        "analysis_code_digest": derive_d1_analysis_code_digest(modules),
-        "complete_reader": D1_COMPLETE_READER_IDENTITY,
-        "modules": modules,
-        "schema_version": "d1-reader-source-manifest-v1",
-        "terminal_defect_reader": D1_TERMINAL_DEFECT_READER_IDENTITY,
-    }
-
-
+# RETRACTED (house rule 4, measured 2026-09-20): this file previously built
+# a "reader_source_manifest_base64" envelope field here (`_reader_manifest`)
+# and populated the mounted reader tree from the installed D1 reader-source
+# closure (`_mounted_reader_root`), both retired this phase. Nothing verifies
+# the mounted tree's contents any more (see the retraction comment in
+# analysis/d1_external_worker.py), so `_mounted_reader_root` now only needs
+# to hand back an existing real directory for `run_d1_external_worker`'s
+# `_real_directory` existence check.
 def _mounted_reader_root(tmp_path: Path) -> Path:
-    source_root = Path(__file__).resolve().parents[1] / "src"
     mounted = tmp_path / "reader"
-    for item in installed_d1_reader_source_files():
-        target = mounted / item.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_root / item.path, target)
+    mounted.mkdir(parents=True, exist_ok=True)
     return mounted
 
 
@@ -163,7 +272,6 @@ def _request_case(tmp_path: Path) -> _WorkerCase:
         "expected_design_digest": design.design_digest,
         "expected_family_digest": design.family_digest,
         "preregistration_control_base64": _b64(_canonical(preregistration_control)),
-        "reader_source_manifest_base64": _b64(_canonical(_reader_manifest())),
         "registered_design_base64": _b64(serialize_registered_design(design).encode("utf-8")),
         "schema_version": "d1-external-analysis-input-v1",
     }
@@ -234,7 +342,7 @@ def test_worker_rehydrates_and_composes_blinded_analysis(
     assert reveal not in artifacts.response_bytes
 
 
-def test_worker_rejects_live_tracking_isolation_and_mounted_reader_drift(
+def test_worker_rejects_live_tracking_and_isolation_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -256,11 +364,6 @@ def test_worker_rejects_live_tracking_isolation_and_mounted_reader_drift(
     with pytest.raises(D1ExternalWorkerError, match="isolation"):
         _run_case(case, request=other_isolation)
 
-    first = installed_d1_reader_source_files()[0]
-    (case.reader_root / first.path).write_bytes(b"drift")
-    with pytest.raises(D1ExternalWorkerError, match="reader_identity"):
-        _run_case(case)
-
 
 def test_worker_request_refusal_does_not_echo_preregistration_bytes(
     tmp_path: Path,
@@ -279,23 +382,12 @@ def test_worker_request_refusal_does_not_echo_preregistration_bytes(
     assert sensitive_text not in str(raised.value)
 
 
-def test_worker_rejects_installed_reader_drift_and_missing_family(
+def test_worker_rejects_missing_family(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     case = _request_case(tmp_path)
     _install_reader_fake(monkeypatch, case.runs)
-    installed = installed_d1_reader_source_files()
-    drifted = (replace(installed[0], sha256="0" * 64), *installed[1:])
-    monkeypatch.setattr(worker_module, "installed_d1_reader_source_files", lambda: drifted)
-    with pytest.raises(D1ExternalWorkerError, match="reader_identity"):
-        _run_case(case)
-
-    monkeypatch.setattr(
-        worker_module,
-        "installed_d1_reader_source_files",
-        installed_d1_reader_source_files,
-    )
     monkeypatch.setattr(worker_module, "load_d1_profile_catalog", lambda: ())
     with pytest.raises(D1ExternalWorkerError, match="family"):
         _run_case(case)
@@ -326,7 +418,7 @@ def test_worker_rejects_symlinked_capture_and_artifact_drift(
         replace(artifacts, response_bytes=artifacts.response_bytes + b"\n")
 
 
-def test_worker_rejects_symlinked_reader_root_and_source_file(
+def test_worker_rejects_symlinked_reader_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -342,30 +434,7 @@ def test_worker_rejects_symlinked_reader_root_and_source_file(
             reader_root=reader_link,
             environ={},
         )
-    assert root_error.value.code == "reader_identity"
-
-    first = installed_d1_reader_source_files()[0]
-    mounted_file = case.reader_root / first.path
-    source_bytes = mounted_file.read_bytes()
-    mounted_file.unlink()
-    outside = tmp_path / "reader-outside.py"
-    outside.write_bytes(source_bytes)
-    mounted_file.symlink_to(outside)
-    with pytest.raises(D1ExternalWorkerError) as file_error:
-        _run_case(case)
-    assert file_error.value.code == "reader_identity"
-
-
-def test_reader_join_rejects_lexical_parent_components(tmp_path: Path) -> None:
-    (tmp_path / "nested").mkdir()
-    (tmp_path / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
-    regular_file = cast(
-        Callable[[Path, str], Path],
-        worker_module.__dict__["_regular_mounted_file"],
-    )
-    with pytest.raises(D1ExternalWorkerError) as raised:
-        regular_file(tmp_path, "nested/../source.py")
-    assert raised.value.code == "reader_identity"
+    assert root_error.value.code == "reader_root"
 
 
 @pytest.mark.parametrize("invalid", ([], {1: "value"}, {"KEY": 1}))
@@ -383,7 +452,7 @@ def test_worker_environment_type_errors_remain_type_errors(
         )
 
 
-def test_worker_rejects_ambiguous_family_and_intermediate_reader_symlink(
+def test_worker_rejects_ambiguous_family(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -398,13 +467,3 @@ def test_worker_rejects_ambiguous_family_and_intermediate_reader_symlink(
     with pytest.raises(D1ExternalWorkerError) as family_error:
         _run_case(case)
     assert family_error.value.code == "family"
-
-    monkeypatch.setattr(worker_module, "load_d1_profile_catalog", load_d1_profile_catalog)
-    intermediate = case.reader_root / "entropic_substrate/analysis"
-    outside = tmp_path / "outside-analysis"
-    shutil.copytree(intermediate, outside)
-    shutil.rmtree(intermediate)
-    intermediate.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(D1ExternalWorkerError) as reader_error:
-        _run_case(case)
-    assert reader_error.value.code == "reader_identity"

@@ -10,11 +10,14 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.analysis.d1_blind_aliases import (
+from entropic_substrate.ladder.review.d1_blind_aliases import (
     D1InMemoryAliasCustodyFake,
     prepare_d1_blind_aliases,
 )
-from entropic_substrate.analysis.d1_review_execution import (
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1_NO_MAJOR_PROMPT_DIRECTIVE,
+)
+from entropic_substrate.ladder.review.d1_review_execution import (
     D1CloudReviewerFake,
     D1CloudReviewRequest,
     D1CloudReviewResponse,
@@ -25,12 +28,9 @@ from entropic_substrate.analysis.d1_review_execution import (
     execute_d1_blind_review,
     release_d1_alias_reveal,
 )
-from entropic_substrate.analysis.d1_review_packet import (
+from entropic_substrate.ladder.review.d1_review_packet import (
     D1BlindReviewPacket,
     D1FactorialReviewerPrompt,
-)
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1_NO_MAJOR_PROMPT_DIRECTIVE,
 )
 
 pytestmark = pytest.mark.unit

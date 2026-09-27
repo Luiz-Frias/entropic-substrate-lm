@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from entropic_substrate.d1_trainer_s3_object_adapter import (
+from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
     Boto3D1TrainerMailboxObjectAdapter,
     D1TrainerS3ObjectError,
 )

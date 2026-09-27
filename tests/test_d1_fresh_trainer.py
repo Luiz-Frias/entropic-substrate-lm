@@ -10,8 +10,8 @@ from typing import cast
 import pytest
 import torch
 
-import entropic_substrate.d1_segment_engine as segment_engine
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -20,18 +20,23 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_trainer_handoff import D1FreshRunFailure
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    AuthoritativeRunJournal,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     JournalCheckpointState,
     JournalEventKind,
     canonical_event_line,
 )
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunFailure
 
 pytestmark = pytest.mark.unit
 

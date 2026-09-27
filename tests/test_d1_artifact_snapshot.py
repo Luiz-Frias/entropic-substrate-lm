@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_artifact_snapshot import (
+from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,

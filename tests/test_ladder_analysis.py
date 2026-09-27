@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.ladder_analysis import (
+from entropic_substrate.kernel.artifacts import snapshot_d1_artifact
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.analyze.ladder_analysis import (
     D1RunReader,
     read_ladder_run,
 )
-from entropic_substrate.d1_artifact_snapshot import snapshot_d1_artifact
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 from .d1_telemetry_fixtures import valid_events, write_events
 

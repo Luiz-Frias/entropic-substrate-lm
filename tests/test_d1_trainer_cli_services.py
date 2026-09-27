@@ -17,28 +17,28 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.d1_cli import (
+from entropic_substrate.composition.wiring.d1_cli import (
     D1_CLI_MANIFEST_SCHEMA,
     D1CliApplication,
     D1CliCommand,
     D1CliExitCode,
     D1CliServiceUnavailable,
 )
-from entropic_substrate.d1_trainer_cli_services import (
+from entropic_substrate.composition.wiring.d1_trainer_cli_services import (
     D1FreshTrainerCliService,
     D1ResumeTrainerCliService,
 )
-from entropic_substrate.d1_trainer_output_publication import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_output_publication import (
     load_d1_published_trainer_output,
 )
-from entropic_substrate.d1_trainer_request_codec import (
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     D1FreshTrainerRequest,
     D1ResumeTrainerRequest,
     D1TrainerLocationSpec,
     trainer_request_to_mapping,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

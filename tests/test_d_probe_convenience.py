@@ -2,9 +2,9 @@
 
 import pytest
 
-import entropic_substrate.d_ladder_execution as execution
-from entropic_substrate.cli import main
-from entropic_substrate.experiments.ladder import Treatment
+import entropic_substrate.historical.d_ladder.d_ladder_execution as execution
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.register.ladder import Treatment
 
 pytestmark = pytest.mark.unit
 

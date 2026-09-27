@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_r2_runtime_composition import (
+from entropic_substrate.ladder.run.construction.d1_r2_runtime_composition import (
     D1R2RuntimeCompositionError,
     build_d1_r2_runtime_composition,
 )

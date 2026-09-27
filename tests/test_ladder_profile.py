@@ -6,11 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.ladder_campaign import artifact_mapping
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import d1_configs_dir, load_d1_profile
-from entropic_substrate.experiments.ladder import CoarseSpec, Rung, RungSpec, Treatment
-from entropic_substrate.experiments.ladder_profile import load_rung_profile, rung_profile_mapping
+from entropic_substrate.historical.d_ladder.ladder_profile import (
+    load_rung_profile,
+    rung_profile_mapping,
+)
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.gate.ladder_campaign import artifact_mapping
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.ladder.register.ladder import CoarseSpec, Rung, RungSpec, Treatment
 
 pytestmark = pytest.mark.unit
 

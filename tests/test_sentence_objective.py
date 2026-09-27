@@ -4,8 +4,8 @@ import pytest
 import torch
 from tests.test_sentence_model import history, tiny_model
 
-from entropic_substrate.sentence_prediction.codec import teacher_forcing_prefix
-from entropic_substrate.sentence_prediction.objective import codec_warmup_loss, prediction_loss
+from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
+from entropic_substrate.core.sentence.objective import codec_warmup_loss, prediction_loss
 
 pytestmark = pytest.mark.unit
 

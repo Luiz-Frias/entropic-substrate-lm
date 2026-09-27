@@ -8,14 +8,14 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.d1_inspect_request import (
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.analyze.d1_inspect_request import (
     D1_INSPECT_MAX_JOURNAL_BYTES,
     D1_INSPECT_REQUEST_SCHEMA,
     D1InspectRequest,
     d1_inspect_request_from_mapping,
 )
-from entropic_substrate.d1_inspect_values import D1_INSPECT_MAX_EVALUATIONS
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.ladder.analyze.d1_inspect_values import D1_INSPECT_MAX_EVALUATIONS
 
 pytestmark = pytest.mark.unit
 

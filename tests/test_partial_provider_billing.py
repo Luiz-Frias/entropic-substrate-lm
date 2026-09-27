@@ -7,18 +7,22 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    BillingUnit,
+    EvidenceGap,
+    Money,
+)
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ProviderBilledAmountObservation,
     ProviderBilling,
     ProviderBillingPartial,
     ProviderBillingPending,
 )
-from entropic_substrate.evidence.resource_billing_reconciliation import (
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
     reconcile_segment_billing,
 )
-from entropic_substrate.evidence.resource_provenance import BillingUnit, EvidenceGap, Money
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 from .test_resource_billing_reconciliation import _start, _termination
 

@@ -8,12 +8,13 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactIdentity,
     D1ArtifactRole,
     D1DvcBinding,
 )
-from entropic_substrate.evidence.d1_capture_declaration_codec import (
+from entropic_substrate.ladder.capture.custody.d1_capture_declaration_codec import (
     D1CaptureDeclarationCodecError,
     artifact_identity_from_mapping,
     artifact_identity_to_mapping,
@@ -24,12 +25,11 @@ from entropic_substrate.evidence.d1_capture_declaration_codec import (
     serialize_artifact_identity,
     serialize_launch_roster,
 )
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
     D1LaunchRoster,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 from .test_d1_capture_roster import _family, _run
 

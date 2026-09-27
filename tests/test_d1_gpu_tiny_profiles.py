@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.experiments.d1_config import (
+from entropic_substrate.ladder.register.d1_config import (
     d1_configs_dir,
     load_d1_profile,
     load_d1_profile_catalog,
 )
-from entropic_substrate.experiments.d1_plan import parse_d1_confirmatory_plan
+from entropic_substrate.ladder.register.d1_plan import parse_d1_confirmatory_plan
 
 pytestmark = pytest.mark.unit
 
@@ -49,7 +49,7 @@ def test_gpu_target_requires_tiny_mode() -> None:
 
 
 def test_execution_catalog_has_one_ordered_full_cpu_gpu_roster() -> None:
-    from entropic_substrate.experiments.d1_config import load_d1_execution_catalog
+    from entropic_substrate.ladder.register.d1_config import load_d1_execution_catalog
 
     catalog = load_d1_execution_catalog()
     assert [profile.scale.value for profile in catalog] == (

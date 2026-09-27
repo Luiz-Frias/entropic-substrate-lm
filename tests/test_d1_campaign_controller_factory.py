@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_controller_factory import (
+from entropic_substrate.composition.wiring.d1_campaign_controller_factory import (
     D1CampaignControllerFactory,
     D1CampaignControllerFactoryError,
     D1CampaignControllerRuntimeConfig,
 )
-from entropic_substrate.d1_operator_ports import D1RunPodAuthReceipt
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1RunPodAuthReceipt
 
 from .test_d1_campaign_cli_service import _case
 

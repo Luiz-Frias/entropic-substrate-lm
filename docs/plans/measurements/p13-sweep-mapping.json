@@ -1,0 +1,1526 @@
+{
+  "layers": [
+    "kernel",
+    "core",
+    "ladder",
+    "historical",
+    "composition"
+  ],
+  "layer_rule": "the first dotted path segment under entropic_substrate (kernel/core/ladder/historical/composition); both root modules (entropic_substrate, entropic_substrate.__main__) have no such segment and are pinned to layer composition, matching tools/mapping.json's own root rows",
+  "dest_rule": "truncate the dotted module path to its first 3 segments (entropic_substrate.<layer>.<subpackage>); a module with 3 or fewer segments maps to itself; both root modules are pinned to entropic_substrate.composition, matching tools/mapping.json's own root rows",
+  "modules": {
+    "entropic_substrate": {
+      "dest": "entropic_substrate.composition",
+      "layer": "composition"
+    },
+    "entropic_substrate.__main__": {
+      "dest": "entropic_substrate.composition",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition": {
+      "dest": "entropic_substrate.composition",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.capture_cli": {
+      "dest": "entropic_substrate.composition.capture_cli",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.cli": {
+      "dest": "entropic_substrate.composition.cli",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.__main__": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.cli": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.d1_trainer_mailbox_command": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.d1_trainer_process_worker": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.entrypoints.d1_trainer_worker_command": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.source_cli": {
+      "dest": "entropic_substrate.composition.source_cli",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.span_cli": {
+      "dest": "entropic_substrate.composition.span_cli",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_campaign_authority_loader": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_campaign_cli_service": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_campaign_controller_factory": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_capture_cli_services": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_cli": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_cli_composition": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_inspect_service": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_probe_cli": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d1_trainer_cli_services": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d_ladder_cli": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.composition.wiring.d_ladder_probe_cli": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition"
+    },
+    "entropic_substrate.core": {
+      "dest": "entropic_substrate.core",
+      "layer": "core"
+    },
+    "entropic_substrate.core.corpus": {
+      "dest": "entropic_substrate.core.corpus",
+      "layer": "core"
+    },
+    "entropic_substrate.core.corpus.batching": {
+      "dest": "entropic_substrate.core.corpus",
+      "layer": "core"
+    },
+    "entropic_substrate.core.corpus.ladder_batching": {
+      "dest": "entropic_substrate.core.corpus",
+      "layer": "core"
+    },
+    "entropic_substrate.core.corpus.ladder_source_order": {
+      "dest": "entropic_substrate.core.corpus",
+      "layer": "core"
+    },
+    "entropic_substrate.core.geometry": {
+      "dest": "entropic_substrate.core.geometry",
+      "layer": "core"
+    },
+    "entropic_substrate.core.geometry.gram": {
+      "dest": "entropic_substrate.core.geometry",
+      "layer": "core"
+    },
+    "entropic_substrate.core.geometry.kappa": {
+      "dest": "entropic_substrate.core.geometry",
+      "layer": "core"
+    },
+    "entropic_substrate.core.geometry.kappa_norm": {
+      "dest": "entropic_substrate.core.geometry",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.coarse_graining": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.dynamics": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.ema_schedules": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.future_law": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.horizons": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.initialization": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.metric": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.objective": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.stabilization": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.state": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.target_updates": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.target_values": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.latent.targets": {
+      "dest": "entropic_substrate.core.latent",
+      "layer": "core"
+    },
+    "entropic_substrate.core.observation": {
+      "dest": "entropic_substrate.core.observation",
+      "layer": "core"
+    },
+    "entropic_substrate.core.observation.byte_codec": {
+      "dest": "entropic_substrate.core.observation",
+      "layer": "core"
+    },
+    "entropic_substrate.core.observation.contracts": {
+      "dest": "entropic_substrate.core.observation",
+      "layer": "core"
+    },
+    "entropic_substrate.core.observation.modules": {
+      "dest": "entropic_substrate.core.observation",
+      "layer": "core"
+    },
+    "entropic_substrate.core.observation.permuted_byte_codec": {
+      "dest": "entropic_substrate.core.observation",
+      "layer": "core"
+    },
+    "entropic_substrate.core.probe": {
+      "dest": "entropic_substrate.core.probe",
+      "layer": "core"
+    },
+    "entropic_substrate.core.probe.predictive_probe": {
+      "dest": "entropic_substrate.core.probe",
+      "layer": "core"
+    },
+    "entropic_substrate.core.probe.predictive_score_gain": {
+      "dest": "entropic_substrate.core.probe",
+      "layer": "core"
+    },
+    "entropic_substrate.core.probe.score_gain": {
+      "dest": "entropic_substrate.core.probe",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.boundary": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.codec": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.consumer": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.corpus": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.head": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.law": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.model": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.numerics": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.objective": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.profile": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.records": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.recovery_state": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.rollout": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.runtime_precision": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.sampling": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.scoring": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.segmentation": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.sentence.spine": {
+      "dest": "entropic_substrate.core.sentence",
+      "layer": "core"
+    },
+    "entropic_substrate.core.substrate": {
+      "dest": "entropic_substrate.core.substrate",
+      "layer": "core"
+    },
+    "entropic_substrate.core.substrate.backbone": {
+      "dest": "entropic_substrate.core.substrate",
+      "layer": "core"
+    },
+    "entropic_substrate.core.substrate.blocks": {
+      "dest": "entropic_substrate.core.substrate",
+      "layer": "core"
+    },
+    "entropic_substrate.core.substrate.field_encoder": {
+      "dest": "entropic_substrate.core.substrate",
+      "layer": "core"
+    },
+    "entropic_substrate.core.substrate.fisher": {
+      "dest": "entropic_substrate.core.substrate",
+      "layer": "core"
+    },
+    "entropic_substrate.historical": {
+      "dest": "entropic_substrate.historical",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d1_probe": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_artifacts": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_execution": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_remote": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_remote_request": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_request": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_resources": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_training": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_worker_command": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.d_ladder_worker_runtime": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.ladder_probe": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.d_ladder.ladder_profile": {
+      "dest": "entropic_substrate.historical.d_ladder",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.e_series": {
+      "dest": "entropic_substrate.historical.e_series",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.e_series.field_pretrain": {
+      "dest": "entropic_substrate.historical.e_series",
+      "layer": "historical"
+    },
+    "entropic_substrate.historical.e_series.train": {
+      "dest": "entropic_substrate.historical.e_series",
+      "layer": "historical"
+    },
+    "entropic_substrate.kernel": {
+      "dest": "entropic_substrate.kernel",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.artifacts": {
+      "dest": "entropic_substrate.kernel.artifacts",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.evidence_class": {
+      "dest": "entropic_substrate.kernel.evidence_class",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.evidence_class.resource_provenance": {
+      "dest": "entropic_substrate.kernel.evidence_class",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.evidence_class.resource_provenance_codec": {
+      "dest": "entropic_substrate.kernel.evidence_class",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.identity": {
+      "dest": "entropic_substrate.kernel.identity",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.identity.d1_primitives": {
+      "dest": "entropic_substrate.kernel.identity",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.identity.factory_attestation": {
+      "dest": "entropic_substrate.kernel.identity",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.lifecycle": {
+      "dest": "entropic_substrate.kernel.lifecycle",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.checkpoint": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.config": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.git_environment": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.logging": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.paths": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.runtime.shared_attempt": {
+      "dest": "entropic_substrate.kernel.runtime",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict.d1_contract": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict.d1_evaluation_values": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict.d1_parsing": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict.d1_statistical_gaps": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.kernel.verdict.d1_types": {
+      "dest": "entropic_substrate.kernel.verdict",
+      "layer": "kernel"
+    },
+    "entropic_substrate.ladder": {
+      "dest": "entropic_substrate.ladder",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.charts": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.codec_equivariance": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_analysis_receipt_codec": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_capture": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_clause_policy": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_diagnostics": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_factorial": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_inspect_codec": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_inspect_projection": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_inspect_request": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_inspect_values": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_machine_analysis": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_machine_analysis_codec": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.d1_output_access": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.embedding_geometry": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.field_head_audit": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.ladder_analysis": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.ladder_registration": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.mlflow_attach": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.palette": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.seed_sizing": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.analyze.series": {
+      "dest": "entropic_substrate.ladder.analyze",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters.composite": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters.d1_observability": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters.d1_tracking": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters.jsonl": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.adapters.mlflow": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.capture": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.build": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_aggregate": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_artifacts": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_bundle": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_declaration_codec": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_filesystem": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_ports": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody_repository": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_roster": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_service": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_subprocess": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_capture_validation": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.d1_content_addressed_custody": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.enwik8": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.fineweb": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.custody.synthetic": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ledger": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ledger.d1_lifecycle_repository": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ledger.d1_lifecycle_values": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ledger.d1_process_manager": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ledger.d1_process_replay": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ports": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ports.metric_sink": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.ports.run_descriptor": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.capture_results": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.d1_journal_snapshot": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.d1_numerical_defect": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.mlflow_aggregate": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.sinks": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.reader.telemetry": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_abort_evidence": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_calibration_records": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_journal": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_journal_values": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_telemetry": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_telemetry_measurements": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_telemetry_payloads": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_telemetry_query": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_telemetry_values": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_terminal_defect_capture": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_terminal_defect_query": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.records.d1_training_step_records": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_billing": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_billing_reconciliation": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_ledger": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_ledger_codec": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_meter_models": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_meter_runtime": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_meter_strategy": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_work": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.capture.resource.resource_work_codec": {
+      "dest": "entropic_substrate.ladder.capture",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_decision_validation": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing_application": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing_assembly": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing_edges": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing_graph": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_filing_receipts": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_gate": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_process_filing": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_real_arm_verdict": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.d1_validator": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.file.ladder_filing": {
+      "dest": "entropic_substrate.ladder.file",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.gate": {
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.gate.d1_family_adapter": {
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.gate.d1_verdict": {
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.gate.ladder_campaign": {
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.gate.ladder_predecessor": {
+      "dest": "entropic_substrate.ladder.gate",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.arms": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_config": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_config_profile": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_confirmatory_matrix": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_execution": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_family": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_launch_attempt_codec": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_launch_attempts": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_plan": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_provenance": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_registered_design": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_registration_codec": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_runs": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.d1_stabilization": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.h_preservation": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.ladder": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.register.rungs": {
+      "dest": "entropic_substrate.ladder.register",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_analysis_api": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_blind_aliases": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_execution_receipt": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_external_analysis_adapter": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_external_analysis_codec": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_external_analysis_control": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_external_review_adapter": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_external_worker": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_machine_analysis_binding": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_machine_analysis_verification": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_review_adjudication": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_review_execution": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.review.d1_review_packet": {
+      "dest": "entropic_substrate.ladder.review",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_bootstrap": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_capture": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_evidence_assembler": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_queue": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_recovery": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_recovery_queue": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_campaign_request": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_excluded_operator": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_operator_controller": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_operator_custody_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_operator_evidence": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_operator_intent_codec": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.campaign.d1_operator_values": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.checkpoint": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_recovery": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_sync": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_billing_finalization_values": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_billing_finalizer": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_excluded_capture": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.closure.d1_runpod_billing_parser": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.d1_r2_runtime_composition": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.ladder_matching": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.ladder_runtime": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.runtime": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.runtime_components": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.construction.runtime_construction": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.evaluation_records": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.execution": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.generation": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_metric_extractor": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_collection": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_control": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_events": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_launch": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_process": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_probe_watchdog": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.h_runpod_transport": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.journal": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.mechanism_evidence": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.native_verification": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.object_worker": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.d1_build_cloud_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.d1_command_runner": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.d1_git_provenance_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.d1_runpod_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.d1_system_runtime_probe": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.provider.provider_launch": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.resource": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.resource.d1_resource_activation": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.runner": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.seals": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.span_diagnostics": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.span_probe": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.span_probe_artifacts": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.span_states": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trace_capture": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.checkpoint_envelope": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.checkpoint_repository": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.checkpoint_validation": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.checkpoint_values": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_calibration": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_dual_failure": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_evaluation": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_evaluation_codec": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_fresh_trainer": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_optimizer": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_resume_runtime": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_resume_trainer": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_segment_engine": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_terminal_failure": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_trainer_runtime": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_trainer_stage": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.trainer.d1_training_step": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.training": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_dvc_remote_config": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_evidence_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_handoff": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_handoff_codec": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_object_transport": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_output_publication": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_process_contracts": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_request_codec": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.values": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.values.d1_operator_ports": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.d1_predecessor_loader": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.h_probe_allocation": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.h_probe_command": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.h_probe_controller": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.hardware": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker.resource_registration": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_command": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_completion": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_execution": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_request": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_snapshot": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    },
+    "entropic_substrate.ladder.run.worker_transport": {
+      "dest": "entropic_substrate.ladder.run",
+      "layer": "ladder"
+    }
+  },
+  "_provenance": {
+    "derived_from": "the src/entropic_substrate tree, module set and modname() convention from tools/import_graph.py",
+    "epoch": "f7b8a21adb74c68813113d0b6f3b9433e7ec70a4",
+    "purpose": "feeds tools/remap_check.py for the p13-sweep post-B2 baseline (P13-BASELINE); distinct from tools/mapping.json, which stays frozen and byte-identical (P13-MAPPING)"
+  }
+}

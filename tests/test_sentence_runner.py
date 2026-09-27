@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from tests.test_sentence_execution import engine
 
-from entropic_substrate.sentence_prediction.journal import read_json
-from entropic_substrate.sentence_prediction.runner import run_probe_training
-from entropic_substrate.sentence_prediction.seals import read_seal
+from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.seals import read_seal
 
 pytestmark = pytest.mark.unit
 LIMIT = 10_000_000
@@ -91,7 +91,7 @@ def test_fresh_run_never_overwrites_an_existing_output(tmp_path: Path) -> None:
 def test_numerical_failure_retains_evidence_and_does_not_emit_completion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction.execution import SentenceExecution
+    from entropic_substrate.ladder.run.execution import SentenceExecution
 
     template = engine(tmp_path)
     output = tmp_path / "run"
@@ -154,7 +154,7 @@ def test_probe_driver_refuses_scientific_authority_and_remote_successors(tmp_pat
 def test_empty_evaluation_cannot_satisfy_the_completion_grid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction.execution import SentenceExecution
+    from entropic_substrate.ladder.run.execution import SentenceExecution
 
     template = engine(tmp_path)
     output = tmp_path / "run"
@@ -180,7 +180,7 @@ def test_empty_evaluation_cannot_satisfy_the_completion_grid(
 def test_completed_receipt_is_idempotent_without_reinitializing_training(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from entropic_substrate.sentence_prediction.execution import SentenceExecution
+    from entropic_substrate.ladder.run.execution import SentenceExecution
 
     template = engine(tmp_path)
     output = tmp_path / "run"

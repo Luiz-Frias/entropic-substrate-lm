@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.observation import LearnedObservationAdapter
-from entropic_substrate.predictive_state import CausalStateEncoder
-from entropic_substrate.predictive_state.runtime_components import D1StateBranch
+from entropic_substrate.core.latent.state import CausalStateEncoder
+from entropic_substrate.core.observation.modules import LearnedObservationAdapter
+from entropic_substrate.ladder.run.construction.runtime_components import D1StateBranch
 from predictive_state_helpers import codec_identity, model_config
 
 pytestmark = pytest.mark.unit

@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -23,7 +23,7 @@ from entropic_substrate.evidence.resource_provenance import (
     unavailable_resource_activation_registration,
     validate_execution_segments,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 
 pytestmark = pytest.mark.unit
 

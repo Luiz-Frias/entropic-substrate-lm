@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from entropic_substrate import telemetry
-from entropic_substrate.evidence import d1_telemetry
+from entropic_substrate.ladder.capture.reader import telemetry
+from entropic_substrate.ladder.capture.records import d1_telemetry
 
 
 def test_public_d1_exports_are_the_evidence_facade_objects() -> None:

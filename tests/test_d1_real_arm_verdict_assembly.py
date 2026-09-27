@@ -7,22 +7,29 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.analysis.d1_blind_aliases import (
-    D1InMemoryAliasCustodyFake,
-    prepare_d1_blind_aliases,
-)
-from entropic_substrate.analysis.d1_execution_receipt import (
-    D1AnalysisExecutionReceipt,
-    issue_d1_verified_analysis_receipt,
-)
-from entropic_substrate.analysis.d1_machine_analysis_verification import (
-    D1VerifiedMachineAnalysis,
-)
-from entropic_substrate.analysis.d1_real_arm_verdict import (
+from entropic_substrate.ladder.file.d1_real_arm_verdict import (
     D1VerdictDecision,
     assemble_d1_real_arm_verdict,
 )
-from entropic_substrate.analysis.d1_review_execution import (
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
+from entropic_substrate.ladder.review.d1_blind_aliases import (
+    D1InMemoryAliasCustodyFake,
+    prepare_d1_blind_aliases,
+)
+from entropic_substrate.ladder.review.d1_execution_receipt import (
+    D1AnalysisExecutionReceipt,
+    issue_d1_verified_analysis_receipt,
+)
+from entropic_substrate.ladder.review.d1_machine_analysis_verification import (
+    D1VerifiedMachineAnalysis,
+)
+from entropic_substrate.ladder.review.d1_review_adjudication import (
+    D1_NO_MAJOR_OUTCOME,
+    D1ReviewAdjudicationSurface,
+    adjudicate_d1_review,
+    parse_d1_major_findings,
+)
+from entropic_substrate.ladder.review.d1_review_execution import (
     D1CloudReviewerFake,
     D1CloudReviewRequest,
     D1ExecutedBlindReview,
@@ -31,18 +38,11 @@ from entropic_substrate.analysis.d1_review_execution import (
     execute_d1_blind_review,
     release_d1_alias_reveal,
 )
-from entropic_substrate.analysis.d1_review_packet import (
+from entropic_substrate.ladder.review.d1_review_packet import (
     D1BlindReviewPacket,
     build_d1_blind_review_packet,
     build_d1_factorial_reviewer_prompt,
 )
-from entropic_substrate.evidence.d1_review_adjudication import (
-    D1_NO_MAJOR_OUTCOME,
-    D1ReviewAdjudicationSurface,
-    adjudicate_d1_review,
-    parse_d1_major_findings,
-)
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
 
 from .test_d1_analysis_receipt import _implementation
 from .test_d1_blind_alias_custody import _DeterministicCrypto
@@ -78,7 +78,7 @@ def _lineage(
         analysis=verified,
         request=result.request,
         worker_response=result.worker_response,
-        implementation=_implementation(result.request.input_control.reader_source),
+        implementation=_implementation(),
         isolation=result.isolation,
     )
     evidence = tuple(

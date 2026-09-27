@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_capture_finalize_request import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request import (
     D1CaptureFinalizeRequest,
     D1CaptureFinalizeRequestError,
     parse_d1_capture_finalize_request,
     serialize_d1_capture_finalize_request,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 from .test_d1_campaign_request import _request
 

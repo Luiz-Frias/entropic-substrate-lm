@@ -2,7 +2,7 @@
 
 import pytest
 
-from entropic_substrate.analysis.ladder_analysis import parse_scientific_data_order
+from entropic_substrate.ladder.analyze.ladder_analysis import parse_scientific_data_order
 
 pytestmark = pytest.mark.unit
 

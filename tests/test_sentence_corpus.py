@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from entropic_substrate.sentence_prediction.corpus import (
+from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
     SplitPolicy,
     prepare_documents,
 )
-from entropic_substrate.sentence_prediction.records import SourceDocument
-from entropic_substrate.sentence_prediction.segmentation import SegmentationPolicy
+from entropic_substrate.core.sentence.records import SourceDocument
+from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
 
 pytestmark = pytest.mark.unit
 
@@ -134,7 +134,7 @@ def test_split_policy_refuses_invalid_partition(change: dict[str, object]) -> No
 def test_fineweb_document_adapter_is_bounded_pinned_and_unflattened(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from entropic_substrate.data import fineweb
+    from entropic_substrate.ladder.capture.custody import fineweb
 
     seen: dict[str, object] = {}
     consumed: list[int] = []
@@ -168,7 +168,7 @@ def test_fineweb_document_adapter_is_bounded_pinned_and_unflattened(
 def test_fineweb_adapter_refuses_invented_ids_or_text_coercion(
     monkeypatch: pytest.MonkeyPatch, row: dict[str, object]
 ) -> None:
-    from entropic_substrate.data import fineweb
+    from entropic_substrate.ladder.capture.custody import fineweb
 
     monkeypatch.setitem(
         sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: (r for r in [row]))
@@ -181,7 +181,7 @@ def test_fineweb_adapter_refuses_invented_ids_or_text_coercion(
 def test_fineweb_owns_and_closes_the_underlying_dataset_iterator(
     monkeypatch: pytest.MonkeyPatch, stop: str
 ) -> None:
-    from entropic_substrate.data import fineweb
+    from entropic_substrate.ladder.capture.custody import fineweb
 
     closed = []
 
@@ -214,7 +214,7 @@ def test_fineweb_owns_and_closes_the_underlying_dataset_iterator(
 def test_fineweb_refuses_a_backend_without_explicit_generator_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from entropic_substrate.data import fineweb
+    from entropic_substrate.ladder.capture.custody import fineweb
 
     monkeypatch.setitem(sys.modules, "datasets", SimpleNamespace(load_dataset=lambda *a, **kw: []))
     with pytest.raises(TypeError, match="closeable dataset generator"):

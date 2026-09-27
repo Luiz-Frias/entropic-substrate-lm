@@ -8,14 +8,14 @@ from datetime import timedelta
 import pytest
 import torch
 
-import entropic_substrate.d1_trainer_runtime as runtime_module
+import entropic_substrate.ladder.run.trainer.d1_trainer_runtime as runtime_module
 from d1_trainer_fixtures import ORIGIN_NS, STARTED_AT, micro_plan, run_start
-from entropic_substrate.d1_trainer_runtime import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
     D1TrainerWallOrigin,
     build_d1_fresh_components,
     create_d1_resource_ledger,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 

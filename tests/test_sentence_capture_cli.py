@@ -7,9 +7,9 @@ import pytest
 from tests.test_sentence_generation import trained
 from tests.test_sentence_rollout import scripted_tokens
 
-from entropic_substrate.cli import main
-from entropic_substrate.sentence_prediction.generation import run_probe_generation
-from entropic_substrate.sentence_prediction.journal import artifact_reference, write_json
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.journal import artifact_reference, write_json
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +71,7 @@ def test_public_capture_and_relocated_inspection(
 def test_capture_command_refuses_unsafe_root_or_budget(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], root: str, limit: int
 ) -> None:
-    from entropic_substrate.sentence_prediction.records import content_identity
+    from entropic_substrate.core.sentence.records import content_identity
 
     (tmp_path / "capture").mkdir()
     command = {

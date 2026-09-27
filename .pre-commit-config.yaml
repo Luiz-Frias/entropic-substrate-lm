@@ -162,13 +162,13 @@ repos:
       - id: uv-run
         name: python unit tests (uv)
         stages: [pre-commit]
-        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings"]
+        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
 
       # Pre-push: full suite (unit + integration) before code reaches remote
       - id: uv-run
         name: python full test suite (uv)
         stages: [pre-push]
-        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings"]
+        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
 
   # =============================================================================
   # CONTAINERS

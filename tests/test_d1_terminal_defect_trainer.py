@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import entropic_substrate.d1_segment_engine as segment_engine
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
     ORIGIN_NS,
@@ -17,25 +17,28 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_evaluation import D1Evaluator
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
+from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1NonfiniteClassification,
     D1NonfiniteMetricError,
     d1_nonfinite_metric_error,
     terminal_numerical_defect_from_mapping,
 )
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_trainer_handoff import D1FreshRunFailure
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.data.batching import SequenceSampler, TokenSplit
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.experiments.d1_family import build_d1_experiment_family
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.initialization import SeededD1BranchInitializer
-from entropic_substrate.predictive_state.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.register.d1_family import build_d1_experiment_family
+from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1Evaluator
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunFailure
 
 from .d1_runtime_fixtures import fit_runtime_baseline, runtime_family
 

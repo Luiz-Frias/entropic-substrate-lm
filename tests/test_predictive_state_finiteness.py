@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.predictive_state.future_law import FutureLaw, FutureLawLoss
-from entropic_substrate.predictive_state.objective import PredictiveObjectiveTerms
-from entropic_substrate.predictive_state.stabilization import (
+from entropic_substrate.core.latent.future_law import FutureLaw, FutureLawLoss
+from entropic_substrate.core.latent.objective import PredictiveObjectiveTerms
+from entropic_substrate.core.latent.stabilization import (
     CollapseDiagnostics,
     CollapseResult,
 )

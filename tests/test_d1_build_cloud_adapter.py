@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.d1_build_cloud_adapter import DockerBuildCloudD1Adapter
-from entropic_substrate.d1_operator_ports import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1ImageBuildRequest
+from entropic_substrate.ladder.run.provider.d1_build_cloud_adapter import DockerBuildCloudD1Adapter
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
     D1CommandResult,
     D1OperatorTransportError,
 )
-from entropic_substrate.d1_operator_values import D1ImageBuildRequest
 
 pytestmark = pytest.mark.unit
 

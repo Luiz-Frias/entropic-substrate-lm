@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     D1CaptureAggregateError,
     build_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_roster import D1PairExclusionReason
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import D1PairExclusionReason
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 

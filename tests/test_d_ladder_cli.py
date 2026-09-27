@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.cli import main
+from entropic_substrate.composition.entrypoints.cli import main
 
 pytestmark = pytest.mark.unit
 

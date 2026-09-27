@@ -6,7 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
     D1ExpectedRun,
@@ -14,7 +15,6 @@ from entropic_substrate.evidence.d1_capture_roster import (
     D1PairExclusion,
     D1PairExclusionReason,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 pytestmark = pytest.mark.unit
 
