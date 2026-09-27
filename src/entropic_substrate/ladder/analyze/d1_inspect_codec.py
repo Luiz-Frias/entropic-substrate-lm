@@ -5,13 +5,6 @@ from __future__ import annotations
 import json
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.__legacy.d1_numerical_defect import terminal_numerical_defect_from_mapping
-from entropic_substrate.__legacy.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.__legacy.evidence.resource_work_codec import (
-    ResourceWorkCodecGap,
-    resource_snapshot_from_mapping,
-    resource_snapshot_to_mapping,
-)
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     run_start_from_mapping,
@@ -35,6 +28,15 @@ from entropic_substrate.ladder.analyze.d1_inspect_values import (
     D1InspectState,
     D1InspectTrainerAborted,
     D1InspectView,
+)
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    terminal_numerical_defect_from_mapping,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    ResourceWorkCodecGap,
+    resource_snapshot_from_mapping,
+    resource_snapshot_to_mapping,
 )
 
 __all__ = [

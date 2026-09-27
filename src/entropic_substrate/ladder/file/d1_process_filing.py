@@ -4,15 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from entropic_substrate.__legacy.evidence.d1_lifecycle_values import (
-    D1ProcessEventKind,
-    D1ProcessState,
-)
-from entropic_substrate.__legacy.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.__legacy.evidence.d1_process_replay import (
-    reject_transition,
-    replay_d1_process,
-)
 from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ArtifactIdentity,
@@ -23,6 +14,15 @@ from entropic_substrate.kernel.verdict.d1_types import (
     FiledGateAuthorization,
     FiledGateRetirement,
     FiledGateValidNegative,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
+    D1ProcessEventKind,
+    D1ProcessState,
+)
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.capture.ledger.d1_process_replay import (
+    reject_transition,
+    replay_d1_process,
 )
 from entropic_substrate.ladder.file.d1_filing_graph import ValidatedD1Filing
 from entropic_substrate.ladder.file.d1_gate import decide_filed_verdict

@@ -13,19 +13,19 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import NoReturn, SupportsIndex, cast
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate_codec import (
-    D1CaptureAggregateDeclaration,
-    parse_d1_capture_aggregate_declaration,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_artifacts import (
-    D1ArtifactIdentity,
-    D1DvcBindingState,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_ports import D1DvcPointerIdentity
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.kernel.verdict.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 from entropic_substrate.ladder.analyze.d1_machine_analysis import D1ArmAliasMap
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
+    D1CaptureAggregateDeclaration,
+    parse_d1_capture_aggregate_declaration,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactIdentity,
+    D1DvcBindingState,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPointerIdentity
 from entropic_substrate.ladder.file.d1_filing_receipts import (
     parse_alias_commitment,
     parse_alias_reveal,

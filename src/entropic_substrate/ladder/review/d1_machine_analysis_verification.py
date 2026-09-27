@@ -7,9 +7,6 @@ import json
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-)
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.ladder.analyze.d1_capture import (
     D1AppliedExclusion,
@@ -21,6 +18,9 @@ from entropic_substrate.ladder.analyze.d1_diagnostics import (
     parse_d1_diagnostic_policy,
 )
 from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
 from entropic_substrate.ladder.review.d1_external_analysis_control import (
     D1ExternalAnalysisInputControl,
 )

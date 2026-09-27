@@ -8,7 +8,6 @@ from typing import Final
 
 import torch
 
-from entropic_substrate.__legacy.d1_numerical_defect import d1_nonfinite_metric_error
 from entropic_substrate.core.corpus.batching import SequenceSampler
 from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
@@ -16,6 +15,7 @@ from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     D1CosineGap,
     validate_d1_cosine,
 )
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import d1_nonfinite_metric_error
 from entropic_substrate.ladder.register.d1_execution import (
     PAIRWISE_COSINE_SEMANTIC,
     D1AmpPolicy,

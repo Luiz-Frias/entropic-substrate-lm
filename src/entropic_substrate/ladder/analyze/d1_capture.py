@@ -8,25 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import NoReturn, cast
 
-import entropic_substrate.__legacy.telemetry as telemetry_api
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-    D1ValidatedTerminalDefect,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_artifacts import (
-    D1ArtifactIdentity,
-    D1CaptureArtifactError,
-    verify_d1_artifact,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_roster import (
-    D1PairExclusion,
-    D1PairExclusionReason,
-)
-from entropic_substrate.__legacy.evidence.d1_telemetry_values import (
-    D1_SCALAR_METRICS,
-    D1RunEvidence,
-    D1RunStatus,
-)
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass, canonical_digest
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap
@@ -37,6 +19,24 @@ from entropic_substrate.ladder.analyze.d1_factorial import (
     D1FactorialExclusionAuthority,
     D1MetricPoint,
     seal_d1_factorial_exclusion_authority,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+    D1ValidatedTerminalDefect,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactIdentity,
+    D1CaptureArtifactError,
+    verify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1PairExclusion,
+    D1PairExclusionReason,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
+    D1_SCALAR_METRICS,
+    D1RunEvidence,
+    D1RunStatus,
 )
 from entropic_substrate.ladder.register.d1_registered_design import (
     D1RegisteredDesign,
@@ -216,7 +216,7 @@ def _verify_inputs(root: Path, aggregate: D1HeterogeneousCaptureAggregate) -> No
 
 
 def _read_complete(root: Path, capture: object) -> D1RunEvidence:
-    from entropic_substrate.__legacy.evidence.d1_capture_bundle import D1ValidatedRunCapture
+    from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1ValidatedRunCapture
 
     if type(capture) is not D1ValidatedRunCapture:
         raise TypeError("complete analysis lane requires D1ValidatedRunCapture")
@@ -257,7 +257,7 @@ def _read_complete(root: Path, capture: object) -> D1RunEvidence:
 
 
 def _cell(expected: object, run: D1RunEvidence) -> D1AnalysisCell:
-    from entropic_substrate.__legacy.evidence.d1_capture_roster import D1ExpectedRun
+    from entropic_substrate.ladder.capture.custody.d1_capture_roster import D1ExpectedRun
 
     if type(expected) is not D1ExpectedRun:
         raise TypeError("analysis extraction requires D1ExpectedRun")

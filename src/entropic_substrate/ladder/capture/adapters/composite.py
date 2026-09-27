@@ -19,9 +19,10 @@ included) consumes.
 ``MLFLOW_TRACKING_ENV``, ``MLFLOW_EXPERIMENT_ENV`` and the default experiment
 name from ``entropic_substrate.ladder.capture.reader.sinks`` (residue, p8) -- imported
 inside the function body, never at module scope, for the same reason
-``adapters/mlflow.py`` does: the facade (``__legacy/sinks.py``) imports this
-module at module level to re-export both names under the old prefix, so a
-module-level import back would be a real cycle.
+``adapters/mlflow.py`` does: ``ladder.capture.reader.sinks`` imports this
+module at module level to re-export both names (the ``__legacy/sinks.py``
+facade that once did so was deleted in 0c94e25), so a module-level import
+back would be a real cycle.
 
 **Frozen door vs. body residue (design-gate risk, architect constraint
 2026-09-21):** the run-descriptor door's freeze covers ``TrackingRunDescriptor``'s

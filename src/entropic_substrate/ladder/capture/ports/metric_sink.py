@@ -4,8 +4,9 @@ Landed at p3b (docs/plans/src-hexagonal-refactor.plan.md #p3b) from
 ``entropic_substrate.sinks:217`` (``entropic_substrate.__legacy.sinks`` under
 quarantine). The ONLY metric port in the tree, ``kind: door``, ``frozen_after:
 p3b`` -- D1's second port does not survive (RULED 2026-09-17, reaffirmed R1
-2026-09-21, wf_12821961-8cd: "one port" means one METRIC port; p8 re-bases
-``D1MlflowObserver`` as a strict adapter of this Protocol).
+2026-09-21, wf_12821961-8cd: "one port" means one METRIC port). p8 moved the D1
+observers RENAME-ONLY (ruling P8-OBSERVERS-RENAME-ONLY, FOR-1552); re-basing
+``D1MlflowObserver`` onto this Protocol is deferred past p13.
 
 Adapters behind this port: :class:`entropic_substrate.ladder.capture.adapters.jsonl.JsonlSink`
 (authoritative), :class:`entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`

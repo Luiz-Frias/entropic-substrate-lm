@@ -10,10 +10,10 @@ from stat import S_ISDIR, S_ISREG
 from typing import Final, NoReturn, Protocol
 
 import entropic_substrate.ladder.review.d1_execution_receipt as execution_receipt_module
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.ladder.review.d1_execution_receipt import (
     D1ExternalIsolationAttestation,
     D1IsolationExecutionEvidence,

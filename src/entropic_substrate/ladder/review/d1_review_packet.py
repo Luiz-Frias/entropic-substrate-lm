@@ -10,20 +10,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NoReturn, SupportsIndex, cast
 
-from entropic_substrate.__legacy.evidence.d1_capture_aggregate import (
-    D1HeterogeneousCaptureAggregate,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_artifacts import D1ArtifactIdentity
-from entropic_substrate.__legacy.evidence.d1_capture_roster import (
-    D1DeclaredAttempt,
-    D1ExpectedRun,
-)
-from entropic_substrate.__legacy.evidence.d1_capture_validation import (
-    D1_RUN_IDENTITY_ATTESTATION_PATHS,
-    D1CaptureBundleError,
-    validate_d1_run_identity,
-)
-from entropic_substrate.__legacy.evidence.d1_telemetry_values import D1RunEvidence
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
@@ -33,6 +19,20 @@ from entropic_substrate.kernel.identity.factory_attestation import FactoryAttest
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.kernel.verdict.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
 from entropic_substrate.ladder.analyze.d1_machine_analysis import D1AliasedMachineAnalysis
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
+    D1HeterogeneousCaptureAggregate,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1DeclaredAttempt,
+    D1ExpectedRun,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_validation import (
+    D1_RUN_IDENTITY_ATTESTATION_PATHS,
+    D1CaptureBundleError,
+    validate_d1_run_identity,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
 from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
 from entropic_substrate.ladder.review.d1_blind_aliases import D1PreparedBlindAliases
 from entropic_substrate.ladder.review.d1_execution_receipt import D1AnalysisExecutionReceipt

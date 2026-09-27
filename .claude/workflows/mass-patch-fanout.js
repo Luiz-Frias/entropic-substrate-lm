@@ -228,6 +228,11 @@ function laneArgs(lane, common, startTip) {
     // still override this per wave.
     policy: Object.assign({ submitMode: 'draft', recon: true, implPackets: true, maxPackets: 2, teardown: false }, common.lanePolicy || {}),
     conductorRuling: common.conductorRuling,
+    // PORT (entropic-substrate-lm, W2-COMMIT-LOCK 2026-09-23): optional args.implRuling
+    // passthrough — the cascade appends it to the IMPLEMENTER prompt only, so a
+    // ruling on an implement-stage DECISION reaches a resumed lane without
+    // invalidating its cached recon/design-gate results.
+    implRuling: common.implRuling,
   }
 }
 // GUARD-PIN END laneArgs
@@ -672,6 +677,7 @@ const laneResults = await parallel(
               commonInvariants: COMMON_INVARIANTS,
               checkout: A.checkout,
               lanePolicy: A.lanePolicy,
+              implRuling: typeof A.implRuling === 'string' && A.implRuling.trim() ? A.implRuling : undefined,
             },
             provision.startTip,
           ),

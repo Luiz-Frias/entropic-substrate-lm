@@ -8,14 +8,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, cast
 
-from entropic_substrate.__legacy.d1_numerical_defect import D1TerminalNumericalDefectRecord
-from entropic_substrate.__legacy.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.__legacy.evidence.d1_telemetry_values import (
-    D1_REPORT_ONLY_METRICS,
-    D1_SCALAR_METRICS,
-    D1RunStatus,
-)
-from entropic_substrate.__legacy.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
@@ -25,6 +17,16 @@ from entropic_substrate.kernel.identity.d1_primitives import (
 from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
 )
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    D1TerminalNumericalDefectRecord,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
+    D1_REPORT_ONLY_METRICS,
+    D1_SCALAR_METRICS,
+    D1RunStatus,
+)
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
 from entropic_substrate.ladder.register.d1_execution import PAIRWISE_COSINE_SEMANTIC
 
 __all__ = [

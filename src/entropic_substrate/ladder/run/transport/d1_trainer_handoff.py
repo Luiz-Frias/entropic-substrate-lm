@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import cast
 
-from entropic_substrate.__legacy.evidence.d1_journal_values import JournalCheckpointState
-from entropic_substrate.__legacy.evidence.resource_ledger import ResourceLedgerState
-from entropic_substrate.__legacy.evidence.resource_work import ResourceWorkSnapshot
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     execution_segment_id,
 )
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalCheckpointState
+from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
 )

@@ -6,16 +6,16 @@ from typing import cast
 
 import torch
 
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
+from entropic_substrate.core.corpus.batching import SequenceSampler
+from entropic_substrate.kernel.identity.d1_primitives import TargetUpdateStrategy
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalError,
     JournalCheckpointState,
 )
-from entropic_substrate.__legacy.evidence.resource_ledger_codec import (
+from entropic_substrate.ladder.capture.resource.resource_ledger_codec import (
     ResourceLedgerCodecGap,
     resource_ledger_state_from_mapping,
 )
-from entropic_substrate.core.corpus.batching import SequenceSampler
-from entropic_substrate.kernel.identity.d1_primitives import TargetUpdateStrategy
 from entropic_substrate.ladder.register.d1_execution import D1ExecutionProtocol
 from entropic_substrate.ladder.register.d1_runs import D1RunSpec
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem

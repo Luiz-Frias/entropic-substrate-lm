@@ -46,7 +46,6 @@ from pathlib import Path
 
 import torch
 
-from entropic_substrate.__legacy.data.build import build_corpus, corpus_byte_stream
 from entropic_substrate.core.corpus.batching import SequenceSampler
 from entropic_substrate.core.geometry.gram import gram_frobenius_sq, normalized_gram
 from entropic_substrate.core.substrate.backbone import LanguageModel, build_model, vocab_size_for
@@ -58,6 +57,7 @@ from entropic_substrate.core.substrate.fisher import (
 from entropic_substrate.kernel.runtime.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.kernel.runtime.config import Config, config_from_dict
 from entropic_substrate.kernel.runtime.logging import logger
+from entropic_substrate.ladder.capture.custody.build import build_corpus, corpus_byte_stream
 
 __all__ = [
     "CheckpointModel",

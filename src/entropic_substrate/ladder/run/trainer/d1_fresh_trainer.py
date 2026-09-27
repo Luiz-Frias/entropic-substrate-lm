@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
-from entropic_substrate.__legacy.evidence.d1_journal import AuthoritativeRunJournal
-from entropic_substrate.__legacy.evidence.d1_journal_values import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.capture.records.d1_journal import AuthoritativeRunJournal
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
 )
-from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
-from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 from entropic_substrate.ladder.run.resource.d1_resource_activation import (
     D1ResourceActivationFactory,
