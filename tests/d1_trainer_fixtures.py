@@ -6,8 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from entropic_substrate.config import merge_dicts
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -21,15 +20,16 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.experiments.d1_config import d1_configs_dir
-from entropic_substrate.experiments.d1_config_profile import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
+from entropic_substrate.kernel.runtime.config import merge_dicts
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir
+from entropic_substrate.ladder.register.d1_config_profile import (
     D1LaunchScale,
     parse_d1_profile_payload,
     read_d1_profile_mapping,
 )
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan, create_d1_smoke_plan
-from entropic_substrate.experiments.d1_primitives import D1Arm, EvidenceClass
-from entropic_substrate.experiments.d1_provenance import EvidenceEnvelope
+from entropic_substrate.ladder.register.d1_plan import SmokeD1RunPlan, create_d1_smoke_plan
+from entropic_substrate.ladder.register.d1_provenance import EvidenceEnvelope
 
 STARTED_AT = datetime(2026, 8, 23, 20, 1, tzinfo=UTC)
 ORIGIN_NS = 10_000
@@ -51,7 +51,12 @@ class DeterministicTrainerClock:
         return ORIGIN_NS + self._monotonic_ticks * 1_000_000_000
 
 
-def micro_plan(arm: D1Arm, *, seed: int = 17) -> SmokeD1RunPlan:
+def micro_plan(
+    arm: D1Arm,
+    *,
+    seed: int = 17,
+    save_interval: int = 1,
+) -> SmokeD1RunPlan:
     path = d1_configs_dir() / f"d1-{arm.value}.yaml"
     payload = read_d1_profile_mapping(path)
     profile = parse_d1_profile_payload(
@@ -78,7 +83,7 @@ def micro_plan(arm: D1Arm, *, seed: int = 17) -> SmokeD1RunPlan:
                     "warmup_steps": 0,
                     "eval_interval": 1,
                     "log_interval": 1,
-                    "save_interval": 1,
+                    "save_interval": save_interval,
                     "amp_dtype": "off",
                     "device": "cpu",
                 },

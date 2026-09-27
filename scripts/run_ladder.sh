@@ -24,6 +24,14 @@ umask 077
 
 cd "$(dirname "$0")/.."
 
+# Deliverable 10 (dreamy-questing-scroll.md, E-4 ruling): the dotted `python -m`
+# entrypoint names are parameterized from ONE source, scripts/entrypoints.env,
+# shared with the justfile and the worker allowlists in provider_launch.py /
+# d1_runpod_adapter.py / h_probe_launch.py / d1_external_analysis_adapter.py
+# (see patches/entrypoints-python.md). `set -u` (above) means a key missing
+# from that file fails loud here, not silently as an empty string.
+source scripts/entrypoints.env
+
 RESULTS_DIR=${RESULTS_DIR:-results}
 PY=${LADDER_PYTHON:-python}
 GPU_ID=${LADDER_GPU_ID:-NVIDIA H100 80GB HBM3}
@@ -54,14 +62,14 @@ run_rung() {
   local exp=$1
   shift
   say "rung ${exp}: training..."
-  "$PY" -m entropic_substrate.cli train --exp "$exp" "$@"
+  "$PY" -m "$ENTRYPOINT_CLI" train --exp "$exp" "$@"
 }
 
 # Measurement path — fail LOUD: no defaults, no fallbacks, no "probably fine".
 # Admissibility lives in entropic_substrate.telemetry, shared with the CLI
 # preflight; an inline copy here is how the two came to disagree once already.
 final_npb() {
-  "$PY" -m entropic_substrate.telemetry final-eval \
+  "$PY" -m "$ENTRYPOINT_TELEMETRY" final-eval \
     "${RESULTS_DIR}/$(rname "$1").jsonl" --metric nats_per_byte
 }
 
@@ -159,7 +167,7 @@ E3_NPB=$(final_npb e3)
 say "E3 gate: ${E3_NPB} nats/byte vs E2 ${E2_NPB}"
 
 say "per-head kappa divergence report (the e3-anchor / e3-vantage execution gate):"
-"$PY" -m entropic_substrate.telemetry kappa-report "${RESULTS_DIR}/$(rname e3).jsonl"
+"$PY" -m "$ENTRYPOINT_TELEMETRY" kappa-report "${RESULTS_DIR}/$(rname e3).jsonl"
 
 cat <<EOF
 
@@ -172,11 +180,11 @@ The ladder STOPS here by design. Review the numbers above, then decide:
 
      runpodctl pod create --name e3-anchor --image ${IMAGE} \\
        --gpu-id "${GPU_ID}" \\
-       --docker-args "python -m entropic_substrate.cli train --exp e3-anchor --device cuda"
+       --docker-args "python -m ${ENTRYPOINT_CLI} train --exp e3-anchor --device cuda"
 
      runpodctl pod create --name e3-vantage --image ${IMAGE} \\
        --gpu-id "${GPU_ID}" \\
-       --docker-args "python -m entropic_substrate.cli train --exp e3-vantage --device cuda"
+       --docker-args "python -m ${ENTRYPOINT_CLI} train --exp e3-vantage --device cuda"
 
    NOTE: each arm's CLI preflight requires results/e3.jsonl ON ITS OWN POD —
    transfer this pod's copy first (runpodctl send ${RESULTS_DIR}/$(rname e3).jsonl

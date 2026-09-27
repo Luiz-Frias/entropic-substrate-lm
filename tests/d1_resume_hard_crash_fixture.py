@@ -7,13 +7,18 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import InterruptedD1Case, origin
 from d1_trainer_fixtures import DeterministicTrainerClock, micro_plan, run_start
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
+    D1CheckpointArtifactReceipt,
+)
+from entropic_substrate.ladder.run.trainer.d1_calibration import D1BaselineCalibrationAttestation
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1FreshComponents
 
 
 def hard_crash_tail_case(
@@ -23,22 +28,42 @@ def hard_crash_tail_case(
     plan = micro_plan(D1Arm.BOTH)
     journal_path = tmp_path / "crashed.jsonl"
     checkpoint_path = tmp_path / "crashed.pt"
-    real_checkpoint = fresh_module._checkpoint  # pyright: ignore[reportPrivateUsage]
+    real_checkpoint = segment_engine.save_d1_segment_checkpoint
 
-    def crash_before_terminal_checkpoint(**kwargs: object):
-        if kwargs["successful_step"] == 2:
+    def crash_before_terminal_checkpoint(
+        *,
+        components: D1FreshComponents,
+        journal: segment_engine.D1SegmentJournal,
+        checkpoint_path: Path,
+        baseline: D1BaselineCalibrationAttestation,
+        successful_step: int,
+        best_nats_per_byte: float,
+    ) -> D1CheckpointArtifactReceipt:
+        if successful_step == 2:
             raise KeyboardInterrupt("simulated hard loss after terminal eval")
-        return real_checkpoint(**kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(fresh_module, "_checkpoint", crash_before_terminal_checkpoint)
-    with pytest.raises(KeyboardInterrupt, match="hard loss"):
-        run_d1_fresh(
-            plan=plan,
-            start=run_start(plan),
-            origin=origin(),
-            locations=D1FreshRunLocations(journal_path, checkpoint_path),
-            clock=DeterministicTrainerClock(),
+        return real_checkpoint(
+            components=components,
+            journal=journal,
+            checkpoint_path=checkpoint_path,
+            baseline=baseline,
+            successful_step=successful_step,
+            best_nats_per_byte=best_nats_per_byte,
         )
+
+    with monkeypatch.context() as crash_patch:
+        crash_patch.setattr(
+            segment_engine,
+            "save_d1_segment_checkpoint",
+            crash_before_terminal_checkpoint,
+        )
+        with pytest.raises(KeyboardInterrupt, match="hard loss"):
+            run_d1_fresh(
+                plan=plan,
+                start=run_start(plan),
+                origin=origin(),
+                locations=D1FreshRunLocations(journal_path, checkpoint_path),
+                clock=DeterministicTrainerClock(),
+            )
     events = read_journal(journal_path)
     assert [event.event_kind for event in events[-3:]] == [
         JournalEventKind.CHECKPOINT,

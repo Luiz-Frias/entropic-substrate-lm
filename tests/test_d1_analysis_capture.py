@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
 from d1_launch_admission_fixtures import (
     PREREG_BLOB,
     PREREG_COMMIT,
@@ -15,28 +16,35 @@ from d1_launch_admission_fixtures import (
     contract,
     family,
 )
-from entropic_substrate.analysis.d1_capture import (
+from entropic_substrate.kernel.identity.d1_primitives import (
+    D1Arm,
+    RunClass,
+    canonical_digest,
+    thaw_for_digest,
+)
+from entropic_substrate.ladder.analyze.d1_capture import (
     D1AnalysisAdmissionError,
     admit_d1_analysis_capture,
+    issue_d1_factorial_exclusion_authority,
 )
-from entropic_substrate.evidence.d1_capture_aggregate import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1CapturePartitionProof,
     D1HeterogeneousCaptureAggregate,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity
-from entropic_substrate.evidence.d1_capture_bundle import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import D1ArtifactIdentity
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
     D1DvcCaptureHandoff,
     D1ValidatedRunCapture,
 )
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1ExpectedRun,
     D1LaunchRoster,
     D1PairExclusion,
     D1PairExclusionReason,
 )
-from entropic_substrate.evidence.d1_journal_values import JournalIdentity
-from entropic_substrate.evidence.d1_telemetry_values import D1RunEvidence
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalIdentity
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,
@@ -44,6 +52,7 @@ from entropic_substrate.experiments.d1_registered_design import (
 )
 
 from .d1_capture_fixtures import capture_family
+from .test_d1_factorial_analysis import _whole_pair_exclusion
 
 pytestmark = pytest.mark.unit
 
@@ -80,7 +89,7 @@ def _analysis_case(tmp_path: Path):
         for item in inputs
     }
     design, decision = _design_and_contract()
-    expected = tuple(
+    candidates = tuple(
         replace(
             item,
             family_digest=design.family_digest,
@@ -88,11 +97,47 @@ def _analysis_case(tmp_path: Path):
         )
         for item in old_roster.expected_confirmatory
     )
+    run_evidence: dict[str, D1RunEvidence] = {}
+    expected: list[D1ExpectedRun] = []
+    for item in candidates:
+        original = real_runs[item.logical_run_id]
+        plan = cast(dict[str, object], thaw_for_digest(original.plan_manifest))
+        plan.update(
+            {
+                "arm": item.arm.value,
+                "construction_digest": item.construction_digest,
+                "family_digest": item.family_digest,
+                "pairing_id": item.pairing_id,
+                "preregistration": {
+                    "commit": design.preregistration.commit,
+                    "family_digest": design.family_digest,
+                    "path": design.preregistration.path,
+                },
+                "seed": item.seed,
+            }
+        )
+        plan_digest = canonical_digest(plan)
+        finalized = replace(item, plan_digest=plan_digest)
+        expected.append(finalized)
+        run_evidence[finalized.logical_run_id] = replace(
+            original,
+            identity=JournalIdentity(
+                logical_run_id=finalized.logical_run_id,
+                execution_digest=finalized.execution_digest,
+                aggregation_digest=finalized.aggregation_digest,
+                construction_digest=finalized.construction_digest,
+                family_digest=finalized.family_digest,
+                run_class=RunClass.CONFIRMATORY,
+            ),
+            plan_digest=plan_digest,
+            plan_manifest=plan,  # type: ignore[arg-type]
+        )
+    expected_tuple = tuple(expected)
     roster = D1LaunchRoster(
         preregistration_path=design.preregistration.path,
         preregistration_commit=design.preregistration.commit,
         family_digest=design.family_digest,
-        expected_confirmatory=expected,
+        expected_confirmatory=expected_tuple,
         attempts=(),
     )
     inputs_by_id = {}
@@ -114,33 +159,8 @@ def _analysis_case(tmp_path: Path):
             data_order_segments=real_runs[item.logical_run_id].data_order_segments,
             checkpoint_receipts=real_runs[item.logical_run_id].checkpoint_receipts,
         )
-        for item in expected
+        for item in expected_tuple
     )
-    run_evidence: dict[str, D1RunEvidence] = {}
-    for item in expected:
-        original = real_runs[item.logical_run_id]
-        plan = dict(original.plan_manifest)
-        plan.update(
-            {
-                "arm": item.arm.value,
-                "construction_digest": item.construction_digest,
-                "family_digest": item.family_digest,
-                "pairing_id": item.pairing_id,
-                "seed": item.seed,
-            }
-        )
-        run_evidence[item.logical_run_id] = replace(
-            original,
-            identity=JournalIdentity(
-                logical_run_id=item.logical_run_id,
-                execution_digest=item.execution_digest,
-                aggregation_digest=item.aggregation_digest,
-                construction_digest=item.construction_digest,
-                family_digest=item.family_digest,
-                run_class=RunClass.CONFIRMATORY,
-            ),
-            plan_manifest=plan,  # type: ignore[arg-type]
-        )
     ids = roster.expected_run_ids
     aggregate = D1HeterogeneousCaptureAggregate.from_validated_evidence(
         roster=roster,
@@ -181,6 +201,43 @@ def test_analysis_reopens_every_finite_cell_through_public_reader(
     assert admitted.exclusions == ()
     assert admitted.capture_digest == aggregate.manifest_digest
     assert len(admitted.input_artifacts) == 12
+
+
+def test_factorial_authority_is_sealed_to_the_exact_admitted_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, design, decision, aggregate, runs = _analysis_case(tmp_path)
+    monkeypatch.setattr(
+        telemetry_api,
+        "read_d1_run_evidence",
+        lambda _path, **expected: runs[str(expected["expected_logical_run_id"])],
+    )
+    admitted = admit_d1_analysis_capture(
+        root=root,
+        design=design,
+        decision_contract=decision,
+        aggregate=aggregate,
+    )
+    authority = issue_d1_factorial_exclusion_authority(
+        design=design,
+        decision_contract=decision,
+        aggregate=aggregate,
+        admitted=admitted,
+    )
+    assert authority.capture_digest == aggregate.manifest_digest
+    assert authority.exclusions == ()
+
+    for forged in (
+        replace(admitted, capture_digest="0" * 64),
+        replace(admitted, exclusions=(_whole_pair_exclusion(7),)),
+    ):
+        with pytest.raises(D1AnalysisAdmissionError, match="factorial_authority"):
+            issue_d1_factorial_exclusion_authority(
+                design=design,
+                decision_contract=decision,
+                aggregate=aggregate,
+                admitted=forged,
+            )
 
 
 def test_analysis_rejects_inherited_exclusion_without_terminal_defect_partition(

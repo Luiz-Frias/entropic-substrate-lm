@@ -9,22 +9,22 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass, canonical_digest
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     D1DvcBindingState,
     identify_d1_artifact,
 )
-from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1AttemptEvidence
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
     D1LaunchRoster,
 )
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     JournalEventKind,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
 
 from .d1_capture_fixtures import _events_for, capture_family
 from .d1_telemetry_fixtures import write_events

@@ -6,7 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.experiments.d1 import (
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.ladder.register.d1 import (
     CausalEncoderSpec,
     CodeIdentity,
     CollapseParameters,
@@ -29,7 +30,6 @@ from entropic_substrate.experiments.d1 import (
     TargetUpdateStrategy,
     build_d1_experiment_family,
 )
-from entropic_substrate.observation import CodecIdentity
 
 pytestmark = pytest.mark.unit
 

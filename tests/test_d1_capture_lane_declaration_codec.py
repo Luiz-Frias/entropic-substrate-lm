@@ -8,10 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
-from entropic_substrate.evidence.d1_capture_artifacts import D1ArtifactIdentity, D1ArtifactRole
-from entropic_substrate.evidence.d1_capture_bundle import D1AttemptEvidence, D1CaptureInput
-from entropic_substrate.evidence.d1_capture_declaration_codec import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import D1TerminalDefectInput
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactIdentity,
+    D1ArtifactRole,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
+    D1AttemptEvidence,
+    D1CaptureInput,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_declaration_codec import (
     D1CaptureDeclarationCodecError,
     attempt_evidence_from_mapping,
     attempt_evidence_to_mapping,
@@ -27,12 +34,11 @@ from entropic_substrate.evidence.d1_capture_declaration_codec import (
     terminal_defect_input_to_mapping,
     validate_capture_lane_path_partition,
 )
-from entropic_substrate.evidence.d1_capture_roster import (
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
     D1AttemptLane,
     D1DeclaredAttempt,
     D1ExpectedRun,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 from .d1_capture_fixtures import capture_family
 

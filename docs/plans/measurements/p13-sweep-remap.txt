@@ -1,0 +1,212 @@
+p13-sweep remap_check baseline (P13-BASELINE, P13-MAPPING restated)
+=====================================================================
+
+epoch_label: f7b8a21adb74c68813113d0b6f3b9433e7ec70a4
+epoch_justification: git diff --stat f7b8a21adb74c68813113d0b6f3b9433e7ec70a4..HEAD -- src/
+  is empty at the D tip (D, E, G touch no file under src/), so the graph below, measured at the
+  B2 tip, still describes HEAD's src/entropic_substrate tree at every later tip in this chunk.
+parent_tip: f7b8a21adb74c68813113d0b6f3b9433e7ec70a4 (B2, the breaking commit; chunk 3's startTip)
+
+tool: tools/import_graph.py
+command: uv run python tools/import_graph.py src/entropic_substrate <out_dir>
+  (run exactly as shown, no --no-sync; recorded verbatim per the standing provenance rule
+  against normalizing commands)
+
+tool (validator): tools/remap_check.py
+command: uv run python tools/remap_check.py <out_dir>/edges.json
+  docs/plans/measurements/p13-sweep-mapping.json
+
+Why a mapping is derived from the tree rather than reusing tools/mapping.json
+------------------------------------------------------------------------------
+tools/mapping.json stays FROZEN and byte-identical (P13-MAPPING restated); it is not retired
+and not edited. remap_check.py exits 1 on any module referenced by edges.json but absent from
+the mapping's `modules` map, and it is keyed by tools/import_graph.py's own modname()
+convention over the post-B2 landed tree. tools/mapping.json predates the p8/p9 sub-package
+refinement and does not carry every landed module name in that exact form, so a mapping
+DERIVED from the current tree is the only one that can cover every node the current graph
+discovers. This is the baseline P13-BASELINE calls for; it is a distinct artifact from
+tools/mapping.json, produced beside it, never in place of it.
+
+Derivation of docs/plans/measurements/p13-sweep-mapping.json
+------------------------------------------------------------
+Module set: every module tools/import_graph.py's own modname() would assign to a *.py file
+under src/entropic_substrate (excluding __pycache__), using import_graph.py's modname()
+function directly (imported, not reimplemented) so the keying is byte-identical to what
+remap_check.py's edges.json will reference.
+
+layer_rule (recorded verbatim, matches the field of the same name in the committed mapping
+file): "the first dotted path segment under entropic_substrate (kernel/core/ladder/historical/
+composition); both root modules (entropic_substrate, entropic_substrate.__main__) have no such
+segment and are pinned to layer composition, matching tools/mapping.json's own root rows"
+
+dest_rule (recorded verbatim, matches the field of the same name in the committed mapping
+file): "truncate the dotted module path to its first 3 segments (entropic_substrate.<layer>.
+<subpackage>); a module with 3 or fewer segments maps to itself; both root modules are pinned
+to entropic_substrate.composition, matching tools/mapping.json's own root rows"
+
+No module carries action "delete". `layers` is exactly [kernel, core, ladder, historical,
+composition], foundational first, matching tools/import_graph.py's five landed top-level
+directories under src/entropic_substrate (verified: `find src/entropic_substrate -maxdepth 1
+-type d` lists exactly composition, core, historical, kernel, ladder plus __pycache__).
+
+Exact reproducing procedure (no absolute path, no username, cwd = repo root; reproduces the
+committed mapping file byte for byte -- verified by regenerating and `cmp`-ing before this
+commit):
+
+    uv run python - <<'PYEOF' docs/plans/measurements/p13-sweep-mapping.json
+    import json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "tools")
+    import import_graph as ig
+
+    root = Path("src/entropic_substrate")
+    pkg = "entropic_substrate"
+
+    files = sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
+    mods = {}
+    for p in files:
+        mods[ig.modname(p, root, pkg)] = p
+
+    layers = ["kernel", "core", "ladder", "historical", "composition"]
+    layer_set = set(layers)
+    roots = {"entropic_substrate", "entropic_substrate.__main__"}
+
+    def layer_of(mod):
+        if mod in roots:
+            return "composition"
+        seg = mod.split(".")[1]
+        if seg not in layer_set:
+            raise SystemExit(f"FATAL: {mod} first segment {seg!r} outside the five landed layers")
+        return seg
+
+    def dest_of(mod):
+        if mod in roots:
+            return "entropic_substrate.composition"
+        parts = mod.split(".")
+        return mod if len(parts) <= 3 else ".".join(parts[:3])
+
+    modules_out = {m: {"dest": dest_of(m), "layer": layer_of(m)} for m in sorted(mods)}
+
+    out = {
+        "layers": layers,
+        "layer_rule": "the first dotted path segment under entropic_substrate (kernel/core/ladder/historical/composition); both root modules (entropic_substrate, entropic_substrate.__main__) have no such segment and are pinned to layer composition, matching tools/mapping.json's own root rows",
+        "dest_rule": "truncate the dotted module path to its first 3 segments (entropic_substrate.<layer>.<subpackage>); a module with 3 or fewer segments maps to itself; both root modules are pinned to entropic_substrate.composition, matching tools/mapping.json's own root rows",
+        "modules": modules_out,
+        "_provenance": {
+            "derived_from": "the src/entropic_substrate tree, module set and modname() convention from tools/import_graph.py",
+            "epoch": "f7b8a21adb74c68813113d0b6f3b9433e7ec70a4",
+            "purpose": "feeds tools/remap_check.py for the p13-sweep post-B2 baseline (P13-BASELINE); distinct from tools/mapping.json, which stays frozen and byte-identical (P13-MAPPING)",
+        },
+    }
+
+    Path(sys.argv[1]).write_text(json.dumps(out, indent=2) + "\n")
+    print(len(modules_out), "modules")
+    PYEOF
+
+Measurements
+------------
+tools/import_graph.py stdout (first two lines; the tool also prints a package matrix and a
+top-fan-in table, both omitted here as non-normative):
+
+    modules=377 edges=1790
+
+len(docs/plans/measurements/p13-sweep-mapping.json['modules']) == 377 == edges.json['modules']
+(P13-BASELINE's coverage requirement; verified equal before this commit).
+
+tools/remap_check.py stdout, verbatim:
+
+    edges considered: 1790 of 1790
+    layer inversions (lower layer importing higher): 1
+         1  kernel -> composition
+    package-level cycles: 4
+      entropic_substrate.ladder.analyze <-> entropic_substrate.ladder.gate
+      entropic_substrate.ladder.file <-> entropic_substrate.ladder.gate
+      entropic_substrate.ladder.file <-> entropic_substrate.ladder.review
+      entropic_substrate.ladder.gate <-> entropic_substrate.ladder.run
+
+Exit code: 0.
+
+Inversion attribution (Case 1, ruled)
+--------------------------------------
+The single inversion is `kernel -> composition`, contributed by exactly one edge (confirmed by
+filtering edges.json for src or dst in {entropic_substrate, entropic_substrate.__main__}):
+
+    entropic_substrate.kernel.runtime.paths -> entropic_substrate
+
+This is the ruled root-endpoint case: `entropic_substrate`'s own `__init__.py` holds only
+`__version__` and sits outside the import-linter layers contract; it is pinned to layer
+`composition` / dest `entropic_substrate.composition` by ruling, not measurement, matching
+tools/mapping.json's own root rows. It is not suppressed by action "delete", by a different
+layer for the root, by omitting the root from the mapping, or by editing
+src/entropic_substrate/kernel/runtime/paths.py (excluded from this phase's Allowed files).
+No inversion has both endpoints under the five landed layer packages: `lint-imports` at the B2
+tip is green over kernel/core/ladder/historical/composition with zero exceptions, which a
+landed-to-landed inversion would contradict. This is recorded as measured, not suppressed, and
+is NOT a lane DECISION.
+
+Cycle-count granularity and the Q9 reconciliation
+----------------------------------------------------
+The measured cycle count is entirely a function of the `dest` rule's truncation depth. The lane
+measured all four candidate depths against this same edges.json before choosing the committed
+rule, to make the granularity choice and its consequence explicit:
+
+  depth 2 (dest = entropic_substrate.<layer>):            1 package-level cycle
+  depth 3 (dest = entropic_substrate.<layer>.<subpkg>):    4 package-level cycles  <- COMMITTED
+  depth 4:                                                11 package-level cycles
+  dest = containing package (full parent of the module):  15 package-level cycles
+
+The committed mapping uses depth 3 ("the bucket level"), because that is the granularity the
+plan's Q9 figure names as comparable: "the p13 terminal state is 4 inversions / 5 package
+cycles" (docs/plans/src-hexagonal-refactor.plan.md, Topology end-state (Q9)), attributed there
+to a measurement at the survey's own historical epoch 7ba2788 using "tools/mapping.json's
+dests, a bucket level where all of ladder.run.* shares one dest".
+
+Reconciliation, both sides labeled by evidence class:
+
+  inversions:      4  [claimed @7ba2788, Q9, plan text -- NOT independently re-derived in this
+                       lane: tools/mapping.json does not exist at 7ba2788 in this repository's
+                       history (`git cat-file -e 7ba2788:tools/mapping.json` fails), so Q9's
+                       own 142/11-style computation was performed in the 2026-09-17 refactor
+                       survey's separate scratch tree, not reproducible from this repo alone]
+              vs.
+                   1  [measured @f7b8a21adb74c68813113d0b6f3b9433e7ec70a4 on the derived
+                       mapping above, dest = depth-3 truncation]
+
+  package cycles:  5  [claimed @7ba2788, Q9, plan text -- same non-reproducibility caveat as
+                       above]
+              vs.
+                   4  [measured @f7b8a21adb74c68813113d0b6f3b9433e7ec70a4 on the derived
+                       mapping above, dest = depth-3 truncation]
+
+Delta, stated at the comparable (depth-3 / bucket) granularity only, per the rule against
+commingling measured and inferred values: inversions measured 3 lower than Q9's stated figure,
+cycles measured 1 lower. Both deltas are consistent with the namespace-retirement work this
+lane's B1/B2 commits performed between Q9's plan-time estimate and this post-B2 measurement:
+B2 deleted every generator shim and the eleven old-namespace directories, which is exactly the
+class of edge Q9's own text says the refactor was expected to cut ("this refactor is a
+topological cut of the measured 142/11 starting state"). No specific named cycle from Q9 is
+claimed cut here, because Q9's own cycle list was never captured in this repository at a
+granularity this lane can compare cycle-for-cycle; only the aggregate counts, at the one
+granularity both sides name as comparable, are compared. This is a reconciliation reference,
+not a gate (per the brief and the ACCEPTANCE bullet): remap_check exits 0 above regardless of
+this delta.
+
+The four measured depth-3 cycles are all confined to entropic_substrate.ladder's own
+sub-packages (analyze, file, gate, review, run) and involve no other landed layer; this is
+recorded as a measurement for the next refactor's baseline, not evaluated further here.
+
+tool_versions
+-------------
+python_venv: (see `uv run python -c "import sys; print(sys.version)"` at this tip; recorded by
+  `just check`'s own environment, not re-measured redundantly here)
+uv: pinned by mise per this repo's toolchain policy (see CLAUDE.md, Commands / Toolchains)
+
+Non-goals of this file
+-----------------------
+This file is a recorded baseline for the NEXT refactor to consume, per P13-BASELINE and the
+plan's own postcondition ("remap_check at the new HEAD recorded in-repo as the next baseline").
+It does not authorize, propose, or schedule any further module movement; the four depth-3
+cycles and the one root inversion are accepted as p13's terminal topology per the plan's Q9
+ruling ("ACCEPTED as ruled debt -- not zero").

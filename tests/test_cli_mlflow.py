@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.cli import main
-from entropic_substrate.sinks import MLFLOW_TINY_ENV, MLFLOW_TRACKING_ENV
+from entropic_substrate.composition.entrypoints.cli import main
+from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TINY_ENV, MLFLOW_TRACKING_ENV
 
 pytestmark = pytest.mark.unit
 

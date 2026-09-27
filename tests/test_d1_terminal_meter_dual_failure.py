@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
-import entropic_substrate.d1_resume_trainer as resume_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import RecordingObserver, captured_step_one_case, origin, resume_start
 from d1_trainer_fixtures import (
     ORIGIN_NS,
@@ -19,33 +18,36 @@ from d1_trainer_fixtures import (
     output_paths,
     run_start,
 )
-from entropic_substrate.d1_dual_failure import (
-    D1PrimarySecondaryFailure,
-    secondary_failure_from_mapping,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    unavailable_resource_activation_registration,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_numerical_defect import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1NonfiniteMetricError,
     d1_nonfinite_metric_error,
     terminal_numerical_defect_from_mapping,
 )
-from entropic_substrate.d1_resource_activation import D1ResourceActivation
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_trainer_handoff import D1FreshRunFailure
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.resource_ledger import (
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.resource.resource_ledger import (
     ResourceLedgerState,
     ResourceMeterSnapshot,
     UnavailableMeterStrategy,
 )
-from entropic_substrate.evidence.resource_meter_models import ResourcePhase
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    unavailable_resource_activation_registration,
+from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+from entropic_substrate.ladder.run.resource.d1_resource_activation import D1ResourceActivation
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
+    D1PrimarySecondaryFailure,
+    secondary_failure_from_mapping,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
+)
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1FreshRunFailure
 
 pytestmark = pytest.mark.unit
 
@@ -134,7 +136,7 @@ def test_fresh_generic_dual_failure_is_journaled_and_replayed(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("primary train failure")
 
-    monkeypatch.setattr(fresh_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,
@@ -156,7 +158,7 @@ def test_fresh_terminal_numerical_defect_survives_secondary_meter_failure(
     plan = micro_plan(D1Arm.BOTH)
     journal, checkpoint = output_paths(tmp_path, D1Arm.BOTH)
     meter = _RefreshFailMeter(successful_snapshots=2)
-    real_eval = fresh_module._record_evaluation  # pyright: ignore[reportPrivateUsage]
+    real_eval = segment_engine.record_d1_segment_evaluation
     calls = 0
 
     def fail_terminal(**kwargs: object):
@@ -166,7 +168,7 @@ def test_fresh_terminal_numerical_defect_survives_secondary_meter_failure(
             raise _nonfinite()
         return real_eval(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(fresh_module, "_record_evaluation", fail_terminal)
+    monkeypatch.setattr(segment_engine, "record_d1_segment_evaluation", fail_terminal)
     with pytest.raises(D1FreshRunFailure) as captured:
         run_d1_fresh(
             plan=plan,
@@ -192,12 +194,14 @@ def test_resumed_dual_failure_preserves_primary_and_secondary(
     meter = _RefreshFailMeter(successful_snapshots=0)
     if numerical:
         monkeypatch.setattr(
-            resume_module, "_evaluate", lambda *_args: (_ for _ in ()).throw(_nonfinite())
+            segment_engine,
+            "record_d1_segment_evaluation",
+            lambda **_kwargs: (_ for _ in ()).throw(_nonfinite()),
         )
         primary_type = "D1NonfiniteMetricError"
     else:
         monkeypatch.setattr(
-            resume_module,
+            segment_engine,
             "apply_d1_training_step",
             lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("primary resumed failure")),
         )

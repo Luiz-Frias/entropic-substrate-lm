@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.models.backbone import build_model, vocab_size_for
-from entropic_substrate.models.blocks import (
+from entropic_substrate.core.substrate.backbone import build_model, vocab_size_for
+from entropic_substrate.core.substrate.blocks import (
     BaselineBlock,
     CausalSelfAttention,
     NGPTBlock,

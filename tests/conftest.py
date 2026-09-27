@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -30,6 +31,20 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register markers so the suite also runs standalone (strict-markers safe)."""
     config.addinivalue_line("markers", "unit: fast CPU-only tests")
     config.addinivalue_line("markers", "integration: slow / network / GPU tests")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_callers_git_context() -> Iterator[None]:
+    """Keep hook-owned indexes out of fixture repositories, including module fixtures.
+
+    Git path-only commits export a temporary index. Regressions that exercise
+    hostile context inject it inside their own tests, after this isolation.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        for name in tuple(os.environ):
+            if name.startswith("GIT_"):
+                patch.delenv(name)
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +92,7 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     dropped silently, which is the correct behavior for teardown-window
     noise (the message has already served its purpose or never mattered).
     """
-    from entropic_substrate.logging import configure_logging
+    from entropic_substrate.kernel.runtime.logging import configure_logging
 
     configure_logging(json_path=None)
     yield
@@ -87,6 +102,6 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
 @pytest.fixture
 def sample_bytes() -> bytes:
     """A small, structured byte corpus for transition counting."""
-    from entropic_substrate.data.synthetic import synthetic_text
+    from entropic_substrate.ladder.capture.custody.synthetic import synthetic_text
 
     return synthetic_text(60_000, seed=7).encode("utf-8")

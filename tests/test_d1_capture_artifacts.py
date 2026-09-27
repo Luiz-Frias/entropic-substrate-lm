@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_artifacts import (
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
     D1ArtifactRole,
     D1CaptureArtifactError,
     D1DvcBinding,

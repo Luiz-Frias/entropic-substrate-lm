@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.config as config_mod
-from entropic_substrate.cli import UNGATED_ENV, main
+import entropic_substrate.kernel.runtime.config as config_mod
+from entropic_substrate.composition.entrypoints.cli import UNGATED_ENV, main
 
 pytestmark = pytest.mark.unit
 

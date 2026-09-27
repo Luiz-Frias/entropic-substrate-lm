@@ -1,0 +1,42 @@
+{
+  "spec_version": "1",
+  "repoSlug": "entropic-substrate-lm",
+  "detected": {
+    "languages": [
+      "python",
+      "shell"
+    ],
+    "toolchains": [
+      "dprint",
+      "graphite",
+      "just",
+      "mise",
+      "prek",
+      "uv"
+    ]
+  },
+  "gates": {
+    "offline": {
+      "cmd": "just check",
+      "evidence": "justfile"
+    },
+    "exit": {
+      "cmd": "just pc-ci",
+      "evidence": "justfile"
+    },
+    "live": {
+      "cmd": "just container-test",
+      "evidence": "justfile"
+    }
+  },
+  "liveRequired": false,
+  "ratified": true,
+  "needsOperator": [
+    "repoSlug adaptation: the schema derives repoSlug from a tracked package.json `name` field (this schema's origin is a TypeScript/bun repo). This repo is Python/uv with no package.json; repoSlug above is derived instead from pyproject.toml [project].name (\"entropic-substrate-lm\", pyproject.toml:2) as the nearest tracked, worktree-independent repo-identity fact. Operator confirmation requested: accept the pyproject.toml [project].name substitution as this repo's permanent repoSlug derivation rule (it keys the /tmp/helmsman-advisor-<repoSlug>.lock semaphore).",
+    "liveRequired is set false at the repo-profile level (most phases in this sprint gate liveRequired per-phase in sprint-manifest.json, not globally here): confirm this default is correct for any FUTURE sprint that reads this profile as a gate-resolution fallback, since this refactor sprint's serial phases (p0-p5, p3b, p10, p12, p13) explicitly require the live gate at the phase level.",
+    "gates.live cmd 'just container-test' stands up the local podman MLflow+Postgres stack per CLAUDE.local.md house rule 2 (probe sequentially, never concurrently — the podman VM is 4 vCPU / 4GB); confirm this repo-profile copy of the command is acceptable to read as a FALLBACK ONLY when explicit args.gates is absent, never as authorization to run it concurrently across wave lanes.",
+    "This file and .claude/helmsman/.gitignore are DRAFTS for operator ratification (ratified:false, no ratifiedAt) — per the schema, an agent may only produce a draft; only the operator may set ratified:true, and only together with a co-required ratifiedAt.",
+    "detected.languages/toolchains were derived from mise.toml, pyproject.toml, and top-level dotfiles (.pre-commit-config.yaml, dprint.json) at a repo scan on 2026-09-17; re-verify at ratification time if the toolchain pins have moved."
+  ],
+  "ratifiedAt": "2026-09-18T16:44:25Z"
+}

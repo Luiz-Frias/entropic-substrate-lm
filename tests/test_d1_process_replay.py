@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.evidence.d1_lifecycle_values import (
-    D1LifecycleEvent,
-    D1ProcessEventKind,
-    D1ProcessState,
-)
-from entropic_substrate.evidence.d1_process_replay import (
-    D1ProcessTransitionError,
-    advance_d1_process,
-    replay_d1_process,
-)
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
     ContentHash,
     LifecycleState,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
+    D1LifecycleEvent,
+    D1ProcessEventKind,
+    D1ProcessState,
+)
+from entropic_substrate.ladder.capture.ledger.d1_process_replay import (
+    D1ProcessTransitionError,
+    advance_d1_process,
+    replay_d1_process,
 )
 
 pytestmark = pytest.mark.unit

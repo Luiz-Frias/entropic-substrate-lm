@@ -8,14 +8,15 @@ from types import MappingProxyType
 
 import pytest
 
-from entropic_substrate.evidence.d1_telemetry_values import (
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1QualityEvidence,
     D1RunStatus,
     D1TailQuarantineEvidence,
     D1TailQuarantineKind,
     D1TelemetryGap,
 )
-from entropic_substrate.experiments.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.ladder.register.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.ladder.run.trainer.d1_evaluation import D1ChannelMoments
 
 pytestmark = pytest.mark.unit
 
@@ -35,16 +36,32 @@ def _quality() -> D1QualityEvidence:
         mean_displacement_nll=mean,
         zero_baseline_improvement=zero - future,
         mean_baseline_improvement=mean - future,
-        residual_mean=0.0,
+        residual_mean=0.015,
         residual_rms=1.0,
-        residual_variance=1.0,
+        residual_variance=0.999775,
         coverage_50=0.5,
         coverage_80=0.8,
         coverage_95=0.95,
-        state_variance=(0.75, 1.25),
-        state_covariance_eigenvalues=(0.5, 1.5),
-        effective_rank=2.0,
-        numerical_rank=2,
+        state_moments=D1ChannelMoments(
+            (0.1, -0.2),
+            (0.75, 1.25),
+            (0.5, 1.5),
+            1.7547653506033232,
+            2,
+            1.2449899597988732,
+        ),
+        target_moments=D1ChannelMoments(
+            (0.02, 0.01), (0.2, 0.3), (0.2, 0.3), 1.9601317042077895, 2, 0.6127805479941412
+        ),
+        predicted_moments=D1ChannelMoments(
+            (0.01, -0.01),
+            (0.18, 0.22),
+            (0.18, 0.22),
+            1.9900083082219462,
+            2,
+            0.547905101272109,
+        ),
+        target_predicted_exact_match_count=0,
         mean_pairwise_cosine_distance=0.8,
         pairwise_cosine_semantic=PAIRWISE_COSINE_SEMANTIC,
         raw_variance_penalty=0.01,
@@ -73,9 +90,6 @@ def test_quality_value_is_immutable_and_exposes_only_registered_scalars() -> Non
     [
         ("coverage_80", 1.1, "coverage_80"),
         ("coverage_50", 0.9, "coverage"),
-        ("state_variance", (1.0,), "width"),
-        ("state_covariance_eigenvalues", (1.5, 0.5), "ascending"),
-        ("effective_rank", 3.0, "latent_width"),
         ("pairwise_cosine_semantic", "different", "meaning"),
         ("nats_per_byte", 0.7, "derivation"),
     ],

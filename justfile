@@ -2,9 +2,60 @@ set shell := ["bash", "-cu"]
 
 import? 'justfile.local'
 
+# Deliverable 10 (dreamy-questing-scroll.md, E-4 ruling): the dotted `python -m`
+# entrypoint names are parameterized from ONE source, scripts/entrypoints.env,
+# shared with run_ladder.sh and the worker allowlists in provider_launch.py /
+# d1_runpod_adapter.py / h_probe_launch.py / d1_external_analysis_adapter.py
+# (see patches/entrypoints-python.md for how those four read the same values).
+# `set dotenv-load` + `set dotenv-path` load it into every recipe's environment
+# AND make it visible to `env_var()` at parse time, so a missing key fails
+# immediately (`just --evaluate` / any recipe invocation), never silently as an
+# empty string.
+set dotenv-load
+set dotenv-path := "scripts/entrypoints.env"
+
+cli := env_var("ENTRYPOINT_CLI")
+telemetry := env_var("ENTRYPOINT_TELEMETRY")
+h_worker := env_var("ENTRYPOINT_H_WORKER")
+
 # List all recipes (default target)
 default:
     @just --list --unsorted
+
+# Local synthetic smoke only; no scientific gate or Runpod spending authority.
+d-probe *ARGS:
+    uv run python -m {{ cli }} d-probe {{ ARGS }}
+
+# H numerical training only; full probe/scientific completion is a separate gate.
+h-train-probe *ARGS:
+    uv run python -m {{ cli }} h-train-probe {{ ARGS }}
+
+h-inspect-training *ARGS:
+    uv run python -m {{ cli }} h-inspect-training {{ ARGS }}
+
+h-generate-probe *ARGS:
+    uv run python -m {{ cli }} h-generate-probe {{ ARGS }}
+
+h-inspect-generation *ARGS:
+    uv run python -m {{ cli }} h-inspect-generation {{ ARGS }}
+
+h-capture-model *ARGS:
+    uv run python -m {{ cli }} h-capture-model {{ ARGS }}
+
+h-inspect-model *ARGS:
+    uv run python -m {{ cli }} h-inspect-model {{ ARGS }}
+
+h-inspect-custody *ARGS:
+    uv run python -m {{ cli }} h-inspect-custody {{ ARGS }}
+
+h-diagnose-spans *ARGS:
+    uv run python -m {{ cli }} h-diagnose-spans {{ ARGS }}
+
+h-inspect-spans *ARGS:
+    uv run python -m {{ cli }} h-inspect-spans {{ ARGS }}
+
+h-worker *ARGS:
+    uv run python -m {{ h_worker }} {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Environment setup
@@ -59,8 +110,21 @@ typecheck:
 # Dependency hygiene + security lint (deptry + bandit, configured in pyproject).
 audit:
     @echo "→ Auditing dependencies and security..."
-    uv run deptry src
+    uv run deptry src notebooks
     uv run bandit -c pyproject.toml -q -r src
+
+# p0-contract-pin (D2/DN-P1): the layers contract over the LANDED layers
+# kernel < core < ladder < historical < composition, `__legacy` deliberately
+# OUTSIDE it until p13. `--no-sync`: a bare `uv run` re-syncs the env and
+# would replace the CPU-only torch wheel CI pins with the CUDA build (see
+# every other `--no-sync` step in ci.yaml for the same measured reason).
+# Echoes the resolved package location so the scanned tree is evidenced, not
+# assumed — a stale editable install pointing elsewhere would otherwise pass
+# silently.
+lint-imports:
+    @echo "→ Checking import layers (kernel < core < ladder < historical < composition)..."
+    @uv run --no-sync python -c "import entropic_substrate; print('scanning', entropic_substrate.__file__)"
+    uv run --no-sync lint-imports
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -69,28 +133,54 @@ audit:
 # Fast hermetic unit tests only (CPU, <60s total).
 test:
     @echo "→ Running unit tests..."
-    PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings
+    PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
 # All tests (unit + integration).
 test-all:
     @echo "→ Running full test suite..."
-    PYTHONPATH=src uv run pytest -q --maxfail=1 --disable-warnings
+    PYTHONPATH=src uv run pytest -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
 # ---------------------------------------------------------------------------
 # Quality gates
 # ---------------------------------------------------------------------------
 
-# Standard quality gate: fmt-check + lint + typecheck + unit tests.
+# Standard quality gate: fmt-check + lint + typecheck + unit tests + import layers.
 # This is the gate CI runs on every push/PR and prek runs pre-push.
-check: fmt-check lint typecheck test
+check: fmt-check lint typecheck test lint-imports
     @echo "✓ All quality checks passed"
 
 # CI parity gate — runs prek hooks (commit + push stages).
-pc-ci:
-    @echo "→ Running prek hooks on changed files..."
-    prek run
-    prek run --stage pre-push
-    @echo "✓ All prek gates passed"
+# CI-parity gate on the BRANCH DIFF, never on the staged set. MEASURED 2026-09-18
+# (sprint-preflight wf_f189da1b-7c8): plain `prek run` examines only staged files, so on
+# a clean tree — and on every lifecycle lane after its commits — it ran zero hooks and
+# reported PASS. A gate that examines nothing must refuse, not pass (measurement path
+# fails LOUD). base = the phase's parent under a stacked sprint ($PC_CI_BASE), default
+# origin/dev; the diff is merge-base(HEAD, base)..HEAD, i.e. exactly what this branch
+# added. An empty diff exits 2 instead of reporting a vacuous PASS.
+pc-ci base=env("PC_CI_BASE", "origin/dev"):
+    #!/usr/bin/env bash
+    set -euo pipefail
+    from_ref="$(git merge-base HEAD "{{base}}")"
+    changed="$(git diff --name-only "${from_ref}..HEAD" | wc -l | tr -d ' ')"
+    if [ "${changed}" -eq 0 ]; then
+        echo "✗ pc-ci: empty diff vs {{base}} (${from_ref:0:7}..HEAD) — nothing examined, refusing to report PASS" >&2
+        exit 2
+    fi
+    echo "→ Running prek hooks on ${changed} file(s) changed vs {{base}} (${from_ref:0:7}..HEAD)..."
+    prek run --from-ref "${from_ref}" --to-ref HEAD
+    prek run --stage pre-push --from-ref "${from_ref}" --to-ref HEAD
+    # FOR-1536 (MEASURED 2026-09-21): prek range runs cover the pre-commit and
+    # pre-push stages only; gitlint lives in the commit-msg stage, so a commit
+    # made with hooks skipped reached submit with an 84-char title. Lint every
+    # message in the range with the same tool the hook pins.
+    # MEASURED 2026-09-22 (p4 ladder): the whole-range form flagged a commit already
+    # published in the p3 PR (21d146d, B6), which no later phase may rewrite. The
+    # gate exists to stop a bad message BEFORE it is pushed, so it lints exactly the
+    # commits no remote ref can reach; an empty set is a pass, never an error.
+    unpublished="$(git rev-list HEAD --not --remotes)"
+    echo "→ gitlint over $(printf '%s\n' "${unpublished}" | grep -c . || true) unpublished commit(s)..."
+    for sha in ${unpublished}; do uv run gitlint --commit "${sha}"; done
+    echo "✓ All prek gates passed on the branch diff"
 
 # ---------------------------------------------------------------------------
 # Data
@@ -110,16 +200,16 @@ download-data:
 # Valid exp values: e0-byte, e0-bpe, e1-fisher, e1-random, e2, e3,
 # e3-anchor, e3-vantage (anchored arms are execution-gated on the E3 readout)
 train exp="tiny" *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli train --exp {{exp}} {{ARGS}}
+    PYTHONPATH=src uv run python -m {{ cli }} train --exp {{ exp }} {{ ARGS }}
 
 # Gated ladder E1 → E2 → E3 (stops with DECISION-NEEDED before the anchored
 # arms / E4). `just ladder --tiny` = CPU smoke of the whole ladder in minutes.
 ladder *ARGS:
-    PYTHONPATH=src uv run --no-sync bash scripts/run_ladder.sh {{ARGS}}
+    PYTHONPATH=src uv run --no-sync bash scripts/run_ladder.sh {{ ARGS }}
 
 # Evaluate a checkpoint, e.g.: just eval ckpt=models/e3-latest.pt
 eval ckpt *ARGS:
-    PYTHONPATH=src uv run python -m entropic_substrate.cli eval --ckpt {{ckpt}} {{ARGS}}
+    PYTHONPATH=src uv run python -m {{ cli }} eval --ckpt {{ ckpt }} {{ ARGS }}
 
 # ---------------------------------------------------------------------------
 # Container
@@ -140,8 +230,8 @@ eval ckpt *ARGS:
 
 # Build the training container image locally (defaults to linux/amd64 for GPU pods)
 container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
-    @echo "→ Building container image {{tag}} for {{platform}}..."
-    podman build --platform {{platform}} -t {{tag}} -f Containerfile .
+    @echo "→ Building container image {{ tag }} for {{ platform }}..."
+    podman build --platform {{ platform }} -t {{ tag }} -f Containerfile .
 
 # Build on a native amd64 Docker Build Cloud builder and push straight to GHCR
 # (the image never transits the local uplink; the context upload respects
@@ -149,7 +239,7 @@ container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
 # Docker Hub login (`docker login`) and the cloud-capable buildx from
 # docker/buildx-desktop; the OSS Homebrew buildx lacks the `cloud` driver.
 container-publish tag="ghcr.io/luiz-frias/entropic-substrate-lm:latest" builder="cloud-luizffrias-small-lang-model":
-    docker buildx build --builder {{builder}} --platform linux/amd64 -f Containerfile -t {{tag}} --push .
+    docker buildx build --builder {{ builder }} --platform linux/amd64 -f Containerfile -t {{ tag }} --push .
 
 # LIVE gate for phase p2-mlflow: bring up postgres + mlflow (compose.yaml,
 # native arm64, real R2 artifacts), run the integration suite against it,

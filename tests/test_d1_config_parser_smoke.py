@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.experiments.d1_config_profile import load_d1_profile
+from entropic_substrate.ladder.register.d1_config_profile import load_d1_profile
 
 pytestmark = pytest.mark.unit
 _PROFILE = Path(__file__).parents[1] / "configs/d1-none.yaml"

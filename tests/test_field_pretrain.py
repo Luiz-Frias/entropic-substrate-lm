@@ -27,16 +27,19 @@ import pytest
 import torch
 import yaml
 
-from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION, normalize_checkpoint
-from entropic_substrate.config import Config
-from entropic_substrate.field_pretrain import (
+from entropic_substrate.core.substrate.field_encoder import FieldEncoder
+from entropic_substrate.historical.e_series.field_pretrain import (
     FieldPretrainGap,
     add_field_pretrain_parser,
     cmd_field_pretrain,
     read_field_pretrain_series,
     run_field_pretrain,
 )
-from entropic_substrate.models.field_encoder import FieldEncoder
+from entropic_substrate.kernel.runtime.checkpoint import (
+    CHECKPOINT_FORMAT_VERSION,
+    normalize_checkpoint,
+)
+from entropic_substrate.kernel.runtime.config import Config
 from helpers import assert_bitwise_equal, tiny_config
 
 pytestmark = pytest.mark.unit
@@ -171,7 +174,7 @@ def test_nonfinite_train_loss_raises(tmp_path: Path, monkeypatch: pytest.MonkeyP
     ``match=`` does not accept, so the test goes RED rather than passing on
     the wrong guard.
     """
-    import entropic_substrate.field_pretrain as field_pretrain
+    import entropic_substrate.historical.e_series.field_pretrain as field_pretrain
 
     real = field_pretrain.field_cross_entropy
 
@@ -199,7 +202,7 @@ def test_nonfinite_eval_loss_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     guard deleted, the run returns a NaN ``final_eval_ce`` and writes it to
     the JSONL — no exception at all, so ``pytest.raises`` goes RED.
     """
-    import entropic_substrate.field_pretrain as field_pretrain
+    import entropic_substrate.historical.e_series.field_pretrain as field_pretrain
 
     real = field_pretrain.field_cross_entropy
 
@@ -230,7 +233,7 @@ def test_refuses_a_non_byte_tokenizer(tmp_path: Path, monkeypatch: pytest.Monkey
     encoder over the corpus before failing one layer down — so the poisoned
     call fires and the test goes RED on the wrong exception.
     """
-    import entropic_substrate.field_pretrain as field_pretrain
+    import entropic_substrate.historical.e_series.field_pretrain as field_pretrain
 
     def poisoned(*_args: object, **_kwargs: object) -> None:
         msg = "build_corpus ran for a tokenizer this lane cannot train"

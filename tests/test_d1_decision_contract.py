@@ -6,7 +6,8 @@ from types import MappingProxyType
 
 import pytest
 
-from entropic_substrate.evidence.d1_contract import (
+from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_contract import (
     D1DecisionContract,
     D1DecisionRule,
     D1RegisteredClause,
@@ -14,8 +15,7 @@ from entropic_substrate.evidence.d1_contract import (
     D1RegisteredEndpoint,
     D1RegisteredExclusion,
 )
-from entropic_substrate.evidence.d1_types import D1_ARM_IDS, D1ContrastTerm, D1FamilyIdentity
-from entropic_substrate.evidence.lifecycle import SuccessorAuthorization
+from entropic_substrate.kernel.verdict.d1_types import D1_ARM_IDS, D1ContrastTerm, D1FamilyIdentity
 
 pytestmark = pytest.mark.unit
 

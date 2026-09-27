@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_ports import D1CaptureTransportError
-from entropic_substrate.evidence.d1_capture_subprocess import (
+from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1CaptureTransportError
+from entropic_substrate.ladder.capture.custody.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
     SubprocessD1DvcAdapter,
     SubprocessD1GitPointerStatusVerifier,
@@ -56,17 +56,19 @@ def _repo(tmp_path: Path) -> tuple[Path, Path, Path]:
     return repo, captured, pointer
 
 
-def test_dvc_adapter_runs_fixed_add_then_targeted_push_arguments(tmp_path: Path) -> None:
+def test_dvc_adapter_runs_fixed_targeted_add_push_and_pull_arguments(tmp_path: Path) -> None:
     repo, captured, pointer = _repo(tmp_path)
     runner = _Runner()
     adapter = SubprocessD1DvcAdapter(repo_root=repo, runner=runner)
 
     adapter.add(tracked_path=captured, pointer_path=pointer)
     adapter.push(pointer_path=pointer)
+    adapter.pull(pointer_path=pointer)
 
     assert runner.calls == [
         (["dvc", "add", "--", "results/captured"], repo),
         (["dvc", "push", "results/captured.dvc"], repo),
+        (["dvc", "pull", "results/captured.dvc"], repo),
     ]
 
 
@@ -83,6 +85,11 @@ def test_dvc_adapter_wraps_command_failure_and_rejects_paths_outside_repo(
     with pytest.raises(D1CaptureTransportError) as outside:
         adapter.add(tracked_path=tmp_path / "outside", pointer_path=pointer)
     assert outside.value.code == "command_path"
+
+    pull_runner = _Runner(fail_at=0)
+    with pytest.raises(D1CaptureTransportError) as pull_failed:
+        SubprocessD1DvcAdapter(repo_root=repo, runner=pull_runner).pull(pointer_path=pointer)
+    assert pull_failed.value.code == "dvc_command"
 
 
 @pytest.mark.parametrize(
@@ -120,13 +127,23 @@ def test_cloud_adapter_refuses_malformed_status_output(tmp_path: Path) -> None:
 def test_git_adapter_requires_exact_clean_tracked_pointer_and_returns_head(tmp_path: Path) -> None:
     repo, _, pointer = _repo(tmp_path)
     digest = hashlib.sha256(pointer.read_bytes()).hexdigest()
-    runner = _Runner(outputs=["", "results/captured.dvc\n", "abcdef123456\n"])
-
-    commit = SubprocessD1GitPointerStatusVerifier(repo_root=repo, runner=runner).committed_revision(
-        pointer_path=pointer, pointer_sha256=digest
+    pointer_bytes = pointer.read_bytes()
+    runner = _Runner(
+        outputs=["", "results/captured.dvc\n", "abcdef123456\n", pointer_bytes.decode()]
     )
 
-    assert commit == "abcdef123456"  # pragma: allowlist secret
+    evidence = SubprocessD1GitPointerStatusVerifier(
+        repo_root=repo, runner=runner
+    ).committed_pointer(
+        pointer_path=pointer,
+        pointer_bytes=pointer_bytes,
+        pointer_sha256=digest,
+        object_id=_OBJECT_ID,
+    )
+
+    assert evidence is not None
+    assert evidence.commit == "abcdef123456"  # pragma: allowlist secret
+    assert evidence.pointer_sha256 == digest
     assert [call[0] for call in runner.calls] == [
         [
             "git",
@@ -138,6 +155,7 @@ def test_git_adapter_requires_exact_clean_tracked_pointer_and_returns_head(tmp_p
         ],
         ["git", "ls-files", "--error-unmatch", "--", "results/captured.dvc"],
         ["git", "rev-parse", "HEAD"],
+        ["git", "show", "abcdef123456:results/captured.dvc"],
     ]
 
 
@@ -152,8 +170,13 @@ def test_git_adapter_returns_no_revision_for_any_uncommitted_pointer_state(
     if condition == "hash_drift":
         digest = "0" * 64
 
-    commit = SubprocessD1GitPointerStatusVerifier(repo_root=repo, runner=runner).committed_revision(
-        pointer_path=pointer, pointer_sha256=digest
+    evidence = SubprocessD1GitPointerStatusVerifier(
+        repo_root=repo, runner=runner
+    ).committed_pointer(
+        pointer_path=pointer,
+        pointer_bytes=pointer.read_bytes(),
+        pointer_sha256=digest,
+        object_id=_OBJECT_ID,
     )
 
-    assert commit is None
+    assert evidence is None

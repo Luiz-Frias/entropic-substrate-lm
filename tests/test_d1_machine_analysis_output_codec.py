@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from entropic_substrate.analysis.d1_machine_analysis_codec import (
+from entropic_substrate.ladder.analyze.d1_machine_analysis_codec import (
     D1MachineAnalysisCodecError,
     decode_d1_machine_analysis_declaration,
 )
@@ -34,14 +34,14 @@ def test_generated_machine_analysis_decodes_with_full_structural_shape() -> None
 
     assert declaration == packet
     assert declaration.analysis_digest == packet.analysis_digest
-    assert declaration.manifest["schema_version"] == "d1-aliased-machine-analysis-v1"
+    assert declaration.manifest["schema_version"] == "d1-aliased-machine-analysis-v2"
 
 
 @pytest.mark.parametrize(
     "payload",
     [
         b"{}",
-        b'{"schema_version":"d1-aliased-machine-analysis-v1","schema_version":"x"}',
+        b'{"schema_version":"d1-aliased-machine-analysis-v2","schema_version":"x"}',
         b'{"included_seeds":[NaN]}',
         b" {}",
         b"[]",
@@ -136,5 +136,23 @@ def test_effect_clause_and_quality_target_shapes_are_enforced() -> None:
 
     manifest = _packet().manifest
     manifest["diagnostics"][0]["quality_target"]["reached"] = True  # type: ignore[index]
+    with pytest.raises(D1MachineAnalysisCodecError, match="quality target"):
+        decode_d1_machine_analysis_declaration(_bytes(manifest))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("metric", ""),
+        ("operator", "SIDEWAYS"),
+        ("operator", []),
+        ("operator", {}),
+        ("threshold", "0.79"),
+    ],
+)
+def test_quality_target_policy_fields_are_strict(field: str, value: object) -> None:
+    manifest = _packet().manifest
+    manifest["diagnostics"][0]["quality_target"][field] = value  # type: ignore[index]
+
     with pytest.raises(D1MachineAnalysisCodecError, match="quality target"):
         decode_d1_machine_analysis_declaration(_bytes(manifest))

@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from entropic_substrate.evidence.d1_capture_aggregate_codec import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     D1CaptureAggregateHydrationError,
     hydrate_d1_capture_aggregate,
     parse_d1_capture_aggregate_declaration,
     serialize_d1_capture_aggregate,
 )
-from entropic_substrate.evidence.d1_capture_aggregate_validation import (
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_validation import (
     build_d1_capture_aggregate,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
 
 from .d1_capture_aggregate_fixtures import heterogeneous_family
 from .test_d1_capture_service import _service

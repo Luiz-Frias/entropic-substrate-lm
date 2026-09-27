@@ -20,19 +20,19 @@ from d1_launch_admission_fixtures import (
     profiles,
     start,
 )
-from entropic_substrate.experiments.d1_confirmatory_matrix import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import (
     D1ConfirmatoryLaunch,
     D1ConfirmatoryMatrix,
     D1GitProvenancePort,
     admit_d1_confirmatory_matrix,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.experiments.d1_registered_design import (
+from entropic_substrate.ladder.register.d1_registered_design import (
     D1PreregistrationArtifact,
     D1RegisteredDesign,
     D1RegisteredDesignCandidate,

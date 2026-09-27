@@ -9,7 +9,15 @@ from datetime import timedelta
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_campaign_checkpoint import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
     D1CampaignCheckpoint,
     D1CampaignCheckpointError,
     D1CampaignCompletedCell,
@@ -19,13 +27,6 @@ from entropic_substrate.d1_campaign_checkpoint import (
     parse_campaign_checkpoint,
     serialize_campaign_checkpoint,
 )
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
 
 pytestmark = pytest.mark.unit
 
@@ -76,6 +77,11 @@ def _ready() -> D1CampaignCheckpoint:
         ledger_digest_after=ledger.ledger_digest,
         lifecycle_prefix_after="b" * 64,
         lifecycle_event_count_after=8,
+        terminal_outcome="completed",
+        finalized_cell_artifact=ArtifactIdentity(
+            "custody/" + "c" * 64 + ".json",
+            ContentHash("sha256", "c" * 64),
+        ),
     )
     return D1CampaignCheckpoint(
         design_digest="d" * 64,
@@ -107,6 +113,33 @@ def test_ready_checkpoint_round_trip_preserves_exact_next_action_and_attempt_ide
     assert (
         campaign_checkpoint_from_mapping(campaign_checkpoint_to_mapping(checkpoint)) == checkpoint
     )
+    assert restored.manifest["schema_version"] == "d1-campaign-checkpoint-v2"
+
+
+def test_checkpoint_round_trip_preserves_registered_terminal_defect_outcome() -> None:
+    checkpoint = _ready()
+    cell = checkpoint.completed_cells[0]
+    failed_event = replace(
+        checkpoint.attempt_ledger.events[-1],
+        status=D1LaunchAttemptStatus.FAILED,
+        reason="terminal numerical defect",
+    )
+    failed_ledger = D1LaunchAttemptLedger((*checkpoint.attempt_ledger.events[:-1], failed_event))
+    failed = replace(
+        checkpoint,
+        completed_cells=(
+            replace(
+                cell,
+                terminal_outcome="numerical_defect",
+                ledger_digest_after=failed_ledger.ledger_digest,
+            ),
+        ),
+        attempt_ledger=failed_ledger,
+    )
+
+    restored = parse_campaign_checkpoint(serialize_campaign_checkpoint(failed))
+
+    assert restored.completed_cells[0].terminal_outcome == "numerical_defect"
 
 
 def test_empty_ready_checkpoint_authorizes_only_first_registered_cell() -> None:

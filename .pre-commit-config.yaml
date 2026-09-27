@@ -64,7 +64,7 @@ repos:
   # SECURITY & SECRETS
   # =============================================================================
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
+    rev: v8.30.1
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
@@ -83,7 +83,7 @@ repos:
         exclude: \.lock$
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.2
+    rev: 1.9.4
     hooks:
       - id: bandit
         args:
@@ -127,7 +127,7 @@ repos:
   # PYTHON QUALITY
   # =============================================================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.13
+    rev: v0.16.7
     hooks:
       - id: ruff
         args: ["--fix", "--exit-non-zero-on-fix", "--config=pyproject.toml"]
@@ -137,7 +137,7 @@ repos:
         exclude: ^(tests/|build/|references/)
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.37.1
+    rev: 1.40.1
     hooks:
       - id: basedpyright
         stages: [pre-commit]
@@ -156,25 +156,25 @@ repos:
   # PYTHON TEST MATRICES (uv-run)
   # =============================================================================
   - repo: https://github.com/andrewaylett/pre-commit-hooks
-    rev: v0.7.1
+    rev: v0.7.2
     hooks:
       # Fast feedback: unit tests on every commit (CPU, hermetic)
       - id: uv-run
         name: python unit tests (uv)
         stages: [pre-commit]
-        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings"]
+        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
 
       # Pre-push: full suite (unit + integration) before code reaches remote
       - id: uv-run
         name: python full test suite (uv)
         stages: [pre-push]
-        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings"]
+        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
 
   # =============================================================================
   # CONTAINERS
   # =============================================================================
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.14.0
+    rev: v2.15.1
     hooks:
       - id: hadolint-docker
         args: ["--ignore", "DL3008", "--ignore", "DL3013", "--ignore", "DL3009"]
@@ -191,14 +191,14 @@ repos:
         exclude: ^(charts/|templates/|\.github/workflows/)
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.36.0
+    rev: 0.38.0
     hooks:
       - id: check-github-workflows
       - id: check-github-actions
       - id: check-dependabot
 
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.10
+    rev: v1.7.12
     hooks:
       - id: actionlint
         stages: [pre-commit]
@@ -207,7 +207,7 @@ repos:
   # COMMITS & DOCS
   # =============================================================================
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.11.6
+    rev: v4.18.0
     hooks:
       - id: commitizen
         stages: [commit-msg]
@@ -222,7 +222,7 @@ repos:
         stages: [commit-msg]
 
   - repo: https://github.com/spinergie/pre-commit-dprint
-    rev: v0.50.1
+    rev: v0.54.0
     hooks:
       - id: dprint
         name: dprint (markdown formatter)
@@ -230,7 +230,7 @@ repos:
         exclude: ^(CHANGELOG\.md|LICENSE\.md|docs/.*|README\.md|references/.*)$
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.20.0 # pragma: allowlist secret
+    rev: v0.23.2 # pragma: allowlist secret
     hooks:
       - id: markdownlint-cli2
         args: ["--config", ".markdownlint.yaml"]

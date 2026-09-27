@@ -13,6 +13,8 @@ dependencies = [
   "datasets>=3.6.0",
   "tiktoken>=0.8.0",
   "pyyaml>=6.0.2",
+  # Sentence-span identity binds the exact offline boundary engine version.
+  "pysbd==0.3.4",
   "loguru>=0.7.3",
   # HTTP tracking client for run metrics (entropic_substrate.sinks). The full
   # MLflow server distribution is isolated in Containerfile.mlflow; keeping it
@@ -23,6 +25,12 @@ dependencies = [
 
 [dependency-groups]
 deploy = [
+  # The R2 worker imports the S3 client directly; do not rely on DVC transitives.
+  "boto3>=1.34.0",
+  # The worker directly uses Config to bound SDK timeouts and retries.
+  "botocore>=1.34.0",
+  # Portable successor verification recomputes sealed paired statistical results.
+  "scipy>=1.15.0",
   # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
   # Keep that operational dependency explicit without shipping test tooling.
   "dvc[s3]>=3.59.0",
@@ -48,6 +56,8 @@ deploy = [
 # this group so the unit suite (tests/test_analysis_charts.py and siblings)
 # can import matplotlib/marimo/plotly.
 analysis = [
+  # Registered paired-test quantiles, pilot variance bounds and power calculations.
+  "scipy>=1.15.0",
   "matplotlib>=3.10.0",
   "marimo>=0.23.16",
   "plotly>=5.24.0",
@@ -64,13 +74,18 @@ dev = [
   "pytest-asyncio>=0.26.0",
   "deptry>=0.20.0",
   "bandit>=1.8.0",
-  "boto3>=1.34.0",
   # The unit suite exercises MLflow's real local SQLite store. These are store
   # adapters for tests only; production tracking goes over HTTP to the
   # containerized server.
   "sqlalchemy>=1.4.0,<3",
   "alembic!=1.10.0,<2",
   "jsonschema>=4.26.0",
+  "pytest-xdist>=3.6",
+  # p0-contract-pin (E-8 ratified at sprint-preflight): the layers contract
+  # over kernel/core/ladder/historical/composition, __legacy deliberately
+  # outside it until p13 (DN-P1). `just check` runs it as `lint-imports`.
+  "import-linter>=1.0",
+  "gitlint>=0.19.1",
 ]
 
 [build-system]
@@ -175,6 +190,14 @@ exclude_dirs = ["tests", "build", ".venv", "references"]
 # ---------------------------------------------------------------------------
 [tool.deptry]
 known_first_party = ["entropic_substrate"]
+# Optional host capabilities are production source, not test-only dependencies.
+# This classification does not change which groups the training image installs.
+non_dev_dependency_groups = ["deploy", "analysis"]
+
+[tool.deptry.per_rule_ignores]
+# DVC is invoked as a CLI (scripts/run_ladder.sh); psutil is loaded by MLflow's
+# system-metrics plugin. Neither usage is a first-party Python import.
+DEP002 = ["dvc", "psutil"]
 
 # ---------------------------------------------------------------------------
 # pytest

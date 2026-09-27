@@ -9,15 +9,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.observation import (
-    ByteObservationCodec,
+from entropic_substrate.core.observation.byte_codec import ByteObservationCodec
+from entropic_substrate.core.observation.contracts import (
     CodecIdentity,
     EncodedObservations,
-    LanguageReadout,
-    LearnedObservationAdapter,
     ObservationAlignment,
     SourceSpan,
 )
+from entropic_substrate.core.observation.modules import LanguageReadout, LearnedObservationAdapter
 
 pytestmark = pytest.mark.unit
 

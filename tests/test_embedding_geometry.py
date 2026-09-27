@@ -58,7 +58,20 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.analysis.embedding_geometry import (
+from entropic_substrate.composition.entrypoints.cli import (
+    _cached_reconstruct_init_table,
+    _init_table_cache_key,
+    main,
+)
+from entropic_substrate.core.substrate.fisher import (
+    build_fisher_init,
+    random_sphere_init,
+    save_init,
+)
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.kernel.runtime.checkpoint import CheckpointFormatError
+from entropic_substrate.kernel.runtime.config import Config
+from entropic_substrate.ladder.analyze.embedding_geometry import (
     CheckpointModel,
     _pearson,
     angular_drift,
@@ -69,11 +82,6 @@ from entropic_substrate.analysis.embedding_geometry import (
     procrustes_align,
     reconstruct_init_table,
 )
-from entropic_substrate.checkpoint import CheckpointFormatError
-from entropic_substrate.cli import _cached_reconstruct_init_table, _init_table_cache_key, main
-from entropic_substrate.config import Config
-from entropic_substrate.init.fisher import build_fisher_init, random_sphere_init, save_init
-from entropic_substrate.train import Trainer
 from helpers import tiny_config
 
 pytestmark = pytest.mark.unit
@@ -107,7 +115,7 @@ def test_analysis_module_imports_no_matplotlib() -> None:
     in-process ``sys.modules`` check here would be a false pass once that
     other test has already run."""
     script = (
-        "import sys; import entropic_substrate.analysis.embedding_geometry; "
+        "import sys; import entropic_substrate.ladder.analyze.embedding_geometry; "
         "assert 'matplotlib' not in sys.modules, sorted("
         "m for m in sys.modules if 'matplotlib' in m)"
     )
@@ -172,7 +180,7 @@ def test_reconstruct_init_table_fisher_sqrt_rebuilds_from_corpus_when_no_path(
     cfg = tiny_config(tmp_path, embedding_init="fisher_sqrt")
     assert cfg.model.fisher_init_path is None
     reconstructed = reconstruct_init_table(cfg)
-    from entropic_substrate.data.build import corpus_byte_stream
+    from entropic_substrate.ladder.capture.custody.build import corpus_byte_stream
 
     stream = b"".join(corpus_byte_stream(cfg.data, 20_000_000))
     expected = build_fisher_init(stream, cfg.model.d_model)
@@ -274,7 +282,7 @@ def test_gram_retention_refuses_oversized_vocab_before_materializing_gram(
     matrices — an OOM kill, not a refusal. Refuses BEFORE calling
     normalized_gram: patches it to raise if reached, proving the size check
     runs first rather than merely coincidentally succeeding on small input."""
-    import entropic_substrate.analysis.embedding_geometry as eg_module
+    import entropic_substrate.ladder.analyze.embedding_geometry as eg_module
 
     def _must_not_be_called(_: torch.Tensor) -> torch.Tensor:
         raise AssertionError("normalized_gram must not run past the size guard")
@@ -606,7 +614,7 @@ def _monkeypatch_reconstruct(monkeypatch: pytest.MonkeyPatch, calls: list[Config
         return torch.full((4, cfg.model.d_model), float(len(calls)))
 
     monkeypatch.setattr(
-        "entropic_substrate.analysis.embedding_geometry.reconstruct_init_table", _fake
+        "entropic_substrate.ladder.analyze.embedding_geometry.reconstruct_init_table", _fake
     )
 
 
@@ -730,7 +738,7 @@ def test_cli_embedding_geometry_reconstructs_shared_arm_configs_once_across_seed
         return real_reconstruct(cfg)
 
     monkeypatch.setattr(
-        "entropic_substrate.analysis.embedding_geometry.reconstruct_init_table", _counting
+        "entropic_substrate.ladder.analyze.embedding_geometry.reconstruct_init_table", _counting
     )
 
     code = main(
@@ -771,7 +779,7 @@ def test_cli_embedding_geometry_reconstructs_shared_arm_configs_once_across_seed
 
 # --------------------------------------------------------------- fig_e15d_* charts
 def test_fig_e15d_angular_drift_renders_with_redundant_non_color_channels() -> None:
-    from entropic_substrate.analysis.charts import fig_e15d_angular_drift
+    from entropic_substrate.ladder.analyze.charts import fig_e15d_angular_drift
 
     series = [
         # Deliberately UNSORTED (descending): fig_e15d_angular_drift's own
@@ -805,15 +813,15 @@ def test_fig_e15d_angular_drift_renders_with_redundant_non_color_channels() -> N
 
 
 def test_fig_e15d_angular_drift_refuses_empty_series() -> None:
-    from entropic_substrate.analysis.charts import fig_e15d_angular_drift
+    from entropic_substrate.ladder.analyze.charts import fig_e15d_angular_drift
 
     with pytest.raises(ValueError, match="no drift series given"):
         fig_e15d_angular_drift([])
 
 
 def test_fig_e15d_gram_retention_renders_with_redundant_non_color_channels() -> None:
-    from entropic_substrate.analysis.charts import fig_e15d_gram_retention
-    from entropic_substrate.analysis.embedding_geometry import GramRetention
+    from entropic_substrate.ladder.analyze.charts import fig_e15d_gram_retention
+    from entropic_substrate.ladder.analyze.embedding_geometry import GramRetention
 
     points = [
         ("arm-a", GramRetention(pearson_r=0.9, spearman_r=0.95, n_pairs=10)),
@@ -836,7 +844,7 @@ def test_fig_e15d_gram_retention_renders_with_redundant_non_color_channels() -> 
 
 
 def test_fig_e15d_gram_retention_refuses_empty_points() -> None:
-    from entropic_substrate.analysis.charts import fig_e15d_gram_retention
+    from entropic_substrate.ladder.analyze.charts import fig_e15d_gram_retention
 
     with pytest.raises(ValueError, match="no retention points given"):
         fig_e15d_gram_retention([])

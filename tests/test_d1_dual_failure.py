@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.d1_dual_failure import (
+from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
     D1PrimarySecondaryFailure,
     D1SecondaryFailureEvidence,
     D1SecondaryFailureStage,
@@ -54,7 +54,11 @@ def test_secondary_failure_replay_refuses_unknown_missing_or_open_vocabulary(
 def test_nominal_dual_failure_retains_both_exception_objects_and_primary_causality() -> None:
     primary = ValueError("scientific defect")
     secondary = RuntimeError("meter snapshot failed")
-    combined = D1PrimarySecondaryFailure(primary, secondary)
+    combined = D1PrimarySecondaryFailure(
+        primary,
+        secondary,
+        secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
+    )
 
     assert combined.primary is primary
     assert combined.secondary is secondary

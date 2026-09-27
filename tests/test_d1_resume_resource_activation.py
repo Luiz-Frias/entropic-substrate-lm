@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.d1_resume_trainer as resume_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_resume_fixtures import (
     RecordingObserver,
     captured_step_one_case,
@@ -15,17 +15,20 @@ from d1_resume_fixtures import (
     resume_start,
 )
 from d1_trainer_fixtures import DeterministicTrainerClock
-from entropic_substrate.d1_resource_activation import (
-    D1ProductionResourceActivationFactory,
-)
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import D1ResumeRunFailure, run_d1_resume
-from entropic_substrate.d1_tracking import D1MetricExtractor
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_meter_models import (
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     PositionFlopModel,
     ResourcePhase,
+)
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ProductionResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import (
+    D1ResumeRunFailure,
+    run_d1_resume,
 )
 
 pytestmark = pytest.mark.unit
@@ -123,7 +126,7 @@ def test_failed_resumed_train_is_timed_without_modeling_a_complete_step(
     def fail_step(**_kwargs: object) -> object:
         raise RuntimeError("deliberate resumed transaction failure")
 
-    monkeypatch.setattr(resume_module, "apply_d1_training_step", fail_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_step)
     with pytest.raises(D1ResumeRunFailure) as captured:
         run_d1_resume(
             plan=case.plan,

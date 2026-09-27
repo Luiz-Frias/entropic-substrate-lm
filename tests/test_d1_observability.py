@@ -8,21 +8,29 @@ from typing import cast
 
 import pytest
 
-from entropic_substrate.d1_observability import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
+    execution_segment_id,
+)
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.adapters.d1_observability import (
     D1JournalObserver,
     D1MlflowObserver,
     ObservedD1Journal,
 )
-from entropic_substrate.evidence.d1_journal import JournalTailQuarantineReceipt, read_journal
-from entropic_substrate.evidence.d1_journal_values import (
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    JournalTailQuarantineReceipt,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
     FrozenJson,
     JournalEventKind,
 )
-from entropic_substrate.evidence.resource_provenance import EvidenceGap, execution_segment_id
-from entropic_substrate.evidence.resource_work import ResourceWorkSnapshot
-from entropic_substrate.evidence.resource_work_codec import resource_snapshot_to_mapping
-from entropic_substrate.experiments.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
+from entropic_substrate.ladder.capture.resource.resource_work_codec import (
+    resource_snapshot_to_mapping,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -93,6 +101,16 @@ def _eval_event() -> D1JournalEvent:
             "quality": {
                 "nats_per_byte": 1.2345678901234567,
                 "effective_rank": 7.75,
+                "state_rms_l2_norm": 1.25,
+                "target_effective_rank": 1.95,
+                "target_numerical_rank": 2,
+                "target_rms_l2_norm": 0.61,
+                "predicted_effective_rank": 1.9,
+                "predicted_numerical_rank": 2,
+                "predicted_rms_l2_norm": 0.55,
+                "residual_mean_l2_norm": 0.02,
+                "target_predicted_exact_match_count": 0,
+                "target_predicted_exact_match_fraction": 0.0,
                 "state_variance": [0.2, 0.3],
                 "state_covariance_eigenvalues": [0.1, 0.4],
                 "state_sample_covariance": [[1.0, 0.0], [0.0, 1.0]],
@@ -164,7 +182,7 @@ def test_observer_runs_only_after_authoritative_journal_fsync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import entropic_substrate.evidence.d1_journal as journal_module
+    import entropic_substrate.ladder.capture.records.d1_journal as journal_module
 
     calls: list[str] = []
     monkeypatch.setattr(journal_module.os, "fsync", lambda _fd: calls.append("fsync"))
@@ -198,6 +216,8 @@ def test_mlflow_observer_projects_only_registered_scalars_at_journal_step(
     metrics = {key: value for _run_id, key, value, _step in client.calls}
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
     assert metrics["d1/quality/derived_from_measured/effective_rank"] == 7.75
+    assert metrics["d1/quality/derived_from_measured/predicted_rms_l2_norm"] == 0.55
+    assert metrics["d1/quality/measured/target_predicted_exact_match_count"] == 0.0
     assert metrics["d1/resource/measured/trainer_wall_seconds"] == 12.5
     assert metrics["d1/cursor/measured/eval_index"] == 3.0
     assert all(run_id == "mlflow-run-123" for run_id, *_rest in client.calls)

@@ -7,8 +7,8 @@ import json
 import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
-from entropic_substrate.evidence.d1_types import D1VerdictValidationError
-from entropic_substrate.evidence.d1_validator import ValidatedD1Verdict
+from entropic_substrate.kernel.verdict.d1_types import D1VerdictValidationError
+from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 pytestmark = pytest.mark.unit
 
@@ -28,10 +28,15 @@ def _validate(payload: dict[str, object]) -> None:
         (("contrasts", 0, "confidence_level"), 0.95, "confidence"),
         (("contrasts", 0, "multiplicity"), "NONE", "multiplicity"),
         (("contrasts", 0, "margins", "practical"), 0.5, "margins"),
-        (("clauses", "language", "margin"), 0.5, "clause"),
-        (("clauses", "language", "decision_vocabulary"), "other", "clause"),
+        (("clauses_by_arm", "sg", "language", "margin"), 0.5, "clause"),
+        (
+            ("clauses_by_arm", "sg", "language", "decision_vocabulary"),
+            "other",
+            "clause",
+        ),
         (("clause_precedence", 0), "language", "precedence"),
         ("verdict_vocabulary", "other", "verdict vocabulary"),
+        (("successor", "eligible_arms", 0), "both", "eligible_arms"),
         (("successor", "eligible_strategies", 0), "unregistered", "strategy"),
     ],
 )

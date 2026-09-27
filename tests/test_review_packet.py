@@ -252,7 +252,7 @@ def test_parity_exempts_keys_declared_per_arm_but_not_shared_ones() -> None:
 def test_build_reader_strips_prose_and_shims_logging() -> None:
     source = (
         '"""Module docstring naming the e3 ladder."""\n'
-        "from entropic_substrate.logging import configure_logging, logger\n\n\n"
+        "from entropic_substrate.kernel.runtime.logging import configure_logging, logger\n\n\n"
         "def f() -> int:\n"
         '    """Docstring naming fisher."""\n'
         "    return 1\n"
@@ -442,6 +442,13 @@ def test_assembly_writes_the_rekey_salt_only_to_the_sealed_file(
     )
     packet = tmp_path / "packet"
     sealed = tmp_path / "sealed.md"
+    # No --telemetry override: this exercises the CLI's DEFAULT telemetry
+    # source, same as test_default_telemetry_source_resolves_through_the_module
+    # below. Pinning an explicit override here (the old form pointed at the
+    # literal src path, which is now a generated shim) would decouple this
+    # test from the default-resolution fix -- FOR-1524's guard tooth
+    # ("revert the default -> both tests RED") depends on this test using
+    # the default too.
     monkeypatch.setattr(
         sys,
         "argv",
@@ -449,7 +456,6 @@ def test_assembly_writes_the_rekey_salt_only_to_the_sealed_file(
             "assemble_review_packet.py",
             "--rung=probe",
             f"--captured={captured}",
-            f"--telemetry={Path(__file__).resolve().parents[1] / 'src/entropic_substrate/telemetry.py'}",
             f"--packet-out={packet}",
             f"--sealed-out={sealed}",
             f"--run-times={times}",
@@ -481,3 +487,125 @@ def test_assembly_writes_the_rekey_salt_only_to_the_sealed_file(
     assert salt not in blob
     for raw in raw_digests.values():
         assert raw not in blob
+
+
+def test_default_telemetry_source_resolves_through_the_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOR-1524: the CLI's default ``--telemetry`` must resolve to the real
+    module, never the literal ``src/entropic_substrate/telemetry.py`` path.
+
+    p3-quarantine's move made that literal path a 4-statement generated
+    shim (``import sys`` / ``import ...__legacy.telemetry as _target`` /
+    ``sys.modules[__name__] = _target``). ``build_reader`` only strips
+    known prose and D1-only ``ImportFrom`` nodes; a bare ``ast.Import`` of
+    ``entropic_substrate.__legacy.telemetry`` survives that filter and
+    lands in ``reader.py`` verbatim, and ``entropic`` is itself a banned
+    identity token -- so the packet fails closed on the leak (an
+    AssertionError from ``banned_scan``, not a silent no-op reader). This
+    pins that the DEFAULT is fixed at the source: it must resolve through
+    ``entropic_substrate.telemetry`` (whose sys.modules rebind makes
+    ``__file__`` the real ``__legacy/telemetry.py``), so the produced
+    reader carries real telemetry code and no repository-identifying
+    dotted name.
+    """
+    monkeypatch.setitem(_MOD.RUNGS, "probe", _probe_spec(attestation_required=False))
+    captured = tmp_path / "captured"
+    captured.mkdir()
+    record = {
+        "event": "run_start",
+        "run": "probe-one",
+        "config": {"name": "probe-one", "model": {"d_model": 32}},
+        "trainable_param_count": 100,
+        "frozen_param_count": 8,
+    }
+    (captured / "probe-one-abcd1234-probe-one-s1.jsonl").write_text(
+        json.dumps(record) + "\n", encoding="utf-8"
+    )
+    record2 = dict(record, run="probe-two")
+    (captured / "probe-two-abcd1234-probe-two-s1.jsonl").write_text(
+        json.dumps(record2) + "\n", encoding="utf-8"
+    )
+
+    times = tmp_path / "times.json"
+    run_id_full = "abcd1234deadbeef"  # fixture run id, not a credential  # pragma: allowlist secret
+    times.write_text(
+        json.dumps({run_id_full: {"start": 1_700_000_000_000, "end": 1_700_000_060_000}}),
+        encoding="utf-8",
+    )
+    packet = tmp_path / "packet"
+    sealed = tmp_path / "sealed.md"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "assemble_review_packet.py",
+            "--rung=probe",
+            f"--captured={captured}",
+            f"--packet-out={packet}",
+            f"--sealed-out={sealed}",
+            f"--run-times={times}",
+            "--prereg-commit=abc123 2026-01-01T00:00:00+00:00",
+        ],
+    )
+    assert _MOD.main() == 0
+
+    reader = (packet / "reader.py").read_text(encoding="utf-8")
+    assert "sys.modules[__name__]" not in reader
+    assert "__legacy" not in reader
+    assert "entropic_substrate" not in reader
+    assert "TelemetryGap" in reader  # a real telemetry symbol, not a shim
+
+
+def test_build_reader_pre_ruff_output_carries_no_leaked_identity() -> None:
+    """FOR-1556 remedy (P13-FOR-1556): re-point the identity-leak guard to
+    ``build_reader``'s PRE-ruff output, over the REAL telemetry module,
+    resolved the same way ``main()`` resolves it.
+
+    The assertion above (``:556``, over ``packet / "reader.py"`` AFTER
+    ``main()`` runs ``ruff format`` + ``ruff check --fix-only``) is real
+    coverage of the shipped artifact and stays exactly as it is. But it is
+    NOT a guard against every leak class: an ``entropic_substrate.*`` import
+    ``build_reader`` fails to strip (e.g. a ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES``
+    entry that no longer matches a real import) can still leave the packet
+    clean, because the excluded functions (``main``/``_build_parser``/
+    ``read_d1_terminal_defect``) are the only consumers of those D1 imports:
+    once they are stripped, the leaked import is textbook ruff F401
+    "unused import" and ``--fix-only`` silently deletes it before line 556
+    ever reads the file. MEASURED in-branch (mutation reverted, never
+    committed), both instruments, all three FOR-1556 classes -- dropping
+    either ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES`` entry, or neutralizing
+    the ``_LOGGING_SHIM`` substitution, leaves the OLD post-ruff instrument
+    green (blind) while THIS pre-ruff instrument goes RED on every one:
+    no class is left green under the new instrument (P13-TEETH-HONESTY has
+    nothing to retract). The baseline (no mutation) is green under both.
+
+    This is additive: it does not replace or weaken the :556 assertion, and
+    it changes no production behavior -- ``_PACKET_READER_EXCLUDED_IMPORT_PREFIXES``
+    and ``_is_shim_source`` are read here, never redefined.
+    """
+    import entropic_substrate.ladder.capture.reader.telemetry as _telemetry
+
+    source = Path(_telemetry.__file__).read_text(encoding="utf-8")
+    reader = _MOD.build_reader(source, source_path=Path(_telemetry.__file__))
+    assert "entropic_substrate" not in reader
+    assert "__legacy" not in reader
+    assert "TelemetryGap" in reader  # a real telemetry symbol, not a shim
+
+
+def test_build_reader_refuses_a_literal_shim_source(tmp_path: Path) -> None:
+    """The refusal guard: a shim-form source can never become a packet
+    reader again, even via an explicit ``--telemetry`` override."""
+    shim_path = tmp_path / "telemetry.py"
+    # P13-EXCEPTIONS (addendum 3): the exact 3-statement rebind shape
+    # `_is_shim_source` detects is kept; only the dotted target changes
+    # (the generator and its `__legacy` shim form retire in B2, but the
+    # refusal guard must still recognize the shape on sight).
+    shim_path.write_text(
+        "import sys\n"
+        "import entropic_substrate.ladder.capture.reader.telemetry as _target\n"
+        "sys.modules[__name__] = _target\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=re.escape(str(shim_path))):
+        _MOD.build_reader(shim_path.read_text(encoding="utf-8"), source_path=shim_path)

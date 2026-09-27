@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import torch
 
-import entropic_substrate.d1_fresh_trainer as fresh_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_trainer_fixtures import (
     ORIGIN_NS,
     STARTED_AT,
@@ -17,19 +17,24 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_resource_activation import D1ResourceActivationFactory
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
-from entropic_substrate.evidence.d1_journal_values import D1JournalEvent
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
 )
-from entropic_substrate.experiments.d1_plan import SmokeD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm
-from entropic_substrate.predictive_state.checkpoint_repository import save_atomic
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    AuthoritativeRunJournal,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import D1JournalEvent
+from entropic_substrate.ladder.register.d1_plan import SmokeD1RunPlan
+from entropic_substrate.ladder.run.resource.d1_resource_activation import (
+    D1ResourceActivationFactory,
+)
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import save_atomic
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +101,7 @@ def captured_step_one_case(
             resume_journal.write_bytes(reference_journal.read_bytes())
         return state
 
-    monkeypatch.setattr(fresh_module, "save_atomic", capture_checkpoint)
+    monkeypatch.setattr(segment_engine, "save_atomic", capture_checkpoint)
     monkeypatch.setattr(AuthoritativeRunJournal, "append_checkpoint", capture_journal)
     start = run_start(plan)
     if resource_activation_factory is not None:

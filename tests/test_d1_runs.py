@@ -6,11 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.experiments.d1_family import (
-    D1ExperimentFamily,
-    build_d1_experiment_family,
-)
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.kernel.identity.d1_primitives import (
     CausalEncoderSpec,
     D1Arm,
     EncoderInitializationIdentity,
@@ -18,7 +15,11 @@ from entropic_substrate.experiments.d1_primitives import (
     MatchedEncoderPairSpec,
     RunClass,
 )
-from entropic_substrate.experiments.d1_provenance import (
+from entropic_substrate.ladder.register.d1_family import (
+    D1ExperimentFamily,
+    build_d1_experiment_family,
+)
+from entropic_substrate.ladder.register.d1_provenance import (
     CodeIdentity,
     ContainerIdentity,
     DataIdentity,
@@ -26,12 +27,11 @@ from entropic_substrate.experiments.d1_provenance import (
     ExecutionIdentity,
     PreregistrationIdentity,
 )
-from entropic_substrate.experiments.d1_runs import (
+from entropic_substrate.ladder.register.d1_runs import (
     ConfirmatoryD1RunSpec,
     D1RunSpec,
     PilotD1RunSpec,
 )
-from entropic_substrate.observation import CodecIdentity
 
 pytestmark = pytest.mark.unit
 

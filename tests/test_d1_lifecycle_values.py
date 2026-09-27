@@ -6,7 +6,14 @@ import json
 
 import pytest
 
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.kernel.lifecycle import (
+    ActorIdentity,
+    ActorRole,
+    ArtifactIdentity,
+    ContentHash,
+    SuccessorAuthorization,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1LifecycleEvent,
     D1LifecycleValueError,
     D1ProblemKind,
@@ -14,13 +21,8 @@ from entropic_substrate.evidence.d1_lifecycle_values import (
     canonical_lifecycle_event_line,
     parse_lifecycle_event_line,
 )
-from entropic_substrate.evidence.lifecycle import (
-    ActorIdentity,
-    ActorRole,
-    ArtifactIdentity,
-    ContentHash,
-    SuccessorAuthorization,
-)
+
+pytestmark = pytest.mark.unit
 
 
 def _artifact(index: int) -> ArtifactIdentity:
@@ -55,7 +57,7 @@ def test_canonical_lifecycle_event_round_trips_exact_bytes() -> None:
     assert parse_lifecycle_event_line(line) == event
     assert canonical_lifecycle_event_line(parse_lifecycle_event_line(line)) == line
     payload = json.loads(line)
-    assert payload["schema_version"] == "d1-lifecycle-event/v1"
+    assert payload["schema_version"] == "d1-lifecycle-event/v2"
     assert payload["artifacts"] == [
         {
             "content_hash": {"algorithm": "sha256", "digest": f"{1:064x}"},
@@ -76,24 +78,30 @@ def test_nonoperational_events_refuse_subject_identity() -> None:
         _event(subject_id="run-1")
 
     assert error.value.code == "unexpected_subject"
+    with pytest.raises(D1LifecycleValueError) as gate_error:
+        _event(eligible_arms=("sg",))
+    assert gate_error.value.code == "unexpected_gate"
 
 
 @pytest.mark.parametrize(
-    ("kind", "authorization", "strategies"),
+    ("kind", "authorization", "arms", "strategies"),
     [
         (
             D1ProcessEventKind.GATE_AUTHORIZED,
             SuccessorAuthorization.AUTHORIZED,
+            ("sg", "ac", "both"),
             ("d2-pullback",),
         ),
         (
             D1ProcessEventKind.GATE_VALID_NEGATIVE,
             SuccessorAuthorization.VALID_NEGATIVE,
             (),
+            (),
         ),
         (
             D1ProcessEventKind.GATE_RETIRED,
             SuccessorAuthorization.RETIRED,
+            (),
             (),
         ),
     ],
@@ -101,11 +109,13 @@ def test_nonoperational_events_refuse_subject_identity() -> None:
 def test_gate_events_bind_exact_outcome(
     kind: D1ProcessEventKind,
     authorization: SuccessorAuthorization,
+    arms: tuple[str, ...],
     strategies: tuple[str, ...],
 ) -> None:
     event = _event(
         event_kind=kind,
         gate_authorization=authorization,
+        eligible_arms=arms,
         eligible_strategies=strategies,
     )
 
@@ -117,6 +127,7 @@ def test_authorized_gate_requires_a_unique_strategy() -> None:
         _event(
             event_kind=D1ProcessEventKind.GATE_AUTHORIZED,
             gate_authorization=SuccessorAuthorization.AUTHORIZED,
+            eligible_arms=("sg",),
             eligible_strategies=(),
         )
     assert error.value.code == "invalid_gate_strategy"
@@ -125,8 +136,57 @@ def test_authorized_gate_requires_a_unique_strategy() -> None:
         _event(
             event_kind=D1ProcessEventKind.GATE_AUTHORIZED,
             gate_authorization=SuccessorAuthorization.AUTHORIZED,
+            eligible_arms=("sg",),
             eligible_strategies=("d2", "d2"),
         )
+    with pytest.raises(D1LifecycleValueError) as non_string:
+        _event(
+            event_kind=D1ProcessEventKind.GATE_AUTHORIZED,
+            gate_authorization=SuccessorAuthorization.AUTHORIZED,
+            eligible_arms=("sg",),
+            eligible_strategies=(1,),
+        )
+    assert non_string.value.code == "invalid_gate_strategy"
+
+
+def test_authorized_gate_requires_canonical_nonempty_stabilization_arms() -> None:
+    for arms in ((), ("none",), ("both", "sg"), ("sg", "sg"), (1,)):
+        with pytest.raises(D1LifecycleValueError, match="eligible_arms") as error:
+            _event(
+                event_kind=D1ProcessEventKind.GATE_AUTHORIZED,
+                gate_authorization=SuccessorAuthorization.AUTHORIZED,
+                eligible_arms=arms,
+                eligible_strategies=("d2",),
+            )
+        assert error.value.code == "invalid_gate_arm"
+
+
+def test_authorized_gate_accepts_a_canonical_stabilization_subset() -> None:
+    event = _event(
+        event_kind=D1ProcessEventKind.GATE_AUTHORIZED,
+        gate_authorization=SuccessorAuthorization.AUTHORIZED,
+        eligible_arms=("ac", "both"),
+        eligible_strategies=("d2",),
+    )
+    assert parse_lifecycle_event_line(canonical_lifecycle_event_line(event)).eligible_arms == (
+        "ac",
+        "both",
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "authorization"),
+    [
+        (D1ProcessEventKind.GATE_VALID_NEGATIVE, SuccessorAuthorization.VALID_NEGATIVE),
+        (D1ProcessEventKind.GATE_RETIRED, SuccessorAuthorization.RETIRED),
+    ],
+)
+def test_non_authorized_gates_forbid_eligible_arms(
+    kind: D1ProcessEventKind, authorization: SuccessorAuthorization
+) -> None:
+    with pytest.raises(D1LifecycleValueError) as error:
+        _event(event_kind=kind, gate_authorization=authorization, eligible_arms=("sg",))
+    assert error.value.code == "invalid_gate_arm"
 
 
 def test_problem_event_requires_typed_problem_and_other_events_refuse_it() -> None:
@@ -161,7 +221,7 @@ def test_event_refuses_duplicate_artifact_paths_and_non_artifact_payloads() -> N
         (lambda line: b" " + line, "noncanonical_json"),
         (
             lambda line: line.replace(
-                b'"schema_version":"d1-lifecycle-event/v1"', b'"schema_version":"v0"'
+                b'"schema_version":"d1-lifecycle-event/v2"', b'"schema_version":"v1"'
             ),
             "unsupported_schema",
         ),
@@ -188,3 +248,13 @@ def test_parser_rejects_unknown_fields() -> None:
         parse_lifecycle_event_line(line)
 
     assert error.value.code == "unknown_field"
+
+
+def test_v2_parser_refuses_the_exact_predecessor_v1_event_language() -> None:
+    payload = json.loads(canonical_lifecycle_event_line(_event()))
+    payload["schema_version"] = "d1-lifecycle-event/v1"
+    del payload["eligible_arms"]
+    line = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode() + b"\n"
+    with pytest.raises(D1LifecycleValueError) as error:
+        parse_lifecycle_event_line(line)
+    assert error.value.code == "missing_field"

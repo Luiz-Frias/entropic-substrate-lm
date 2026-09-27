@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -21,14 +21,18 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.evidence.resource_provenance_codec import (
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     parse_run_start_line,
+    quoted_rate_from_mapping,
+    quoted_rate_to_mapping,
+    resource_activation_from_mapping,
+    resource_activation_to_mapping,
     run_start_from_mapping,
     run_start_to_mapping,
     serialize_run_start_line,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 
 pytestmark = pytest.mark.unit
 
@@ -87,6 +91,24 @@ def test_run_start_mapping_and_json_line_round_trip_canonically() -> None:
     line = serialize_run_start_line(start)
     assert parse_run_start_line(line) == start
     assert serialize_run_start_line(parse_run_start_line(line)) == line
+
+
+def test_rate_and_activation_component_codecs_reuse_run_start_rules() -> None:
+    start = _start()
+
+    rate = quoted_rate_to_mapping(start.quoted_rate)
+    activation = resource_activation_to_mapping(start.resource_activation)
+
+    assert rate["observed_at"] == "2026-08-24T01:00:02.123456Z"
+    assert quoted_rate_from_mapping(rate) == start.quoted_rate
+    assert resource_activation_from_mapping(activation) == start.resource_activation
+
+    rate["unknown"] = True
+    activation["unknown"] = True
+    with pytest.raises(ResourceProvenanceCodecGap):
+        quoted_rate_from_mapping(rate)
+    with pytest.raises(ResourceProvenanceCodecGap):
+        resource_activation_from_mapping(activation)
 
 
 @pytest.mark.parametrize(

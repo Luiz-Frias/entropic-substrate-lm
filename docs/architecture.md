@@ -1,17 +1,55 @@
-# Architecture — Predictive-State Geometry Pivot
+# Architecture — Codec-Separated Hierarchical Latent Prediction
 
-**Status:** authoritative forward architecture for the D1–D5 pivot.
+**Status:** approved forward north star; sentence-first generative design is not yet implemented.
 
-**Pivot date:** 2026-08-23.
+**North-star update:** 2026-09-15. The retained D-series design dates to 2026-08-23.
 
-**Linear program:** `Predictive-State Geometry Pivot`, under the Entropic Substrate
-initiative.
+**Prior Linear program:** `Predictive-State Geometry Pivot`, under the Entropic Substrate
+initiative. This documentation change does not update external project status.
 
-**Historical boundary:** the E-series preregistrations, captures, reviews, and verdicts remain
-the binding record for those experiments. This document changes the forward architecture; it
-does not reinterpret a filed result.
+**Historical boundary:** E-series evidence and existing D-series construction and registration
+identities remain bound to their original experiments. Nothing below upgrades their readiness
+or reinterprets a filed result.
 
 ## North star
+
+Build a codec-separated hierarchical latent predictor: a boundary encoder constructs
+continuous sentence/chunk representations, the main spine predicts the next representation
+in that sequence, and a local decoder generates text from predicted latents. The main
+computational clock is the chunk sequence, not necessarily one step per byte or surface token.
+Start with sentence boundaries; paragraph and document-context scales are controlled research
+stages, not assumed semantic improvements. Latent slots/tensors may preserve detail beyond a
+single vector; coarsening does not imply lossless compression.
+
+Target roughly 500M total deployed parameters, with an upper design envelope of 1B. Count
+encoder, spine, and decoder together; report training-only teachers separately. Fisher-based
+dynamics remain a candidate mechanism whose signed predictive value and off-target effects
+must be measured. The approved implementation contract is in
+[the hierarchical predictor itinerary](hierarchical-latent-predictor.plan.md).
+
+Sentence-vector normalization and spine-carrier normalization are independent 2×2 axes.
+The magnitude-preserving control must retain its carrier without a final UnitNorm or RMS
+overwrite. No probability-floor/square-root state substitution is permitted. The effective
+directional/log-magnitude law induces an update operator, never an alphabet-sized carrier.
+H1 tests preservation with isotropic dynamics before H2 supervision and H3 Fisher consumption.
+
+## Horizon
+
+First complete one causal sentence-level generation tracer with checkpoint/recovery and the
+full reviewed scientific flywheel. Then retain or retire mechanisms through sealed paired
+comparisons before increasing temporal resolution, changing backbone/codec, or scaling toward
+the deployment envelope. Final success requires reproducible generation, appropriate held-out
+quality and resource evidence, and filed support for the retained mechanisms—not merely a
+latent-prediction loss or a working byte-level model. The itinerary is not a preregistration
+or a remote-spending authorization.
+
+## Retained D-series design boundary
+
+All remaining sections preserve the earlier byte-clock D-series architecture for provenance
+and component reuse. Their D1–D5 gates apply only to those constructions. They do not describe
+the new sentence-level generator or authorize its execution.
+
+### D-series north star (2026-08-23)
 
 > The hidden state stays latent. Future laws determine which latent displacements matter, and
 > geometry is consumed as an operator on latent dynamics—not substituted for latent state.
@@ -26,7 +64,7 @@ The internal implementation term is **predictive semimetric**. “Predictive man
 a research hypothesis until measured rank, regularity, stability, and codec-equivariance
 support the stronger word.
 
-## Horizon
+### D-series completion contract
 
 The pivot is done enough when D1–D5 have each completed the full scientific lifecycle:
 
@@ -446,7 +484,7 @@ the design can support blinding.
 The existing evidence architecture is retained:
 
 - JSONL plus DVC capture is authoritative;
-- `entropic_substrate.telemetry` is the only admissible read side;
+- `entropic_substrate.ladder.capture.reader.telemetry` is the only admissible read side;
 - MLflow is a best-effort operational mirror and never a verdict input;
 - checkpoints carry schema and construction identities; and
 - missing, partial, nonfinite, nonmonotonic, or incompatible evidence fails loudly.
@@ -524,11 +562,11 @@ measured property of the model.
 | Existing asset | Disposition in the pivot |
 |---|---|
 | E0/E1 configs, captures, and verdicts | Preserve unchanged as historical controls and evidence. |
-| `init/fisher.py` | Preserve as the E1 warm-start control; do not promote it to the D-series semantic state. |
+| `core/substrate/fisher.py` | Preserve as the E1 warm-start control; do not promote it to the D-series semantic state. |
 | E1.5-D geometry diagnostics | Reuse as report-only relational observers. |
 | E1.5a/E1.5b freeze/Gram arms | Preserve for attribution history; no automatic D-series carry-forward. |
 | `FieldEncoder` H/P/F paths | Preserve as bridge controls and possible target-encoder components. Do not add another enum member as the pivot architecture. |
-| `analysis/field_head_audit.py` and the frozen-head findings | Complete as exploratory D-entry evidence; use it to refine controls, not as a confirmatory D verdict. |
+| `ladder/analyze/field_head_audit.py` and the frozen-head findings | Complete as exploratory D-entry evidence; use it to refine controls, not as a confirmatory D verdict. |
 | nGPT projection/retraction blocks | Candidate geometry consumer and matched control after D1. |
 | kappa attention | Later relational comparator after the decoder-Fisher tracer; not a substitute for it. |
 | E4 fixed-window code/reference | Reuse as D4 fixed control over latent states. |

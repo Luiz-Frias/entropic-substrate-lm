@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from entropic_substrate.telemetry import (
+from entropic_substrate.ladder.capture.reader.telemetry import (
     TelemetryGap,
     final_eval_metric,
     final_eval_record,

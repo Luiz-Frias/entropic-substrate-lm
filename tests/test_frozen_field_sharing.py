@@ -33,9 +33,9 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION
-from entropic_substrate.init.fisher import semi_orthogonal_lift
-from entropic_substrate.models.field_encoder import FieldEncoder
+from entropic_substrate.core.substrate.field_encoder import FieldEncoder
+from entropic_substrate.core.substrate.fisher import semi_orthogonal_lift
+from entropic_substrate.kernel.runtime.checkpoint import CHECKPOINT_FORMAT_VERSION
 from helpers import assert_bitwise_equal, tiny_model_config
 
 pytestmark = pytest.mark.unit

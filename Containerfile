@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 # a binary neither respects nor violates that boundary, which bites at
 # INSTALL time. See the ENV below for the measured failure and the fix.
 COPY --from=ghcr.io/astral-sh/uv:0.11.6@sha256:43cb71695fcad1516c2fbe0f56e500184c42d8bce838d9f64593b8aff2c16298 /uv /uvx /bin/
+# MEASURED 2026-09-16 in the pinned project image: PATH selected a distinct
+# /usr/local/bin/uv (SHA-256 1cb9cd0a...), shadowing /bin/uv (dc407e8e...).
+# The explicit /bin/uv reported 0.11.6 and exported the current lock offline.
+# Invoke that copied tool explicitly; COPY alone does not control PATH lookup.
 
 # The base image's system Python 3.12 is Debian "externally managed"
 # (PEP 668). MEASURED on the FIRST real build of this file (Docker Build
@@ -50,20 +54,25 @@ ENV UV_BREAK_SYSTEM_PACKAGES=1
 # libraries. This layer stays cached across src/ changes. (Installing `.` here
 # would fail anyway: the setuptools src-layout build needs src/ present.)
 COPY pyproject.toml uv.lock ./
-RUN uv export --frozen --no-dev --group deploy --prune torch --no-emit-project --no-hashes \
+RUN /bin/uv export --frozen --no-dev --group deploy --prune torch --no-emit-project --no-hashes \
       --format requirements-txt --output-file /tmp/requirements.txt \
- && uv pip install --system --no-cache -r /tmp/requirements.txt
+ && /bin/uv pip install --system --no-cache -r /tmp/requirements.txt
 
 # Source layer: invalidated on every src/configs/scripts change, but cheap to
 # rebuild since deps are already installed above.
 COPY src/ ./src/
 COPY configs/ ./configs/
 COPY scripts/ ./scripts/
+# The D1 pod-side worker composes its checkpoint and recovery transports from
+# this committed, credential-free topology. Runtime credentials arrive only
+# through RunPod secret references; no .env or local DVC config enters the
+# remote build context.
+COPY .dvc/config ./.dvc/config
 # E1.5c frozen field: the pretrained p_phi (2.5MB) the frozen arms load via
 # field_ckpt_path. Baked because pods are credential-free — and baking is
 # what puts these weights under the image digest the launch record pins.
 COPY models/field-pphi-v1.pt ./models/field-pphi-v1.pt
-RUN uv pip install --system --no-cache --no-deps .
+RUN /bin/uv pip install --system --no-cache --no-deps .
 
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
@@ -78,5 +87,5 @@ ENV PYTHONUNBUFFERED=1
 # Example direct-run on an H100 pod:
 #   podman run --gpus all -v $(pwd)/data:/app/data -v $(pwd)/models:/app/models \
 #     -v $(pwd)/results:/app/results entropic-substrate-lm:latest \
-#     python -m entropic_substrate.cli train --exp e3
+#     python -m entropic_substrate.composition.entrypoints.cli train --exp e3
 CMD ["sleep", "infinity"]

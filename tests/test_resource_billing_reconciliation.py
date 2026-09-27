@@ -8,21 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
-    ExecutionSegmentTermination,
-    ProviderBilling,
-)
-from entropic_substrate.evidence.resource_billing_reconciliation import (
-    LogicalBillingMissingCost,
-    LogicalBillingReconciliation,
-    SegmentBillingMissingCost,
-    SegmentBillingReconciliation,
-    estimate_terminal_rate,
-    reconcile_logical_billing,
-    reconcile_segment_billing,
-)
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -37,7 +23,23 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    BillingGap,
+    ExecutionSegmentTermination,
+    ProviderBilledAmountObservation,
+    ProviderBilling,
+    ProviderBillingPartial,
+)
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
+    LogicalBillingMissingCost,
+    LogicalBillingReconciliation,
+    SegmentBillingMissingCost,
+    SegmentBillingReconciliation,
+    estimate_terminal_rate,
+    reconcile_logical_billing,
+    reconcile_segment_billing,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -141,21 +143,35 @@ def test_segment_reconciliation_is_exact_and_missing_billing_is_not_zero() -> No
         replace(reconciled, amount_delta=Decimal("-0.30"))
 
 
-def test_reconciliation_preserves_provider_unit_evidence_independently_of_quote() -> None:
+def test_partial_unit_gap_is_preserved_without_money_reconciliation() -> None:
     measured = reconcile_segment_billing(_start(), _termination(), _bill())
     assert type(measured) is SegmentBillingReconciliation
     assert measured.rate_estimate.quoted_rate.billing_unit is BillingUnit.HOUR
     assert measured.provider_billing.billing_unit is BillingUnit.SECOND
 
     unit_gap = EvidenceGap("provider_billing_unit", "provider export omits billing unit")
-    billed = replace(_bill(), billing_unit=unit_gap)
+    start = _start()
+    billed = ProviderBillingPartial(
+        start.logical_run_id,
+        start.execution_segment_index,
+        start.execution_segment_id,
+        Decimal("7200"),
+        ProviderBilledAmountObservation(Decimal("11.7"), "USD"),
+        unit_gap,
+        "provider-bill-0",
+        "settled",
+        "2026-08-23 13:00:00",
+        "a" * 64,
+        start.trainer_started_at,
+        EvidenceClass.PROVIDER_BILLED,
+    )
 
     reconciled = reconcile_segment_billing(_start(), _termination(), billed)
 
-    assert type(reconciled) is SegmentBillingReconciliation
+    assert type(reconciled) is SegmentBillingMissingCost
     assert reconciled.rate_estimate.quoted_rate.billing_unit is BillingUnit.HOUR
-    assert reconciled.provider_billing.billing_unit == unit_gap
-    assert reconciled.manifest["provider_billing"]["billing_unit"] == {
+    assert reconciled.provider_evidence.billing_unit == unit_gap
+    assert reconciled.manifest["provider_evidence"]["billing_unit"] == {
         "field": "provider_billing_unit",
         "kind": "gap",
         "reason": "provider export omits billing unit",
@@ -197,7 +213,7 @@ def test_incomplete_logical_bill_is_typed_and_duplicate_records_are_refused() ->
     assert missing.provider_billed_duration_seconds is None
     assert missing.estimated_amount == Money(Decimal("24"), "USD")
     assert missing.missing_segment_ids == ("d1-both-seed-7:segment:1",)
-    assert missing.segments[1].manifest["billing_gap"]["kind"] == "billing_gap"
+    assert missing.segments[1].manifest["provider_evidence"]["kind"] == "billing_gap"
     with pytest.raises(ValueError, match="duplicate provider billing_record_id"):
         reconcile_logical_billing(
             (_start(0), _start(1)),

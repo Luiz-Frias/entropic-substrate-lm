@@ -8,13 +8,14 @@ from datetime import timedelta
 import pytest
 import torch
 
+import entropic_substrate.ladder.run.trainer.d1_trainer_runtime as runtime_module
 from d1_trainer_fixtures import ORIGIN_NS, STARTED_AT, micro_plan, run_start
-from entropic_substrate.d1_trainer_runtime import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
     D1TrainerWallOrigin,
     build_d1_fresh_components,
     create_d1_resource_ledger,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 
@@ -62,6 +63,30 @@ def test_wall_origin_and_fresh_segment_are_admitted_before_construction() -> Non
             start=replace(start, logical_run_id="wrong", execution_segment_id="wrong:segment:0"),
             origin=_origin(),
         )
+
+
+def test_fresh_construction_binds_the_shared_model_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = micro_plan(D1Arm.SG)
+    start = run_start(plan)
+    real_materialize = runtime_module.materialize_d1_model_runtime
+    observed: list[object] = []
+
+    def record_materialization(candidate: object):
+        observed.append(candidate)
+        return real_materialize(candidate)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runtime_module, "materialize_d1_model_runtime", record_materialization)
+    components = build_d1_fresh_components(
+        plan=plan,
+        start=start,
+        origin=_origin(),
+        resource_ledger=create_d1_resource_ledger(plan=plan, start=start, origin=_origin()),
+    )
+
+    assert observed == [plan]
+    assert components.system.draft == plan.profile.draft
 
 
 def test_online_state_is_blind_to_changed_future_target_after_plan_composition() -> None:

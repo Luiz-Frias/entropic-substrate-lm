@@ -8,13 +8,17 @@ from decimal import Decimal
 
 import pytest
 
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    BillingUnit,
+    EvidenceGap,
+    Money,
+)
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
     ProviderBilling,
 )
-from entropic_substrate.evidence.resource_provenance import BillingUnit, EvidenceGap, Money
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
 
 pytestmark = pytest.mark.unit
 LOGICAL = "d1-both-seed-7"
@@ -63,7 +67,7 @@ def test_termination_is_utc_ordered_and_has_a_strict_manifest() -> None:
         "execution_segment_index": 0,
         "logical_run_id": LOGICAL,
         "pod_terminated_at": "2026-08-23T13:01:00+00:00",
-        "schema_version": "resource-billing/v2",
+        "schema_version": "resource-billing/v3",
         "trainer_ended_at": "2026-08-23T13:00:00+00:00",
     }
     with pytest.raises(ValueError, match="ordering"):
@@ -80,22 +84,14 @@ def test_provider_bill_is_all_present_exact_and_provider_classed() -> None:
         replace(_bill(), billed_duration_seconds=Decimal("3660.0"))
     with pytest.raises(ValueError, match="finite"):
         replace(_bill(), billed_duration_seconds=Decimal("NaN"))
-    with pytest.raises(TypeError, match="billing_unit"):
+    with pytest.raises(TypeError, match="BillingUnit"):
         replace(_bill(), billing_unit="minute")  # type: ignore[arg-type]
 
 
-def test_provider_bill_preserves_an_exact_unit_gap_without_inference() -> None:
+def test_complete_provider_bill_refuses_a_unit_gap_without_inference() -> None:
     gap = EvidenceGap("provider_billing_unit", "provider record omits its billing unit")
-    bill = replace(_bill(), billing_unit=gap)
-
-    assert bill.billing_unit == gap
-    assert bill.manifest["billing_unit"] == {
-        "field": "provider_billing_unit",
-        "kind": "gap",
-        "reason": "provider record omits its billing unit",
-    }
-    with pytest.raises(ValueError, match="provider_billing_unit"):
-        replace(_bill(), billing_unit=EvidenceGap("billing_unit", "ambiguous source"))
+    with pytest.raises(TypeError, match="BillingUnit"):
+        replace(_bill(), billing_unit=gap)
 
 
 def test_terminal_gap_requires_all_exact_names_without_invalidating_quality() -> None:

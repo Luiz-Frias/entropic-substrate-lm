@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 import torch
 
-from entropic_substrate.data.batching import PredictiveBatch, SequenceSampler, TokenSplit
-from entropic_substrate.observation import ObservationAlignment
+from entropic_substrate.core.corpus.batching import PredictiveBatch, SequenceSampler, TokenSplit
+from entropic_substrate.core.observation.contracts import ObservationAlignment
 
 pytestmark = pytest.mark.unit
 

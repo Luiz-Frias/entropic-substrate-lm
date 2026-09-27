@@ -7,9 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from d1_verdict_v2_fixtures import decision_contract
-from entropic_substrate.evidence.d1_contract import D1DecisionContract
-from entropic_substrate.evidence.d1_types import D1FamilyIdentity
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     BillingRoundingPolicy,
     BillingUnit,
@@ -23,16 +21,19 @@ from entropic_substrate.evidence.resource_provenance import (
     execution_segment_id,
     unavailable_resource_activation_registration,
 )
-from entropic_substrate.experiments.d1_config import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_types import D1FamilyIdentity
+from entropic_substrate.ladder.register.d1_config import (
     D1LaunchProfile,
     load_d1_profile_catalog,
 )
-from entropic_substrate.experiments.d1_family import D1ExperimentFamily
-from entropic_substrate.experiments.d1_plan import (
+from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_plan import (
     ConfirmatoryD1RunPlan,
     parse_d1_confirmatory_plan,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass
+from entropic_substrate.ladder.register.d1_provenance import D1_TELEMETRY_SCHEMA_VERSION
 
 SEEDS = (101, 103, 107, 109)
 PREREG_PATH = "docs/d1-preregistration.md"
@@ -99,7 +100,7 @@ def plan(profile: D1LaunchProfile, seed: int, **overrides: object) -> Confirmato
             "dvc_capture_required": True,
             "required_classes": ["derived_from_measured", "measured"],
             "schema_version": "d1-evidence-v1",
-            "telemetry_schema_version": 1,
+            "telemetry_schema_version": D1_TELEMETRY_SCHEMA_VERSION,
         },
         "preregistration": {
             "path": PREREG_PATH,

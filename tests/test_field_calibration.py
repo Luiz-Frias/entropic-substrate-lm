@@ -52,11 +52,14 @@ import numpy as np
 import pytest
 import torch
 
-from entropic_substrate.checkpoint import CHECKPOINT_FORMAT_VERSION
-from entropic_substrate.config import Config, ModelConfig
-from entropic_substrate.models.field_encoder import FieldCalibrationAccumulator, FieldEncoder
-from entropic_substrate.sinks import MlflowSink
-from entropic_substrate.train import Trainer
+from entropic_substrate.core.substrate.field_encoder import (
+    FieldCalibrationAccumulator,
+    FieldEncoder,
+)
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.kernel.runtime.checkpoint import CHECKPOINT_FORMAT_VERSION
+from entropic_substrate.kernel.runtime.config import Config, ModelConfig
+from entropic_substrate.ladder.capture.reader.sinks import MlflowSink
 from helpers import assert_bitwise_equal, tiny_config, tiny_model_config
 from test_sinks import FakeMlflowClient
 

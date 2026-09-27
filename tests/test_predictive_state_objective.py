@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from entropic_substrate.predictive_state import PredictiveObjectiveTerms
+from entropic_substrate.core.latent.objective import PredictiveObjectiveTerms
 
 pytestmark = pytest.mark.unit
 

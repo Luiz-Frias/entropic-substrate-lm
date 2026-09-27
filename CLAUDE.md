@@ -4,56 +4,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## North star
 
-Prove or falsify one forward thesis: **the hidden state stays latent; future laws determine
-which latent displacements matter, and geometry is consumed as an operator on latent
-dynamics—not substituted for latent state.** Bytes remain the first observation/readout
-codec because enwik8 is the measured task, but byte IDs, table rows, and 256-coordinate
-predictive distributions are boundary objects, never the ontology or width of the semantic
-core. A causal state `h_t` is supervised by a codec-independent law over future latent
-targets; that law induces a local Fisher pullback (conservatively, a predictive semimetric)
-which downstream dynamics may consume. “Predictive manifold” is a hypothesis to earn from
-rank, regularity, stability, and codec-equivariance measurements, not an implementation
-assumption.
+Build and test a **codec-separated hierarchical latent predictor** that generates text by
+predicting the next continuous chunk representation in a sequence. A boundary encoder
+constructs latent vectors or sets of vectors from observed text; the main Transformer or
+state-space spine advances on that chunk sequence; a local decoder realizes predicted
+latents as text. Start with declared sentence boundaries. Paragraph, document-context,
+learned-boundary, and recursive levels must earn their value through controlled experiments.
 
-The filed E-series remains the binding historical evidence: E1 Fisher initialization,
-E1.5 static/contextual state-construction controls, E2 hypersphere dynamics, E3 relational
-κ-kernels, and the deferred E4 chunking design. The forward program is the D1→D5 controlled
-ablation ladder in `docs/architecture.md` and `docs/pivoted-implementation.plan.md`, not a
-framework: stabilized latent predictive state → decoder-induced geometry → future-law
-horizons → predictive coarse-graining → codec equivariance. Readouts keep nats/byte and add
-registered collapse, grounding, geometry, scale, and resource diagnostics without mixing
-evidence classes.
+The deployment destination is roughly **500M total parameters, with an upper design envelope
+of 1B**, counting every deployed encoder, spine, and decoder parameter once. Training-only
+teachers, external pretraining data, and resource costs are accounted for separately. This
+is a target, not a measured capability, resource quote, or spending authorization.
+
+Latents remain continuous rather than being forced through an alphabet-sized probability
+state. Future laws may induce Fisher geometry for their dynamics, but sensitivity to output
+change is not itself evidence of useful prediction. Compare signed predictive improvement,
+off-target disturbance, information preservation, and measured resources separately.
+Codec separation is an architectural contract; codec equivariance and a meaningful
+predictive manifold remain hypotheses to test, not assumptions.
+
+The approved construction tests sentence-vector normalization and spine normalization as
+independent 2×2 axes. A magnitude-preserving carrier must not contain a hidden final UnitNorm
+or RMS overwrite. No probability-floor/square-root substitution is permitted in the main
+latent path. The law is directional plus log-magnitude, with unused magnitude integrated out
+for the spherical interface; its Fisher pullback shapes updates rather than becoming state.
+Normalization, density, and Fisher math establish their own FP32 computation islands.
+
+The forward contract is `docs/hierarchical-latent-predictor.plan.md`, linked from
+`docs/architecture.md`. Existing E-series evidence and D-series construction/registration
+identities keep their original scope. The old D-ladder is retained as mechanistic groundwork,
+not relabelled as an implemented or scientifically validated chunk-level generator.
 
 ## Horizon
 
-Complete D1→D5 through the entire rung flywheel. Every rung is done only after tested
-implementation, excluded pilot, committed preregistration, paired confirmatory execution,
-authoritative DVC capture, fresh-session analysis, arm-blind review where technically
-possible, filed Markdown/JSON verdicts, and an explicit successor gate.
+The next sufficient slice is one causal sentence-level encoder → predicted latent → text
+decoder path that generates multiple continuations without access to future target latents,
+survives checkpoint/resume, and traverses capture, fresh analysis, independent review, filing,
+and an explicit gate. Design bypasses and interventions before training so latent-signal use
+is testable. A passing forward call or teacher-forced reconstruction alone is not completion.
 
-- **D1 — stabilized latent predictive state.** Build the complete vertical tracer bullet.
-  Keep the online state latent; add a future-target encoder and simple probabilistic future
-  law; test the full 2×2 of stop-gradient target encoder and moment anti-collapse
-  regularization. D2 requires at least one noncollapsed, causally clean, predictively grounded
-  arm under the filed D1 rule.
-- **D2 — decoder-induced geometry.** Within each D1-eligible stabilization block, separate
-  predictive supervision (`S−L`) from consuming its Fisher pullback (`G−S`) under matched
-  Euclidean and geometry-aware consumers. Predictive state may advance without Fisher if S
-  passes and G fails; both failing retires D3/D4 scale-up.
-- **D3 — future-law family and horizon sweep.** Compare fixed source-byte horizons
-  `{1,4,16,64}` and one preregistered multihorizon composite in matched-backbone and
-  matched-total lanes. Longer/learned scale is earned only by complementary registered value.
-- **D4 — multiscale coarse-graining.** Run an identity/fixed-window control first. Launch a
-  pure-Torch learned predictive-boundary arm only behind the filed trigger; keep H-Net/Mamba
-  tooling quarantined as conditional scale-up, and do not target an English token-length ratio.
-- **D5 — codec quarantine and interface generalization.** Test identity bytes against
-  deterministic bijective byte permutations before any non-isomorphic codec. Permit
-  “codec-equivariant” only if performance, function, relational geometry, and scale-policy
-  clauses all pass.
+The programme is complete only when a model within the declared deployment envelope has
+reproducible generation and held-out evaluation, and each retained mechanism has its own
+controlled evidence. The approved H0–H5 itinerary tests the complete tracer, preservation/codec
+fidelity, predictive value, geometry, interface/scale transfer, and approximately 500M deployment.
+Stages may narrow or retire mechanisms; the final model need not contain every proposed one.
 
-The existing `Auditable compute-to-quality telemetry` work (`FOR-938`–`FOR-947`) is a
-cross-project dependency, not work to duplicate. A post-D5 topology capstone is report-only
-and requires its own preregistration; TDA is not a D1–D5 loss or a rescue gate.
+Each scientific stage requires excluded pilots, a committed preregistration, a pilot-powered
+paired seed matrix, authoritative capture, fresh-session analysis, arm-blind review where
+possible, and filed decisions. Retain the agreed 95% familywise decision standard, secondary
+3-sigma report on the same sealed data, and 90% planned-power target. Exact estimands, margins,
+corpus, sampling laws, and new construction identities must be sealed before confirmation.
+The target parameter count does not authorize a GPU run or fix a training-data budget.
+
+Reuse existing numerical and evidence machinery only after verifying the new composition.
+Do not infer new-stage eligibility from old E/D results or local test fixtures. Preserve
+registered collapse as valid negative evidence and unexpected invariants as execution defects.
+The `Auditable compute-to-quality telemetry` dependency is reused, not duplicated. Quantum
+hardware, topology capstones, and unregistered modality expansion are not implied by this goal.
 
 ## Commands
 
@@ -95,7 +102,7 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
 
 2. **Probe sequentially. Never draw a conclusion from concurrent containers.** The
    podman VM is 4 vCPU / 4 GB. Several MLflow containers booting at once each import
-   the full FastAPI/SQLAlchemy stack and all appear to hang — _including a control_.
+   the full FastAPI/SQLAlchemy stack and all appear to hang — *including a control*.
    This has produced two wrong conclusions already, one of which became a load-bearing
    comment justifying ~110 lines of machinery. One container at a time, always.
 
@@ -104,12 +111,12 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
    the cause; the symptom taxonomy will keep growing otherwise.
 
 4. **Comments record measurements, with the measurement.** This is why a comment here
-   can be _wrong_ rather than merely stale — and a wrong measured claim is a defect to
+   can be *wrong* rather than merely stale — and a wrong measured claim is a defect to
    retract explicitly, in the commit that fixes it, not to quietly overwrite.
 
 5. **TDD is non-negotiable, and guard-teeth prove both arms.** Failing test first. Then
    break the guarded thing and show the test goes RED — a test that cannot fail is not
-   evidence. For a guard, prove it is _load-bearing_: the happy path passing does not
+   evidence. For a guard, prove it is *load-bearing*: the happy path passing does not
    distinguish "the guard worked" from "the hazard never reached it".
 
 6. **Secrets never enter git.** gitleaks runs at pre-commit and pre-push. `gt auth`
@@ -125,29 +132,33 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
 `just ship-it` is tracked, so everyone has it. `just stack` / `just commit-msg` are
 personal (`justfile.local`, gitignored) because they need an API key.
 
-## Architecture
+## Historical E-series architecture
+
+The components below describe retained E-series implementations. The current forward
+architecture is the codec-separated predictor above. Its local generative path is implemented;
+complete flywheel integration and remote validation remain open.
 
 Three swappable components under a standard decoder-only transformer, selected per
 experiment by `configs/*.yaml` (init × block × norm) — `docs/architecture.md` is the
 authoritative version:
 
-1. **Substrate init** (`init/fisher.py`) — √p of Laplace-smoothed next-byte transition
+1. **Substrate init** (`core/substrate/fisher.py`) — √p of Laplace-smoothed next-byte transition
    rows → points on S²⁵⁵ ∩ ℝ₊, lifted 256→`d_model` by a fixed semi-orthogonal QR map.
    Control arm: uniform-random unit vectors. This is the only thing E1 varies.
-2. **Backbone** (`models/blocks.py`) — nGPT-style: all embedding-dim vectors unit-norm,
+2. **Backbone** (`core/substrate/blocks.py`) — nGPT-style: all embedding-dim vectors unit-norm,
    affine-free `Norm()` as the retraction step, residual `h ← Norm(h + α(h_block − h))`
    with learnable eigen-learning-rates. Optimizer stays plain AdamW; geometry lives
    entirely in the forward pass. This is the E2 swap.
-3. **κ-attention** (`models/blocks.py`) — the novel artifact (redesigned 2026-08-11, design
+3. **κ-attention** (`core/substrate/blocks.py`) — the novel artifact (redesigned 2026-08-11, design
    record in `docs/e-3-instruction.md`): per-head attention logits `−d_κ(q,k)²` with one
    learnable clamped curvature per head (init spread −1/0/+1); E2 is the exact κ=0 member
    (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
-   `layers/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
+   `core/geometry/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
    pinned by regression test — curvature is relational and cannot act on a single point at
    a chart origin under a unit-norm contract). The anchored arms `e3-anchor` (per-head κ +
    global asymmetric anchors) and `e3-vantage` (global κ + per-head anchors; attribution
    ablation) are code-ready but execution-gated on the E3 readout: per-head κ divergence.
-   Symmetric anchors are exactly null (isometry) — pinned by test. `geometry/kappa.py` implements the
+   Symmetric anchors are exactly null (isometry) — pinned by test. `core/geometry/kappa.py` implements the
    κ-stereographic primitives directly; the geoopt submodule is a **test-time oracle
    only**, never a runtime dependency.
 
@@ -158,14 +169,15 @@ any map; the load-balance loss must stay finite and gradients must reach κ (uni
 `references/holobyte/holobyte.py` demonstrates the failure mode this prevents.
 
 **Data flow:** enwik8 is DVC-tracked in `data/` (pointer `.dvc` files are git's half of the
-contract — `data|models|results/*` are gitignored _except_ `*.dvc`); FineWeb-Edu is
-streamed, never local. `train.py` writes `results/*.jsonl` (nats/byte, κ trajectories,
-gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via `dvc push`.
-Both are read back through validated readers, because both feed gates: `telemetry.py` is the
-only admissibility predicate for `results/*.jsonl` (shared by the CLI preflight and
-`scripts/run_ladder.sh` — inadmissible telemetry raises, it never returns an empty value),
-and `checkpoint.py` stamps/checks `format_version` on `models/*.pt`. See
-`docs/architecture.md` for why an unversioned `tau` is refused rather than guessed.
+contract — `data|models|results/*` are gitignored *except* `*.dvc`); FineWeb-Edu is
+streamed, never local. `historical/e_series/train.py` writes `results/*.jsonl` (nats/byte, κ
+trajectories, gate histograms) and `models/*.pt` checkpoints; both sync to the R2 remote via
+`dvc push`. Both are read back through validated readers, because both feed gates:
+`ladder/capture/reader/telemetry.py` is the only admissibility predicate for `results/*.jsonl`
+(shared by the CLI preflight and `scripts/run_ladder.sh` — inadmissible telemetry raises, it
+never returns an empty value), and `kernel/runtime/checkpoint.py` stamps/checks
+`format_version` on `models/*.pt`. See `docs/architecture.md` for why an unversioned `tau` is
+refused rather than guessed.
 
 **Tests** (`tests/`, pytest markers `unit` / `integration`) check the vendored κ-math
 against geoopt and pin the numerics invariants above.

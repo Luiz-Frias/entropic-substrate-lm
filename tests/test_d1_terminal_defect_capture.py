@@ -8,26 +8,26 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.telemetry as telemetry_api
-from entropic_substrate.d1_numerical_defect import (
+import entropic_substrate.ladder.capture.reader.telemetry as telemetry_api
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, RunClass
+from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
+    D1ArtifactRole,
+    identify_d1_artifact,
+)
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
     D1DefectCheckpointReference,
     D1NonfiniteClassification,
     D1TerminalNumericalDefectRecord,
 )
-from entropic_substrate.evidence.d1_capture_artifacts import (
-    D1ArtifactRole,
-    identify_d1_artifact,
-)
-from entropic_substrate.evidence.d1_journal import read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.d1_terminal_defect_capture import (
+from entropic_substrate.ladder.capture.records.d1_journal import read_journal
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.records.d1_terminal_defect_capture import (
     D1DefectCaptureError,
     D1TerminalDefectCaptureInput,
     derive_d1_pair_exclusions,
     read_d1_terminal_numerical_defect,
     validate_d1_pair_exclusion_claims,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, RunClass
 
 from .d1_capture_fixtures import DVC_POINTER, capture_family
 from .d1_telemetry_fixtures import write_events
@@ -118,6 +118,36 @@ def test_dedicated_reader_admits_only_typed_incomplete_defect_and_exact_artifact
     assert roster.expected_run_ids > {evidence.record.logical_run_id}
 
 
+def test_dedicated_reader_retains_defect_after_operator_run_end_finalization(
+    tmp_path: Path,
+) -> None:
+    _, root, capture = _defect_case(tmp_path)
+    path = root / capture.journal.normalized_path
+    events = list(read_journal(path))
+    events.append(
+        replace(
+            events[-1],
+            event_kind=JournalEventKind.RUN_END,
+            event_seq=events[-1].event_seq + 1,
+            payload={"outcome": "trainer_failed"},
+        )
+    )
+    write_events(path, events)
+    capture = replace(
+        capture,
+        journal=identify_d1_artifact(
+            root,
+            path,
+            role=D1ArtifactRole.JOURNAL,
+            dvc_pointer_path=DVC_POINTER,
+        ),
+    )
+
+    evidence = read_d1_terminal_numerical_defect(root, capture)
+
+    assert evidence.record.logical_run_id == capture.expected.logical_run_id
+
+
 @pytest.mark.parametrize("mutation", ["gap", "wrong-checkpoint", "wrong-source", "complete"])
 def test_defect_reader_rejects_unsubstantiated_or_wrong_lane_evidence(
     tmp_path: Path, mutation: str
@@ -197,3 +227,23 @@ def test_reader_calls_public_authority_without_fallback(
     with pytest.raises(D1DefectCaptureError, match="authoritative_reader") as caught:
         read_d1_terminal_numerical_defect(root, capture)
     assert isinstance(caught.value.__cause__, ValueError)
+
+
+def test_reader_consumes_one_authoritative_fold_without_second_journal_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, root, capture = _defect_case(tmp_path)
+    path = root / capture.journal.normalized_path
+    real = telemetry_api.read_d1_run_evidence
+
+    def read_once(*args: object, **kwargs: object):
+        run = real(*args, **kwargs)
+        path.unlink()
+        return run
+
+    monkeypatch.setattr(telemetry_api, "read_d1_run_evidence", read_once)
+
+    evidence = read_d1_terminal_numerical_defect(root, capture)
+
+    assert evidence.record.logical_run_id == capture.expected.logical_run_id
+    assert not path.exists()

@@ -8,14 +8,13 @@ from collections.abc import Callable
 import pytest
 import torch
 
-from entropic_substrate.predictive_state import (
-    CausalStateEncoder,
+from entropic_substrate.core.latent.state import CausalStateEncoder, TargetEncoder
+from entropic_substrate.core.latent.targets import (
     CosineEmaDecaySchedule,
     FixedEmaDecaySchedule,
     OnlineTargetUpdate,
     OptimizationStepCommitted,
     StopGradientEmaUpdate,
-    TargetEncoder,
 )
 from predictive_state_helpers import CompositeTargetBranch, model_config
 

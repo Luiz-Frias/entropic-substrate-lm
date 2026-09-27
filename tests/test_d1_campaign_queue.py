@@ -2,48 +2,53 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
+from pathlib import Path
 from typing import cast
 
 import pytest
 
 import d1_launch_admission_fixtures as fixtures
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
-from entropic_substrate.d1_campaign_queue import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    ExecutionSegmentTermination,
+    ProviderBilling,
+)
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1ConfirmatoryMatrix
+from entropic_substrate.ladder.register.d1_launch_attempts import (
+    D1LaunchAttemptIdentity,
+    D1LaunchAttemptLedger,
+    D1LaunchAttemptStatus,
+)
+from entropic_substrate.ladder.register.d1_registered_design import (
+    D1PreregistrationArtifact,
+    D1RegisteredDesign,
+    D1RegisteredDesignCandidate,
+    admit_d1_registered_design,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import (
     D1CampaignQueue,
     D1CampaignQueueHalt,
     D1CompletedCampaign,
 )
-from entropic_substrate.d1_operator_controller import D1OperatorRunResult
-from entropic_substrate.d1_operator_evidence import D1TrainerExportReceipt
-from entropic_substrate.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import D1OperatorRunResult
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import D1TrainerExportReceipt
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1A100FormFactor,
     D1A100ResourceRequest,
     D1ImmutableImage,
     D1OperatorLaunchIntent,
     D1PodPlacement,
 )
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.resource_billing import (
-    ExecutionSegmentTermination,
-    ProviderBilling,
-)
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1ConfirmatoryMatrix
-from entropic_substrate.experiments.d1_launch_attempts import (
-    D1LaunchAttemptIdentity,
-    D1LaunchAttemptLedger,
-    D1LaunchAttemptStatus,
-)
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass
-from entropic_substrate.experiments.d1_registered_design import (
-    D1PreregistrationArtifact,
-    D1RegisteredDesign,
-    D1RegisteredDesignCandidate,
-    admit_d1_registered_design,
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
+    D1BillingFinalization,
 )
 
 from .test_d1_confirmatory_matrix import FakeGit
+from .test_d1_finalized_cell_custody_values import _attest, _failed_case, _finalized_case
 
 pytestmark = pytest.mark.unit
 
@@ -153,6 +158,11 @@ def _results(
                 termination,
                 cast(ProviderBilling, object()),
                 cast(D1BillingFinalization, object()),
+                None,
+                ArtifactIdentity(
+                    f"operator/finalized-{index}.json",
+                    ContentHash("sha256", f"{index + 1:064x}"),
+                ),
                 halt_at != index,
             )
         )
@@ -201,6 +211,70 @@ def test_first_inadmissible_result_stops_before_any_later_arm() -> None:
     assert controller.calls == [intent.plan.logical_run_id for intent in intents[:2]]
 
 
+def _campaign_with_defect(tmp_path: Path):
+    design, intents, starts = _campaign()
+    results = list(_results(intents, starts))
+    defect_index = 1
+    defect_id = intents[defect_index].plan.logical_run_id
+    record = _attest(_failed_case(_finalized_case(tmp_path / "defect")))
+    for index in range(defect_index, len(results)):
+        events = tuple(
+            replace(
+                event,
+                status=D1LaunchAttemptStatus.FAILED,
+                reason="terminal numerical defect",
+            )
+            if event.identity.logical_run_id == defect_id
+            and event.status is D1LaunchAttemptStatus.COMPLETED
+            else event
+            for event in results[index].attempt_ledger.events
+        )
+        results[index] = replace(results[index], attempt_ledger=D1LaunchAttemptLedger(events))
+    results[defect_index] = replace(
+        results[defect_index],
+        finalized_cell=record,
+        finalized_cell_artifact=ArtifactIdentity(
+            "operator/terminal-defect.json",
+            ContentHash("sha256", record.record_digest),
+        ),
+        queue_admissible=False,
+    )
+    controller = _Controller(tuple(results), [])
+
+    completed = D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(intents)
+    return completed, intents, starts, defect_index, controller
+
+
+def test_registered_terminal_defect_continues_matrix_but_remains_nonadmissible(
+    tmp_path: Path,
+) -> None:
+    completed, intents, _, defect_index, controller = _campaign_with_defect(tmp_path)
+    defect_id = intents[defect_index].plan.logical_run_id
+
+    assert controller.calls == [intent.plan.logical_run_id for intent in intents]
+    assert completed.results[defect_index].queue_admissible is False
+    assert completed.matrix.terminal_defect_run_ids == (defect_id,)
+
+
+@pytest.mark.parametrize("mutation", ["missing_completion", "wrong_identity"])
+def test_malformed_cell_ledger_stops_before_launching_the_next_arm(mutation: str) -> None:
+    design, intents, starts = _campaign()
+    results = list(_results(intents, starts))
+    events = results[0].attempt_ledger.events
+    if mutation == "missing_completion":
+        ledger = D1LaunchAttemptLedger(events[:-1])
+    else:
+        drifted = replace(events[0].identity, seed=events[0].identity.seed + 1)
+        ledger = D1LaunchAttemptLedger(tuple(replace(item, identity=drifted) for item in events))
+    results[0] = replace(results[0], attempt_ledger=ledger)
+    controller = _Controller(tuple(results), [])
+
+    with pytest.raises(D1CampaignQueueHalt, match="attempt ledger"):
+        D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(intents)
+
+    assert controller.calls == [intents[0].plan.logical_run_id]
+
+
 def test_missing_reordered_or_duplicate_roster_is_refused_before_first_launch() -> None:
     design, intents, starts = _campaign()
     controller = _Controller(_results(intents, starts), [])
@@ -209,3 +283,38 @@ def test_missing_reordered_or_duplicate_roster_is_refused_before_first_launch() 
         with pytest.raises(ValueError, match="registered campaign roster"):
             D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(invalid)
         assert controller.calls == []
+
+
+def _drift_provenance(intent: D1OperatorLaunchIntent, field: str) -> D1OperatorLaunchIntent:
+    plan = intent.plan
+    execution = plan.run.execution
+    image = intent.image
+    if field == "pairing":
+        execution = replace(execution, pairing_id="different-pair")
+    elif field == "code":
+        execution = replace(
+            execution,
+            code=replace(execution.code, repository_digest="1" * 64),
+        )
+    elif field == "image":
+        digest = "sha256:" + "2" * 64
+        execution = replace(execution, container=replace(execution.container, image_digest=digest))
+        image = replace(image, digest=digest)
+    else:
+        data = replace(plan.run.data, dataset_digest="3" * 64)
+        plan = replace(plan, run=replace(plan.run, data=data))
+    if field != "data":
+        plan = replace(plan, run=replace(plan.run, execution=execution))
+    return replace(intent, plan=plan, image=image)
+
+
+@pytest.mark.parametrize("field", ["pairing", "code", "image", "data"])
+def test_provenance_drift_is_refused_before_first_provider_launch(field: str) -> None:
+    design, intents, starts = _campaign()
+    drifted = (_drift_provenance(intents[0], field), *intents[1:])
+    controller = _Controller(_results(intents, starts), [])
+
+    with pytest.raises(ValueError, match="provenance"):
+        D1CampaignQueue(design=design, controller=controller, git=FakeGit()).run(drifted)
+
+    assert controller.calls == []

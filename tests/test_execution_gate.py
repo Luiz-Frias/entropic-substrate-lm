@@ -33,9 +33,9 @@ from pathlib import Path
 
 import pytest
 
-import entropic_substrate.config as config_mod
-from entropic_substrate.cli import UNGATED_ENV, main
-from entropic_substrate.config import (
+import entropic_substrate.kernel.runtime.config as config_mod
+from entropic_substrate.composition.entrypoints.cli import UNGATED_ENV, main
+from entropic_substrate.kernel.runtime.config import (
     E15_PREREGISTRATIONS,
     Config,
     required_preregistrations,

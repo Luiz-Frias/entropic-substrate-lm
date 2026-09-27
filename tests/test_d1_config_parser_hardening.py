@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.experiments.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
 
 pytestmark = pytest.mark.unit
 

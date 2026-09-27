@@ -138,12 +138,20 @@ from entropic_substrate.data.batching import SequenceSampler
 from entropic_substrate.data.build import build_corpus
 from entropic_substrate.models.field_encoder import FieldEncoder
 
-cfg = load_config("configs/e1-5c-field.yaml", overlay={
-    "model": {"field_mode": "frozen", "field_ckpt_path": "models/field-pphi-v1.pt"}})
+cfg = load_config(
+    "configs/e1-5c-field.yaml",
+    overlay={"model": {"field_mode": "frozen", "field_ckpt_path": "models/field-pphi-v1.pt"}},
+)
 encoder = FieldEncoder(cfg.model)
 corpus = build_corpus(cfg.data, cfg.model.tokenizer)
-sampler = SequenceSampler(corpus.val, cfg.data.batch_size, cfg.data.seq_len,
-                          train=False, seed=cfg.train.seed + 1, device="cpu")
+sampler = SequenceSampler(
+    corpus.val,
+    cfg.data.batch_size,
+    cfg.data.seq_len,
+    train=False,
+    seed=cfg.train.seed + 1,
+    device="cpu",
+)
 audit = audit_field_head(encoder, [x for x, _y in sampler.iter_batches(8)])
 ```
 

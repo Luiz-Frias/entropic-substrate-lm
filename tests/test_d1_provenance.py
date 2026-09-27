@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from entropic_substrate.experiments.d1_provenance import DataIdentity, DataOrderAttestation
+from entropic_substrate.ladder.register.d1_provenance import DataIdentity, DataOrderAttestation
 
 pytestmark = pytest.mark.unit
 

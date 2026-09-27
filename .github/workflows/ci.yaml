@@ -2,9 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # refactor/**: the hexagonal-refactor sprint trunk (operator ruling 2026-09-19);
+    # without it no sprint push or PR ran CI and lint-imports had no channel to stop
+    # a merge (measured on PR #285: 0 workflow runs before this trigger landed).
+    branches: [main, 'refactor/**']
   pull_request:
-    branches: [main]
+    # mythwave/**: stacked lane PRs base on the previous lane branch, so the
+    # refactor/** filter never matched them (measured on PR #286: 0 runs);
+    # operator ruling 2026-09-20. The filter matches the PR's BASE branch.
+    branches: [main, 'refactor/**', 'mythwave/**']
+
+# Least-privilege default: every step below only checks out and reads the repo
+# (lint, typecheck, unit tests, import-lint) — no push, comment, or artifact write.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -60,3 +71,9 @@ jobs:
         env:
           ENTROPIC_SUBSTRATE_DEVICE: cpu
         run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings
+
+      # p0-contract-pin (operator ruling 2026-09-18): a channel that can stop
+      # a merge, not just a local `just check` a contributor can skip. Layers
+      # contract over the LANDED layers, __legacy outside it until p13.
+      - name: Import layers (lint-imports)
+        run: uv run --no-sync lint-imports

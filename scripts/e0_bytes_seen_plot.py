@@ -26,7 +26,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from entropic_substrate.telemetry import TelemetryGap, final_eval_record, read_eval_series
+from entropic_substrate.ladder.capture.reader.telemetry import (
+    TelemetryGap,
+    final_eval_record,
+    read_eval_series,
+)
 
 OKABE_BLUE = "#0072B2"
 OKABE_ORANGE = "#E69F00"

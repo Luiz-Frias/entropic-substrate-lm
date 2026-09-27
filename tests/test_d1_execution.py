@@ -6,7 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from entropic_substrate.experiments.d1_execution import (
+from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass, canonical_digest
+from entropic_substrate.ladder.register.d1_execution import (
     PAIRWISE_COSINE_SEMANTIC,
     BaselineSampling,
     CalibrationSplit,
@@ -21,7 +22,6 @@ from entropic_substrate.experiments.d1_execution import (
     TrainerWallOrigin,
     WeightDecayPolicy,
 )
-from entropic_substrate.experiments.d1_primitives import EvidenceClass, canonical_digest
 
 pytestmark = pytest.mark.unit
 

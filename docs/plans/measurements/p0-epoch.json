@@ -1,0 +1,87 @@
+{
+  "epoch_label": "bbe7976",
+  "epoch_justification": "git diff --stat bbe7976..<parent tip> -- src/ is empty (measured on parent tip 5464c6cd95529d86ed8ae7b27db57e5f5076041f); src/ has not moved since bbe7976, so the graph re-derived at the lane's parent tip restates the bbe7976 epoch rather than establishing a new one.",
+  "parent_tip": "5464c6cd95529d86ed8ae7b27db57e5f5076041f",
+  "tool": "tools/import_graph.py",
+  "command": "uv run --no-sync python tools/import_graph.py src/entropic_substrate <out_dir>",
+  "measurements": {
+    "pre_marker": {
+      "description": "src/entropic_substrate as committed at the parent tip, before this phase's five empty layer-package __init__.py markers exist.",
+      "modules": 332,
+      "edge_bearing_modules": 326,
+      "edges": 1783,
+      "source": "edges.json: len(modules), len(edges); edge_bearing_modules = |{m : m appears as src or dst of some edge}|"
+    },
+    "post_marker": {
+      "description": "src/entropic_substrate after this phase adds the five empty layer-package markers (kernel, core, ladder, historical, composition). import_graph.py's modname() collapses each __init__.py to its package name, so each marker is one new graph node with zero edges.",
+      "modules": 337,
+      "edge_bearing_modules": 326,
+      "edges": 1783,
+      "delta_modules": [
+        "entropic_substrate.kernel",
+        "entropic_substrate.core",
+        "entropic_substrate.ladder",
+        "entropic_substrate.historical",
+        "entropic_substrate.composition"
+      ],
+      "source": "edges.json: len(modules), len(edges); edge_bearing_modules unchanged because the five new nodes carry no edges"
+    }
+  },
+  "inversions": {
+    "layer_contract": "kernel < core < ladder < historical < composition",
+    "count": 0,
+    "note": "Vacuous at p0: the five layer packages are empty (no code assigned yet), so import-linter's layers contract has no edges to examine. Non-vacuity is proven by the boto3-import mutation recorded in the PR body, not by this count."
+  },
+  "package_cycles": [
+    ["ROOT", "analysis"],
+    ["ROOT", "data"],
+    ["ROOT", "evidence"],
+    ["ROOT", "experiments"],
+    ["ROOT", "models"],
+    ["ROOT", "predictive_state"],
+    ["ROOT", "sentence_prediction"],
+    ["analysis", "evidence"],
+    ["data", "sentence_prediction"],
+    ["evidence", "experiments"],
+    ["experiments", "predictive_state"]
+  ],
+  "package_cycles_note": "Raw physical-subpackage cycles from tools/import_graph.py's package_matrix (top-level dirs under src/entropic_substrate as they exist today, e.g. analysis/evidence/experiments/sentence_prediction). Not layer inversions -- these subpackages have not been assigned to kernel/core/ladder/historical/composition yet; that reassignment is later phases' work per tools/mapping.json.",
+  "tool_versions": {
+    "python_venv": "3.12.13",
+    "python_ambient_python3": "3.14.7",
+    "torch": "2.13.0",
+    "uv": "0.11.6"
+  },
+  "tool_versions_note": "python_venv is what .venv/bin/python reports and is the interpreter every gate and test in this repo runs under (just check, just test use `uv run`, which resolves to .venv). python_ambient_python3 is the bare `python3` on PATH and is recorded only to justify why no gate recipe or test may invoke it bare (see tests/test_identity_epoch.py's regime-failure test).",
+  "d1_closure_p1_overlap": {
+    "description": "Architect ruling: the D1 reader-source closure (installed_d1_reader_source_files(), 73 entries at this epoch) and p1's five depth-derived path-rewrite sites overlap on exactly two files. p1 provably changes two closure-member sha256 values even though p1 is not a ruled identity-bump phase (only p4 and p2 are); this is pre-declared here so p1's edit lands as an explicit two-row fixture bump, never an unexplained identity break.",
+    "closure_members": [
+      "entropic_substrate/config.py",
+      "entropic_substrate/analysis/d1_reader_source_closure.py"
+    ],
+    "not_closure_members": [
+      "entropic_substrate/sinks.py",
+      "entropic_substrate/sentence_prediction/worker_execution.py",
+      "entropic_substrate/d_ladder_worker_runtime.py"
+    ],
+    "verified_by": "PYTHONPATH=src .venv/bin/python -c \"from entropic_substrate.analysis.d1_reader_source_closure import installed_d1_reader_source_files; paths={i.path for i in installed_d1_reader_source_files()}; check=['entropic_substrate/config.py','entropic_substrate/analysis/d1_reader_source_closure.py','entropic_substrate/sinks.py','entropic_substrate/sentence_prediction/worker_execution.py','entropic_substrate/d_ladder_worker_runtime.py']; print([(c, c in paths) for c in check])\" -- both closure_members present (True), all three not_closure_members absent (False), matching the architect ruling exactly."
+  },
+  "observability_baseline": {
+    "description": "E-series entry points and modules that import from entropic_substrate.logging or entropic_substrate.sinks, measured at this epoch. Includes all direct importers; sinks itself imports logging and is included.",
+    "entry_points_and_importers": [
+      "entropic_substrate.analysis.embedding_geometry",
+      "entropic_substrate.analysis.mlflow_attach",
+      "entropic_substrate.capture_results",
+      "entropic_substrate.checkpoint",
+      "entropic_substrate.cli",
+      "entropic_substrate.field_pretrain",
+      "entropic_substrate.mlflow_aggregate",
+      "entropic_substrate.sinks",
+      "entropic_substrate.telemetry",
+      "entropic_substrate.train"
+    ],
+    "measurement_count": 10,
+    "note": "The brief mentions 9 modules (7 named + 2 unnamed analysis modules); measurement finds 10 including sinks. These are the observability surface that p1+ will rewrite to logger routing.",
+    "verified_by": "uv run --no-sync python tools/import_graph.py src/entropic_substrate /tmp/graph; then filtered edges.json for edges where dst in {entropic_substrate.logging, entropic_substrate.sinks} to extract unique src modules."
+  }
+}

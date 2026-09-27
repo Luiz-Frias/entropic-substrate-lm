@@ -6,26 +6,27 @@ import json
 
 import pytest
 
-from entropic_substrate.analysis.d1_capture import D1AdmittedAnalysisCapture
-from entropic_substrate.analysis.d1_clause_policy import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+from entropic_substrate.ladder.analyze.d1_clause_policy import (
     evaluate_d1_clauses,
     parse_d1_clause_policy,
 )
-from entropic_substrate.analysis.d1_diagnostics import (
+from entropic_substrate.ladder.analyze.d1_diagnostics import (
     D1QualityTargetResult,
     D1ReportRunDiagnostic,
     D1TrajectoryPoint,
 )
-from entropic_substrate.analysis.d1_factorial import compute_d1_factorial
-from entropic_substrate.analysis.d1_machine_analysis import (
+from entropic_substrate.ladder.analyze.d1_factorial import compute_d1_factorial
+from entropic_substrate.ladder.analyze.d1_machine_analysis import (
     D1AliasError,
     D1ArmAliasMap,
     build_d1_aliased_machine_analysis,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 from .test_d1_clause_policy import _contract_with_policy, _policy
-from .test_d1_factorial_analysis import _cells, _design
+from .test_d1_factorial_analysis import _authority, _cells, _design
+from .test_d1_report_diagnostics import _policy as diagnostic_policy
 
 pytestmark = pytest.mark.unit
 
@@ -59,13 +60,17 @@ def _diagnostics() -> tuple[D1ReportRunDiagnostic, ...]:
 
 
 def _packet(*, future_threshold: float = 15.0):
-    decision = _contract_with_policy(_policy(future_threshold=future_threshold))
+    decision = _contract_with_policy(
+        _policy(future_threshold=future_threshold),
+        diagnostic_policy=diagnostic_policy(),
+    )
     design = _design(decision)
     cells = _cells()
     factorial = compute_d1_factorial(
         design=design,
         decision_contract=decision,
         cells=cells,
+        exclusion_authority=_authority(design),
     )
     clauses = evaluate_d1_clauses(
         policy=parse_d1_clause_policy(decision),

@@ -30,14 +30,14 @@ from pathlib import Path
 import pytest
 import torch
 
-from entropic_substrate.config import Config
-from entropic_substrate.geometry.gram import (
+from entropic_substrate.core.geometry.gram import (
     _clamp_cosine,
     gram_frobenius_sq,
     normalized_gram,
 )
-from entropic_substrate.sinks import MlflowSink
-from entropic_substrate.train import Trainer
+from entropic_substrate.historical.e_series.train import Trainer
+from entropic_substrate.kernel.runtime.config import Config
+from entropic_substrate.ladder.capture.reader.sinks import MlflowSink
 from helpers import tiny_config
 from test_sinks import FakeMlflowClient
 

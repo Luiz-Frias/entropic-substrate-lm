@@ -9,11 +9,12 @@ from typing import cast
 
 import pytest
 
-import entropic_substrate.d1_fresh_trainer as trainer_module
+import entropic_substrate.ladder.run.trainer.d1_segment_engine as segment_engine
 from d1_billing_finalizer_fixtures import (
     CompletedD1Case,
     billing_gap,
     completed_case,
+    partial_provider_bill,
     provider_bill,
 )
 from d1_resume_fixtures import RecordingObserver, origin, resume_start
@@ -25,36 +26,38 @@ from d1_trainer_fixtures import (
     micro_plan,
     run_start,
 )
-from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
-from entropic_substrate.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
-from entropic_substrate.d1_resume_runtime import D1ResumeRunLocations
-from entropic_substrate.d1_resume_trainer import run_d1_resume
-from entropic_substrate.d1_trainer_handoff import (
-    D1FreshRunFailure,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    Money,
 )
-from entropic_substrate.d1_trainer_runtime import D1TrainerWallOrigin
-from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
-from entropic_substrate.evidence.d1_journal_values import JournalEventKind
-from entropic_substrate.evidence.resource_billing import (
-    BillingGap,
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    AuthoritativeRunJournal,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import JournalEventKind
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     ExecutionSegmentTermination,
-    ProviderBilling,
+    TerminalProviderBillingEvidence,
 )
-from entropic_substrate.evidence.resource_billing_reconciliation import (
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
     LogicalBillingMissingCost,
     LogicalBillingReconciliation,
 )
-from entropic_substrate.evidence.resource_provenance import (
-    Money,
+from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
+from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
+from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import run_d1_resume
+from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
+    D1FreshRunFailure,
 )
-from entropic_substrate.experiments.d1_primitives import D1Arm
 
 pytestmark = pytest.mark.unit
 
 
 def _finalize(
     case: CompletedD1Case,
-    provider: ProviderBilling | BillingGap,
+    provider: TerminalProviderBillingEvidence,
 ):
     return finalize_d1_billing(
         plan=case.plan,
@@ -124,8 +127,28 @@ def test_provider_gap_stays_missing_without_blocking_quality_export(tmp_path: Pa
     assert billing["provider_billed_duration_seconds"] is None
     assert payload["provider_billing_complete"] is False
     segment = cast(dict[str, object], cast(list[object], billing["segments"])[0])
-    gap = cast(dict[str, object], segment["billing_gap"])
+    gap = cast(dict[str, object], segment["provider_evidence"])
     assert cast(dict[str, object], gap["provider_billing_unit"])["kind"] == "gap"
+
+
+def test_partial_provider_rows_survive_without_cost_reconciliation(tmp_path: Path) -> None:
+    case = completed_case(tmp_path)
+
+    finalized = _finalize(case, partial_provider_bill(case.start))
+
+    assert type(finalized.billing) is LogicalBillingMissingCost
+    assert finalized.quality_export_ready is True
+    partial = cast(dict[str, object], finalized.billing.segments[0].manifest["provider_evidence"])
+    assert partial["kind"] == "partial_provider_billing"
+    assert partial["billed_duration_seconds"] == "24.726"
+    assert partial["billed_amount"] == {
+        "amount": "0.25",
+        "currency": {
+            "field": "provider_billed_currency",
+            "kind": "gap",
+            "reason": "RunPod billing rows omit this field",
+        },
+    }
 
 
 def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
@@ -135,7 +158,7 @@ def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
     plan = micro_plan(D1Arm.BOTH)
     start = run_start(plan)
     journal_path = tmp_path / "failed.jsonl"
-    real_step = trainer_module.apply_d1_training_step
+    real_step = segment_engine.apply_d1_training_step
     calls = 0
 
     def fail_second_step(**kwargs: object) -> object:
@@ -145,7 +168,7 @@ def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
             raise RuntimeError("operator-finalized defect")
         return real_step(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(trainer_module, "apply_d1_training_step", fail_second_step)
+    monkeypatch.setattr(segment_engine, "apply_d1_training_step", fail_second_step)
     with pytest.raises(D1FreshRunFailure) as caught:
         run_d1_fresh(
             plan=plan,
