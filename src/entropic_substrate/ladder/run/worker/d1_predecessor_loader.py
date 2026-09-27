@@ -9,11 +9,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    FiledLadderGate,
-    actor_from_mapping,
-    gate_from_d1_filing,
-)
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     normalize_d1_artifact_root,
@@ -39,6 +34,11 @@ from entropic_substrate.ladder.file.d1_filing import D1FilingManifest, validate_
 from entropic_substrate.ladder.file.d1_filing_application import D1LocalFilingArtifactStore
 from entropic_substrate.ladder.file.d1_filing_graph import verify_d1_filing
 from entropic_substrate.ladder.file.d1_filing_receipts import D1FilingGitPort, D1FilingRevisions
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    FiledLadderGate,
+    actor_from_mapping,
+    gate_from_d1_filing,
+)
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, load_d1_profile_catalog
 from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,

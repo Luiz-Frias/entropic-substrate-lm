@@ -1599,3 +1599,47 @@ def test_build_sink_registered_model_name_equals_cfg_name(tmp_path: Path) -> Non
     mlflow_sink = sink.best_effort[0]
     mlflow_sink.register_citation()
     assert "e1-fisher" in client._registered_models
+
+
+# ------------------------------------------------------------- build_mlflow_client
+def test_build_mlflow_client_passes_tracking_uri_through_identically() -> None:
+    """RED-first (P12-D6 / P12-MLFLOW-FACTORY): ``build_mlflow_client``
+    must plumb ``tracking_uri`` through to ``mlflow.tracking.MlflowClient``
+    identically to how :meth:`MlflowSink.__init__`'s own inline construction
+    already does it -- same one keyword argument, nothing else. Monkeypatches
+    the REAL ``mlflow.tracking.MlflowClient`` (no network is reached; the
+    fake constructor never calls out) rather than passing a fake client in,
+    because the factory's whole job is the construction call itself."""
+    import mlflow.tracking
+
+    from entropic_substrate.ladder.capture.adapters.mlflow import build_mlflow_client
+
+    calls: list[dict[str, object]] = []
+
+    class _FakeMlflowClient:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    import pytest as _pytest  # local import: keep this test self-contained
+
+    mp = _pytest.MonkeyPatch()
+    try:
+        mp.setattr(mlflow.tracking, "MlflowClient", _FakeMlflowClient)
+        client = build_mlflow_client("http://example.invalid:5000")
+    finally:
+        mp.undo()
+
+    assert isinstance(client, _FakeMlflowClient)
+    assert calls == [{"tracking_uri": "http://example.invalid:5000"}]
+
+
+def test_build_mlflow_client_exposes_the_identical_mlflow_exception_class() -> None:
+    """The adapter's lazy ``MlflowException`` re-export (PEP 562
+    ``__getattr__``) must yield the SAME class object mlflow itself
+    exposes, not a copy -- ``except MlflowException`` at a call site must
+    still catch what mlflow actually raises."""
+    import mlflow.exceptions
+
+    from entropic_substrate.ladder.capture.adapters.mlflow import MlflowException
+
+    assert MlflowException is mlflow.exceptions.MlflowException

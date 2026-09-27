@@ -516,3 +516,45 @@ class MlflowSink:
         except Exception as exc:
             self._failed_writes += 1
             logger.warning(f"mlflow: registry citation failed: {exc}")
+
+
+def build_mlflow_client(tracking_uri: str) -> Any:
+    """Additive client factory (P12-D6 / P12-MLFLOW-FACTORY, operator-ruled
+    2026-09-25): a SECOND call site beside :meth:`MlflowSink.__init__`'s own
+    inline construction, which stays byte-untouched (pure addition, per the
+    ruling's "additive only" framing). Does exactly a function-local import
+    plus construction -- no :func:`_apply_fast_fail_http_defaults`, no
+    ``os.environ`` mutation, zero behaviour change from the callers'
+    (``composition/entrypoints/cli.py``'s three sites) own prior inline
+    ``mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)`` construction.
+    Returns ``Any`` rather than a precise ``mlflow.tracking.MlflowClient``
+    annotation -- the same choice :meth:`MlflowSink.__init__`'s own
+    ``client: Any | None = None`` parameter already makes in this file, for
+    the identical reason: a real type annotation would need ``mlflow``
+    resolvable at module scope, which P12-D6-LAZY-EXPOSURE forbids.
+    """
+    import mlflow.tracking
+
+    return mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+
+
+def __getattr__(name: str) -> type[BaseException]:
+    """PEP 562 lazy module attribute (architect constraint
+    P12-D6-LAZY-EXPOSURE): resolves ``MlflowException`` only on access,
+    never binding ``mlflow`` at module scope. The brief's own code-sketch
+    (a module-scope ``from mlflow.exceptions import MlflowException``
+    re-export) is RETRACTED BY MEASUREMENT -- it turns
+    ``tests/test_sinks.py::test_mlflow_adapter_module_never_binds_mlflow_at_module_scope``
+    RED (a module-level ``mlflow`` bind). This lazy form is GREEN on all
+    three of that guard's assertions and yields the IDENTICAL class object
+    (``is mlflow.exceptions.MlflowException`` — Python caches the imported
+    module in ``sys.modules``, so repeated calls return the same class).
+    ``__all__`` is never extended to include it. Return type is
+    ``type[BaseException]`` (never ``object``) so a caller's
+    ``except MlflowException as exc:`` type-checks -- the only successful
+    return path is this one name, which is always an exception class."""
+    if name == "MlflowException":
+        from mlflow.exceptions import MlflowException
+
+        return MlflowException
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

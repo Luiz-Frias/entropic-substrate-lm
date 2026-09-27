@@ -41,7 +41,12 @@ pytestmark = pytest.mark.unit
 # guards, producing a vacuous (ERROR, not RED-on-the-guard) arm.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _D_LADDER_RUNTIME_SOURCE = (
-    _REPO_ROOT / "src" / "entropic_substrate" / "__legacy" / "d_ladder_worker_runtime.py"
+    _REPO_ROOT
+    / "src"
+    / "entropic_substrate"
+    / "historical"
+    / "d_ladder"
+    / "d_ladder_worker_runtime.py"
 )
 _WORKER_EXECUTION_SOURCE = (
     _REPO_ROOT / "src" / "entropic_substrate" / "ladder" / "run" / "worker_execution.py"

@@ -5,12 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from entropic_substrate.__legacy.evidence.ladder_campaign import (
-    FiledLadderGate,
-    actor_from_mapping,
-    read_campaign_design,
-    verify_ladder_registration,
-)
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     object_fields,
@@ -36,6 +30,12 @@ from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
 )
 from entropic_substrate.ladder.capture.custody.d1_capture_bundle import D1DvcCaptureHandoff
 from entropic_substrate.ladder.file.ladder_filing import file_ladder_verdict
+from entropic_substrate.ladder.gate.ladder_campaign import (
+    FiledLadderGate,
+    actor_from_mapping,
+    read_campaign_design,
+    verify_ladder_registration,
+)
 from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
 
 
