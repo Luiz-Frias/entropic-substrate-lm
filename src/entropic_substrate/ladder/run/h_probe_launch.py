@@ -42,6 +42,10 @@ class H0ProbeLaunch:
     container_disk_gb: int
     r2_access_secret_name: str
     r2_private_secret_name: str
+    mlflow_uri_secret_name: str
+    mlflow_username_secret_name: str
+    mlflow_password_secret_name: str
+    mlflow_s3_endpoint_secret_name: str
     controller_timeout_seconds: int
     watchdog_timeout_seconds: int
     cost_guard: str
@@ -84,16 +88,26 @@ class H0ProbeLaunch:
             )
         if self.cost_guard != "host_watchdog_tiny_only":
             raise ValueError("H0 deployment requires the declared tiny-only watchdog exception")
-        for name in (self.r2_access_secret_name, self.r2_private_secret_name):
+        secret_names = (
+            self.r2_access_secret_name,
+            self.r2_private_secret_name,
+            self.mlflow_uri_secret_name,
+            self.mlflow_username_secret_name,
+            self.mlflow_password_secret_name,
+            self.mlflow_s3_endpoint_secret_name,
+        )
+        for name in secret_names:
             if type(name) is not str or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", name) is None:
-                raise ValueError("R2 credentials must use provider secret-reference names")
-        if self.r2_access_secret_name == self.r2_private_secret_name:
-            raise ValueError("R2 secret-reference names must be distinct")
+                raise ValueError(
+                    "R2 and MLflow credentials must use provider secret-reference names"
+                )
+        if len(set(secret_names)) != len(secret_names):
+            raise ValueError("provider secret-reference names must be distinct")
 
     @property
     def manifest(self) -> dict[str, object]:
         return {
-            "schema": "h0-probe-launch-v1",
+            "schema": "h0-probe-launch-v2",
             "scientific_authority": "none",
             "spending_authority": "none",
             "provider_deadline": None,
@@ -121,9 +135,29 @@ class H0ProbeLaunch:
 
     @property
     def template_environment(self) -> dict[str, str]:
+        """The pod's entire environment, every value a provider secret reference
+        except the one literal opt-in.
+
+        EXIT-GATE LANE (conductor, operator-cleared 2026-09-26, schema v2): the H
+        worker builds ``CompositeSink(JsonlSink, MlflowSink, tiny=True)`` and
+        ``sinks.mlflow_enabled`` admits the MLflow mirror only when
+        ``MLFLOW_TRACKING_URI`` is set AND ``ENTROPIC_MLFLOW_TINY == "1"``; with
+        either missing it falls back to JSONL-only SILENTLY (measured 2026-09-26
+        on the pinned 6b4e68fa image regime). The v1 contract carried only the
+        two R2 references, so no v1 launch could ever reach the Railway MLflow.
+        The username/password references feed the mlflow client's basic-auth
+        env contract; the S3 endpoint reference feeds the artifact upload of the
+        JSONL mirror. Exactly seven keys; validate_template compares the whole
+        mapping, so a template missing any reference or the opt-in is refused.
+        """
         return {
             "AWS_ACCESS_KEY_ID": f"{{{{ RUNPOD_SECRET_{self.r2_access_secret_name} }}}}",
             "AWS_SECRET_ACCESS_KEY": f"{{{{ RUNPOD_SECRET_{self.r2_private_secret_name} }}}}",
+            "MLFLOW_TRACKING_URI": f"{{{{ RUNPOD_SECRET_{self.mlflow_uri_secret_name} }}}}",
+            "MLFLOW_TRACKING_USERNAME": f"{{{{ RUNPOD_SECRET_{self.mlflow_username_secret_name} }}}}",
+            "MLFLOW_TRACKING_PASSWORD": f"{{{{ RUNPOD_SECRET_{self.mlflow_password_secret_name} }}}}",
+            "MLFLOW_S3_ENDPOINT_URL": f"{{{{ RUNPOD_SECRET_{self.mlflow_s3_endpoint_secret_name} }}}}",
+            "ENTROPIC_MLFLOW_TINY": "1",
         }
 
     def validate_template(self, value: object) -> None:
@@ -230,7 +264,7 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names}",
     ).copy()
     if (
-        row.pop("schema") != "h0-probe-launch-v1"
+        row.pop("schema") != "h0-probe-launch-v2"
         or row.pop("scientific_authority") != "none"
         or row.pop("spending_authority") != "none"
         or row.pop("provider_deadline") is not None
