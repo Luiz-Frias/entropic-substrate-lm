@@ -8,24 +8,24 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Protocol
 
-from entropic_substrate.__legacy.d1_operator_evidence import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.ladder.capture.resource.resource_billing import (
+    ExecutionSegmentTermination,
+    ProviderBillingObservation,
+    TerminalProviderBillingEvidence,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
     D1StagedTrainerRequestReceipt,
     D1TrainerStartReceipt,
 )
-from entropic_substrate.__legacy.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1ImageBuildRequest,
     D1ImmutableImage,
     D1OperatorLaunchIntent,
     D1PodPlacement,
     D1RuntimeObservation,
     require_d1_pod_id,
-)
-from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
-from entropic_substrate.ladder.capture.resource.resource_billing import (
-    ExecutionSegmentTermination,
-    ProviderBillingObservation,
-    TerminalProviderBillingEvidence,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import D1TrainerRequest
 

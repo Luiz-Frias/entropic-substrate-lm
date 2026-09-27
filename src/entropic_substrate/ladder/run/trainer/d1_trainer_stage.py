@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from entropic_substrate.__legacy.d1_operator_evidence import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1StagedTrainerRequestReceipt,
     D1TrainerStartReceipt,
     d1_runtime_observation_sha256,
 )
-from entropic_substrate.__legacy.d1_operator_values import D1RuntimeObservation
-from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
-from entropic_substrate.kernel.lifecycle import ArtifactIdentity
-from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import D1TrainerWallOrigin
 from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
     build_d1_trainer_request,

@@ -7,64 +7,68 @@ from datetime import datetime
 from pathlib import Path
 from typing import NoReturn, Protocol
 
-from entropic_substrate.d1_billing_finalization_values import D1BillingFinalization
-from entropic_substrate.d1_billing_finalizer import finalize_d1_billing
-from entropic_substrate.d1_finalized_cell_custody import (
-    D1FinalizedCellCustodyRecord,
-    attest_d1_finalized_cell_custody,
-    identify_d1_finalized_journal,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    validate_execution_segments,
 )
-from entropic_substrate.d1_numerical_defect import D1TerminalNumericalDefectRecord
-from entropic_substrate.d1_operator_evidence import (
-    D1ExportedTrainerHandoff,
-    D1TrainerExportReceipt,
-    verify_d1_trainer_export,
-)
-from entropic_substrate.d1_operator_ports import (
-    D1PodDeletionAcknowledgedError,
-    D1RunPodAuthReceipt,
-    D1RunPodPort,
-    D1TrainerEvidencePort,
-)
-from entropic_substrate.d1_operator_values import (
-    D1OperatorLaunchIntent,
-    D1PodPlacement,
-    D1RuntimeObservation,
-    attest_d1_run_start,
-)
-from entropic_substrate.d1_resume_trainer import D1ResumeRunCompletion
-from entropic_substrate.d1_trainer_handoff import D1TrainerFailureHandoff
-from entropic_substrate.d1_trainer_request_codec import (
-    d1_trainer_bootstrap_attempt_sha256,
-)
-from entropic_substrate.d1_trainer_stage import stage_and_start_d1_trainer
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProblemKind
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.d1_telemetry_query import read_d1_run_evidence
-from entropic_substrate.evidence.d1_telemetry_values import D1RunStatus
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
     ContentHash,
 )
-from entropic_substrate.evidence.resource_billing import (
+from entropic_substrate.kernel.runtime.shared_attempt import AttemptFlow
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProblemKind
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
+    D1TerminalNumericalDefectRecord,
+)
+from entropic_substrate.ladder.capture.records.d1_telemetry_query import read_d1_run_evidence
+from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunStatus
+from entropic_substrate.ladder.capture.resource.resource_billing import (
     ExecutionSegmentTermination,
     TerminalProviderBillingEvidence,
 )
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    validate_execution_segments,
-)
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan, D1RunPlan
-from entropic_substrate.experiments.d1_primitives import RunClass
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
-from entropic_substrate.shared_attempt import AttemptFlow
+from entropic_substrate.ladder.register.d1_plan import ConfirmatoryD1RunPlan, D1RunPlan
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
+    D1ExportedTrainerHandoff,
+    D1TrainerExportReceipt,
+    verify_d1_trainer_export,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
+    D1OperatorLaunchIntent,
+    D1PodPlacement,
+    D1RuntimeObservation,
+    attest_d1_run_start,
+)
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
+    D1BillingFinalization,
+)
+from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
+    D1FinalizedCellCustodyRecord,
+    attest_d1_finalized_cell_custody,
+    identify_d1_finalized_journal,
+)
+from entropic_substrate.ladder.run.trainer.d1_resume_trainer import D1ResumeRunCompletion
+from entropic_substrate.ladder.run.trainer.d1_trainer_stage import stage_and_start_d1_trainer
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import D1TrainerFailureHandoff
+from entropic_substrate.ladder.run.transport.d1_trainer_request_codec import (
+    d1_trainer_bootstrap_attempt_sha256,
+)
+from entropic_substrate.ladder.run.values.d1_operator_ports import (
+    D1PodDeletionAcknowledgedError,
+    D1RunPodAuthReceipt,
+    D1RunPodPort,
+    D1TrainerEvidencePort,
+)
 
 
 class D1OperatorClock(Protocol):

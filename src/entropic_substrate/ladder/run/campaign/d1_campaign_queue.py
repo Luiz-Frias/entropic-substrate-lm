@@ -5,26 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final, Protocol, cast
 
-from entropic_substrate.d1_operator_controller import (
-    D1OperatorQueueHalt,
-    D1OperatorRunResult,
-)
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.experiments.d1_confirmatory_matrix import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass, canonical_digest
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import (
     D1ConfirmatoryLaunch,
     D1ConfirmatoryMatrix,
     D1GitProvenancePort,
     attest_d1_confirmatory_matrix,
 )
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm, RunClass, canonical_digest
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.register.d1_plan import ConfirmatoryD1RunPlan
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
+    D1OperatorQueueHalt,
+    D1OperatorRunResult,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
 
 _CAMPAIGN_TOKEN: Final = object()
 

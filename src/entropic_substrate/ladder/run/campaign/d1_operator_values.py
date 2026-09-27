@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final, cast
 
-from entropic_substrate.evidence.resource_provenance import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RESOURCE_TELEMETRY_SCHEMA_VERSION,
     PurchaseOption,
     QuotedRate,
@@ -19,12 +19,12 @@ from entropic_substrate.evidence.resource_provenance import (
     SegmentStartMode,
     execution_segment_id,
 )
-from entropic_substrate.experiments.d1_plan import D1RunPlan
-from entropic_substrate.experiments.d1_primitives import (
+from entropic_substrate.kernel.identity.d1_primitives import (
     RunClass,
     require_nonempty_string,
     require_sha256,
 )
+from entropic_substrate.ladder.register.d1_plan import D1RunPlan
 
 _OCI_DIGEST: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FULL_COMMIT: Final = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")

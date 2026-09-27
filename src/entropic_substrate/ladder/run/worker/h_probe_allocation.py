@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from entropic_substrate.__legacy.d1_operator_values import require_d1_pod_id
+from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
 from entropic_substrate.ladder.run.h_runpod_transport import (

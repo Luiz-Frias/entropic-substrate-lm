@@ -29,8 +29,8 @@ from entropic_substrate.ladder.analyze.seed_sizing import (
 from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
 
 if TYPE_CHECKING:
-    from entropic_substrate.__legacy.d1_excluded_capture import D1ExcludedCaptureReceipt
     from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
+    from entropic_substrate.ladder.run.closure.d1_excluded_capture import D1ExcludedCaptureReceipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,10 +377,10 @@ def prepare_registration(
     This first adapter admits FULL D1 pilots only. D2-D5 smoke construction
     coverage is not a source of pilot variance and receives no fallback path.
     """
-    from entropic_substrate.__legacy.d1_excluded_capture import D1ExcludedCaptureReceipt
     from entropic_substrate.kernel.identity.d1_primitives import RunClass
     from entropic_substrate.ladder.capture.reader.telemetry import read_d1_run_evidence_bytes
     from entropic_substrate.ladder.register.d1_config import D1LaunchScale
+    from entropic_substrate.ladder.run.closure.d1_excluded_capture import D1ExcludedCaptureReceipt
 
     design = read_statistical_design(rule_bytes, expected_sha256=expected_rule_sha256)
     if design.run_class != "pilot" or type(receipts) is not tuple or not receipts:

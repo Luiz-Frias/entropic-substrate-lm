@@ -6,7 +6,12 @@ conductor 2026-09-22, wf_6d1caf7e-2e6: this module's own live importers
 consume only those two names). Re-imported below so this module's other
 consumers -- `__legacy/d_ladder_worker_command.py` and its tests -- keep
 resolving `measure_hardware`/`verify_source_tree`/`SOURCE_PREFIXES` off this
-same dotted name unchanged.
+same dotted name unchanged. p10 (ruling P10-WORKER-SPLIT, 2026-09-24) moved
+`worker_resource_registration` to
+`entropic_substrate.ladder.run.worker.resource_registration`, re-exported here
+by identity; `build_worker_factory` and `verify_worker_source` stay until p12
+because `tests/test_d_ladder_worker_runtime.py` monkeypatches
+`build_torch_cuda_adapters` on this module.
 """
 
 from __future__ import annotations
@@ -21,10 +26,7 @@ from entropic_substrate.d1_trainer_mailbox_contracts import D1TrainerMailboxObje
 from entropic_substrate.d1_trainer_object_transport import D1TrainerMailboxObjectPort
 from entropic_substrate.d_ladder_remote_request import RemoteLadderRequest
 from entropic_substrate.evidence.resource_meter_runtime import build_torch_cuda_adapters
-from entropic_substrate.evidence.resource_provenance import (
-    ResourceActivationMode,
-    ResourceActivationRegistration,
-)
+from entropic_substrate.evidence.resource_provenance import ResourceActivationRegistration
 from entropic_substrate.experiments.d1_primitives import canonical_digest
 from entropic_substrate.ladder.run.worker.hardware import (
     SOURCE_PREFIXES as SOURCE_PREFIXES,
@@ -33,6 +35,9 @@ from entropic_substrate.ladder.run.worker.hardware import (
     measure_hardware as measure_hardware,
 )
 from entropic_substrate.ladder.run.worker.hardware import verify_source_tree
+from entropic_substrate.ladder.run.worker.resource_registration import (
+    worker_resource_registration as worker_resource_registration,
+)
 from entropic_substrate.paths import source_root
 
 _PROVIDER = "torch-cuda-events-and-peak-memory-v1"
@@ -45,13 +50,6 @@ _FACTORY_DIGEST = canonical_digest(
         "power": None,
     }
 )
-
-
-def worker_resource_registration() -> ResourceActivationRegistration:
-    """This tracer measures CUDA duration/memory; FLOPs/power remain explicit gaps."""
-    return ResourceActivationRegistration(
-        _FACTORY_DIGEST, ResourceActivationMode.PRODUCTION, _PROVIDER, "cuda:0", None, None
-    )
 
 
 def build_worker_factory(

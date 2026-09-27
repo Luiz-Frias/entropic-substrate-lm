@@ -2,8 +2,11 @@
 
 from dataclasses import dataclass
 
-from entropic_substrate.__legacy.d1_operator_values import D1A100ResourceRequest, D1ImmutableImage
 from entropic_substrate.kernel.identity.d1_primitives import require_nonempty_string
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
+    D1A100ResourceRequest,
+    D1ImmutableImage,
+)
 
 
 @dataclass(frozen=True, slots=True)

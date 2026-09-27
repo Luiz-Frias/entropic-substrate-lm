@@ -6,14 +6,14 @@ import json
 from dataclasses import dataclass
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.d1_campaign_request import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
+from entropic_substrate.ladder.run.campaign.d1_campaign_request import (
     D1CampaignCommandRequest,
     D1CampaignRequestError,
     parse_d1_campaign_request,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.experiments.d1_config import D1LaunchProfile
-from entropic_substrate.experiments.d1_primitives import canonical_json
 
 __all__ = [
     "D1CaptureFinalizeRequest",

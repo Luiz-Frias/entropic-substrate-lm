@@ -8,17 +8,17 @@ import re
 from pathlib import Path
 from typing import NoReturn
 
-from entropic_substrate.d1_content_addressed_custody import (
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.custody.d1_content_addressed_custody import (
     D1ContentAddressedCustodyError,
     D1ContentAddressedCustodyStore,
 )
-from entropic_substrate.d1_finalized_cell_custody import (
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyError,
     D1FinalizedCellCustodyRecord,
     parse_d1_finalized_cell_custody,
     serialize_d1_finalized_cell_custody,
 )
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity, ContentHash
 
 _RECORD_NAME = re.compile(r"^([0-9a-f]{64})\.json$")
 

@@ -7,27 +7,27 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.d1_campaign_checkpoint import (
-    D1CampaignCheckpoint,
-    D1CampaignCompletedCell,
-    D1CampaignDisposition,
+from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    RunStartProvenance,
+    SegmentStartMode,
 )
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1ProcessEventKind,
     D1ProcessState,
     canonical_lifecycle_event_line,
 )
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.resource_provenance import (
-    RunStartProvenance,
-    SegmentStartMode,
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_confirmatory_matrix import D1ConfirmatoryLaunch
+from entropic_substrate.ladder.register.d1_launch_attempts import D1LaunchAttemptLedger
+from entropic_substrate.ladder.register.d1_plan import ConfirmatoryD1RunPlan
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
+    D1CampaignCheckpoint,
+    D1CampaignCompletedCell,
+    D1CampaignDisposition,
 )
-from entropic_substrate.experiments.d1_confirmatory_matrix import D1ConfirmatoryLaunch
-from entropic_substrate.experiments.d1_launch_attempts import D1LaunchAttemptLedger
-from entropic_substrate.experiments.d1_plan import ConfirmatoryD1RunPlan
-from entropic_substrate.experiments.d1_primitives import D1Arm, canonical_digest
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
 
 _RECOVERY_TOKEN: Final = object()
 

@@ -5,36 +5,39 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from entropic_substrate.d1_billing_finalization_values import (
+from entropic_substrate.kernel.evidence_class.resource_provenance import EvidenceGap
+from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
+from entropic_substrate.ladder.capture.records.d1_journal import (
+    AuthoritativeRunJournal,
+    read_journal,
+)
+from entropic_substrate.ladder.capture.records.d1_journal_values import (
+    D1JournalEvent,
+    FrozenJson,
+    JournalEventKind,
+)
+from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation import (
+    LogicalBillingReconciliation,
+    reconcile_logical_billing,
+)
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
     D1BillingFinalizationRequest,
     D1TerminalResourceEvidence,
     D1TrainerHandoff,
     attest_durable_d1_finalization,
 )
-from entropic_substrate.d1_trainer_handoff import (
-    D1FreshRunCompletion,
-    D1TrainerFailureHandoff,
-)
-from entropic_substrate.evidence.d1_journal import AuthoritativeRunJournal, read_journal
-from entropic_substrate.evidence.d1_journal_values import (
-    D1JournalEvent,
-    FrozenJson,
-    JournalEventKind,
-)
-from entropic_substrate.evidence.resource_billing_reconciliation import (
-    LogicalBillingReconciliation,
-    reconcile_logical_billing,
-)
-from entropic_substrate.evidence.resource_provenance import EvidenceGap
-from entropic_substrate.evidence.resource_provenance_codec import run_start_to_mapping
-from entropic_substrate.predictive_state.checkpoint_repository import (
+from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
     load_checkpoint_candidate,
 )
-from entropic_substrate.predictive_state.checkpoint_values import (
+from entropic_substrate.ladder.run.trainer.checkpoint_values import (
     D1_CHECKPOINT_KIND,
     D1_CHECKPOINT_SCHEMA_VERSION,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
+    D1FreshRunCompletion,
+    D1TrainerFailureHandoff,
 )
 
 __all__ = ["D1BillingFinalization", "finalize_d1_billing"]

@@ -5,29 +5,31 @@ from __future__ import annotations
 import hashlib
 from typing import NoReturn, Protocol
 
-from entropic_substrate.d1_campaign_checkpoint import (
-    D1CampaignCheckpoint,
-    D1CampaignCompletedCell,
-    D1CampaignDisposition,
-)
-from entropic_substrate.d1_campaign_checkpoint_repository import (
-    D1CampaignCheckpointReceipt,
-)
-from entropic_substrate.d1_finalized_cell_custody import D1FinalizedCellCustodyRecord
-from entropic_substrate.d1_operator_values import D1OperatorLaunchIntent
-from entropic_substrate.evidence.d1_lifecycle_values import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1ProcessEventKind,
     D1ProcessState,
     canonical_lifecycle_event_line,
 )
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import ArtifactIdentity
-from entropic_substrate.experiments.d1_launch_attempts import (
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
-from entropic_substrate.experiments.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.register.d1_registered_design import D1RegisteredDesign
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
+    D1CampaignCheckpoint,
+    D1CampaignCompletedCell,
+    D1CampaignDisposition,
+)
+from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository import (
+    D1CampaignCheckpointReceipt,
+)
+from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
+from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
+    D1FinalizedCellCustodyRecord,
+)
 
 
 class D1CampaignBootstrapError(ValueError):

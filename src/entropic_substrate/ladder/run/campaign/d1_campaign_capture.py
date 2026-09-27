@@ -6,35 +6,35 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Protocol, cast
 
-from entropic_substrate.d1_campaign_queue import D1CompletedCampaign
-from entropic_substrate.evidence.d1_capture_aggregate import D1TerminalDefectInput
-from entropic_substrate.evidence.d1_capture_bundle import (
-    D1AttemptEvidence,
-    D1CaptureInput,
-)
-from entropic_substrate.evidence.d1_capture_preparation_custody import (
-    D1CampaignCaptureAuthority,
-    D1CapturePreparationCustodyRecord,
-    capture_preparation_custody_from_preparation,
-    hydrate_d1_capture_preparation_custody,
-)
-from entropic_substrate.evidence.d1_capture_roster import (
-    D1ExpectedRun,
-    D1LaunchRoster,
-)
-from entropic_substrate.evidence.d1_capture_service import (
-    D1HeterogeneousCapturePreparation,
-    D1HeterogeneousCaptureReceipt,
-)
-from entropic_substrate.evidence.d1_lifecycle_values import D1ProcessState
-from entropic_substrate.evidence.d1_process_manager import D1ProcessManager
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
+from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
     ArtifactIdentity,
     ContentHash,
 )
-from entropic_substrate.experiments.d1_primitives import canonical_digest
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import D1TerminalDefectInput
+from entropic_substrate.ladder.capture.custody.d1_capture_bundle import (
+    D1AttemptEvidence,
+    D1CaptureInput,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_preparation_custody import (
+    D1CampaignCaptureAuthority,
+    D1CapturePreparationCustodyRecord,
+    capture_preparation_custody_from_preparation,
+    hydrate_d1_capture_preparation_custody,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_roster import (
+    D1ExpectedRun,
+    D1LaunchRoster,
+)
+from entropic_substrate.ladder.capture.custody.d1_capture_service import (
+    D1HeterogeneousCapturePreparation,
+    D1HeterogeneousCaptureReceipt,
+)
+from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
+from entropic_substrate.ladder.capture.ledger.d1_process_manager import D1ProcessManager
+from entropic_substrate.ladder.run.campaign.d1_campaign_queue import D1CompletedCampaign
 
 _CAPTURE_TOKEN: Final = object()
 

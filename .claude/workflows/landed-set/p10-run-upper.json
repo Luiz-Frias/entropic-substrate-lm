@@ -1,0 +1,115 @@
+{
+  "phase": "p10-run-upper",
+  "modules": {
+    "entropic_substrate.d1_operator_values": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_values",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_checkpoint": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint",
+      "landed": true
+    },
+    "entropic_substrate.d1_billing_finalization_values": {
+      "target": "entropic_substrate.ladder.run.closure.d1_billing_finalization_values",
+      "landed": true
+    },
+    "entropic_substrate.d1_predecessor_loader": {
+      "target": "entropic_substrate.ladder.run.worker.d1_predecessor_loader",
+      "landed": true
+    },
+    "entropic_substrate.d1_billing_finalizer": {
+      "target": "entropic_substrate.ladder.run.closure.d1_billing_finalizer",
+      "landed": true
+    },
+    "entropic_substrate.d1_finalized_cell_custody": {
+      "target": "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody",
+      "landed": true
+    },
+    "entropic_substrate.d1_finalized_cell_custody_repository": {
+      "target": "entropic_substrate.ladder.run.closure.d1_finalized_cell_custody_repository",
+      "landed": true
+    },
+    "entropic_substrate.d1_runpod_billing_parser": {
+      "target": "entropic_substrate.ladder.run.closure.d1_runpod_billing_parser",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_bootstrap": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_bootstrap",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_capture": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_capture",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_checkpoint_repository": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint_repository",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_evidence_assembler": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_evidence_assembler",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_queue": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_queue",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_recovery": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_recovery",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_recovery_queue": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_recovery_queue",
+      "landed": true
+    },
+    "entropic_substrate.d1_campaign_request": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_campaign_request",
+      "landed": true
+    },
+    "entropic_substrate.d1_excluded_operator": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_excluded_operator",
+      "landed": true
+    },
+    "entropic_substrate.d1_operator_controller": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_controller",
+      "landed": true
+    },
+    "entropic_substrate.d1_operator_custody_adapter": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_custody_adapter",
+      "landed": true
+    },
+    "entropic_substrate.d1_operator_evidence": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_evidence",
+      "landed": true
+    },
+    "entropic_substrate.d1_operator_intent_codec": {
+      "target": "entropic_substrate.ladder.run.campaign.d1_operator_intent_codec",
+      "landed": true
+    },
+    "entropic_substrate.d1_excluded_capture": {
+      "target": "entropic_substrate.ladder.run.closure.d1_excluded_capture",
+      "landed": true
+    },
+    "entropic_substrate.d1_capture_finalize_coordinator": {
+      "target": "entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_coordinator",
+      "landed": true
+    },
+    "entropic_substrate.d1_capture_finalize_request": {
+      "target": "entropic_substrate.ladder.run.ckptsync.d1_capture_finalize_request",
+      "landed": true
+    },
+    "entropic_substrate.d1_capture_prepare_coordinator": {
+      "target": "entropic_substrate.ladder.run.ckptsync.d1_capture_prepare_coordinator",
+      "landed": true
+    },
+    "entropic_substrate.d1_checkpoint_dvc_recovery": {
+      "target": "entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_recovery",
+      "landed": true
+    },
+    "entropic_substrate.d1_checkpoint_dvc_sync": {
+      "target": "entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_sync",
+      "landed": true
+    }
+  },
+  "legacy_edge_budget": 5,
+  "note": "MEASURED 2026-09-24, commit 1 of 4 (tests/test_legacy_coupling.py's own count_landed_to_legacy_edges(import_graph.build_graph(...)) on the exact post-ruff commit-1 tree): 13, down from the parent baseline 32 (12f9f4a/e5aa9d3) minus the 21 d1_operator_values(19)+d1_predecessor_loader(2) importer-line edges removed by rewrite-on-arrival, plus 2 new landed->legacy edges introduced by this commit: (a) the worker-split leaf's function-scoped back-import of _FACTORY_DIGEST/_PROVIDER from entropic_substrate.__legacy.d_ladder_worker_runtime (the function-scoped back-import chosen under ruling P10-WORKER-SPLIT -- the label 'SPLIT-CYCLE ruling' in commit e740b66's message and in this note's earlier text named no real ruling and is retracted, docs sweep 2026-09-24; static import inside worker_resource_registration's body, visible to tools/import_graph.py's AST walk); (b) d1_predecessor_loader, now landed at entropic_substrate.ladder.run.worker.d1_predecessor_loader, keeps 3 of its 7 evidence.ladder_campaign names (FiledLadderGate, actor_from_mapping, gate_from_d1_filing) imported from entropic_substrate.__legacy.evidence.ladder_campaign per the MOVED-MODULE IMPORT REWRITE SPLIT CASE (a) -- a 4th landed importer of that still-quarantined module (GAP 1, RULED 2026-09-24: p12 commit 1 lands it at ladder/gate/ladder_campaign.py, FOR-1557 / P12-GATE-HALF), noted here for that gap's future owner; the other 4 names (artifact_from_mapping, object_fields, read_bound_artifact, read_json_artifact) resolve to the landed entropic_substrate.kernel.artifacts and do not count. 32 - 21 + 1 + 1 = 13, independently MEASURED not arithmetic-typed. split_consumption: worker_resource_registration (from entropic_substrate.__legacy.d_ladder_worker_runtime, lines 50-54 at e5aa9d3) landed alone as entropic_substrate.ladder.run.worker.resource_registration; the remainder (build_worker_factory, verify_worker_source) stays action:split, landed:false, not a p10 fragment row. COMMIT 2 (2026-09-24, closure minus the peeled exception: d1_billing_finalizer, d1_finalized_cell_custody, d1_finalized_cell_custody_repository, d1_runpod_billing_parser -- FOR-1485 first of two commits): legacy_edge_budget MEASURED 12 (tests/test_legacy_coupling.py's own classifier on the post-ruff commit-2 tree), down from commit 1's 13 by exactly the 1 d1_runpod_billing_parser importer line (d1_runpod_adapter.py) rewritten this commit. No R-PIN member among these 4 modules or this 1 importer (none is one of the 51 _READER_MODULES); _CHECKPOINT_REGIME_TABLE unchanged this commit, per R-PIN ORDER AND CONTROL. COMMIT 3 (2026-09-24, campaign's 13 remaining modules plus the peeled d1_excluded_capture -- FOR-1484 primary, FOR-1485 partial absorption note for d1_excluded_capture): d1_campaign_bootstrap, d1_campaign_capture, d1_campaign_checkpoint_repository, d1_campaign_evidence_assembler, d1_campaign_queue, d1_campaign_recovery, d1_campaign_recovery_queue, d1_campaign_request, d1_excluded_operator, d1_operator_controller, d1_operator_custody_adapter, d1_operator_evidence, d1_operator_intent_codec, d1_excluded_capture. Rewrites d1_operator_evidence's 4 importer lines (d1_trainer_stage.py, d1_trainer_evidence_adapter.py, d1_operator_ports.py, d1_trainer_output_publication.py) and d1_excluded_capture's 2 TYPE_CHECKING importer lines (ladder_registration.py:32,380). Topological placement verified against the corrected 55-edge/3-back-edge graph: d1_excluded_capture peeled here (not with the rest of closure in commit 2) because its one true back-edge targets d1_excluded_operator, which lands in THIS commit, not commit 1 -- zero forward references. legacy_edge_budget MEASURED 7 (tests/test_legacy_coupling.py's own classifier on the post-ruff commit-3 tree), down from commit 2's 12 by 5 (4 d1_operator_evidence importer-line edges + 1 d1_excluded_capture importer edge, both ladder_registration.py TYPE_CHECKING lines targeting the same module counted as one edge in the AST graph). No R-PIN member among these 14 modules or their 6 importer lines; _CHECKPOINT_REGIME_TABLE unchanged this commit. COMMIT 4 (2026-09-24, ckptsync's all 5 modules -- FOR-1486, CLOSING COMMIT of the 4-commit sequence): d1_capture_finalize_coordinator, d1_capture_finalize_request, d1_capture_prepare_coordinator, d1_checkpoint_dvc_recovery, d1_checkpoint_dvc_sync. Rewrites d1_checkpoint_dvc_sync's and d1_checkpoint_dvc_recovery's 1 importer line each (both in d1_r2_runtime_composition.py) -- the final 2 of the 30 total landed-importer lines, discharging P10-IMPORTERS in full. legacy_edge_budget MEASURED 5 (down from commit 3's 7 by exactly these 2 rewritten importer lines) -- this is p10's FINAL fragment value, re-measured on the closing tree with all 27 full-move modules plus the worker-split leaf landed. All 30 landed-importer lines and both intra-set SPLIT cases (d1_predecessor_loader's evidence.ladder_campaign hand-split, evidence.d1_filing_receipts) are now discharged. Allowlist byte-identity (P10-ALLOWLISTS) re-confirmed across all 4 commits: provider_launch.py:32-35 and d1_runpod_adapter.py:349 byte-identical to e5aa9d3, tests/test_cli_surface.py::TestFrozenDottedNameLiteralSet green unedited throughout. No R-PIN member among these 5 modules or their 2 importer lines; _CHECKPOINT_REGIME_TABLE unchanged this commit (R-PIN was fully discharged in commit 1)."
+}

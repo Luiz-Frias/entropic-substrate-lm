@@ -9,28 +9,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
 
-from entropic_substrate.d1_artifact_snapshot import (
-    normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
-    publish_d1_atomic_bytes,
-)
-from entropic_substrate.d1_command_runner import D1BoundedProcessRunner
-from entropic_substrate.d1_filing_application import D1LocalFilingArtifactStore
-from entropic_substrate.d1_git_provenance_adapter import SubprocessD1GitProvenance
-from entropic_substrate.evidence.d1_capture_aggregate_codec import hydrate_d1_capture_aggregate
-from entropic_substrate.evidence.d1_filing import D1FilingManifest, validate_d1_filing_manifest
-from entropic_substrate.evidence.d1_filing_graph import verify_d1_filing
-from entropic_substrate.evidence.d1_filing_receipts import D1FilingGitPort, D1FilingRevisions
-from entropic_substrate.evidence.ladder_campaign import (
+from entropic_substrate.__legacy.evidence.ladder_campaign import (
     FiledLadderGate,
     actor_from_mapping,
-    artifact_from_mapping,
     gate_from_d1_filing,
+)
+from entropic_substrate.kernel.artifacts import (
+    artifact_from_mapping,
+    normalize_d1_artifact_root,
+    normalize_d1_relative_artifact_path,
     object_fields,
+    publish_d1_atomic_bytes,
     read_bound_artifact,
     read_json_artifact,
 )
-from entropic_substrate.evidence.lifecycle import (
+from entropic_substrate.kernel.lifecycle import (
     ArtifactIdentity,
     FiledVerdictEvidence,
     LifecycleEvent,
@@ -38,14 +31,25 @@ from entropic_substrate.evidence.lifecycle import (
     LifecycleRecord,
     transition,
 )
-from entropic_substrate.experiments.d1_config import D1LaunchProfile, load_d1_profile_catalog
-from entropic_substrate.experiments.d1_registration_codec import (
+from entropic_substrate.kernel.runtime.git_environment import isolated_git_environment
+from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
+    hydrate_d1_capture_aggregate,
+)
+from entropic_substrate.ladder.file.d1_filing import D1FilingManifest, validate_d1_filing_manifest
+from entropic_substrate.ladder.file.d1_filing_application import D1LocalFilingArtifactStore
+from entropic_substrate.ladder.file.d1_filing_graph import verify_d1_filing
+from entropic_substrate.ladder.file.d1_filing_receipts import D1FilingGitPort, D1FilingRevisions
+from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, load_d1_profile_catalog
+from entropic_substrate.ladder.register.d1_registration_codec import (
     D1PreregistrationByteEvidence,
     hydrate_registered_design,
     parse_decision_contract,
     parse_registered_design_declaration,
 )
-from entropic_substrate.git_environment import isolated_git_environment
+from entropic_substrate.ladder.run.provider.d1_command_runner import D1BoundedProcessRunner
+from entropic_substrate.ladder.run.provider.d1_git_provenance_adapter import (
+    SubprocessD1GitProvenance,
+)
 
 
 @contextmanager

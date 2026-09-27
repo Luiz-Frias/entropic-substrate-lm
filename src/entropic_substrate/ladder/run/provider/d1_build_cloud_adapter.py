@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.__legacy.d1_operator_values import (
+from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1ImageBuildRequest,
     D1ImmutableImage,
 )
