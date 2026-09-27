@@ -94,18 +94,8 @@ def test_d1_reader_source_closure_and_its_control_symbol_are_gone() -> None:
 # than imported, per the design gate).
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_CONTROL_SOURCE = (
-    _REPO_ROOT
-    / "src"
-    / "entropic_substrate"
-    / "__legacy"
-    / "analysis"
-    / "d1_external_analysis_control.py"
-)
-_WORKER_SOURCE = (
-    _REPO_ROOT / "src" / "entropic_substrate" / "__legacy" / "analysis" / "d1_external_worker.py"
-)
+_CONTROL_SOURCE = Path(cast(str, control_module.__file__))
+_WORKER_SOURCE = Path(cast(str, worker_module.__file__))
 
 
 def _load_relocated_copy(source: Path, relocated_dir: Path, module_name: str) -> ModuleType:
@@ -154,16 +144,23 @@ def test_review_ring_imports_from_a_relocated_tree(
     ``d1_external_worker.py``) is anchored on the PATH ARGUMENT it receives,
     never on the depth of the file that happens to define it.
 
-    Guard-teeth MEASURED 2026-09-20 (mutation performed and reverted
-    in-branch, evidence in the PR body): adding, at module scope near the
-    closure's former call site (``d1_external_analysis_control.py:100``),
-    ``_ANCHOR = Path(__file__).resolve().parents[2]`` followed by
-    ``if _ANCHOR.name != "src": raise RuntimeError("anchor")`` turns this
-    test RED with that ``RuntimeError`` (the real installed module's own
-    ``parents[2]`` is the repo's ``src/`` directory, so the check passes for
-    it, but the relocated copy's ``parents[2]`` is pytest's own base tmp
-    directory, named after the test run rather than ``src``); reverting
-    turns it back GREEN."""
+    RETRACTED (house rule 4, p11-analyze-review-file, ruling
+    P11-WORKER-TEST-CARVEOUT): the paragraph below MEASURED 2026-09-20 a
+    ``parents[2]`` recipe at the pre-p3 depth. MEASURED by the p11 design
+    gate, ``parents[2].name == "entropic_substrate"`` at both the old
+    ``__legacy/analysis/`` path and the new ``ladder/review/`` path this
+    phase lands at, so the pre-p3 recipe would raise for the REAL installed
+    module too and proves nothing at this depth. The re-proven recipe is
+    ``parents[3]``, re-measured in-branch with both arms below.
+
+    Guard-teeth MEASURED 2026-09-20, RE-PROVEN 2026-09-23 at the
+    ``ladder/review/`` depth (mutation performed and reverted in-branch,
+    evidence in the PR body): adding, at module scope near the closure's
+    former call site (``d1_external_analysis_control.py:100``), ``_ANCHOR =
+    Path(__file__).resolve().parents[3]`` followed by ``if _ANCHOR.name !=
+    "src": raise RuntimeError("anchor")`` turns this test RED with that
+    ``RuntimeError`` (the relocated copy's ``parents[3]`` is not ``src``);
+    reverting turns it back GREEN."""
     control, worker = _relocated_review_ring
     assert control.__name__ != "entropic_substrate.analysis.d1_external_analysis_control"
     assert worker.__name__ != "entropic_substrate.analysis.d1_external_worker"
