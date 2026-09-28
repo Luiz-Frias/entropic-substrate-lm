@@ -12,6 +12,7 @@ from entropic_substrate.ladder.run.h_probe_collection import collect_probe_termi
 from entropic_substrate.ladder.run.h_probe_control import read_probe_control
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
+from entropic_substrate.ladder.run.h_probe_watchdog import UNCERTAIN_ABSENT_CONFIRMATIONS
 from entropic_substrate.ladder.run.h_runpod_transport import ProbePod, ProbeProviderError
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
@@ -20,6 +21,7 @@ from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     ProbeAllocationHandoffError,
     ProbeAllocationProvider,
     allocate_probe_once,
+    provider_error_code,
 )
 
 
@@ -35,6 +37,13 @@ class ProbeControllerFailure(RuntimeError):
 
 
 def _termination(record: dict[str, object], pod_id: str | None) -> bool:
+    """Accept either a verified attributed teardown or a verified pre-pod absence.
+
+    The two admissible watchdog statuses require a different pod_id shape each:
+    `terminated` only ever certifies an attributed pod, `cancelled_uncertain_absent`
+    only ever certifies that no pod was ever attributed. Every other flag keeps
+    identical, unconditional semantics between the two.
+    """
     required = {
         "schema",
         "scientific_authority",
@@ -46,19 +55,20 @@ def _termination(record: dict[str, object], pod_id: str | None) -> bool:
         "unattributed_pod_ids",
         "guard_fault",
     }
-    return (
+    if not (
         required <= record.keys()
         and record["schema"] == "h-probe-watchdog-result-v1"
         and record["scientific_authority"] == "none"
-        and record["status"] == "terminated"
-        and pod_id is not None
-        and record["pod_id"] == pod_id
         and record["termination_verified"] is True
         and record["attributed_pod_absent"] is True
         and record["inventory_verified"] is True
         and record["unattributed_pod_ids"] == []
         and record["guard_fault"] is None
-    )
+    ):
+        return False
+    if pod_id is None:
+        return record["status"] == "cancelled_uncertain_absent" and record["pod_id"] is None
+    return record["status"] == "terminated" and record["pod_id"] == pod_id
 
 
 def _emergency_cleanup(
@@ -133,6 +143,7 @@ def run_probe_controller(
     collection: dict[str, object] | None = None
     watchdog: dict[str, object] | None = None
     emergency: dict[str, object] | None = None
+    provider_failure_code: str | None = None
     now = monotonic()
     if type(now) not in (int, float) or not math.isfinite(now):
         raise ValueError("controller clock must start finite")
@@ -185,8 +196,10 @@ def run_probe_controller(
         failure_stages.append(stage)
         if isinstance(error, ProbeAllocationHandoffError):
             pod_id = error.pod_id
+            provider_failure_code = provider_error_code(error.provider_error)
         elif isinstance(error, ProbeProviderError):
             pod_id = error.possible_pod_id
+            provider_failure_code = provider_error_code(error)
 
     stop_failed = False
     try:
@@ -236,8 +249,21 @@ def run_probe_controller(
     ):
         emergency_attempt()
     try:
-        timeout = max(0.0, float(cleanup_deadline) - clock())
-        timeout += 3 * guard.config.provider_timeout_seconds + guard.config.shutdown_timeout_seconds
+        if pod_id is None:
+            # No pod was ever attributed: the watchdog resolves this from its own
+            # K-poll uncertain-absent window (h_probe_watchdog), not by polling
+            # toward the full cleanup_deadline sized for an attributed teardown.
+            # Per poll the watchdog makes up to two bounded provider calls
+            # (account, list_owned) plus the sleep; +1 poll covers a stop
+            # landing just after a poll tick.
+            timeout = (UNCERTAIN_ABSENT_CONFIRMATIONS + 1) * (
+                guard.config.poll_seconds + 2 * guard.config.provider_timeout_seconds
+            ) + guard.config.shutdown_timeout_seconds
+        else:
+            timeout = max(0.0, float(cleanup_deadline) - clock())
+            timeout += (
+                3 * guard.config.provider_timeout_seconds + guard.config.shutdown_timeout_seconds
+            )
         watchdog = guard.wait_result(timeout_seconds=timeout)
         if not _termination(watchdog, pod_id):
             raise ValueError("watchdog did not verify this allocation's complete termination")
@@ -263,6 +289,7 @@ def run_probe_controller(
         "watchdog": watchdog,
         "emergency_cleanup": emergency,
         "error_types": [type(error).__name__ for error in errors],
+        "provider_error_code": provider_failure_code,
         "failure_stages": failure_stages,
     }
     try:
