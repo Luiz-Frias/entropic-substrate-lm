@@ -144,7 +144,9 @@ def test_workflow_runs_the_action_on_main_with_both_files() -> None:
     triggers = workflow[True] if True in workflow else workflow["on"]  # YAML 1.1 reads `on` as True
     assert triggers["push"]["branches"] == ["main"]
     steps = [s for job in workflow["jobs"].values() for s in job["steps"]]
-    action = [s for s in steps if str(s.get("uses", "")).startswith("googleapis/release-please-action@")]
+    action = [
+        s for s in steps if str(s.get("uses", "")).startswith("googleapis/release-please-action@")
+    ]
     assert len(action) == 1, action
     inputs = action[0]["with"]
     assert inputs["config-file"] == CONFIG_PATH.name
