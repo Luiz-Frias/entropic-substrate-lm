@@ -142,12 +142,24 @@ lint-imports:
 # Tests
 # ---------------------------------------------------------------------------
 
-# Fast hermetic unit tests only (CPU, <60s total).
+# Hermetic unit tests only (CPU). Wall time scales with physical cores: the
+# "<60s" this comment used to claim was never measured here and is withdrawn.
+# CI deliberately diverges from this line (ci.yaml unit step, FOR-1618,
+# 2026-09-28): the ubuntu-latest runner reports psutil physical=1, so `-n auto`
+# is ONE worker there and CI runs `-n logical` (2) plus OMP/MKL_NUM_THREADS=1
+# for the subprocess children tests spawn, measured 23m01s -> 18m29s on the same
+# host model. On a multi-core dev box `-n auto` is already N workers and the
+# local regime is unmeasured, so the flags stay. tests/xdist_policy.py pins one
+# torch thread per xdist worker on both.
 test:
     @echo "→ Running unit tests..."
     PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
-# All tests (unit + integration).
+# All tests (unit + integration). Stays `--dist loadfile` on purpose: the
+# integration files tests/test_caddy_auth.py and tests/test_mlflow_allowed_hosts.py
+# bring up podman compose under ONE fixed project name, so any mode that splits a
+# file across workers (worksteal) can run both at once and collide. worksteal and
+# loadscope measured null for the unit suite anyway (FOR-1618 ledger).
 test-all:
     @echo "→ Running full test suite..."
     PYTHONPATH=src uv run pytest -q --maxfail=1 --disable-warnings -n auto --dist loadfile
