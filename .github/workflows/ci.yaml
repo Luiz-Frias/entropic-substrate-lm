@@ -104,6 +104,15 @@ jobs:
         # the PR that carries this comment.
         run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile --durations=60 --durations-min=1.0
 
+      # Teeth for tests/test_subprocess_env_hygiene.py at the regime that bit:
+      # a test that re-syncs .venv from uv.lock swaps the CPU wheel above for
+      # the CUDA build (MEASURED 2026-09-28, FOR-1618: three two-worker runs
+      # died in cold-import children mid-reinstall). If torch is no longer the
+      # +cpu wheel after the suite, something in the suite rewrote the env.
+      - name: Venv unchanged by the suite (torch is still the +cpu wheel)
+        run: |
+          uv run --no-sync python -c "import sys, torch; v = torch.__version__; print('torch', v); sys.exit(0 if v.endswith('+cpu') else 1)"
+
       # p0-contract-pin (operator ruling 2026-09-18): a channel that can stop
       # a merge, not just a local `just check` a contributor can skip. Layers
       # contract over the LANDED layers, __legacy outside it until p13.

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -144,9 +145,20 @@ def test_notebook_computes_kappa_spread_through_telemetry() -> None:
 def test_marimo_check_reports_no_issues() -> None:
     """A real ``marimo check --strict`` run — catches structural notebook
     defects (undefined cell references, cyclic deps) static text checks
-    above cannot see."""
-    result = subprocess.run(  # nosec B603 B607 -- fixed argv, no shell
-        ["uv", "run", "marimo", "check", "--strict", str(NOTEBOOK)],
+    above cannot see.
+
+    Runs marimo through ``sys.executable -m marimo``, never ``uv run``:
+    a bare ``uv run`` re-syncs the project ``.venv`` from ``uv.lock`` while
+    the suite is executing in it. MEASURED 2026-09-28 (FOR-1618): 26.57 s
+    and 55.72 s in CI for this one test (runs 36486275734, 36486548073)
+    against 1.4 s for ``python -m marimo check`` on the same notebook, and
+    under two xdist workers the re-sync raced ``test_cold_import.py`` into
+    ``ModuleNotFoundError`` three runs out of three (36489145501,
+    36489147202, 36489150096). ``tests/test_subprocess_env_hygiene.py``
+    pins the rule.
+    """
+    result = subprocess.run(  # nosec B603 -- fixed argv, no shell
+        [sys.executable, "-m", "marimo", "check", "--strict", str(NOTEBOOK)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
