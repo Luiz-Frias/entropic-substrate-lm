@@ -1,5 +1,6 @@
 """One allocation submission with an attributed, durable watchdog handoff."""
 
+import hashlib
 from typing import Protocol
 
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
@@ -40,6 +41,27 @@ class ProbeAllocationHandoffError(RuntimeError):
         super().__init__("allocation handoff failed; attributed cleanup remains unresolved")
 
 
+_PROVIDER_DETAIL_MAX_BYTES = 512
+
+
+def provider_error_code(error: BaseException | None) -> str | None:
+    """The stable failure code for provider-failure telemetry, never a free-text message."""
+    if error is None:
+        return None
+    if isinstance(error, ProbeProviderError):
+        return error.code
+    return type(error).__name__
+
+
+def _bounded_provider_detail(text: str) -> tuple[str, str]:
+    """Bound the stored detail to 512 bytes; the sha256 always covers the full text."""
+    encoded = text.encode("utf-8", errors="replace")
+    digest = hashlib.sha256(encoded).hexdigest()
+    if len(encoded) <= _PROVIDER_DETAIL_MAX_BYTES:
+        return text, digest
+    return encoded[:_PROVIDER_DETAIL_MAX_BYTES].decode("utf-8", errors="ignore"), digest
+
+
 def _handoff(
     guard: ProbeWatchdogProcess,
     *,
@@ -47,15 +69,33 @@ def _handoff(
     response_sha256: str | None,
     provider_error: BaseException | None,
 ) -> None:
+    code = provider_error_code(provider_error)
+    allocation_uncertain = False
+    possible_pod_id: str | None = None
+    provider_detail: str | None = None
+    provider_detail_sha256: str | None = None
+    if provider_error is not None:
+        allocation_uncertain = (
+            provider_error.allocation_uncertain
+            if isinstance(provider_error, ProbeProviderError)
+            else True
+        )
+        possible_pod_id = pod_id
+        provider_detail, provider_detail_sha256 = _bounded_provider_detail(str(provider_error))
     try:
         guard.control.write(
             "allocation",
             {
-                "schema": "h-probe-allocation-v1",
+                "schema": "h-probe-allocation-v2",
                 "guard_pid": guard.pid,
                 "outcome": "created" if provider_error is None else "uncertain",
                 "pod_id": pod_id,
                 "response_sha256": response_sha256,
+                "provider_error_code": code,
+                "allocation_uncertain": allocation_uncertain,
+                "possible_pod_id": possible_pod_id,
+                "provider_detail": provider_detail,
+                "provider_detail_sha256": provider_detail_sha256,
             },
             max_bytes=guard.config.max_control_bytes,
         )

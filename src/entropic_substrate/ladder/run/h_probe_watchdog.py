@@ -19,6 +19,10 @@ from entropic_substrate.ladder.run.h_runpod_transport import (
     ProbeProviderError,
 )
 
+UNCERTAIN_ABSENT_CONFIRMATIONS = 3
+"""K consecutive valid empty inventory reads required to resolve a cancelled,
+never-attributed create as `cancelled_uncertain_absent` (see run_probe_watchdog)."""
+
 
 class WatchdogProvider(Protocol):
     def account(self) -> ProbeAccount: ...
@@ -50,6 +54,35 @@ def _message(
     return row
 
 
+_ALLOCATION_V1_FIELDS = "outcome pod_id response_sha256"
+_ALLOCATION_V2_FIELDS = (
+    "outcome pod_id response_sha256 provider_error_code allocation_uncertain "
+    "possible_pod_id provider_detail provider_detail_sha256"
+)
+
+
+def _allocation_message(
+    root: Path, launch: H0ProbeLaunch, maximum: int
+) -> dict[str, object] | None:
+    """Read-old, write-new: accept exactly the v1 field set or exactly the v2 one."""
+    value = read_probe_control(root, launch, "controller", "allocation", max_bytes=maximum)
+    if value is None:
+        return None
+    if type(value) is not dict:
+        raise ValueError("control record has an invalid shape")
+    schema = value.get("schema")
+    if schema == "h-probe-allocation-v2":
+        fields = _ALLOCATION_V2_FIELDS
+    elif schema == "h-probe-allocation-v1":
+        fields = _ALLOCATION_V1_FIELDS
+    else:
+        raise ValueError("unknown allocation schema version")
+    row = recovery_record(value, f"schema guard_pid {fields}")
+    if type(row["guard_pid"]) is not int or row["guard_pid"] != os.getpid():
+        raise ValueError("control record belongs to another watchdog")
+    return row
+
+
 def _allocation(row: dict[str, object]) -> tuple[str | None, bool]:
     outcome, pod_id, digest = row["outcome"], row["pod_id"], row["response_sha256"]
     if outcome not in ("created", "uncertain"):
@@ -62,6 +95,26 @@ def _allocation(row: dict[str, object]) -> tuple[str | None, bool]:
         ContentHash("sha256", digest)
     if outcome == "created" and (pod_id is None or digest is None):
         raise ValueError("created allocation requires its pod and response identities")
+    if "provider_error_code" in row:
+        code = row["provider_error_code"]
+        if code is not None and type(code) is not str:
+            raise ValueError("provider error code must be text or absent")
+        uncertain_flag = row["allocation_uncertain"]
+        if type(uncertain_flag) is not bool:
+            raise ValueError("allocation_uncertain must be boolean")
+        possible = row["possible_pod_id"]
+        if possible is not None:
+            require_d1_pod_id(possible)
+        detail = row["provider_detail"]
+        if detail is not None and type(detail) is not str:
+            raise ValueError("provider detail must be text or absent")
+        detail_digest = row["provider_detail_sha256"]
+        if detail_digest is not None:
+            if type(detail_digest) is not str:
+                raise ValueError("provider detail hash must be text")
+            ContentHash("sha256", detail_digest)
+        if outcome == "created" and (code is not None or uncertain_flag is not False):
+            raise ValueError("created allocation cannot carry a provider failure")
     return pod_id, outcome == "uncertain"
 
 
@@ -125,6 +178,9 @@ def run_probe_watchdog(
         candidates: set[str] = set()
         errors = 0
         inventory_valid = False
+        absent_confirmations = 0
+        unattributed_seen = False
+        resolved_uncertain_absent = False
 
         def note_error(error: ProbeProviderError | ValueError) -> None:
             nonlocal errors, last_error, fault
@@ -150,13 +206,7 @@ def run_probe_watchdog(
                 if fault is None:
                     intent = _message(root, launch, "create-intent", "", max_control_bytes)
                     intent_seen = intent is not None
-                    allocation = _message(
-                        root,
-                        launch,
-                        "allocation",
-                        "outcome pod_id response_sha256",
-                        max_control_bytes,
-                    )
+                    allocation = _allocation_message(root, launch, max_control_bytes)
                     if allocation is not None:
                         if not intent_seen:
                             raise ValueError("allocation lacks durable create intent")
@@ -194,6 +244,15 @@ def run_probe_watchdog(
                     candidates, inventory_valid = current_candidates, True
                 except (ProbeProviderError, ValueError) as error:
                     note_error(error)
+                if pod_id is None and inventory_valid and candidates:
+                    # A candidate appeared while nothing is attributed: never adopt
+                    # or delete it here (unchanged conservative behavior below), and
+                    # never again resolve this run as uncertain-absent either.
+                    unattributed_seen = True
+                if reason == "cancelled" and pod_id is None and inventory_valid and not candidates:
+                    absent_confirmations += 1
+                else:
+                    absent_confirmations = 0
                 now = _clock(monotonic, now)
                 if now >= watchdog_deadline:
                     break
@@ -226,6 +285,18 @@ def run_probe_watchdog(
                                 break
                     elif not intent_seen and inventory_valid and not candidates and fault is None:
                         break
+                    elif (
+                        intent_seen
+                        and reason == "cancelled"
+                        and fault is None
+                        and not unattributed_seen
+                        and inventory_valid
+                        and not candidates
+                        and absent_confirmations >= UNCERTAIN_ABSENT_CONFIRMATIONS
+                    ):
+                        verified = True
+                        resolved_uncertain_absent = True
+                        break
             except (ProbeProviderError, ValueError) as error:
                 note_error(error)
             now = _clock(monotonic, now)
@@ -242,6 +313,8 @@ def run_probe_watchdog(
             status = (
                 "cancelled_before_create" if reason == "cancelled" else "expired_without_intent"
             )
+        if resolved_uncertain_absent:
+            status = "cancelled_uncertain_absent"
         record: dict[str, object] = {
             "schema": "h-probe-watchdog-result-v1",
             "scientific_authority": "none",

@@ -14,7 +14,11 @@ from entropic_substrate.ladder.run.h_probe_control import (
     read_probe_control,
 )
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
-from entropic_substrate.ladder.run.h_probe_watchdog import ProbeWatchdogFailure, run_probe_watchdog
+from entropic_substrate.ladder.run.h_probe_watchdog import (
+    UNCERTAIN_ABSENT_CONFIRMATIONS,
+    ProbeWatchdogFailure,
+    run_probe_watchdog,
+)
 from entropic_substrate.ladder.run.h_runpod_transport import (
     ProbeAccount,
     ProbePod,
@@ -280,6 +284,255 @@ def test_invalid_polling_cannot_arm_watchdog(tmp_path: Path, poll: float) -> Non
             directory, spec, Provider(spec), poll_seconds=poll, max_control_bytes=10_000
         )
     assert not (directory / "watchdog-ready.json").exists()
+
+
+def test_uncertain_absence_confirmation_threshold_is_pinned_at_three() -> None:
+    """K=3 is the spec's literal choice (FOR-1566); other tests derive from the
+    constant symbolically, so they cannot themselves catch a change to its value."""
+    assert UNCERTAIN_ABSENT_CONFIRMATIONS == 3
+
+
+def test_cancelled_uncertain_absence_resolves_after_exactly_k_valid_empty_reads(
+    tmp_path: Path,
+) -> None:
+    spec = replace(launch(), controller_timeout_seconds=50, watchdog_timeout_seconds=100)
+    directory, provider = root(tmp_path), Provider(spec)
+    with own_probe_role(directory, spec, "controller") as controller:
+        declare(controller, outcome="uncertain")
+        controller.write(
+            "stop",
+            {
+                "schema": "h-probe-stop-v1",
+                "guard_pid": os.getpid(),
+                "reason": "cancelled",
+                "pod_id": None,
+            },
+            max_bytes=10_000,
+        )
+    clock = [0.0]
+    calls = [0]
+    original_list_owned = provider.list_owned
+
+    def counting_list_owned(spec_arg: H0ProbeLaunch) -> tuple[ProbePod, ...]:
+        calls[0] += 1
+        return original_list_owned(spec_arg)
+
+    provider.list_owned = counting_list_owned
+
+    def wait(seconds: float) -> None:
+        clock[0] += seconds
+
+    result = run_probe_watchdog(
+        directory,
+        spec,
+        provider,
+        poll_seconds=1,
+        max_control_bytes=10_000,
+        monotonic=lambda: clock[0],
+        wait=wait,
+    )
+    assert result["status"] == "cancelled_uncertain_absent"
+    assert result["reason"] == "cancelled" and result["pod_id"] is None
+    assert result["termination_verified"] is True
+    assert result["attributed_pod_absent"] is True
+    assert result["inventory_verified"] is True
+    assert result["unattributed_pod_ids"] == []
+    # Resolves the instant the K-th empty read lands, before any (K)-th wait().
+    assert result["elapsed_seconds"] == UNCERTAIN_ABSENT_CONFIRMATIONS - 1
+    # +1 for the pre-loop arming check (provider.list_owned at entry, before the
+    # preexisting-candidates guard), which this counting fixture also observes.
+    assert calls[0] == UNCERTAIN_ABSENT_CONFIRMATIONS + 1
+
+
+def test_k_minus_one_valid_empty_reads_do_not_resolve_the_uncertain_absence(
+    tmp_path: Path,
+) -> None:
+    spec = replace(
+        launch(),
+        controller_timeout_seconds=1,
+        watchdog_timeout_seconds=UNCERTAIN_ABSENT_CONFIRMATIONS - 1,
+    )
+    directory, provider = root(tmp_path), Provider(spec)
+    with own_probe_role(directory, spec, "controller") as controller:
+        declare(controller, outcome="uncertain")
+        controller.write(
+            "stop",
+            {
+                "schema": "h-probe-stop-v1",
+                "guard_pid": os.getpid(),
+                "reason": "cancelled",
+                "pod_id": None,
+            },
+            max_bytes=10_000,
+        )
+    clock = [0.0]
+
+    def wait(seconds: float) -> None:
+        clock[0] += seconds
+
+    with pytest.raises(ProbeWatchdogFailure) as error:
+        run_probe_watchdog(
+            directory,
+            spec,
+            provider,
+            poll_seconds=1,
+            max_control_bytes=10_000,
+            monotonic=lambda: clock[0],
+            wait=wait,
+        )
+    assert error.value.record["status"] == "cleanup_unresolved"
+    assert error.value.record["termination_verified"] is False
+
+
+def test_uncertain_absence_count_starts_after_the_cancelled_stop_not_after_intent(
+    tmp_path: Path,
+) -> None:
+    spec = replace(launch(), controller_timeout_seconds=50, watchdog_timeout_seconds=100)
+    directory, provider = root(tmp_path), Provider(spec)
+    with own_probe_role(directory, spec, "controller") as controller:
+        declare(controller, outcome="uncertain")  # intent + allocation only, no stop yet
+    clock = [0.0]
+    waits = [0]
+    pre_stop_polls = 2
+
+    def wait(seconds: float) -> None:
+        waits[0] += 1
+        if waits[0] == pre_stop_polls:
+            with own_probe_role(directory, spec, "controller") as controller:
+                controller.write(
+                    "stop",
+                    {
+                        "schema": "h-probe-stop-v1",
+                        "guard_pid": os.getpid(),
+                        "reason": "cancelled",
+                        "pod_id": None,
+                    },
+                    max_bytes=10_000,
+                )
+        clock[0] += seconds
+
+    result = run_probe_watchdog(
+        directory,
+        spec,
+        provider,
+        poll_seconds=1,
+        max_control_bytes=10_000,
+        monotonic=lambda: clock[0],
+        wait=wait,
+    )
+    assert result["status"] == "cancelled_uncertain_absent"
+    # Empty reads before the stop never count: elapsed = pre-stop polls + (K - 1).
+    assert result["elapsed_seconds"] == pre_stop_polls + UNCERTAIN_ABSENT_CONFIRMATIONS - 1
+
+
+def test_candidate_at_any_poll_permanently_disables_the_uncertain_absence_exit(
+    tmp_path: Path,
+) -> None:
+    spec = replace(
+        launch(),
+        controller_timeout_seconds=1,
+        watchdog_timeout_seconds=2 * UNCERTAIN_ABSENT_CONFIRMATIONS + 4,
+    )
+    directory, provider = root(tmp_path), Provider(spec)
+    with own_probe_role(directory, spec, "controller") as controller:
+        declare(controller, outcome="uncertain")
+        controller.write(
+            "stop",
+            {
+                "schema": "h-probe-stop-v1",
+                "guard_pid": os.getpid(),
+                "reason": "cancelled",
+                "pod_id": None,
+            },
+            max_bytes=10_000,
+        )
+    calls = [0]
+
+    def list_owned(spec_arg: H0ProbeLaunch) -> tuple[ProbePod, ...]:
+        calls[0] += 1
+        if calls[0] == 2:
+            return (
+                ProbePod(
+                    "owned-pod",
+                    spec_arg.pod_name,
+                    str(spec_arg.request.image),
+                    1,
+                    "RUNNING",
+                    "running",
+                    1,
+                    "a" * 64,
+                ),
+            )
+        return ()
+
+    provider.list_owned = list_owned
+    clock = [0.0]
+
+    def wait(seconds: float) -> None:
+        clock[0] += seconds
+
+    with pytest.raises(ProbeWatchdogFailure) as error:
+        run_probe_watchdog(
+            directory,
+            spec,
+            provider,
+            poll_seconds=1,
+            max_control_bytes=10_000,
+            monotonic=lambda: clock[0],
+            wait=wait,
+        )
+    # Plenty of consecutive empty reads followed the transient candidate, and it
+    # still never resolves: the exit is disabled for the rest of this run.
+    assert error.value.record["status"] == "cleanup_unresolved"
+    assert error.value.record["termination_verified"] is False
+    assert calls[0] > UNCERTAIN_ABSENT_CONFIRMATIONS + 1
+
+
+def test_retryable_provider_error_resets_the_uncertain_absence_count(tmp_path: Path) -> None:
+    spec = replace(launch(), controller_timeout_seconds=50, watchdog_timeout_seconds=100)
+    directory, provider = root(tmp_path), Provider(spec)
+    with own_probe_role(directory, spec, "controller") as controller:
+        declare(controller, outcome="uncertain")
+        controller.write(
+            "stop",
+            {
+                "schema": "h-probe-stop-v1",
+                "guard_pid": os.getpid(),
+                "reason": "cancelled",
+                "pod_id": None,
+            },
+            max_bytes=10_000,
+        )
+    calls = [0]
+
+    def list_owned(_spec_arg: H0ProbeLaunch) -> tuple[ProbePod, ...]:
+        calls[0] += 1
+        if calls[0] == 2:
+            raise ProbeProviderError("network_error")
+        return ()
+
+    provider.list_owned = list_owned
+    clock = [0.0]
+
+    def wait(seconds: float) -> None:
+        clock[0] += seconds
+
+    result = run_probe_watchdog(
+        directory,
+        spec,
+        provider,
+        poll_seconds=1,
+        max_control_bytes=10_000,
+        monotonic=lambda: clock[0],
+        wait=wait,
+    )
+    assert result["status"] == "cancelled_uncertain_absent"
+    assert result["provider_error_count"] == 1 and result["last_error"] == "network_error"
+    assert result["guard_fault"] is None
+    # Read 2 errored and reset the count; K fresh reads afterward still resolve it,
+    # landing one poll later than the error-free case (calls 1,[2 error],3,4,5).
+    assert calls[0] == UNCERTAIN_ABSENT_CONFIRMATIONS + 2
+    assert result["elapsed_seconds"] == UNCERTAIN_ABSENT_CONFIRMATIONS
 
 
 def test_expiry_without_intent_does_not_claim_a_terminated_run(tmp_path: Path) -> None:

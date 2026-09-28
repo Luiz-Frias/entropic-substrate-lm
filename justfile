@@ -57,6 +57,18 @@ h-inspect-spans *ARGS:
 h-worker *ARGS:
     uv run python -m {{ h_worker }} {{ ARGS }}
 
+# e.g. just h-tiny-trace --profile <remote>/profile.json --corpus <capture> --out results/<dir>
+# Re-seals the capture in this regime; JSONL sink always, MLflow when opted in.
+# Local CPU tracer for a remote tiny H profile (no scientific or spending authority).
+h-tiny-trace *ARGS:
+    uv run python -m entropic_substrate.composition.wiring.h_tiny_tracer {{ ARGS }}
+
+# e.g. just h-solver-preflight --profile results/<attempt>/profile.json --corpus <pod>/prepared-corpus.json
+# Replays prediction step 1 on CPU; exit 0 PASS, 3 REFUSE; verdict JSON beside the profile.
+# CPU solver-budget preflight that gates every H pod launch (no scientific or spending authority).
+h-solver-preflight *ARGS:
+    PYTHONPATH=src uv run python tools/h_solver_preflight.py {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------

@@ -10,12 +10,21 @@ import pytest
 from tests.test_h_probe_launch import launch
 
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
-from entropic_substrate.ladder.run.h_runpod_transport import ProbeAccount, ProbePod
+from entropic_substrate.ladder.run.h_probe_watchdog import UNCERTAIN_ABSENT_CONFIRMATIONS
+from entropic_substrate.ladder.run.h_runpod_transport import (
+    ProbeAccount,
+    ProbePod,
+    ProbeProviderError,
+)
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.worker.h_probe_allocation import (
+    ProbeAllocationHandoffError,
+)
 from entropic_substrate.ladder.run.worker.h_probe_controller import (
     ProbeControllerFailure,
+    _termination,
     run_probe_controller,
 )
 
@@ -36,7 +45,10 @@ class Guard:
         self.root, self.launch, self.pid = root, launch(), 123
         self.control = Control()
         self.config = SimpleNamespace(
-            max_control_bytes=100_000, shutdown_timeout_seconds=1, provider_timeout_seconds=1
+            max_control_bytes=100_000,
+            shutdown_timeout_seconds=1,
+            provider_timeout_seconds=1,
+            poll_seconds=1,
         )
         self.ready = {"account_id": "fixture", "controller_deadline": 3.0, "watchdog_deadline": 6.0}
         self.alive = True
@@ -280,6 +292,148 @@ def test_changed_allocation_record_cannot_redirect_stop_or_emergency_cleanup(
     with pytest.raises(ProbeControllerFailure):
         run()
     assert "stop" not in guard.control.records and provider.deleted == ["owned-pod"]
+
+
+def test_provider_error_code_reaches_the_controller_result_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _guard, _provider, calls, _clock, run = setup(tmp_path, monkeypatch, None)
+
+    def failing_allocate(*_args: object) -> ProbePod:
+        calls.append("create")
+        raise ProbeProviderError("network_error", allocation_uncertain=True)
+
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.allocate_probe_once",
+        failing_allocate,
+    )
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    assert caught.value.record["provider_error_code"] == "network_error"
+    assert "ProbeProviderError" in caught.value.record["error_types"]
+
+
+def test_allocation_handoff_error_still_surfaces_its_wrapped_provider_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _guard, _provider, calls, _clock, run = setup(tmp_path, monkeypatch, None)
+    wrapped = ProbeProviderError("timeout", allocation_uncertain=True)
+
+    def failing_allocate(*_args: object) -> ProbePod:
+        calls.append("create")
+        raise ProbeAllocationHandoffError("owned-pod", wrapped)
+
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.allocate_probe_once",
+        failing_allocate,
+    )
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    assert caught.value.record["provider_error_code"] == "timeout"
+    assert caught.value.record["pod_id"] == "owned-pod"
+
+
+_BASE_TERMINATION_FIELDS: dict[str, object] = {
+    "schema": "h-probe-watchdog-result-v1",
+    "scientific_authority": "none",
+    "termination_verified": True,
+    "attributed_pod_absent": True,
+    "inventory_verified": True,
+    "unattributed_pod_ids": [],
+    "guard_fault": None,
+}
+
+
+def test_termination_accepts_terminated_only_with_an_attributed_pod() -> None:
+    record = {**_BASE_TERMINATION_FIELDS, "status": "terminated", "pod_id": "owned-pod"}
+    assert _termination(record, "owned-pod") is True
+    # Unchanged prior behavior: pod_id=None never accepts `terminated`, even if
+    # the record happens to say pod_id=None too.
+    assert _termination({**record, "pod_id": None}, None) is False
+    assert _termination(record, "different-pod") is False
+
+
+def test_termination_accepts_cancelled_uncertain_absent_only_without_a_pod() -> None:
+    record = {
+        **_BASE_TERMINATION_FIELDS,
+        "status": "cancelled_uncertain_absent",
+        "pod_id": None,
+    }
+    assert _termination(record, None) is True
+    # A record claiming uncertain-absence while carrying an attributed pod_id,
+    # or being asked about an attributed pod_id, is never accepted.
+    assert _termination({**record, "pod_id": "owned-pod"}, None) is False
+    assert _termination(record, "owned-pod") is False
+
+
+@pytest.mark.parametrize(
+    "field", ["termination_verified", "attributed_pod_absent", "inventory_verified"]
+)
+def test_termination_requires_every_verified_flag_for_both_statuses(field: str) -> None:
+    attributed = {**_BASE_TERMINATION_FIELDS, "status": "terminated", "pod_id": "owned-pod"}
+    absent = {**_BASE_TERMINATION_FIELDS, "status": "cancelled_uncertain_absent", "pod_id": None}
+    attributed[field] = False
+    absent[field] = False
+    assert _termination(attributed, "owned-pod") is False
+    assert _termination(absent, None) is False
+
+
+def test_pod_id_none_bounds_the_watchdog_wait_to_the_resolution_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No pod was ever attributed: wait_result must use the watchdog's own K-poll
+    uncertain-absent resolution window, never the full cleanup_deadline (which,
+    at 11100s in production, is exactly the defect FOR-1566 measured)."""
+    guard, _provider, calls, _clock, run = setup(tmp_path, monkeypatch, None)
+    # Production sizing (measured 2026-09-28): controller_timeout_seconds=3600,
+    # watchdog_timeout_seconds=11100 — the span the defect actually blocked for.
+    guard.ready = {**guard.ready, "watchdog_deadline": 11_100.0}
+
+    def failing_allocate(*_args: object) -> ProbePod:
+        calls.append("create")
+        guard.control.records["create-intent"] = {"guard_pid": guard.pid}
+        guard.control.records["allocation"] = {"pod_id": None}
+        raise ProbeProviderError("network_error", allocation_uncertain=True, possible_pod_id=None)
+
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_controller.allocate_probe_once",
+        failing_allocate,
+    )
+    seen_timeouts: list[float] = []
+    original_wait_result = guard.wait_result
+
+    def capturing_wait_result(*, timeout_seconds: float) -> dict[str, object]:
+        seen_timeouts.append(timeout_seconds)
+        guard.result = {
+            "schema": "h-probe-watchdog-result-v1",
+            "scientific_authority": "none",
+            "status": "cancelled_uncertain_absent",
+            "pod_id": None,
+            "termination_verified": True,
+            "attributed_pod_absent": True,
+            "inventory_verified": True,
+            "unattributed_pod_ids": [],
+            "guard_fault": None,
+        }
+        return original_wait_result(timeout_seconds=timeout_seconds)
+
+    monkeypatch.setattr(guard, "wait_result", capturing_wait_result)
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    expected_timeout = (UNCERTAIN_ABSENT_CONFIRMATIONS + 1) * (
+        guard.config.poll_seconds + 2 * guard.config.provider_timeout_seconds
+    ) + guard.config.shutdown_timeout_seconds
+    assert seen_timeouts == [expected_timeout]
+    # The reduced window must stay well under the full cleanup deadline it
+    # replaces; that gap is the entire point of the fix.
+    assert expected_timeout < guard.ready["watchdog_deadline"]
+    # The provider error still fails the controller run, but the watchdog's own
+    # verified-absent record is now accepted rather than contradicted.
+    assert caught.value.record["termination_verified"] is True
+    assert caught.value.record["status"] == "controller_failed"
 
 
 def test_emergency_cleanup_refuses_a_changed_account(
