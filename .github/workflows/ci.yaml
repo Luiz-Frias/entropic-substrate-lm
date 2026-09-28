@@ -70,7 +70,13 @@ jobs:
       - name: Unit tests (pytest -m unit, CPU only)
         env:
           ENTROPIC_SUBSTRATE_DEVICE: cpu
-        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings
+        # MEASURED 2026-09-28: the serial suite took 25m53s on ubuntu-latest
+        # (run 36446994821, 15:53:25Z -> 16:19:18Z). pytest-xdist with `-n auto`
+        # and `--dist loadfile` is the same invocation `just test` and the
+        # pre-commit hook use locally (justfile `test`), so CI stops being the
+        # one serial regime; the wall-clock at this commit is recorded in the
+        # PR that introduced it, not guessed here.
+        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
       # p0-contract-pin (operator ruling 2026-09-18): a channel that can stop
       # a merge, not just a local `just check` a contributor can skip. Layers
