@@ -84,6 +84,8 @@ jobs:
       - name: Runner CPU topology (xdist -n auto = psutil physical cores)
         run: |
           nproc
+          lscpu | grep -E 'Model name|Thread\(s\) per core|Core\(s\) per socket'
+          free -m
           uv run --no-sync python -c "import os, psutil; print('physical', psutil.cpu_count(logical=False), 'logical', os.cpu_count(), 'affinity', len(os.sched_getaffinity(0)))"
 
       - name: Unit tests (pytest -m unit, CPU only)
