@@ -1,0 +1,50 @@
+name: Release Please
+
+# The ONLY publisher of stable vX.Y.Z tags and GitHub releases in this repo.
+# On every push to main it opens or updates one release PR from the
+# Conventional Commits since the last release; merging that PR mints the tag
+# and the GitHub release. Nothing else tags (no cz bump, no manual tags), and
+# the release PR is never hand-created.
+on:
+  push:
+    branches: [main]
+
+# Needed only when the GITHUB_TOKEN fallback below is in use; a
+# RELEASE_PLEASE_TOKEN secret carries its own grants.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialize runs: two concurrent runs would race on the one release PR branch.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release PR / tag
+    runs-on: ubuntu-latest
+    steps:
+      # GitHub never starts workflow runs for events made with GITHUB_TOKEN, so
+      # without RELEASE_PLEASE_TOKEN (fine-grained PAT or GitHub App token:
+      # Contents + Pull requests read/write) CI never runs on the release PR.
+      # Say which token is in use rather than degrading silently.
+      - name: Report which token opens the release PR
+        env:
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
+        run: |
+          if [ "${HAS_RELEASE_TOKEN}" = "true" ]; then
+            echo "::notice::release-please runs as RELEASE_PLEASE_TOKEN; CI runs on the release PR"
+          else
+            echo "::warning::RELEASE_PLEASE_TOKEN is not set; using GITHUB_TOKEN, so CI will NOT run on the release PR and PR creation needs 'Allow GitHub Actions to create and approve pull requests'"
+          fi
+
+      # v5 verified 2026-09-28: v5 -> v5.0.0 (45996ed), node24 runtime, bundles
+      # release-please 17.6.0. v4 is the node20 line of the same action.
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0 (lightweight tag -> this commit, verified 2026-09-28)
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
