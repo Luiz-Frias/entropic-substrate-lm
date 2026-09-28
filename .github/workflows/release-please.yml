@@ -43,7 +43,7 @@ jobs:
       # release-please 17.6.0. v4 is the node20 line of the same action.
       - name: Run release-please
         id: release
-        uses: googleapis/release-please-action@v5
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0 (lightweight tag -> this commit, verified 2026-09-28)
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json

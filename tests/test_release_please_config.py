@@ -148,6 +148,11 @@ def test_workflow_runs_the_action_on_main_with_both_files() -> None:
         s for s in steps if str(s.get("uses", "")).startswith("googleapis/release-please-action@")
     ]
     assert len(action) == 1, action
+    # The action is pinned to a full commit SHA, never a mutable tag (review on
+    # PR #306, 2026-09-28): `v5.0.0` is a lightweight tag on this commit, and
+    # a moved tag would otherwise change what runs with `contents: write`.
+    ref = str(action[0]["uses"]).split("@", 1)[1]
+    assert re.fullmatch(r"[0-9a-f]{40}", ref), f"action must be SHA-pinned, got {ref!r}"
     inputs = action[0]["with"]
     assert inputs["config-file"] == CONFIG_PATH.name
     assert inputs["manifest-file"] == MANIFEST_PATH.name
