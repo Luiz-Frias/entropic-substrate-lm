@@ -7,7 +7,7 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane, written 2026-09-2
 | field                                 | value                                                                                            |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | branch                                | `mythwave/p14-t-trainer`                                                                         |
-| parent                                | `mythwave/p14-t-composition`                                                                     |
+| parent                                | `mythwave/p14-j-register`                                                                        |
 | mode (manifest, parallel eligibility) | `ratchet`                                                                                        |
 | cascade `phase.mode` (model tier)     | `normal`, always explicit                                                                        |
 | wave                                  | w2 (`p14-w2`), launched as one `mass-patch-fanout` wave, K <= 3                                  |
@@ -69,7 +69,7 @@ Machine-checkable, one line each.
 - remap_check at the tip over a mapping re-derived by the p13 procedure, never the committed `p13-sweep-mapping.json`: inversions <= 1, package cycles <= 4. Output in the PR body.
 - Mechanical counts at the tip at or under the epoch values below, output in the PR body.
 - Admissibility evidence in the PR body for every abstraction introduced: consolidated sites as `path:line`, and the AST branch count at each call site holding flat or falling (ruling 14).
-- `git diff --name-only mythwave/p14-t-composition...HEAD` is a subset of *Allowed files*; the identity tripwire above is empty.
+- `git diff --name-only mythwave/p14-j-register...HEAD` is a subset of *Allowed files*; the identity tripwire above is empty.
 - `just check` green; exit gate `just pc-ci` via `uv run python scripts/run_exit_gate.py`; `lint-imports` clean.
 
 Ratchet commands:

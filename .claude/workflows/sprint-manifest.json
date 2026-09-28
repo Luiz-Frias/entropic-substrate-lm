@@ -6,15 +6,15 @@
   "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
   "generated_by": "p14 planning lane (Opus, worktree .claude/worktrees/p14-plan) from helmsman:sprint-preflight wf_3076de6f-c56 draft + operator rulings 2026-09-28; ratified:false",
   "ratified": false,
-  "merge_topology": "Stacked mythwave/p14-* branches on refactor/p14-consolidation. Before any phase: four pre-phase rungs (fix/for-1567, fix/for-1617, chore/for-1614, chore/for-1615), each parented on the trunk and landed into it serially in that order, the two fix/ rungs each with its own conductor reader re-pin; these are NOT manifest phases (ruling 7, 12). Then rail p14-r1-strict-json alone; waves (K<=3, commit hooks serialized per the 2026-09-23 measurement): w1 {p14-t-local, p14-j-register, p14-t-composition}, w2 {p14-t-trainer, p14-t-historical, p14-t-campaign}, serial p14-t-capture-sink (live gate), w3 {p14-t-core, p14-t-dead, p14-j-kernel-capture}, w4 {p14-j-analyze-review-file, p14-j-run}; then serial tracer p14-t-verdict-vocab and the identity rail p14-z-identity last (one conductor re-pin). R-PARALLEL: members of one group share no file (measured, zero in-group overlaps) and no contract edge to each other; rails-before edges to the landed rail are discharged. The two cross-wave shared files (kernel/verdict/d1_evaluation_values.py, tests/test_d_ladder_remote.py) resolve serial-after by wave order. Parent chain below is the serial reading order; inside a wave the zip restacks ascending by footprint and re-runs the exit gate at every restacked tip. verified_at is re-stamped at the prelaunch ceremony after the trunk is rebased onto the v0.1.0 release tip.",
+  "merge_topology": "Stacked mythwave/p14-* branches on refactor/p14-consolidation. Before any phase: four pre-phase rungs (fix/for-1567, fix/for-1617, chore/for-1614, chore/for-1615), each parented on the trunk and landed into it serially in that order, the two fix/ rungs each with its own conductor reader re-pin; these are NOT manifest phases (ruling 7, 12). Then rail p14-r1-strict-json alone; waves (K<=3, commit hooks serialized per the 2026-09-23 measurement): w1 {p14-t-local, p14-t-composition, p14-j-register}, w2 {p14-t-trainer, p14-t-campaign, p14-t-historical}, serial p14-t-capture-sink (live gate), w3 {p14-t-core, p14-t-dead, p14-j-kernel-capture}, w4 {p14-j-analyze-review-file, p14-j-run}; then serial tracer p14-t-verdict-vocab and the identity rail p14-z-identity last (one conductor re-pin). R-PARALLEL: members of one group share no file (measured, zero in-group overlaps) and no contract edge to each other; rails-before edges to the landed rail are discharged. The two cross-wave shared files (kernel/verdict/d1_evaluation_values.py, tests/test_d_ladder_remote.py) resolve serial-after by wave order. Parent chain below is the serial reading order; inside a wave the zip restacks ascending by footprint and re-runs the exit gate at every restacked tip. verified_at is re-stamped at the prelaunch ceremony after the trunk is rebased onto the v0.1.0 release tip.",
   "sequence": [
     "p14-r1-strict-json",
     "p14-t-local",
-    "p14-j-register",
     "p14-t-composition",
+    "p14-j-register",
     "p14-t-trainer",
-    "p14-t-historical",
     "p14-t-campaign",
+    "p14-t-historical",
     "p14-t-capture-sink",
     "p14-t-core",
     "p14-t-dead",
@@ -122,6 +122,50 @@
       "notes": "FOR-1585: config.py _build special case moves into TrainConfig.__post_init__. FOR-1602: d1_capture_ports.py __post_init__ validates through self.binding; no signature change, so the 10 D1DvcPointerIdentity importers are untouched."
     },
     {
+      "id": "p14-t-composition",
+      "title": "Composition: one dispatch table, typed runtime/RunPod ports, canonical_json reuse, typed mailbox factory",
+      "issues": [
+        "FOR-1571",
+        "FOR-1583",
+        "FOR-1582",
+        "FOR-1584",
+        "FOR-1607"
+      ],
+      "branch": "mythwave/p14-t-composition",
+      "parent": "mythwave/p14-t-local",
+      "brief": ".claude/workflows/briefs/p14-t-composition.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.identity.d1_primitives.canonical_json (trunk)",
+        "ladder.run.values.d1_operator_ports.D1RunPodPort (trunk)",
+        "ladder.run.transport.d1_trainer_object_transport.D1TrainerMailboxObjectPort (trunk)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/composition/entrypoints/cli.py",
+        "src/entropic_substrate/composition/wiring/d1_campaign_controller_factory.py",
+        "src/entropic_substrate/composition/wiring/d1_trainer_cli_services.py",
+        "src/entropic_substrate/composition/entrypoints/d1_trainer_worker_command.py",
+        "src/entropic_substrate/composition/entrypoints/d1_trainer_mailbox_command.py",
+        "tests/test_cli_surface.py",
+        "tests/test_d1_campaign_controller_factory.py",
+        "tests/test_d1_trainer_cli_services.py",
+        "tests/test_d1_trainer_process_worker.py",
+        "tests/test_d1_trainer_mailbox_command.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w1",
+      "status": "queued",
+      "notes": "composition/entrypoints/cli.py is NOT a reader-tuple member (composition.cli is composition/cli.py). composition/wiring/d1_cli.py:180 _checked_payload is excluded (strict admission gate). FOR-1582's fourth site ladder/run/transport/d1_trainer_process_contracts.py belongs to p14-j-run. FOR-1608 is closed against FOR-1571 (ruling 13)."
+    },
+    {
       "id": "p14-j-register",
       "title": "Register and gate codecs adopt strict_json (FOR-1575 + FOR-1599 merged)",
       "issues": [
@@ -131,7 +175,7 @@
         "FOR-1613"
       ],
       "branch": "mythwave/p14-j-register",
-      "parent": "mythwave/p14-t-local",
+      "parent": "mythwave/p14-t-composition",
       "brief": ".claude/workflows/briefs/p14-j-register.md",
       "mode": "ratchet",
       "engine_mode": "normal",
@@ -175,50 +219,6 @@
       "notes": "Each codec keeps its own _text semantics (FOR-1614 is settled by the pre-phase rung chore/for-1614, never here) and its own exception type via the fail callback. d1_plan.py adopts require_mapping/exact_keys only (it validates already-decoded objects). ladder/register/ladder.py, d1_confirmatory_matrix.py, d1_launch_attempts.py, d1_provenance.py and d1_registered_design.py are in the set only as audited callers of the renamed loose SHA function."
     },
     {
-      "id": "p14-t-composition",
-      "title": "Composition: one dispatch table, typed runtime/RunPod ports, canonical_json reuse, typed mailbox factory",
-      "issues": [
-        "FOR-1571",
-        "FOR-1583",
-        "FOR-1582",
-        "FOR-1584",
-        "FOR-1607"
-      ],
-      "branch": "mythwave/p14-t-composition",
-      "parent": "mythwave/p14-j-register",
-      "brief": ".claude/workflows/briefs/p14-t-composition.md",
-      "mode": "ratchet",
-      "engine_mode": "normal",
-      "gates": {
-        "liveRequired": false,
-        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
-      },
-      "cost_class": "build",
-      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
-      "contracts_owned": [],
-      "contracts_consumed": [
-        "kernel.identity.d1_primitives.canonical_json (trunk)",
-        "ladder.run.values.d1_operator_ports.D1RunPodPort (trunk)",
-        "ladder.run.transport.d1_trainer_object_transport.D1TrainerMailboxObjectPort (trunk)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/composition/entrypoints/cli.py",
-        "src/entropic_substrate/composition/wiring/d1_campaign_controller_factory.py",
-        "src/entropic_substrate/composition/wiring/d1_trainer_cli_services.py",
-        "src/entropic_substrate/composition/entrypoints/d1_trainer_worker_command.py",
-        "src/entropic_substrate/composition/entrypoints/d1_trainer_mailbox_command.py",
-        "tests/test_cli_surface.py",
-        "tests/test_d1_campaign_controller_factory.py",
-        "tests/test_d1_trainer_cli_services.py",
-        "tests/test_d1_trainer_process_worker.py",
-        "tests/test_d1_trainer_mailbox_command.py"
-      ],
-      "conflict_edges": [],
-      "parallel_group": "p14-w1",
-      "status": "queued",
-      "notes": "composition/entrypoints/cli.py is NOT a reader-tuple member (composition.cli is composition/cli.py). composition/wiring/d1_cli.py:180 _checked_payload is excluded (strict admission gate). FOR-1582's fourth site ladder/run/transport/d1_trainer_process_contracts.py belongs to p14-j-run. FOR-1608 is closed against FOR-1571 (ruling 13)."
-    },
-    {
       "id": "p14-t-trainer",
       "title": "Trainer dedup: one fresh/resume failure helper, shared state_* accessors",
       "issues": [
@@ -226,7 +226,7 @@
         "FOR-1611"
       ],
       "branch": "mythwave/p14-t-trainer",
-      "parent": "mythwave/p14-t-composition",
+      "parent": "mythwave/p14-j-register",
       "brief": ".claude/workflows/briefs/p14-t-trainer.md",
       "mode": "ratchet",
       "engine_mode": "normal",
@@ -263,6 +263,47 @@
       "notes": "FOR-1568: _trainer_failure moves verbatim from d1_resume_trainer.py:210 to d1_terminal_failure.py (already imported by the fresh trainer at :31); zero new parameters. FOR-1611: D1EvalResult (d1_evaluation.py:42) and D1QualityEvidence (d1_telemetry_values.py:257) are two types with byte-identical state_mean/state_variance/state_covariance_eigenvalues/effective_rank properties over state_moments; the shared home is kernel/verdict/d1_evaluation_values.py, which both modules already import. Owns d1_evaluation_values.py; p14-j-kernel-capture touches it later (FOR-1572 parse_d1_cosine)."
     },
     {
+      "id": "p14-t-campaign",
+      "title": "ladder/run campaign + resource: typed billing request, shared custody decision, typed meter restore",
+      "issues": [
+        "FOR-1576",
+        "FOR-1587",
+        "FOR-1603",
+        "FOR-1601"
+      ],
+      "branch": "mythwave/p14-t-campaign",
+      "parent": "mythwave/p14-t-trainer",
+      "brief": ".claude/workflows/briefs/p14-t-campaign.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/closure/d1_billing_finalizer.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_controller.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_excluded_operator.py",
+        "src/entropic_substrate/ladder/capture/resource/resource_meter_strategy.py",
+        "src/entropic_substrate/ladder/run/resource/d1_resource_activation.py",
+        "tests/test_d1_billing_finalizer.py",
+        "tests/test_d1_finalized_cell_custody_values.py",
+        "tests/test_d1_operator_controller.py",
+        "tests/test_d1_operator_resume.py",
+        "tests/test_d1_excluded_operator.py",
+        "tests/test_resource_meter_strategy.py",
+        "tests/test_d1_resource_activation.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w2",
+      "status": "queued",
+      "notes": "Intra-phase order: FOR-1576 before FOR-1587 (both edit d1_operator_controller.py); FOR-1603 before FOR-1601 (restore() gains max_power_gap_seconds, which d1_resource_activation.py:255 resume() passes). finalize_d1_billing has 3 src call sites (d1_operator_controller.py:375,567, d1_excluded_operator.py:258) and 3 test consumers (test_d1_billing_finalizer.py, test_d1_finalized_cell_custody_values.py:90, test_d1_operator_resume.py:198 monkeypatch)."
+    },
+    {
       "id": "p14-t-historical",
       "title": "historical/: shared optimizer/autocast, resource-phase helper, dead load_ladder_model, workspace cleanup on failure",
       "issues": [
@@ -272,7 +313,7 @@
         "FOR-1580"
       ],
       "branch": "mythwave/p14-t-historical",
-      "parent": "mythwave/p14-t-trainer",
+      "parent": "mythwave/p14-t-campaign",
       "brief": ".claude/workflows/briefs/p14-t-historical.md",
       "mode": "ratchet",
       "engine_mode": "normal",
@@ -322,47 +363,6 @@
       "notes": "Owns the hub tests/test_d_ladder_remote.py (FOR-1580 RED-first test); p14-t-dead edits its d1_configs_dir import at :19 later (serial-after). FOR-1580 changes failure-path behaviour (root emptied on failure): RED-first with both arms. FOR-1586: local helper only, never a null-object ResourceMeter (d_ladder_execution.py:147 invariant). d_ladder_remote_request.py and d_ladder_worker_command.py are in the set only as audited callers of the renamed loose SHA function (P14-SHA-SEQ); this phase consumes the rail for that leg."
     },
     {
-      "id": "p14-t-campaign",
-      "title": "ladder/run campaign + resource: typed billing request, shared custody decision, typed meter restore",
-      "issues": [
-        "FOR-1576",
-        "FOR-1587",
-        "FOR-1603",
-        "FOR-1601"
-      ],
-      "branch": "mythwave/p14-t-campaign",
-      "parent": "mythwave/p14-t-historical",
-      "brief": ".claude/workflows/briefs/p14-t-campaign.md",
-      "mode": "ratchet",
-      "engine_mode": "normal",
-      "gates": {
-        "liveRequired": false,
-        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
-      },
-      "cost_class": "build",
-      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
-      "contracts_owned": [],
-      "contracts_consumed": [],
-      "touch_set": [
-        "src/entropic_substrate/ladder/run/closure/d1_billing_finalizer.py",
-        "src/entropic_substrate/ladder/run/campaign/d1_operator_controller.py",
-        "src/entropic_substrate/ladder/run/campaign/d1_excluded_operator.py",
-        "src/entropic_substrate/ladder/capture/resource/resource_meter_strategy.py",
-        "src/entropic_substrate/ladder/run/resource/d1_resource_activation.py",
-        "tests/test_d1_billing_finalizer.py",
-        "tests/test_d1_finalized_cell_custody_values.py",
-        "tests/test_d1_operator_controller.py",
-        "tests/test_d1_operator_resume.py",
-        "tests/test_d1_excluded_operator.py",
-        "tests/test_resource_meter_strategy.py",
-        "tests/test_d1_resource_activation.py"
-      ],
-      "conflict_edges": [],
-      "parallel_group": "p14-w2",
-      "status": "queued",
-      "notes": "Intra-phase order: FOR-1576 before FOR-1587 (both edit d1_operator_controller.py); FOR-1603 before FOR-1601 (restore() gains max_power_gap_seconds, which d1_resource_activation.py:255 resume() passes). finalize_d1_billing has 3 src call sites (d1_operator_controller.py:375,567, d1_excluded_operator.py:258) and 3 test consumers (test_d1_billing_finalizer.py, test_d1_finalized_cell_custody_values.py:90, test_d1_operator_resume.py:198 monkeypatch)."
-    },
-    {
       "id": "p14-t-capture-sink",
       "title": "MLflow sink: no duplicate run on cold-start retry; honest MetricExtractor contracts",
       "issues": [
@@ -370,7 +370,7 @@
         "FOR-1569"
       ],
       "branch": "mythwave/p14-t-capture-sink",
-      "parent": "mythwave/p14-t-campaign",
+      "parent": "mythwave/p14-t-historical",
       "brief": ".claude/workflows/briefs/p14-t-capture-sink.md",
       "mode": "ratchet",
       "engine_mode": "arch",

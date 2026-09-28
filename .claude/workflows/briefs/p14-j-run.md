@@ -10,7 +10,7 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane, written 2026-09-2
 | parent                                | `mythwave/p14-j-analyze-review-file`                                                             |
 | mode (manifest, parallel eligibility) | `ratchet`                                                                                        |
 | cascade `phase.mode` (model tier)     | `normal`, always explicit                                                                        |
-| wave                                  | w4 (`p14-w4`), launched as one `mass-patch-fanout` wave, K <= 2                                  |
+| wave                                  | w4 (`p14-w4`), launched as one `mass-patch-fanout` wave, K <= 3 (2 lanes)                        |
 | `gates.liveRequired`                  | `false`                                                                                          |
 | gates                                 | `{"offline":"just check","exit":"just pc-ci","live":"just container-test","liveRequired":false}` |
 | `repoToplevel`                        | `/Users/luizfrias/CursorAI/entropic-substrate-lm`, the MAIN checkout, never a worktree           |

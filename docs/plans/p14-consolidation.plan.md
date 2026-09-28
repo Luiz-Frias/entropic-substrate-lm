@@ -117,11 +117,11 @@ the operator to ratify.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [p14-r1-strict-json](#p14-r1-strict-json) | strict canonical-JSON codec module | tracer | FOR-1613 | rail | ship-it | 0 | 3 |
 | [p14-t-local](#p14-t-local) | TrainConfig betas, D1DvcBinding | ratchet | FOR-1585, FOR-1602 | w1 | zip | 0 | 4 |
-| [p14-j-register](#p14-j-register) | register and gate codecs adopt strict_json | ratchet | FOR-1575, FOR-1599, FOR-1577, FOR-1613 | w1 | zip | 0 | 14 |
 | [p14-t-composition](#p14-t-composition) | one dispatch table, typed ports, canonical_json reuse | ratchet | FOR-1571, FOR-1583, FOR-1582, FOR-1584, FOR-1607 | w1 | zip | 0 | 10 |
+| [p14-j-register](#p14-j-register) | register and gate codecs adopt strict_json | ratchet | FOR-1575, FOR-1599, FOR-1577, FOR-1613 | w1 | zip | 0 | 14 |
 | [p14-t-trainer](#p14-t-trainer) | one failure helper, shared accessors | ratchet | FOR-1568, FOR-1611 | w2 | zip | 0 | 10 |
-| [p14-t-historical](#p14-t-historical) | shared optimizer, resource-phase helper, workspace cleanup | ratchet | FOR-1570, FOR-1586, FOR-1606, FOR-1580 | w2 | zip | 0 | 14 |
 | [p14-t-campaign](#p14-t-campaign) | typed billing request, custody decision, meter restore | ratchet | FOR-1576, FOR-1587, FOR-1603, FOR-1601 | w2 | zip | 0 | 12 |
+| [p14-t-historical](#p14-t-historical) | shared optimizer, resource-phase helper, workspace cleanup | ratchet | FOR-1570, FOR-1586, FOR-1606, FOR-1580 | w2 | zip | 0 | 14 |
 | [p14-t-capture-sink](#p14-t-capture-sink) | MLflow startup split, extractor contracts | ratchet | FOR-1578, FOR-1569 | serial | **ship-it (live)** | 0 | 12 |
 | [p14-t-core](#p14-t-core) | decode validator, offset sampler, horizon heads, GatedKappaNorm | ratchet | FOR-1593, FOR-1591, FOR-1592, FOR-1595, FOR-1597 | w3 | zip | 0 | 14 |
 | [p14-t-dead](#p14-t-dead) | dead-code sweep | ratchet | FOR-1574, FOR-1590, FOR-1594, FOR-1600, FOR-1605 | w3 | zip | 0 | 21 |
@@ -366,8 +366,8 @@ Every phase ACCEPTANCE carries these, machine-checkable, at its tip:
 ```text
 pre: fix/for-1567 -> fix/for-1617 -> chore/for-1614 -> chore/for-1615   (each onto the trunk)
 p14-r1-strict-json
-w1  [ t-local | j-register | t-composition ]
-w2  [ t-trainer | t-historical | t-campaign ]
+w1  [ t-local | t-composition | j-register ]
+w2  [ t-trainer | t-campaign | t-historical ]
 p14-t-capture-sink                      (serial, live gate)
 w3  [ t-core | t-dead | j-kernel-capture ]
 w4  [ j-analyze-review-file | j-run ]
