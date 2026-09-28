@@ -49,9 +49,20 @@ def _isolate_callers_git_context() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _deterministic() -> None:
-    """Pin the global RNG and thread count for every test."""
+    """Pin the global RNG and thread count for every test.
+
+    Thread count comes from ``tests/xdist_policy.py``: 1 inside an xdist
+    worker (``PYTEST_XDIST_WORKER`` set), 2 in a serial session. The old
+    hardcoded 2 meant N workers x 2 intra-op threads on an N-CPU runner
+    before any subprocess a test spawns (FOR-1618 P4b; the wall-time
+    measurement is in that PR's ledger, not here). Imported inside the
+    fixture because ``tests/`` joins ``sys.path`` above, after this
+    module's own imports.
+    """
+    from xdist_policy import torch_threads_for
+
     torch.manual_seed(1234)
-    torch.set_num_threads(2)
+    torch.set_num_threads(torch_threads_for(os.environ))
 
 
 @pytest.fixture(autouse=True)
