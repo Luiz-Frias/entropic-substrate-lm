@@ -363,8 +363,8 @@ def _worst(trace: SolveTrace) -> dict[str, Any]:
     }
 
 
-def analyze(solve: CapturedSolve) -> dict[str, Any]:
-    """Replay FP32 (fidelity-checked) and FP64, plus spectrum and floor, per position."""
+def checked_replay(solve: CapturedSolve) -> SolveTrace:
+    """FP32 replay that must reproduce the live outcome (and residuals bitwise)."""
     fp32, trace32 = replay(solve, torch.float32)
     if trace32.outcome != solve.live_outcome:
         raise RuntimeError(
@@ -372,6 +372,12 @@ def analyze(solve: CapturedSolve) -> dict[str, Any]:
         )
     if fp32 is not None and _rows(fp32.diagnostics.residual_norm) != solve.live_residual_norm:
         raise RuntimeError("replay residuals differ bitwise from the live solve")
+    return trace32
+
+
+def analyze(solve: CapturedSolve) -> dict[str, Any]:
+    """Replay FP32 (fidelity-checked) and FP64, plus spectrum and floor, per position."""
+    trace32 = checked_replay(solve)
     _, trace64 = replay(solve, torch.float64)
     spectrum = operator_spectrum(
         solve.parameterized_mean_map,
