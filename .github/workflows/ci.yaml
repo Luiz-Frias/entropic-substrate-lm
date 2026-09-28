@@ -91,20 +91,31 @@ jobs:
       - name: Unit tests (pytest -m unit, CPU only)
         env:
           ENTROPIC_SUBSTRATE_DEVICE: cpu
-        # MEASURED 2026-09-28, step span (started_at -> completed_at of THIS
-        # step, GitHub Actions jobs API), ubuntu-latest:
-        #   serial (run 36446994821, 651af30):      24m56s  15:54:16Z -> 16:19:12Z
-        #   -n auto --dist loadfile (run 36466114767, ef8bdf1): 23m06s  18:35:09Z -> 18:58:15Z
-        #     summary: 5116 passed, 1 skipped in 1381.38s
-        # RETRACTION: the previous comment quoted 25m53s for the serial run;
-        # that was the RUN span (run created_at -> updated_at, 15:53:25Z ->
-        # 16:19:18Z: queueing and install included), not this step. Every
-        # figure here is the step span.
-        # --durations: pytest-core, aggregated at the controller across xdist
-        # workers, so the long-pole tests are in the log and never inferred.
-        # FOR-1618 hill-climb ledger (probe, SHA, run ID, verdict) lives in
-        # the PR that carries this comment.
-        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile --durations=60 --durations-min=1.0
+          # Reach the subprocess children tests spawn (cold-import, command
+          # runner, h-probe and sentence workers inherit os.environ); the
+          # parent's own threads are pinned by tests/xdist_policy.py.
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        # MEASURED 2026-09-28 (FOR-1618): step span of THIS step (jobs API
+        # started_at -> completed_at), ubuntu-latest, CPU model from the
+        # topology step above. The label hides at least two host types that
+        # differ ~1.6x on the same tree, so only same-model rows compare:
+        #   EPYC 7763  1 worker (-n auto = physical 1)        run 36495315707 a150cf9  23m01s
+        #   EPYC 7763  1 worker + OMP/MKL=1                    run 36495375337 6dfe075  22m53s
+        #   EPYC 7763  -n 0 + OMP/MKL=1                        run 36495318051 e3a45de  23m02s
+        #   EPYC 7763  -n logical (2 workers) + OMP/MKL=1      run 36493205728 7320c11  19m39s
+        #   EPYC 7763  -n logical + OMP/MKL=1 + thread policy  run 36493208190 b0492ce  18m29s  <- this
+        #   EPYC 9V45  1 worker + OMP/MKL=1                    run 36493203944 6dfe075  13m24s
+        # No 2-worker sample landed on a 9V45 host; that regime is unmeasured.
+        # RETRACTION: the two figures this comment carried before (serial
+        # 24m56s, run 36446994821; loadfile 23m06s, run 36466114767) were
+        # recorded without the host model and compare to nothing above.
+        # -n logical: xdist 3.8.0 -n auto = psutil physical cores = 1 here.
+        # --dist loadfile: worksteal (run 36490750363) and loadscope (run
+        # 36490753188) measured within 20 s of loadfile (runs 36490748461,
+        # 36490755242) on the same tree, hosts not recorded. Full ledger:
+        # the FOR-1618 PR body.
+        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n logical --dist loadfile --durations=60 --durations-min=1.0
 
       # Teeth for tests/test_subprocess_env_hygiene.py at the regime that bit:
       # a test that re-syncs .venv from uv.lock swaps the CPU wheel above for
