@@ -5,12 +5,19 @@ on:
     # refactor/**: the hexagonal-refactor sprint trunk (operator ruling 2026-09-19);
     # without it no sprint push or PR ran CI and lint-imports had no channel to stop
     # a merge (measured on PR #285: 0 workflow runs before this trigger landed).
-    branches: [main, 'refactor/**']
+    # ci/**: CI-tuning probe branches (FOR-1618, 2026-09-28). Each probe is a
+    # single config change measured on its own runner; without this entry a
+    # pushed probe branch ran nothing (the base ci/xdist-unit-suite had exactly
+    # 1 run, and that one was PR #307's pull_request event onto main).
+    branches: [main, 'refactor/**', 'ci/**']
   pull_request:
     # mythwave/**: stacked lane PRs base on the previous lane branch, so the
     # refactor/** filter never matched them (measured on PR #286: 0 runs);
     # operator ruling 2026-09-20. The filter matches the PR's BASE branch.
-    branches: [main, 'refactor/**', 'mythwave/**']
+    # ci/**: a PR whose BASE is a ci/ probe trunk (FOR-1618's deliverable
+    # bases on ci/xdist-unit-suite) matched none of the entries above and
+    # could not run CI at all (filter read 2026-09-28).
+    branches: [main, 'refactor/**', 'mythwave/**', 'ci/**']
 
 # Least-privilege default: every step below only checks out and reads the repo
 # (lint, typecheck, unit tests, import-lint) — no push, comment, or artifact write.
@@ -67,16 +74,57 @@ jobs:
       - name: Typecheck (basedpyright, strict)
         run: uv run --no-sync basedpyright src scripts
 
+      # xdist 3.8.0 `-n auto` = psutil.cpu_count(logical=False) when psutil is
+      # importable (xdist/plugin.py pytest_xdist_auto_num_workers; psutil is in
+      # the deploy group, which dev includes), and `-q` hides xdist's
+      # "N workers" header (dsession.py: shown only at verbose >= 0). So the
+      # worker count the suite actually ran with was never in the log. This
+      # step prints the same numbers xdist reads, on the same runner, before
+      # the suite starts.
+      - name: Runner CPU topology (xdist -n auto = psutil physical cores)
+        run: |
+          nproc
+          lscpu | grep -E 'Model name|Thread\(s\) per core|Core\(s\) per socket'
+          free -m
+          uv run --no-sync python -c "import os, psutil; print('physical', psutil.cpu_count(logical=False), 'logical', os.cpu_count(), 'affinity', len(os.sched_getaffinity(0)))"
+
       - name: Unit tests (pytest -m unit, CPU only)
         env:
           ENTROPIC_SUBSTRATE_DEVICE: cpu
-        # MEASURED 2026-09-28: the serial suite took 25m53s on ubuntu-latest
-        # (run 36446994821, 15:53:25Z -> 16:19:18Z). pytest-xdist with `-n auto`
-        # and `--dist loadfile` is the same invocation `just test` and the
-        # pre-commit hook use locally (justfile `test`), so CI stops being the
-        # one serial regime; the wall-clock at this commit is recorded in the
-        # PR that introduced it, not guessed here.
-        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
+          # Reach the subprocess children tests spawn (cold-import, command
+          # runner, h-probe and sentence workers inherit os.environ); the
+          # parent's own threads are pinned by tests/xdist_policy.py.
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        # MEASURED 2026-09-28 (FOR-1618): step span of THIS step (jobs API
+        # started_at -> completed_at), ubuntu-latest, CPU model from the
+        # topology step above. The label hides at least two host types that
+        # differ ~1.6x on the same tree, so only same-model rows compare:
+        #   EPYC 7763  1 worker (-n auto = physical 1)        run 36495315707 a150cf9  23m01s
+        #   EPYC 7763  1 worker + OMP/MKL=1                    run 36495375337 6dfe075  22m53s
+        #   EPYC 7763  -n 0 + OMP/MKL=1                        run 36495318051 e3a45de  23m02s
+        #   EPYC 7763  -n logical (2 workers) + OMP/MKL=1      run 36493205728 7320c11  19m39s
+        #   EPYC 7763  -n logical + OMP/MKL=1 + thread policy  run 36493208190 b0492ce  18m29s  <- this
+        #   EPYC 9V45  1 worker + OMP/MKL=1                    run 36493203944 6dfe075  13m24s
+        # No 2-worker sample landed on a 9V45 host; that regime is unmeasured.
+        # RETRACTION: the two figures this comment carried before (serial
+        # 24m56s, run 36446994821; loadfile 23m06s, run 36466114767) were
+        # recorded without the host model and compare to nothing above.
+        # -n logical: xdist 3.8.0 -n auto = psutil physical cores = 1 here.
+        # --dist loadfile: worksteal (run 36490750363) and loadscope (run
+        # 36490753188) measured within 20 s of loadfile (runs 36490748461,
+        # 36490755242) on the same tree, hosts not recorded. Full ledger:
+        # the FOR-1618 PR body.
+        run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n logical --dist loadfile --durations=60 --durations-min=1.0
+
+      # Teeth for tests/test_subprocess_env_hygiene.py at the regime that bit:
+      # a test that re-syncs .venv from uv.lock swaps the CPU wheel above for
+      # the CUDA build (MEASURED 2026-09-28, FOR-1618: three two-worker runs
+      # died in cold-import children mid-reinstall). If torch is no longer the
+      # +cpu wheel after the suite, something in the suite rewrote the env.
+      - name: Venv unchanged by the suite (torch is still the +cpu wheel)
+        run: |
+          uv run --no-sync python -c "import sys, torch; v = torch.__version__; print('torch', v); sys.exit(0 if v.endswith('+cpu') else 1)"
 
       # p0-contract-pin (operator ruling 2026-09-18): a channel that can stop
       # a merge, not just a local `just check` a contributor can skip. Layers
