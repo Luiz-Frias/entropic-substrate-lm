@@ -69,6 +69,12 @@ h-tiny-trace *ARGS:
 h-solver-preflight *ARGS:
     PYTHONPATH=src uv run python tools/h_solver_preflight.py {{ ARGS }}
 
+# e.g. just h-probe-stop --launch-root <dir> --launch-file launch.json --repo-root . --max-launch-bytes 1000000 --wait-seconds 300 --poll-seconds 5
+# The only sanctioned way to end an in-flight H probe run (FOR-1617): publishes
+# the R2 stop marker, waits for the worker's `stopped` terminal, prints its keys.
+h-probe-stop *ARGS:
+    uv run python -m entropic_substrate.ladder.run.worker.h_probe_stop {{ ARGS }}
+
 # ---------------------------------------------------------------------------
 # Environment setup
 # ---------------------------------------------------------------------------

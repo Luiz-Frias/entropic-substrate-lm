@@ -27,6 +27,7 @@ _FIELDS = {
     "checkpoint": "successful_optimizer_steps training",
     "complete": "result",
     "paused": "result",
+    "stopped": "result successful_optimizer_steps",
     "failure": "stage error_type error_code evidence_delivery",
 }
 _STATUS = {
@@ -34,6 +35,7 @@ _STATUS = {
     "checkpoint": "checkpoint",
     "complete": "probe_workload_complete",
     "paused": "paused",
+    "stopped": "stopped_by_operator",
 }
 # FOR-1567, design-gate ruling DG-C: a `publication` block on checkpoint-*
 # events records per-leg seconds and object/retry counts. Door: read-old
@@ -186,6 +188,17 @@ def read_probe_event(
         worker_artifact(row["training"], "run")
         if "publication" in row:
             _admit_publication(row["publication"])
+    elif kind == "stopped":
+        count = row["successful_optimizer_steps"]
+        if (
+            type(count) is not int
+            or not 1
+            <= count
+            <= request.profile.schedule.warmup_steps + request.profile.schedule.steps
+        ):
+            raise ValueError("worker stopped step differs from workload bounds")
+        steps = count
+        worker_artifact(row["result"], "worker")
     else:
         worker_artifact(row["result"], "worker")
     snapshot = (

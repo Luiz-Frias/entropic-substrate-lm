@@ -45,7 +45,7 @@ def collect_probe_terminal(
     """
     found = [
         (name, event)
-        for name in ("complete", "paused", "failure")
+        for name in ("complete", "paused", "stopped", "failure")
         if (
             event := read_probe_event(
                 objects, request, name, expected_pod_id=expected_pod_id, max_bytes=max_marker_bytes
@@ -161,6 +161,50 @@ def _capture(
                 capture_status="pause_bytes_verified",
                 reported_optimizer_steps=expected_steps,
                 resume_artifact=paused["training"],
+            )
+        elif name == "stopped":
+            stopped = recovery_record(
+                read_json(
+                    root / "worker",
+                    worker_artifact(row["result"], "worker"),
+                    max_bytes=request.limits.max_object_bytes,
+                ),
+                "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds",
+            )
+            reported_step = event.reported_optimizer_steps
+            if (
+                stopped["schema"] != "h-probe-worker-result-v1"
+                or stopped["request_sha256"] != request.digest
+                or stopped["run_identity"] != request.profile.identity
+                or stopped["scientific_authority"] != "none"
+                or stopped["status"] != "stopped_by_operator"
+                or type(stopped["successful_optimizer_steps"]) is not int
+                or stopped["successful_optimizer_steps"] != reported_step
+                or any(
+                    stopped[k] is not None
+                    for k in ("generation", "diagnostics", "capture", "verification")
+                )
+            ):
+                raise ValueError("stopped result differs from its terminal event")
+            admit_worker_runtime(stopped["runtime"], request, expected_pod_id)
+            receipt = recovery_record(
+                read_json(
+                    root / "run",
+                    worker_artifact(stopped["training"], "run"),
+                    max_bytes=request.limits.max_object_bytes,
+                ),
+                "schema run_identity run_class scientific_authority profile status phase step successful_optimizer_steps last_seal evaluations parent_receipt inventory",
+            )
+            if (
+                receipt["schema"] != "h-probe-training-progress-v1"
+                or receipt["status"] != "paused"
+                or receipt["successful_optimizer_steps"] != reported_step
+            ):
+                raise ValueError("stopped receipt differs from its reported terminal step")
+            report.update(
+                capture_status="stop_bytes_verified",
+                reported_optimizer_steps=reported_step,
+                resume_artifact=stopped["training"],
             )
         else:
             files = cast(list[dict[str, object]], snapshot["files"])

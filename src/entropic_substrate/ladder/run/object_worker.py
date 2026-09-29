@@ -33,6 +33,47 @@ from entropic_substrate.ladder.run.worker_transport import (
 )
 
 
+def _canonical(value: dict[str, object]) -> bytes:
+    return json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+
+
+# R2 stop marker door (FOR-1617): its own schema, distinct from the host
+# control message `h-probe-stop-v1` (worker/h_probe_controller.py,
+# h_probe_watchdog.py). Defined once here -- never in worker/h_probe_stop.py,
+# which would close an import cycle through worker_command.py -- and
+# imported by the verb, never duplicated.
+STOP_MARKER_SCHEMA = "h-probe-stop-marker-v1"
+
+
+def stop_marker_key(request: ProbeRequest) -> str:
+    return f"{request.prefix}/control/stop.json"
+
+
+def encode_stop_marker(request: ProbeRequest) -> bytes:
+    """A pure function of (schema name, request digest): no `at`, no nonce."""
+    return _canonical({"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest})
+
+
+def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
+    """True: stop this request. False: a marker for another request, ignored.
+
+    Everything else -- bad JSON/UTF-8, non-canonical bytes, a missing or
+    extra key, a foreign schema -- raises. The schema check runs before the
+    request digest check.
+    """
+    row = recovery_record(json.loads(payload), "schema request_sha256")
+    if row["schema"] != STOP_MARKER_SCHEMA:
+        raise ValueError("stop marker schema is foreign")
+    digest = row["request_sha256"]
+    if type(digest) is not str:
+        raise ValueError("stop marker request digest is invalid")
+    if digest != request.digest:
+        return False
+    if _canonical(row) != payload:
+        raise ValueError("stop marker is not canonical JSON")
+    return True
+
+
 def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
     paths = []
     for section in sections:
@@ -52,7 +93,7 @@ def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
 def _event(
     objects: D1TrainerMailboxObjectPort, request: ProbeRequest, name: str, value: dict[str, object]
 ) -> D1TrainerMailboxObjectIdentity:
-    payload = json.dumps(
+    payload = _canonical(
         {
             "schema": "h-worker-event-v1",
             "request_sha256": request.digest,
@@ -60,11 +101,8 @@ def _event(
             "scientific_authority": "none",
             "at": datetime.now(UTC).isoformat(),
             **value,
-        },
-        sort_keys=True,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode()
+        }
+    )
     if len(payload) > request.limits.max_object_bytes:
         raise ValueError("worker event exceeds its byte budget")
     return publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
@@ -105,7 +143,7 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
         or row["successful_optimizer_steps"] != report["successful_optimizer_steps"]
     ):
         raise ValueError("worker result step count differs from admitted training")
-    if row["status"] == "paused":
+    if row["status"] in ("paused", "stopped_by_operator"):
         if report["status"] != "paused" or any(
             row[k] is not None for k in ("generation", "diagnostics", "capture", "verification")
         ):
@@ -250,6 +288,31 @@ def run_object_worker(
                 },
             )
 
+        def stop_requested() -> bool:
+            """One bounded read per call site; never retries an absent marker.
+
+            Reuses rung 1's :class:`VerificationReadRetry` for its attempt
+            count and backoff schedule only (its public fields), never its
+            private ``_verified_read`` (which needs an expected identity and
+            payload this poll does not have). A raised exception is retried
+            up to ``attempts`` total and then re-raised unchanged; a clean
+            ``None`` (absent) or an object read is never retried.
+            """
+            retry = VerificationReadRetry()
+            key = stop_marker_key(request)
+            received = None
+            for index in range(retry.attempts):
+                try:
+                    received = objects.read(key)
+                    break
+                except Exception:
+                    if index == retry.attempts - 1:
+                        raise
+                    retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
+            if received is None:
+                return False
+            return classify_stop_marker(received.payload, request)
+
         stage = "execution"
         result = execute_probe_request(
             request,
@@ -259,11 +322,18 @@ def run_object_worker(
             on_start=start,
             sink=sink,
             publication_timing=publication_timing,
+            operator_stop=stop_requested,
         )
         result = _admit_result(root, request, result)
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)
         stage = "final_snapshot"
-        name = "paused" if result["status"] == "paused" else "complete"
+        name = (
+            "paused"
+            if result["status"] == "paused"
+            else "stopped"
+            if result["status"] == "stopped_by_operator"
+            else "complete"
+        )
         snapshot = publish_worker_snapshot(
             objects,
             request,
@@ -271,16 +341,14 @@ def run_object_worker(
             _paths(root, ("run", "capture", "verification", "worker")),
             name=name,
         )
-        return _event(
-            objects,
-            request,
-            name,
-            {
-                "status": result["status"],
-                "result": artifact_reference(root, result_artifact),
-                "snapshot": asdict(snapshot),
-            },
-        )
+        event_value: dict[str, object] = {
+            "status": result["status"],
+            "result": artifact_reference(root, result_artifact),
+            "snapshot": asdict(snapshot),
+        }
+        if result["status"] == "stopped_by_operator":
+            event_value["successful_optimizer_steps"] = result["successful_optimizer_steps"]
+        return _event(objects, request, name, event_value)
     except Exception as error:
         status = (
             "scientific_gap"
