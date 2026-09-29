@@ -332,20 +332,20 @@ def test_marker_at_a_checkpoint_step_seals_once_not_twice(tmp_path: Path) -> Non
     worker = tmp_path / "worker-run"
     worker.mkdir()
     run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
-    seal_keys = [
-        key
-        for key in objects.values
-        if key.startswith(f"{request.prefix}/checkpoint-") and key.endswith(".json")
-    ]
-    assert seal_keys.count(f"{request.prefix}/checkpoint-00000004.json") == 1
-    # Never reached the checkpoint the completing run would have sealed.
+    # `objects.values` is a dict: a key it holds can never count more than
+    # once, so counting keys there cannot distinguish "sealed once" from
+    # "sealed twice, second write collapsed the first". `objects.publishes`
+    # is the append-only call log (test_d1_trainer_object_transport.py:73)
+    # and is the only thing that can actually witness a double publish.
+    assert objects.publishes.count(f"{request.prefix}/checkpoint-00000004.json") == 1
     assert (
-        f"{request.prefix}/checkpoint-00000004.json" not in objects.values
-        or json.loads(objects.values[f"{request.prefix}/checkpoint-00000004.json"])[
+        json.loads(objects.values[f"{request.prefix}/checkpoint-00000004.json"])[
             "successful_optimizer_steps"
         ]
         == 4
     )
+    # Never reached the checkpoint the completing run would have sealed.
+    assert f"{request.prefix}/checkpoint-00000006.json" not in objects.values
 
 
 def test_marker_for_another_request_is_ignored_run_completes(tmp_path: Path) -> None:
