@@ -281,6 +281,7 @@ def test_d1_extractor_projects_only_evidence_qualified_scalars_at_successful_ste
     before = canonical_event_line(event)
 
     mirror.log(event)
+    mirror.flush()
 
     metrics = client._runs[mirror.run_id].data.metrics
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
