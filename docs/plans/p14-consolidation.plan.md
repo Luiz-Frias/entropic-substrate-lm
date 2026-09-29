@@ -34,7 +34,7 @@ FOR-1617, become pre-phase rungs too.
 
 | quantity | value | evidence |
 | --- | --- | --- |
-| epoch | `651af30d4db9e50456ea374b13f0126197348393` on `main` | `[M, git rev-parse]` |
+| epoch | `4e0ae6a59117d054cc9b63d705d5004e06b982cb` on `main` | `[M, git rev-parse]` |
 | trunk | `refactor/p14-consolidation` at `eb93d5d`, 651af30 plus one docs-only commit | `[M, git diff --stat 651af30 eb93d5d]` |
 | modules / import edges | 378 / 1805 | `[M, tools/import_graph.py at eb93d5d, src identical to 651af30]` |
 | layer inversions / package cycles | 1 / 4, equal to the p13 baseline | `[M, tools/remap_check.py over a mapping re-derived by the p13 procedure]` |

@@ -2,7 +2,7 @@
   "spec_version": "1",
   "sprint": "p14 consolidation: extract / abstract / consolidate at the p13 tip",
   "trunk": "refactor/p14-consolidation",
-  "verified_at": "651af30d4db9e50456ea374b13f0126197348393",
+  "verified_at": "4e0ae6a59117d054cc9b63d705d5004e06b982cb",
   "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
   "generated_by": "p14 planning lane (Opus, worktree .claude/worktrees/p14-plan) from helmsman:sprint-preflight wf_3076de6f-c56 draft + operator rulings 2026-09-28; ratified:false",
   "ratified": false,
