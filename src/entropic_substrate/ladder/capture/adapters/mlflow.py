@@ -363,6 +363,16 @@ class MlflowSink:
         self._abandoned = False
         self._worker_error: BaseException | None = None
         self._death_reported_at_log = False
+        # LOG-AFTER-FINISH (FOR-1622 regression, design gate 2026-09-29): the
+        # pre-async adapter's log() delivered synchronously regardless of
+        # finish(), so no caller ever needed to stop after it. This class's
+        # ``_stop`` Event stays set once finish() has run, so a naively
+        # reintroduced worker would see it set at loop entry and exit without
+        # draining the record it was just handed — lost, uncounted. log()
+        # checks ``_finished`` first (no in-tree caller triggers this today;
+        # every call site finishes last) and counts+warns every call rather
+        # than starting a doomed thread — rare enough that a per-call warning
+        # is not spam, unlike the dead-worker case below.
         self._metric_extractor = metric_extractor or LegacyMetricExtractor()
         # The authoritative results JSONL this run writes locally; finish()
         # uploads it as a derived, best-effort run artifact (operator ruling
@@ -495,23 +505,39 @@ class MlflowSink:
             logger.warning(f"mlflow: metric write failed (#{failed}): {exc}")
             return
         # Check-and-count under the lock the worker's _die() takes: a record is
-        # either pending when the worker dies (counted there) or sees the error
-        # here (counted here), never neither.
+        # either pending when the worker dies (counted there), sees the dead
+        # error here (counted here), or arrives after finish() (counted here
+        # too) — never neither.
         report_death = False
+        after_finish = False
+        dead: BaseException | None = None
         with self._lock:
-            dead = self._worker_error
-            if dead is None:
-                self._pending_records += 1
-                if self._worker is None:
-                    self._worker = threading.Thread(
-                        target=self._drain, name=_WRITER_THREAD_NAME, daemon=True
-                    )
-                    self._worker.start()
-            else:
+            if self._finished:
+                # _stop is already set; a thread started now would see it at
+                # loop entry and exit without draining this record. Count and
+                # warn instead of starting one — see the constructor's note.
                 self._failed_writes += 1
-                report_death = not self._death_reported_at_log
-                self._death_reported_at_log = True
+                after_finish = True
+            else:
+                dead = self._worker_error
+                if dead is None:
+                    self._pending_records += 1
+                    if self._worker is None:
+                        self._worker = threading.Thread(
+                            target=self._drain, name=_WRITER_THREAD_NAME, daemon=True
+                        )
+                        self._worker.start()
+                else:
+                    self._failed_writes += 1
+                    report_death = not self._death_reported_at_log
+                    self._death_reported_at_log = True
             failed = self._failed_writes
+        if after_finish:
+            logger.warning(
+                f"mlflow: log() called after finish() (#{failed} failed write); "
+                "the record is counted as failed, never delivered"
+            )
+            return
         if dead is not None:
             if report_death:
                 logger.warning(
@@ -558,7 +584,17 @@ class MlflowSink:
         for start in range(0, len(tagged), _MAX_METRICS_PER_BATCH):
             chunk = tagged[start : start + _MAX_METRICS_PER_BATCH]
             try:
-                self._client.log_batch(self._run_id, metrics=[metric for _, metric in chunk])
+                # synchronous=True EXPLICITLY (design gate 2026-09-29,
+                # MEASURED against installed mlflow-skinny 3.15.0): a bare
+                # ``synchronous=None`` resolves to
+                # ``not MLFLOW_ENABLE_ASYNC_LOGGING.get()``, so with that env
+                # var true a failed batch returns a future instead of raising
+                # here and is never counted. This worker already IS the async
+                # layer; the accounting contract must not depend on mlflow's
+                # own ambient env on top of it.
+                self._client.log_batch(
+                    self._run_id, metrics=[metric for _, metric in chunk], synchronous=True
+                )
             except Exception as exc:
                 carried = {index for index, _ in chunk}
                 failed |= carried

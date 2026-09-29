@@ -454,3 +454,105 @@ def test_flush_drains_without_stopping_the_worker_and_finish_joins_it() -> None:
     metrics: Mapping[str, float] = client._runs[sink.run_id].data.metrics
     assert metrics == {"loss": 2.0}
     assert sink.failed_writes == 0
+
+
+# --------------------------------------------------- (g) log() after finish()
+def test_log_after_finish_counts_the_record_and_starts_no_new_writer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression (architect constraint, design gate 2026-09-29): the
+    pre-FOR-1622 synchronous adapter delivered a post-``finish()`` ``log()``
+    (it just called ``client.log_metric`` inline, unconditionally). The async
+    writer's ``_stop`` Event stays SET after ``finish()``, so a naively
+    reintroduced worker thread would see it set at loop entry and exit
+    without ever draining the record it was just handed — lost, uncounted.
+    ``log()`` after ``finish()`` must count the record as failed and warn,
+    never start a new writer thread and never silently drop it."""
+    client = FakeMlflowClient()
+    sink = _sink(client)
+    sink.log(_eval(1))
+    sink.finish()
+    assert _writer_threads() == []
+    capsys.readouterr()
+
+    sink.log(_eval(2))
+
+    assert sink.failed_writes == 1, "a record logged after finish() must be counted, not lost"
+    assert _writer_threads() == [], "log() after finish() must never start a new writer"
+    warnings = [line for line in capsys.readouterr().err.splitlines() if "after finish" in line]
+    assert len(warnings) == 1, warnings
+    assert client._runs[sink.run_id].data.metrics == {"loss": 1.0}, (
+        "the post-finish record must never reach the client"
+    )
+
+    sink.log(_eval(3))  # a second post-finish call: counted again, not restarted
+    assert sink.failed_writes == 2
+    assert _writer_threads() == []
+
+
+# --------------------------------------- (h) log_batch is explicitly synchronous
+def test_log_batch_is_always_explicitly_synchronous_independent_of_the_async_logging_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MEASURED 2026-09-29 against installed mlflow-skinny 3.15.0:
+    ``MlflowClient.log_batch`` resolves ``synchronous=None`` as
+    ``not MLFLOW_ENABLE_ASYNC_LOGGING.get()`` -- with that env var true, a
+    failed batch would return a future instead of raising into ``_write``'s
+    try/except, so it would never be counted. The accounting contract must
+    not depend on ambient env: ``_write`` passes ``synchronous=True``
+    explicitly on every call, regardless of the environment."""
+    monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_LOGGING", "true")
+
+    class _RecordingSyncClient(_GatedClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.synchronous_values: list[bool | None] = []
+
+        def log_batch(
+            self,
+            run_id: str,
+            metrics: Any = (),
+            params: Any = (),
+            tags: Any = (),
+            synchronous: bool | None = None,
+        ) -> None:
+            self.synchronous_values.append(synchronous)
+            super().log_batch(run_id, metrics, params, tags, synchronous)
+
+    client = _RecordingSyncClient()
+    client.gate.set()
+    sink = _sink(client)
+    sink.log(_eval(1))
+    sink.finish()
+    assert client.synchronous_values == [True], (
+        "log_batch must be called with synchronous=True regardless of MLFLOW_ENABLE_ASYNC_LOGGING"
+    )
+
+
+# --------------------------- late-failing-batch-after-abandon (guard teeth, _write)
+def test_a_late_failing_batch_after_abandon_does_not_double_count(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pins the ``if not self._abandoned`` guard in ``_write`` (architect
+    constraint, design gate 2026-09-29): after ``finish()`` abandons the
+    drain (counting every pending record as failed, once), a LATE batch
+    write that then fails (not merely succeeds) must not double-count those
+    same records. Without the guard, ``_write``'s except-Exception branch
+    would decrement ``_pending_records`` (already zeroed by the abandon,
+    driving it negative) and add ``len(failed)`` to ``failed_writes`` a
+    second time."""
+    client = _FailingBatchClient()
+    sink = _sink(client, drain_timeout_seconds=0.05)
+    sink.log(_eval(1))
+    assert client.entered.wait(_LATCH_BUDGET_S), "the worker never picked record 1 up"
+    sink.log(_eval(2))  # queued behind the closed gate
+    capsys.readouterr()
+    try:
+        sink.finish()  # abandons: 2 pending records counted as failed, once
+        assert sink.failed_writes == 2
+    finally:
+        client.gate.set()
+        for thread in _writer_threads():
+            thread.join(_LATCH_BUDGET_S)
+    assert _writer_threads() == [], "the abandoned writer must stop once its write returns"
+    assert sink.failed_writes == 2, "a late FAILING batch after abandon must not double count"
