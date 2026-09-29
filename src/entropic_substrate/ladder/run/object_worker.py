@@ -2,6 +2,7 @@
 
 import json
 import math
+import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,8 +24,9 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
 )
 from entropic_substrate.ladder.run.worker_execution import execute_probe_request
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
-from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
+from entropic_substrate.ladder.run.worker_snapshot import PublicationLedger, publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
+    VerificationReadRetry,
     materialize_probe_request,
     publish_verified_object,
     read_published_probe_request,
@@ -167,6 +169,12 @@ def run_object_worker(
     request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
     maximum = request.limits.max_object_bytes
     stage = "materialization"
+    # Owned by exactly this ONE run_object_worker invocation (never
+    # module-level state): the checkpoint-snapshot publication ledger and
+    # the runner's L1/L2 timing mirror it is combined with in each
+    # checkpoint event's `publication` block (FOR-1567).
+    ledger: PublicationLedger = {}
+    publication_timing: dict[str, float] = {}
     try:
         materialize_probe_request(objects, marker, root, max_request_bytes=max_request_bytes)
         (root / "worker").mkdir()
@@ -203,13 +211,32 @@ def run_object_worker(
             total = row["successful_optimizer_steps"]
             if type(total) is not int or total < 1:
                 raise ValueError("worker checkpoint must report measured successful steps")
+            paths = _paths(root, ("run", "worker"))
+            retry = VerificationReadRetry()
+            ledgered_before = len(ledger)
+            l3_started = time.perf_counter()
             snapshot = publish_worker_snapshot(
                 objects,
                 request,
                 root,
-                _paths(root, ("run", "worker")),
+                paths,
                 name=f"checkpoint-{total:08d}",
+                ledger=ledger,
+                retry=retry,
             )
+            l3_seconds = time.perf_counter() - l3_started
+            # +1 in both counts below: the checkpoint-snapshot MARKER itself
+            # (h-worker-snapshot-v1) is always a fresh key, never ledgered.
+            new_objects = (len(ledger) - ledgered_before) + 1
+            publication = {
+                "l1_seconds": publication_timing.get("l1_seconds", 0.0),
+                "l2_seconds": publication_timing.get("l2_seconds", 0.0),
+                "l3_seconds": l3_seconds,
+                "objects_put": new_objects,
+                "objects_skipped": len(paths) - (new_objects - 1),
+                "verification_reads": new_objects,
+                "retries": retry.failures,
+            }
             _event(
                 objects,
                 request,
@@ -219,6 +246,7 @@ def run_object_worker(
                     "successful_optimizer_steps": total,
                     "training": artifact_reference(root, artifact),
                     "snapshot": asdict(snapshot),
+                    "publication": publication,
                 },
             )
 
@@ -230,6 +258,7 @@ def run_object_worker(
             on_checkpoint=checkpoint,
             on_start=start,
             sink=sink,
+            publication_timing=publication_timing,
         )
         result = _admit_result(root, request, result)
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)

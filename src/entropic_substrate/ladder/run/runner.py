@@ -1,6 +1,7 @@
 """Recoverable engineering-probe training driver over the shared numerical engine."""
 
-from collections.abc import Callable
+import time
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
@@ -15,7 +16,7 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.seals import read_seal, resume_seal, seal_step
+from entropic_substrate.ladder.run.seals import SealMemo, read_seal, resume_seal, seal_step
 
 
 @dataclass(frozen=True)
@@ -46,8 +47,17 @@ def read_training_progress(
     *,
     max_source_bytes: int,
     max_artifact_bytes: int,
+    memo: SealMemo | None = None,
 ) -> dict[str, object]:
-    """Admit resume/completion only against the exact source and sealed ancestry."""
+    """Admit resume/completion only against the exact source and sealed ancestry.
+
+    ``memo``, when given, accelerates the seal-chain (and evaluation-lineage)
+    verification below exactly as :func:`~entropic_substrate.ladder.run.seals.read_seal`
+    documents; it never changes what is admitted. Resume admission, pause and
+    completion always call this with ``memo=None`` (the full walk stays the
+    admission predicate there); only the mid-training, per-checkpoint call
+    passes the invocation's memo.
+    """
     if profile.run_class not in ("local_tiny", "remote_tiny"):
         raise ValueError("probe receipt has no scientific authority")
     row = recovery_record(
@@ -73,6 +83,7 @@ def read_training_progress(
         source_root,
         max_bytes=max_artifact_bytes,
         max_source_bytes=max_source_bytes,
+        memo=memo,
     )
     total = seal.step + (profile.schedule.warmup_steps if seal.phase == "prediction" else 0)
     if (
@@ -105,6 +116,7 @@ def read_training_progress(
             source_root,
             max_bytes=max_artifact_bytes,
             max_source_bytes=max_source_bytes,
+            memo=memo,
         )
         point = artifact_from_mapping(evaluation.get("checkpoint_seal"))
         if point.content_hash.digest not in seal.seal_hashes:
@@ -116,6 +128,7 @@ def read_training_progress(
             source_root,
             max_bytes=max_artifact_bytes,
             max_source_bytes=max_source_bytes,
+            memo=memo,
         )
         if (
             point_state.phase != "prediction"
@@ -162,6 +175,7 @@ def run_probe_training(
     stop_after_seal: Callable[[str, int], bool] | None = None,
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
     sink: MetricSink | None = None,
+    publication_timing: MutableMapping[str, float] | None = None,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
 
@@ -175,6 +189,17 @@ def run_probe_training(
     journal's authoritative, content-addressed record. This function never
     constructs a sink and never calls ``sink.finish()``; the caller that
     built it owns its lifecycle.
+
+    ``publication_timing``, when given, is overwritten with this checkpoint's
+    ``l1_seconds``/``l2_seconds`` immediately BEFORE ``on_checkpoint`` fires,
+    so the caller's callback (``object_worker``'s ``checkpoint`` closure) can
+    read it synchronously for that same event -- an ADDITIVE instrumentation
+    mirror, never part of the training or admission contract. Internally,
+    one :class:`~entropic_substrate.ladder.run.seals.SealMemo` is created for
+    this WHOLE invocation and threaded to every ``seal_step`` call and to
+    the mid-training ``read_training_progress``/``read_evaluation`` calls
+    (never to resume admission or to a completion/pause admission, which
+    always re-walk the full chain).
     """
     if profile.run_class not in ("local_tiny", "remote_tiny") or (
         profile.run_class == "remote_tiny" and profile.stage != "H0"
@@ -207,6 +232,7 @@ def run_probe_training(
     execution: SentenceExecution | None = None
     prefix = uuid4().hex
     pending: list[dict[str, object]] = []
+    memo = SealMemo()
     try:
         execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
         if last_seal is not None:
@@ -233,6 +259,7 @@ def run_probe_training(
                 final or evaluate or execution.step % profile.schedule.checkpoint_interval == 0
             ):
                 continue
+            l1_started = None if publication_timing is None else time.perf_counter()
             last_seal = seal_step(
                 root,
                 prefix,
@@ -240,7 +267,10 @@ def run_probe_training(
                 tuple(pending),
                 parent=last_seal,
                 max_bytes=max_artifact_bytes,
+                memo=memo,
             )
+            if publication_timing is not None and l1_started is not None:
+                publication_timing["l1_seconds"] = time.perf_counter() - l1_started
             pending.clear()
             if evaluate:
                 report = execution.evaluate()
@@ -258,6 +288,7 @@ def run_probe_training(
                     source_root,
                     max_bytes=max_artifact_bytes,
                     max_source_bytes=max_source_bytes,
+                    memo=memo,
                 )
                 if sink is not None:
                     # EXIT-GATE LANE (2026-09-26): the sealed, reader-admitted
@@ -302,6 +333,7 @@ def run_probe_training(
             )
             previous_receipt = receipt
             if complete or stopped or on_checkpoint is not None:
+                l2_started = None if publication_timing is None else time.perf_counter()
                 read_training_progress(
                     root,
                     receipt,
@@ -309,7 +341,13 @@ def run_probe_training(
                     source_root,
                     max_source_bytes=max_source_bytes,
                     max_artifact_bytes=max_artifact_bytes,
+                    # DG-B/C12: only the mid-training, per-checkpoint call
+                    # trusts the memo; a genuine completion or pause always
+                    # re-walks the full chain as its admission predicate.
+                    memo=None if (complete or stopped) else memo,
                 )
+                if publication_timing is not None and l2_started is not None:
+                    publication_timing["l2_seconds"] = time.perf_counter() - l2_started
             if on_checkpoint is not None:
                 on_checkpoint(artifact_from_mapping(artifact_reference(root, receipt)))
             if complete or stopped:

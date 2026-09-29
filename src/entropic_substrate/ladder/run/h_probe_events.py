@@ -1,6 +1,7 @@
 """Host observations of H worker events; artifact verification remains separate."""
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,6 +35,27 @@ _STATUS = {
     "complete": "probe_workload_complete",
     "paused": "paused",
 }
+# FOR-1567, design-gate ruling DG-C: a `publication` block on checkpoint-*
+# events records per-leg seconds and object/retry counts. Door: read-old
+# tolerated for one rollback window (a checkpoint event WITHOUT the block
+# still admits), write-new always (the worker emits it on every checkpoint).
+_PUBLICATION_SECONDS = ("l1_seconds", "l2_seconds", "l3_seconds")
+_PUBLICATION_COUNTS = ("objects_put", "objects_skipped", "verification_reads", "retries")
+_PUBLICATION_FIELDS = " ".join((*_PUBLICATION_SECONDS, *_PUBLICATION_COUNTS))
+
+
+def _admit_publication(value: object) -> None:
+    row = recovery_record(value, _PUBLICATION_FIELDS)
+    for key in _PUBLICATION_SECONDS:
+        seconds = row[key]
+        if type(seconds) is not float and type(seconds) is not int:
+            raise ValueError("worker checkpoint publication seconds must be a number")
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError("worker checkpoint publication seconds must be finite and >= 0")
+    for key in _PUBLICATION_COUNTS:
+        count = row[key]
+        if type(count) is not int or count < 0:
+            raise ValueError("worker checkpoint publication counts must be nonnegative integers")
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +148,8 @@ def read_probe_event(
     extra = ""
     if type(value) is dict and kind == "failure" and value.get("evidence_delivery") == "failed":
         extra = " delivery_error_type"
+    if type(value) is dict and kind == "checkpoint" and "publication" in value:
+        extra += " publication"
     row = recovery_record(value, f"{_COMMON} {_FIELDS[kind]}{extra}")
     if (
         row["schema"] != "h-worker-event-v1"
@@ -160,6 +184,8 @@ def read_probe_event(
             raise ValueError("worker checkpoint count differs from event or workload")
         steps = count
         worker_artifact(row["training"], "run")
+        if "publication" in row:
+            _admit_publication(row["publication"])
     else:
         worker_artifact(row["result"], "worker")
     snapshot = (

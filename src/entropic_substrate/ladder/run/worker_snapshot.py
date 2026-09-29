@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import MutableMapping
 from pathlib import Path, PurePosixPath
 
 from entropic_substrate.core.sentence.recovery_state import recovery_record
@@ -20,7 +21,14 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
     D1TrainerMailboxObjectPort,
 )
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
-from entropic_substrate.ladder.run.worker_transport import publish_verified_object
+from entropic_substrate.ladder.run.worker_transport import (
+    VerificationReadRetry,
+    publish_verified_object,
+)
+
+# A path's ledger entry: (sha256, size_bytes) as confirmed by that key's own
+# verification read the first time this worker process published it.
+PublicationLedger = MutableMapping[str, tuple[str, int]]
 
 
 def _path(value: object) -> str:
@@ -43,11 +51,25 @@ def publish_worker_snapshot(
     paths: tuple[str, ...],
     *,
     name: str,
+    ledger: PublicationLedger | None = None,
+    retry: VerificationReadRetry | None = None,
 ) -> D1TrainerMailboxObjectIdentity:
     """Snapshot explicit producer files; the marker grants no completion claim.
 
     Output paths are immutable across snapshots within one request. A changed
     path is a producer defect, not a new version silently hidden by snapshot names.
+
+    ``ledger``, when given, is an in-process record of keys this SAME worker
+    process has already published and verified (``sha256``, ``size_bytes``),
+    owned by exactly one :func:`~entropic_substrate.ladder.run.object_worker.run_object_worker`
+    call (never module-level state). A path already in the ledger is neither
+    re-read for publication nor re-PUT; its manifest entry still comes from
+    this call's own local read (below), so the marker's bytes are identical
+    with or without ledger hits. A path whose freshly-read bytes disagree
+    with its ledger entry fails loud before any network call. ``retry``,
+    when given, bounds ONLY the verification reads this call performs (never
+    a PUT) -- see :class:`~entropic_substrate.ladder.run.worker_transport.VerificationReadRetry`.
+    Both default to ``None``, which reproduces today's behaviour byte-for-byte.
     """
     if type(name) is not str or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", name) is None:
         raise ValueError("worker snapshot name is unsafe")
@@ -65,6 +87,10 @@ def publish_worker_snapshot(
         )
         if not payload:
             raise ValueError("worker snapshot cannot contain empty artifacts")
+        if ledger is not None:
+            cached = ledger.get(f"{request.prefix}/outputs/{path}")
+            if cached is not None and (cached[0] != digest or cached[1] != len(payload)):
+                raise ValueError("worker output changed during snapshot publication")
         total += len(payload)
         records.append(
             {
@@ -88,13 +114,25 @@ def publish_worker_snapshot(
         raise ValueError("worker snapshot byte budget exceeded")
     for record in records:
         path = _path(record["path"])
+        key = f"{request.prefix}/outputs/{path}"
+        if ledger is not None and key in ledger:
+            # Already published AND verified by this same worker process:
+            # not re-read, not re-PUT. Its manifest entry above came from
+            # this call's own pass-1 local read, so the marker is unaffected.
+            continue
         _, payload, digest = read_d1_artifact_bytes(
             root, path, label="worker output", max_bytes=limits.max_object_bytes
         )
         if digest != record["sha256"] or len(payload) != record["size_bytes"]:
             raise ValueError("worker output changed during snapshot publication")
-        publish_verified_object(objects, f"{request.prefix}/outputs/{path}", payload)
-    return publish_verified_object(objects, f"{request.prefix}/snapshots/{name}.json", marker)
+        publish_verified_object(objects, key, payload, retry=retry)
+        if ledger is not None:
+            # C2: the entry is added only AFTER this key's own verification
+            # read has succeeded, never before.
+            ledger[key] = (digest, len(payload))
+    return publish_verified_object(
+        objects, f"{request.prefix}/snapshots/{name}.json", marker, retry=retry
+    )
 
 
 def materialize_worker_snapshot(
