@@ -7,6 +7,7 @@ key behaves exactly like the shared fake object store used across this
 module's siblings.
 """
 
+import io
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import cast
 import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_probe_controller import Guard, Provider
+from tests.test_h_probe_launch import launch
 from tests.test_sentence_profile import profile
 from tests.test_span_state_collection import model
 
@@ -41,7 +43,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
     D1TrainerMailboxObjectPort,
 )
 from entropic_substrate.ladder.run.worker.h_probe_controller import run_probe_controller
-from entropic_substrate.ladder.run.worker.h_probe_stop import request_stop
+from entropic_substrate.ladder.run.worker.h_probe_stop import request_stop, run_probe_stop
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, TransferLimits
 from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
@@ -293,6 +295,42 @@ def test_marker_mid_prediction_phase_stops_at_the_next_boundary_not_at_completio
     event = read_probe_event(objects, request, "stopped", expected_pod_id=None, max_bytes=1_000_000)
     assert event is not None and event.reported_optimizer_steps == 4
     assert objects.control_reads == 2  # warmup-2 (absent), prediction-2 (present)
+
+    # ACCEPTANCE bullet 1: the `stopped` receipt names the last committed
+    # global step AND every sealed artifact key -- journal, seal, progress,
+    # checkpoint .pt for the last committed step (both phases this run
+    # passed through: warmup sealed once at its own final step, prediction
+    # sealed at ITS last committed step), the run profile, the worker
+    # start/result records, and the evaluation report produced at the stop
+    # boundary. `runner.py` mints a fresh `uuid4().hex` receipt prefix once
+    # per run and reuses it across every one of that run's filenames, so it
+    # cannot be hardcoded here -- it is recovered from the snapshot's own
+    # `codec_warmup` seal path, the one path shape unique to a single file.
+    assert event.snapshot is not None
+    manifest = json.loads(objects.values[event.snapshot.key])
+    paths = {entry["path"] for entry in manifest["files"]}
+    receipt_id = next(
+        path.removeprefix("run/").removesuffix("-codec_warmup-00000002-seal.json")
+        for path in paths
+        if path.endswith("-codec_warmup-00000002-seal.json")
+    )
+    expected_paths = {
+        f"run/{receipt_id}-codec_warmup-00000002-journal.json",
+        f"run/{receipt_id}-codec_warmup-00000002-progress.json",
+        f"run/{receipt_id}-codec_warmup-00000002-seal.json",
+        f"run/{receipt_id}-codec_warmup-00000002.pt",
+        f"run/{receipt_id}-prediction-00000002-journal.json",
+        f"run/{receipt_id}-prediction-00000002-progress.json",
+        f"run/{receipt_id}-prediction-00000002-seal.json",
+        f"run/{receipt_id}-prediction-00000002.pt",
+        f"run/{receipt_id}-00000002-evaluation.json",  # evaluation sealed at step 2
+        "run/profile.json",
+        "worker/result.json",
+        "worker/start.json",
+    }
+    assert paths == expected_paths  # exactly 12 keys, no more, no fewer
+    keys = {entry["key"] for entry in manifest["files"]}
+    assert keys == {f"{request.prefix}/outputs/{path}" for path in expected_paths}
 
 
 def test_marker_mid_warmup_phase_stops_strictly_before_warmups_final_step(
@@ -574,3 +612,76 @@ def test_verb_returns_none_at_its_bound_when_the_event_never_appears(tmp_path: P
     assert json.loads(objects.values[stop_marker_key(request)]) == json.loads(
         encode_stop_marker(request)
     )
+
+
+# ---------------------------------------------------------------------------
+# The verb's CLI entrypoint (ACCEPTANCE bullet 4: exits non-zero at its bound
+# without the event; exits zero with the keys once the event exists).
+# `build_worker_objects` builds a live R2 client from process credentials, so
+# every test here substitutes it -- never lets it run against production R2.
+# ---------------------------------------------------------------------------
+
+
+def _stop_argv(tmp_path: Path, *, wait_seconds: str, poll_seconds: str) -> list[str]:
+    (tmp_path / "launch.json").write_bytes(launch().payload)
+    return [
+        "--launch-root",
+        str(tmp_path),
+        "--launch-file",
+        "launch.json",
+        "--repo-root",
+        str(tmp_path),
+        "--max-launch-bytes",
+        "1000000",
+        "--wait-seconds",
+        wait_seconds,
+        "--poll-seconds",
+        poll_seconds,
+    ]
+
+
+def test_verb_cli_exits_nonzero_without_the_event_at_its_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    objects = _ObjectStore()
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_stop.build_worker_objects",
+        lambda *_a, **_kw: objects,
+    )
+    argv = _stop_argv(tmp_path, wait_seconds="0.05", poll_seconds="0.01")
+    stdout, stderr = io.StringIO(), io.StringIO()
+    code = run_probe_stop(argv, environ={}, stdout=stdout, stderr=stderr)
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "status": "stop_not_confirmed",
+        "scientific_authority": "none",
+    }
+    # The marker publish is a single call, and the fake store's own PUT is
+    # idempotent-but-tracked, so its append-only call log is the only witness
+    # that the verb published the marker exactly once (never per poll tick).
+    assert objects.publishes.count(stop_marker_key(launch().request)) == 1
+
+
+def test_verb_cli_exits_zero_and_prints_keys_once_the_stopped_event_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = launch().request
+    objects = _ObjectStore()
+    fixture_root = tmp_path / "worker-fixture"
+    fixture_root.mkdir()
+    _synthetic_stopped_terminal(objects, request, fixture_root, steps=4, pod_id="owned-pod")
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_stop.build_worker_objects",
+        lambda *_a, **_kw: objects,
+    )
+    argv = _stop_argv(tmp_path, wait_seconds="5", poll_seconds="1")
+    stdout, stderr = io.StringIO(), io.StringIO()
+    code = run_probe_stop(argv, environ={}, stdout=stdout, stderr=stderr)
+    assert code == 0
+    assert stderr.getvalue() == ""
+    printed = json.loads(stdout.getvalue())
+    assert printed["status"] == "stopped" and printed["scientific_authority"] == "none"
+    manifest = json.loads(objects.values[f"{request.prefix}/snapshots/stopped.json"])
+    expected_keys = sorted(str(entry["key"]) for entry in manifest["files"])
+    assert sorted(printed["keys"]) == sorted((*expected_keys, f"{request.prefix}/snapshots/stopped.json"))
