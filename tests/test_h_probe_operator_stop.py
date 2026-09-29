@@ -684,4 +684,6 @@ def test_verb_cli_exits_zero_and_prints_keys_once_the_stopped_event_exists(
     assert printed["status"] == "stopped" and printed["scientific_authority"] == "none"
     manifest = json.loads(objects.values[f"{request.prefix}/snapshots/stopped.json"])
     expected_keys = sorted(str(entry["key"]) for entry in manifest["files"])
-    assert sorted(printed["keys"]) == sorted((*expected_keys, f"{request.prefix}/snapshots/stopped.json"))
+    assert sorted(printed["keys"]) == sorted(
+        (*expected_keys, f"{request.prefix}/snapshots/stopped.json")
+    )
