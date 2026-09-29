@@ -179,9 +179,16 @@ check: fmt-check lint typecheck test lint-imports
 # a clean tree — and on every lifecycle lane after its commits — it ran zero hooks and
 # reported PASS. A gate that examines nothing must refuse, not pass (measurement path
 # fails LOUD). base = the phase's parent under a stacked sprint ($PC_CI_BASE), default
-# origin/dev; the diff is merge-base(HEAD, base)..HEAD, i.e. exactly what this branch
+# origin/main; the diff is merge-base(HEAD, base)..HEAD, i.e. exactly what this branch
 # added. An empty diff exits 2 instead of reporting a vacuous PASS.
-pc-ci base=env("PC_CI_BASE", "origin/dev"):
+# MEASURED 2026-09-28 (p14 rung pre-for-1567, L2 gate-check on e28c3f8): the former
+# default `origin/dev` no longer exists (`git ls-remote --heads origin dev` is empty
+# since dev was retired into main at v0.1.0), so the gate died at `git merge-base`
+# with exit 128 before running a single hook, on the parent tip as well. A default
+# that names a retired ref is a gate that cannot run; `origin/main` always exists.
+# Under a stacked sprint the range vs main is a superset of the branch's own diff
+# (the trunk's already-gated commits ride along), which is correct, only slower.
+pc-ci base=env("PC_CI_BASE", "origin/main"):
     #!/usr/bin/env bash
     set -euo pipefail
     from_ref="$(git merge-base HEAD "{{base}}")"
