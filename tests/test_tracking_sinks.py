@@ -147,7 +147,7 @@ def test_mlflow_sink_uses_an_injected_extractor_without_mutating_the_event() -> 
     )
 
     sink.log(event)
-    sink.flush()
+    sink.finish()
 
     assert extractor.seen == [event]
     assert event == before

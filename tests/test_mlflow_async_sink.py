@@ -11,13 +11,18 @@ Contract pinned here (brief ``pre-for-1622``, frozen_after true):
   swallowed; its undelivered records are counted.
 * A full queue BLOCKS the producer, never drops: MLflow must never disagree
   with the authoritative JSONL by omission.
-* ``finish()`` drains (bounded) before the existing finish sequence, so
-  ``set_terminated`` never races queued metrics.
+* ``flush(timeout)`` waits for every logged record to settle (join
+  semantics, bounded) WITHOUT stopping the worker, so a writer that hangs past
+  a failed flush and later recovers still delivers everything logged after it.
+* ``finish()`` drains within its injectable budget (``drain_timeout_seconds``)
+  before the existing finish sequence, so ``set_terminated`` never races queued
+  metrics; then it stops and joins the worker, or, past the budget, counts the
+  stranded records and reports the writer it could not join.
 
 Every test injects a fake client (the ``client=`` seam): no thread in this
 file ever talks to a real ``MlflowClient``. The autouse fixture below fails
 any test that leaves a writer thread alive, so every worker a test starts is
-joined inside that test (``flush()``/``finish()`` join it).
+joined inside that test (``finish()`` joins it; ``flush()`` does not).
 
 Latches, not sleeps: the gated fake blocks inside ``log_batch`` on an Event the
 test opens. ``_LATCH_BUDGET_S`` only bounds a wait that a correct
@@ -85,6 +90,7 @@ class _GatedClient(FakeMlflowClient):
         self.gate = threading.Event()
         self.entered = threading.Event()
         self.terminated = threading.Event()
+        self.completed = threading.Event()
         self.write_threads: list[int] = []
         self.batches: list[list[tuple[str, float, int]]] = []
         self.completed_batches = 0
@@ -105,6 +111,7 @@ class _GatedClient(FakeMlflowClient):
         self.batches.append([(m.key, m.value, m.step) for m in metrics])
         super().log_batch(run_id, metrics, params, tags, synchronous)
         self.completed_batches += 1
+        self.completed.set()
 
     def _before_write(self, metrics: Any) -> None:
         """Hook for failure-injecting subclasses."""
@@ -303,9 +310,10 @@ def test_a_dead_worker_is_reported_at_the_next_log_and_at_finish(
     assert sink.flush() is False, "a dead worker must not read as a clean drain"
     assert sink.failed_writes == 1, "the in-flight record is counted, not lost"
     capsys.readouterr()
+    before = {t.ident for t in _writer_threads()}
 
     sink.log(_eval(2))  # must not raise, must not silently restart the worker
-    assert _writer_threads() == []
+    assert {t.ident for t in _writer_threads()} <= before, "a dead writer was restarted"
     assert sink.failed_writes == 2
     at_log = [line for line in capsys.readouterr().err.splitlines() if "worker died" in line]
     assert len(at_log) == 1, at_log
@@ -356,6 +364,64 @@ def test_an_unbounded_or_negative_queue_bound_is_refused(bound: int) -> None:
         _sink(FakeMlflowClient(), max_queued_records=bound)
 
 
+@pytest.mark.parametrize("budget", [0.0, -1.0, float("inf"), float("nan")])
+def test_a_non_positive_or_non_finite_drain_budget_is_refused(budget: float) -> None:
+    with pytest.raises(ValueError, match="drain_timeout_seconds"):
+        _sink(FakeMlflowClient(), drain_timeout_seconds=budget)
+
+
+# ------------------------------------------------ stale stop (conductor ruling 2)
+def test_a_writer_that_recovers_after_a_failed_flush_still_delivers_later_records() -> None:
+    """A timed-out ``flush`` must leave nothing behind that later stops the
+    writer: once the hung write returns, every record logged afterwards is
+    delivered at ``finish()``."""
+    client = _GatedClient()
+    sink = _sink(client, drain_timeout_seconds=_LATCH_BUDGET_S)
+    sink.log(_eval(1))
+    assert client.entered.wait(_LATCH_BUDGET_S), "the worker never picked record 1 up"
+    assert sink.flush(0.05) is False, "record 1 is still held at the closed gate"
+    client.gate.set()
+    assert client.completed.wait(_LATCH_BUDGET_S), "the hung write never returned"
+
+    sink.log(_eval(2))
+    sink.log(_eval(3))
+    sink.finish()
+
+    assert [step for batch in client.batches for _, _, step in batch] == [1, 2, 3]
+    assert sink.failed_writes == 0
+    assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
+
+
+# --------------------------------------------- finish() abandon (conductor ruling 3)
+def test_finish_past_its_drain_budget_counts_stranded_records_and_still_terminates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _GatedClient()
+    sink = _sink(client, drain_timeout_seconds=0.05)
+    sink.log(_eval(1))
+    assert client.entered.wait(_LATCH_BUDGET_S), "the worker never picked record 1 up"
+    sink.log(_eval(2))  # queued behind the closed gate
+    sink.log(_eval(3))
+    capsys.readouterr()
+    try:
+        sink.finish()  # the gate is still closed: the drain cannot finish in 0.05 s
+
+        assert sink.failed_writes == 3, "every unsettled record, in flight or queued"
+        run = client._runs[sink.run_id]
+        assert run.data.tags["mlflow_failed_writes"] == "3"
+        assert run.data.tags["mlflow.status"] == "FINISHED"
+        budget = [line for line in capsys.readouterr().err.splitlines() if "drain" in line]
+        assert len(budget) == 1, budget
+        assert "3 undelivered record(s)" in budget[0]
+        assert "not joined" in budget[0], "an unjoined writer must be reported"
+    finally:
+        client.gate.set()
+        for thread in _writer_threads():
+            thread.join(_LATCH_BUDGET_S)
+    assert _writer_threads() == [], "the abandoned writer must stop once its write returns"
+    assert sink.failed_writes == 3, "a late settle must not count the records twice"
+
+
 # ------------------------------------------------------------ (f) idempotence
 def test_finish_twice_after_logging_is_idempotent_and_joins_the_worker() -> None:
     client = FakeMlflowClient()
@@ -375,14 +441,16 @@ def test_flush_with_nothing_logged_is_a_clean_no_op() -> None:
     sink.finish()
 
 
-def test_log_after_flush_restarts_a_healthy_worker_lazily() -> None:
+def test_flush_drains_without_stopping_the_worker_and_finish_joins_it() -> None:
     client = FakeMlflowClient()
     sink = _sink(client)
     sink.log(_eval(1))
     assert sink.flush() is True
-    assert _writer_threads() == []
+    assert client._runs[sink.run_id].data.metrics == {"loss": 1.0}
+    assert len(_writer_threads()) == 1, "flush() drains; only finish() stops the writer"
     sink.log(_eval(2))
     sink.finish()
+    assert _writer_threads() == []
     metrics: Mapping[str, float] = client._runs[sink.run_id].data.metrics
     assert metrics == {"loss": 2.0}
     assert sink.failed_writes == 0
