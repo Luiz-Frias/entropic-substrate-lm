@@ -427,6 +427,8 @@ Also settled before the interview: FOR-1581 CANCELED as a byte-identical duplica
 
 ---
 
+**Ratified 2026-09-28 (operator, live, then autonomous mode until the morning):** the manifest as written at epoch 4e0ae6a, all planning-lane decisions (P14-SHA-SEQ, P14-1579-HOME, P14-LIVE, P14-1611-HOME, P14-1597-HOME, P14-LEAN, P14-ARCHIVE) as recommended; DN-ARCHIVE = delete the archived p0-p13 manifest (this commit); DN-LEDGER = rotate the gitignored launch queue (done by the conductor, `launch-queue.hexagonal-refactor.jsonl`); DN-LEAN-BOX set at that launch; DN-1614-READ-OLD deferred to the audit. Goal: complete the 15 phases end to end, tracer phases serial with the design gate, ratchet waves autonomous; notify only on DECISION-NEEDED / BLOCKED.
+
 ## DECISION-NEEDED register
 
 | id | question |
