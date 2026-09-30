@@ -1,7 +1,9 @@
 """Boundary predicates for kernel.codec.strict_json: duplicate-key and
 non-finite rejection in strict_loads, exact_keys' pure set arithmetic, and
 the require_mapping / require_lowercase_sha256 type-and-shape predicates.
-`fail` is the only error channel every arm exercises."""
+`fail` is the only error channel every arm exercises, and the propagation
+arms pin that whatever `fail` raises reaches the caller unchanged, for
+both a ValueError-subclass and a non-ValueError sentinel."""
 
 from __future__ import annotations
 
@@ -25,17 +27,22 @@ class _MarkerRuntimeError(RuntimeError):
     """A non-ValueError sentinel raised by a test-owned `fail`."""
 
 
-def _raiser(exception_type: type[Exception]) -> tuple[list[str], object]:
-    """Return (messages, fail) where fail records the message it received
-    and raises a fresh instance of exception_type."""
+def _raiser(
+    exception_type: type[Exception],
+) -> tuple[list[str], list[BaseException], object]:
+    """Return (messages, raised, fail) where fail records the message it
+    received, records the exact instance it raises, and raises it."""
 
     messages: list[str] = []
+    raised: list[BaseException] = []
 
     def fail(message: str) -> None:
         messages.append(message)
-        raise exception_type(message)
+        instance = exception_type(message)
+        raised.append(instance)
+        raise instance
 
-    return messages, fail
+    return messages, raised, fail
 
 
 # --------------------------------------------------------------------------
@@ -44,7 +51,7 @@ def _raiser(exception_type: type[Exception]) -> tuple[list[str], object]:
 
 
 def test_strict_loads_rejects_a_top_level_duplicate_key() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         strict_loads('{"a": 1, "a": 2}', fail=fail)
     assert len(messages) == 1
@@ -54,7 +61,7 @@ def test_strict_loads_rejects_a_top_level_duplicate_key() -> None:
 
 
 def test_strict_loads_rejects_a_nested_duplicate_key() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         strict_loads('{"outer": {"b": 1, "b": 2}}', fail=fail)
     assert len(messages) == 1
@@ -63,7 +70,7 @@ def test_strict_loads_rejects_a_nested_duplicate_key() -> None:
 
 
 def test_strict_loads_accepts_distinct_keys_in_pair_order() -> None:
-    _, fail = _raiser(_MarkerValueError)
+    _, _, fail = _raiser(_MarkerValueError)
     result = strict_loads('{"a": 1, "b": 2}', fail=fail)
     assert result == {"a": 1, "b": 2}
     assert type(result) is dict
@@ -80,7 +87,7 @@ def test_strict_loads_accepts_distinct_keys_in_pair_order() -> None:
     [("NaN", "NaN"), ("Infinity", "Infinity"), ("-Infinity", "-Infinity")],
 )
 def test_strict_loads_rejects_each_nonfinite_constant(literal: str, constant: str) -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         strict_loads(f'{{"value": {literal}}}', fail=fail)
     assert len(messages) == 1
@@ -90,52 +97,48 @@ def test_strict_loads_rejects_each_nonfinite_constant(literal: str, constant: st
 
 
 def test_strict_loads_accepts_ordinary_finite_numbers() -> None:
-    _, fail = _raiser(_MarkerValueError)
+    _, _, fail = _raiser(_MarkerValueError)
     result = strict_loads('{"value": 1.5}', fail=fail)
     assert result == {"value": 1.5}
 
 
 # --------------------------------------------------------------------------
-# strict_loads: fail propagates unchanged (both exception families)
+# strict_loads: fail propagates unchanged, both exception families,
+# duplicate-key and non-finite paths
 # --------------------------------------------------------------------------
 
 
 def test_strict_loads_duplicate_key_propagates_value_error_subclass_unchanged() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, raised, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError) as excinfo:
         strict_loads('{"a": 1, "a": 2}', fail=fail)
-    assert excinfo.value.args[0] == messages[0]
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
 
 
 def test_strict_loads_duplicate_key_propagates_non_value_error_unchanged() -> None:
-    messages: list[str] = []
-    raised: list[BaseException] = []
-
-    def recording_fail(message: str) -> None:
-        instance = _MarkerRuntimeError(message)
-        raised.append(instance)
-        messages.append(message)
-        raise instance
-
+    messages, raised, fail = _raiser(_MarkerRuntimeError)
     with pytest.raises(_MarkerRuntimeError) as excinfo:
-        strict_loads('{"a": 1, "a": 2}', fail=recording_fail)
+        strict_loads('{"a": 1, "a": 2}', fail=fail)
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
+
+
+def test_strict_loads_nonfinite_propagates_value_error_subclass_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError) as excinfo:
+        strict_loads('{"value": NaN}', fail=fail)
     assert excinfo.value is raised[0]
     assert len(messages) == 1
     assert messages[0] != ""
 
 
 def test_strict_loads_nonfinite_propagates_non_value_error_unchanged() -> None:
-    raised: list[BaseException] = []
-    messages: list[str] = []
-
-    def recording_fail(message: str) -> None:
-        instance = _MarkerRuntimeError(message)
-        raised.append(instance)
-        messages.append(message)
-        raise instance
-
+    messages, raised, fail = _raiser(_MarkerRuntimeError)
     with pytest.raises(_MarkerRuntimeError) as excinfo:
-        strict_loads('{"value": NaN}', fail=recording_fail)
+        strict_loads('{"value": NaN}', fail=fail)
     assert excinfo.value is raised[0]
     assert len(messages) == 1
     assert messages[0] != ""
@@ -190,14 +193,14 @@ def test_exact_keys_consumes_a_one_shot_iterator_only_once() -> None:
 
 
 def test_require_mapping_accepts_a_dict_with_string_keys_and_returns_it_unchanged() -> None:
-    _, fail = _raiser(_MarkerValueError)
+    _, _, fail = _raiser(_MarkerValueError)
     value: dict[str, object] = {"a": 1}
     result = require_mapping(value, fail=fail)
     assert result is value
 
 
 def test_require_mapping_rejects_a_non_dict() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_mapping(["not", "a", "mapping"], fail=fail)
     assert len(messages) == 1
@@ -205,24 +208,29 @@ def test_require_mapping_rejects_a_non_dict() -> None:
 
 
 def test_require_mapping_rejects_a_non_str_key() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_mapping({1: "a"}, fail=fail)
     assert len(messages) == 1
     assert messages[0] != ""
 
 
-def test_require_mapping_propagates_a_non_value_error_unchanged() -> None:
-    raised: list[BaseException] = []
-
-    def recording_fail(message: str) -> None:
-        instance = _MarkerRuntimeError(message)
-        raised.append(instance)
-        raise instance
-
-    with pytest.raises(_MarkerRuntimeError) as excinfo:
-        require_mapping("not a mapping", fail=recording_fail)
+def test_require_mapping_propagates_a_value_error_subclass_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError) as excinfo:
+        require_mapping("not a mapping", fail=fail)
     assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
+
+
+def test_require_mapping_propagates_a_non_value_error_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerRuntimeError)
+    with pytest.raises(_MarkerRuntimeError) as excinfo:
+        require_mapping("not a mapping", fail=fail)
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
 
 
 # --------------------------------------------------------------------------
@@ -231,14 +239,14 @@ def test_require_mapping_propagates_a_non_value_error_unchanged() -> None:
 
 
 def test_require_lowercase_sha256_accepts_a_valid_digest_and_returns_it_unchanged() -> None:
-    _, fail = _raiser(_MarkerValueError)
+    _, _, fail = _raiser(_MarkerValueError)
     digest = "a" * 64
     result = require_lowercase_sha256(digest, fail=fail)
     assert result is digest
 
 
 def test_require_lowercase_sha256_rejects_uppercase_hex() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_lowercase_sha256("A" * 64, fail=fail)
     assert len(messages) == 1
@@ -246,34 +254,39 @@ def test_require_lowercase_sha256_rejects_uppercase_hex() -> None:
 
 
 def test_require_lowercase_sha256_rejects_a_63_character_digest() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_lowercase_sha256("a" * 63, fail=fail)
     assert len(messages) == 1
 
 
 def test_require_lowercase_sha256_rejects_a_65_character_digest() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_lowercase_sha256("a" * 65, fail=fail)
     assert len(messages) == 1
 
 
 def test_require_lowercase_sha256_rejects_a_non_str_digest() -> None:
-    messages, fail = _raiser(_MarkerValueError)
+    messages, _, fail = _raiser(_MarkerValueError)
     with pytest.raises(_MarkerValueError):
         require_lowercase_sha256(("a" * 64).encode(), fail=fail)
     assert len(messages) == 1
 
 
-def test_require_lowercase_sha256_propagates_a_non_value_error_unchanged() -> None:
-    raised: list[BaseException] = []
-
-    def recording_fail(message: str) -> None:
-        instance = _MarkerRuntimeError(message)
-        raised.append(instance)
-        raise instance
-
-    with pytest.raises(_MarkerRuntimeError) as excinfo:
-        require_lowercase_sha256("A" * 64, fail=recording_fail)
+def test_require_lowercase_sha256_propagates_a_value_error_subclass_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError) as excinfo:
+        require_lowercase_sha256("A" * 64, fail=fail)
     assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
+
+
+def test_require_lowercase_sha256_propagates_a_non_value_error_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerRuntimeError)
+    with pytest.raises(_MarkerRuntimeError) as excinfo:
+        require_lowercase_sha256("A" * 64, fail=fail)
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
+    assert messages[0] != ""
