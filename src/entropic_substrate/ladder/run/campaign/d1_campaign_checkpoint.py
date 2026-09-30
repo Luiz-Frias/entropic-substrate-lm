@@ -13,7 +13,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     run_start_from_mapping,
     run_start_to_mapping,
 )
-from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256_hex_any_case
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
 from entropic_substrate.ladder.register.d1_launch_attempt_codec import (
@@ -76,7 +76,7 @@ def _text(value: object, *, label: str) -> str:
 
 def _sha(value: object, *, label: str) -> str:
     text = _text(value, label=label)
-    require_sha256(text, label=label)
+    require_sha256_hex_any_case(text, label=label)
     return text
 
 

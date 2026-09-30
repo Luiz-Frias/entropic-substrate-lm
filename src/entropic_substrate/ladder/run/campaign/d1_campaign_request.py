@@ -12,7 +12,7 @@ from typing import Final, NoReturn, cast
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_json,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
@@ -104,7 +104,7 @@ class D1PersistedCampaignCursor:
     sha256: str
 
     def __post_init__(self) -> None:
-        require_sha256(self.sha256, label="D1 persisted campaign checkpoint")
+        require_sha256_hex_any_case(self.sha256, label="D1 persisted campaign checkpoint")
 
     @property
     def manifest(self) -> dict[str, object]:

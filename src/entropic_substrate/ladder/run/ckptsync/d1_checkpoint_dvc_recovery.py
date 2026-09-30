@@ -14,7 +14,7 @@ from entropic_substrate.kernel.artifacts import (
     read_d1_artifact_bytes,
     snapshot_d1_artifact,
 )
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import D1DvcPullPort
 from entropic_substrate.ladder.capture.custody.d1_capture_service import read_d1_dvc_pointer
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
@@ -64,7 +64,7 @@ def _logical_run_id(value: str) -> str:
 
 
 def _checkpoint_sha256(value: str) -> str:
-    require_sha256(value, label="D1 recovery checkpoint")
+    require_sha256_hex_any_case(value, label="D1 recovery checkpoint")
     if value != value.lower():
         raise ValueError("D1 recovery checkpoint must use lowercase hexadecimal")
     return value
@@ -135,7 +135,7 @@ class D1CheckpointDvcRecoveryService:
             raise _error("receipt_key", key)
         try:
             require_d1_pod_id(parts[2])
-            require_sha256(parts[3], label="D1 recovery attempt")
+            require_sha256_hex_any_case(parts[3], label="D1 recovery attempt")
         except (TypeError, ValueError) as cause:
             raise _error("receipt_key", key) from cause
         step = int(match.group(1))

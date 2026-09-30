@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from entropic_substrate.kernel.artifacts import snapshot_d1_artifact
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
@@ -62,7 +62,7 @@ def _error(code: str, path: object) -> D1CheckpointDvcSyncError:
 
 
 def _sha256(value: str, *, label: str) -> str:
-    require_sha256(value, label=label)
+    require_sha256_hex_any_case(value, label=label)
     if value != value.lower():
         raise ValueError(f"{label} must use lowercase hexadecimal")
     return value

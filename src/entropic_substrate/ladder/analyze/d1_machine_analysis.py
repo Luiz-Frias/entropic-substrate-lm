@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256_hex_any_case
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EndpointGap
 from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
@@ -58,7 +58,7 @@ class D1ArmAliasMap:
         if len(set(frozen.values())) != len(D1Arm):
             raise D1AliasError("alias labels must be unique")
         try:
-            require_sha256(self.sealed_commitment, label="D1 alias sealed commitment")
+            require_sha256_hex_any_case(self.sealed_commitment, label="D1 alias sealed commitment")
         except ValueError as error:
             raise D1AliasError("alias map requires a SHA-256 sealed commitment") from error
         object.__setattr__(self, "aliases", MappingProxyType(frozen))

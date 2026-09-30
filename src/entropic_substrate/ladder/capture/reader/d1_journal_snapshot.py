@@ -12,7 +12,7 @@ from entropic_substrate.kernel.artifacts import (
     normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_sha256_hex_any_case
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 from entropic_substrate.ladder.capture.records.d1_telemetry_query import (
     read_d1_run_evidence_bytes,
@@ -66,7 +66,7 @@ def _validate_snapshot(value: D1JournalSnapshot) -> None:
     )
     if type(value.byte_count) is not int or value.byte_count < 1:
         raise ValueError("D1 journal snapshot byte_count must be positive")
-    require_sha256(value.sha256, label="D1 journal snapshot sha256")
+    require_sha256_hex_any_case(value.sha256, label="D1 journal snapshot sha256")
     if type(value.run) is not D1RunEvidence or value.run.path != value.path:
         raise ValueError("D1 journal snapshot run evidence differs from its path")
 

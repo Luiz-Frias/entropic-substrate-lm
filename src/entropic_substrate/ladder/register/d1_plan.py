@@ -12,7 +12,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
     require_commit,
     require_nonempty_string,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.runtime.config import TrainConfig
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, D1LaunchScale
@@ -99,7 +99,7 @@ def _positive_int(value: object, *, label: str) -> int:
 def _sha256(value: object, *, label: str) -> str:
     text = _string(value, label=label)
     try:
-        require_sha256(text, label=label)
+        require_sha256_hex_any_case(text, label=label)
     except ValueError as error:
         _fail(str(error), error)
     return text

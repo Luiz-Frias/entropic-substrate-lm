@@ -24,7 +24,10 @@ from entropic_substrate.kernel.artifacts import (
     read_json_artifact,
     relative_d1_artifact_path,
 )
-from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import (
+    canonical_digest,
+    require_sha256_hex_any_case,
+)
 from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
@@ -69,7 +72,7 @@ def parse_scientific_data_order(value: object, step: int) -> tuple[str, int] | N
         or count != min(step, DATA_ORDER_DIGEST_BATCHES)
     ):
         raise ValueError("data-order attestation must cover the complete bounded prefix")
-    require_sha256(digest, label="scientific data order")
+    require_sha256_hex_any_case(digest, label="scientific data order")
     return digest, count
 
 

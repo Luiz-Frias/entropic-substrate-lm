@@ -24,7 +24,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     RunClass,
     canonical_digest,
     canonical_json,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
@@ -79,7 +79,7 @@ def _sha(value: object, label: str) -> str:
     if type(value) is not str:
         _fail(f"{label} must be SHA-256 text")
     try:
-        require_sha256(value, label=label)
+        require_sha256_hex_any_case(value, label=label)
     except (TypeError, ValueError) as error:
         _fail(f"{label} must be lowercase SHA-256", error)
     return value

@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
-from entropic_substrate.kernel.identity.d1_primitives import require_nonempty_string, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import (
+    require_nonempty_string,
+    require_sha256_hex_any_case,
+)
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
 from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
@@ -63,7 +66,7 @@ def _pod(value: str) -> str:
 
 
 def _attempt(value: str) -> str:
-    require_sha256(value, label="trainer attempt")
+    require_sha256_hex_any_case(value, label="trainer attempt")
     return value
 
 

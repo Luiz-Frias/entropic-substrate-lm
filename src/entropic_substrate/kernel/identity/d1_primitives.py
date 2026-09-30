@@ -34,7 +34,7 @@ def require_nonempty_string(value: str, *, label: str) -> None:
         raise ValueError(msg)
 
 
-def require_sha256(value: str, *, label: str) -> None:
+def require_sha256_hex_any_case(value: str, *, label: str) -> None:
     """Refuse any identity that is not a complete SHA-256 digest."""
     if type(value) is not str or len(value) != _SHA256_LENGTH:
         msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
@@ -224,7 +224,7 @@ class EncoderInitializationIdentity:
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.name, label="encoder initialization name")
-        require_sha256(self.construction_digest, label="encoder initialization digest")
+        require_sha256_hex_any_case(self.construction_digest, label="encoder initialization digest")
 
     @property
     def manifest(self) -> dict[str, object]:

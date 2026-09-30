@@ -12,7 +12,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
     canonical_digest,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptIdentity,
@@ -56,11 +56,11 @@ class D1ConfirmatoryLaunch:
             raise TypeError("D1 confirmatory launch requires ConfirmatoryD1RunPlan")
         if type(self.start) is not RunStartProvenance:
             raise TypeError("D1 confirmatory launch requires RunStartProvenance")
-        require_sha256(
+        require_sha256_hex_any_case(
             self.registered_design_digest,
             label="D1 launch registered_design_digest",
         )
-        require_sha256(
+        require_sha256_hex_any_case(
             self.decision_contract_digest,
             label="D1 launch decision_contract_digest",
         )

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_sha256_hex_any_case
 from entropic_substrate.ladder.analyze.d1_inspect_values import D1_INSPECT_MAX_EVALUATIONS
 
 __all__ = [
@@ -38,7 +38,7 @@ def _optional_text(value: str | None, *, label: str) -> None:
 
 def _optional_digest(value: str | None, *, label: str) -> None:
     if value is not None:
-        require_sha256(value, label=f"D1 inspect {label}")
+        require_sha256_hex_any_case(value, label=f"D1 inspect {label}")
 
 
 @dataclass(frozen=True, slots=True)

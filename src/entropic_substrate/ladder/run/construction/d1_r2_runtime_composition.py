@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
@@ -77,7 +77,7 @@ class D1BoundR2CheckpointSync(D1CheckpointSyncPort):
         if type(self._adapter) is not D1CheckpointDvcSyncAdapter:
             raise TypeError("bound R2 sync requires the DVC sync adapter")
         require_d1_pod_id(self._pod_id)
-        require_sha256(self._attempt_sha256, label="bound R2 sync attempt")
+        require_sha256_hex_any_case(self._attempt_sha256, label="bound R2 sync attempt")
         if (
             type(self._logical_run_id) is not str
             or not self._logical_run_id

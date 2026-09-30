@@ -12,7 +12,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     RunClass,
     canonical_digest,
     require_nonempty_string,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 
 D1_LAUNCH_ATTEMPT_SCHEMA: Final = "d1-launch-attempt-v1"
@@ -69,7 +69,7 @@ class D1LaunchAttemptIdentity:
     def __post_init__(self) -> None:
         if self.run_class not in (RunClass.PILOT, RunClass.CONFIRMATORY):
             raise ValueError("D1 attempt ledger records only pilot or confirmatory runs")
-        require_sha256(self.family_digest, label="D1 attempt family_digest")
+        require_sha256_hex_any_case(self.family_digest, label="D1 attempt family_digest")
         if type(self.arm) is not D1Arm:
             raise TypeError("D1 attempt arm must be a D1Arm")
         if type(self.seed) is not int or self.seed < 0:
@@ -78,7 +78,7 @@ class D1LaunchAttemptIdentity:
         if self.run_class is RunClass.CONFIRMATORY:
             if self.registered_design_digest is None:
                 raise ValueError("confirmatory attempt requires registered_design_digest")
-            require_sha256(
+            require_sha256_hex_any_case(
                 self.registered_design_digest,
                 label="D1 attempt registered_design_digest",
             )

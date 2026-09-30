@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 
 __all__ = [
@@ -80,7 +80,7 @@ class D1TrainerAdapterPhase(StrEnum):
 
 def d1_trainer_request_path(attempt_sha256: str) -> str:
     """Derive the sole remote request target from the bootstrap attempt identity."""
-    require_sha256(attempt_sha256, label="D1 trainer request attempt")
+    require_sha256_hex_any_case(attempt_sha256, label="D1 trainer request attempt")
     return normalize_d1_relative_artifact_path(
         f"requests/{attempt_sha256}.json",
         label="D1 trainer request",
@@ -89,7 +89,7 @@ def d1_trainer_request_path(attempt_sha256: str) -> str:
 
 def d1_trainer_runtime_report_path(attempt_sha256: str) -> str:
     """Derive the immutable runtime-report path for one bootstrap attempt."""
-    require_sha256(attempt_sha256, label="D1 trainer runtime-report attempt")
+    require_sha256_hex_any_case(attempt_sha256, label="D1 trainer runtime-report attempt")
     return normalize_d1_relative_artifact_path(
         f"trainer-runtime-{attempt_sha256}.json",
         label="D1 trainer runtime report",
@@ -98,8 +98,8 @@ def d1_trainer_runtime_report_path(attempt_sha256: str) -> str:
 
 def d1_trainer_start_report_path(attempt_sha256: str, request_sha256: str) -> str:
     """Derive the immutable start-report path for one staged request attempt."""
-    require_sha256(attempt_sha256, label="D1 trainer start-report attempt")
-    require_sha256(request_sha256, label="D1 trainer start-report request")
+    require_sha256_hex_any_case(attempt_sha256, label="D1 trainer start-report attempt")
+    require_sha256_hex_any_case(request_sha256, label="D1 trainer start-report request")
     return normalize_d1_relative_artifact_path(
         f"trainer-start-{attempt_sha256}-{request_sha256}.json",
         label="D1 trainer start report",
@@ -186,7 +186,7 @@ def _text(value: object, label: str) -> str:
 def _sha(value: object, label: str) -> str:
     text = _text(value, label)
     try:
-        require_sha256(text, label=label)
+        require_sha256_hex_any_case(text, label=label)
     except ValueError as error:
         _fail(str(error), error)
     if text.lower() != text:
