@@ -86,9 +86,10 @@ bare-`str` vocabularies into compile-time structure. Everything else is extracti
 3. **Any h-ladder flywheel experimental run needs a fresh operator green light.** No phase and no
    rung launches pods, spends GPU, or starts an experiment. Ruling 8.
 
-**Pre-phase rungs.** Five `fix/` and `chore/` branches (rung 5 added 2026-09-29 on ruling DN-1567-C), rungs 1, 2 and 5 a
-stack (trunk → 1567 → 1617 → 1567c) and rungs 3 and 4 parented on the trunk, landed serially in the
-listed order before `p14-r1-strict-json` launches. They are not manifest phases; each carries a brief under
+**Pre-phase rungs.** Seven `fix/`, `chore/` and `feat/` branches (rung 5 added 2026-09-29 on ruling DN-1567-C;
+rungs 6 and 7 on the operator's 2026-09-29 ask to move persistence off the training hot path), rungs 1, 2 and 5 a
+stack (trunk → 1567 → 1617 → 1567c), rungs 3, 4 and 6 parented on the trunk, rung 7 gated on the first measured
+run; landed serially in the listed order before `p14-r1-strict-json` launches. They are not manifest phases; each carries a brief under
 `.claude/workflows/briefs/pre-for-*.md` (installed 2026-09-28/29), their scope lives there and in their
 Linear tickets. Rulings 7 and 12.
 
@@ -99,6 +100,8 @@ Linear tickets. Rulings 7 and 12.
 | 3 | `chore/for-1614-text-trim-semantics` | FOR-1614 | commit 1 audits every persisted launch-attempt ledger for untrimmed-but-nonblank strings and pins each codec's current `_text` boundary RED-first. Commit 2, only when the audit count is zero: `d1_launch_attempt_codec._text` becomes strict-trimmed, the pin flips, both arms shown. A non-zero count halts as DECISION-NEEDED for a read-old window | no: the three `_text` sites are not tuple members |
 | 4 | `chore/for-1615-lowercase-sha-boundary` | FOR-1615 | audit every caller of the loose kernel `require_sha256` and classify each as boundary or in-process; rename it to `require_sha256_hex_any_case` and repoint the 34 `src` importers mechanically, zero behaviour change; commit the audit table as `docs/plans/measurements/p14-sha-callers.txt` | no: none of the 34 importers is a tuple member `[M, comm against the tuple files]` |
 | 5 | `fix/for-1567-final-leg-publication` | FOR-1621 | option C of DN-1567-C (operator 2026-09-29): the `h-worker-event-v1` `complete` event gains the `publication` block (write-new, read-old for one rollback window in both readers) and the final snapshot leg reuses the run's publication ledger and the bounded verification-read retry; started and failure snapshots untouched; stacked on rung 2, brief `.claude/workflows/briefs/pre-for-1567c.md` | yes: `object_worker.py`, `worker_completion.py` |
+| 6 | `feat/for-1622-mlflow-async-sink` | FOR-1622 | operator ask 2026-09-29 (persistence off the hot path, part 1): `MlflowSink.log` enqueues into a bounded queue drained by one background worker into `log_batch`; `finish()` drains with a declared bound; best-effort accounting unchanged (failed batches counted, dead worker reported, full queue blocks, never drops); the `MetricSink` port is not widened. Adapter-local, no reader member, live-required. Worked in a parallel worktree off the trunk tip, rebased and lifecycle-checked at the next gap; brief `.claude/workflows/briefs/pre-for-1622.md` | no |
+| 7 | `feat/for-1623-publication-actor` | FOR-1623 | part 2, GATED on the first measured `publication` block from a green-lit run after rung 1: the runner seals locally as today and hands sealed keys to a background publication actor (ledger, retry, checkpoint events, stop-marker poll) with backpressure at N unpublished checkpoints, synchronous drain at the final/stopped boundary, and fail-loud health checks at every boundary; N sized from the measurement | yes: `runner.py`, `object_worker.py`, `worker_execution.py` (+ `worker_snapshot.py`, `worker_transport.py`, `h_probe_events.py`) |
 
 **Why FOR-1615 splits this way.** The ruling asks for lowercase-strict SHA at every boundary and a
 rename of the loose kernel function, landed before the consolidation phases. The lowercase-strict
