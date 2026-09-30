@@ -108,6 +108,35 @@ def _event(
     return publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
 
 
+def _publication(
+    ledger: PublicationLedger,
+    ledgered_before: int,
+    paths: tuple[str, ...],
+    l3_seconds: float,
+    retry: VerificationReadRetry,
+    timing: dict[str, float],
+) -> dict[str, object]:
+    """The ONE `publication`-block builder shared by every leg that calls
+    :func:`~entropic_substrate.ladder.run.worker_snapshot.publish_worker_snapshot`
+    with a ledger (FOR-1567/pre-for-1567c). ``timing`` is the runner's L1/L2
+    mirror for the checkpoint leg, or an empty mapping for the final-snapshot
+    leg (see its call site for why that leg's L1/L2 are unmeasured, never
+    reused).
+    """
+    # +1 in both counts below: the snapshot MARKER itself (h-worker-snapshot-v1)
+    # is always a fresh key, never ledgered.
+    new_objects = (len(ledger) - ledgered_before) + 1
+    return {
+        "l1_seconds": timing.get("l1_seconds", 0.0),
+        "l2_seconds": timing.get("l2_seconds", 0.0),
+        "l3_seconds": l3_seconds,
+        "objects_put": new_objects,
+        "objects_skipped": len(paths) - (new_objects - 1),
+        "verification_reads": new_objects,
+        "retries": retry.failures,
+    }
+
+
 def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str, object]:
     row = recovery_record(
         value,
@@ -263,18 +292,9 @@ def run_object_worker(
                 retry=retry,
             )
             l3_seconds = time.perf_counter() - l3_started
-            # +1 in both counts below: the checkpoint-snapshot MARKER itself
-            # (h-worker-snapshot-v1) is always a fresh key, never ledgered.
-            new_objects = (len(ledger) - ledgered_before) + 1
-            publication = {
-                "l1_seconds": publication_timing.get("l1_seconds", 0.0),
-                "l2_seconds": publication_timing.get("l2_seconds", 0.0),
-                "l3_seconds": l3_seconds,
-                "objects_put": new_objects,
-                "objects_skipped": len(paths) - (new_objects - 1),
-                "verification_reads": new_objects,
-                "retries": retry.failures,
-            }
+            publication = _publication(
+                ledger, ledgered_before, paths, l3_seconds, retry, publication_timing
+            )
             _event(
                 objects,
                 request,
@@ -334,17 +354,48 @@ def run_object_worker(
             if result["status"] == "stopped_by_operator"
             else "complete"
         )
+        final_paths = _paths(root, ("run", "capture", "verification", "worker"))
+        final_retry = VerificationReadRetry()
+        final_ledgered_before = len(ledger)
+        l3_started = time.perf_counter()
         snapshot = publish_worker_snapshot(
             objects,
             request,
             root,
-            _paths(root, ("run", "capture", "verification", "worker")),
+            final_paths,
             name=name,
+            ledger=ledger,
+            retry=final_retry,
+        )
+        l3_seconds = time.perf_counter() - l3_started
+        # DN-1567-C (operator, 2026-09-29): the final-snapshot leg -- shared
+        # by all three terminal names, no branch on `name` at this call site
+        # -- reuses the SAME run's ledger (never a fresh {}) and a fresh
+        # VerificationReadRetry(), exactly like the checkpoint leg.
+        #
+        # l1_seconds/l2_seconds are 0.0 here: NOT MEASURED for this leg. L1
+        # (seal_step's ancestor walk) and L2 (read_training_progress) time
+        # the training loop's own seal chain, and that walk already
+        # completed -- and was already reported -- on the last checkpoint-*
+        # event the runner emitted immediately before this terminal status
+        # (runner.py fires `on_checkpoint` at every seal boundary it
+        # reaches, unconditionally, including the final one). Reusing those
+        # same numbers here would double-report one measurement under two
+        # event names, not record a second one. Two further full-chain
+        # re-walks DO happen on this leg -- `worker_execution.py`'s own
+        # post-training `read_training_progress` call and `_admit_result`'s
+        # `read_training_progress` call above (:133 in this file) -- and
+        # neither is instrumented, so their cost is genuinely unmeasured
+        # here. 0.0 means "not measured for this leg", never "measured
+        # zero".
+        publication = _publication(
+            ledger, final_ledgered_before, final_paths, l3_seconds, final_retry, {}
         )
         event_value: dict[str, object] = {
             "status": result["status"],
             "result": artifact_reference(root, result_artifact),
             "snapshot": asdict(snapshot),
+            "publication": publication,
         }
         if result["status"] == "stopped_by_operator":
             event_value["successful_optimizer_steps"] = result["successful_optimizer_steps"]

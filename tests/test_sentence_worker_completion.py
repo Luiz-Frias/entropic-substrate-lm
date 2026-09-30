@@ -73,6 +73,84 @@ def test_external_completion_admission_matches_one_worker_lineage(tmp_path: Path
     assert not (missing / "snapshot.json").exists()
 
 
+@pytest.fixture(scope="module")
+def _complete_fixture(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[_ObjectStore, object, object]:
+    """Run the REAL worker pipeline exactly ONCE for this whole module (same
+    pattern as ``tests/test_h_probe_events.py``'s ``_checkpoint_fixture``):
+    every publication-block arm below mutates its OWN in-memory copy of the
+    resulting object values, never re-running the (slow) training pipeline."""
+    tmp_path = tmp_path_factory.mktemp("worker-completion-pub")
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    return request, terminal, dict(objects.values)
+
+
+def test_a_complete_event_is_admitted_with_or_without_a_publication_block(
+    tmp_path: Path, _complete_fixture: tuple[_ObjectStore, object, object]
+) -> None:
+    """Read-old/write-new (FOR-1567/pre-for-1567c, DN-1567-C): the REAL
+    worker's `complete` event carries a `publication` block and admits
+    (write-new); a `complete` event recorded BEFORE this door existed -- no
+    `publication` key at all -- is still admitted (read-old). Mutation: drop
+    the extra-key admission in `worker_completion.py` and the write-new arm
+    below goes RED (`recovery payload fields differ from the versioned
+    schema`), independent of the read-old arm, which would still pass."""
+    request, terminal, values = _complete_fixture
+    write_new = _ObjectStore(values=dict(values))
+    row = json.loads(write_new.values[terminal.key])
+    assert "publication" in row  # write-new sanity: the fixture really has one
+    host_new = tmp_path / "host-write-new"
+    host_new.mkdir()
+    admitted_new = receive_worker_completion(
+        write_new, request, terminal, host_new, expected_pod_id=None, max_marker_bytes=1_000_000
+    )
+    assert admitted_new["status"] == "probe_completion_verified"
+
+    read_old = _ObjectStore(values=dict(values))
+    del row["publication"]
+    old_payload = json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+    read_old.values[terminal.key] = old_payload
+    old_terminal = read_old._identity(terminal.key, old_payload)
+    host_old = tmp_path / "host-read-old"
+    host_old.mkdir()
+    admitted_old = receive_worker_completion(
+        read_old, request, old_terminal, host_old, expected_pod_id=None, max_marker_bytes=1_000_000
+    )
+    assert admitted_old["status"] == "probe_completion_verified"
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        lambda pub: {**pub, "retries": -1},
+        lambda pub: {**pub, "l1_seconds": -0.1},
+        lambda pub: {k: v for k, v in pub.items() if k != "retries"},
+    ],
+)
+def test_a_malformed_publication_block_on_complete_is_refused(
+    tmp_path: Path, _complete_fixture: tuple[_ObjectStore, object, object], corruption
+) -> None:
+    request, terminal, values = _complete_fixture
+    objects = _ObjectStore(values=dict(values))
+    row = json.loads(objects.values[terminal.key])
+    row["publication"] = corruption(row["publication"])
+    payload = json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+    objects.values[terminal.key] = payload
+    bad_terminal = objects._identity(terminal.key, payload)
+    host = tmp_path / "host-malformed"
+    host.mkdir()
+    with pytest.raises(ValueError):
+        receive_worker_completion(
+            objects, request, bad_terminal, host, expected_pod_id=None, max_marker_bytes=1_000_000
+        )
+
+
 def test_remote_runtime_binding_is_a_metadata_contract_not_a_remote_run() -> None:
     local = local_request()
     bundle = ArtifactIdentity("code.bundle", ContentHash("sha256", "b" * 64))
