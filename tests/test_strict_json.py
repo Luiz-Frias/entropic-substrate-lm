@@ -7,6 +7,7 @@ both a ValueError-subclass and a non-ValueError sentinel."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -103,6 +104,61 @@ def test_strict_loads_accepts_ordinary_finite_numbers() -> None:
     _, _, fail = _raiser(_MarkerValueError)
     result = strict_loads('{"value": 1.5}', fail=fail)
     assert result == {"value": 1.5}
+
+
+def test_strict_loads_accepts_ints_and_floats_with_their_own_types() -> None:
+    _, _, fail = _raiser(_MarkerValueError)
+    result = strict_loads('{"a": 1, "b": 1.5}', fail=fail)
+    assert type(result["a"]) is int
+    assert type(result["b"]) is float
+
+
+# --------------------------------------------------------------------------
+# strict_loads: overflow-to-infinity floats (parse_float hook)
+# --------------------------------------------------------------------------
+
+
+def test_strict_loads_rejects_a_top_level_overflow_to_infinity_float() -> None:
+    messages, _, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError):
+        strict_loads("[23456789012E666]", fail=fail)  # pragma: allowlist secret
+    assert len(messages) == 1
+    assert messages[0] != ""
+    assert "23456789012E666" in messages[0]  # pragma: allowlist secret
+
+
+def test_strict_loads_rejects_a_top_level_overflow_to_negative_infinity_float() -> None:
+    messages, _, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError):
+        strict_loads("[-1E999]", fail=fail)
+    assert len(messages) == 1
+    assert messages[0] != ""
+    assert "-1E999" in messages[0]
+
+
+def test_strict_loads_rejects_a_nested_overflow_to_infinity_float_in_an_object_value() -> None:
+    messages, _, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError):
+        strict_loads('{"value": 23456789012E666}', fail=fail)  # pragma: allowlist secret
+    assert len(messages) == 1
+    assert messages[0] != ""
+    assert "23456789012E666" in messages[0]  # pragma: allowlist secret
+
+
+def test_strict_loads_overflow_float_propagates_value_error_subclass_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerValueError)
+    with pytest.raises(_MarkerValueError) as excinfo:
+        strict_loads("[23456789012E666]", fail=fail)  # pragma: allowlist secret
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
+
+
+def test_strict_loads_overflow_float_propagates_non_value_error_unchanged() -> None:
+    messages, raised, fail = _raiser(_MarkerRuntimeError)
+    with pytest.raises(_MarkerRuntimeError) as excinfo:
+        strict_loads("[23456789012E666]", fail=fail)  # pragma: allowlist secret
+    assert excinfo.value is raised[0]
+    assert len(messages) == 1
 
 
 # --------------------------------------------------------------------------
@@ -293,3 +349,15 @@ def test_require_lowercase_sha256_propagates_a_non_value_error_unchanged() -> No
     assert excinfo.value is raised[0]
     assert len(messages) == 1
     assert messages[0] != ""
+
+
+# --------------------------------------------------------------------------
+# strict_loads: malformed JSON is a decoder-level error, not a `fail` call
+# --------------------------------------------------------------------------
+
+
+def test_strict_loads_malformed_json_raises_decode_error_and_never_calls_fail() -> None:
+    messages, _, fail = _raiser(_MarkerValueError)
+    with pytest.raises(json.JSONDecodeError):
+        strict_loads("{", fail=fail)
+    assert messages == []

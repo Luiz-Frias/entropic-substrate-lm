@@ -2,15 +2,20 @@
 rejection, exact-key set comparison, and the mapping/digest boundary
 predicates promoted from ladder/capture/records/d1_telemetry_payloads.py.
 
-`fail` is the only error channel: every caller supplies its own exception
-type and message text, so no caller-visible exception surface changes when
-a site adopts this module. `fail` is typed `Callable[[str], NoReturn]` and
-must raise; this module never wraps that call, so whatever `fail` raises
-propagates unchanged to the caller.
+`fail` is the error channel for the predicates this module enforces on
+already-decoded JSON: duplicate keys, the three non-finite constants
+(NaN, Infinity, -Infinity), and any numeric literal that overflows to a
+non-finite float. `fail` is typed `Callable[[str], NoReturn]` and must
+raise; this module never wraps that call, so whatever `fail` raises
+propagates unchanged to the caller. Malformed input that the stdlib
+decoder itself rejects (invalid JSON syntax, invalid UTF-8 bytes) raises
+`json.JSONDecodeError` / `UnicodeDecodeError` directly, without calling
+`fail`; each adopter wraps those at its own boundary.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable
 from json import loads
 from typing import NoReturn
@@ -35,7 +40,18 @@ def strict_loads(raw: str | bytes, *, fail: Callable[[str], NoReturn]) -> object
     def constant_hook(constant: str) -> object:
         fail(f"non-finite constant: {constant!r}")
 
-    return loads(raw, object_pairs_hook=pairs_hook, parse_constant=constant_hook)
+    def float_hook(token: str) -> float:
+        value = float(token)
+        if not math.isfinite(value):
+            fail(f"non-finite float literal: {token!r}")
+        return value
+
+    return loads(
+        raw,
+        object_pairs_hook=pairs_hook,
+        parse_constant=constant_hook,
+        parse_float=float_hook,
+    )
 
 
 def exact_keys(
