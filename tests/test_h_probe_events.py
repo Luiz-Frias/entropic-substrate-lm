@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -254,7 +255,7 @@ def test_a_terminal_event_is_admitted_with_or_without_a_publication_block(
     ],
 )
 def test_a_malformed_publication_block_on_a_terminal_event_is_refused(
-    tmp_path: Path, kind: str, corruption
+    tmp_path: Path, kind: str, corruption: Callable[[dict[str, object]], dict[str, object]]
 ) -> None:
     request, _ = prepared(tmp_path)
     value = event(

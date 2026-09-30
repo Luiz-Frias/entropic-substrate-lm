@@ -1,6 +1,7 @@
 """Host completion admission binds transferred bytes, native receipts, and request."""
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,10 +12,14 @@ from tests.test_sentence_worker_request import request as local_request
 
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
+    D1TrainerMailboxObjectIdentity,
+)
 from entropic_substrate.ladder.run.worker_completion import (
     admit_worker_runtime,
     receive_worker_completion,
 )
+from entropic_substrate.ladder.run.worker_request import ProbeRequest
 from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
@@ -76,7 +81,7 @@ def test_external_completion_admission_matches_one_worker_lineage(tmp_path: Path
 @pytest.fixture(scope="module")
 def _complete_fixture(
     tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[_ObjectStore, object, object]:
+) -> tuple[ProbeRequest, D1TrainerMailboxObjectIdentity, dict[str, bytes]]:
     """Run the REAL worker pipeline exactly ONCE for this whole module (same
     pattern as ``tests/test_h_probe_events.py``'s ``_checkpoint_fixture``):
     every publication-block arm below mutates its OWN in-memory copy of the
@@ -92,7 +97,8 @@ def _complete_fixture(
 
 
 def test_a_complete_event_is_admitted_with_or_without_a_publication_block(
-    tmp_path: Path, _complete_fixture: tuple[_ObjectStore, object, object]
+    tmp_path: Path,
+    _complete_fixture: tuple[ProbeRequest, D1TrainerMailboxObjectIdentity, dict[str, bytes]],
 ) -> None:
     """Read-old/write-new (FOR-1567/pre-for-1567c, DN-1567-C): the REAL
     worker's `complete` event carries a `publication` block and admits
@@ -134,7 +140,9 @@ def test_a_complete_event_is_admitted_with_or_without_a_publication_block(
     ],
 )
 def test_a_malformed_publication_block_on_complete_is_refused(
-    tmp_path: Path, _complete_fixture: tuple[_ObjectStore, object, object], corruption
+    tmp_path: Path,
+    _complete_fixture: tuple[ProbeRequest, D1TrainerMailboxObjectIdentity, dict[str, bytes]],
+    corruption: Callable[[dict[str, object]], dict[str, object]],
 ) -> None:
     request, terminal, values = _complete_fixture
     objects = _ObjectStore(values=dict(values))
