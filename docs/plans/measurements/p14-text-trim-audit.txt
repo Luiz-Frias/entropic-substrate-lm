@@ -1,0 +1,624 @@
+FOR-1614 pre-phase rung: persisted-record trim-semantics audit
+================================================================
+
+Scope: audit the local corpus for records whose value is nonblank but
+untrimmed at a field gated only by one of the three focal `_text` boundaries
+(`d1_launch_attempt_codec`, `d1_registration_codec`, `ladder_campaign`), and
+inventory every `_text` definition in `src`. No semantic change lands in
+this rung (operator ruling 12, 2026-09-28); commit 2 is closed here per the
+architect constraint and does not depend on this file's count.
+
+Epoch
+-----
+base SHA (refactor/p14-consolidation, parent tip): 9d90e4c421b96899c67ded8679ae8255f21526bd
+measured at (UTC):                                  2026-09-30T05:08:50Z
+per-root file counts at that tip (`find <root> -type f | wc -l`):
+  results/  3008
+  data/     4
+  configs/  26
+  docs/     99
+  models/   7
+  .dvc/cache 88
+
+Command reproducing this file
+------------------------------
+Run from the repo root with `uv run python -`, piping in the script text
+below (the p13-sweep-remap.txt precedent for embedding a reproducing
+procedure verbatim; no script file is committed — Allowed files admits only
+this .txt):
+
+    uv run python - <<'PYEOF'
+    <the full contents of the "AUDIT SCRIPT" section below>
+    PYEOF
+
+    uv run python - <<'PYEOF'
+    <the full contents of the "CONTROL-CORPUS BUILDER" section below>
+    PYEOF
+
+    uv run python - --control /path/to/scratch/control_corpus <<'PYEOF'
+    <the AUDIT SCRIPT again, this time it also scans --control>
+    PYEOF
+
+Method
+------
+1. Roots searched: results/, data/, configs/, docs/, models/, .dvc/cache
+   (the brief's five plus the authoring-time .dvc/cache leg named in
+   Scope item 2 of the brief).
+2. A file is CLAIMED DECODABLE, and json.loads is attempted on it, when
+   EITHER its extension is .json/.jsonl OR `file`'s own magic classifies
+   its content as "JSON data" regardless of extension. The second leg
+   matters concretely here: 79 of the 88 `.dvc/cache` files are
+   extensionless, content-addressed `files/md5/<hash>` blobs that `file`
+   still content-sniffs as JSON, and they are already local (no DVC pull
+   needed to read them) — an extension-only filter would have silently
+   excluded them from the "claimed decodable" set, which is exactly the
+   kind of quiet gap the fail-LOUD invariant forbids. A decode failure on
+   a claimed-decodable file (or a malformed `*_base64` field, see below)
+   is reported by path below under UNREADABLE; it is never dropped or
+   counted as zero by omission.
+3. Every successfully decoded JSON document is walked recursively — dicts,
+   lists, and any string-valued key ending in `_base64`, which is
+   base64-decoded, UTF-8-decoded and re-parsed as JSON, then walked in
+   turn (decision contracts travel base64-encoded, per the brief, and can
+   nest two layers deep: `input_manifest_base64` -> `decision_contract_base64`).
+   A dict is a RECOGNIZED RECORD of schema S the instant it carries a
+   `schema_version` or `schema` key (the campaign design uses `schema`,
+   everything else uses `schema_version`) whose value is one of the five
+   known schema strings enumerated from source:
+     d1-launch-attempt-v1          (D1_LAUNCH_ATTEMPT_SCHEMA)
+     d1-launch-ledger-v1           (D1_LAUNCH_LEDGER_SCHEMA)
+     d1-decision-contract-v1       (_SCHEMA, d1_registration_codec.py)
+     d-ladder-campaign-design-v1   (ladder_campaign.read_campaign_design)
+     d-ladder-run-authorization-v1 (RunAuthorization.manifest)
+   Recognition does not stop at the outer document: a nested dict with its
+   own schema tag (a launch-attempt identity embedded inside a launch
+   ledger's events, or a decision contract behind a base64 field) is a
+   second, independently counted record.
+4. For each recognized record, every string LEAF value anywhere in its own
+   subtree is checked against the untrimmed predicate on decoded Python
+   str, `v.strip() and v.strip() != v` (Python's own Unicode-whitespace
+   rule for `.strip()`, never a regex over raw bytes), and tagged by its
+   dotted field path relative to the record root. A nested sub-object that
+   itself declares a different schema tag is excluded from the parent's
+   leaf walk (counted as its own record instead, so nothing is double
+   counted). This is deliberately a SUPERSET of the three focal codecs'
+   own `_text`-gated fields: it can only over-count against
+   `logical_run_id` / `verdict_vocabulary` / `cells[].*`, never
+   under-count, and the per-path breakdown makes it possible to see
+   exactly which named field, if any, actually carries drift.
+5. A passing CONTROL CORPUS, built outside the repo in the session
+   scratchpad, seeds one known-untrimmed record per schema — including one
+   base64-nested decision contract, one two-layer base64 nesting, and one
+   custody-embedded launch ledger matching `d1_finalized_cell_custody.py`'s
+   embedding shape — plus one clean (trimmed) control record and two
+   deliberately-broken files (invalid JSON, invalid base64) to prove the
+   fail-LOUD path reports rather than swallows. Its full output is quoted
+   verbatim below; every seed is recovered and every broken file is
+   reported.
+
+AUDIT SCRIPT
+------------
+```python
+"""FOR-1614 persisted-record trim-semantics audit. Not committed."""
+from __future__ import annotations
+
+import base64
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+SCHEMAS = {
+    "d1-launch-attempt-v1",
+    "d1-launch-ledger-v1",
+    "d1-decision-contract-v1",
+    "d-ladder-campaign-design-v1",
+    "d-ladder-run-authorization-v1",
+}
+
+
+class Unreadable(Exception):
+    """A claimed-decodable file or base64 field could not be decoded."""
+
+
+def untrimmed(value: str) -> bool:
+    return bool(value.strip()) and value.strip() != value
+
+
+def schema_of(node: object) -> str | None:
+    if type(node) is not dict:
+        return None
+    for key in ("schema_version", "schema"):
+        value = node.get(key)
+        if type(value) is str and value in SCHEMAS:
+            return value
+    return None
+
+
+def walk_leaves(node: object, path: str, into: dict[str, list[str]]) -> None:
+    if type(node) is dict:
+        for key, value in node.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if type(value) is dict and schema_of(value) is not None:
+                continue
+            walk_leaves(value, child_path, into)
+    elif type(node) is list:
+        for index, item in enumerate(node):
+            walk_leaves(item, f"{path}[{index}]", into)
+    elif type(node) is str:
+        if untrimmed(node):
+            into.setdefault(path, []).append(node)
+
+
+def walk_records(node, path, source, records):
+    schema = schema_of(node)
+    if schema is not None:
+        leaves: dict[str, list[str]] = {}
+        walk_leaves(node, "", leaves)
+        records.append((source, path, schema, leaves))
+    if type(node) is dict:
+        for key, value in node.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if type(value) is str and key.endswith("_base64"):
+                try:
+                    decoded_bytes = base64.b64decode(value, validate=True)
+                except Exception as error:
+                    raise Unreadable(f"{source}:{child_path}: invalid base64: {error}") from error
+                try:
+                    decoded_json = json.loads(decoded_bytes.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                walk_records(decoded_json, f"{child_path}(base64)", source, records)
+            else:
+                walk_records(value, child_path, source, records)
+    elif type(node) is list:
+        for index, item in enumerate(node):
+            walk_records(item, f"{path}[{index}]", source, records)
+
+
+def _magic_json_paths(root: Path) -> set[Path]:
+    all_files = [p for p in root.rglob("*") if p.is_file()]
+    if not all_files:
+        return set()
+    proc = subprocess.run(["file", "-f", "-"], input="\n".join(str(p) for p in all_files),
+                           capture_output=True, text=True)
+    hits: set[Path] = set()
+    for line in proc.stdout.splitlines():
+        path_str, _, desc = line.rpartition(": ")
+        if "JSON data" in desc:
+            hits.add(Path(path_str))
+    return hits
+
+
+def scan_root(root: Path):
+    records, unreadable = [], []
+    if not root.exists():
+        return records, unreadable, 0
+    magic_json = _magic_json_paths(root)
+    candidates = sorted({p for p in root.rglob("*") if p.is_file()
+                          and p.suffix in (".json", ".jsonl")} | magic_json)
+    for path in candidates:
+        source = str(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            unreadable.append(f"{source}: not UTF-8: {error}")
+            continue
+        if not text.strip():
+            continue
+        whole_doc_error = None
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError as error:
+            whole_doc_error, document = error, None
+        if document is not None and path.suffix != ".jsonl":
+            try:
+                walk_records(document, "", source, records)
+            except Unreadable as error:
+                unreadable.append(str(error))
+            continue
+        line_failures, any_line_ok = [], False
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                line_doc = json.loads(line)
+            except json.JSONDecodeError as error:
+                line_failures.append(f"{source}:{line_no}: invalid JSON: {error}")
+                continue
+            any_line_ok = True
+            try:
+                walk_records(line_doc, "", f"{source}:{line_no}", records)
+            except Unreadable as error:
+                unreadable.append(str(error))
+        if any_line_ok:
+            unreadable.extend(line_failures)
+        elif whole_doc_error is not None:
+            unreadable.append(f"{source}: invalid JSON (whole-doc and per-line): {whole_doc_error}")
+    return records, unreadable, len(candidates)
+
+
+def report(label: str, roots: list[Path]) -> None:
+    print(f"\n=== {label} ===")
+    total_records = total_untrimmed = json_file_count = 0
+    per_schema: dict[str, dict[str, int]] = {}
+    all_unreadable: list[str] = []
+    for root in roots:
+        records, unreadable, scanned = scan_root(root)
+        json_file_count += scanned
+        all_unreadable.extend(unreadable)
+        for source, path, schema, leaves in records:
+            total_records += 1
+            bucket = per_schema.setdefault(schema, {"records": 0, "untrimmed_fields": 0, "untrimmed_records": 0})
+            bucket["records"] += 1
+            if leaves:
+                bucket["untrimmed_records"] += 1
+                n = sum(len(v) for v in leaves.values())
+                bucket["untrimmed_fields"] += n
+                total_untrimmed += n
+                for field_path, values in leaves.items():
+                    print(f"  UNTRIMMED {schema} @ {source}#{path or '<root>'} field={field_path!r} "
+                          f"count={len(values)} example={values[0]!r}")
+    print(f"  JSON/JSONL files scanned: {json_file_count}")
+    print(f"  Recognized records: {total_records}")
+    for schema in sorted(SCHEMAS):
+        b = per_schema.get(schema, {"records": 0, "untrimmed_fields": 0, "untrimmed_records": 0})
+        print(f"  schema={schema}: records={b['records']} "
+              f"untrimmed_records={b['untrimmed_records']} untrimmed_fields={b['untrimmed_fields']}")
+    print(f"  Total untrimmed-but-nonblank string leaves across all recognized records: {total_untrimmed}")
+    if all_unreadable:
+        print(f"  UNREADABLE ({len(all_unreadable)}):")
+        for entry in all_unreadable:
+            print(f"    {entry}")
+    else:
+        print("  UNREADABLE: none")
+
+
+def main() -> None:
+    report("LIVE CORPUS (main checkout)",
+           [Path(p) for p in ("results", "data", "configs", "docs", "models", ".dvc/cache")])
+    if len(sys.argv) > 1 and sys.argv[1] == "--control":
+        report("CONTROL CORPUS (scratchpad, seeded)", [Path(sys.argv[2])])
+
+
+if __name__ == "__main__":
+    main()
+```
+
+CONTROL-CORPUS BUILDER
+-----------------------
+```python
+"""Build the FOR-1614 audit's passing control corpus (scratchpad only)."""
+from __future__ import annotations
+
+import base64
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).parent / "control_corpus"
+ROOT.mkdir(parents=True, exist_ok=True)
+
+launch_attempt = {
+    "arm": "none",
+    "family_digest": "a" * 64,
+    "registered_design_digest": None,
+    "run_class": "pilot",
+    "schema_version": "d1-launch-attempt-v1",
+    "seed": 1,
+    "logical_run_id": " seeded-run-1",  # untrimmed: leading space
+    "optional_stopping_digest": "b" * 64,
+}
+(ROOT / "bare_launch_attempt.json").write_text(json.dumps(launch_attempt, indent=2))
+
+launch_ledger_custody = {
+    "custody_kind": "finalized-cell",
+    "ledger": {
+        "events": [{
+            "event_seq": 0,
+            "identity": {**launch_attempt, "logical_run_id": "seeded-run-2 "},  # trailing space
+            "observed_at": "2026-09-30T00:00:00+00:00",
+            "reason": None,
+            "status": "recorded",
+        }],
+        "schema_version": "d1-launch-ledger-v1",
+    },
+}
+(ROOT / "custody_embedded_ledger.json").write_text(json.dumps(launch_ledger_custody, indent=2))
+
+decision_contract = {
+    "arm_ids": ["none", "sg"], "clause_ids": [], "clause_precedence": [],
+    "clause_rules": {}, "contrast_ids": ["sg-main"],
+    "contrast_rules": {"sg-main": {
+        "contrast_id": "sg-main", "contrast_kind": "PAIRWISE",
+        "terms": [{"arm_id": "sg", "coefficient": 1.0}, {"arm_id": "none", "coefficient": -1.0}],
+        "endpoint": {"metric": "nats_per_byte", "estimator": "last_k_mean", "smoothing_window": 5},
+        "n_rule": "EXACT", "registered_n": 4, "df_rule": "N_MINUS_ONE",
+        "confidence_level": 0.975, "multiplicity": "BONFERRONI_TWO_SIDED",
+        "margins": {"practical": 0.01}, "decision_vocabulary": "d1-contrast/v1",
+    }},
+    "decision_rules": {}, "exclusion_rules": [],
+    "family_identity": {"family_digest": "f" * 64,
+                         "arm_construction_digests": {"none": "0" * 64, "sg": "1" * 64}},
+    "registered_constants": {}, "schema_version": "d1-decision-contract-v1",
+    "verdict_vocabulary": "seeded-vocab\n",  # untrimmed: trailing newline
+}
+decision_contract_payload = json.dumps(decision_contract, separators=(",", ":"), sort_keys=True).encode()
+envelope = {
+    "kind": "external-analysis-control",
+    "decision_contract_base64": base64.b64encode(decision_contract_payload).decode("ascii"),
+}
+(ROOT / "base64_nested_decision_contract.json").write_text(json.dumps(envelope, indent=2))
+
+inner_envelope_payload = json.dumps(envelope, separators=(",", ":"), sort_keys=True).encode()
+outer_envelope = {
+    "kind": "input-manifest",
+    "input_manifest_base64": base64.b64encode(inner_envelope_payload).decode("ascii"),
+}
+(ROOT / "two_layer_base64_decision_contract.json").write_text(json.dumps(outer_envelope, indent=2))
+
+campaign_design = {
+    "schema": "d-ladder-campaign-design-v1", "rung": "d1", "d4_phase": None,
+    "cells": [{
+        "logical_run_id": "none-1", "arm": "none", "seed": 1,
+        "pairing_id": " pair-1",  # untrimmed: leading space
+        "spec_digest": "c" * 64, "predecessor_strategy": "supervised",
+    }],
+}
+(ROOT / "campaign_design.json").write_text(json.dumps(campaign_design, indent=2))
+
+run_authorization = {
+    "schema": "d-ladder-run-authorization-v1",
+    "reader_identity": "scientific-reader-v1 ",  # untrimmed: trailing space
+    "device": "cpu",
+}
+(ROOT / "run_authorization.json").write_text(json.dumps(run_authorization, indent=2))
+
+clean = {
+    "arm_ids": ["none"], "schema_version": "d1-launch-attempt-v1",
+    "logical_run_id": "clean-run-1", "family_digest": "a" * 64, "arm": "none",
+    "run_class": "pilot", "seed": 2, "registered_design_digest": None,
+    "optional_stopping_digest": "b" * 64,
+}
+(ROOT / "clean_control.json").write_text(json.dumps(clean, indent=2))
+
+(ROOT / "corrupt.json").write_text("{not valid json")
+(ROOT / "bad_base64.json").write_text(json.dumps({"decision_contract_base64": "not-base64!!"}))
+```
+
+VERBATIM RUN OUTPUT (uv run python <audit script> --control <scratchpad>/control_corpus)
+------------------------------------------------------------------------------------------
+```
+=== LIVE CORPUS (main checkout) ===
+  JSON/JSONL files scanned: 461
+  Recognized records: 0
+  schema=d-ladder-campaign-design-v1: records=0 untrimmed_records=0 untrimmed_fields=0
+  schema=d-ladder-run-authorization-v1: records=0 untrimmed_records=0 untrimmed_fields=0
+  schema=d1-decision-contract-v1: records=0 untrimmed_records=0 untrimmed_fields=0
+  schema=d1-launch-attempt-v1: records=0 untrimmed_records=0 untrimmed_fields=0
+  schema=d1-launch-ledger-v1: records=0 untrimmed_records=0 untrimmed_fields=0
+  Total untrimmed-but-nonblank string leaves across all recognized records: 0
+  UNREADABLE: none
+
+=== CONTROL CORPUS (scratchpad, seeded) ===
+  UNTRIMMED d1-launch-attempt-v1 @ .../control_corpus/bare_launch_attempt.json#<root> field='logical_run_id' count=1 example=' seeded-run-1'
+  UNTRIMMED d1-decision-contract-v1 @ .../control_corpus/base64_nested_decision_contract.json#decision_contract_base64(base64) field='verdict_vocabulary' count=1 example='seeded-vocab\n'
+  UNTRIMMED d-ladder-campaign-design-v1 @ .../control_corpus/campaign_design.json#<root> field='cells[0].pairing_id' count=1 example=' pair-1'
+  UNTRIMMED d1-launch-attempt-v1 @ .../control_corpus/custody_embedded_ledger.json#ledger.events[0].identity field='logical_run_id' count=1 example='seeded-run-2 '
+  UNTRIMMED d-ladder-run-authorization-v1 @ .../control_corpus/run_authorization.json#<root> field='reader_identity' count=1 example='scientific-reader-v1 '
+  UNTRIMMED d1-decision-contract-v1 @ .../control_corpus/two_layer_base64_decision_contract.json#input_manifest_base64(base64).decision_contract_base64(base64) field='verdict_vocabulary' count=1 example='seeded-vocab\n'
+  JSON/JSONL files scanned: 9
+  Recognized records: 8
+  schema=d-ladder-campaign-design-v1: records=1 untrimmed_records=1 untrimmed_fields=1
+  schema=d-ladder-run-authorization-v1: records=1 untrimmed_records=1 untrimmed_fields=1
+  schema=d1-decision-contract-v1: records=2 untrimmed_records=2 untrimmed_fields=2
+  schema=d1-launch-attempt-v1: records=3 untrimmed_records=2 untrimmed_fields=2
+  schema=d1-launch-ledger-v1: records=1 untrimmed_records=0 untrimmed_fields=0
+  Total untrimmed-but-nonblank string leaves across all recognized records: 6
+  UNREADABLE (2):
+    .../control_corpus/bad_base64.json:decision_contract_base64: invalid base64: Only base64 data is allowed
+    .../control_corpus/corrupt.json: invalid JSON (whole-doc and per-line): Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+```
+(paths truncated to `.../control_corpus/<name>` above; they are absolute
+scratchpad paths in the raw run and carry no secret material — see the
+"no env values, credentials or credentialed URLs" rule below.)
+
+Control corpus is a passing control: every one of the 6 seeded untrimmed
+fields (one per schema, including both base64 nesting depths and the
+custody-embedded shape) is recovered with the correct schema, field path
+and example value; the clean (trimmed) `clean_control.json` record
+contributes to `d1-launch-attempt-v1`'s `records=3` but not to
+`untrimmed_records` (still 2), proving no false positive; both
+deliberately-broken files are reported under UNREADABLE, not dropped. The
+live-corpus zero above is therefore a TRUE zero for the corpus this
+instrument can see, not an artifact of an instrument that cannot see this
+record class.
+
+CORPUS COVERAGE BY FILE-TYPE CLASS (measured, not restated from the brief)
+---------------------------------------------------------------------------
+Command: `file -f <filelist>` over every file under each root, bucketed by
+description. "JSON data (decoded)" rows are covered by the audit script
+above; everything else is UNMEASURED for trim semantics (a grep or
+json.loads exiting nonzero on a git bundle, SQLite file or zip archive is
+not evidence of zero, so none was attempted against these classes).
+
+  results/  (3008 files)
+    2248  source text (build-context copy: results/*/context/**/*.py, .sh — full
+          repository snapshots bundled for container builds; confirms the
+          brief's authoring-time finding that this root's schema-string hits
+          were source copies, not persisted records)
+     351  text (other grep-visible text; not JSON, not decoded)
+     331  JSON data (decoded by the audit script)
+      33  empty
+      13  Git bundle                              UNMEASURED (opaque)
+      12  SQLite 3.x database                      UNMEASURED (opaque)
+       9  PNG image                                UNMEASURED (not a record format)
+       7  Zip archive                              UNMEASURED (opaque)
+       3  POSIX tar archive                        UNMEASURED (opaque)
+       1  Git index, version 2, 909 entries         UNMEASURED (opaque)
+
+  models/  (7 files)
+       4  Zip archive                              UNMEASURED (opaque)
+       2  text (not JSON)
+       1  empty
+
+  data/  (4 files)
+       3  text (not JSON)
+       1  empty
+
+  configs/  (26 files)
+      26  text (not JSON; no schema-tagged records expected or found)
+
+  docs/  (99 files)
+      46  text (not JSON)
+      45  JSON data (decoded by the audit script)
+       5  source text (build-context copy)
+       3  PNG image                                UNMEASURED (not a record format)
+
+  .dvc/cache/  (88 files)
+      72  JSON data (decoded by the audit script; includes 70
+          extensionless `files/md5/<hash>` content-addressed blobs
+          content-sniffed as JSON by `file`, plus 2 `.dir` DVC directory
+          manifests — an extension-only filter would have missed these)
+       9  text (not JSON)
+       4  Git bundle                              UNMEASURED (opaque)
+       2  source text (build-context copy)
+       1  Zip archive                              UNMEASURED (opaque)
+
+Total claimed-decodable and scanned: 461 (331 + 45 + 72 magic/extension
+JSON hits, reconciled against 448 magic-only + 13 extension-only-not-magic,
+matching the audit script's own reported "JSON/JSONL files scanned: 461").
+
+UNMEASURED (explicitly, per Non-goals: no DVC pull, no R2 listing, no MLflow read)
+-------------------------------------------------------------------------------------
+- Every opaque container above (Git bundles, SQLite databases, Zip
+  archives, POSIX tar archives, the Git index, PNG images): 13+12+7+3+1=36
+  in results/, 4 in models/, 4+1=5 in .dvc/cache — none pulled apart or
+  decoded; a record of one of the five schemas could exist inside a Git
+  bundle or a zip archive and this audit would not see it.
+- R2 objects not present in the local DVC cache (`.dvc/cache`): not
+  listed, not fetched. DVC's own remote config lives in `.dvc/config`
+  (bucket `entropic-substrate-lm`) but this rung does not query it.
+- The MLflow artifact/run store on Railway (`railway-observability-stack`
+  memory entry): not read. No live MLflow server is required or contacted
+  by this audit (house rule 1's live-gate skip semantics do not apply
+  here; this is a read-only local-filesystem audit).
+
+WRITER / READER TRACE (git grep over the three codecs' own round-trip entry points)
+--------------------------------------------------------------------------------------
+Command: `git grep -n "<entry-point-name>(" -- 'src/*.py'` per entry point,
+filtered to exclude the defining codec file itself.
+
+launch-attempt ledger (`launch_attempt_ledger_to_mapping` /
+`launch_attempt_ledger_from_mapping` / `serialize_launch_attempt_ledger` /
+`parse_launch_attempt_ledger`):
+  ladder/run/campaign/d1_campaign_checkpoint.py:277   (write, to_mapping)
+  ladder/run/campaign/d1_campaign_checkpoint.py:368   (read, from_mapping)
+  ladder/run/campaign/d1_operator_custody_adapter.py:82,89  (write, to_mapping)
+  ladder/run/closure/d1_excluded_capture.py:204       (read, from_mapping)
+  ladder/run/closure/d1_finalized_cell_custody.py:177 (write, via canonical_json(to_mapping(...)))
+  ladder/run/closure/d1_finalized_cell_custody.py:510 (read, from_mapping)
+
+decision contract (`decision_contract_to_mapping` /
+`decision_contract_from_mapping` / `serialize_decision_contract` /
+`parse_decision_contract`):
+  ladder/review/d1_external_analysis_control.py:403   (write, base64-encoded)
+  ladder/review/d1_external_analysis_control.py:705   (read, parse)
+  ladder/run/campaign/d1_campaign_request.py:241      (write, to_mapping)
+  ladder/run/campaign/d1_campaign_request.py:300      (read, from_mapping)
+  ladder/run/worker/d1_predecessor_loader.py:168      (read, parse)
+
+campaign design (`read_campaign_design`):
+  ladder/analyze/ladder_analysis.py:195,345
+  ladder/file/ladder_filing.py:58,153,232
+  ladder/gate/ladder_predecessor.py:79
+
+Sites found by this grep beyond the brief's starting list (brief named
+`d1_finalized_cell_custody.py:177`, `d1_excluded_capture.py:204`,
+`d1_operator_custody_adapter.py`, `d1_external_analysis_control.py:403`,
+`ladder_campaign.py:189`): `d1_campaign_checkpoint.py:277,368`,
+`d1_campaign_request.py:241,300`, `d1_predecessor_loader.py:168` — the
+recon's flagged gap is confirmed real; none of these three sites is
+persisted anywhere in the local corpus scanned above (they were only
+recognized-record ZERO everywhere), so the gap does not change the count,
+but it is recorded here as a divergence from the brief's own enumeration.
+
+`_TEXT` INVENTORY (28 rows; `grep -rn 'def _text(' src --include='*.py' | wc -l` = 28)
+------------------------------------------------------------------------------------------
+Matches the brief's count exactly; `src` is byte-identical between the
+brief's authoring tip (4e0ae6a) and this rung's parent tip (9d90e4c) per
+`git diff --stat 4e0ae6a refactor/p14-consolidation -- src` (empty), so the
+brief's 28 is NOT restated as stale here (the haiku recon's "STALE: 30" was
+a pattern artifact of an unparenthesized `def _text` grep, confirmed
+below).
+
+Excluded near-names (command: `grep -rn 'def _text' src --include='*.py' |
+grep -v 'def _text('`; 2 rows, not counted in the 28):
+  ladder/capture/resource/resource_billing.py:74  def _text_or_gap(...)
+  ladder/capture/resource/resource_billing.py:93  def _text_or_gap_manifest(...)
+
+Per-row semantics (read directly at each site; PERMISSIVE = untrimmed
+nonblank text accepted; STRICT = any value whose `.strip()` differs is
+rejected; NO-TRIM-CHECK = type check only, blank and untrimmed both
+accepted):
+
+  PERMISSIVE (untrimmed nonblank accepted, blank rejected) — 5 rows:
+    ladder/register/d1_launch_attempt_codec.py:58   <- FOR-1614 focal (pinned)
+    ladder/analyze/d1_inspect_codec.py:234
+    ladder/analyze/seed_sizing.py:102
+    ladder/run/campaign/d1_campaign_checkpoint.py:71
+    ladder/run/campaign/d1_operator_intent_codec.py:88
+
+  NO-TRIM-CHECK (type check only; blank AND untrimmed both accepted) — 3 rows:
+    ladder/capture/capture.py:146
+    ladder/analyze/d1_machine_analysis_codec.py:103   (rejects blank via `not value`; untrimmed accepted)
+    historical/d_ladder/ladder_profile.py:39
+
+  STRICT (blank AND untrimmed both rejected) — 20 rows:
+    ladder/capture/reader/d1_numerical_defect.py:61
+    ladder/capture/custody/d1_capture_declaration_codec.py:132
+    ladder/capture/custody/d1_capture_roster.py:24
+    ladder/capture/custody/d1_capture_aggregate.py:37
+    ladder/capture/custody/d1_capture_aggregate_codec.py:99
+    ladder/capture/resource/resource_billing.py:81
+    ladder/file/d1_filing_receipts.py:155
+    ladder/register/d1_registration_codec.py:121     <- FOR-1614 focal (pinned)
+    ladder/review/d1_review_execution.py:52
+    ladder/review/d1_review_adjudication.py:64
+    ladder/review/d1_external_analysis_control.py:182
+    ladder/gate/ladder_campaign.py:48                <- FOR-1614 focal (pinned)
+    ladder/analyze/ladder_registration.py:75
+    ladder/run/closure/d1_finalized_cell_custody.py:99
+    ladder/run/transport/d1_trainer_handoff_codec.py:145
+    ladder/run/transport/d1_trainer_process_contracts.py:180
+    ladder/run/provider/d1_system_runtime_probe.py:40
+    ladder/run/provider/d1_runpod_adapter.py:90
+    ladder/run/transport/d1_trainer_output_publication.py:71
+    composition/wiring/d1_campaign_controller_factory.py:70
+
+  5 + 3 + 20 = 28.
+
+Only the three marked FOR-1614 focal rows are pinned or touched by this
+rung (Non-goals: does not pin or edit the other 25). The
+NO-TRIM-CHECK/PERMISSIVE classes above are listed as unpinned data, per
+the brief, not as a finding requiring action in this rung.
+
+CONCLUSION FOR THE CONDUCTOR
+-----------------------------
+Audit count over the corpus this instrument can see: 0 untrimmed-but-
+nonblank persisted records across all five known schemas, at every field
+in every recognized record (461 JSON-claimed files scanned, 0 recognized
+records of any kind — the local corpus currently holds no persisted
+records of these five schemas at all, matching the brief's own
+authoring-time finding that results/ and .dvc/cache contain only source
+copies, now confirmed by full structural decode plus recursive base64
+descent rather than a plain-text schema-string grep).
+
+This 0 is NOT "a corpus the conductor accepts as complete" by itself: the
+opaque-container and DVC/R2/MLflow legs above are UNMEASURED by design
+(Non-goals), and the brief's own gate for commit 2 requires the conductor's
+explicit go on top of a zero count. Per the ARCHITECT CONSTRAINT binding
+this rung ("Commit 2 is closed in this rung... whatever the audit count"),
+this rung takes NO position on whether that go should be given and makes
+NO code change to any `_text` site: commit 1 only, this file plus
+`tests/test_text_trim_pins.py`, `d1_launch_attempt_codec.py` byte-identical
+to the parent at the tip.
