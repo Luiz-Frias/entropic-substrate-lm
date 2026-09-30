@@ -7,6 +7,9 @@ both a ValueError-subclass and a non-ValueError sentinel."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import NoReturn
+
 import pytest
 
 from entropic_substrate.kernel.codec.strict_json import (
@@ -29,14 +32,14 @@ class _MarkerRuntimeError(RuntimeError):
 
 def _raiser(
     exception_type: type[Exception],
-) -> tuple[list[str], list[BaseException], object]:
+) -> tuple[list[str], list[BaseException], Callable[[str], NoReturn]]:
     """Return (messages, raised, fail) where fail records the message it
     received, records the exact instance it raises, and raises it."""
 
     messages: list[str] = []
     raised: list[BaseException] = []
 
-    def fail(message: str) -> None:
+    def fail(message: str) -> NoReturn:
         messages.append(message)
         instance = exception_type(message)
         raised.append(instance)
