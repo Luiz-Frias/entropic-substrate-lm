@@ -15,6 +15,7 @@ from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker imp
 )
 from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
     D1TrainerProcessWorker,
+    D1TrainerStartReportPublisher,
 )
 from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
@@ -126,7 +127,9 @@ def _default_mailbox_factory(
         max_objects=max_objects,
     )
 
-    def worker_factory(start_report_publisher) -> D1TrainerProcessWorker:  # type: ignore[no-untyped-def]
+    def worker_factory(
+        start_report_publisher: D1TrainerStartReportPublisher,
+    ) -> D1TrainerProcessWorker:
         return D1TrainerProcessWorker(
             artifact_root=root,
             catalog=catalog,

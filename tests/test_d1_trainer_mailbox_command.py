@@ -280,3 +280,18 @@ def test_mailbox_command_uses_the_shared_canonical_json_not_a_local_dump() -> No
 
     assert command_module.canonical_json is d1_primitives.canonical_json  # type: ignore[attr-defined]
     assert "json.dumps" not in Path(command_module.__file__).read_text(encoding="utf-8")
+
+
+def test_mailbox_command_worker_factory_is_fully_annotated_without_ignores() -> None:
+    import ast
+
+    text = Path(command_module.__file__).read_text(encoding="utf-8")
+    assert "type: ignore" not in text
+    factory = next(
+        node
+        for node in ast.walk(ast.parse(text))
+        if isinstance(node, ast.FunctionDef) and node.name == "worker_factory"
+    )
+    annotation = factory.args.args[0].annotation
+    assert annotation is not None
+    assert ast.unparse(annotation) == "D1TrainerStartReportPublisher"
