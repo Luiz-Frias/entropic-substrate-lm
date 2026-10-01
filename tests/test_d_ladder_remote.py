@@ -80,6 +80,93 @@ def test_worker_refuses_runtime_drift_before_dispatch_and_emits_no_ready_receipt
     assert f"{request.prefix}/failure.json" in objects.values
 
 
+def _published_request(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    request = request_fixture(source)
+    objects = _ObjectStore()
+    return request, objects, publish_remote_request(objects, request, source)
+
+
+def _run_worker(request, objects, identity, root, **kwargs):
+    return run_remote_worker(
+        objects,
+        identity,
+        root,
+        observed_start=request.start,
+        observed_code_commit=request.code_commit,
+        factory=UnavailableResourceActivationFactory(),
+        **kwargs,
+    )
+
+
+def test_identity_mismatch_on_a_later_input_leaves_no_partial_workspace_and_retry_reaches_identity(
+    tmp_path: Path,
+) -> None:
+    """FOR-1580: artifact 2 of 4 is tampered; artifact 1 is already on disk when it fails.
+
+    Without cleanup the half-written root makes every retry die on
+    ``FileExistsError`` before it can reach the identity check it needs to see.
+    """
+    request, objects, identity = _published_request(tmp_path)
+    objects.values[f"{request.prefix}/inputs/{request.inputs[1].path}"] = b"changed"
+    root = tmp_path / "worker"
+
+    with pytest.raises(ValueError, match="remote input object identity mismatch"):
+        _run_worker(request, objects, identity, root)
+    assert not root.exists() or not any(root.iterdir())
+    failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
+    assert failure["error_type"] == "ValueError"
+
+    with pytest.raises(ValueError, match="remote input object identity mismatch"):
+        _run_worker(request, objects, identity, root)
+
+
+def test_failure_after_full_materialization_also_empties_the_workspace(tmp_path: Path) -> None:
+    request, objects, identity = _published_request(tmp_path)
+    root = tmp_path / "worker"
+
+    def _boom(_root: Path):
+        assert (root / "profile.json").is_file()  # materialization really happened
+        raise RuntimeError("predecessor unavailable")
+
+    with pytest.raises(RuntimeError, match="predecessor unavailable"):
+        _run_worker(request, objects, identity, root, predecessor_loader=_boom)
+    assert not any(root.iterdir())
+    assert f"{request.prefix}/failure.json" in objects.values
+
+
+def test_failure_never_deletes_a_workspace_the_worker_did_not_start_empty(tmp_path: Path) -> None:
+    """Ownership guard: a foreign non-empty root is refused and left exactly as found."""
+    request, objects, identity = _published_request(tmp_path)
+    root = tmp_path / "worker"
+    root.mkdir()
+    (root / "keep.txt").write_bytes(b"operator data")
+
+    with pytest.raises(FileExistsError, match="empty real directory"):
+        _run_worker(request, objects, identity, root)
+    assert (root / "keep.txt").read_bytes() == b"operator data"
+    assert f"{request.prefix}/failure.json" in objects.values
+
+
+def test_failed_cleanup_still_publishes_the_failure_receipt_and_surfaces_the_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.historical.d_ladder import d_ladder_remote
+
+    request, objects, identity = _published_request(tmp_path)
+    objects.values[f"{request.prefix}/inputs/{request.inputs[1].path}"] = b"changed"
+
+    def _cannot_clear(_root: Path) -> None:
+        raise OSError("cleanup refused")
+
+    monkeypatch.setattr(d_ladder_remote, "_clear_workspace", _cannot_clear)
+    with pytest.raises(OSError, match="cleanup refused") as caught:
+        _run_worker(request, objects, identity, tmp_path / "worker")
+    assert isinstance(caught.value.__context__, ValueError)
+    assert f"{request.prefix}/failure.json" in objects.values
+
+
 def test_worker_dispatches_real_scientific_tiny_with_actual_filing_gate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

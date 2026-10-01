@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from collections.abc import Callable, Mapping
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -223,6 +224,24 @@ def materialize_remote_output(
     return row
 
 
+def _is_unused_workspace(root: Path) -> bool:
+    """True when ``root`` is absent or an empty real directory, i.e. nothing there is foreign."""
+    if root.is_symlink():
+        return False
+    return not root.exists() or (root.is_dir() and not any(root.iterdir()))
+
+
+def _clear_workspace(root: Path) -> None:
+    """Remove what a failed attempt materialized under ``root``; ``root`` itself stays."""
+    if root.is_symlink() or not root.is_dir():
+        return
+    for child in root.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def run_remote_worker(
     objects: D1TrainerMailboxObjectPort,
     identity: D1TrainerMailboxObjectIdentity,
@@ -237,10 +256,14 @@ def run_remote_worker(
 
     A failed dispatch emits a typed, request-bound failure receipt and rethrows;
     it never publishes a completion marker or substitutes a local smoke run.
+    It first empties a workspace it started with, so a retry reaches the identity
+    checks instead of dying on a half-written root; a root that already held
+    foreign files is left untouched.
     """
     from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
 
     request = parse_remote_request(_read(objects, identity))
+    owns_workspace = _is_unused_workspace(root)
     try:
         if observed_start != request.start or observed_code_commit != request.code_commit:
             raise ValueError("observed runtime provenance differs from remote request")
@@ -327,5 +350,9 @@ def run_remote_worker(
             version=2,
         )
     except Exception as error:
-        _receipt(objects, request, "failure", {"error_type": type(error).__name__})
+        try:
+            if owns_workspace:
+                _clear_workspace(root)
+        finally:
+            _receipt(objects, request, "failure", {"error_type": type(error).__name__})
         raise
