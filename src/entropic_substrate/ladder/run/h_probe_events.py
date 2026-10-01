@@ -1,7 +1,6 @@
 """Host observations of H worker events; artifact verification remains separate."""
 
 import json
-import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,7 +14,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
-from entropic_substrate.ladder.run.worker_completion import admit_worker_runtime
+from entropic_substrate.ladder.run.worker_completion import admit_publication, admit_worker_runtime
 from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     worker_artifact,
@@ -37,27 +36,21 @@ _STATUS = {
     "paused": "paused",
     "stopped": "stopped_by_operator",
 }
-# FOR-1567, design-gate ruling DG-C: a `publication` block on checkpoint-*
-# events records per-leg seconds and object/retry counts. Door: read-old
-# tolerated for one rollback window (a checkpoint event WITHOUT the block
-# still admits), write-new always (the worker emits it on every checkpoint).
-_PUBLICATION_SECONDS = ("l1_seconds", "l2_seconds", "l3_seconds")
-_PUBLICATION_COUNTS = ("objects_put", "objects_skipped", "verification_reads", "retries")
-_PUBLICATION_FIELDS = " ".join((*_PUBLICATION_SECONDS, *_PUBLICATION_COUNTS))
-
-
-def _admit_publication(value: object) -> None:
-    row = recovery_record(value, _PUBLICATION_FIELDS)
-    for key in _PUBLICATION_SECONDS:
-        seconds = row[key]
-        if type(seconds) is not float and type(seconds) is not int:
-            raise ValueError("worker checkpoint publication seconds must be a number")
-        if not math.isfinite(seconds) or seconds < 0:
-            raise ValueError("worker checkpoint publication seconds must be finite and >= 0")
-    for key in _PUBLICATION_COUNTS:
-        count = row[key]
-        if type(count) is not int or count < 0:
-            raise ValueError("worker checkpoint publication counts must be nonnegative integers")
+# FOR-1567/pre-for-1567c, design-gate rulings DG-C and DN-1567-C: a
+# `publication` block records per-leg seconds and object/retry counts. It
+# first appeared on checkpoint-* events only (DG-C); DN-1567-C (operator,
+# 2026-09-29) widened the door to every terminal event the final-snapshot
+# call site emits (`complete`, `paused`, `stopped`), since one call site
+# serves all three and the worker writes the block on all of them
+# unconditionally. Door: read-old tolerated for one rollback window (an
+# event of any of these kinds WITHOUT the block still admits), write-new
+# always. `started` and `failure` are NOT in this set -- an event of either
+# kind carrying `publication` still raises (the exact-key admission below
+# has no `extra` branch for them). The validator itself lives in
+# `worker_completion.py` (reused, not copied): this module already imports
+# `admit_worker_runtime` from there, so importing `admit_publication` too
+# adds no new edge, while the reverse import would close a cycle.
+_PUBLICATION_KINDS = ("checkpoint", "complete", "paused", "stopped")
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,7 +143,7 @@ def read_probe_event(
     extra = ""
     if type(value) is dict and kind == "failure" and value.get("evidence_delivery") == "failed":
         extra = " delivery_error_type"
-    if type(value) is dict and kind == "checkpoint" and "publication" in value:
+    if type(value) is dict and kind in _PUBLICATION_KINDS and "publication" in value:
         extra += " publication"
     row = recovery_record(value, f"{_COMMON} {_FIELDS[kind]}{extra}")
     if (
@@ -186,8 +179,6 @@ def read_probe_event(
             raise ValueError("worker checkpoint count differs from event or workload")
         steps = count
         worker_artifact(row["training"], "run")
-        if "publication" in row:
-            _admit_publication(row["publication"])
     elif kind == "stopped":
         count = row["successful_optimizer_steps"]
         if (
@@ -201,6 +192,8 @@ def read_probe_event(
         worker_artifact(row["result"], "worker")
     else:
         worker_artifact(row["result"], "worker")
+    if kind in _PUBLICATION_KINDS and "publication" in row:
+        admit_publication(row["publication"])
     snapshot = (
         None
         if kind == "failure" and row["evidence_delivery"] == "failed"

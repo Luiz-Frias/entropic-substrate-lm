@@ -1,6 +1,7 @@
 """Host-side completion admission without pretending to rerun native CUDA readers."""
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -20,6 +21,35 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
 )
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
 from entropic_substrate.ladder.run.worker_snapshot import materialize_worker_snapshot
+
+# FOR-1567/pre-for-1567c, DN-1567-C: the `publication` block records per-leg
+# seconds and object/retry counts on a worker event. It first appeared on
+# checkpoint-* events (design-gate ruling DG-C) and now also appears on the
+# `complete` event (final-snapshot leg). The validator is defined ONCE here
+# -- the reader-neutral site the lane measured as lowest-coupling, since
+# `h_probe_events.py` already imports :func:`admit_worker_runtime` from this
+# module (no new edge), while the reverse edge (this module importing
+# `h_probe_events`) would close a two-module cycle. Door: read-old tolerated
+# for one rollback window (an event without the block still admits),
+# write-new always (the worker emits it on every checkpoint/paused/stopped/
+# complete terminal event).
+_PUBLICATION_SECONDS = ("l1_seconds", "l2_seconds", "l3_seconds")
+_PUBLICATION_COUNTS = ("objects_put", "objects_skipped", "verification_reads", "retries")
+_PUBLICATION_FIELDS = " ".join((*_PUBLICATION_SECONDS, *_PUBLICATION_COUNTS))
+
+
+def admit_publication(value: object) -> None:
+    row = recovery_record(value, _PUBLICATION_FIELDS)
+    for key in _PUBLICATION_SECONDS:
+        seconds = row[key]
+        if type(seconds) is not float and type(seconds) is not int:
+            raise ValueError("worker checkpoint publication seconds must be a number")
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError("worker checkpoint publication seconds must be finite and >= 0")
+    for key in _PUBLICATION_COUNTS:
+        count = row[key]
+        if type(count) is not int or count < 0:
+            raise ValueError("worker checkpoint publication counts must be nonnegative integers")
 
 
 def admit_worker_runtime(
@@ -76,9 +106,15 @@ def receive_worker_completion(
     received = objects.read(terminal.key)
     if type(received) is not D1TrainerMailboxObjectRead or received.identity != terminal:
         raise ValueError("worker completion object identity mismatch")
+    raw = json.loads(received.payload)
+    # Read-old/write-new (DN-1567-C): a `complete` event recorded before this
+    # door existed carries no `publication` key at all and still admits; one
+    # written by the current worker always carries it. Mirrors
+    # h_probe_events.py's own extra-key pattern for the same door.
+    extra = " publication" if type(raw) is dict and "publication" in raw else ""
     event = recovery_record(
-        json.loads(received.payload),
-        "schema request_sha256 run_identity scientific_authority at status result snapshot",
+        raw,
+        "schema request_sha256 run_identity scientific_authority at status result snapshot" + extra,
     )
     if (
         event["schema"] != "h-worker-event-v1"
@@ -90,6 +126,8 @@ def receive_worker_completion(
         != received.payload
     ):
         raise ValueError("worker completion identity, authority or encoding mismatch")
+    if "publication" in event:
+        admit_publication(event["publication"])
     at = event["at"]
     if type(at) is not str or datetime.fromisoformat(at).utcoffset() != UTC.utcoffset(None):
         raise ValueError("worker completion time must be UTC")

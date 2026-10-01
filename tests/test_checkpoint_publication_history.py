@@ -18,13 +18,16 @@ This file holds the ACCEPTANCE bullet that names a counting fake object
 port swept over k = 1, 2, 3, 5 checkpoints, independent of k.
 """
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
+from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_request import request
 
+from entropic_substrate.ladder.run.object_worker import run_object_worker
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
@@ -33,7 +36,10 @@ from entropic_substrate.ladder.run.worker_snapshot import (
     materialize_worker_snapshot,
     publish_worker_snapshot,
 )
-from entropic_substrate.ladder.run.worker_transport import VerificationReadRetry
+from entropic_substrate.ladder.run.worker_transport import (
+    VerificationReadRetry,
+    publish_probe_request,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -133,6 +139,50 @@ def test_the_manifest_at_checkpoint_k_still_lists_every_file(tmp_path: Path, k: 
         assert (
             target / f"run/step-{step:02d}.pt"
         ).read_bytes() == f"checkpoint payload {step}".encode()
+
+
+def test_final_snapshot_puts_only_files_new_since_the_last_checkpoint(tmp_path: Path) -> None:
+    """pre-for-1567c ACCEPTANCE: the final snapshot after k checkpoints PUTs
+    only the files new since checkpoint k, plus its own marker and event --
+    the SAME O(new) property the checkpoint leg already has, now wired
+    through the final leg's own ledger/retry (DN-1567-C). Mutation: drop
+    `ledger=`/`retry=` from the final-leg `publish_worker_snapshot` call in
+    `object_worker.py` and this test goes RED (the tail grows to every
+    accumulated file, not just the new ones)."""
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+
+    # The last checkpoint's own EVENT (never its marker, which is published
+    # one step earlier and would leave that event itself in the tail) is the
+    # cutoff: everything published after it belongs to the final leg alone.
+    checkpoint_event_prefix = f"{request.prefix}/checkpoint-"
+    checkpoint_event_indices = [
+        index
+        for index, key in enumerate(objects.publishes)
+        if key.startswith(checkpoint_event_prefix)
+    ]
+    assert checkpoint_event_indices  # sanity: this profile checkpoints at least once
+    last_checkpoint_event = json.loads(
+        objects.values[objects.publishes[checkpoint_event_indices[-1]]]
+    )
+    tail = objects.publishes[checkpoint_event_indices[-1] + 1 :]
+
+    last_checkpoint_manifest = json.loads(objects.values[last_checkpoint_event["snapshot"]["key"]])
+    last_checkpoint_output_keys = {entry["key"] for entry in last_checkpoint_manifest["files"]}
+
+    final_event = json.loads(objects.values[terminal.key])
+    final_snapshot_key = final_event["snapshot"]["key"]
+    final_manifest = json.loads(objects.values[final_snapshot_key])
+    final_output_keys = {entry["key"] for entry in final_manifest["files"]}
+
+    expected_new_output_keys = final_output_keys - last_checkpoint_output_keys
+    expected_tail = expected_new_output_keys | {final_snapshot_key, terminal.key}
+    assert set(tail) == expected_tail
+    assert len(tail) == len(expected_tail)  # no duplicate PUT of an already-ledgered key
 
 
 def test_a_path_whose_bytes_change_after_publication_raises_before_any_put(

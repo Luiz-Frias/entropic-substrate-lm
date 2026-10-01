@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -184,6 +185,123 @@ def store(request: ProbeRequest, name: str, value: object) -> _ObjectStore:
         f"{request.prefix}/{name}.json", raw, expected_sha256=hashlib.sha256(raw).hexdigest()
     )
     return objects
+
+
+def _publication_block(**overrides: object) -> dict[str, object]:
+    block: dict[str, object] = {
+        "l1_seconds": 0.0,
+        "l2_seconds": 0.0,
+        "l3_seconds": 0.01,
+        "objects_put": 2,
+        "objects_skipped": 0,
+        "verification_reads": 2,
+        "retries": 0,
+    }
+    block.update(overrides)
+    return block
+
+
+# FOR-1567/pre-for-1567c, DN-1567-C: `publication` is admitted on
+# checkpoint/complete/paused/stopped -- the fields each terminal kind
+# otherwise requires, minus `snapshot` (added by `event()`) and
+# `publication` itself (added per-test below).
+_TERMINAL_FIELDS: dict[str, dict[str, object]] = {
+    "complete": {
+        "status": "probe_workload_complete",
+        "result": {"path": "worker/result.json", "sha256": "3" * 64},
+    },
+    "paused": {
+        "status": "paused",
+        "result": {"path": "worker/result.json", "sha256": "3" * 64},
+    },
+    "stopped": {
+        "status": "stopped_by_operator",
+        "result": {"path": "worker/result.json", "sha256": "3" * 64},
+        "successful_optimizer_steps": 4,
+    },
+}
+
+
+@pytest.mark.parametrize("kind", ["complete", "paused", "stopped"])
+def test_a_terminal_event_is_admitted_with_or_without_a_publication_block(
+    tmp_path: Path, kind: str
+) -> None:
+    """Write-new/read-old (DN-1567-C): every terminal kind the final-snapshot
+    call site can emit admits its event both with and without `publication`."""
+    request, _ = prepared(tmp_path)
+    with_block = event(request, kind, **_TERMINAL_FIELDS[kind], publication=_publication_block())
+    observed = read_probe_event(
+        store(request, kind, with_block), request, kind, expected_pod_id=None, max_bytes=1_000_000
+    )
+    assert observed is not None and observed.reported_status == _TERMINAL_FIELDS[kind]["status"]
+    without_block = event(request, kind, **_TERMINAL_FIELDS[kind])
+    observed = read_probe_event(
+        store(request, kind, without_block),
+        request,
+        kind,
+        expected_pod_id=None,
+        max_bytes=1_000_000,
+    )
+    assert observed is not None and observed.reported_status == _TERMINAL_FIELDS[kind]["status"]
+
+
+@pytest.mark.parametrize("kind", ["complete", "paused", "stopped"])
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        lambda pub: {**pub, "retries": -1},
+        lambda pub: {**pub, "l1_seconds": -0.1},
+        lambda pub: {k: v for k, v in pub.items() if k != "retries"},
+    ],
+)
+def test_a_malformed_publication_block_on_a_terminal_event_is_refused(
+    tmp_path: Path, kind: str, corruption: Callable[[dict[str, object]], dict[str, object]]
+) -> None:
+    request, _ = prepared(tmp_path)
+    value = event(
+        request, kind, **_TERMINAL_FIELDS[kind], publication=corruption(_publication_block())
+    )
+    with pytest.raises(ValueError):
+        read_probe_event(
+            store(request, kind, value), request, kind, expected_pod_id=None, max_bytes=1_000_000
+        )
+
+
+@pytest.mark.parametrize(
+    "kind,fields",
+    [
+        (
+            "started",
+            {
+                "status": "inputs_admitted",
+                "runtime": {"kind": "local_tiny", "pod_id": None},
+                "record": {"path": "worker/start.json", "sha256": "3" * 64},
+            },
+        ),
+        (
+            "failure",
+            {
+                "status": "execution_defect",
+                "stage": "execution",
+                "error_type": "FixtureError",
+                "error_code": "fixture",
+                "evidence_delivery": "captured",
+            },
+        ),
+    ],
+)
+def test_a_publication_block_on_started_or_failure_is_refused(
+    tmp_path: Path, kind: str, fields: dict[str, object]
+) -> None:
+    """Negative arm (DN-1567-C): `started` and `failure` are NOT in the
+    publication door -- an event of either kind carrying the block still
+    raises, enforced by exact-key admission (no `extra` branch for them)."""
+    request, _ = prepared(tmp_path)
+    value = event(request, kind, **fields, publication=_publication_block())
+    with pytest.raises(ValueError):
+        read_probe_event(
+            store(request, kind, value), request, kind, expected_pod_id=None, max_bytes=1_000_000
+        )
 
 
 @pytest.mark.parametrize("status", ["execution_defect", "scientific_gap", "diagnostic_gap"])

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
+from tests.test_sentence_worker_transport import _FlakyReadStore, _ReadFailure
 
 from entropic_substrate.ladder.run import object_worker
 from entropic_substrate.ladder.run.object_worker import run_object_worker
@@ -109,3 +110,93 @@ def test_paused_worker_publishes_recovery_not_completion(tmp_path: Path) -> None
     assert result.key == f"{request.prefix}/paused.json"
     assert json.loads(objects.values[result.key])["status"] == "paused"
     assert f"{request.prefix}/complete.json" not in objects.values
+
+
+_PUBLICATION_KEYS = {
+    "l1_seconds",
+    "l2_seconds",
+    "l3_seconds",
+    "objects_put",
+    "objects_skipped",
+    "verification_reads",
+    "retries",
+}
+
+
+def _assert_well_shaped_publication(publication: dict[str, object]) -> None:
+    assert set(publication) == _PUBLICATION_KEYS
+    for seconds_field in ("l1_seconds", "l2_seconds", "l3_seconds"):
+        assert isinstance(publication[seconds_field], (int, float))
+        assert publication[seconds_field] >= 0
+    for count_field in ("objects_put", "objects_skipped", "verification_reads", "retries"):
+        assert type(publication[count_field]) is int and publication[count_field] >= 0
+
+
+def test_the_worker_always_writes_a_publication_block_on_the_complete_event(
+    tmp_path: Path,
+) -> None:
+    """Write-new (FOR-1567/pre-for-1567c, DN-1567-C): the final-snapshot leg
+    carries a `publication` block on `complete`, unconditionally. l1/l2 are
+    pinned to exactly 0.0 -- NOT MEASURED for this leg (see the comment at
+    its call site in object_worker.py for why reusing the last checkpoint's
+    values would double-report one measurement)."""
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    publication = json.loads(objects.values[terminal.key])["publication"]
+    _assert_well_shaped_publication(publication)
+    assert publication["l1_seconds"] == 0.0
+    assert publication["l2_seconds"] == 0.0
+
+
+def test_the_worker_always_writes_a_publication_block_on_the_paused_event(tmp_path: Path) -> None:
+    """Write-new (DN-1567-C): the same final-snapshot call site, reached via
+    the pause path, carries a `publication` block too -- no branch on the
+    terminal name."""
+    request, inputs = prepared(tmp_path, pause=("prediction", 2))
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    result = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    publication = json.loads(objects.values[result.key])["publication"]
+    _assert_well_shaped_publication(publication)
+
+
+def test_two_transient_reads_on_the_final_leg_publish_once_and_record_two_retries(
+    tmp_path: Path,
+) -> None:
+    """ACCEPTANCE: on the final leg, two transient verification-read failures
+    then success publish once and record `retries: 2`. The fault targets the
+    terminal snapshot MARKER key -- the one key only the final leg publishes
+    -- never a PUT (house rule 3's ruled carve-out)."""
+    request, inputs = prepared(tmp_path)
+    fault_key = f"{request.prefix}/snapshots/complete.json"
+    objects = _FlakyReadStore(fail_reads_remaining={fault_key: 2})
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    publication = json.loads(objects.values[terminal.key])["publication"]
+    assert publication["retries"] == 2
+    assert objects.publish_calls.count(fault_key) == 1
+
+
+def test_three_transient_reads_on_the_final_leg_raise_the_original_class(tmp_path: Path) -> None:
+    """ACCEPTANCE: three failures raise the original error class; `put_object`
+    (here, ``publish``) is still called exactly once for the faulted key."""
+    request, inputs = prepared(tmp_path)
+    fault_key = f"{request.prefix}/snapshots/complete.json"
+    objects = _FlakyReadStore(fail_reads_remaining={fault_key: 3})
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    with pytest.raises(_ReadFailure):
+        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    assert objects.publish_calls.count(fault_key) == 1
+    assert f"{request.prefix}/complete.json" not in objects.values
+    failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
+    assert failure["status"] == "execution_defect" and failure["stage"] == "final_snapshot"
