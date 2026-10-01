@@ -81,6 +81,7 @@ def execute_probe_request(
     on_start: Callable[[dict[str, object]], None] | None = None,
     sink: MetricSink | None = None,
     publication_timing: MutableMapping[str, float] | None = None,
+    operator_stop: Callable[[], bool] | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
 
@@ -94,6 +95,16 @@ def execute_probe_request(
     ``publication_timing``, when given, is threaded to ``run_probe_training``
     unchanged -- an ADDITIVE instrumentation mirror (FOR-1567), never part of
     this function's own completion contract.
+
+    ``operator_stop``, when given, is composed with ``request.pause`` into
+    :func:`~entropic_substrate.ladder.run.runner.run_probe_training`'s single
+    ``stop_after_seal`` callback (FOR-1617): it is called at every seal
+    boundary the runner already reaches, unconditionally, so a control-key
+    read count matches the boundary count regardless of whether ``pause`` is
+    also set. When both a declared pause and the operator poll agree on the
+    same boundary, the existing pause label (``"paused"``) wins -- the result
+    status becomes ``"stopped_by_operator"`` only when the poll alone caused
+    the stop.
     """
     started = time.perf_counter()
     request.__post_init__()
@@ -121,6 +132,18 @@ def execute_probe_request(
             ref = _reference(root, "run", artifact)
             on_checkpoint(ArtifactIdentity(ref["path"], ContentHash("sha256", ref["sha256"])))
 
+    operator_stopped = False
+
+    def stop_after_seal(phase: str, step: int) -> bool:
+        nonlocal operator_stopped
+        matched = request.pause is not None and (phase, step) == request.pause
+        # Called unconditionally (never short-circuited by `matched`) so a
+        # control-key read happens on every boundary this callback reaches,
+        # independent of whether a declared pause is also set (C13(a)).
+        polled = operator_stop() if operator_stop is not None else False
+        operator_stopped = polled and not matched
+        return matched or polled
+
     trained = run_probe_training(
         profile,
         source,
@@ -129,8 +152,8 @@ def execute_probe_request(
         max_artifact_bytes=limits.max_object_bytes,
         resume=resume,
         stop_after_seal=None
-        if request.pause is None
-        else lambda phase, step: (phase, step) == request.pause,
+        if request.pause is None and operator_stop is None
+        else stop_after_seal,
         on_checkpoint=checkpoint if on_checkpoint is not None else None,
         sink=sink,
         publication_timing=publication_timing,
@@ -148,7 +171,7 @@ def execute_probe_request(
         "request_sha256": request.digest,
         "run_identity": profile.identity,
         "scientific_authority": "none",
-        "status": "paused",
+        "status": "stopped_by_operator" if operator_stopped else "paused",
         "runtime": runtime,
         "successful_optimizer_steps": training["successful_optimizer_steps"],
         "training": _reference(root, "run", trained.receipt),

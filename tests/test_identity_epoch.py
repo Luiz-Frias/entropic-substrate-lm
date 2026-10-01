@@ -349,6 +349,27 @@ untouched: none of the seven touched members is one of h-source-reader-v3's
 seven fixed members, confirmed by re-measuring both source rows unchanged with
 the same tool invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
 
+pre-for-1617 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-09-29, p14 pre-phase rung FOR-1617, operator ruling 7
++ ruling R-PIN, design-gate ruling DG-A carried over): h-checkpoint-reader-v2
+changes because two of its 51 members changed bytes --
+``ladder.run.object_worker`` (stop-marker schema, encoder and classifier, the
+bounded ``stop_requested`` poll at seal boundaries over the existing
+``VerificationReadRetry`` fields, and the ``stopped`` terminal wiring) and
+``ladder.run.worker_execution`` (the ``operator_stop`` poll composed with
+``request.pause`` inside ``stop_after_seal``). ``ladder.run.runner`` needed no
+byte change: it already exposed ``stop_after_seal`` once per seal boundary.
+Label and member set unchanged. Both rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point.
+The OLD values they replace,
+``ae100745d962684bfc82fc1f01e145b45045ad705185dd8bcbd64dab4b35e7d8``
+(local) and
+``37590887e88ca26e499a54453f16ad033af4f6f037a4cb55a8427836dd420b05``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: neither member is one of h-source-reader-v3's seven fixed members,
+confirmed by re-measuring both source rows unchanged with the same tool
+invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -494,11 +515,11 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "ae100745d962684bfc82fc1f01e145b45045ad705185dd8bcbd64dab4b35e7d8",  # pragma: allowlist secret
+    ): "44052b3f34f8f16843b5a35094583929932dfeff6ab42b9f3d9202063c6ca127",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "37590887e88ca26e499a54453f16ad033af4f6f037a4cb55a8427836dd420b05",  # pragma: allowlist secret
+    ): "072ef7770347234d6ca3045b349d69a608e002783b7d7b41e4956c3e0098c215",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
