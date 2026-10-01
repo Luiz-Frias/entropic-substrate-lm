@@ -566,3 +566,39 @@ def test_registered_arms_have_an_even_head_dim_at_full_width(exp: str) -> None:
         f"{exp}: head_dim {head_dim} (d_model {d_model} / n_heads {n_heads}) is ODD — "
         "RoPE requires an even head_dim, so this arm cannot run at its registered width"
     )
+
+
+# FOR-1585: TrainConfig owns its betas coercion. YAML parses ``[0.9, 0.95]``
+# as a list; the dataclass declares ``tuple[float, float]``. Normalising in
+# ``__post_init__`` makes the file path and the code path agree without a
+# ``cls is TrainConfig`` special case in the generic ``_build``.
+def test_yaml_list_betas_load_as_a_two_float_tuple(tmp_path: Path) -> None:
+    path = tmp_path / "betas.yaml"
+    path.write_text("train:\n  betas: [1, 2]\n", encoding="utf-8")
+    betas = load_config(path).train.betas
+    assert betas == (1.0, 2.0)
+    assert type(betas) is tuple
+    assert all(type(beta) is float for beta in betas)
+
+
+@pytest.mark.parametrize("raw", [[1, 2], (1, 2), ("0.9", "0.95"), (True, 0)])
+def test_code_constructed_train_config_normalises_betas_like_the_loader(
+    raw: object,
+) -> None:
+    built = TrainConfig(betas=raw)  # type: ignore[arg-type]
+    loaded = config_from_dict({"train": {"betas": raw}}).train
+    assert built.betas == loaded.betas
+    assert type(built.betas) is tuple
+    assert all(type(beta) is float for beta in built.betas)
+
+
+def test_train_config_default_betas_are_unchanged() -> None:
+    assert TrainConfig().betas == (0.9, 0.95)
+
+
+def test_train_config_rejects_betas_without_a_second_element() -> None:
+    # Parent behaviour (the `_build` branch indexed betas[1]); preserved, not widened.
+    with pytest.raises(IndexError):
+        TrainConfig(betas=[0.9])  # type: ignore[arg-type]
+    with pytest.raises(IndexError):
+        TrainConfig(betas=[])  # type: ignore[arg-type]
