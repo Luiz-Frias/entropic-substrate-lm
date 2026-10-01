@@ -6,8 +6,9 @@ import copy
 import json
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import NoReturn, cast
+from typing import NoReturn
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
 from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1_LAUNCH_ATTEMPT_SCHEMA,
@@ -45,13 +46,14 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} must be a JSON object with string keys")
+    )
 
 
 def _exact(value: Mapping[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unknown = exact_keys(value, keys)
+    if missing or unknown:
         _fail(f"{label} keys must be exact")
 
 
@@ -156,28 +158,11 @@ def serialize_launch_attempt_ledger(ledger: D1LaunchAttemptLedger) -> str:
     )
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate launch-attempt JSON key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite launch-attempt JSON constant {value!r}")
-
-
 def parse_launch_attempt_ledger(payload: str) -> D1LaunchAttemptLedger:
     if type(payload) is not str or not payload:
         _fail("launch-attempt ledger payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except D1LaunchAttemptCodecError:
         raise
     except json.JSONDecodeError as error:

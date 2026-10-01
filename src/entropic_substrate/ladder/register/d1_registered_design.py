@@ -23,6 +23,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
 )
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 D1_REGISTERED_DESIGN_SCHEMA: Final = "d1-registered-design-v1"
 _DESIGN_ATTESTATION: Final = object()
@@ -207,8 +208,8 @@ class D1RegisteredDesign:
     def __post_init__(self) -> None:
         if self._attestation is not _DESIGN_ATTESTATION:
             raise TypeError("D1RegisteredDesign is factory-only")
-        require_sha256_hex_any_case(self.family_digest, label="D1 registered family_digest")
-        require_sha256_hex_any_case(
+        require_lowercase_digest(self.family_digest, label="D1 registered family_digest")
+        require_lowercase_digest(
             self.decision_contract_digest,
             label="D1 registered decision_contract_digest",
         )
@@ -218,7 +219,7 @@ class D1RegisteredDesign:
         frozen: dict[str, str] = {}
         for arm in expected_arms:
             digest = self.arm_construction_digests[arm]
-            require_sha256_hex_any_case(digest, label=f"D1 {arm} construction digest")
+            require_lowercase_digest(digest, label=f"D1 {arm} construction digest")
             frozen[arm] = digest
         object.__setattr__(self, "arm_construction_digests", MappingProxyType(frozen))
         _validate_seeds(self.registered_seeds)
