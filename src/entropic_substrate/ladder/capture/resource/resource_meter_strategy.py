@@ -32,11 +32,14 @@ from entropic_substrate.ladder.capture.resource.resource_work import (
 )
 
 __all__ = [
+    "DEFAULT_MAX_POWER_GAP_SECONDS",
     "D1ProductionResourceMeter",
     "DevicePhaseTimerPort",
     "PeakMemoryPort",
     "PowerSampleSourcePort",
 ]
+
+DEFAULT_MAX_POWER_GAP_SECONDS = 5.0
 
 
 @runtime_checkable
@@ -98,7 +101,7 @@ class D1ProductionResourceMeter:
         peak_memory: PeakMemoryPort | None = None,
         flop_model: PositionFlopModel | None = None,
         power_samples: PowerSampleSourcePort | None = None,
-        max_power_gap_seconds: float = 5.0,
+        max_power_gap_seconds: float = DEFAULT_MAX_POWER_GAP_SECONDS,
     ) -> None:
         if type(start) is not RunStartProvenance:
             raise TypeError("production resource meter requires RunStartProvenance")
@@ -140,7 +143,12 @@ class D1ProductionResourceMeter:
         cls,
         start: RunStartProvenance,
         state: ResourceLedgerState,
-        **ports: object,
+        *,
+        phase_timer: DevicePhaseTimerPort | None = None,
+        peak_memory: PeakMemoryPort | None = None,
+        flop_model: PositionFlopModel | None = None,
+        power_samples: PowerSampleSourcePort | None = None,
+        max_power_gap_seconds: float = DEFAULT_MAX_POWER_GAP_SECONDS,
     ) -> D1ProductionResourceMeter:
         if type(state) is not ResourceLedgerState:
             raise TypeError("resource meter restore requires ResourceLedgerState")
@@ -148,7 +156,14 @@ class D1ProductionResourceMeter:
             raise ValueError("resource meter restore logical_run_id changed")
         if start.execution_segment_index != state.execution_segment_index + 1:
             raise ValueError("resource meter restore requires the exact next segment")
-        meter = cls(start, **ports)  # type: ignore[arg-type]
+        meter = cls(
+            start,
+            phase_timer=phase_timer,
+            peak_memory=peak_memory,
+            flop_model=flop_model,
+            power_samples=power_samples,
+            max_power_gap_seconds=max_power_gap_seconds,
+        )
         readings = dict(state.last_optional_readings)
         meter._base_wall = meter._last_wall = state.trainer_wall_seconds
         prior_work = sum(

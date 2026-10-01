@@ -25,6 +25,7 @@ from entropic_substrate.ladder.capture.resource.resource_meter_models import (
     ResourcePhase,
 )
 from entropic_substrate.ladder.capture.resource.resource_meter_strategy import (
+    DEFAULT_MAX_POWER_GAP_SECONDS,
     D1ProductionResourceMeter,
     DevicePhaseTimerPort,
     PeakMemoryPort,
@@ -227,30 +228,36 @@ class D1ProductionResourceActivationFactory:
         memory = self._memory_factory(start) if self._memory_factory is not None else None
         return timer, memory
 
+    @staticmethod
+    def _max_power_gap_seconds(lifecycle: PowerSamplingLifecyclePort) -> float:
+        registration = lifecycle.registration
+        if registration is None:
+            return DEFAULT_MAX_POWER_GAP_SECONDS
+        return registration.max_gap_seconds
+
     def fresh(self, start: RunStartProvenance) -> D1ResourceActivation:
         lifecycle = self._lifecycle(start)
         timer, memory = self._ports(start)
-        kwargs: dict[str, object] = {
-            "phase_timer": timer,
-            "peak_memory": memory,
-            "flop_model": self._flop_model,
-            "power_samples": lifecycle.sample_source,
-        }
-        if lifecycle.registration is not None:
-            kwargs["max_power_gap_seconds"] = lifecycle.registration.max_gap_seconds
-        meter = D1ProductionResourceMeter(start, **kwargs)  # type: ignore[arg-type]
+        meter = D1ProductionResourceMeter(
+            start,
+            phase_timer=timer,
+            peak_memory=memory,
+            flop_model=self._flop_model,
+            power_samples=lifecycle.sample_source,
+            max_power_gap_seconds=self._max_power_gap_seconds(lifecycle),
+        )
         return D1ResourceActivation(meter, lifecycle)
 
     def resume(self, start: RunStartProvenance, state: ResourceLedgerState) -> D1ResourceActivation:
         lifecycle = self._lifecycle(start)
         timer, memory = self._ports(start)
-        kwargs: dict[str, object] = {
-            "phase_timer": timer,
-            "peak_memory": memory,
-            "flop_model": self._flop_model,
-            "power_samples": lifecycle.sample_source,
-        }
-        if lifecycle.registration is not None:
-            kwargs["max_power_gap_seconds"] = lifecycle.registration.max_gap_seconds
-        meter = D1ProductionResourceMeter.restore(start, state, **kwargs)
+        meter = D1ProductionResourceMeter.restore(
+            start,
+            state,
+            phase_timer=timer,
+            peak_memory=memory,
+            flop_model=self._flop_model,
+            power_samples=lifecycle.sample_source,
+            max_power_gap_seconds=self._max_power_gap_seconds(lifecycle),
+        )
         return D1ResourceActivation(meter, lifecycle)
