@@ -538,6 +538,7 @@ def test_mlflow_sink_forwards_field_ce_on_eval_events() -> None:
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "eval", "step": 7, "loss": 1.0, "field_ce": 1.234})
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert metrics["field_ce"] == pytest.approx(1.234)
 
@@ -548,6 +549,7 @@ def test_mlflow_sink_omits_field_ce_when_absent_from_the_record() -> None:
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "eval", "step": 1, "loss": 1.0})
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert "field_ce" not in metrics
 
@@ -842,6 +844,7 @@ def test_mlflow_sink_forwards_the_five_calibration_keys_on_eval_events() -> None
             "field_top1": 0.75,
         }
     )
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert metrics["field_nats_per_byte"] == pytest.approx(0.5)
     assert metrics["field_brier"] == pytest.approx(0.2)
@@ -856,6 +859,7 @@ def test_mlflow_sink_omits_the_five_calibration_keys_when_absent_from_the_record
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "eval", "step": 1, "loss": 1.0})
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     for key in _CALIBRATION_KEYS:
         assert key not in metrics

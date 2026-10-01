@@ -32,9 +32,13 @@ imports ``entropic_substrate.ladder.capture.reader.sinks`` ONLY inside function 
 
 from __future__ import annotations
 
+import math
 import os
+import queue
+import threading
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -58,6 +62,42 @@ _STARTUP_COLD_BUDGET_S = 90.0
 # to isinstance-check them would couple this module to mlflow's own transitive
 # dependencies for no gain.
 _COLD_START_EXC_NAMES = frozenset({"ReadTimeout", "ReadTimeoutError", "Timeout"})
+
+# ASYNC METRIC WRITES (FOR-1622). ``MlflowSink.log`` runs on the training
+# thread once per optimizer step (``ladder/run/runner.py:223`` at 3c8db2a) and
+# once per evaluation (``:267``); before FOR-1622 it made one synchronous HTTP round
+# trip PER METRIC there. It now only extracts and enqueues; one daemon worker
+# drains the queue into ``log_batch`` calls.
+#
+# QUEUE BOUND, a declared budget counted in RECORDS (one per ``log()`` call
+# that yields metrics), not in metrics. Arithmetic: the H lane enqueues 1
+# record per optimizer step plus 1 evaluation report per evaluation, and the
+# H0 probe profiles checkpoint every 250 steps (the operator's H0 wave
+# runbook, 2026-09-27/28; this module is profile-agnostic, so the value is not
+# read at runtime). 1 record/step x 250 steps + the evaluation report landing
+# on that boundary, rounded up to 256: the producer blocks only once the
+# writer has fallen a whole checkpoint interval behind. A full queue BLOCKS
+# (backpressure), never drops: MLflow must never disagree with the
+# authoritative JSONL by omission.
+_MAX_QUEUED_RECORDS = 256
+
+# mlflow's own per-request cap, MEASURED 2026-09-29 against the installed
+# mlflow-skinny 3.15.0: ``mlflow.utils.validation.MAX_METRICS_PER_BATCH ==
+# 1000``. A larger ``log_batch`` is rejected by the server, so records are
+# chunked at this size.
+_MAX_METRICS_PER_BATCH = 1000
+
+_WRITER_THREAD_NAME = "mlflow-sink-writer"
+
+
+@dataclass(frozen=True, slots=True)
+class _QueuedRecord:
+    """One ``log()`` call's extracted metrics, stamped on the caller's thread
+    (``timestamp_ms`` is the time ``log_metric`` would have stamped)."""
+
+    step: int
+    timestamp_ms: int
+    metrics: tuple[tuple[str, float], ...]
 
 
 def _is_cold_start(exc: BaseException) -> bool:
@@ -220,13 +260,22 @@ class MlflowSink:
     ``client`` is injectable so callers (and tests) can pass a stub/fake that
     implements the small slice of ``mlflow.tracking.MlflowClient`` this class
     uses (``get_experiment_by_name``, ``create_experiment``, ``create_run``,
-    ``set_tag``, ``log_param``, ``log_metric``, ``log_artifact``,
+    ``set_tag``, ``log_param``, ``log_batch``, ``log_artifact``,
     ``set_terminated``, plus the registry trio ``create_registered_model`` /
     ``create_model_version`` / ``set_registered_model_alias`` for
     :meth:`register_citation`) without a live server. When ``client`` is
-    omitted, ``mlflow`` is imported lazily here — the only place in this
-    module that touches the dependency — so untracked runs and unit tests
-    that never build an ``MlflowSink`` pay no import cost.
+    omitted, ``mlflow`` is imported lazily here, and ``mlflow.entities`` is
+    imported lazily by the metric writer — both at function scope, never at
+    module scope — so untracked runs and unit tests that never build an
+    ``MlflowSink`` pay no import cost.
+
+    Metric writes are ASYNCHRONOUS (FOR-1622): :meth:`log` extracts on the
+    caller's thread and enqueues into a bounded queue; one daemon writer
+    thread, started lazily by the first :meth:`log` that yields metrics,
+    drains it into ``log_batch``. :meth:`flush` waits (bounded) until every
+    logged record is settled, without stopping the thread; :meth:`finish`
+    flushes before its existing sequence, then stops and joins the thread.
+    ``flush`` lives on this class only, never on the ``MetricSink`` port.
 
     ``system_metrics_monitor_factory`` is the same injectable-seam idiom for
     mlflow's OWN ``SystemMetricsMonitor``: production leaves it at the
@@ -256,6 +305,20 @@ class MlflowSink:
         metric_extractor: MetricExtractor | None = None,
         system_metrics_monitor_factory: Callable[[str, str], _SystemMetricsMonitorLike]
         | None = None,
+        max_queued_records: int = _MAX_QUEUED_RECORDS,
+        # FINISH DRAIN BUDGET, a declared bound on how long finish() waits for
+        # the writer before terminating the run anyway; NOT a retry, and
+        # nothing re-sends. Reasoning (DERIVED, not measured): the widest
+        # record any in-tree extractor emits is the E3 9x12 kappa projection,
+        # 108 head series + 9 spreads + 2 derived + <= 12 scalars = 131
+        # metrics, so a full queue is at most 256 x 131 = 33,536 metrics = 34
+        # log_batch calls. 120 s admits ~3.5 s per call for that worst case,
+        # and ~5 consecutive fully timed-out requests under this module's own
+        # HTTP defaults (10 s x 2 attempts + ~1 s backoff = ~21 s each). Past
+        # the budget the undelivered records are COUNTED in failed_writes
+        # (never lost silently) and termination proceeds: the local JSONL is
+        # authoritative. Injectable so the abandon path is testable.
+        drain_timeout_seconds: float = 120.0,
     ) -> None:
         # MlflowStartupError stays in entropic_substrate.ladder.capture.reader.sinks
         # (residue, p8) -- imported here at function scope, never at module
@@ -264,6 +327,52 @@ class MlflowSink:
 
         self._failed_writes = 0
         self._finished = False
+        if type(max_queued_records) is not int or max_queued_records < 1:
+            # queue.Queue(maxsize=0) is UNBOUNDED: refused, never defaulted.
+            msg = f"max_queued_records must be a positive int, got {max_queued_records!r}"
+            raise ValueError(msg)
+        # NaN fails every comparison, so it is refused here as well.
+        if not 0 < drain_timeout_seconds < math.inf:
+            msg = (
+                f"drain_timeout_seconds must be positive and finite, got {drain_timeout_seconds!r}"
+            )
+            raise ValueError(msg)
+        self._drain_timeout_s = float(drain_timeout_seconds)
+        # One lock guards every counter the worker and the caller both touch;
+        # ``_settled`` is signalled on it whenever records settle or the worker
+        # dies, which is what flush() waits on (join semantics, bounded).
+        self._lock = threading.Lock()
+        self._settled = threading.Condition(self._lock)
+        # STOP PROTOCOL (conductor ruling 2026-09-29): the stop decision is
+        # ``_stop``, an Event only finish() sets. flush() never enqueues
+        # anything, so a timed-out flush leaves nothing behind that could stop a
+        # writer that later recovers (the retired protocol queued a ``None``
+        # stop from flush(); a hung writer that recovered consumed it and
+        # exited, stranding every record logged afterwards). finish() queues a
+        # ``None`` WAKE after setting ``_stop``, only to unblock a get(); on its
+        # own it stops nothing. (Not a module-level ``object()`` sentinel:
+        # tests/test_module_identity.py freezes those as the p0 door.)
+        self._stop = threading.Event()
+        self._queue: queue.Queue[_QueuedRecord | None] = queue.Queue(maxsize=max_queued_records)
+        self._worker: threading.Thread | None = None
+        # Records enqueued and not yet settled (delivered or counted failed):
+        # the task_done counter, decremented once per written batch.
+        self._pending_records = 0
+        # Set once finish() gave up on the drain and counted what was pending:
+        # a late settle from a still-running worker must not count it twice.
+        self._abandoned = False
+        self._worker_error: BaseException | None = None
+        self._death_reported_at_log = False
+        # LOG-AFTER-FINISH (FOR-1622 regression, design gate 2026-09-29): the
+        # pre-async adapter's log() delivered synchronously regardless of
+        # finish(), so no caller ever needed to stop after it. This class's
+        # ``_stop`` Event stays set once finish() has run, so a naively
+        # reintroduced worker would see it set at loop entry and exit without
+        # draining the record it was just handed — lost, uncounted. log()
+        # checks ``_finished`` first (no in-tree caller triggers this today;
+        # every call site finishes last) and counts+warns every call rather
+        # than starting a doomed thread — rare enough that a per-call warning
+        # is not spam, unlike the dead-worker case below.
         self._metric_extractor = metric_extractor or LegacyMetricExtractor()
         # The authoritative results JSONL this run writes locally; finish()
         # uploads it as a derived, best-effort run artifact (operator ruling
@@ -370,26 +479,210 @@ class MlflowSink:
 
         logger.info(f"mlflow: tracking run {run_name!r} at {tracking_uri} (run_id={self._run_id})")
 
+    def _count_failed(self, records: int) -> int:
+        with self._lock:
+            self._failed_writes += records
+            return self._failed_writes
+
     def log(self, record: object) -> None:
+        """Extract on the caller's thread, enqueue for the worker; no client I/O here.
+
+        Extraction stays on the caller so an extractor failure is counted
+        synchronously, exactly as before FOR-1622. A full queue blocks until
+        the worker frees a slot (backpressure, never a drop).
+        """
         try:
             extracted = self._metric_extractor.extract(record)
-            if extracted is None:
+            if extracted is None or not extracted.metrics:
                 return
-            for key, value in extracted.metrics.items():
-                self._client.log_metric(self._run_id, key, value, step=extracted.step)
+            item = _QueuedRecord(
+                step=extracted.step,
+                timestamp_ms=int(time.time() * 1000),
+                metrics=tuple(extracted.metrics.items()),
+            )
         except Exception as exc:
-            self._failed_writes += 1
-            logger.warning(f"mlflow: metric write failed (#{self._failed_writes}): {exc}")
+            failed = self._count_failed(1)
+            logger.warning(f"mlflow: metric write failed (#{failed}): {exc}")
+            return
+        # Check-and-count under the lock the worker's _die() takes: a record is
+        # either pending when the worker dies (counted there), sees the dead
+        # error here (counted here), or arrives after finish() (counted here
+        # too) — never neither.
+        report_death = False
+        after_finish = False
+        dead: BaseException | None = None
+        with self._lock:
+            if self._finished:
+                # _stop is already set; a thread started now would see it at
+                # loop entry and exit without draining this record. Count and
+                # warn instead of starting one — see the constructor's note.
+                self._failed_writes += 1
+                after_finish = True
+            else:
+                dead = self._worker_error
+                if dead is None:
+                    self._pending_records += 1
+                    if self._worker is None:
+                        self._worker = threading.Thread(
+                            target=self._drain, name=_WRITER_THREAD_NAME, daemon=True
+                        )
+                        self._worker.start()
+                else:
+                    self._failed_writes += 1
+                    report_death = not self._death_reported_at_log
+                    self._death_reported_at_log = True
+            failed = self._failed_writes
+        if after_finish:
+            logger.warning(
+                f"mlflow: log() called after finish() (#{failed} failed write); "
+                "the record is counted as failed, never delivered"
+            )
+            return
+        if dead is not None:
+            if report_death:
+                logger.warning(
+                    f"mlflow: metric writer worker died ({dead!r}); this and every later "
+                    f"record is counted as a failed write (#{failed}), never restarted"
+                )
+            return
+        self._queue.put(item)
+
+    def _drain(self) -> None:
+        """Worker loop: coalesce everything queued into ``log_batch`` calls
+        until finish() sets ``_stop``; a ``None`` wake carries no record."""
+        try:
+            while not self._stop.is_set():
+                batch: list[_QueuedRecord] = []
+                item = self._queue.get()
+                while item is not None:
+                    batch.append(item)
+                    try:
+                        item = self._queue.get_nowait()
+                    except queue.Empty:
+                        break
+                if batch:
+                    self._write(batch)
+        except BaseException as exc:  # stashed, counted and reported, never swallowed
+            self._die(exc)
+
+    def _write(self, batch: list[_QueuedRecord]) -> None:
+        """Send ``batch`` in chunks of at most ``_MAX_METRICS_PER_BATCH`` metrics.
+
+        A chunk the client rejects (any ``Exception``) counts every record it
+        carried, once, and warns once. Anything escaping this method (a
+        ``BaseException`` from the client, a crash building the entities) kills
+        the worker; ``_die`` then counts every unsettled record.
+        """
+        from mlflow.entities import Metric
+
+        tagged = [
+            (index, Metric(key, value, record.timestamp_ms, record.step))
+            for index, record in enumerate(batch)
+            for key, value in record.metrics
+        ]
+        failed: set[int] = set()
+        for start in range(0, len(tagged), _MAX_METRICS_PER_BATCH):
+            chunk = tagged[start : start + _MAX_METRICS_PER_BATCH]
+            try:
+                # synchronous=True EXPLICITLY (design gate 2026-09-29,
+                # MEASURED against installed mlflow-skinny 3.15.0): a bare
+                # ``synchronous=None`` resolves to
+                # ``not MLFLOW_ENABLE_ASYNC_LOGGING.get()``, so with that env
+                # var true a failed batch returns a future instead of raising
+                # here and is never counted. This worker already IS the async
+                # layer; the accounting contract must not depend on mlflow's
+                # own ambient env on top of it.
+                self._client.log_batch(
+                    self._run_id, metrics=[metric for _, metric in chunk], synchronous=True
+                )
+            except Exception as exc:
+                carried = {index for index, _ in chunk}
+                failed |= carried
+                logger.warning(
+                    f"mlflow: metric batch failed ({len(carried)} record(s), "
+                    f"{len(chunk)} metric(s)): {exc}"
+                )
+        with self._settled:
+            # After finish() abandoned the drain, the stranded records were
+            # already counted and the counter zeroed: a late settle from the
+            # recovered writer touches neither.
+            if not self._abandoned:
+                self._pending_records -= len(batch)
+                self._failed_writes += len(failed)
+            self._settled.notify_all()
+
+    def _die(self, exc: BaseException) -> None:
+        """Stash the error and count every unsettled record, then keep consuming.
+
+        The thread stays in a discard loop until finish() sets ``_stop`` so a
+        producer blocked on a full queue is always released; discarded records
+        were already counted here (or are counted by ``log()`` once it sees
+        the error).
+        """
+        with self._settled:
+            self._worker_error = exc
+            if not self._abandoned:
+                self._failed_writes += self._pending_records
+                self._pending_records = 0
+            self._settled.notify_all()
+        try:
+            while not self._stop.is_set():
+                self._queue.get()
+        except BaseException:  # the error that matters is already stashed
+            return
+
+    def flush(self, timeout: float | None = None) -> bool:
+        """Wait until every record logged so far is settled (bounded join).
+
+        On ``MlflowSink`` only, never on the ``MetricSink`` port (conductor
+        ruling 2026-09-29). Enqueues nothing and never stops the writer, so a
+        writer that is still busy when ``timeout`` runs out keeps draining
+        afterwards. ``timeout`` defaults to this sink's
+        ``drain_timeout_seconds``. Returns ``True`` iff everything settled and
+        the writer is healthy; ``False`` when the writer died or the timeout
+        ran out first.
+        """
+        budget = self._drain_timeout_s if timeout is None else timeout
+        deadline = time.monotonic() + budget
+        with self._settled:
+            while self._pending_records and self._worker_error is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._settled.wait(remaining)
+            return self._pending_records == 0 and self._worker_error is None
+
+    def _stop_writer(self, *, wait: bool) -> bool:
+        """Set ``_stop``, wake the writer, and join it when it is idle or dead.
+
+        ``wait`` is False only for a writer still busy past the drain budget:
+        it re-checks ``_stop`` after its current write and exits then, so it
+        is reported rather than waited on. Returns whether the thread is gone.
+        """
+        self._stop.set()
+        worker = self._worker
+        if worker is None:
+            return True
+        try:
+            self._queue.put_nowait(None)  # wake a get(); stops nothing by itself
+        except queue.Full:
+            pass  # a writer with a full queue is not blocked in get(): no wake needed
+        if wait:
+            # Idle (drained) or in its discard loop (dead): it exits on the
+            # wake at once; the bound only keeps finish() total.
+            worker.join(self._drain_timeout_s)
+        if worker.is_alive():
+            return False
+        self._worker = None
+        return True
 
     def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
         try:
             self._client.log_artifact(self._run_id, str(path), artifact_path=artifact_path)
             self._log_dvc_pointer_if_present(path)
         except Exception as exc:
-            self._failed_writes += 1
-            logger.warning(
-                f"mlflow: artifact upload failed for {path} (#{self._failed_writes}): {exc}"
-            )
+            failed = self._count_failed(1)
+            logger.warning(f"mlflow: artifact upload failed for {path} (#{failed}): {exc}")
 
     def _log_dvc_pointer_if_present(self, path: Path) -> None:
         """Best-effort: if ``<path>.dvc`` already exists, log its md5 + remote.
@@ -420,6 +713,29 @@ class MlflowSink:
         if self._finished:
             return
         self._finished = True
+        # DRAIN FIRST (FOR-1622): every queued metric must land before
+        # set_terminated below, bounded by drain_timeout_seconds.
+        drained = self.flush()
+        with self._lock:
+            error = self._worker_error
+            stranded = 0
+            if not drained and error is None:
+                stranded = self._pending_records
+                self._abandoned = True
+                self._failed_writes += stranded
+                self._pending_records = 0
+        joined = self._stop_writer(wait=drained or error is not None)
+        if error is not None:
+            logger.warning(
+                f"mlflow: metric writer worker died ({error!r}); its undelivered "
+                "records are counted as failed writes"
+            )
+        elif not drained:
+            state = "joined" if joined else "not joined, still busy (daemon, abandoned)"
+            logger.warning(
+                f"mlflow: metric drain exceeded its {self._drain_timeout_s:g}s budget; "
+                f"{stranded} undelivered record(s) counted as failed writes; writer {state}"
+            )
         # OWN GUARD: a monitor that fails to stop must not block run
         # termination below. Nested inside the `_finished` early-return
         # above, so a second finish() call never double-stops it.
@@ -427,7 +743,7 @@ class MlflowSink:
             try:
                 self._system_metrics_monitor.finish()
             except Exception as exc:
-                self._failed_writes += 1
+                self._count_failed(1)
                 logger.warning(f"mlflow: system metrics monitor finish() failed: {exc}")
         # OWN GUARD, deliberately separate from the termination block below: a
         # dead artifact store must not leave the run stuck in RUNNING —
@@ -446,7 +762,7 @@ class MlflowSink:
                         "skipping the derived upload; the local JSONL is authoritative"
                     )
             except Exception as exc:
-                self._failed_writes += 1
+                self._count_failed(1)
                 logger.warning(f"mlflow: results JSONL upload failed: {exc}")
         try:
             if self._failed_writes:
@@ -458,13 +774,14 @@ class MlflowSink:
                 )
             self._client.set_terminated(self._run_id, status="FINISHED")
         except Exception as exc:
-            self._failed_writes += 1
+            self._count_failed(1)
             logger.warning(f"mlflow: finish() failed: {exc}")
 
     @property
     def failed_writes(self) -> int:
         """Count of tracking writes swallowed after startup — for tests/diagnostics."""
-        return self._failed_writes
+        with self._lock:
+            return self._failed_writes
 
     @property
     def run_id(self) -> str:
@@ -514,7 +831,7 @@ class MlflowSink:
                 self._registered_model_name, f"champion-{self._config_hash}", version.version
             )
         except Exception as exc:
-            self._failed_writes += 1
+            self._count_failed(1)
             logger.warning(f"mlflow: registry citation failed: {exc}")
 
 

@@ -467,6 +467,7 @@ def test_mlflow_sink_forwards_gram_metrics_on_eval_events() -> None:
             "gram_penalty": 0.021,
         }
     )
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert metrics["gram_frob_sq"] == pytest.approx(0.42)
     assert metrics["gram_penalty"] == pytest.approx(0.021)
@@ -478,6 +479,7 @@ def test_mlflow_sink_omits_gram_metrics_when_absent_from_the_record() -> None:
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "eval", "step": 1, "loss": 1.0})
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert "gram_frob_sq" not in metrics
     assert "gram_penalty" not in metrics

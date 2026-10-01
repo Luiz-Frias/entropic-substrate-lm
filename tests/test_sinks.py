@@ -178,6 +178,32 @@ class FakeMlflowClient:
         self._tick()
         self._runs[run_id].data.metrics[key] = float(value)
 
+    # ``log_batch`` signature MEASURED 2026-09-29 against the installed
+    # mlflow-skinny 3.15.0 (`inspect.signature(MlflowClient.log_batch)`):
+    # ``(self, run_id, metrics=(), params=(), tags=(), synchronous=None)``.
+    # DELEGATES PER METRIC to ``self.log_metric`` (FOR-1622 ruling, conductor
+    # 2026-09-29) so a subclass that overrides ``log_metric`` to record calls
+    # (``tests/test_d1_tracking.py``'s ``_RecordingClient``) keeps seeing every
+    # metric once ``MlflowSink`` writes batches: a fake that wrote the dict
+    # directly here would leave such a recorder empty and its assertions
+    # vacuously true. ``MlflowSink`` never sends params/tags through a batch;
+    # a fake that silently accepted them would be more permissive than the
+    # contract this file pins.
+    def log_batch(
+        self,
+        run_id: str,
+        metrics: Any = (),
+        params: Any = (),
+        tags: Any = (),
+        synchronous: bool | None = None,
+    ) -> None:
+        self._tick()
+        if params or tags:
+            msg = "FakeMlflowClient.log_batch models metrics only"
+            raise NotImplementedError(msg)
+        for metric in metrics:
+            self.log_metric(run_id, metric.key, metric.value, step=metric.step)
+
     def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:
         self._tick()
         self.artifacts_logged.append((run_id, path, artifact_path))
@@ -371,6 +397,28 @@ def test_fake_create_registered_model_raises_resource_already_exists_on_duplicat
     assert exc_info.value.error_code == "RESOURCE_ALREADY_EXISTS"
 
 
+def test_fake_log_batch_delegates_each_metric_to_log_metric_so_overrides_fire() -> None:
+    """FOR-1622 ruling: ``log_batch`` routes every metric through
+    ``self.log_metric``; a subclass recorder (``_RecordingClient`` in
+    ``tests/test_d1_tracking.py``) must see each one, with its step."""
+    from mlflow.entities import Metric
+
+    class _Recording(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen: list[tuple[str, float, int]] = []
+
+        def log_metric(self, run_id: str, key: str, value: float, step: int = 0) -> None:
+            self.seen.append((key, value, step))
+            super().log_metric(run_id, key, value, step)
+
+    client = _Recording()
+    run = client.create_run(client.create_experiment("exp"))
+    client.log_batch(run.info.run_id, metrics=[Metric("a", 1.0, 0, 3), Metric("b", 2.0, 0, 4)])
+    assert client.seen == [("a", 1.0, 3), ("b", 2.0, 4)]
+    assert run.data.metrics == {"a": 1.0, "b": 2.0}
+
+
 # ------------------------------------------------------------------- JsonlSink
 def test_jsonl_sink_is_byte_identical_to_the_pre_port_serialisation(tmp_path: Path) -> None:
     """Golden-byte pin: old-style inline dump vs JsonlSink, same bytes."""
@@ -452,6 +500,7 @@ def test_mlflow_sink_logs_eval_scalar_metrics() -> None:
             "perplexity": 3.4,
         }
     )
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     assert metrics["loss"] == pytest.approx(1.23)
     assert metrics["nats_per_byte"] == pytest.approx(0.5)
@@ -467,6 +516,7 @@ def test_mlflow_sink_ignores_non_eval_events() -> None:
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "train", "step": 1, "loss": 9.9})
+    sink.flush()
     assert client._runs[sink.run_id].data.metrics == {}
 
 
@@ -478,6 +528,7 @@ def test_mlflow_sink_logs_108_shaped_per_head_kappa_plus_derived_series() -> Non
     n_layers, n_heads = 9, 12
     kappa = [[float(i * n_heads + j) / 10 for j in range(n_heads)] for i in range(n_layers)]
     sink.log({"event": "eval", "step": 5, "kappa": kappa})
+    sink.finish()
 
     metrics = client._runs[sink.run_id].data.metrics
     head_keys = {k for k in metrics if k.startswith("kappa/L") and "/h" in k}
@@ -499,6 +550,7 @@ def test_mlflow_sink_kappa_metrics_are_shape_agnostic_not_hardcoded_108() -> Non
     )
     kappa = [[-1.0, 0.0, 1.0, 0.5], [2.0, -2.0, 0.0, 0.1]]  # 2 layers x 4 heads
     sink.log({"event": "eval", "step": 0, "kappa": kappa})
+    sink.finish()
     metrics = client._runs[sink.run_id].data.metrics
     head_keys = {k for k in metrics if k.startswith("kappa/L") and "/h" in k}
     assert len(head_keys) == 8
@@ -514,6 +566,7 @@ def test_mlflow_sink_swallows_post_startup_failures_and_counts_them() -> None:
     sink.log({"event": "eval", "step": 1, "loss": 1.0})  # must not raise
     sink.log({"event": "eval", "step": 2, "loss": 1.0})  # must not raise
     sink.log_artifact(Path("/tmp/does-not-matter.pt"))  # must not raise
+    sink.flush()
     assert sink.failed_writes == 3
     sink.finish()  # must not raise, even though set_terminated also fails
     assert sink.failed_writes == 4
@@ -1198,7 +1251,9 @@ def test_composite_sink_authoritative_write_survives_even_if_best_effort_fails(
 
     lines = jsonl.path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 5, "JSONL must be complete even though every MLflow write failed"
+    mlflow_sink.flush()
     assert mlflow_sink.failed_writes == 5
+    mlflow_sink.finish()  # joins the writer thread
 
 
 # ---------------------------------------------------------------- enablement
@@ -1334,6 +1389,7 @@ def test_kappa_metric_helper_handles_empty_rows_without_crashing() -> None:
         tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
     )
     sink.log({"event": "eval", "step": 0, "kappa": []})
+    sink.flush()
     # No kappa keys, no crash — an empty kappa list is falsy and short-circuits.
     metrics = client._runs[sink.run_id].data.metrics
     assert not any(k.startswith("kappa/") for k in metrics)

@@ -281,6 +281,7 @@ def test_d1_extractor_projects_only_evidence_qualified_scalars_at_successful_ste
     before = canonical_event_line(event)
 
     mirror.log(event)
+    mirror.finish()
 
     metrics = client._runs[mirror.run_id].data.metrics
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
@@ -298,7 +299,9 @@ def test_d1_extractor_projects_only_evidence_qualified_scalars_at_successful_ste
     assert metrics["d1/resource/model_estimate/cumulative_train_flops"] == 1.25e15
     assert metrics["d1/resource/rate_estimate/rate_estimated_cost_usd"] == 0.042
     assert metrics["d1/cursor/measured/eval_index"] == 3.0
-    assert all(step == event.successful_step for _, _, step in client.metric_steps)
+    assert client.metric_steps and all(
+        step == event.successful_step for _, _, step in client.metric_steps
+    )
     assert not any("covariance" in key or "state_variance" in key for key in metrics)
     assert not any("gpu_eval_device_seconds" in key for key in metrics)
     assert not any("cumulative_eval_flops" in key for key in metrics)
