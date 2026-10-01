@@ -306,6 +306,12 @@ _SITES: list[tuple[str, type[Exception], str, Callable[[], object]]] = [
         lambda: PreregistrationIdentity(PREREG_PATH, PREREG_COMMIT, _MIXED),
     ),
     (
+        "registered_design.blob_sha256_keeps_its_own_lowercase_message",
+        ValueError,
+        "D1 preregistration blob_sha256 must be lowercase",
+        lambda: D1PreregistrationArtifact(PREREG_PATH, _MIXED, PREREG_COMMIT),
+    ),
+    (
         "design.family_digest",
         ValueError,
         "must be a 64-character hexadecimal SHA-256 digest",
