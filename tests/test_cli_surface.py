@@ -253,9 +253,10 @@ _D1_COMMANDS = frozenset(
     }
 )
 
-# command -> (module holding the handler, handler name). Resolved lazily at
-# call time, so patching the module attribute reaches the dispatch.
-_LAZY_ROUTES: tuple[tuple[str, str, str], ...] = (
+# command -> (module holding the handler, handler name). Imported inside main()
+# at call time (build_parser() already loaded the modules); no string-resolved
+# lazy wrapper since c45ac0a. Patching the module attribute reaches the dispatch.
+_FUNCTION_LOCAL_ROUTES: tuple[tuple[str, str, str], ...] = (
     ("d-probe", "composition.wiring.d_ladder_cli", "cmd_d_probe"),
     ("d-score-gain", "composition.wiring.d_ladder_probe_cli", "cmd_score_gain"),
     ("h-train-probe", "composition.cli", "cmd_sentence"),
@@ -353,8 +354,8 @@ class TestMainDispatchesThroughOneTable:
         ]
         assert string_resolved == [], string_resolved
 
-    @pytest.mark.parametrize(("command", "module_name", "handler"), _LAZY_ROUTES)
-    def test_lazy_handler_routes_return_value_and_receives_parsed_args(
+    @pytest.mark.parametrize(("command", "module_name", "handler"), _FUNCTION_LOCAL_ROUTES)
+    def test_function_local_handler_routes_return_value_and_receives_parsed_args(
         self,
         monkeypatch: pytest.MonkeyPatch,
         command: str,

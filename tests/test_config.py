@@ -597,7 +597,10 @@ def test_train_config_default_betas_are_unchanged() -> None:
 
 
 def test_train_config_rejects_betas_without_a_second_element() -> None:
-    # Parent behaviour (the `_build` branch indexed betas[1]); preserved, not widened.
+    # Parent behaviour for the YAML loader path (the `_build` branch indexed
+    # betas[1]); the code-constructed path now matches it (TrainConfig(betas=[0.9])
+    # raised nothing at the parent and raises IndexError now, the intended
+    # consequence of moving the coercion into __post_init__).
     with pytest.raises(IndexError):
         TrainConfig(betas=[0.9])  # type: ignore[arg-type]
     with pytest.raises(IndexError):

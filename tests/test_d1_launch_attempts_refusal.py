@@ -13,7 +13,7 @@ nonnegative int ``seed``, a nonempty ``logical_run_id``,
 ``registered_design_digest=None`` -- so ``RunClass.SMOKE`` is the ONLY
 reason construction can raise, and a raise at ``:71`` is attributable to
 the refusal alone. Five further raise sites follow ``:71`` in
-``__post_init__`` (``require_sha256_hex_any_case`` on ``family_digest``, the ``D1Arm``
+``__post_init__`` (``require_lowercase_digest`` on ``family_digest``, the ``D1Arm``
 ``TypeError``, the seed check, ``require_nonempty_string`` on
 ``logical_run_id``, the ``:80``/``:86`` digest arms). If any other field were
 invalid, the mutated code (``RunClass.SMOKE`` dropped from the rejected set)

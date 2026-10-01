@@ -97,3 +97,12 @@ src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:92 |
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:101 | d1_trainer_start_report_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:102 | d1_trainer_start_report_path | boundary | request_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:189 | _sha | boundary | text = _text(value, label), value parameter of a generic process-contract codec helper | p14-j-run
+#
+# 2026-10-01 wave 1 (PR #319): 20 of the 21 p14-j-register BOUNDARY rows
+# repointed to require_lowercase_sha256 via
+# ladder/register/d1_provenance.require_lowercase_digest; row 71
+# (d1_registered_design.py D1PreregistrationArtifact.__post_init__
+# blob_sha256, now :87-89) RETAINED on require_sha256_hex_any_case plus an
+# explicit lowercase check per conductor ruling W1-16 (message pinned by
+# tests/test_d1_registered_design.py:111); FOR-1626 owns the eventual repoint
+# with that test. Rows above are the pre-wave-1 audit and are not rewritten.

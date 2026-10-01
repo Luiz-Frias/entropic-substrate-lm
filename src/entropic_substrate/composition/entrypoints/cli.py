@@ -13,6 +13,15 @@ Subcommands
 ``field-pretrain``     train a standalone p_phi and save the checkpoint
                        ``field_mode="frozen"`` loads (E1.5c Repair 1)
 ``d1-*``               dispatch one strict D1 application manifest
+``d-probe``            run the D-ladder probe (handlers table)
+``d-score-gain``       score the D-ladder probe gain (handlers table)
+``h-*``                the H sentence, capture, span and source families
+                       (``h-train-probe``, ``h-inspect-training``,
+                       ``h-generate-probe``, ``h-inspect-generation``,
+                       ``h-capture-model``, ``h-inspect-model``,
+                       ``h-inspect-custody``, ``h-diagnose-spans``,
+                       ``h-inspect-spans``, ``h-prepare-source``,
+                       ``h-inspect-source``), routed through the handlers table
 """
 
 from __future__ import annotations
@@ -1127,6 +1136,8 @@ def main(
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
+        # Scope: this fires only for the E/D commands whose import closure
+        # raises CheckpointFormatError; the h-* handlers do not reach it.
         # An ambiguous or too-new checkpoint is an expected, operator-actionable
         # condition — the guidance is in the message. Present it the way every
         # other gate here does (printed refusal, exit 2), not as a traceback

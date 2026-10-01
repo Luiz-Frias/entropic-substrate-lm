@@ -7,7 +7,7 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane, written 2026-09-2
 | field                                 | value                                                                                            |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | branch                                | `mythwave/p14-t-local`                                                                           |
-| parent                                | `mythwave/p14-r1-strict-json`                                                                    |
+| parent                                | `refactor/p14-consolidation`                                                                     |
 | mode (manifest, parallel eligibility) | `ratchet`                                                                                        |
 | cascade `phase.mode` (model tier)     | `normal`, always explicit                                                                        |
 | wave                                  | w1 (`p14-w1`), launched as one `mass-patch-fanout` wave, K <= 3                                  |
@@ -62,13 +62,13 @@ Two local cleanups, no signature change.
 
 Machine-checkable, one line each.
 
-- A RED-first test in `tests/test_config.py`: a YAML-list `betas` loads as a tuple of two floats through `load_config`, and a code-constructed `TrainConfig` normalizes the same way.
+- A RED-first test in `tests/test_config.py`: a YAML-list `betas` loads as a tuple of two floats through `load_config`, and a code-constructed `TrainConfig` normalizes the same way. Measured at launch (e929910): at the parent the loader already coerced the YAML list, so the YAML-list arm is GREEN there; the RED-first arm is the code-constructed `TrainConfig` test.
 - `git grep -n 'cls is TrainConfig' src` is empty at the tip.
 - A test in `tests/test_d1_capture_service.py` shows an invalid binding still raises at construction for both classes, same exception type and message as at the parent.
 - remap_check at the tip over a mapping re-derived by the p13 procedure, never the committed `p13-sweep-mapping.json`: inversions <= 1, package cycles <= 4. Output in the PR body.
 - Mechanical counts at the tip at or under the epoch values below, output in the PR body.
 - Admissibility evidence in the PR body for every abstraction introduced: consolidated sites as `path:line`, and the AST branch count at each call site holding flat or falling (ruling 14).
-- `git diff --name-only mythwave/p14-r1-strict-json...HEAD` is a subset of *Allowed files*; the identity tripwire above is empty.
+- `git diff --name-only refactor/p14-consolidation...HEAD` is a subset of *Allowed files*; the identity tripwire above is empty.
 - `just check` green; exit gate `just pc-ci` via `uv run python scripts/run_exit_gate.py`; `lint-imports` clean.
 
 Ratchet commands:

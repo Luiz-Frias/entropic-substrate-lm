@@ -274,9 +274,10 @@ def test_missing_roster_cell_and_reader_refusal_have_no_export_or_live_fallback(
     assert events == ["export"]
 
 
-# FOR-1602: each class validates through ``self.binding`` so one site knows the
-# D1DvcBinding constructor shape. Construction must still refuse eagerly, with
-# the exceptions D1DvcBinding itself raises (messages measured at the parent).
+# FOR-1602: each class validates through ``self.binding`` so one site PER CLASS
+# knows the D1DvcBinding constructor shape. Construction must still refuse
+# eagerly, with the exceptions D1DvcBinding itself raises (messages measured
+# against e929910 src: these exact cases pass there).
 _GOOD_SHA = "a" * 64
 _GOOD_COMMIT = "b" * 40
 

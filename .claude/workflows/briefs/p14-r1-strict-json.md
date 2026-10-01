@@ -62,7 +62,7 @@ Create the package `src/entropic_substrate/kernel/codec/` with an empty `__init_
 - `require_mapping(value: object, *, fail) -> dict[str, object]`: `type(value) is dict` with every key a `str`, else `fail`.
 - `require_lowercase_sha256(value: object, *, fail) -> str`: `type(value) is str`, length 64, every character in `0123456789abcdef`, else `fail`. This is the lowercase-strict contract of `ladder/capture/records/d1_telemetry_payloads.py:68`, promoted; that module is adopted later by `p14-j-kernel-capture`, not here.
 
-`fail` is the only error channel, so every adopting site keeps its own exception type and message. The module imports only the standard library. No site adopts the module in this phase.
+`fail` is the only error channel, so every adopting site keeps its own exception TYPE through the fail callback; decode-level reasons (duplicate key, non-finite constant, non-finite float literal) come from the door (ruling W1-17). The module imports only the standard library. No site adopts the module in this phase.
 
 ## ACCEPTANCE
 
