@@ -263,8 +263,9 @@ def run_remote_worker(
     from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
 
     request = parse_remote_request(_read(objects, identity))
-    owns_workspace = _is_unused_workspace(root)
+    owns_workspace = False
     try:
+        owns_workspace = _is_unused_workspace(root)
         if observed_start != request.start or observed_code_commit != request.code_commit:
             raise ValueError("observed runtime provenance differs from remote request")
         resources = LadderResources(observed_start, factory)

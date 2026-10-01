@@ -341,3 +341,21 @@ def test_serve_refuses_a_mixed_case_digest_with_the_unchanged_message(
     assert type(refused.value) is ValueError
     assert str(refused.value) == f"{label} must be a 64-character hexadecimal SHA-256 digest"
     assert not objects.publishes  # refusal precedes any publication
+
+
+def test_unreadable_workspace_still_publishes_the_failure_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The very first workspace read is inside the guarded region, so it is receipted."""
+    from entropic_substrate.historical.d_ladder import d_ladder_remote
+
+    request, objects, identity = _published_request(tmp_path)
+
+    def _unreadable(_root: Path) -> bool:
+        raise OSError("workspace unreadable")
+
+    monkeypatch.setattr(d_ladder_remote, "_is_unused_workspace", _unreadable)
+    with pytest.raises(OSError, match="workspace unreadable"):
+        _run_worker(request, objects, identity, tmp_path / "worker")
+    failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
+    assert failure["error_type"] == "OSError"
