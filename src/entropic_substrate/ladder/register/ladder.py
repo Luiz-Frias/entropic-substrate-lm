@@ -9,9 +9,9 @@ from enum import StrEnum
 from entropic_substrate.core.latent.dynamics import SolverConfig
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
-    require_sha256_hex_any_case,
 )
 from entropic_substrate.ladder.register.d1_family import D1DraftSpec
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 
 class Rung(StrEnum):
@@ -41,7 +41,7 @@ class ParameterMatchReference:
     max_relative_gap: float = 0.01
 
     def __post_init__(self) -> None:
-        require_sha256_hex_any_case(self.construction_identity, label="parameter reference")
+        require_lowercase_digest(self.construction_identity, label="parameter reference")
         if type(self.total_parameters) is not int or self.total_parameters < 1:
             raise ValueError("reference total_parameters must be a positive integer")
         if (

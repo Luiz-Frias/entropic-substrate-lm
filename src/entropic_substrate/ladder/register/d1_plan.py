@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+)
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     EvidenceClass,
@@ -12,7 +17,6 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
     require_commit,
     require_nonempty_string,
-    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.runtime.config import TrainConfig
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile, D1LaunchScale
@@ -63,19 +67,17 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} must be a JSON object with string keys")
+    )
 
 
 def _exact_keys(value: dict[str, object], expected: frozenset[str], *, label: str) -> None:
-    actual = frozenset(value)
-    unknown = sorted(actual - expected)
+    missing, unknown = exact_keys(value, expected)
     if unknown:
-        _fail(f"unknown keys for {label}: {unknown}")
-    missing = sorted(expected - actual)
+        _fail(f"unknown keys for {label}: {sorted(unknown)}")
     if missing:
-        _fail(f"missing keys for {label}: {missing}")
+        _fail(f"missing keys for {label}: {sorted(missing)}")
 
 
 def _string(value: object, *, label: str) -> str:
@@ -98,11 +100,10 @@ def _positive_int(value: object, *, label: str) -> int:
 
 def _sha256(value: object, *, label: str) -> str:
     text = _string(value, label=label)
-    try:
-        require_sha256_hex_any_case(text, label=label)
-    except ValueError as error:
-        _fail(str(error), error)
-    return text
+    return require_lowercase_sha256(
+        text,
+        fail=lambda _reason: _fail(f"{label} must be a 64-character hexadecimal SHA-256 digest"),
+    )
 
 
 def _commit(value: object, *, label: str) -> str:

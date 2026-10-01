@@ -21,7 +21,6 @@ from entropic_substrate.kernel.artifacts import (
 )
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
-    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
@@ -32,6 +31,7 @@ from entropic_substrate.kernel.lifecycle import (
     LifecycleState,
     SuccessorAuthorization,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 if TYPE_CHECKING:
     from entropic_substrate.ladder.analyze.ladder_registration import StatisticalDesign
@@ -56,7 +56,7 @@ def _text(value: object) -> str:
 
 def _sha(value: object) -> str:
     result = _text(value)
-    require_sha256_hex_any_case(result, label="ladder identity")
+    require_lowercase_digest(result, label="ladder identity")
     return result
 
 
