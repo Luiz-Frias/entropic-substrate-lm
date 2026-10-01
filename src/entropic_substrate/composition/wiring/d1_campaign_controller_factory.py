@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import Protocol, cast
 
 from entropic_substrate.composition.wiring.d1_campaign_authority_loader import (
     D1LoadedCampaignAuthority,
@@ -39,7 +39,9 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1ObjectMailboxTrainerTransport,
+    D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.values.d1_operator_ports import D1RunPodPort
 
 __all__ = [
     "D1CampaignControllerFactory",
@@ -51,8 +53,16 @@ __all__ = [
 _REGISTRY_AUTH_ENV = "D1_RUNPOD_REGISTRY_AUTH_ID"
 _NETWORK_VOLUME_ENV = "D1_RUNPOD_NETWORK_VOLUME_ID"
 
-type D1R2RuntimeBuilder = Callable[..., object]
-type D1RunPodBuilder = Callable[..., object]
+
+class D1R2Runtime(Protocol):
+    """The slice of the R2 runtime composition this factory consumes."""
+
+    @property
+    def mailbox(self) -> D1TrainerMailboxObjectPort: ...
+
+
+type D1R2RuntimeBuilder = Callable[..., D1R2Runtime]
+type D1RunPodBuilder = Callable[..., D1RunPodPort]
 
 
 class D1CampaignControllerFactoryError(RuntimeError):
@@ -210,7 +220,7 @@ class D1CampaignControllerFactory:
             raise _error("locations")
         return target
 
-    def _runtime(self, loaded: D1LoadedCampaignAuthority) -> object:
+    def _runtime(self, loaded: D1LoadedCampaignAuthority) -> D1R2Runtime:
         try:
             runtime = self._runtime_builder(
                 repo_root=loaded.request.locations.repo_root,
@@ -224,7 +234,7 @@ class D1CampaignControllerFactory:
             raise _error("r2")
         return runtime
 
-    def _runpod(self, wait_seconds: int) -> object:
+    def _runpod(self, wait_seconds: int) -> D1RunPodPort:
         config = self._config
         try:
             runpod = self._runpod_builder(
@@ -263,7 +273,7 @@ class D1CampaignControllerFactory:
                 self._config.trainer_mailbox_poll_seconds,
             )
             transport = D1ObjectMailboxTrainerTransport(
-                objects=runtime.mailbox,  # type: ignore[attr-defined]
+                objects=runtime.mailbox,
                 materialization_root=artifact_root,
                 wait_policy=policy,
             )
@@ -283,7 +293,7 @@ class D1CampaignControllerFactory:
                 design=loaded.design,
                 process_manager=loaded.process_manager,
                 attempt_ledger=loaded.checkpoint.attempt_ledger,
-                runpod=runpod,  # type: ignore[arg-type]
+                runpod=runpod,
                 trainer=trainer,
                 custody=custody,
                 operator=ActorIdentity(

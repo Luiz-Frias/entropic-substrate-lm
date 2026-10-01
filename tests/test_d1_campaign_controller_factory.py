@@ -226,3 +226,21 @@ def test_factory_sanitizes_r2_composition_failure_before_runpod_or_custody(
     assert raised.value.code == "r2"
     assert _PRIVATE not in str(raised.value)
     assert runpod_calls == []
+
+
+def test_factory_ports_are_typed_without_type_ignores() -> None:
+    from entropic_substrate.composition.wiring import d1_campaign_controller_factory as module
+
+    assert "type: ignore" not in Path(module.__file__).read_text(encoding="utf-8")
+
+
+def test_r2_runtime_protocol_types_the_mailbox_as_the_object_port() -> None:
+    import typing
+
+    from entropic_substrate.composition.wiring.d1_campaign_controller_factory import D1R2Runtime
+    from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+        D1TrainerMailboxObjectPort,
+    )
+
+    hints = typing.get_type_hints(D1R2Runtime.mailbox.fget)  # type: ignore[attr-defined]
+    assert hints["return"] is D1TrainerMailboxObjectPort
