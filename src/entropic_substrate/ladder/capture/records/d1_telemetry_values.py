@@ -16,6 +16,7 @@ from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
     D1ChannelMoments,
     D1CosineGap,
+    D1StateMomentAccessors,
     validate_d1_cosine,
 )
 from entropic_substrate.ladder.capture.records.d1_abort_evidence import D1TrainerAbortEvidence
@@ -254,7 +255,7 @@ def _close(left: float, right: float) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class D1QualityEvidence:
+class D1QualityEvidence(D1StateMomentAccessors):
     """The exact registered scalar/vector payload from one D1 evaluation."""
 
     language_loss: float
@@ -372,22 +373,6 @@ class D1QualityEvidence:
     @property
     def latent_width(self) -> int:
         return self.state_moments.width
-
-    @property
-    def state_mean(self) -> tuple[float, ...]:
-        return self.state_moments.mean
-
-    @property
-    def state_variance(self) -> tuple[float, ...]:
-        return self.state_moments.variance
-
-    @property
-    def state_covariance_eigenvalues(self) -> tuple[float, ...]:
-        return self.state_moments.covariance_eigenvalues
-
-    @property
-    def effective_rank(self) -> float:
-        return self.state_moments.effective_rank
 
     @property
     def numerical_rank(self) -> int:

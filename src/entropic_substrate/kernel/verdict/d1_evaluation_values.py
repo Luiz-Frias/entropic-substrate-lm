@@ -137,4 +137,36 @@ class D1ChannelMoments:
         return len(self.mean)
 
 
-__all__ = ["TARGET_PREDICTED_EXACT_MATCH_SEMANTIC", "D1ChannelMoments"]
+class D1StateMomentAccessors:
+    """State-channel views shared by every evaluation record carrying ``state_moments``.
+
+    Slotted and fieldless: the annotation reserves no storage, so a frozen slotted
+    dataclass inheriting it declares ``state_moments`` as its own field.
+    """
+
+    __slots__ = ()
+
+    state_moments: D1ChannelMoments
+
+    @property
+    def state_mean(self) -> tuple[float, ...]:
+        return self.state_moments.mean
+
+    @property
+    def state_variance(self) -> tuple[float, ...]:
+        return self.state_moments.variance
+
+    @property
+    def state_covariance_eigenvalues(self) -> tuple[float, ...]:
+        return self.state_moments.covariance_eigenvalues
+
+    @property
+    def effective_rank(self) -> float:
+        return self.state_moments.effective_rank
+
+
+__all__ = [
+    "TARGET_PREDICTED_EXACT_MATCH_SEMANTIC",
+    "D1ChannelMoments",
+    "D1StateMomentAccessors",
+]
