@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -17,6 +16,7 @@ from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker imp
 from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import (
     D1TrainerProcessWorker,
 )
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     AuthoritativeJournalOnlyObserver,
 )
@@ -59,18 +59,8 @@ type D1MailboxFactory = Callable[
 ]
 
 
-def _canonical(value: Mapping[str, object]) -> bytes:
-    return json.dumps(
-        dict(value),
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-
-
 def _emit(stream: TextIO, value: Mapping[str, object]) -> None:
-    stream.write(_canonical(value).decode("utf-8") + "\n")
+    stream.write(canonical_json(value) + "\n")
     stream.flush()
 
 
@@ -193,7 +183,7 @@ def run_d1_trainer_mailbox_command(
         else:
             mailbox = mailbox_factory(root, pod, policy)
         result = mailbox.run()
-        result_sha256 = hashlib.sha256(_canonical(result)).hexdigest()
+        result_sha256 = hashlib.sha256(canonical_json(result).encode("utf-8")).hexdigest()
         _emit(
             stdout,
             {

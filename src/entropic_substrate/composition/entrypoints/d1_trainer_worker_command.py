@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -14,6 +13,7 @@ from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import
 )
 from entropic_substrate.composition.wiring.d1_cli import D1CliInvalidEvidence
 from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     AuthoritativeJournalOnlyObserver,
     D1JournalObserver,
@@ -41,18 +41,8 @@ class D1TrainerWorkerCommandRefusal(ValueError):
     """The internal argv shape is incomplete, duplicated, or unsupported."""
 
 
-def _canonical(value: Mapping[str, object]) -> str:
-    return json.dumps(
-        dict(value),
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
 def _emit(stream: TextIO, value: Mapping[str, object]) -> None:
-    stream.write(_canonical(value) + "\n")
+    stream.write(canonical_json(value) + "\n")
     stream.flush()
 
 

@@ -231,3 +231,52 @@ def test_command_sanitizes_unexpected_failure(tmp_path: Path) -> None:
         "code": "unexpected_defect",
         "type": "RuntimeError",
     }
+
+
+_CANONICAL_FIXTURES: tuple[dict[str, object], ...] = (
+    {},
+    {"b": 1, "a": [1, 2.5, None, True], "c": {"z": "x", "y": []}},
+    {"unicode": "café ☃ \U0001f600", "nested": [[1], [2, [3]]]},
+    {"n": -0.0, "big": 10**30, "small": 1e-9, "quote": 'a"b\\c\n'},
+)
+
+
+def _parent_canonical(value: dict[str, object]) -> bytes:
+    """The parent `_canonical` expression, verbatim (oracle for the repoint)."""
+    return json.dumps(
+        dict(value),
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+@pytest.mark.parametrize("payload", _CANONICAL_FIXTURES)
+def test_emit_and_result_digest_equal_the_parent_canonical_bytes(
+    tmp_path: Path, payload: dict[str, object]
+) -> None:
+    stream = io.StringIO()
+    command_module._emit(stream, payload)  # type: ignore[attr-defined]
+    assert stream.getvalue().encode("utf-8") == _parent_canonical(payload) + b"\n"
+
+    stdout = io.StringIO()
+    code = run_d1_trainer_mailbox_command(
+        _argv(tmp_path),
+        environ={"RUNPOD_POD_ID": _POD},
+        mailbox_factory=lambda root, pod, policy: _Mailbox(payload),
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+    assert code == 0
+    assert (
+        json.loads(stdout.getvalue())["result_sha256"]
+        == hashlib.sha256(_parent_canonical(payload)).hexdigest()
+    )
+
+
+def test_mailbox_command_uses_the_shared_canonical_json_not_a_local_dump() -> None:
+    from entropic_substrate.kernel.identity import d1_primitives
+
+    assert command_module.canonical_json is d1_primitives.canonical_json  # type: ignore[attr-defined]
+    assert "json.dumps" not in Path(command_module.__file__).read_text(encoding="utf-8")
