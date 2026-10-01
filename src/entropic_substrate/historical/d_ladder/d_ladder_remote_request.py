@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import cast
+from typing import NoReturn, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     run_start_from_mapping,
@@ -17,7 +19,6 @@ from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_json,
     require_commit,
-    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
 from entropic_substrate.ladder.gate.ladder_campaign import (
@@ -27,6 +28,16 @@ from entropic_substrate.ladder.gate.ladder_campaign import (
     object_fields,
 )
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
+
+
+def digest_refusal(label: str) -> Callable[[str], NoReturn]:
+    """The ``fail`` channel of the remote boundary digests: a labelled ``ValueError``."""
+
+    def fail(_reason: str) -> NoReturn:
+        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
+        raise ValueError(msg)
+
+    return fail
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +68,9 @@ class RemoteLadderRequest:
         require_commit(self.code_commit, label="remote source commit")
         if len(self.code_commit) not in (40, 64):
             raise ValueError("remote source commit requires a full Git object identity")
-        require_sha256_hex_any_case(self.attempt_sha256, label="remote attempt")
-        require_sha256_hex_any_case(
-            self.authorization_digest, label="remote expected authorization"
+        require_lowercase_sha256(self.attempt_sha256, fail=digest_refusal("remote attempt"))
+        require_lowercase_sha256(
+            self.authorization_digest, fail=digest_refusal("remote expected authorization")
         )
         if type(self.start) is not RunStartProvenance:
             raise TypeError("remote request requires complete resource provenance")

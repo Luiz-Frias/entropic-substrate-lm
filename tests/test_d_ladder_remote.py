@@ -1,6 +1,8 @@
 """Hash-bound generic remote requests and existing immutable-object transport."""
 
+import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -288,3 +290,54 @@ def test_worker_dispatches_real_scientific_tiny_with_actual_filing_gate(
     objects.values[key] = b"tampered"
     with pytest.raises(ValueError, match="identity"):
         materialize_remote_output(objects, request, result, tmp_path / "tampered")
+
+
+# ------------------------------------------------ lowercase SHA boundaries (P14-SHA-SEQ)
+# Four BOUNDARY rows of docs/plans/measurements/p14-sha-callers.txt moved from the
+# any-case kernel predicate to strict_json's lowercase one. Each refusal keeps the
+# exception type and message the any-case predicate used for a malformed digest.
+_MIXED_CASE_DIGEST = "aB" * 32
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [
+        ("attempt_sha256", "remote attempt"),
+        ("authorization_digest", "remote expected authorization"),
+    ],
+)
+def test_remote_request_refuses_a_mixed_case_digest_with_the_unchanged_message(
+    tmp_path: Path, field: str, label: str
+) -> None:
+    request = request_fixture(tmp_path)
+    with pytest.raises(ValueError) as refused:
+        replace(request, **{field: _MIXED_CASE_DIGEST})
+    assert type(refused.value) is ValueError
+    assert str(refused.value) == f"{label} must be a 64-character hexadecimal SHA-256 digest"
+    assert replace(request, **{field: "ab" * 32}).digest  # lowercase still constructs
+
+
+@pytest.mark.parametrize(
+    ("attempt", "image", "label"),
+    [
+        (_MIXED_CASE_DIGEST, "sha256:" + "d" * 64, "worker attempt"),
+        ("c" * 64, "sha256:" + _MIXED_CASE_DIGEST, "image digest"),
+    ],
+)
+def test_serve_refuses_a_mixed_case_digest_with_the_unchanged_message(
+    attempt: str, image: str, label: str
+) -> None:
+    import entropic_substrate.historical.d_ladder.d_ladder_worker_command as command
+
+    arguments = argparse.Namespace(attempt_sha256=attempt)
+    environ = {
+        "RUNPOD_POD_ID": "pod123",
+        "D_LADDER_CODE_COMMIT": "b" * 40,
+        "D_LADDER_IMAGE_DIGEST": image,
+    }
+    objects = _ObjectStore()
+    with pytest.raises(ValueError) as refused:
+        command._serve(arguments, environ, objects)  # pyright: ignore[reportPrivateUsage]
+    assert type(refused.value) is ValueError
+    assert str(refused.value) == f"{label} must be a 64-character hexadecimal SHA-256 digest"
+    assert not objects.publishes  # refusal precedes any publication
