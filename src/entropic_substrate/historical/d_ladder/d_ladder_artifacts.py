@@ -17,7 +17,6 @@ from entropic_substrate.ladder.run.construction.ladder_runtime import LadderPred
 
 if TYPE_CHECKING:
     from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest
-    from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
 
 
 def _mapping(content: bytes, label: str) -> dict[str, object]:
@@ -99,16 +98,6 @@ def load_smoke_model(
     """Rehydrate the verified model while preserving caller RNG state."""
     if request.manifest.get("schema") != "d-ladder-local-smoke-v1":
         raise ValueError("smoke model loader requires a local smoke request")
-    return load_ladder_model(request, checkpoint, expected_sha256=expected_sha256)
-
-
-def load_ladder_model(
-    request: SmokeRequest | ScientificRequest,
-    checkpoint: Path,
-    *,
-    expected_sha256: str | None = None,
-) -> LadderPredictiveSystem:
-    """Load the same verified checkpoint bytes used by diagnostic provenance."""
     return load_bound_ladder_model(
         request.spec, request.manifest, checkpoint, expected_sha256=expected_sha256
     )
