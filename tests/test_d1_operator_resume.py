@@ -18,6 +18,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
     execution_segment_id,
 )
 from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
@@ -34,6 +35,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
 )
 from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
+    D1TrainerExportReceipt,
     verify_d1_trainer_export,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
@@ -52,6 +54,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
 from .test_d1_finalized_cell_custody_values import _attest, _finalized_case
 from .test_d1_operator_controller import (
     _artifact,
+    _Case,
     _case,
     _Clock,
     _Custody,
@@ -339,7 +342,9 @@ def test_resume_refuses_nonconsecutive_segment_before_provider_auth(tmp_path: Pa
     assert events == []
 
 
-def _export_before_finalization(tmp_path: Path):
+def _export_before_finalization(
+    tmp_path: Path,
+) -> tuple[_Case, D1FreshRunCompletion, D1TrainerExportReceipt]:
     case = _case(tmp_path)
     fresh = cast(D1FreshRunCompletion, case.handoff)
     export = verify_d1_trainer_export(D1ExportedTrainerHandoff(fresh, case.journal_path))
@@ -441,7 +446,9 @@ def test_resume_closure_routes_custody_through_the_shared_helper(
     calls: list[dict[str, object]] = []
     shared = controller_module._persist_finalization_artifact
 
-    def spy(custody: object, **kwargs: object):
+    def spy(
+        custody: object, **kwargs: object
+    ) -> tuple[ArtifactIdentity, D1FinalizedCellCustodyRecord | None]:
         calls.append(kwargs)
         return shared(custody, **kwargs)  # type: ignore[arg-type]
 

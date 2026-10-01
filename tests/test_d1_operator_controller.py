@@ -534,7 +534,9 @@ def test_fresh_closure_routes_custody_through_the_shared_helper(
     calls: list[dict[str, object]] = []
     shared = controller_module._persist_finalization_artifact
 
-    def spy(custody: object, **kwargs: object):
+    def spy(
+        custody: object, **kwargs: object
+    ) -> tuple[ArtifactIdentity, D1FinalizedCellCustodyRecord | None]:
         calls.append(kwargs)
         return shared(custody, **kwargs)  # type: ignore[arg-type]
 
