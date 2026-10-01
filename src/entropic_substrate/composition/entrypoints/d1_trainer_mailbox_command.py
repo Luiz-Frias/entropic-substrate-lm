@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -17,7 +16,7 @@ from entropic_substrate.composition.entrypoints.d1_trainer_process_worker import
     D1TrainerProcessWorker,
     D1TrainerStartReportPublisher,
 )
-from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, canonical_json
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     AuthoritativeJournalOnlyObserver,
 )
@@ -186,7 +185,7 @@ def run_d1_trainer_mailbox_command(
         else:
             mailbox = mailbox_factory(root, pod, policy)
         result = mailbox.run()
-        result_sha256 = hashlib.sha256(canonical_json(result).encode("utf-8")).hexdigest()
+        result_sha256 = canonical_digest(result)
         _emit(
             stdout,
             {

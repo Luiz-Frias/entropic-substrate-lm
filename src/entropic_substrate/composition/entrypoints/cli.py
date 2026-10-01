@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import importlib
 import json
 import os
 import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import torch
 import yaml
@@ -1063,16 +1062,6 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
 type _Handler = Callable[[argparse.Namespace], int]
 
 
-def _lazy(module: str, attr: str) -> _Handler:
-    """Defer ``entropic_substrate.<module>.<attr>`` to call time (no handler-stack import)."""
-
-    def run(args: argparse.Namespace) -> int:
-        resolved = getattr(importlib.import_module(f"entropic_substrate.{module}"), attr)
-        return cast(_Handler, resolved)(args)
-
-    return run
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -1104,6 +1093,14 @@ def main(
             )
         )
         return outcome.exit_code
+
+    from entropic_substrate.composition.capture_cli import cmd_capture
+    from entropic_substrate.composition.cli import cmd_sentence
+    from entropic_substrate.composition.source_cli import cmd_source
+    from entropic_substrate.composition.span_cli import cmd_span
+    from entropic_substrate.composition.wiring.d_ladder_cli import cmd_d_probe
+    from entropic_substrate.composition.wiring.d_ladder_probe_cli import cmd_score_gain
+
     handlers: dict[str, _Handler] = {
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,
@@ -1113,19 +1110,19 @@ def main(
         "charts": cmd_charts,
         "embedding-geometry": cmd_embedding_geometry,
         "field-pretrain": cmd_field_pretrain,
-        "d-probe": _lazy("composition.wiring.d_ladder_cli", "cmd_d_probe"),
-        "d-score-gain": _lazy("composition.wiring.d_ladder_probe_cli", "cmd_score_gain"),
-        "h-train-probe": _lazy("composition.cli", "cmd_sentence"),
-        "h-inspect-training": _lazy("composition.cli", "cmd_sentence"),
-        "h-generate-probe": _lazy("composition.cli", "cmd_sentence"),
-        "h-inspect-generation": _lazy("composition.cli", "cmd_sentence"),
-        "h-capture-model": _lazy("composition.capture_cli", "cmd_capture"),
-        "h-inspect-model": _lazy("composition.capture_cli", "cmd_capture"),
-        "h-inspect-custody": _lazy("composition.capture_cli", "cmd_capture"),
-        "h-diagnose-spans": _lazy("composition.span_cli", "cmd_span"),
-        "h-inspect-spans": _lazy("composition.span_cli", "cmd_span"),
-        "h-prepare-source": _lazy("composition.source_cli", "cmd_source"),
-        "h-inspect-source": _lazy("composition.source_cli", "cmd_source"),
+        "d-probe": cmd_d_probe,
+        "d-score-gain": cmd_score_gain,
+        "h-train-probe": cmd_sentence,
+        "h-inspect-training": cmd_sentence,
+        "h-generate-probe": cmd_sentence,
+        "h-inspect-generation": cmd_sentence,
+        "h-capture-model": cmd_capture,
+        "h-inspect-model": cmd_capture,
+        "h-inspect-custody": cmd_capture,
+        "h-diagnose-spans": cmd_span,
+        "h-inspect-spans": cmd_span,
+        "h-prepare-source": cmd_source,
+        "h-inspect-source": cmd_source,
     }
     try:
         return handlers[args.command](args)

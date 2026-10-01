@@ -322,6 +322,37 @@ class TestMainDispatchesThroughOneTable:
         assert len(keys) == len(table.keys), "handlers keys must be unique string literals"
         assert keys == set(_FROZEN_SUBCOMMANDS) - _D1_COMMANDS
 
+    def test_handlers_table_values_are_statically_resolved_names(self) -> None:
+        # A string-resolved handler (``importlib.import_module`` + ``cast``) erases
+        # the handler's signature from the type checker and hides the edge from
+        # import-linter. Every table value must be a bare name bound by a static
+        # import, so changing a handler's arity is a basedpyright error here.
+        main, _ = _main_function()
+        table = next(
+            node.value
+            for node in ast.walk(main)
+            if isinstance(node, ast.Assign | ast.AnnAssign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "handlers"
+                for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+            and isinstance(node.value, ast.Dict)
+        )
+        non_names = [
+            ast.unparse(value) for value in table.values if not isinstance(value, ast.Name)
+        ]
+        assert non_names == [], non_names
+        source = Path(
+            importlib.import_module("entropic_substrate.composition.entrypoints.cli").__file__ or ""
+        ).read_text()
+        tree = ast.parse(source)
+        string_resolved = [
+            ast.unparse(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr == "import_module"
+        ]
+        assert string_resolved == [], string_resolved
+
     @pytest.mark.parametrize(("command", "module_name", "handler"), _LAZY_ROUTES)
     def test_lazy_handler_routes_return_value_and_receives_parsed_args(
         self,
