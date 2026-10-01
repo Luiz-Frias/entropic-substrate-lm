@@ -50,6 +50,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_values import (
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
@@ -373,13 +374,15 @@ class D1SequentialOperatorController:
             handoff = export.handoff
             stopped = handoff.termination
             finalization = finalize_d1_billing(
-                plan=intent.plan,
-                segment_starts=(start,),
-                segment_terminations=(termination,),
-                provider_billings=(billing,),
-                handoff=handoff,
-                journal_path=candidate.journal_path,
-                expected_journal_state=stopped.journal_state,
+                D1BillingFinalizationRequest(
+                    plan=intent.plan,
+                    segment_starts=(start,),
+                    segment_terminations=(termination,),
+                    provider_billings=(billing,),
+                    handoff=handoff,
+                    journal_path=candidate.journal_path,
+                    expected_journal_state=stopped.journal_state,
+                )
             )
             failed = isinstance(handoff, D1TrainerFailureHandoff)
             ledger = ledger.transition(
@@ -565,13 +568,15 @@ class D1SequentialOperatorController:
             handoff = export.handoff
             stopped = handoff.termination
             finalization = finalize_d1_billing(
-                plan=intent.plan,
-                segment_starts=(*history.starts, start),
-                segment_terminations=(*history.terminations, termination),
-                provider_billings=(*history.billings, billing),
-                handoff=handoff,
-                journal_path=candidate.journal_path,
-                expected_journal_state=stopped.journal_state,
+                D1BillingFinalizationRequest(
+                    plan=intent.plan,
+                    segment_starts=(*history.starts, start),
+                    segment_terminations=(*history.terminations, termination),
+                    provider_billings=(*history.billings, billing),
+                    handoff=handoff,
+                    journal_path=candidate.journal_path,
+                    expected_journal_state=stopped.journal_state,
+                )
             )
             failed = isinstance(handoff, D1TrainerFailureHandoff)
             ledger = self.attempt_ledger.transition(

@@ -37,6 +37,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
 )
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyRecord,
@@ -190,8 +191,8 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     finalized_cell = _attest(_finalized_case(tmp_path / "finalized-cell"))
     custody_captured: dict[str, object] = {}
 
-    def finalize(**kwargs: object) -> D1BillingFinalization:
-        captured.update(kwargs)
+    def finalize(request: D1BillingFinalizationRequest) -> D1BillingFinalization:
+        captured["request"] = request
         return finalized
 
     monkeypatch.setattr(controller_module, "verify_d1_trainer_export", lambda _: receipt)
@@ -276,8 +277,9 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         else D1LaunchAttemptStatus.COMPLETED
     )
     assert result.attempt_ledger.events[-1].status is expected_status
-    assert captured["segment_starts"] == (start0, start1)
-    assert captured["segment_terminations"] == (prior_termination, result.termination)
+    request = cast(D1BillingFinalizationRequest, captured["request"])
+    assert request.segment_starts == (start0, start1)
+    assert request.segment_terminations == (prior_termination, result.termination)
     assert result.queue_admissible is (outcome == "admissible")
     if outcome in {"admissible", "billing_gap"}:
         assert custody_captured["segment_starts"] == (start0, start1)

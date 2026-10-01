@@ -42,6 +42,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
 from entropic_substrate.ladder.run.campaign.d1_operator_values import D1OperatorLaunchIntent
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
     attest_durable_d1_finalization,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
@@ -88,13 +89,15 @@ def _finalized_case(tmp_path: Path, *, missing_cost: bool = False) -> _Finalized
     )
     provider = billing_gap(start) if missing_cost else provider_bill(start)
     finalization = finalize_d1_billing(
-        plan=intent.plan,
-        segment_starts=(start,),
-        segment_terminations=(termination,),
-        provider_billings=(provider,),
-        handoff=handoff,
-        journal_path=case.journal_path,
-        expected_journal_state=handoff.journal_state,
+        D1BillingFinalizationRequest(
+            plan=intent.plan,
+            segment_starts=(start,),
+            segment_terminations=(termination,),
+            provider_billings=(provider,),
+            handoff=handoff,
+            journal_path=case.journal_path,
+            expected_journal_state=handoff.journal_state,
+        )
     )
     attempt = D1LaunchAttemptIdentity(
         RunClass.CONFIRMATORY,
