@@ -232,3 +232,51 @@ def test_d1_run_resume_cli_restores_and_completes_real_training(
     assert case.uninterrupted_terminal is not None
     for field in ("model", "optimizer", "sampler", "rng"):
         assert_nested_equal(resumed[field], case.uninterrupted_terminal[field])
+
+
+_CANONICAL_FIXTURES: tuple[dict[str, object], ...] = (
+    {},
+    {"b": 1, "a": [1, 2.5, None, True], "c": {"z": "x", "y": []}},
+    {"unicode": "café ☃ \U0001f600", "tuple_free": [[1], [2, [3]]]},
+    {"n": -0.0, "big": 10**30, "small": 1e-9, "quote": 'a"b\\c\n'},
+)
+
+
+def _parent_bytes(value: dict[str, object]) -> bytes:
+    """The parent expression of ``_request_bytes``, verbatim (oracle for the repoint)."""
+    return json.dumps(
+        dict(value),
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+
+@pytest.mark.parametrize("payload", _CANONICAL_FIXTURES)
+def test_request_bytes_equal_the_parent_canonical_bytes(payload: dict[str, object]) -> None:
+    from types import SimpleNamespace
+
+    from entropic_substrate.composition.wiring import d1_trainer_cli_services as services
+
+    invocation = SimpleNamespace(payload=payload)
+    assert services._request_bytes(invocation) == _parent_bytes(payload)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_request_bytes_refuses_nonfinite_payload_as_invalid_evidence(bad: float) -> None:
+    from types import SimpleNamespace
+
+    from entropic_substrate.composition.wiring import d1_trainer_cli_services as services
+    from entropic_substrate.composition.wiring.d1_cli import D1CliInvalidEvidence
+
+    with pytest.raises(D1CliInvalidEvidence, match="not canonical"):
+        services._request_bytes(SimpleNamespace(payload={"x": bad}))  # type: ignore[arg-type]
+
+
+def test_request_bytes_is_the_shared_canonical_json_not_a_local_dump() -> None:
+    from entropic_substrate.composition.wiring import d1_trainer_cli_services as services
+    from entropic_substrate.kernel.identity import d1_primitives
+
+    assert services.canonical_json is d1_primitives.canonical_json  # type: ignore[attr-defined]
+    assert "json.dumps" not in Path(services.__file__).read_text(encoding="utf-8")

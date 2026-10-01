@@ -625,3 +625,45 @@ def test_internal_worker_command_preserves_failure_classes(
     assert exit_code == expected_exit
     assert _canonical_output(stderr)["error"]["code"] == expected_code  # type: ignore[index]
     assert stdout.getvalue() == ""
+
+
+_CANONICAL_FIXTURES: tuple[dict[str, object], ...] = (
+    {},
+    {"b": 1, "a": [1, 2.5, None, True], "c": {"z": "x", "y": []}},
+    {"unicode": "café ☃ \U0001f600", "nested": [[1], [2, [3]]]},
+    {"n": -0.0, "big": 10**30, "small": 1e-9, "quote": 'a"b\\c\n'},
+)
+
+
+@pytest.mark.parametrize("payload", _CANONICAL_FIXTURES)
+def test_worker_command_emit_equals_the_parent_canonical_line(payload: dict[str, object]) -> None:
+    import entropic_substrate.composition.entrypoints.d1_trainer_worker_command as worker_command
+
+    stream = io.StringIO()
+    worker_command._emit(stream, payload)  # type: ignore[attr-defined]
+    # Oracle: the parent `_canonical` expression, verbatim.
+    parent = json.dumps(
+        dict(payload),
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert stream.getvalue() == parent + "\n"
+
+
+def test_worker_command_uses_the_shared_canonical_json_not_a_local_dump() -> None:
+    import entropic_substrate.composition.entrypoints.d1_trainer_worker_command as worker_command
+    from entropic_substrate.kernel.identity import d1_primitives
+
+    assert worker_command.canonical_json is d1_primitives.canonical_json  # type: ignore[attr-defined]
+    assert "json.dumps" not in Path(worker_command.__file__).read_text(encoding="utf-8")
+
+
+def test_worker_command_emit_refuses_nonfinite_values() -> None:
+    import entropic_substrate.composition.entrypoints.d1_trainer_worker_command as worker_command
+
+    stream = io.StringIO()
+    with pytest.raises(ValueError, match="Out of range float"):
+        worker_command._emit(stream, {"x": float("nan")})  # type: ignore[attr-defined]
+    assert stream.getvalue() == ""
