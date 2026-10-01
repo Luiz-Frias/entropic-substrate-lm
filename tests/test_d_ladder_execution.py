@@ -62,3 +62,21 @@ def test_smoke_request_refuses_invalid_budget_and_fresh_overwrite(tmp_path: Path
     run_local_smoke(request, tmp_path)
     with pytest.raises(FileExistsError):
         run_local_smoke(request, tmp_path)
+
+
+def test_scientific_execution_refuses_missing_resources_before_touching_the_request(
+    tmp_path: Path,
+) -> None:
+    """``resources is None`` stays load-bearing: scientific mode must name its meter.
+
+    The request is deliberately uninitialised: the guard has to fire before any
+    attribute of it is read, so no fixture can mask a regression that moved the
+    check later (or replaced ``None`` with a stand-in meter).
+    """
+    from entropic_substrate.historical.d_ladder.d_ladder_execution import run_ladder
+    from entropic_substrate.historical.d_ladder.d_ladder_request import ScientificRequest
+
+    request = ScientificRequest.__new__(ScientificRequest)
+    with pytest.raises(TypeError, match="scientific execution requires explicit LadderResources"):
+        run_ladder(request, tmp_path, resources=None)
+    assert not any(tmp_path.iterdir())

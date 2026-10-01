@@ -108,3 +108,37 @@ def test_collapsed_online_state_retains_zero_rank_and_variance():
     assert metrics["online_numerical_rank"] == metrics["online_mean_variance"] == 0
     assert metrics["online_zero_norm_positions"] == 16 * protocol.evaluation.num_batches
     assert resources is None
+
+
+# ----------------------------------------------- resource-phase helper (FOR-1586)
+# ``resources is None`` is a load-bearing state (smoke runs carry no meter), so
+# the helper must be a plain no-op context for it: never a stub meter, which
+# would let a scientific-looking run measure into nothing.
+def test_resource_phase_without_resources_is_a_plain_null_context():
+    from contextlib import nullcontext
+
+    from entropic_substrate.historical.d_ladder.d_ladder_training import resource_phase
+    from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+
+    phase = resource_phase(None, ResourcePhase.TRAIN)
+    assert isinstance(phase, nullcontext)
+    with phase as entered:
+        assert entered is None
+
+
+@pytest.mark.parametrize("measured", ["TRAIN", "EVAL"])
+def test_resource_phase_delegates_to_the_meter_with_the_requested_phase(measured):
+    from entropic_substrate.historical.d_ladder.d_ladder_training import resource_phase
+    from entropic_substrate.ladder.capture.resource.resource_meter_models import ResourcePhase
+
+    marker = object()
+    seen: list[ResourcePhase] = []
+
+    class _Resources:
+        def measure(self, phase):
+            seen.append(phase)
+            return marker
+
+    requested = ResourcePhase[measured]
+    assert resource_phase(_Resources(), requested) is marker  # type: ignore[arg-type]
+    assert seen == [requested]
