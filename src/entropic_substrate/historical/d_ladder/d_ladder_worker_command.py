@@ -28,7 +28,6 @@ from entropic_substrate.historical.d_ladder.d_ladder_remote import (
 )
 from entropic_substrate.historical.d_ladder.d_ladder_remote_request import (
     RemoteLadderRequest,
-    digest_refusal,
     parse_remote_request,
 )
 from entropic_substrate.historical.d_ladder.d_ladder_worker_runtime import (
@@ -38,13 +37,13 @@ from entropic_substrate.historical.d_ladder.d_ladder_worker_runtime import (
     worker_resource_registration,
 )
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
-from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_json,
     require_commit,
 )
 from entropic_substrate.ladder.gate.ladder_campaign import object_fields
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.construction.d1_r2_runtime_composition import (
     build_d1_r2_runtime_composition,
@@ -128,7 +127,7 @@ def _serve(
 ) -> D1TrainerMailboxObjectIdentity:
     pod = require_d1_pod_id(environ.get("RUNPOD_POD_ID"))
     attempt = cast(str, arguments.attempt_sha256)
-    require_lowercase_sha256(attempt, fail=digest_refusal("worker attempt"))
+    require_lowercase_digest(attempt, label="worker attempt")
     commit, image = (
         environ.get("D_LADDER_CODE_COMMIT", ""),
         environ.get("D_LADDER_IMAGE_DIGEST", ""),
@@ -136,7 +135,7 @@ def _serve(
     require_commit(commit, label="image source commit")
     if len(commit) not in (40, 64) or not image.startswith("sha256:"):
         raise ValueError("worker requires full source commit and immutable image digest")
-    require_lowercase_sha256(image.removeprefix("sha256:"), fail=digest_refusal("image digest"))
+    require_lowercase_digest(image.removeprefix("sha256:"), label="image digest")
     policy = D1TrainerMailboxWaitPolicy(
         arguments.maximum_wait_seconds, arguments.poll_interval_seconds
     )
