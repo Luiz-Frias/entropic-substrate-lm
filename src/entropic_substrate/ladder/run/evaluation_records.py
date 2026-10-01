@@ -18,7 +18,7 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import batch_coordinates
 from entropic_substrate.ladder.run.journal import read_json
-from entropic_substrate.ladder.run.seals import read_seal
+from entropic_substrate.ladder.run.seals import SealMemo, read_seal
 
 
 def _real(value: object) -> float:
@@ -46,8 +46,16 @@ def read_evaluation(
     *,
     max_bytes: int,
     max_source_bytes: int,
+    memo: SealMemo | None = None,
 ) -> dict[str, object]:
-    """Recompute weights/ESS/MCSE and source positions from immutable artifacts."""
+    """Recompute weights/ESS/MCSE and source positions from immutable artifacts.
+
+    ``memo``, when given, is passed straight through to :func:`read_seal`'s
+    lookup of the evaluation's own checkpoint seal (design-gate ruling DG-B):
+    the already-verified parent seal may be reused in-process, but a fresh
+    process (``memo=None``) still walks the full chain as the admission
+    predicate.
+    """
     row = recovery_record(
         read_json(root, artifact, max_bytes=max_bytes),
         "schema meaning run_identity step examples wall_seconds cuda_seconds checkpoint_seal",
@@ -65,6 +73,7 @@ def read_evaluation(
         source_root,
         max_bytes=max_bytes,
         max_source_bytes=max_source_bytes,
+        memo=memo,
     )
     if seal.phase != "prediction" or type(row["step"]) is not int or row["step"] != seal.step:
         raise ValueError("evaluation is not bound to its exact prediction checkpoint")

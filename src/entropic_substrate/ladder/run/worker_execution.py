@@ -2,7 +2,7 @@
 
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from pathlib import Path, PurePosixPath
 
 from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
@@ -80,6 +80,7 @@ def execute_probe_request(
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
     on_start: Callable[[dict[str, object]], None] | None = None,
     sink: MetricSink | None = None,
+    publication_timing: MutableMapping[str, float] | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
 
@@ -89,6 +90,10 @@ def execute_probe_request(
     ``sink``, when given, is threaded to :func:`~entropic_substrate.ladder.run.runner.run_probe_training`
     unchanged -- see that function's docstring. This function neither
     constructs nor finishes it.
+
+    ``publication_timing``, when given, is threaded to ``run_probe_training``
+    unchanged -- an ADDITIVE instrumentation mirror (FOR-1567), never part of
+    this function's own completion contract.
     """
     started = time.perf_counter()
     request.__post_init__()
@@ -128,6 +133,7 @@ def execute_probe_request(
         else lambda phase, step: (phase, step) == request.pause,
         on_checkpoint=checkpoint if on_checkpoint is not None else None,
         sink=sink,
+        publication_timing=publication_timing,
     )
     training = read_training_progress(
         output,

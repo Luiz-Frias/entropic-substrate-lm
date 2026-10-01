@@ -55,6 +55,13 @@ class _S3Client:
     fail_get: Exception | None = None
     fail_list: Exception | None = None
     last_body: _Body | None = None
+    # FOR-1567: fails exactly this many of the NEXT get_object calls (any
+    # key), regardless of whether the caller is the adapter's own post-PUT
+    # readback (inside publish()) or a later explicit objects.read() -- this
+    # is what lets a test inject "the first get_object call(s) issued after
+    # put_object" without caring which caller made them.
+    fail_get_times: int = 0
+    get_calls: list[str] = field(default_factory=list)
 
     def put_object(self, **kwargs: object) -> dict[str, object]:
         self.puts.append(dict(kwargs))
@@ -72,8 +79,12 @@ class _S3Client:
         return {"ETag": '"opaque"'}
 
     def get_object(self, **kwargs: object) -> dict[str, object]:
+        self.get_calls.append(str(kwargs["Key"]))
         if self.fail_get is not None:
             raise self.fail_get
+        if self.fail_get_times > 0:
+            self.fail_get_times -= 1
+            raise _ClientFailure("InternalError", 500)
         key = str(kwargs["Key"])
         if key not in self.values:
             raise _ClientFailure("NoSuchKey", 404)

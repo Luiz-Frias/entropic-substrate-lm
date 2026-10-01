@@ -16,6 +16,92 @@ from entropic_substrate.ladder.run.worker_snapshot import (
 pytestmark = pytest.mark.unit
 
 
+def test_a_ledgered_path_is_not_reread_or_republished_on_a_later_snapshot(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run/a.pt").write_bytes(b"alpha")
+    (tmp_path / "run/b.pt").write_bytes(b"beta")
+    value, objects = request(), _ObjectStore()
+    ledger: dict[str, tuple[str, int]] = {}
+    first = publish_worker_snapshot(
+        objects, value, tmp_path, ("run/a.pt",), name="checkpoint-1", ledger=ledger
+    )
+    assert objects.publishes == [f"{value.prefix}/outputs/run/a.pt", first.key]
+    puts_before = list(objects.publishes)
+    second = publish_worker_snapshot(
+        objects,
+        value,
+        tmp_path,
+        ("run/a.pt", "run/b.pt"),
+        name="checkpoint-2",
+        ledger=ledger,
+    )
+    # Only the NEW path (b.pt) and the new marker were published; a.pt's key
+    # from checkpoint-1 does not reappear in the publish log.
+    assert objects.publishes == [
+        *puts_before,
+        f"{value.prefix}/outputs/run/b.pt",
+        second.key,
+    ]
+    manifest = json.loads(objects.values[second.key])
+    assert sorted(item["path"] for item in manifest["files"]) == ["run/a.pt", "run/b.pt"]
+    assert set(ledger) == {f"{value.prefix}/outputs/run/a.pt", f"{value.prefix}/outputs/run/b.pt"}
+
+
+def test_ledger_manifest_bytes_are_identical_with_and_without_a_hit(tmp_path: Path) -> None:
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run/a.pt").write_bytes(b"alpha")
+    value = request()
+    without = publish_worker_snapshot(
+        _ObjectStore(), value, tmp_path, ("run/a.pt",), name="checkpoint-1"
+    )
+    ledger: dict[str, tuple[str, int]] = {}
+    fresh_store = _ObjectStore()
+    publish_worker_snapshot(
+        fresh_store, value, tmp_path, ("run/a.pt",), name="checkpoint-1", ledger=ledger
+    )
+    with_hit_store = _ObjectStore()
+    with_hit = publish_worker_snapshot(
+        with_hit_store, value, tmp_path, ("run/a.pt",), name="checkpoint-1", ledger=ledger
+    )
+    assert with_hit == without
+    assert with_hit_store.values[with_hit.key] == fresh_store.values[without.key]
+
+
+def test_a_ledger_entry_mismatch_raises_before_any_network_call(tmp_path: Path) -> None:
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run/a.pt").write_bytes(b"alpha")
+    value, objects = request(), _ObjectStore()
+    ledger: dict[str, tuple[str, int]] = {
+        f"{value.prefix}/outputs/run/a.pt": ("0" * 64, 999),
+    }
+    with pytest.raises(ValueError, match="changed"):
+        publish_worker_snapshot(
+            objects, value, tmp_path, ("run/a.pt",), name="checkpoint-1", ledger=ledger
+        )
+    assert objects.publishes == []
+
+
+def test_ledger_entry_is_written_only_after_verification_succeeds(tmp_path: Path) -> None:
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run/a.pt").write_bytes(b"alpha")
+    value = request()
+
+    class DroppingStore(_ObjectStore):
+        def read(self, key):  # type: ignore[override]
+            if key == f"{value.prefix}/outputs/run/a.pt":
+                return None
+            return super().read(key)
+
+    ledger: dict[str, tuple[str, int]] = {}
+    with pytest.raises(ValueError, match="readback"):
+        publish_worker_snapshot(
+            DroppingStore(), value, tmp_path, ("run/a.pt",), name="checkpoint-1", ledger=ledger
+        )
+    assert ledger == {}
+
+
 def test_snapshot_roundtrip_and_marker_last(tmp_path: Path) -> None:
     (tmp_path / "run").mkdir()
     (tmp_path / "run/checkpoint.pt").write_bytes(b"transport fixture")

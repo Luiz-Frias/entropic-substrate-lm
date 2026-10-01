@@ -16,6 +16,124 @@ from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 pytestmark = pytest.mark.unit
 
 
+def _run_and_fetch_checkpoint_key(tmp_path: Path) -> tuple[_ObjectStore, ProbeRequest, str]:
+    request, inputs = prepared(tmp_path, pause=None)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    root = tmp_path / "run-worker"
+    root.mkdir()
+    run_object_worker(objects, marker, root, max_request_bytes=1_000_000)
+    key = f"{request.prefix}/checkpoint-00000002.json"
+    assert key in objects.values
+    return objects, request, key
+
+
+@pytest.fixture(scope="module")
+def _checkpoint_fixture(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[ProbeRequest, str, dict[str, bytes]]:
+    """Run the REAL worker pipeline exactly ONCE for this whole module: every
+    publication-block test below mutates its OWN in-memory copy of the
+    resulting object values, never re-running the (slow) training pipeline."""
+    objects, request, key = _run_and_fetch_checkpoint_key(tmp_path_factory.mktemp("h-probe-pub"))
+    return request, key, dict(objects.values)
+
+
+def _store_copy(values: dict[str, bytes]) -> _ObjectStore:
+    return _ObjectStore(values=dict(values))
+
+
+def test_the_worker_always_writes_a_publication_block_on_checkpoint_events(
+    _checkpoint_fixture: tuple[ProbeRequest, str, dict[str, bytes]],
+) -> None:
+    """Write-new (FOR-1567/DG-C): every checkpoint-* event the worker emits
+    carries a well-shaped publication block, unconditionally."""
+    request, key, values = _checkpoint_fixture
+    objects = _store_copy(values)
+    row = json.loads(objects.values[key])
+    publication = row["publication"]
+    assert set(publication) == {
+        "l1_seconds",
+        "l2_seconds",
+        "l3_seconds",
+        "objects_put",
+        "objects_skipped",
+        "verification_reads",
+        "retries",
+    }
+    for seconds_field in ("l1_seconds", "l2_seconds", "l3_seconds"):
+        assert isinstance(publication[seconds_field], (int, float))
+        assert publication[seconds_field] >= 0
+    for count_field in ("objects_put", "objects_skipped", "verification_reads", "retries"):
+        assert type(publication[count_field]) is int and publication[count_field] >= 0
+    event = read_probe_event(
+        objects, request, "checkpoint-00000002", expected_pod_id=None, max_bytes=1_000_000
+    )
+    assert event is not None and event.reported_status == "checkpoint"
+
+
+def test_a_checkpoint_event_is_admitted_with_or_without_a_publication_block(
+    _checkpoint_fixture: tuple[ProbeRequest, str, dict[str, bytes]],
+) -> None:
+    """Read-old (FOR-1567/DG-C): a checkpoint event recorded BEFORE this door
+    existed -- no ``publication`` key at all -- is still admitted."""
+    request, key, values = _checkpoint_fixture
+    objects = _store_copy(values)
+    row = json.loads(objects.values[key])
+    assert "publication" in row  # write-new sanity: the fixture really has one
+    del row["publication"]
+    old_payload = json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+    objects.values[key] = old_payload
+    event = read_probe_event(
+        objects, request, "checkpoint-00000002", expected_pod_id=None, max_bytes=1_000_000
+    )
+    assert event is not None and event.reported_status == "checkpoint"
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        lambda pub: {**pub, "retries": -1},
+        lambda pub: {**pub, "retries": 1.5},
+        lambda pub: {**pub, "l1_seconds": -0.1},
+        lambda pub: {k: v for k, v in pub.items() if k != "retries"},
+    ],
+)
+def test_a_malformed_publication_block_is_refused(
+    _checkpoint_fixture: tuple[ProbeRequest, str, dict[str, bytes]], corruption
+) -> None:
+    request, key, values = _checkpoint_fixture
+    objects = _store_copy(values)
+    row = json.loads(objects.values[key])
+    row["publication"] = corruption(row["publication"])
+    payload = json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+    objects.values[key] = payload
+    with pytest.raises(ValueError):
+        read_probe_event(
+            objects, request, "checkpoint-00000002", expected_pod_id=None, max_bytes=1_000_000
+        )
+
+
+def test_a_nonfinite_publication_second_is_refused(
+    _checkpoint_fixture: tuple[ProbeRequest, str, dict[str, bytes]],
+) -> None:
+    """``allow_nan=False`` on the WRITE side (object_worker/_event) already
+    forbids a NaN in a fresh payload; this pins the READER's own defense for
+    a payload that reached it by some other route (e.g. read-old storage)."""
+    request, key, values = _checkpoint_fixture
+    objects = _store_copy(values)
+    row = json.loads(objects.values[key])
+    row["publication"]["l1_seconds"] = float("nan")
+    # allow_nan=True here deliberately: constructing the adversarial payload
+    # must not itself be blocked by the same guard under test.
+    payload = json.dumps(row, sort_keys=True, allow_nan=True, separators=(",", ":")).encode()
+    objects.values[key] = payload
+    with pytest.raises(ValueError):
+        read_probe_event(
+            objects, request, "checkpoint-00000002", expected_pod_id=None, max_bytes=1_000_000
+        )
+
+
 @pytest.mark.parametrize("pause", [None, ("prediction", 2)])
 def test_real_worker_events_share_one_lineage_and_remain_observations(
     tmp_path: Path, pause: tuple[str, int] | None
