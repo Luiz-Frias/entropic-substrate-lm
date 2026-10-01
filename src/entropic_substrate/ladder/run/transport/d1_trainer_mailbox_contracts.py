@@ -10,7 +10,7 @@ from enum import StrEnum
 from typing import NoReturn, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 
 __all__ = [
@@ -37,7 +37,7 @@ _ERROR_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
 
 
 def _digest(value: str, *, label: str) -> str:
-    require_sha256(value, label=label)
+    require_sha256_hex_any_case(value, label=label)
     if value != value.lower():
         raise ValueError(f"{label} must use lowercase hexadecimal")
     return value

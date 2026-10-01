@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     D1CaptureAggregateHydrationError,
     hydrate_d1_capture_aggregate,
@@ -80,7 +80,7 @@ def _validate_aggregate_binding(
     pointer: D1DvcPointerIdentity,
 ) -> None:
     try:
-        require_sha256(aggregate_sha256, label="capture aggregate sha256")
+        require_sha256_hex_any_case(aggregate_sha256, label="capture aggregate sha256")
         declaration = parse_d1_capture_aggregate_declaration(aggregate_json)
     except (TypeError, ValueError, D1CaptureAggregateHydrationError) as error:
         _fail(f"D1 capture preparation aggregate is invalid: {error}", error)
@@ -120,7 +120,7 @@ class D1CampaignCaptureAuthority:
             ("attempt_ledger_digest", self.attempt_ledger_digest),
             ("lifecycle_prefix", self.lifecycle_prefix),
         ):
-            require_sha256(value, label=f"campaign capture {label}")
+            require_sha256_hex_any_case(value, label=f"campaign capture {label}")
         if type(self.lifecycle_event_count) is not int or self.lifecycle_event_count < 1:
             raise ValueError("campaign capture lifecycle_event_count must be positive")
 

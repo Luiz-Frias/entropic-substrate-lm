@@ -13,7 +13,7 @@ from typing import NoReturn, cast
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
 from entropic_substrate.kernel.verdict.d1_contract import (
@@ -431,7 +431,7 @@ class D1PreregistrationByteEvidence:
         if type(self.size_bytes) is not int or self.size_bytes != len(self.payload):
             raise ValueError("preregistration size_bytes differs from raw bytes")
         try:
-            require_sha256(self.sha256, label="preregistration sha256")
+            require_sha256_hex_any_case(self.sha256, label="preregistration sha256")
         except (TypeError, ValueError) as error:
             raise ValueError("preregistration sha256 must be lowercase SHA-256") from error
         if self.sha256 != self.sha256.lower():
@@ -458,7 +458,7 @@ class D1RegisteredDesignDeclaration:
     def __post_init__(self) -> None:
         if type(self.family_identity) is not D1FamilyIdentity:
             raise TypeError("design declaration requires D1FamilyIdentity")
-        require_sha256(
+        require_sha256_hex_any_case(
             self.decision_contract_digest,
             label="design declaration decision_contract_digest",
         )
@@ -491,7 +491,7 @@ class D1RegisteredDesignDeclaration:
 def _sha256_text(value: object, *, label: str) -> str:
     text = _text(value, label=label)
     try:
-        require_sha256(text, label=label)
+        require_sha256_hex_any_case(text, label=label)
     except ValueError as error:
         _fail(f"{label} must be lowercase SHA-256", error)
     if text != text.lower():

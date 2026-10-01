@@ -12,7 +12,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import RunStar
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
@@ -76,7 +76,7 @@ class D1InspectJournal:
         _nonempty(self.path, field="journal path")
         _nonempty(self.relative_path, field="journal relative_path")
         _count(self.byte_count, field="journal byte_count", positive=True)
-        require_sha256(self.sha256, label="D1 inspect journal sha256")
+        require_sha256_hex_any_case(self.sha256, label="D1 inspect journal sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +102,7 @@ class D1InspectRun:
             "plan_digest",
             "authority_digest",
         ):
-            require_sha256(getattr(self, field), label=f"D1 inspect {field}")
+            require_sha256_hex_any_case(getattr(self, field), label=f"D1 inspect {field}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +172,7 @@ class D1InspectCheckpoint:
 
     def __post_init__(self) -> None:
         _count(self.successful_step, field="checkpoint successful_step")
-        require_sha256(self.sha256, label="D1 inspect checkpoint sha256")
+        require_sha256_hex_any_case(self.sha256, label="D1 inspect checkpoint sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,7 +289,7 @@ class D1InspectEventRef:
             raise TypeError("D1 inspect event kind must be nominal")
         _count(self.event_seq, field="event sequence")
         _count(self.successful_step, field="event successful_step")
-        require_sha256(self.event_sha256, label="D1 inspect event sha256")
+        require_sha256_hex_any_case(self.event_sha256, label="D1 inspect event sha256")
 
 
 @dataclass(frozen=True, slots=True)

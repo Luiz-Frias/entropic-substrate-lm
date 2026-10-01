@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     DualConfidenceReport,
@@ -101,7 +101,7 @@ def _sequence(value: object) -> list[object]:
 
 def _digest(value: object) -> str:
     result = _text(value)
-    require_sha256(result, label="statistical identity")
+    require_sha256_hex_any_case(result, label="statistical identity")
     return result
 
 

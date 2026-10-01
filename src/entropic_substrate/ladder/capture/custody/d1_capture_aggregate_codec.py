@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1CapturePartitionProof,
     D1HeterogeneousCaptureAggregate,
@@ -263,7 +263,7 @@ def serialize_d1_capture_aggregate(aggregate: D1HeterogeneousCaptureAggregate) -
 
 def _expected_digest(value: str) -> str:
     try:
-        require_sha256(value, label="expected aggregate manifest digest")
+        require_sha256_hex_any_case(value, label="expected aggregate manifest digest")
     except (TypeError, ValueError) as error:
         _fail("expected aggregate manifest digest must be lowercase SHA-256", error)
     if value != value.lower():

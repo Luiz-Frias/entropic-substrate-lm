@@ -18,7 +18,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import Evidenc
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
     require_nonempty_string,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 from entropic_substrate.kernel.lifecycle import (
@@ -164,7 +164,7 @@ def attest_d1_trainer_start(
         (runtime_sha256, "runtime"),
         (command_sha256, "command"),
     ):
-        require_sha256(value, label=f"D1 trainer start {label}")
+        require_sha256_hex_any_case(value, label=f"D1 trainer start {label}")
     if (
         type(trainer_started_at) is not datetime
         or trainer_started_at.tzinfo is None

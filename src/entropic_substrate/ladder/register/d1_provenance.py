@@ -10,7 +10,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     RunClass,
     require_commit,
     require_nonempty_string,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 
 __all__ = [
@@ -81,9 +81,11 @@ class DataIdentity:
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.dataset_name, label="dataset_name")
-        require_sha256(self.dataset_digest, label="dataset_digest")
-        require_sha256(self.split_digest, label="split_digest")
-        require_sha256(self.sampler_construction_digest, label="sampler_construction_digest")
+        require_sha256_hex_any_case(self.dataset_digest, label="dataset_digest")
+        require_sha256_hex_any_case(self.split_digest, label="split_digest")
+        require_sha256_hex_any_case(
+            self.sampler_construction_digest, label="sampler_construction_digest"
+        )
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -102,7 +104,7 @@ class DataOrderAttestation:
     data_order_digest: str
 
     def __post_init__(self) -> None:
-        require_sha256(self.data_order_digest, label="data_order_digest")
+        require_sha256_hex_any_case(self.data_order_digest, label="data_order_digest")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -118,7 +120,7 @@ class CodeIdentity:
 
     def __post_init__(self) -> None:
         require_commit(self.commit, label="code commit")
-        require_sha256(self.repository_digest, label="repository_digest")
+        require_sha256_hex_any_case(self.repository_digest, label="repository_digest")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -135,7 +137,9 @@ class ContainerIdentity:
         if not self.image_digest.startswith("sha256:"):
             msg = "container image_digest must start with 'sha256:'"
             raise ValueError(msg)
-        require_sha256(self.image_digest.removeprefix("sha256:"), label="container image digest")
+        require_sha256_hex_any_case(
+            self.image_digest.removeprefix("sha256:"), label="container image digest"
+        )
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -153,7 +157,7 @@ class PreregistrationIdentity:
     def __post_init__(self) -> None:
         require_nonempty_string(self.path, label="preregistration path")
         require_commit(self.commit, label="preregistration commit")
-        require_sha256(self.family_digest, label="preregistration family_digest")
+        require_sha256_hex_any_case(self.family_digest, label="preregistration family_digest")
 
     @property
     def manifest(self) -> dict[str, object]:

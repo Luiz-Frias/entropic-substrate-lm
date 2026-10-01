@@ -1,0 +1,99 @@
+# docs/plans/measurements/p14-sha-callers.txt
+# P14-SHA-SEQ caller audit: kernel.identity.d1_primitives.require_sha256_hex_any_case
+# (renamed from require_sha256, pre-for-1615 rung; FOR-1615, plan section
+# 'Prerequisites and pre-phase rungs' row 4). Ratified 2026-09-28, ruling 12.
+#
+# Rows are every call-site reference to require_sha256_hex_any_case outside its
+# definition, plus the one internal call inside d1_primitives.py itself,
+# located by an AST scan of src/entropic_substrate that walks every ImportFrom
+# (absolute or relative, aliased or not) binding the name plus every Call whose
+# func resolves to a bound name or an Attribute with that name, run with:
+#   PYTHONPATH=src uv run python -c "import ast; ..." (tests/test_sha256_caller_audit.py::
+#   test_caller_audit_is_committed_and_covers_the_live_tree runs the equivalent scan)
+# cross-checked against the sprint manifest's touch_set per phase and
+# tools/import_graph.py's importer edges for kernel.identity.d1_primitives.
+#
+# Classification: boundary = the digest reaches this call site by ANY path that
+# includes parsed JSON, a file, a CLI argument, an environment value, an R2
+# payload, or a dataclass __post_init__ fed from any of those (safe branch:
+# mixed-reachability sites are boundary). in-process = every caller path is
+# shown to be in-process (e.g. a hashlib digest computed in the same scope).
+# All 61 rows below are boundary; none is proven in-process on every path.
+#
+# importer_files: 34
+# files: 35
+# rows: 61
+# boundary: 61
+# in-process: 0
+#
+# owners (sprint-manifest.json phase ids):
+#   p14-j-register: 8
+#   p14-t-historical: 2
+#   p14-j-kernel-capture: 4
+#   p14-j-analyze-review-file: 6
+#   p14-j-run: 14
+#   p14-t-dead: 1
+#
+# columns: path:line | enclosing_symbol | class | evidence | owning_phase
+#
+src/entropic_substrate/kernel/identity/d1_primitives.py:227 | EncoderInitializationIdentity.__post_init__ | boundary | constructed via d1_config_profile._build_encoder(payload), a decoded-JSON boundary path | p14-t-dead
+src/entropic_substrate/composition/entrypoints/d1_r2_trainer_mailbox_worker.py:191 | D1R2TrainerMailboxWorker._attempt | boundary | attempt = relative.parts[0], a filesystem path segment | p14-j-run
+src/entropic_substrate/historical/d_ladder/d_ladder_remote_request.py:60 | RemoteLadderRequest.__post_init__ | boundary | attempt_sha256 dataclass field constructed from a remote request payload | p14-t-historical
+src/entropic_substrate/historical/d_ladder/d_ladder_remote_request.py:61 | RemoteLadderRequest.__post_init__ | boundary | authorization_digest dataclass field constructed from a remote request payload | p14-t-historical
+src/entropic_substrate/historical/d_ladder/d_ladder_worker_command.py:130 | _serve | boundary | attempt = arguments.attempt_sha256, a CLI argument | p14-t-historical
+src/entropic_substrate/historical/d_ladder/d_ladder_worker_command.py:138 | _serve | boundary | image.removeprefix(...) sourced from environ.get("D_LADDER_IMAGE_DIGEST"), an environment value | p14-t-historical
+src/entropic_substrate/ladder/analyze/d1_inspect_request.py:41 | _optional_digest | boundary | value parameter of the D1 inspect request decoder | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/d1_inspect_values.py:79 | D1InspectJournal.__post_init__ | boundary | sha256 dataclass field constructed from a parsed journal record | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/d1_inspect_values.py:105 | D1InspectRun.__post_init__ | boundary | getattr(self, field) over dataclass fields constructed from a parsed inspect-run record | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/d1_inspect_values.py:175 | D1InspectCheckpoint.__post_init__ | boundary | sha256 dataclass field constructed from a parsed checkpoint record | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/d1_inspect_values.py:292 | D1InspectEventRef.__post_init__ | boundary | event_sha256 dataclass field constructed from a parsed journal event record | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/d1_machine_analysis.py:61 | D1ArmAliasMap.__post_init__ | boundary | sealed_commitment dataclass field constructed from a parsed alias map record | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/ladder_analysis.py:75 | parse_scientific_data_order | boundary | digest parsed out of an object-typed value by this function's own name (parse_*) | p14-j-analyze-review-file
+src/entropic_substrate/ladder/analyze/ladder_registration.py:104 | _digest | boundary | result = _text(value), value parameter of a generic statistical-identity decoder | p14-j-analyze-review-file
+src/entropic_substrate/ladder/capture/custody/d1_capture_aggregate_codec.py:266 | _expected_digest | boundary | value parameter of a codec function decoding an aggregate manifest digest | p14-j-kernel-capture
+src/entropic_substrate/ladder/capture/custody/d1_capture_preparation_custody.py:83 | _validate_aggregate_binding | boundary | aggregate_sha256 parameter sourced from the capture aggregate JSON payload | p14-j-kernel-capture
+src/entropic_substrate/ladder/capture/custody/d1_capture_preparation_custody.py:123 | D1CampaignCaptureAuthority.__post_init__ | boundary | value from a tuple of dataclass fields constructed from decoded campaign capture custody data | p14-j-kernel-capture
+src/entropic_substrate/ladder/capture/reader/d1_journal_snapshot.py:69 | _validate_snapshot | boundary | value.sha256 field of a parsed journal snapshot record | p14-j-kernel-capture
+src/entropic_substrate/ladder/capture/records/d1_calibration_records.py:46 | D1BaselineCalibrationAttestation.__post_init__ | boundary | value from a tuple of dataclass fields constructed from a decoded calibration attestation record | p14-j-kernel-capture
+src/entropic_substrate/ladder/gate/ladder_campaign.py:59 | _sha | boundary | result = _text(value), value parameter of a generic ladder-identity codec helper | p14-j-register
+src/entropic_substrate/ladder/register/d1_confirmatory_matrix.py:59 | D1ConfirmatoryLaunch.__post_init__ | boundary | registered_design_digest dataclass field constructed from a parsed confirmatory launch record | p14-j-register
+src/entropic_substrate/ladder/register/d1_confirmatory_matrix.py:63 | D1ConfirmatoryLaunch.__post_init__ | boundary | decision_contract_digest dataclass field constructed from a parsed confirmatory launch record | p14-j-register
+src/entropic_substrate/ladder/register/d1_launch_attempts.py:72 | D1LaunchAttemptIdentity.__post_init__ | boundary | family_digest dataclass field constructed from a parsed launch-attempt record | p14-j-register
+src/entropic_substrate/ladder/register/d1_launch_attempts.py:81 | D1LaunchAttemptIdentity.__post_init__ | boundary | registered_design_digest dataclass field constructed from a parsed launch-attempt record | p14-j-register
+src/entropic_substrate/ladder/register/d1_plan.py:102 | _sha256 | boundary | text = _string(value, label=label), value parameter of a generic plan codec helper | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:84 | DataIdentity.__post_init__ | boundary | dataset_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:85 | DataIdentity.__post_init__ | boundary | split_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:86 | DataIdentity.__post_init__ | boundary | sampler_construction_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:107 | DataOrderAttestation.__post_init__ | boundary | data_order_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:123 | CodeIdentity.__post_init__ | boundary | repository_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:140 | ContainerIdentity.__post_init__ | boundary | image_digest.removeprefix("sha256:") dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_provenance.py:160 | PreregistrationIdentity.__post_init__ | boundary | family_digest dataclass field constructed from a parsed provenance record | p14-j-register
+src/entropic_substrate/ladder/register/d1_registered_design.py:87 | D1PreregistrationArtifact.__post_init__ | boundary | blob_sha256 dataclass field constructed from a parsed preregistration artifact record | p14-j-register
+src/entropic_substrate/ladder/register/d1_registered_design.py:210 | D1RegisteredDesign.__post_init__ | boundary | family_digest dataclass field constructed from a parsed registered-design record | p14-j-register
+src/entropic_substrate/ladder/register/d1_registered_design.py:211 | D1RegisteredDesign.__post_init__ | boundary | decision_contract_digest dataclass field constructed from a parsed registered-design record | p14-j-register
+src/entropic_substrate/ladder/register/d1_registered_design.py:221 | D1RegisteredDesign.__post_init__ | boundary | arm_construction_digests[arm], parsed registered-design record entries | p14-j-register
+src/entropic_substrate/ladder/register/d1_registration_codec.py:434 | D1PreregistrationByteEvidence.__post_init__ | boundary | sha256 dataclass field constructed from decoded preregistration byte evidence | p14-j-register
+src/entropic_substrate/ladder/register/d1_registration_codec.py:461 | D1RegisteredDesignDeclaration.__post_init__ | boundary | decision_contract_digest dataclass field constructed from a decoded design declaration | p14-j-register
+src/entropic_substrate/ladder/register/d1_registration_codec.py:494 | _sha256_text | boundary | text = _text(value, label=label), value parameter of a generic registration codec helper | p14-j-register
+src/entropic_substrate/ladder/register/ladder.py:44 | ParameterMatchReference.__post_init__ | boundary | construction_identity dataclass field constructed from a parsed ladder parameter reference | p14-j-register
+src/entropic_substrate/ladder/review/d1_execution_receipt.py:62 | _sha256 | boundary | value parameter of a generic execution-receipt codec helper | p14-j-analyze-review-file
+src/entropic_substrate/ladder/run/campaign/d1_campaign_checkpoint.py:79 | _sha | boundary | text = _text(value, label=label), value parameter of a generic campaign-checkpoint codec helper | p14-j-run
+src/entropic_substrate/ladder/run/campaign/d1_campaign_request.py:107 | D1PersistedCampaignCursor.__post_init__ | boundary | sha256 dataclass field constructed from a persisted campaign checkpoint record | p14-j-run
+src/entropic_substrate/ladder/run/campaign/d1_operator_evidence.py:167 | attest_d1_trainer_start | boundary | value from a tuple of attempt/request/runtime/command sha256 parameters of a trainer-start attestation | p14-j-run
+src/entropic_substrate/ladder/run/campaign/d1_operator_values.py:215 | D1OperatorLaunchIntent.__post_init__ | boundary | resume_checkpoint_sha256 dataclass field constructed from a parsed operator launch intent | p14-j-run
+src/entropic_substrate/ladder/run/campaign/d1_operator_values.py:226 | D1OperatorLaunchIntent.__post_init__ | boundary | registered_design_digest dataclass field constructed from a parsed operator launch intent | p14-j-run
+src/entropic_substrate/ladder/run/ckptsync/d1_checkpoint_dvc_recovery.py:67 | _checkpoint_sha256 | boundary | value parameter of a generic DVC recovery checkpoint decoder | p14-j-run
+src/entropic_substrate/ladder/run/ckptsync/d1_checkpoint_dvc_recovery.py:138 | D1CheckpointDvcRecoveryService._sync_step | boundary | parts[3], a component parsed out of the DVC recovery receipt_key path | p14-j-run
+src/entropic_substrate/ladder/run/ckptsync/d1_checkpoint_dvc_sync.py:65 | _sha256 | boundary | value parameter of a generic DVC sync codec helper | p14-j-run
+src/entropic_substrate/ladder/run/closure/d1_finalized_cell_custody.py:82 | _sha | boundary | value parameter of a generic finalized-cell-custody codec helper | p14-j-run
+src/entropic_substrate/ladder/run/construction/d1_r2_runtime_composition.py:80 | D1BoundR2CheckpointSync.__post_init__ | boundary | _attempt_sha256 dataclass field constructed from a decoded bound R2 sync attempt identity | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_evidence_adapter.py:69 | _attempt | boundary | value parameter of a generic trainer attempt decoder | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_contracts.py:40 | _digest | boundary | value parameter of a generic mailbox-contract digest codec helper | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_worker.py:135 | D1TrainerMailboxWorker._attempt | boundary | candidate.name, a filesystem directory-entry name | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py:75 | _attempt | boundary | value parameter of a generic trainer object-transport attempt decoder | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py:256 | D1ObjectMailboxTrainerTransport.start_trainer | boundary | request_sha256 method parameter supplied at the trainer session boundary | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:83 | d1_trainer_request_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:92 | d1_trainer_runtime_report_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:101 | d1_trainer_start_report_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:102 | d1_trainer_start_report_path | boundary | request_sha256 function parameter used to build a remote artifact path | p14-j-run
+src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:189 | _sha | boundary | text = _text(value, label), value parameter of a generic process-contract codec helper | p14-j-run

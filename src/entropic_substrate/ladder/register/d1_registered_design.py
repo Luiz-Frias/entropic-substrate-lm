@@ -19,7 +19,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
     require_commit,
     require_nonempty_string,
-    require_sha256,
+    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
@@ -84,7 +84,7 @@ class D1PreregistrationArtifact:
             raise ValueError("D1 preregistration path must be repository-relative POSIX")
         if ".." in parsed.parts:
             raise ValueError("D1 preregistration path forbids parent traversal")
-        require_sha256(self.blob_sha256, label="D1 preregistration blob_sha256")
+        require_sha256_hex_any_case(self.blob_sha256, label="D1 preregistration blob_sha256")
         if self.blob_sha256 != self.blob_sha256.lower():
             raise ValueError("D1 preregistration blob_sha256 must be lowercase")
         require_commit(self.commit, label="D1 preregistration commit")
@@ -207,8 +207,8 @@ class D1RegisteredDesign:
     def __post_init__(self) -> None:
         if self._attestation is not _DESIGN_ATTESTATION:
             raise TypeError("D1RegisteredDesign is factory-only")
-        require_sha256(self.family_digest, label="D1 registered family_digest")
-        require_sha256(
+        require_sha256_hex_any_case(self.family_digest, label="D1 registered family_digest")
+        require_sha256_hex_any_case(
             self.decision_contract_digest,
             label="D1 registered decision_contract_digest",
         )
@@ -218,7 +218,7 @@ class D1RegisteredDesign:
         frozen: dict[str, str] = {}
         for arm in expected_arms:
             digest = self.arm_construction_digests[arm]
-            require_sha256(digest, label=f"D1 {arm} construction digest")
+            require_sha256_hex_any_case(digest, label=f"D1 {arm} construction digest")
             frozen[arm] = digest
         object.__setattr__(self, "arm_construction_digests", MappingProxyType(frozen))
         _validate_seeds(self.registered_seeds)
