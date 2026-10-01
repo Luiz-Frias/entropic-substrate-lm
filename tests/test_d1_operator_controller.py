@@ -13,6 +13,7 @@ from typing import cast
 import pytest
 
 import d1_launch_admission_fixtures as launch_fixtures
+import entropic_substrate.ladder.run.campaign.d1_operator_controller as controller_module
 from d1_billing_finalizer_fixtures import partial_provider_bill, provider_bill
 from d1_trainer_fixtures import micro_plan
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
@@ -524,6 +525,30 @@ def test_fresh_segment_orders_custody_before_create_and_export_before_terminatio
     assert trainer.bootstrap_attempt_sha256 == d1_trainer_bootstrap_attempt_sha256(
         "pod-123", case.intent
     )
+
+
+def test_fresh_closure_routes_custody_through_the_shared_helper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    shared = controller_module._persist_finalization_artifact
+
+    def spy(custody: object, **kwargs: object):
+        calls.append(kwargs)
+        return shared(custody, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(controller_module, "_persist_finalization_artifact", spy)
+    case = _case(tmp_path)
+    events: list[str] = []
+    controller, _ = _controller(tmp_path, case, events)
+
+    result = controller.execute_fresh(case.intent)
+
+    assert len(calls) == 1
+    assert len(cast(tuple[object, ...], calls[0]["segment_starts"])) == 1
+    assert result.finalized_cell is not None
+    assert events.count("persist_finalized_cell") == 1
 
 
 def test_partial_billing_preserves_quality_but_latches_paid_campaign_queue(
