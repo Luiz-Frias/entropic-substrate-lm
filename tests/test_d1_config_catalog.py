@@ -65,7 +65,7 @@ def test_tiny_overlay_cannot_select_a_scientific_arm(tmp_path: Path) -> None:
         load_d1_profile(configs_dir() / "d1-none.yaml", tiny_overlay_path=path)
 
 
-def test_retired_d1_configs_dir_alias_is_absent() -> None:
+def test_retired_d1_config_dir_alias_is_absent() -> None:
     """FOR-1600: callers use the shared locator; the D1 alias stays deleted."""
     retired = "d1_configs" + "_dir"
     assert not hasattr(d1_config, retired)
