@@ -1630,6 +1630,76 @@ def test_phase_two_inherits_the_deadline_phase_one_spent(
     assert len(client._runs) == 1
 
 
+def test_non_cold_set_tag_failure_still_aborts_startup(
+    _no_startup_sleep: list[float],
+) -> None:
+    """The startup-abort contract for ``set_tag``: the half of "set_tag and
+    log_param stay under the abort policy" the log_param test does not pin.
+    A non-cold failure raises ``MlflowStartupError`` at once (injected exception
+    as ``__cause__``), with no retry, no backoff and no second run.
+    """
+    injected = ConnectionError("simulated: nothing listening")
+
+    class AbsentOnSetTag(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.create_run_calls = 0
+            self.set_tag_calls = 0
+
+        def create_run(self, experiment_id: str, tags: dict[str, str] | None = None) -> _FakeRun:
+            self.create_run_calls += 1
+            return super().create_run(experiment_id, tags)
+
+        def set_tag(self, run_id: str, key: str, value: Any) -> None:
+            self.set_tag_calls += 1
+            raise injected
+
+    client = AbsentOnSetTag()
+    with pytest.raises(MlflowStartupError, match="unreachable/misconfigured") as exc_info:
+        MlflowSink(tracking_uri="http://fake", experiment_name="exp", run_name="r", client=client)
+    assert exc_info.value.__cause__ is injected
+    assert client.create_run_calls == 1
+    assert client.set_tag_calls == 1
+    assert _no_startup_sleep == []
+
+
+def test_backoff_schedule_continues_across_both_startup_phases(
+    _no_startup_sleep: list[float],
+) -> None:
+    """One policy means one attempt counter: a cold retry in phase 1 (2s) then a
+    cold retry in phase 2 backs off 4s, not 2s again, exactly as the single
+    pre-split loop did.
+    """
+
+    def cold() -> RuntimeError:
+        wrapped = RuntimeError("API request failed")
+        wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+        return wrapped
+
+    class ColdInEachPhase(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.experiment_calls = 0
+            self.set_tag_calls = 0
+
+        def get_experiment_by_name(self, name: str) -> Any:
+            self.experiment_calls += 1
+            if self.experiment_calls == 1:
+                raise cold()
+            return super().get_experiment_by_name(name)
+
+        def set_tag(self, run_id: str, key: str, value: Any) -> None:
+            self.set_tag_calls += 1
+            if self.set_tag_calls == 1:
+                raise cold()
+            super().set_tag(run_id, key, value)
+
+    client = ColdInEachPhase()
+    MlflowSink(tracking_uri="http://fake", experiment_name="exp", run_name="r", client=client)
+    assert _no_startup_sleep == [2.0, 4.0]
+    assert len(client._runs) == 1
+
+
 # ------------------------------------------------ results JSONL at finish()
 # The sink owns the upload of the authoritative results JSONL as a run
 # artifact (operator ruling 2026-08-17) — previously pod-side glue after
