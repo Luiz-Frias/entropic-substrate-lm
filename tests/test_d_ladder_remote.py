@@ -151,6 +151,45 @@ def test_failure_never_deletes_a_workspace_the_worker_did_not_start_empty(tmp_pa
     assert f"{request.prefix}/failure.json" in objects.values
 
 
+def test_pre_created_empty_workspace_is_cleared_and_retry_reaches_identity(tmp_path: Path) -> None:
+    """An existing EMPTY root is owned: a failed attempt empties it again for the retry.
+
+    Pins ``_is_unused_workspace`` for the present-but-empty case; treating only an
+    absent root as owned would leave the half-written files and every retry would
+    die on ``FileExistsError`` before reaching the identity check.
+    """
+    request, objects, identity = _published_request(tmp_path)
+    objects.values[f"{request.prefix}/inputs/{request.inputs[1].path}"] = b"changed"
+    root = tmp_path / "worker"
+    root.mkdir()
+
+    with pytest.raises(ValueError, match="remote input object identity mismatch"):
+        _run_worker(request, objects, identity, root)
+    assert root.is_dir()
+    assert not any(root.iterdir())
+    with pytest.raises(ValueError, match="remote input object identity mismatch"):
+        _run_worker(request, objects, identity, root)
+
+
+def test_workspace_is_already_empty_when_the_failure_receipt_is_published(tmp_path: Path) -> None:
+    """The receipt is the retry signal, so the root is cleared BEFORE it appears."""
+    request, objects, identity = _published_request(tmp_path)
+    objects.values[f"{request.prefix}/inputs/{request.inputs[1].path}"] = b"changed"
+    root = tmp_path / "worker"
+    at_publish: list[list[str]] = []
+    real_publish = objects.publish
+
+    def _spy(key: str, payload: bytes, *, expected_sha256: str):
+        if key.endswith("/failure.json"):
+            at_publish.append(sorted(p.name for p in root.iterdir()))
+        return real_publish(key, payload, expected_sha256=expected_sha256)
+
+    objects.publish = _spy  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="remote input object identity mismatch"):
+        _run_worker(request, objects, identity, root)
+    assert at_publish == [[]]
+
+
 def test_failed_cleanup_still_publishes_the_failure_receipt_and_surfaces_the_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -485,8 +485,9 @@ def test_autocast_for_dtype_policy_and_both_callers_share_it(
     assert field_pretrain.autocast_for is train.autocast_for
 
 
+@pytest.mark.parametrize("amp_dtype", ["bf16", "fp16", "off"])
 def test_trainer_autocast_delegates_to_the_shared_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, amp_dtype: str
 ) -> None:
     """Trainer._autocast forwards its device and cfg amp_dtype to ``autocast_for``.
 
@@ -499,7 +500,7 @@ def test_trainer_autocast_delegates_to_the_shared_policy(
     from entropic_substrate.historical.e_series.train import Trainer
 
     cfg = tiny_config(tmp_path)
-    cfg.train.amp_dtype = "bf16"
+    cfg.train.amp_dtype = amp_dtype  # type: ignore[assignment]
     trainer = Trainer(cfg)
     seen: list[tuple[torch.device, str]] = []
 
@@ -510,7 +511,7 @@ def test_trainer_autocast_delegates_to_the_shared_policy(
     monkeypatch.setattr(train, "autocast_for", _spy)
     trainer.device = torch.device("cuda")
     trainer._autocast()  # pyright: ignore[reportPrivateUsage]
-    assert seen == [(torch.device("cuda"), "bf16")]
+    assert seen == [(torch.device("cuda"), amp_dtype)]
 
 
 def test_field_pretrain_call_sites_use_the_shared_autocast(
@@ -520,6 +521,9 @@ def test_field_pretrain_call_sites_use_the_shared_autocast(
     from entropic_substrate.historical.e_series import field_pretrain
 
     cfg = _pretrain_config(tmp_path)
+    # Non-default: the fixture's "off" would not tell a forwarded dtype from a
+    # hard-coded "off" (cpu autocast_for disables amp whatever the dtype).
+    cfg.train.amp_dtype = "fp16"
     cfg.train.max_steps = 3
     cfg.train.eval_interval = 3
     real = field_pretrain.autocast_for
@@ -536,4 +540,4 @@ def test_field_pretrain_call_sites_use_the_shared_autocast(
     # 3 train steps plus one eval pass (interval == total) of num_eval_batches batches,
     # each through the shared function: a bypass at either site changes the count.
     assert len(calls) == 3 + cfg.data.num_eval_batches
-    assert set(calls) == {cfg.train.amp_dtype}
+    assert set(calls) == {"fp16"}
