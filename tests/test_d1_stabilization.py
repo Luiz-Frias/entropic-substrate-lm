@@ -57,10 +57,11 @@ def _dotted(*parts: str) -> str:
     "module_path",
     [
         _dotted("entropic_substrate", "ladder", "gate", "d1_family" + "_adapter"),
+        _dotted("entropic_substrate", "ladder", "analyze", "d1_output" + "_access"),
     ],
 )
 def test_retired_dead_modules_are_not_importable(module_path: str) -> None:
-    """FOR-1574: the zero-importer family adapter stays deleted, not relocated."""
+    """FOR-1574 / FOR-1605: zero-importer modules stay deleted, not relocated."""
     assert importlib.util.find_spec(module_path) is None
 
 
