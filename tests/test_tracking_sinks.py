@@ -247,6 +247,7 @@ def test_door_rejects_the_d1_extractor_and_admits_the_h_and_legacy_ones(
         timeout=120,
         check=False,
     )
+    assert result.stdout.strip(), (result.returncode, result.stderr)
     report = json.loads(result.stdout)
     diagnostics = [
         (item.get("rule"), item["range"]["start"]["line"] + 1)
