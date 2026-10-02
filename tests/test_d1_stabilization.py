@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 from collections.abc import Callable
 
 import pytest
 
-from entropic_substrate.kernel.identity.d1_primitives import EncoderShape, StateConstructionSpec
+from entropic_substrate.kernel.identity.d1_primitives import StateConstructionSpec
 from entropic_substrate.ladder.register.d1_stabilization import D1TargetSpec, FutureLawSpec
 
 pytestmark = pytest.mark.unit
@@ -16,7 +17,6 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize(
     ("factory", "match"),
     [
-        (lambda: EncoderShape(online_width=32, target_width=64), "equal widths"),
         (lambda: D1TargetSpec(horizon=2), "horizon=1"),
         (lambda: D1TargetSpec(rms_normalized=False), "RMS-normalized"),
         (lambda: FutureLawSpec(variance=2.0), "variance=1"),
@@ -62,3 +62,18 @@ def _dotted(*parts: str) -> str:
 def test_retired_dead_modules_are_not_importable(module_path: str) -> None:
     """FOR-1574: the zero-importer family adapter stays deleted, not relocated."""
     assert importlib.util.find_spec(module_path) is None
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    [
+        "entropic_substrate.kernel.identity.d1_primitives",
+        "entropic_substrate.ladder.register.d1",
+    ],
+)
+def test_retired_width_only_encoder_contract_is_absent(module_path: str) -> None:
+    """FOR-1590: the legacy width-only contract has no module-level home or export."""
+    retired = "Encoder" + "Shape"
+    module = importlib.import_module(module_path)
+    assert not hasattr(module, retired)
+    assert retired not in getattr(module, "__all__", ())
