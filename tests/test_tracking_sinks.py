@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
+from entropic_substrate.ladder.capture.ports.run_descriptor import LegacyMetricExtractor
 from entropic_substrate.ladder.capture.reader.sinks import (
     CompositeSink,
     ExtractedMetrics,
@@ -152,3 +156,76 @@ def test_mlflow_sink_uses_an_injected_extractor_without_mutating_the_event() -> 
     assert extractor.seen == [event]
     assert event == before
     assert client._runs[sink.run_id].data.metrics == {"custom/measured/value": 1.2345678901234567}
+
+
+def test_legacy_extractor_ignores_a_non_mapping_and_a_non_eval_record() -> None:
+    """The runtime refusals survive the static narrowing (return None, never raise)."""
+    extractor = LegacyMetricExtractor()
+    assert extractor.extract("not-a-mapping") is None  # type: ignore[arg-type]
+    assert extractor.extract({"event": "train", "loss": 1.0}) is None
+    assert extractor.extract({"event": "eval", "step": 4, "loss": 1.5}) is not None
+
+
+# ---------------------------------------------------- typing fixture (FOR-1569)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_D1_MARKER = "# D1-MUST-FAIL"
+_TYPING_FIXTURE = f"""\
+from pathlib import Path
+
+from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.ports.run_descriptor import (
+    LegacyMetricExtractor,
+    TrackingRunDescriptor,
+)
+from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
+
+descriptor = TrackingRunDescriptor(run_name="r", tiny=True, params={{}}, tags={{}})
+results = Path("results.jsonl")
+h_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=HTrainingStepExtractor(warmup_steps=0)
+)
+legacy_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=LegacyMetricExtractor()
+)
+default_sink = build_sink_for_run(descriptor, results_path=results)
+d1_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=D1MetricExtractor()  {_D1_MARKER}
+)
+"""
+
+
+def test_door_rejects_the_d1_extractor_and_admits_the_h_and_legacy_ones(
+    tmp_path: Path,
+) -> None:
+    """``build_sink_for_run(metric_extractor=D1MetricExtractor())`` is a type error.
+
+    Run by the venv-pinned checker ``just typecheck`` uses, from the repo root so
+    the repo's basedpyright config applies and ``entropic_substrate`` resolves
+    (tests are excluded from the repo's own pass). Exactly one diagnostic is
+    allowed, a ``reportArgumentType`` on the D1 line; the H, legacy and default
+    control calls must stay clean, so a checker that fails for any other reason
+    cannot satisfy this.
+    """
+    fixture = tmp_path / "typing_fixture.py"
+    fixture.write_text(_TYPING_FIXTURE, encoding="utf-8")
+    d1_line = next(
+        number
+        for number, line in enumerate(_TYPING_FIXTURE.splitlines(), start=1)
+        if _D1_MARKER in line
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "basedpyright", "--outputjson", str(fixture)],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    report = json.loads(result.stdout)
+    diagnostics = [
+        (item.get("rule"), item["range"]["start"]["line"] + 1)
+        for item in report["generalDiagnostics"]
+    ]
+    assert report["summary"]["filesAnalyzed"] == 1
+    assert diagnostics == [("reportArgumentType", d1_line)], (diagnostics, result.stderr)

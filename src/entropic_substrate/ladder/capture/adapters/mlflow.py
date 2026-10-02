@@ -40,7 +40,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.run_descriptor import (
@@ -517,7 +517,8 @@ class MlflowSink:
         the worker frees a slot (backpressure, never a drop).
         """
         try:
-            extracted = self._metric_extractor.extract(record)
+            # Static bridge only: the port hands over an object, the protocol types a dict.
+            extracted = self._metric_extractor.extract(cast(dict[str, object], record))
             if extracted is None or not extracted.metrics:
                 return
             item = _QueuedRecord(

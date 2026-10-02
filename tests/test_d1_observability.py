@@ -296,3 +296,14 @@ def test_observed_journal_rejects_invalid_observer_and_mlflow_run_identity(
         )
     with pytest.raises(ValueError, match="run_id"):
         D1MlflowObserver(client=_RecordingMlflowClient(), run_id=" ")
+
+
+def test_mlflow_observer_refuses_an_extractor_without_extract() -> None:
+    """The runtime guard survives the static narrowing, message byte-identical."""
+    with pytest.raises(TypeError) as exc_info:
+        D1MlflowObserver(
+            client=_RecordingMlflowClient(),
+            run_id="run-1",
+            extractor=object(),  # type: ignore[arg-type]
+        )
+    assert str(exc_info.value) == "extractor must implement MetricExtractor"
