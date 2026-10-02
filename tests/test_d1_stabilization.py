@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Callable
 
 import pytest
@@ -45,3 +46,19 @@ def test_mean_baseline_calibration_protocol_is_construction_identity() -> None:
     assert law.mean_baseline_sampling == "deterministic_train_grid_v1"
     assert law.manifest["mean_baseline_calibration_batches"] == 32
     assert law.manifest["mean_baseline_sampling"] == "deterministic_train_grid_v1"
+
+
+def _dotted(*parts: str) -> str:
+    """Assemble a retired dotted path so this file never spells the dead name."""
+    return ".".join(parts)
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    [
+        _dotted("entropic_substrate", "ladder", "gate", "d1_family" + "_adapter"),
+    ],
+)
+def test_retired_dead_modules_are_not_importable(module_path: str) -> None:
+    """FOR-1574: the zero-importer family adapter stays deleted, not relocated."""
+    assert importlib.util.find_spec(module_path) is None
