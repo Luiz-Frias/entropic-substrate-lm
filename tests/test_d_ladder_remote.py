@@ -359,3 +359,68 @@ def test_unreadable_workspace_still_publishes_the_failure_receipt(
         _run_worker(request, objects, identity, tmp_path / "worker")
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["error_type"] == "OSError"
+
+
+def test_unknown_workspace_ownership_never_clears_foreign_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling 20 safe default: when ownership cannot be read, nothing is cleared.
+
+    ``owns_workspace`` starts False; a failing ``_is_unused_workspace`` must leave a
+    non-empty foreign root untouched while still publishing the typed receipt.
+    """
+    from entropic_substrate.historical.d_ladder import d_ladder_remote
+
+    request, objects, identity = _published_request(tmp_path)
+    root = tmp_path / "worker"
+    root.mkdir()
+    (root / "keep.txt").write_bytes(b"operator data")
+
+    def _unreadable(_root: Path) -> bool:
+        raise OSError("workspace unreadable")
+
+    monkeypatch.setattr(d_ladder_remote, "_is_unused_workspace", _unreadable)
+    with pytest.raises(OSError, match="workspace unreadable"):
+        _run_worker(request, objects, identity, root)
+    assert (root / "keep.txt").read_bytes() == b"operator data"
+    failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
+    assert failure["error_type"] == "OSError"
+
+
+def test_clear_workspace_removes_subdirs_and_does_not_follow_symlink_children(
+    tmp_path: Path,
+) -> None:
+    """Directory arm and symlink arm of the cleanup, pinned directly."""
+    from entropic_substrate.historical.d_ladder import d_ladder_remote
+
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    (root / "a" / "b").mkdir(parents=True)
+    (root / "a" / "b" / "c.txt").write_bytes(b"x")
+    (root / "d.txt").write_bytes(b"y")
+    outside.mkdir()
+    (outside / "precious.txt").write_bytes(b"z")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+
+    d_ladder_remote._clear_workspace(root)  # pyright: ignore[reportPrivateUsage]
+
+    assert root.is_dir()
+    assert not any(root.iterdir())
+    assert (outside / "precious.txt").read_bytes() == b"z"
+
+
+def test_failure_after_a_subdirectory_was_materialized_still_empties_root(
+    tmp_path: Path,
+) -> None:
+    """Run-time shape: the executor leaves ``root/run/...`` behind when it fails mid-run."""
+    request, objects, identity = _published_request(tmp_path)
+    root = tmp_path / "worker"
+
+    def _boom(_root: Path):
+        (root / "run" / "checkpoints").mkdir(parents=True)
+        (root / "run" / "checkpoints" / "step-000001.pt").write_bytes(b"partial")
+        raise RuntimeError("mid-run failure")
+
+    with pytest.raises(RuntimeError, match="mid-run failure"):
+        _run_worker(request, objects, identity, root, predecessor_loader=_boom)
+    assert root.is_dir()
+    assert not any(root.iterdir())

@@ -483,3 +483,57 @@ def test_autocast_for_dtype_policy_and_both_callers_share_it(
     assert calls == [expected]
     # Both callers reach the same function: no second copy of the policy exists.
     assert field_pretrain.autocast_for is train.autocast_for
+
+
+def test_trainer_autocast_delegates_to_the_shared_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trainer._autocast forwards its device and cfg amp_dtype to ``autocast_for``.
+
+    The policy table above cannot see a caller that bypasses it: on cpu the shared
+    function disables amp whatever the dtype, so the delegation itself is spied.
+    """
+    from contextlib import nullcontext
+
+    from entropic_substrate.historical.e_series import train
+    from entropic_substrate.historical.e_series.train import Trainer
+
+    cfg = tiny_config(tmp_path)
+    cfg.train.amp_dtype = "bf16"
+    trainer = Trainer(cfg)
+    seen: list[tuple[torch.device, str]] = []
+
+    def _spy(device: torch.device, amp_dtype: str) -> object:
+        seen.append((device, amp_dtype))
+        return nullcontext()
+
+    monkeypatch.setattr(train, "autocast_for", _spy)
+    trainer.device = torch.device("cuda")
+    trainer._autocast()  # pyright: ignore[reportPrivateUsage]
+    assert seen == [(torch.device("cuda"), "bf16")]
+
+
+def test_field_pretrain_call_sites_use_the_shared_autocast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Train loop and eval pass both go through ``autocast_for`` with cfg amp_dtype."""
+    from entropic_substrate.historical.e_series import field_pretrain
+
+    cfg = _pretrain_config(tmp_path)
+    cfg.train.max_steps = 3
+    cfg.train.eval_interval = 3
+    real = field_pretrain.autocast_for
+    calls: list[str] = []
+
+    def _spy(device: torch.device, amp_dtype: str) -> object:
+        calls.append(amp_dtype)
+        return real(device, amp_dtype)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(field_pretrain, "autocast_for", _spy)
+    run_field_pretrain(
+        cfg, out_path=tmp_path / "p.pt", results_path=tmp_path / "r.jsonl", device="cpu"
+    )
+    # 3 train steps plus one eval pass (interval == total) of num_eval_batches batches,
+    # each through the shared function: a bypass at either site changes the count.
+    assert len(calls) == 3 + cfg.data.num_eval_batches
+    assert set(calls) == {cfg.train.amp_dtype}
