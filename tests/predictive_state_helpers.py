@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from entropic_substrate.core.latent.future_law import MeanDisplacementBaseline
-from entropic_substrate.core.latent.targets import FutureTarget
+from entropic_substrate.core.latent.target_values import FutureTarget
 from entropic_substrate.core.observation.contracts import CodecIdentity, EncodedObservations
 from entropic_substrate.kernel.runtime.config import ModelConfig
 
