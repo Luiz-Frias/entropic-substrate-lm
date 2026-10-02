@@ -1577,29 +1577,56 @@ def test_non_cold_log_param_failure_still_aborts_startup(
     assert _no_startup_sleep == []
 
 
-def test_cold_phase_two_past_the_deadline_aborts_with_the_same_error(
-    _no_startup_sleep: list[float], monkeypatch: pytest.MonkeyPatch
+def test_phase_two_inherits_the_deadline_phase_one_spent(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Phase 2 shares phase 1's single deadline: a cold timeout once the budget
-    is spent raises ``MlflowStartupError`` rather than retrying forever.
+    """Phase 2 shares phase 1's single deadline, it does not get a fresh budget.
+
+    Phase 1 is cold once; the fake clock jumps past ``_STARTUP_COLD_BUDGET_S``
+    during that backoff and the retry succeeds. Phase 2's first ``set_tag`` is then
+    cold: with the shared deadline already spent it aborts at once, whereas a
+    fresh phase-2 deadline would back off and retry (a second ``set_tag`` call)
+    and construct. ``set_tag_calls == 1`` is what tells the two apart.
     """
     from entropic_substrate.ladder.capture.adapters import mlflow as adapter
 
     clock = {"now": 1000.0}
     monkeypatch.setattr(adapter.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(
-        adapter.time, "sleep", lambda seconds: clock.__setitem__("now", clock["now"] + 1000.0)
+        adapter.time,
+        "sleep",
+        lambda _seconds: clock.__setitem__(
+            "now", clock["now"] + adapter._STARTUP_COLD_BUDGET_S + 1
+        ),
     )
 
-    class AlwaysColdSetTag(FakeMlflowClient):
-        def set_tag(self, run_id: str, key: str, value: Any) -> None:
-            wrapped = RuntimeError("API request to /runs/set-tag failed")
-            wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
-            raise wrapped
+    def cold() -> RuntimeError:
+        wrapped = RuntimeError("API request failed")
+        wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+        return wrapped
 
-    client = AlwaysColdSetTag()
+    class SpendsTheBudgetInPhaseOne(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.experiment_calls = 0
+            self.set_tag_calls = 0
+
+        def get_experiment_by_name(self, name: str) -> Any:
+            self.experiment_calls += 1
+            if self.experiment_calls == 1:
+                raise cold()
+            return super().get_experiment_by_name(name)
+
+        def set_tag(self, run_id: str, key: str, value: Any) -> None:
+            self.set_tag_calls += 1
+            if self.set_tag_calls == 1:
+                raise cold()
+            super().set_tag(run_id, key, value)
+
+    client = SpendsTheBudgetInPhaseOne()
     with pytest.raises(MlflowStartupError, match="unreachable/misconfigured"):
         MlflowSink(tracking_uri="http://fake", experiment_name="exp", run_name="r", client=client)
+    assert client.set_tag_calls == 1
     assert len(client._runs) == 1
 
 
