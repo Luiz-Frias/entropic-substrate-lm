@@ -400,6 +400,19 @@ over tracked source confirms zero remaining importers of
 ``installed_d1_reader_source_files`` once this row is removed. This is the
 one D1 closure manifest row this phase's ruled bump touches; every other
 fixture value below stays byte-identical to p0/p1.
+CI regime row added (house rule 4, MEASURED 2026-10-02): the GitHub runners
+resolve mise's floating ``python = "3.12"`` to CPython 3.12.15 since
+2026-10-02 (run 37006785236 on PR #323, and the same signature on #320-#322),
+while the last green trunk run (36870794433 at b11855d, 2026-10-01) installed
+3.12.14, so ``h-checkpoint-reader-v2 has no fixture row for regime
+('3.12.15', '2.13.0+cpu')`` failed loud by name as this fixture is designed
+to. No reader member changed: the 3.12.14 rows are RETAINED (that regime is
+still real), and the 3.12.15 rows are ADDED, computed with
+``tools/regime_rows.py --python 3.12.15 --torch 2.13.0+cpu --pysbd 0.3.4``
+(the same instrument that produced the 3.12.14 rows, run on the macOS
+checkout; the first CI run at this tip is the live confirmation). The
+source-derived assertions below are untouched. The floating patch pin is the
+root cause and is recorded as a separate decision for the toolchain owner.
 """
 
 from __future__ import annotations
@@ -541,6 +554,10 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
         "3.12.14",
         "2.13.0+cpu",
     ): "5bc5602ec70a0af083070d764bcdfaba75e7186359b6716cf6abf37b7ac0cd7c",  # pragma: allowlist secret
+    (
+        "3.12.15",
+        "2.13.0+cpu",
+    ): "18823965fe4bf9f1d8b2d34afbc5688cb1cfb7028300ab76688b43960c6dfc1f",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
@@ -552,6 +569,10 @@ _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
         "3.12.14",
         "0.3.4",
     ): "5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84",  # pragma: allowlist secret
+    (
+        "3.12.15",
+        "0.3.4",
+    ): "904eaa93db093eff0587b50d113a6af8b0594db5c9ef16e0fcdb10c00ccb25b0",  # pragma: allowlist secret
 }
 
 
