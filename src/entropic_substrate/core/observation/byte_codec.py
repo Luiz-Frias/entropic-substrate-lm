@@ -85,11 +85,3 @@ class ByteObservationCodec:
             msg = "byte codec observation_ids must be in [0, 255]"
             raise ValueError(msg)
         return bytes(ids.tolist())
-
-    def encode_bytes(self, source: bytes) -> torch.Tensor:
-        """Explicit-name alias for :meth:`encode`."""
-        return self.encode(source)
-
-    def decode_ids(self, observation_ids: torch.Tensor) -> bytes:
-        """Explicit-name alias for :meth:`decode`."""
-        return self.decode(observation_ids)

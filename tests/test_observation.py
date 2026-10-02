@@ -125,3 +125,9 @@ def test_value_contracts_fail_loudly_on_invalid_spans_and_byte_ids() -> None:
         ObservationAlignment.predictive(start=0, sequence_length=4, horizon=0)
     with pytest.raises(ValueError, match="0, 255"):
         ByteObservationCodec().decode(torch.tensor([256], dtype=torch.int64))
+
+
+def test_byte_codec_exposes_only_encode_and_decode() -> None:
+    """FOR-1593: the explicit-name aliases had zero callers and are gone."""
+    assert not hasattr(ByteObservationCodec, "encode_bytes")
+    assert not hasattr(ByteObservationCodec, "decode_ids")
