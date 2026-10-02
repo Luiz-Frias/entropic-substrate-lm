@@ -18,7 +18,8 @@ from entropic_substrate.historical.d_ladder.d_ladder_remote_request import Remot
 from entropic_substrate.historical.d_ladder.ladder_profile import rung_profile_mapping
 from entropic_substrate.kernel.evidence_class.resource_provenance import execution_segment_id
 from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.kernel.runtime.config import configs_dir
+from entropic_substrate.ladder.register.d1_config import load_d1_profile
 from entropic_substrate.ladder.register.ladder import Rung, RungSpec, Treatment
 from entropic_substrate.ladder.run.resource.d1_resource_activation import (
     UnavailableResourceActivationFactory,
@@ -214,7 +215,7 @@ def test_worker_dispatches_real_scientific_tiny_with_actual_filing_gate(
 ) -> None:
     source, worker = tmp_path / "source", tmp_path / "worker"
     source.mkdir()
-    payload = yaml.safe_load((d1_configs_dir() / "d1-both.yaml").read_bytes())
+    payload = yaml.safe_load((configs_dir() / "d1-both.yaml").read_bytes())
     payload["encoder"].update(latent_width=8, n_layers=1, n_heads=2, block_size=128)
     payload["future_law"].update(predictor_hidden_width=8)
     payload["data"].update(batch_size=2, seq_len=8, num_eval_batches=1)

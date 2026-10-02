@@ -13,7 +13,8 @@ from entropic_substrate.core.probe.predictive_probe import ProbeConfig
 from entropic_substrate.historical.d_ladder.d_ladder_execution import SmokeRequest, run_local_smoke
 from entropic_substrate.historical.d_ladder.ladder_profile import rung_profile_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.kernel.runtime.config import configs_dir
+from entropic_substrate.ladder.register.d1_config import load_d1_profile
 from entropic_substrate.ladder.register.ladder import Rung, RungSpec, Treatment
 
 pytestmark = pytest.mark.unit
@@ -24,7 +25,7 @@ def test_public_score_command_preserves_diagnostic_identity(tmp_path: Path, caps
         (tmp_path / name).write_bytes(content)
         return {"path": name, "sha256": hashlib.sha256(content).hexdigest()}
 
-    payload = yaml.safe_load((d1_configs_dir() / "d1-both.yaml").read_text())
+    payload = yaml.safe_load((configs_dir() / "d1-both.yaml").read_text())
     payload["encoder"].update(latent_width=8, n_layers=1, n_heads=2, block_size=128)
     payload["future_law"]["predictor_hidden_width"] = 8
     payload["data"].update(seq_len=8, batch_size=2)
