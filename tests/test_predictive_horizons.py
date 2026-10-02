@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+
 import pytest
 import torch
 
-from entropic_substrate.core.latent.future_law import MeanDisplacementBaseline
+from entropic_substrate.core.latent import horizons as horizons_module
+from entropic_substrate.core.latent.future_law import (
+    DiagonalGaussianFutureLaw,
+    MeanDisplacementBaseline,
+)
 from entropic_substrate.core.latent.horizons import (
     HorizonFutureLaw,
     horizon_displacement,
@@ -108,3 +115,20 @@ def test_single_horizon_reuses_d1_loss_exactly() -> None:
     result = bank.loss(states, {1: target}, mean_baselines={1: baseline})
     torch.testing.assert_close(result.nll, result.per_horizon[1].nll, atol=0.0, rtol=0.0)
     assert set(bank(states)) == {1}
+
+
+def test_typed_head_accessor_returns_the_registered_head_and_holds_the_only_cast() -> None:
+    """FOR-1595: one private accessor owns the ModuleDict-to-law narrowing."""
+    bank = HorizonFutureLaw(latent_width=8, hidden_width=12, horizons=(1, 4))
+    for horizon in (1, 4):
+        head = bank._head(horizon)
+        assert type(head) is DiagonalGaussianFutureLaw
+        assert head is bank.heads[str(horizon)]
+    with pytest.raises(KeyError):
+        bank._head(16)
+    casts = [
+        node
+        for node in ast.walk(ast.parse(inspect.getsource(horizons_module)))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "cast"
+    ]
+    assert len(casts) == 1

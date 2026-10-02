@@ -113,11 +113,13 @@ class HorizonFutureLaw(nn.Module):
             }
         )
 
+    def _head(self, horizon: int) -> DiagonalGaussianFutureLaw:
+        """The registered head for ``horizon``; the one narrowing of the ``ModuleDict``."""
+        return cast(DiagonalGaussianFutureLaw, self.heads[str(horizon)])
+
     def forward(self, states: LatentTrajectory) -> dict[int, FutureLaw]:
         """Predict all laws from the same causal online states."""
-        return {
-            h: cast(DiagonalGaussianFutureLaw, self.heads[str(h)])(states) for h in self.horizons
-        }
+        return {h: self._head(h)(states) for h in self.horizons}
 
     def loss(
         self,
@@ -140,8 +142,7 @@ class HorizonFutureLaw(nn.Module):
             if aligned.alignment.online_observations != reference_span:
                 msg = "all horizon targets must share one online source span"
                 raise ValueError(msg)
-            head = cast(DiagonalGaussianFutureLaw, self.heads[str(horizon)])
-            losses[horizon] = head.loss(
+            losses[horizon] = self._head(horizon).loss(
                 states, aligned.target, mean_baseline=mean_baselines[horizon]
             )
         nll = torch.stack([losses[h].nll for h in self.horizons]).mean()
