@@ -2,8 +2,9 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping
 from entropic_substrate.kernel.verdict.d1_evaluation_values import D1CosineGap, parse_d1_cosine
 
 
@@ -87,9 +88,13 @@ class D1EstimateGap:
 
 
 def _object(value: object, fields: set[str]) -> dict[str, object]:
-    if type(value) is not dict or set(value) != fields:
+    def fail(_reason: str) -> NoReturn:
         raise ValueError("undefined statistic requires exact versioned fields")
-    return cast(dict[str, object], value)
+
+    mapping = require_mapping(value, fail=fail)
+    if any(exact_keys(mapping, frozenset(fields))):
+        fail("keys must be exact")
+    return mapping
 
 
 def parse_endpoint_gap(value: object) -> D1EndpointGap:

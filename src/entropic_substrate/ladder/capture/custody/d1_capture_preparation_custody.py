@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256, strict_loads
 from entropic_substrate.ladder.capture.custody.d1_capture_aggregate_codec import (
     D1CaptureAggregateHydrationError,
     hydrate_d1_capture_aggregate,
@@ -23,6 +23,7 @@ from entropic_substrate.ladder.capture.custody.d1_capture_service import (
     D1CapturePreparationStatus,
     D1HeterogeneousCapturePreparation,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 __all__ = [
     "D1_CAPTURE_PREPARATION_CUSTODY_SCHEMA",
@@ -79,8 +80,14 @@ def _validate_aggregate_binding(
     aggregate_sha256: str,
     pointer: D1DvcPointerIdentity,
 ) -> None:
+    require_lowercase_sha256(
+        aggregate_sha256,
+        fail=lambda _reason: _fail(
+            "D1 capture preparation aggregate is invalid: "
+            "capture aggregate sha256 must be a 64-character hexadecimal SHA-256 digest"
+        ),
+    )
     try:
-        require_sha256_hex_any_case(aggregate_sha256, label="capture aggregate sha256")
         declaration = parse_d1_capture_aggregate_declaration(aggregate_json)
     except (TypeError, ValueError, D1CaptureAggregateHydrationError) as error:
         _fail(f"D1 capture preparation aggregate is invalid: {error}", error)
@@ -120,7 +127,7 @@ class D1CampaignCaptureAuthority:
             ("attempt_ledger_digest", self.attempt_ledger_digest),
             ("lifecycle_prefix", self.lifecycle_prefix),
         ):
-            require_sha256_hex_any_case(value, label=f"campaign capture {label}")
+            require_lowercase_digest(value, label=f"campaign capture {label}")
         if type(self.lifecycle_event_count) is not int or self.lifecycle_event_count < 1:
             raise ValueError("campaign capture lifecycle_event_count must be positive")
 
@@ -211,15 +218,6 @@ def serialize_d1_capture_preparation_custody(
     return payload
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate D1 capture preparation key {key!r}")
-        result[key] = value
-    return result
-
-
 def _object(value: object, *, label: str, keys: set[str]) -> dict[str, object]:
     if type(value) is not dict or any(type(key) is not str for key in value):
         _fail(f"D1 capture preparation {label} must be an object")
@@ -233,13 +231,7 @@ def parse_d1_capture_preparation_custody(payload: str) -> D1CapturePreparationCu
     if type(payload) is not str or not payload or len(payload.encode()) > _MAX_BYTES:
         _fail("D1 capture preparation custody payload is empty or exceeds its byte limit")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(
-                f"non-finite D1 capture preparation constant {constant}"
-            ),
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except D1CapturePreparationCustodyError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
