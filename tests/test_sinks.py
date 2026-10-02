@@ -1451,6 +1451,158 @@ def test_cold_start_walk_terminates_on_a_cyclic_cause_chain() -> None:
     assert not _is_cold_start(a)
 
 
+# ------------------------------------ startup phase split (FOR-1578)
+# MlflowSink never re-invokes create_run after it returned a run_id. Evidence
+# class: fake-client test (FakeMlflowClient subclass), not a live measurement.
+class _ColdOnceClient(FakeMlflowClient):
+    """``set_tag`` raises a cold-start timeout once, then behaves normally."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.create_run_calls = 0
+        self.set_tag_calls = 0
+
+    def create_run(self, experiment_id: str, tags: dict[str, str] | None = None) -> _FakeRun:
+        self.create_run_calls += 1
+        return super().create_run(experiment_id, tags)
+
+    def set_tag(self, run_id: str, key: str, value: Any) -> None:
+        self.set_tag_calls += 1
+        if self.set_tag_calls == 1:
+            wrapped = RuntimeError("API request to /runs/set-tag failed")
+            wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+            raise wrapped
+        super().set_tag(run_id, key, value)
+
+
+@pytest.fixture
+def _no_startup_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Neutralise the retry backoff on the TEST side only (no production knob)."""
+    from entropic_substrate.ladder.capture.adapters import mlflow as adapter
+
+    slept: list[float] = []
+    monkeypatch.setattr(adapter.time, "sleep", slept.append)
+    return slept
+
+
+def test_cold_timeout_after_create_run_does_not_create_a_second_run(
+    _no_startup_sleep: list[float],
+) -> None:
+    client = _ColdOnceClient()
+    sink = MlflowSink(
+        tracking_uri="http://fake",
+        experiment_name="exp",
+        run_name="named-run",
+        params={"a": 1, "b": 2},
+        client=client,
+    )
+    assert client.create_run_calls == 1
+    assert list(client._runs) == [sink.run_id]
+    run = client._runs[sink.run_id]
+    assert run.data.tags["mlflow.runName"] == "named-run"
+    assert run.data.params == {"a": "1", "b": "2"}
+    assert client.set_tag_calls == 2
+    assert len(_no_startup_sleep) == 1  # one backoff: the retry actually happened
+
+
+def test_cold_timeout_on_a_log_param_retries_without_a_second_run(
+    _no_startup_sleep: list[float],
+) -> None:
+    class ColdOnLogParam(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.create_run_calls = 0
+            self.armed = True
+
+        def create_run(self, experiment_id: str, tags: dict[str, str] | None = None) -> _FakeRun:
+            self.create_run_calls += 1
+            return super().create_run(experiment_id, tags)
+
+        def log_param(self, run_id: str, key: str, value: Any) -> None:
+            if key == "b" and self.armed:
+                self.armed = False
+                wrapped = RuntimeError("API request to /runs/log-parameter failed")
+                wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+                raise wrapped
+            super().log_param(run_id, key, value)
+
+    client = ColdOnLogParam()
+    sink = MlflowSink(
+        tracking_uri="http://fake",
+        experiment_name="exp",
+        run_name="r",
+        params={"a": 1, "b": 2, "c": 3},
+        client=client,
+    )
+    assert client.create_run_calls == 1
+    assert list(client._runs) == [sink.run_id]
+    assert client._runs[sink.run_id].data.params == {"a": "1", "b": "2", "c": "3"}
+
+
+def test_non_cold_log_param_failure_still_aborts_startup(
+    _no_startup_sleep: list[float],
+) -> None:
+    """The startup-abort contract, pinned: construction raises before any
+    training work, with the injected exception as ``__cause__``, and phase 2
+    neither retried nor re-created the run.
+    """
+    injected = ConnectionError("simulated: nothing listening")
+
+    class AbsentOnLogParam(FakeMlflowClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.create_run_calls = 0
+            self.log_param_calls = 0
+
+        def create_run(self, experiment_id: str, tags: dict[str, str] | None = None) -> _FakeRun:
+            self.create_run_calls += 1
+            return super().create_run(experiment_id, tags)
+
+        def log_param(self, run_id: str, key: str, value: Any) -> None:
+            self.log_param_calls += 1
+            raise injected
+
+    client = AbsentOnLogParam()
+    with pytest.raises(MlflowStartupError, match="unreachable/misconfigured") as exc_info:
+        MlflowSink(
+            tracking_uri="http://fake",
+            experiment_name="exp",
+            run_name="r",
+            params={"a": 1},
+            client=client,
+        )
+    assert exc_info.value.__cause__ is injected
+    assert client.create_run_calls == 1
+    assert client.log_param_calls == 1
+    assert _no_startup_sleep == []
+
+
+def test_cold_phase_two_past_the_deadline_aborts_with_the_same_error(
+    _no_startup_sleep: list[float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2 shares phase 1's single deadline: a cold timeout once the budget
+    is spent raises ``MlflowStartupError`` rather than retrying forever.
+    """
+    from entropic_substrate.ladder.capture.adapters import mlflow as adapter
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(adapter.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        adapter.time, "sleep", lambda seconds: clock.__setitem__("now", clock["now"] + 1000.0)
+    )
+
+    class AlwaysColdSetTag(FakeMlflowClient):
+        def set_tag(self, run_id: str, key: str, value: Any) -> None:
+            wrapped = RuntimeError("API request to /runs/set-tag failed")
+            wrapped.__cause__ = ReadTimeoutError("Read timed out. (read timeout=10)")
+            raise wrapped
+
+    client = AlwaysColdSetTag()
+    with pytest.raises(MlflowStartupError, match="unreachable/misconfigured"):
+        MlflowSink(tracking_uri="http://fake", experiment_name="exp", run_name="r", client=client)
+    assert len(client._runs) == 1
+
+
 # ------------------------------------------------ results JSONL at finish()
 # The sink owns the upload of the authoritative results JSONL as a run
 # artifact (operator ruling 2026-08-17) — previously pod-side glue after
