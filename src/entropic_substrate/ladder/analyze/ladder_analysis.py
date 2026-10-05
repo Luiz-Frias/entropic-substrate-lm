@@ -121,7 +121,6 @@ class D1RunReader:
                     tuple(
                         (name, item.quality.scalar_metric(name))
                         for name in sorted(D1_SCALAR_METRICS)
-                        if type(getattr(item.quality, name)) in (int, float)
                     ),
                 )
                 for item in run.evals
