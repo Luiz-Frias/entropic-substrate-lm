@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Literal, NoReturn, cast
 
 from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
 from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     DualConfidenceReport,
@@ -28,6 +27,7 @@ from entropic_substrate.ladder.analyze.seed_sizing import (
     validate_hypothesis,
 )
 from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 if TYPE_CHECKING:
     from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
@@ -104,7 +104,7 @@ def _sequence(value: object) -> list[object]:
 
 def _digest(value: object) -> str:
     result = _text(value)
-    require_sha256_hex_any_case(result, label="statistical identity")
+    require_lowercase_digest(result, label="statistical identity")
     return result
 
 
