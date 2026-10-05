@@ -7,6 +7,13 @@ import json
 from dataclasses import dataclass
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
+
 __all__ = [
     "D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA",
     "D1AnalysisExecutionReceipt",
@@ -64,14 +71,10 @@ def canonical_d1_analysis_receipt_bytes(value: object) -> bytes:
 
 
 def _require_sha256(value: object, *, label: str) -> str:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise ValueError(f"{label} must be a lowercase SHA-256 digest")
-    return value
+
+    return require_lowercase_sha256(value, fail=fail)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,24 +113,16 @@ class D1AnalysisFilingBindings:
         }
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"D1 analysis execution receipt has duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    raise ValueError(f"D1 analysis execution receipt contains non-finite value {value!r}")
+def _fail(reason: str) -> NoReturn:
+    raise ValueError(f"D1 analysis execution receipt: {reason}")
 
 
 def _object(value: object, *, fields: frozenset[str], label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
+    def not_object(_reason: str) -> NoReturn:
         raise ValueError(f"D1 analysis execution receipt {label} must be an object")
-    result = cast(dict[str, object], value)
-    if frozenset(result) != fields:
+
+    result = require_mapping(value, fail=not_object)
+    if any(exact_keys(result, fields)):
         raise ValueError(f"D1 analysis execution receipt {label} fields must be exact")
     return result
 
@@ -151,11 +146,7 @@ def _decode(payload: str) -> dict[str, object]:
     if type(payload) is not str or not payload:
         raise ValueError("D1 analysis execution receipt must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except (json.JSONDecodeError, UnicodeError) as error:
         raise ValueError("D1 analysis execution receipt must be valid JSON") from error
     root = _object(value, fields=_RECEIPT_FIELDS, label="root")

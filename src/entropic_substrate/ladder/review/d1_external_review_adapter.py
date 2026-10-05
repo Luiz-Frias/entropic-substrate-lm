@@ -12,8 +12,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import NoReturn, Protocol, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.ladder.review.d1_review_execution import (
     D1CloudReviewRequest,
@@ -43,13 +49,10 @@ def _sha(payload: bytes) -> str:
 
 
 def _digest(value: str, label: str) -> None:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise ValueError(f"{label} must be lowercase SHA-256")
+
+    require_lowercase_sha256(value, fail=fail)
 
 
 def _canonical(value: object) -> bytes:
@@ -197,18 +200,8 @@ def _work_dir(value: str | os.PathLike[str]) -> Path:
     return path
 
 
-def _strict_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate field")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value: str) -> object:
-    del value
-    raise ValueError("nonfinite JSON constant")
+def _reject(reason: str) -> NoReturn:
+    raise ValueError(reason)
 
 
 def _parse_result(payload: bytes) -> Mapping[str, object]:
@@ -217,19 +210,17 @@ def _parse_result(payload: bytes) -> Mapping[str, object]:
     value: object | None = None
     parse_failed = False
     try:
-        value = json.loads(
-            payload,
-            object_pairs_hook=_strict_pairs,
-            parse_constant=_reject_constant,
-        )
+        value = strict_loads(payload, fail=_reject)
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
         parse_failed = True
     if parse_failed:
         raise ValueError("worker stdout must be strict UTF-8 JSON")
-    if type(value) is not dict:
+
+    def not_object(_reason: str) -> NoReturn:
         raise ValueError("worker result must have an object root")
-    result = cast(dict[str, object], value)
-    if frozenset(result) != _RESULT_FIELDS:
+
+    result = require_mapping(value, fail=not_object)
+    if any(exact_keys(result, _RESULT_FIELDS)):
         raise ValueError("worker result fields must match the protocol exactly")
     if result["schema_version"] != "d1-external-review-result-v1":
         raise ValueError("worker result schema is unsupported")

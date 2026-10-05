@@ -13,8 +13,14 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Final, NoReturn, cast
+from typing import Final, NoReturn
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.ladder.register.d1_registered_design import decision_contract_digest
 from entropic_substrate.ladder.register.d1_registration_codec import (
@@ -61,27 +67,14 @@ _REQUEST_V2_TOKEN = object()
 
 
 def _sha256(value: object, *, label: str) -> str:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise ValueError(f"{label} must be a lowercase SHA-256 digest")
-    return value
+
+    return require_lowercase_sha256(value, fail=fail)
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"D1 external analysis envelope has duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    raise ValueError(f"D1 external analysis envelope has non-finite constant {value!r}")
+def _fail(reason: str) -> NoReturn:
+    raise ValueError(f"D1 external analysis envelope: {reason}")
 
 
 def _canonical(manifest: Mapping[str, object]) -> bytes:
@@ -98,17 +91,15 @@ def _decode(payload: bytes, *, fields: frozenset[str], schema: str) -> dict[str,
     if type(payload) is not bytes:
         raise TypeError("D1 external analysis envelope must be bytes")
     try:
-        value: object = json.loads(
-            payload.decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload.decode("utf-8"), fail=_fail)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"D1 external analysis envelope is invalid UTF-8 JSON: {error}") from error
-    if type(value) is not dict:
+
+    def not_object(_reason: str) -> NoReturn:
         raise ValueError("D1 external analysis envelope must be a JSON object")
-    manifest = cast(dict[str, object], value)
-    if set(manifest) != set(fields):
+
+    manifest = require_mapping(value, fail=not_object)
+    if any(exact_keys(manifest, fields)):
         raise ValueError("D1 external analysis envelope fields must be exact")
     if manifest["schema_version"] != schema:
         raise ValueError(f"D1 external analysis envelope schema must be {schema!r}")

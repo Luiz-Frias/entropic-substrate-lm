@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import require_mapping
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.ladder.analyze.d1_capture import (
     D1AppliedExclusion,
@@ -48,9 +49,9 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
-    if type(value) is not dict:
-        _fail(f"machine analysis {label} must be an object")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"machine analysis {label} must be an object")
+    )
 
 
 def _rows(value: object, label: str) -> list[object]:

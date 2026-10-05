@@ -8,6 +8,12 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
     parse_endpoint_gap,
     parse_estimate_gap,
@@ -72,24 +78,9 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
     raise D1MachineAnalysisCodecError(message) from error
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate machine analysis key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite machine analysis constant {value!r}")
-
-
 def _object(value: object, keys: frozenset[str], label: str) -> dict[str, object]:
-    if type(value) is not dict:
-        _fail(f"{label} must be an object")
-    item = cast(dict[str, object], value)
-    if frozenset(item) != keys:
+    item = require_mapping(value, fail=lambda _reason: _fail(f"{label} must be an object"))
+    if any(exact_keys(item, keys)):
         _fail(f"{label} fields must be exact")
     return item
 
@@ -128,9 +119,9 @@ def _integer(value: object, label: str, *, positive: bool = False) -> int:
 
 def _sha(value: object, label: str) -> str:
     text = _text(value, label)
-    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
-        _fail(f"{label} must be lowercase SHA-256")
-    return text
+    return require_lowercase_sha256(
+        text, fail=lambda _reason: _fail(f"{label} must be lowercase SHA-256")
+    )
 
 
 def _alias(value: object, label: str) -> str:
@@ -497,18 +488,16 @@ def _decode(payload: bytes) -> dict[str, object]:
     if type(payload) is not bytes:
         raise TypeError("machine analysis payload must be bytes")
     try:
-        value: object = json.loads(
-            payload.decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
+        value: object = strict_loads(
+            payload.decode("utf-8"), fail=lambda reason: _fail(f"machine analysis: {reason}")
         )
     except D1MachineAnalysisCodecError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
         _fail("machine analysis payload is invalid UTF-8 JSON", error)
-    if type(value) is not dict:
-        _fail("machine analysis payload must have an object root")
-    root = cast(dict[str, object], value)
+    root = require_mapping(
+        value, fail=lambda _reason: _fail("machine analysis payload must have an object root")
+    )
     canonical = json.dumps(
         root,
         allow_nan=False,

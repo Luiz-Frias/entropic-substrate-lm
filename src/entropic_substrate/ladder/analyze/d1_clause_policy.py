@@ -9,6 +9,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract, D1RegisteredEndpoint
 from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EndpointGap
@@ -141,7 +142,7 @@ def _object(value: object, *, path: str, fields: frozenset[str]) -> Mapping[str,
     if not isinstance(value, Mapping) or any(type(key) is not str for key in value):
         _fail("type", path, "must be an object with string keys")
     typed = cast(Mapping[str, object], value)
-    if frozenset(typed) != fields:
+    if any(exact_keys(typed, fields)):
         _fail("fields", path, f"must contain exactly {sorted(fields)}")
     return typed
 

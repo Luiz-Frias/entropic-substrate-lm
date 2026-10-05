@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys
 from entropic_substrate.kernel.lifecycle import (
     ArtifactIdentity,
     ContentHash,
@@ -76,12 +77,13 @@ def _object(value: object, *, path: str, keys: frozenset[str]) -> Mapping[str, o
         if not isinstance(key, str):
             raise _error("invalid_field_name", path, "object field names must be strings")
         actual.add(key)
-    missing = sorted(keys - actual)
-    unknown = sorted(actual - keys)
+    missing, unknown = exact_keys(actual, keys)
     if missing:
-        raise _error("missing_field", path, f"missing required field(s): {', '.join(missing)}")
+        raise _error(
+            "missing_field", path, f"missing required field(s): {', '.join(sorted(missing))}"
+        )
     if unknown:
-        raise _error("unknown_field", path, f"unknown field(s): {', '.join(unknown)}")
+        raise _error("unknown_field", path, f"unknown field(s): {', '.join(sorted(unknown))}")
     return value
 
 
