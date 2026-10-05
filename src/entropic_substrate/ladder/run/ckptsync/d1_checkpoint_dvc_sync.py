@@ -9,16 +9,17 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import NoReturn, cast
 
 from entropic_substrate.kernel.artifacts import snapshot_d1_artifact
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
     D1DvcPointerIdentity,
 )
 from entropic_substrate.ladder.capture.custody.d1_capture_service import read_d1_dvc_pointer
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
@@ -62,9 +63,7 @@ def _error(code: str, path: object) -> D1CheckpointDvcSyncError:
 
 
 def _sha256(value: str, *, label: str) -> str:
-    require_sha256_hex_any_case(value, label=label)
-    if value != value.lower():
-        raise ValueError(f"{label} must use lowercase hexadecimal")
+    require_lowercase_digest(value, label=label)
     return value
 
 
@@ -185,26 +184,15 @@ def d1_checkpoint_sync_mailbox_path(
     return f"{prefix}/sync/checkpoint-{successful_step:09d}.json"
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError(f"duplicate checkpoint sync key {key!r}")
-        value[key] = item
-    return value
+def _reject(reason: str) -> NoReturn:
+    raise ValueError(f"checkpoint sync receipt {reason}")
 
 
 def parse_d1_checkpoint_dvc_sync_receipt(payload: bytes) -> D1CheckpointDvcSyncReceipt:
     if type(payload) is not bytes:
         raise TypeError("checkpoint sync receipt payload must be bytes")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: (_ for _ in ()).throw(
-                ValueError(f"nonfinite checkpoint sync value {constant}")
-            ),
-        )
+        value = strict_loads(payload, fail=_reject)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("checkpoint sync receipt must be UTF-8 JSON") from error
     if type(value) is not dict or frozenset(value) != _FIELDS:

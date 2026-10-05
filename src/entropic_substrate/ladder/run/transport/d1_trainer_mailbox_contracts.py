@@ -10,7 +10,8 @@ from enum import StrEnum
 from typing import NoReturn, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import strict_loads
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 
 __all__ = [
@@ -37,9 +38,7 @@ _ERROR_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
 
 
 def _digest(value: str, *, label: str) -> str:
-    require_sha256_hex_any_case(value, label=label)
-    if value != value.lower():
-        raise ValueError(f"{label} must use lowercase hexadecimal")
+    require_lowercase_digest(value, label=label)
     return value
 
 
@@ -229,15 +228,6 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
     raise ValueError(message) from error
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            _fail(f"D1 trainer mailbox payload contains duplicate key {key!r}")
-        value[key] = item
-    return value
-
-
 def _decode(payload: bytes, *, fields: frozenset[str], label: str) -> dict[str, object]:
     if type(payload) is not bytes:
         raise TypeError(f"{label} payload must be bytes")
@@ -246,13 +236,7 @@ def _decode(payload: bytes, *, fields: frozenset[str], label: str) -> dict[str, 
     except UnicodeError as error:
         _fail(f"{label} must be UTF-8 JSON", error)
     try:
-        value: object = json.loads(
-            text,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(
-                f"{label} contains nonfinite constant {constant}"
-            ),
-        )
+        value = strict_loads(text, fail=lambda reason: _fail(f"{label}: {reason}"))
     except json.JSONDecodeError as error:
         _fail(f"{label} must be UTF-8 JSON", error)
     except ValueError:

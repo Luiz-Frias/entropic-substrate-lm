@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
@@ -38,13 +39,17 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"D1 capture-finalize {label} must be an object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value,
+        fail=lambda _reason: _fail(
+            f"D1 capture-finalize {label} must be an object with string keys"
+        ),
+    )
 
 
 def _exact(value: dict[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unexpected = exact_keys(value, keys)
+    if missing or unexpected:
         _fail(f"D1 capture-finalize {label} keys must be exact")
 
 
@@ -111,15 +116,6 @@ def serialize_d1_capture_finalize_request(request: D1CaptureFinalizeRequest) -> 
     return canonical_json(request.manifest)
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate D1 capture-finalize key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_capture_finalize_request(
     payload: str,
     *,
@@ -128,13 +124,7 @@ def parse_d1_capture_finalize_request(
     if type(payload) is not str or not payload:
         _fail("D1 capture-finalize payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(
-                f"non-finite D1 capture-finalize constant {constant}"
-            ),
-        )
+        value = strict_loads(payload, fail=_fail)
     except D1CaptureFinalizeRequestError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:

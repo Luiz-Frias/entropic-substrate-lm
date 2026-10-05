@@ -15,7 +15,7 @@ from entropic_substrate.kernel.artifacts import (
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
 )
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
@@ -72,9 +72,7 @@ def _error(stage: str, code: str) -> D1ObjectMailboxTransportError:
 
 
 def _attempt(value: str) -> str:
-    require_sha256_hex_any_case(value, label="D1 trainer object attempt")
-    if value != value.lower():
-        raise _error("identity", "attempt_noncanonical")
+    require_lowercase_digest(value, label="D1 trainer object attempt")
     return value
 
 
@@ -253,7 +251,7 @@ class D1ObjectMailboxTrainerTransport:
 
     def start_trainer(self, pod_id: str, attempt_sha256: str, request_sha256: str) -> None:
         session = self._session(pod_id, attempt_sha256)
-        require_sha256_hex_any_case(request_sha256, label="D1 trainer object request")
+        require_lowercase_digest(request_sha256, label="D1 trainer object request")
         if session.request_sha256 is None:
             raise _error("start", "request_missing")
         if request_sha256 != session.request_sha256:

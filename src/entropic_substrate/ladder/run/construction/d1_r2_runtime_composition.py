@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CloudObjectVerifierPort,
     D1DvcCommandPort,
@@ -18,6 +17,7 @@ from entropic_substrate.ladder.capture.custody.d1_capture_subprocess import (
     SubprocessD1CloudObjectVerifier,
     SubprocessD1DvcAdapter,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.ckptsync.d1_checkpoint_dvc_recovery import (
     D1CheckpointDvcRecoveryService,
@@ -77,7 +77,7 @@ class D1BoundR2CheckpointSync(D1CheckpointSyncPort):
         if type(self._adapter) is not D1CheckpointDvcSyncAdapter:
             raise TypeError("bound R2 sync requires the DVC sync adapter")
         require_d1_pod_id(self._pod_id)
-        require_sha256_hex_any_case(self._attempt_sha256, label="bound R2 sync attempt")
+        require_lowercase_digest(self._attempt_sha256, label="bound R2 sync attempt")
         if (
             type(self._logical_run_id) is not str
             or not self._logical_run_id
