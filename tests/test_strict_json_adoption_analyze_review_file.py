@@ -195,6 +195,7 @@ def test_decoders_refuse_strict_json_violations_with_their_own_error(
         decode_d1_machine_analysis_declaration,
         parse_d1_alias_commitment_control,
         decode_d1_external_analysis_worker_response_v2,
+        parse_d1_analysis_execution_receipt,
         parse_d1_review_execution_receipt,
     ],
 )
@@ -203,6 +204,20 @@ def test_decode_level_messages_come_from_the_door(
 ) -> None:
     with pytest.raises(ValueError, match=needle):
         decode(payload)
+
+
+@pytest.mark.parametrize("payload", [_DUPLICATE, _NAN, _NEG_INFINITY, _OVERFLOW])
+def test_adapter_decode_reports_the_strict_json_refusal(payload: bytes) -> None:
+    """The adapter swallows the door's reason, so the refusal is pinned by its own message."""
+    with pytest.raises(ValueError, match="worker stdout must be strict UTF-8 JSON"):
+        d1_external_review_adapter._parse_result(payload)
+
+
+def test_adapter_and_adjudication_decoders_refuse_inexact_fields_with_their_message() -> None:
+    with pytest.raises(ValueError, match="worker result fields must match the protocol exactly"):
+        d1_external_review_adapter._parse_result(b'{"a":1}')
+    with pytest.raises(ValueError, match="fields must match the v2 schema exactly"):
+        d1_review_adjudication._document(b'{"a":1}')
 
 
 def test_review_receipt_decode_now_refuses_nonfinite_constants() -> None:
