@@ -312,6 +312,13 @@ def test_enum_values_are_the_parent_tip_wire_literals_and_names_mirror_them(
         ("FACTORIAL_INTERACTION", 0.2, 0.5, 0.1, "INTERACTION_DETECTED"),
         ("FACTORIAL_INTERACTION", -0.5, -0.2, 0.1, "INTERACTION_DETECTED"),
         ("FACTORIAL_INTERACTION", -0.05, 0.05, 0.1, "INTERACTION_INCONCLUSIVE"),
+        # Interval limits exactly at +/- margin: strict outside (>, <), inclusive null (>=, <=).
+        ("PAIRWISE", 0.1, 0.5, 0.1, "INCONCLUSIVE"),
+        ("PAIRWISE", -0.5, -0.1, 0.1, "INCONCLUSIVE"),
+        ("PAIRWISE", -0.1, 0.05, 0.1, "PRACTICALLY_NULL"),
+        ("PAIRWISE", -0.05, 0.1, 0.1, "PRACTICALLY_NULL"),
+        ("FACTORIAL_INTERACTION", 0.1, 0.5, 0.1, "INTERACTION_INCONCLUSIVE"),
+        ("FACTORIAL_INTERACTION", -0.5, -0.1, 0.1, "INTERACTION_INCONCLUSIVE"),
     ],
 )
 def test_contrast_decision_interval_boundary_cases(
@@ -320,6 +327,45 @@ def test_contrast_decision_interval_boundary_cases(
     result = _contrast_decision(kind, {"interval_lower": lower, "interval_upper": upper}, margin)
     assert result == wire
     assert type(result) is str
+
+
+def _integrity_status_contract(*, require_pass: bool) -> D1DecisionContract:
+    contract = decision_contract()
+    # replace() re-runs __post_init__, which expects the unfrozen constants (as the fixture builds them).
+    return replace(
+        contract,
+        registered_constants={"seeds": [1, 2, 3, 4], "primary": {"alpha": 0.025}},
+        decision_rules={
+            name: replace(rule, require_integrity_pass=require_pass)
+            for name, rule in contract.decision_rules.items()
+        },
+    )
+
+
+@pytest.mark.parametrize("raw", ["PASS", "FAIL", "INCONCLUSIVE"])
+def test_every_integrity_status_parses_to_its_own_member(raw: str) -> None:
+    # The registered decision rules normally require PASS integrity, which hides FAIL and
+    # INCONCLUSIVE; relaxing that requirement observes each member through the parser, so a
+    # wrong-member mapping (for example FAIL parsed as PASS) goes RED here.
+    payload = machine_verdict()
+    _set(payload, ("integrity", "status"), raw)
+    verdict = ValidatedD1Verdict.from_mapping(
+        payload, decision_contract=_integrity_status_contract(require_pass=False)
+    )
+    assert type(verdict.integrity.status) is ClauseStatus
+    assert verdict.integrity.status is ClauseStatus(raw)
+    assert verdict.integrity.status.value == raw
+
+
+@pytest.mark.parametrize("raw", ["FAIL", "INCONCLUSIVE"])
+def test_a_pass_requiring_decision_rule_rejects_a_non_pass_integrity_status(raw: str) -> None:
+    payload = machine_verdict()
+    _set(payload, ("integrity", "status"), raw)
+    with pytest.raises(D1VerdictValidationError) as raised:
+        ValidatedD1Verdict.from_mapping(
+            payload, decision_contract=_integrity_status_contract(require_pass=True)
+        )
+    assert raised.value.code == "decision_integrity_mismatch"
 
 
 def test_the_verdict_evidence_class_is_not_the_lowercase_identity_evidence_class() -> None:
