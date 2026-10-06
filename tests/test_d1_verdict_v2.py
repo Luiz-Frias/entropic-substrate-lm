@@ -27,6 +27,7 @@ from entropic_substrate.kernel.verdict.d1_types import (
 )
 from entropic_substrate.ladder.file.d1_decision_validation import parse_review
 from entropic_substrate.ladder.file.d1_filing import canonical_machine_verdict_bytes
+from entropic_substrate.ladder.file.d1_real_arm_verdict import _contrast_decision
 from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 pytestmark = pytest.mark.unit
@@ -296,6 +297,29 @@ def test_enum_values_are_the_parent_tip_wire_literals_and_names_mirror_them(
     assert all(member.name == member.value for member in vocabulary)
     assert all(member == member.value for member in vocabulary)
     assert all(json.dumps(member) == json.dumps(member.value) for member in vocabulary)
+    assert all(str(member) == member.value and f"{member}" == member.value for member in vocabulary)
+
+
+@pytest.mark.parametrize(
+    ("kind", "lower", "upper", "margin", "wire"),
+    [
+        ("PAIRWISE", None, None, 0.1, "INCONCLUSIVE"),
+        ("FACTORIAL_INTERACTION", None, None, 0.1, "INTERACTION_INCONCLUSIVE"),
+        ("PAIRWISE", 0.2, 0.5, 0.1, "FAVORS_LEFT"),
+        ("PAIRWISE", -0.5, -0.2, 0.1, "FAVORS_RIGHT"),
+        ("PAIRWISE", -0.05, 0.05, 0.1, "PRACTICALLY_NULL"),
+        ("PAIRWISE", -0.2, 0.05, 0.1, "INCONCLUSIVE"),
+        ("FACTORIAL_INTERACTION", 0.2, 0.5, 0.1, "INTERACTION_DETECTED"),
+        ("FACTORIAL_INTERACTION", -0.5, -0.2, 0.1, "INTERACTION_DETECTED"),
+        ("FACTORIAL_INTERACTION", -0.05, 0.05, 0.1, "INTERACTION_INCONCLUSIVE"),
+    ],
+)
+def test_contrast_decision_interval_boundary_cases(
+    kind: str, lower: float | None, upper: float | None, margin: float, wire: str
+) -> None:
+    result = _contrast_decision(kind, {"interval_lower": lower, "interval_upper": upper}, margin)
+    assert result == wire
+    assert type(result) is str
 
 
 def test_the_verdict_evidence_class_is_not_the_lowercase_identity_evidence_class() -> None:
