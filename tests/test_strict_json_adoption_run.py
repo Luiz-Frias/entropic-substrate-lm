@@ -141,7 +141,8 @@ _EXEMPT = frozenset({"ladder/run/journal.py"})
 # has no parse_float hook, so the billing parser (parse_float=Decimal, a
 # 19-digit amount pinned in tests/test_d1_runpod_billing_parser.py) cannot
 # adopt it without silently rounding billed amounts to float. The file keeps
-# its local hooks until the door grows a parse_float seam (a conductor ruling).
+# its local hooks until the door grows a parse_float seam. Ruled W4-21
+# (option a, 2026-10-05): the exemption stands, the seam is FOR-1632.
 _PENDING = frozenset({"ladder/run/closure/d1_runpod_billing_parser.py"})
 _FORBIDDEN = frozenset({"_pairs", "_strict_pairs", "_nonfinite", "_reject_constant"})
 
