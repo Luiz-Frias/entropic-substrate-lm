@@ -704,7 +704,11 @@ def test_every_boundary_sha_site_refuses_a_mixed_case_digest_with_its_own_error(
 @pytest.mark.parametrize("site", [pytest.param(site, id=site.name) for site in _SITES])
 def test_every_boundary_sha_site_still_admits_a_lowercase_digest(site: _Site) -> None:
     # Positive control: the refusal above is the digest check, not the fixture.
+    # The call must RETURN. The site's own exception is the digest refusal and is
+    # named as such; any other exception is a fixture defect and propagates, so a
+    # message that merely mentions a short needle ("invalid", "attempt") can
+    # neither pass this control by accident nor fail it for the wrong reason.
     try:
         site.call(_DIGEST)
-    except Exception as error:
-        assert site.needle not in str(error), f"{site.name} refused a lowercase digest: {error}"
+    except site.exception as error:
+        pytest.fail(f"{site.name} refused a lowercase digest: {error!r}")
