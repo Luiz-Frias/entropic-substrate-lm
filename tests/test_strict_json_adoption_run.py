@@ -21,6 +21,7 @@ Five groups, one per acceptance bullet (FOR-1577, FOR-1582, FOR-1613):
 from __future__ import annotations
 
 import ast
+import hashlib
 import inspect
 import json
 import re
@@ -111,6 +112,9 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWaitPolicy,
     D1TrainerMailboxWorker,
     D1TrainerMailboxWorkerError,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1ObjectMailboxTransportError,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_output_publication import (
     D1TrainerOutputPublicationError,
@@ -505,15 +509,6 @@ def _mailbox_worker_attempt(attempt: str) -> object:
         return worker._attempt()  # pyright: ignore[reportPrivateUsage]
 
 
-def _object_transport_start(request_sha256: str) -> object:
-    from .test_d1_trainer_object_transport import _ObjectStore, _transport
-
-    with tempfile.TemporaryDirectory() as directory:
-        transport = _transport(Path(directory).resolve(), _ObjectStore())
-        transport.bootstrap(_POD, _ATTEMPT)
-        return transport.start_trainer(_POD, _ATTEMPT, request_sha256)
-
-
 def _sync_step(attempt: str) -> object:
     key = f"d1-mailbox/v1/{_POD}/{attempt}/sync/checkpoint-000000001.json"
     return D1CheckpointDvcRecoveryService._sync_step(  # pyright: ignore[reportPrivateUsage]
@@ -640,9 +635,9 @@ _SITES = [
     _Site(
         "object_transport_attempt",
         d1_trainer_object_transport._attempt,  # pyright: ignore[reportPrivateUsage]
-        ValueError,
+        D1ObjectMailboxTransportError,
+        "attempt_noncanonical",
     ),
-    _Site("object_transport_request", _object_transport_start, ValueError),
     _Site("process_request_path", d1_trainer_request_path, ValueError),
     _Site("process_runtime_report_path", d1_trainer_runtime_report_path, ValueError),
     _Site(
@@ -665,6 +660,35 @@ _SITES = [
     # composition
     _Site("r2_entrypoint_attempt", _r2_worker_attempt, D1R2TrainerMailboxWorkerError, "attempt"),
 ]
+
+
+# W4-26(b): the object-transport request digest is RETAINED at its parent form
+# (FOR-1626, third retained site). A mixed-case digest there is not refused as a
+# malformed digest: it passes the any-case door and is refused by the session's
+# own request_mismatch check, a D1ObjectMailboxTransportError. Repointing it at
+# the lowercase-only door would turn that into a bare ValueError (a type change
+# that standing ruling 17 forbids), so it is pinned here, apart from _SITES.
+def test_object_transport_request_digest_retains_its_parent_exception_type() -> None:
+    from .test_d1_trainer_object_transport import _ObjectStore, _transport
+
+    payload = b"request-payload"
+    real = hashlib.sha256(payload).hexdigest()
+    mixed = real[:-1] + ("A" if real[-1] != "A" else "B")
+    assert mixed != real and mixed.lower() != mixed
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _transport(Path(directory).resolve(), _ObjectStore())
+        transport.bootstrap(_POD, _ATTEMPT)
+        transport.write_request(_POD, _ATTEMPT, d1_trainer_request_path(_ATTEMPT), payload)
+        with pytest.raises(D1ObjectMailboxTransportError) as caught:
+            transport.start_trainer(_POD, _ATTEMPT, mixed)
+        assert type(caught.value) is D1ObjectMailboxTransportError
+        assert (caught.value.stage, caught.value.code) == ("start", "request_mismatch")
+        # Positive control: the genuine lowercase digest starts the trainer.
+        transport.start_trainer(_POD, _ATTEMPT, real)
+        # A digest that is not hex at all still fails at the any-case door.
+        with pytest.raises(ValueError) as malformed:
+            transport.start_trainer(_POD, _ATTEMPT, "z" * 64)
+        assert type(malformed.value) is ValueError
 
 
 @pytest.mark.parametrize("site", [pytest.param(site, id=site.name) for site in _SITES])
