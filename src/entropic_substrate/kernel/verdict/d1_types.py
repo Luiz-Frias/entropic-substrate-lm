@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Final
 
@@ -40,24 +41,70 @@ ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     }
 )
 CLAUSE_NAMES: Final[frozenset[str]] = frozenset({"noncollapse", "future_grounding", "language"})
-CLAUSE_STATUS: Final[frozenset[str]] = frozenset({"PASS", "FAIL", "INCONCLUSIVE"})
+
+
+class ClauseStatus(StrEnum):
+    """Clause and integrity status; members mirror their persisted wire values."""
+
+    PASS = "PASS"  # nosec B105 -- a verdict status wire literal, never a credential
+    FAIL = "FAIL"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class VerdictEvidenceClass(StrEnum):
+    """Verdict evidence class, UPPERCASE on the wire.
+
+    Distinct from ``kernel.identity.d1_primitives.EvidenceClass``, whose values are
+    lowercase: serializing that type's ``.name`` would look byte-identical while
+    breaking the persisted contract.
+    """
+
+    MEASURED = "MEASURED"
+    DERIVED_FROM_MEASURED = "DERIVED_FROM_MEASURED"
+    MODEL_ESTIMATE = "MODEL_ESTIMATE"
+    RATE_ESTIMATE = "RATE_ESTIMATE"
+    PROVIDER_BILLED = "PROVIDER_BILLED"
+
+
+class ContrastKind(StrEnum):
+    PAIRWISE = "PAIRWISE"
+    FACTORIAL_INTERACTION = "FACTORIAL_INTERACTION"
+
+
+class ContrastDecision(StrEnum):
+    FAVORS_LEFT = "FAVORS_LEFT"
+    FAVORS_RIGHT = "FAVORS_RIGHT"
+    PRACTICALLY_NULL = "PRACTICALLY_NULL"
+    INCONCLUSIVE = "INCONCLUSIVE"
+    INTERACTION_DETECTED = "INTERACTION_DETECTED"
+    INTERACTION_INCONCLUSIVE = "INTERACTION_INCONCLUSIVE"
+
+
+class ReviewAdjudicationStatus(StrEnum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+    NOT_REQUIRED = "NOT_REQUIRED"
+
+
+class ReviewFindingStatus(StrEnum):
+    """A single MAJOR finding is open or resolved, never NOT_REQUIRED."""
+
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+
+
+# The legacy sets keep their names and hold PLAIN str members: d1_parsing renders
+# sorted(CLAUSE_STATUS) into a caller-visible error. Measured 2026-10-06 at this
+# commit: sorted(frozenset(ClauseStatus)) prints
+# [<ClauseStatus.FAIL: 'FAIL'>, ...] where the plain-str set prints ['FAIL', ...];
+# tests/test_d1_verdict_v2.py pins the message.
+CLAUSE_STATUS: Final[frozenset[str]] = frozenset(member.value for member in ClauseStatus)
 VERDICTS: Final[frozenset[str]] = frozenset(
     {"SUPPORTED", "NOT_SUPPORTED", "PRACTICALLY_NULL", "INCONCLUSIVE", "VALID_NEGATIVE", "RETIRED"}
 )
-EVIDENCE_CLASSES: Final[frozenset[str]] = frozenset(
-    {"MEASURED", "DERIVED_FROM_MEASURED", "MODEL_ESTIMATE", "RATE_ESTIMATE", "PROVIDER_BILLED"}
-)
-CONTRAST_KINDS: Final[frozenset[str]] = frozenset({"PAIRWISE", "FACTORIAL_INTERACTION"})
-CONTRAST_DECISIONS: Final[frozenset[str]] = frozenset(
-    {
-        "FAVORS_LEFT",
-        "FAVORS_RIGHT",
-        "PRACTICALLY_NULL",
-        "INCONCLUSIVE",
-        "INTERACTION_DETECTED",
-        "INTERACTION_INCONCLUSIVE",
-    }
-)
+EVIDENCE_CLASSES: Final[frozenset[str]] = frozenset(member.value for member in VerdictEvidenceClass)
+CONTRAST_KINDS: Final[frozenset[str]] = frozenset(member.value for member in ContrastKind)
+CONTRAST_DECISIONS: Final[frozenset[str]] = frozenset(member.value for member in ContrastDecision)
 CONTRAST_VOCABULARY: Final = "d1-contrast/v1"
 
 type JsonScalar = str | int | float | bool | None
@@ -72,6 +119,23 @@ class D1VerdictValidationError(ValueError):
         self.path = path
         self.context = {"path": path, "code": code}
         super().__init__(f"D1 verdict validation {code} at {path}: {detail}")
+
+
+def _closed[Vocabulary: StrEnum](
+    vocabulary: type[Vocabulary], value: object, field: str
+) -> Vocabulary:
+    """Hold ``value`` as a member of its closed vocabulary, or raise at construction.
+
+    The parsers run their coded membership checks first; this is the second guard
+    and covers direct construction only.
+    """
+
+    try:
+        return vocabulary(value)
+    except ValueError as exc:
+        allowed = sorted(member.value for member in vocabulary)
+        msg = f"{field} must be one of {allowed}, got {value!r}"
+        raise ValueError(msg) from exc
 
 
 @dataclass(frozen=True)
@@ -135,7 +199,7 @@ class D1Endpoint:
 @dataclass(frozen=True)
 class D1Contrast:
     contrast_id: str
-    contrast_kind: str
+    contrast_kind: ContrastKind
     terms: tuple[D1ContrastTerm, ...]
     endpoint: D1Endpoint
     estimate: float | None
@@ -147,11 +211,26 @@ class D1Contrast:
     margins: Mapping[str, float]
     n: int
     df: int | None
-    evidence_class: str
+    evidence_class: VerdictEvidenceClass
     decision_vocabulary: str
-    decision: str
+    decision: ContrastDecision
     evidence_hash: ContentHash
     unavailable: D1EstimateGap | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "contrast_kind",
+            _closed(ContrastKind, self.contrast_kind, "D1Contrast.contrast_kind"),
+        )
+        object.__setattr__(
+            self,
+            "evidence_class",
+            _closed(VerdictEvidenceClass, self.evidence_class, "D1Contrast.evidence_class"),
+        )
+        object.__setattr__(
+            self, "decision", _closed(ContrastDecision, self.decision, "D1Contrast.decision")
+        )
 
 
 @dataclass(frozen=True)
@@ -160,18 +239,24 @@ class D1Clause:
     decision_vocabulary: str
     threshold: float | None
     margin: float | None
-    status: str
+    status: ClauseStatus
     evidence_hash: ContentHash
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _closed(ClauseStatus, self.status, "D1Clause.status"))
 
 
 @dataclass(frozen=True)
 class D1Integrity:
-    status: str
+    status: ClauseStatus
     roster_complete: bool
     pairing_verified: bool
     data_order_verified: bool
     completion_verified: bool
     evidence_hash: ContentHash
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _closed(ClauseStatus, self.status, "D1Integrity.status"))
 
 
 @dataclass(frozen=True)
@@ -186,14 +271,21 @@ class D1InputIdentity:
 @dataclass(frozen=True)
 class D1ReviewFindingDisposition:
     finding_id: str
-    status: str
+    status: ReviewFindingStatus
     rationale: str
     evidence_sha256: str | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "status",
+            _closed(ReviewFindingStatus, self.status, "D1ReviewFindingDisposition.status"),
+        )
 
 
 @dataclass(frozen=True)
 class D1ReviewAdjudication:
-    status: str
+    status: ReviewAdjudicationStatus
     major_findings: tuple[str, ...]
     dispositions: Mapping[str, D1ReviewFindingDisposition]
     execution_receipt_sha256: str
@@ -201,6 +293,13 @@ class D1ReviewAdjudication:
     report_sha256: str
     review_packet_sha256: str
     review_request_sha256: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "status",
+            _closed(ReviewAdjudicationStatus, self.status, "D1ReviewAdjudication.status"),
+        )
 
 
 @dataclass(frozen=True)

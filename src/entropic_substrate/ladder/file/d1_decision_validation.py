@@ -25,6 +25,8 @@ from entropic_substrate.kernel.verdict.d1_types import (
     D1ReviewFindingDisposition,
     D1Successor,
     JsonValue,
+    ReviewAdjudicationStatus,
+    ReviewFindingStatus,
 )
 
 _MAJOR_ID = re.compile(r"MAJOR-[1-9][0-9]*")
@@ -117,7 +119,7 @@ def parse_review(value: object) -> D1Review:
             raise error("invalid_adjudication", path, "resolved MAJOR requires evidence SHA-256")
         rationale = string(item["rationale"], path=f"{path}.rationale")
         dispositions[finding_id] = D1ReviewFindingDisposition(
-            finding_id, finding_status, rationale, evidence_sha256
+            finding_id, ReviewFindingStatus(finding_status), rationale, evidence_sha256
         )
     if tuple(dispositions) != major_findings:
         raise error(
@@ -144,7 +146,7 @@ def parse_review(value: object) -> D1Review:
     return D1Review(
         open_major_findings=open_findings,
         adjudication=D1ReviewAdjudication(
-            status=adjudication_status,
+            status=ReviewAdjudicationStatus(adjudication_status),
             major_findings=major_findings,
             dispositions=MappingProxyType(dispositions),
             execution_receipt_sha256=sha256_digest(

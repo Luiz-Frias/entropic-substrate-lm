@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import replace
 
@@ -9,7 +10,23 @@ import pytest
 
 from d1_verdict_v2_fixtures import decision_contract, machine_verdict
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
-from entropic_substrate.kernel.verdict.d1_types import D1VerdictValidationError
+from entropic_substrate.kernel.verdict.d1_types import (
+    CLAUSE_STATUS,
+    CONTRAST_DECISIONS,
+    CONTRAST_KINDS,
+    EVIDENCE_CLASSES,
+    ClauseStatus,
+    ContrastDecision,
+    ContrastKind,
+    D1ReviewAdjudication,
+    D1ReviewFindingDisposition,
+    D1VerdictValidationError,
+    ReviewAdjudicationStatus,
+    ReviewFindingStatus,
+    VerdictEvidenceClass,
+)
+from entropic_substrate.ladder.file.d1_decision_validation import parse_review
+from entropic_substrate.ladder.file.d1_filing import canonical_machine_verdict_bytes
 from entropic_substrate.ladder.file.d1_validator import ValidatedD1Verdict
 
 pytestmark = pytest.mark.unit
@@ -219,3 +236,287 @@ def test_review_major_requires_adjudication_consistent_with_registered_clearance
     ]
     with pytest.raises(D1VerdictValidationError, match="review"):
         _validated(payload)
+
+
+# FOR-1573: the closed D1 vocabularies are StrEnum types whose wire values are the
+# parent-tip (119081a) literals, so persisted bytes and the read-old window hold.
+_PARENT_TIP_CLAUSE_STATUS = frozenset({"PASS", "FAIL", "INCONCLUSIVE"})
+_PARENT_TIP_EVIDENCE_CLASSES = frozenset(
+    {"MEASURED", "DERIVED_FROM_MEASURED", "MODEL_ESTIMATE", "RATE_ESTIMATE", "PROVIDER_BILLED"}
+)
+_PARENT_TIP_CONTRAST_KINDS = frozenset({"PAIRWISE", "FACTORIAL_INTERACTION"})
+_PARENT_TIP_CONTRAST_DECISIONS = frozenset(
+    {
+        "FAVORS_LEFT",
+        "FAVORS_RIGHT",
+        "PRACTICALLY_NULL",
+        "INCONCLUSIVE",
+        "INTERACTION_DETECTED",
+        "INTERACTION_INCONCLUSIVE",
+    }
+)
+_PARENT_TIP_ADJUDICATION_STATUS = frozenset({"OPEN", "RESOLVED", "NOT_REQUIRED"})
+_PARENT_TIP_DISPOSITION_STATUS = frozenset({"OPEN", "RESOLVED"})
+
+_ENUMS = (
+    (ClauseStatus, _PARENT_TIP_CLAUSE_STATUS),
+    (VerdictEvidenceClass, _PARENT_TIP_EVIDENCE_CLASSES),
+    (ContrastKind, _PARENT_TIP_CONTRAST_KINDS),
+    (ContrastDecision, _PARENT_TIP_CONTRAST_DECISIONS),
+    (ReviewAdjudicationStatus, _PARENT_TIP_ADJUDICATION_STATUS),
+    (ReviewFindingStatus, _PARENT_TIP_DISPOSITION_STATUS),
+)
+
+
+@pytest.mark.parametrize(
+    ("legacy", "literal"),
+    [
+        (CLAUSE_STATUS, _PARENT_TIP_CLAUSE_STATUS),
+        (EVIDENCE_CLASSES, _PARENT_TIP_EVIDENCE_CLASSES),
+        (CONTRAST_KINDS, _PARENT_TIP_CONTRAST_KINDS),
+        (CONTRAST_DECISIONS, _PARENT_TIP_CONTRAST_DECISIONS),
+    ],
+)
+def test_legacy_vocabulary_sets_equal_the_parent_tip_literals_as_plain_strings(
+    legacy: frozenset[str], literal: frozenset[str]
+) -> None:
+    # d1_parsing renders sorted(CLAUSE_STATUS) into a caller-visible error, so
+    # a member must stay a plain str, never an enum member.
+    assert legacy == literal
+    assert type(legacy) is frozenset
+    assert all(type(member) is str for member in legacy)
+
+
+@pytest.mark.parametrize(("vocabulary", "literal"), _ENUMS)
+def test_enum_values_are_the_parent_tip_wire_literals_and_names_mirror_them(
+    vocabulary: type, literal: frozenset[str]
+) -> None:
+    assert {member.value for member in vocabulary} == literal
+    assert all(type(member.value) is str for member in vocabulary)
+    assert all(member.name == member.value for member in vocabulary)
+    assert all(member == member.value for member in vocabulary)
+    assert all(json.dumps(member) == json.dumps(member.value) for member in vocabulary)
+
+
+def test_the_verdict_evidence_class_is_not_the_lowercase_identity_evidence_class() -> None:
+    from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
+
+    assert VerdictEvidenceClass is not EvidenceClass
+    assert {member.value for member in VerdictEvidenceClass}.isdisjoint(
+        {member.value for member in EvidenceClass}
+    )
+
+
+def _verdict() -> ValidatedD1Verdict:
+    return _validated(machine_verdict())
+
+
+_FIELDS = {
+    "contrast_kind": lambda **over: replace(_verdict().contrasts[0], **over),
+    "evidence_class": lambda **over: replace(_verdict().contrasts[0], **over),
+    "decision": lambda **over: replace(_verdict().contrasts[0], **over),
+    "clause_status": lambda **over: replace(
+        _verdict().clauses_by_arm["sg"]["noncollapse"], **{"status": over["value"]}
+    ),
+    "integrity_status": lambda **over: replace(_verdict().integrity, status=over["value"]),
+    "adjudication_status": lambda **over: replace(
+        _verdict().review.adjudication, status=over["value"]
+    ),
+    "disposition_status": lambda **over: D1ReviewFindingDisposition(
+        finding_id="MAJOR-1", status=over["value"], rationale="r", evidence_sha256=None
+    ),
+}
+
+
+def _build(field: str, value: object) -> object:
+    if field in {"contrast_kind", "evidence_class", "decision"}:
+        return _FIELDS[field](**{field: value})
+    return _FIELDS[field](value=value)
+
+
+@pytest.mark.parametrize("field", list(_FIELDS))
+@pytest.mark.parametrize("bad", ["MAYBE", "", "pass", " PASS", None, 3, ["PASS"]])
+def test_an_out_of_vocabulary_value_raises_at_construction(field: str, bad: object) -> None:
+    with pytest.raises(ValueError):
+        _build(field, bad)
+
+
+def test_decision_maybe_raises_at_construction() -> None:
+    with pytest.raises(ValueError, match=r"D1Contrast\.decision"):
+        replace(_verdict().contrasts[0], decision="MAYBE")
+
+
+def test_the_two_review_vocabularies_do_not_merge() -> None:
+    with pytest.raises(ValueError):
+        D1ReviewFindingDisposition(
+            finding_id="MAJOR-1", status="NOT_REQUIRED", rationale="r", evidence_sha256=None
+        )
+    assert _build("adjudication_status", "NOT_REQUIRED").status is (  # type: ignore[attr-defined]
+        ReviewAdjudicationStatus.NOT_REQUIRED
+    )
+    for status in ("OPEN", "RESOLVED"):
+        assert _build("disposition_status", status).status is ReviewFindingStatus(status)  # type: ignore[attr-defined]
+
+
+def test_construction_holds_the_member_and_it_equals_the_old_string() -> None:
+    verdict = _verdict()
+    contrast = verdict.contrasts[0]
+    assert type(contrast.contrast_kind) is ContrastKind and contrast.contrast_kind == "PAIRWISE"
+    assert type(contrast.evidence_class) is VerdictEvidenceClass
+    assert contrast.evidence_class == "DERIVED_FROM_MEASURED"
+    assert type(contrast.decision) is ContrastDecision and contrast.decision == "INCONCLUSIVE"
+    clause = verdict.clauses_by_arm["sg"]["noncollapse"]
+    assert type(clause.status) is ClauseStatus and clause.status == "PASS"
+    assert type(verdict.integrity.status) is ClauseStatus and verdict.integrity.status == "PASS"
+    adjudication = verdict.review.adjudication
+    assert type(adjudication.status) is ReviewAdjudicationStatus
+    assert adjudication.status == "NOT_REQUIRED"
+    assert replace(contrast, decision="FAVORS_LEFT").decision is ContrastDecision.FAVORS_LEFT
+
+
+def _set(payload: dict[str, object], path: tuple[object, ...], value: object) -> None:
+    node: object = payload
+    for key in path[:-1]:
+        node = node[key]  # type: ignore[index]
+    node[path[-1]] = value  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("path", "code"),
+    [
+        (("contrasts", 0, "contrast_kind"), "invalid_contrast_kind"),
+        (("contrasts", 0, "evidence_class"), "invalid_evidence_class"),
+        (("contrasts", 0, "decision"), "invalid_contrast_decision"),
+        (("clauses_by_arm", "sg", "language", "status"), "invalid_status"),
+        (("integrity", "status"), "invalid_status"),
+        (("review", "adjudication", "status"), "invalid_adjudication_status"),
+    ],
+)
+def test_the_parser_membership_check_still_runs_before_the_enum_is_built(
+    path: tuple[object, ...], code: str
+) -> None:
+    payload = machine_verdict()
+    _set(payload, path, "MAYBE")
+    with pytest.raises(D1VerdictValidationError) as raised:
+        _validated(payload)
+    assert raised.value.code == code
+    if code == "invalid_status":
+        assert "['FAIL', 'INCONCLUSIVE', 'PASS']" in str(raised.value)
+
+
+def test_a_disposition_outside_open_or_resolved_keeps_its_parser_code() -> None:
+    review = _review("OPEN")
+    review["adjudication"]["dispositions"][0]["status"] = "NOT_REQUIRED"  # type: ignore[index]
+    with pytest.raises(D1VerdictValidationError) as raised:
+        parse_review(review)
+    assert raised.value.code == "invalid_adjudication"
+
+
+def _review(status: str) -> dict[str, object]:
+    findings = [] if status == "NOT_REQUIRED" else ["MAJOR-1"]
+    dispositions = (
+        []
+        if status == "NOT_REQUIRED"
+        else [
+            {
+                "evidence_sha256": None if status == "OPEN" else f"{240:064x}",
+                "finding_id": "MAJOR-1",
+                "rationale": "Independent recomputation.",
+                "status": status,
+            }
+        ]
+    )
+    return {
+        "open_major_findings": findings if status == "OPEN" else [],
+        "adjudication": {
+            "dispositions": dispositions,
+            "execution_receipt_sha256": f"{230:064x}",
+            "major_finding_ids": findings,
+            "open_major_finding_ids": findings if status == "OPEN" else [],
+            "operator_record_sha256": f"{231:064x}",
+            "report_sha256": f"{232:064x}",
+            "review_packet_sha256": f"{233:064x}",
+            "review_request_sha256": f"{234:064x}",
+            "schema_version": "d1-review-adjudication-v1",
+            "status": status,
+        },
+    }
+
+
+def _rebuild_vocabulary(
+    payload: dict[str, object], verdict: ValidatedD1Verdict
+) -> dict[str, object]:
+    """Blank every vocabulary field of the persisted shape, then refill it from the
+    parsed value objects through ``.value`` (the serialization contract)."""
+
+    rebuilt = copy.deepcopy(payload)
+    for index, contrast in enumerate(verdict.contrasts):
+        _set(rebuilt, ("contrasts", index, "contrast_kind"), contrast.contrast_kind.value)
+        _set(rebuilt, ("contrasts", index, "evidence_class"), contrast.evidence_class.value)
+        _set(rebuilt, ("contrasts", index, "decision"), contrast.decision.value)
+    for arm, clauses in verdict.clauses_by_arm.items():
+        for name, clause in clauses.items():
+            _set(rebuilt, ("clauses_by_arm", arm, name, "status"), clause.status.value)
+    _set(rebuilt, ("integrity", "status"), verdict.integrity.status.value)
+    adjudication = verdict.review.adjudication
+    _set(rebuilt, ("review", "adjudication", "status"), adjudication.status.value)
+    return rebuilt
+
+
+def _blanked(payload: dict[str, object]) -> dict[str, object]:
+    blank = copy.deepcopy(payload)
+    for index in range(len(blank["contrasts"])):  # type: ignore[arg-type]
+        for key in ("contrast_kind", "evidence_class", "decision"):
+            _set(blank, ("contrasts", index, key), "UNSET")
+    for arm, clauses in blank["clauses_by_arm"].items():  # type: ignore[attr-defined]
+        for name in clauses:
+            _set(blank, ("clauses_by_arm", arm, name, "status"), "UNSET")
+    _set(blank, ("integrity", "status"), "UNSET")
+    _set(blank, ("review", "adjudication", "status"), "UNSET")
+    return blank
+
+
+@pytest.mark.parametrize("verdict_name", ["SUPPORTED", "VALID_NEGATIVE"])
+def test_read_old_fixture_literals_parse_and_round_trip_byte_identically(
+    verdict_name: str,
+) -> None:
+    # The oracle is the fixture literals (plain strings, never rebuilt from members).
+    payload = machine_verdict(verdict=verdict_name)
+    verdict = _validated(payload)
+    rebuilt = _rebuild_vocabulary(_blanked(payload), verdict)
+    for contrast in verdict.contrasts:
+        assert type(contrast.decision.value) is str
+    assert canonical_machine_verdict_bytes(rebuilt) == canonical_machine_verdict_bytes(payload)
+
+
+@pytest.mark.parametrize("evidence_class", sorted(_PARENT_TIP_EVIDENCE_CLASSES))
+@pytest.mark.parametrize("decision", sorted(_PARENT_TIP_CONTRAST_DECISIONS))
+def test_every_registered_evidence_class_and_decision_still_parses_and_round_trips(
+    evidence_class: str, decision: str
+) -> None:
+    payload = machine_verdict()
+    for index in range(3):
+        _set(payload, ("contrasts", index, "evidence_class"), evidence_class)
+        _set(payload, ("contrasts", index, "decision"), decision)
+    verdict = _validated(payload)
+    assert {c.evidence_class.value for c in verdict.contrasts} == {evidence_class}
+    rebuilt = _rebuild_vocabulary(_blanked(payload), verdict)
+    assert canonical_machine_verdict_bytes(rebuilt) == canonical_machine_verdict_bytes(payload)
+
+
+@pytest.mark.parametrize("status", ["NOT_REQUIRED", "OPEN", "RESOLVED"])
+def test_every_review_status_still_parses_and_round_trips(status: str) -> None:
+    review = _review(status)
+    parsed = parse_review(review)
+    assert isinstance(parsed.adjudication, D1ReviewAdjudication)
+    assert parsed.adjudication.status.value == status
+    rebuilt = copy.deepcopy(review)
+    rebuilt["adjudication"]["status"] = parsed.adjudication.status.value  # type: ignore[index]
+    for item, disposition in zip(
+        rebuilt["adjudication"]["dispositions"],  # type: ignore[index]
+        parsed.adjudication.dispositions.values(),
+        strict=True,
+    ):
+        item["status"] = disposition.status.value  # type: ignore[index]
+        assert type(disposition.status) is ReviewFindingStatus
+    assert canonical_machine_verdict_bytes(rebuilt) == canonical_machine_verdict_bytes(review)
