@@ -126,16 +126,15 @@ def _closed[Vocabulary: StrEnum](
 ) -> Vocabulary:
     """Hold ``value`` as a member of its closed vocabulary, or raise at construction.
 
-    The parsers run their coded membership checks first; this is the second guard
-    and covers direct construction only.
+    The guard is nominal, like every sibling enum field in the repo: a raw ``str``
+    (even one whose value is in the vocabulary), ``None`` or a member of another
+    enum raises ``TypeError``. The parsers' coded membership checks and their
+    ``Vocabulary(value)`` wraps remain the only ``str`` to member mapping.
     """
-
-    try:
-        return vocabulary(value)
-    except ValueError as exc:
-        allowed = sorted(member.value for member in vocabulary)
-        msg = f"{field} must be one of {allowed}, got {value!r}"
-        raise ValueError(msg) from exc
+    if type(value) is not vocabulary:
+        msg = f"{field} must be {vocabulary.__name__}, got {type(value).__name__}"
+        raise TypeError(msg)
+    return value
 
 
 @dataclass(frozen=True)

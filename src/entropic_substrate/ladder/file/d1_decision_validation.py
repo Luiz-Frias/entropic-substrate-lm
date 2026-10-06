@@ -75,7 +75,7 @@ def parse_review(value: object) -> D1Review:
             "must be d1-review-adjudication-v1",
         )
     adjudication_status = string(adjudication["status"], path="review.adjudication.status")
-    if adjudication_status not in {"OPEN", "RESOLVED", "NOT_REQUIRED"}:
+    if adjudication_status not in {member.value for member in ReviewAdjudicationStatus}:
         raise error(
             "invalid_adjudication_status",
             "review.adjudication.status",
@@ -109,7 +109,7 @@ def parse_review(value: object) -> D1Review:
                 "invalid_adjudication", f"{path}.finding_id", "must be canonical and unique"
             )
         finding_status = string(item["status"], path=f"{path}.status")
-        if finding_status not in {"OPEN", "RESOLVED"}:
+        if finding_status not in {member.value for member in ReviewFindingStatus}:
             raise error("invalid_adjudication", f"{path}.status", "must be OPEN or RESOLVED")
         evidence = item["evidence_sha256"]
         evidence_sha256 = (

@@ -337,25 +337,49 @@ def _build(field: str, value: object) -> object:
 @pytest.mark.parametrize("field", list(_FIELDS))
 @pytest.mark.parametrize("bad", ["MAYBE", "", "pass", " PASS", None, 3, ["PASS"]])
 def test_an_out_of_vocabulary_value_raises_at_construction(field: str, bad: object) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         _build(field, bad)
 
 
+_VALID_RAW = {
+    "contrast_kind": "PAIRWISE",
+    "evidence_class": "MEASURED",
+    "decision": "FAVORS_LEFT",
+    "clause_status": "PASS",
+    "integrity_status": "PASS",
+    "adjudication_status": "NOT_REQUIRED",
+    "disposition_status": "OPEN",
+}
+
+
+@pytest.mark.parametrize("field", list(_FIELDS))
+def test_a_raw_string_inside_the_vocabulary_is_refused_nominally(field: str) -> None:
+    # The door is nominal: only the parsers map str to member, so a lenient
+    # coercion at construction (which would accept this value) goes RED here.
+    with pytest.raises(TypeError, match="must be"):
+        _build(field, _VALID_RAW[field])
+
+
 def test_decision_maybe_raises_at_construction() -> None:
-    with pytest.raises(ValueError, match=r"D1Contrast\.decision"):
+    with pytest.raises(TypeError, match=r"D1Contrast\.decision"):
         replace(_verdict().contrasts[0], decision="MAYBE")
 
 
 def test_the_two_review_vocabularies_do_not_merge() -> None:
-    with pytest.raises(ValueError):
+    # A disposition cannot accept a member of adjudication_status, even if the value matches.
+    with pytest.raises(TypeError):
         D1ReviewFindingDisposition(
-            finding_id="MAJOR-1", status="NOT_REQUIRED", rationale="r", evidence_sha256=None
+            finding_id="MAJOR-1",
+            status=ReviewAdjudicationStatus.OPEN,  # Same value "OPEN", wrong enum type
+            rationale="r",
+            evidence_sha256=None,
         )
-    assert _build("adjudication_status", "NOT_REQUIRED").status is (  # type: ignore[attr-defined]
-        ReviewAdjudicationStatus.NOT_REQUIRED
-    )
-    for status in ("OPEN", "RESOLVED"):
-        assert _build("disposition_status", status).status is ReviewFindingStatus(status)  # type: ignore[attr-defined]
+    # Both enums have their own members.
+    adjudication = _build("adjudication_status", ReviewAdjudicationStatus.NOT_REQUIRED)  # type: ignore[arg-type]
+    assert adjudication.status is ReviewAdjudicationStatus.NOT_REQUIRED  # type: ignore[attr-defined]
+    for member in (ReviewFindingStatus.OPEN, ReviewFindingStatus.RESOLVED):
+        disposition = _build("disposition_status", member)  # type: ignore[arg-type]
+        assert disposition.status is member  # type: ignore[attr-defined]
 
 
 def test_construction_holds_the_member_and_it_equals_the_old_string() -> None:
@@ -371,7 +395,10 @@ def test_construction_holds_the_member_and_it_equals_the_old_string() -> None:
     adjudication = verdict.review.adjudication
     assert type(adjudication.status) is ReviewAdjudicationStatus
     assert adjudication.status == "NOT_REQUIRED"
-    assert replace(contrast, decision="FAVORS_LEFT").decision is ContrastDecision.FAVORS_LEFT
+    assert (
+        replace(contrast, decision=ContrastDecision.FAVORS_LEFT).decision
+        is ContrastDecision.FAVORS_LEFT
+    )
 
 
 def _set(payload: dict[str, object], path: tuple[object, ...], value: object) -> None:
