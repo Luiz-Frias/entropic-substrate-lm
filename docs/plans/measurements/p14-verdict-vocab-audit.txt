@@ -1,0 +1,806 @@
+FOR-1573 audit: persisted D1 verdict vocabularies
+=================================================
+
+Scope: read back every persisted D1 verdict artifact in the repository and in
+the DVC-tracked `results/` against the closed vocabularies at
+`kernel/verdict/d1_types.py` (CLAUSE_STATUS, EVIDENCE_CLASSES, CONTRAST_KINDS,
+CONTRAST_DECISIONS) and the two review status vocabularies in
+`ladder/file/d1_decision_validation.py` (adjudication {OPEN, RESOLVED,
+NOT_REQUIRED}, finding disposition {OPEN, RESOLVED}). Commit 1 of
+p14-t-verdict-vocab; no source changes land in this commit. Zero is a result,
+never an assumption: the count below is a measured count over a stated scan
+set, and the outputs that could NOT be scanned are listed as UNSCANNED, never
+folded into the zero.
+
+Result
+------
+D1 verdict artifacts found (payload whose schema_version is d1-verdict/v2 or
+d1-verdict/v3), read back through the production parsers:   0
+Schemaless signature hits (a dict carrying both `clauses_by_arm` and
+`contrasts`):                                                0
+Values outside any vocabulary (per field, all seven fields): 0
+UNREADABLE files or base64 fields in the scanned set:        0
+Completeness: PARTIAL. Three DVC outputs are UNSCANNED (see below). The zero
+holds for the scanned set only. Nothing here is inferred for the unscanned
+outputs, and the read-old window is therefore pinned independently by the
+tests, whose oracle is the fixture literals in tests/d1_verdict_v2_fixtures.py.
+
+Epoch
+-----
+start tip (mythwave/p14-c-hook-1541, parent of this branch): 119081a0251d3a2bc38723f877e7494ea524902b
+working tree clean at measurement (`git status --short | wc -l` = 0)
+measured at (UTC): 2026-10-06T17:30:56Z
+per-root file counts (`find <root> -type f | wc -l`):
+  results/    3008
+  data/       4
+  configs/    26
+  docs/       101
+  models/     7
+  .dvc/cache  88
+  git ls-files 1072 entries at the tip; 1068 are regular files present in the
+  working tree and form the TRACKED TREE scan set below (the four non-files
+  are the references/* submodule entries, mode 160000)
+
+Scan set
+--------
+1. TRACKED TREE: `git ls-files` at the start tip (clean tree). Every file is
+   byte-searched for the markers `d1-verdict/v`, `clauses_by_arm` and
+   `"contrast_kind"`; every .json/.jsonl (and every file `file` classifies
+   as JSON data) is decoded and walked. docs/verdicts/e1-5a-verdict.json,
+   e1-5c-frozen-verdict.json and e1-5d-readout.json carry neither a
+   schema_version nor a schema key (measured: top-level keys read directly),
+   so they are E-series records and the D1 count there is measured, not
+   inferred.
+2. DVC pointers, seven `results/*.dvc`, with their materialization state
+   measured by `dvc status <pointer>` (local only, no remote contact):
+   results/captured.dvc                     pointer nfiles 76, workspace 46 files,
+                                            `.dir` manifest b779345... NOT in
+                                            .dvc/cache: scanned the 46 present
+                                            files; 30 files UNSCANNED (their
+                                            names are unknowable without the
+                                            manifest)
+   results/h-image-publication-79a4be2.dvc  clean, 7/7 files, scanned
+   results/h-image-publication-88d1a25.dvc  clean, 12/12 files, scanned
+   results/h-image-publication-9a6300a.dvc  clean, 9/9 files, scanned
+   results/h-image-publication-b576df4.dvc  clean, 8/8 files, scanned
+   results/h-image-publication-3b93854.dvc  ABSENT from workspace and cache:
+                                            UNSCANNED (12 files, 9635176 B)
+   results/field-pretrain-s42.jsonl.dvc     ABSENT from workspace and cache:
+                                            UNSCANNED (1 file, 4769 B)
+3. UNTRACKED SCRATCH directories under results/ (h-image-build.*,
+   h-image-refresh.*, h-image-storage-diagnostics.*, h-index-isolation.*,
+   h0-*, deferred-h-r2.*): classified BY NAME as scratch and source copies,
+   scanned and reported in their own sections, never folded into the
+   artifact count. The three h-image-* directories hold `context/` copies of
+   the source tree and `source.tar` at an older module layout
+   (analysis/evidence/experiments); their marker hits are Python source, not
+   artifacts.
+4. LOOSE FILES in results/ (non-pointer) and the whole `.dvc/cache`
+   (88 files, content-addressed blobs, sniffed by `file` regardless of
+   extension).
+
+Why the three UNSCANNED outputs were not fetched: `dvc fetch`/`dvc pull`
+downloads from the project's R2 remote, and this lane holds no operator
+authorization for a download; completing the scan is one operator command
+(`dvc pull results/captured.dvc results/field-pretrain-s42.jsonl.dvc
+results/h-image-publication-3b93854.dvc`, which also rewrites the local
+`results/captured` workspace) followed by re-running the script below.
+By name and format, none of the three is a D1 filing: `captured` holds
+E-series telemetry (the 46 present files are 2 `e0-*` and 44 `e1-*` JSONL),
+`h-image-publication-*` are image-publication evidence bundles, and
+`field-pretrain-s42.jsonl` is a pretraining telemetry JSONL. That is a
+classification by name, not a measurement, and is not counted.
+
+Command reproducing this file
+-----------------------------
+Run from the repo root at the start tip, with the project venv:
+
+    PYTHONPATH=src .venv/bin/python audit.py            # the AUDIT SCRIPT below
+    PYTHONPATH=src .venv/bin/python control.py <dir>    # the CONTROL BUILDER below
+    PYTHONPATH=src .venv/bin/python audit.py --control <dir>
+
+No script file is committed (the p14-text-trim-audit.txt precedent: Allowed
+files admits only this .txt); the script text is quoted verbatim below. The
+instrument: a node is an ARTIFACT when it is a dict whose schema_version is
+d1-verdict/v2 or d1-verdict/v3 (the two schema versions the production
+validator accepts, d1_validator.py:87). Each artifact's vocabulary-bearing sections are read back
+through the production parsers `_parse_contrasts`, `_parse_clauses_by_arm`,
+`_parse_integrity` (ladder/file/d1_validator.py) and `parse_review`
+(ladder/file/d1_decision_validation.py), and every value of the seven
+vocabulary fields is counted from the raw payload and compared against the
+legacy sets independently of the parser. Strings under keys ending
+`_base64` are decoded and walked (decision contracts travel that way).
+A decode failure on a claimed-decodable file is reported as UNREADABLE,
+never dropped.
+
+Control (the instrument finds what it is meant to find)
+-------------------------------------------------------
+A control corpus built outside the repo from `machine_verdict()` in
+tests/d1_verdict_v2_fixtures.py holds: a valid artifact, the same inside a
+JSONL line, one with decision "MAYBE", one with clause status "BROKEN" nested
+in a base64 field, one schemaless signature with integrity status "WEIRD",
+a broken-JSON file and a prose-only note. Required: the two valid artifacts
+PARSED; the MAYBE, BROKEN and WEIRD values each reported OUT-OF-VOCABULARY
+and the parser REJECTED with its code; the broken file UNREADABLE; the
+prose file a marker hit but not an artifact. Output, verbatim:
+
+    [CONTROL <scratch>/control_corpus]
+      files in scan set                 : 7
+      claimed decodable (json/jsonl/magic): 6
+      files containing a D1 marker byte string: 5
+        marker file: <scratch>/control_corpus/notes.txt
+        marker file: <scratch>/control_corpus/oov_decision.json
+        marker file: <scratch>/control_corpus/schemaless_signature.json
+        marker file: <scratch>/control_corpus/valid.json
+        marker file: <scratch>/control_corpus/valid_line.jsonl
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 4
+      schemaless signature hits (clauses_by_arm + contrasts): 1
+        artifact <scratch>/control_corpus/oov_clause_b64.json wrapper_base64(base64) -> REJECTED invalid_status at clauses_by_arm.sg.language.status
+        artifact <scratch>/control_corpus/oov_decision.json <root> -> REJECTED invalid_contrast_decision at contrasts[0].decision
+        signature <scratch>/control_corpus/schemaless_signature.json <root> -> REJECTED missing_field at integrity
+        artifact <scratch>/control_corpus/valid.json <root> -> PARSED
+        artifact <scratch>/control_corpus/valid_line.jsonl:2 <root> -> PARSED
+      contrast_kind: "FACTORIAL_INTERACTION"x5, "PAIRWISE"x10 ; out-of-vocabulary=0
+      evidence_class: "DERIVED_FROM_MEASURED"x15 ; out-of-vocabulary=0
+      contrast_decision: "INCONCLUSIVE"x9, "INTERACTION_INCONCLUSIVE"x5, "MAYBE"x1 OUT-OF-VOCABULARY ; out-of-vocabulary=1
+      clause_status: "BROKEN"x1 OUT-OF-VOCABULARY, "PASS"x44 ; out-of-vocabulary=1
+      integrity_status: "PASS"x4, "WEIRD"x1 OUT-OF-VOCABULARY ; out-of-vocabulary=1
+      adjudication_status: "NOT_REQUIRED"x4 ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 1
+        <scratch>/control_corpus/broken.json: JSONDecodeError Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+
+AUDIT OUTPUT (the real run, verbatim)
+-------------------------------------
+    [TRACKED TREE (git ls-files)]
+      files in scan set                 : 1068
+      claimed decodable (json/jsonl/magic): 58
+      files containing a D1 marker byte string: 17
+        marker file: docs/plans/measurements/p14-text-trim-audit.txt
+        marker file: src/entropic_substrate/kernel/verdict/d1_types.py
+        marker file: src/entropic_substrate/ladder/file/d1_decision_validation.py
+        marker file: src/entropic_substrate/ladder/file/d1_filing_edges.py
+        marker file: src/entropic_substrate/ladder/file/d1_real_arm_verdict.py
+        marker file: src/entropic_substrate/ladder/file/d1_validator.py
+        marker file: src/entropic_substrate/ladder/register/d1_registered_design.py
+        marker file: src/entropic_substrate/ladder/register/d1_registration_codec.py
+        marker file: tests/d1_verdict_v2_fixtures.py
+        marker file: tests/test_d1_decision_bindings.py
+        marker file: tests/test_d1_decision_contract.py
+        marker file: tests/test_d1_filing_assembly.py
+        marker file: tests/test_d1_filing_graph_gate.py
+        marker file: tests/test_d1_real_arm_verdict_assembly.py
+        marker file: tests/test_d1_unavailable_filing.py
+        marker file: tests/test_d1_unavailable_verdict.py
+        marker file: tests/test_d1_verdict_v2.py
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [DVC OUTPUT results/captured]
+      files in scan set                 : 46
+      claimed decodable (json/jsonl/magic): 46
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [DVC OUTPUT results/h-image-publication-79a4be2]
+      files in scan set                 : 7
+      claimed decodable (json/jsonl/magic): 4
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [DVC OUTPUT results/h-image-publication-88d1a25]
+      files in scan set                 : 12
+      claimed decodable (json/jsonl/magic): 9
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [DVC OUTPUT results/h-image-publication-9a6300a]
+      files in scan set                 : 9
+      claimed decodable (json/jsonl/magic): 6
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [DVC OUTPUT results/h-image-publication-b576df4]
+      files in scan set                 : 8
+      claimed decodable (json/jsonl/magic): 5
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/deferred-h-r2.LmrgGj (classified by name: source/scratch copy)]
+      files in scan set                 : 3
+      claimed decodable (json/jsonl/magic): 0
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h-image-build.ohRI1c (classified by name: source/scratch copy)]
+      files in scan set                 : 900
+      claimed decodable (json/jsonl/magic): 53
+      files containing a D1 marker byte string: 17
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/analysis/d1_real_arm_verdict.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/evidence/d1_decision_validation.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/evidence/d1_filing_edges.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/evidence/d1_types.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/evidence/d1_validator.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/experiments/d1_registered_design.py
+        marker file: results/h-image-build.ohRI1c/context/src/entropic_substrate/experiments/d1_registration_codec.py
+        marker file: results/h-image-build.ohRI1c/context/tests/d1_verdict_v2_fixtures.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_decision_bindings.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_decision_contract.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_filing_assembly.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_filing_graph_gate.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_real_arm_verdict_assembly.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_unavailable_filing.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_unavailable_verdict.py
+        marker file: results/h-image-build.ohRI1c/context/tests/test_d1_verdict_v2.py
+        marker file: results/h-image-build.ohRI1c/source.tar
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h-image-refresh.Se6m2y (classified by name: source/scratch copy)]
+      files in scan set                 : 921
+      claimed decodable (json/jsonl/magic): 54
+      files containing a D1 marker byte string: 17
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/analysis/d1_real_arm_verdict.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/evidence/d1_decision_validation.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/evidence/d1_filing_edges.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/evidence/d1_types.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/evidence/d1_validator.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/experiments/d1_registered_design.py
+        marker file: results/h-image-refresh.Se6m2y/context/src/entropic_substrate/experiments/d1_registration_codec.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/d1_verdict_v2_fixtures.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_decision_bindings.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_decision_contract.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_filing_assembly.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_filing_graph_gate.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_real_arm_verdict_assembly.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_unavailable_filing.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_unavailable_verdict.py
+        marker file: results/h-image-refresh.Se6m2y/context/tests/test_d1_verdict_v2.py
+        marker file: results/h-image-refresh.Se6m2y/source.tar
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h-image-storage-diagnostics.zwgvMw (classified by name: source/scratch copy)]
+      files in scan set                 : 924
+      claimed decodable (json/jsonl/magic): 54
+      files containing a D1 marker byte string: 17
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/analysis/d1_real_arm_verdict.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/evidence/d1_decision_validation.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/evidence/d1_filing_edges.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/evidence/d1_types.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/evidence/d1_validator.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/experiments/d1_registered_design.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/src/entropic_substrate/experiments/d1_registration_codec.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/d1_verdict_v2_fixtures.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_decision_bindings.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_decision_contract.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_filing_assembly.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_filing_graph_gate.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_real_arm_verdict_assembly.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_unavailable_filing.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_unavailable_verdict.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/context/tests/test_d1_verdict_v2.py
+        marker file: results/h-image-storage-diagnostics.zwgvMw/source.tar
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h-index-isolation.M7J4Pl (classified by name: source/scratch copy)]
+      files in scan set                 : 1
+      claimed decodable (json/jsonl/magic): 0
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-6k-a6000.sL97j9 (classified by name: source/scratch copy)]
+      files in scan set                 : 27
+      claimed decodable (json/jsonl/magic): 19
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-6k-preparation.v79jqJ (classified by name: source/scratch copy)]
+      files in scan set                 : 24
+      claimed decodable (json/jsonl/magic): 15
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-6k-secrets-ready.Bkwq47 (classified by name: source/scratch copy)]
+      files in scan set                 : 19
+      claimed decodable (json/jsonl/magic): 12
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-6k-storage-repair-eu.qDxBik (classified by name: source/scratch copy)]
+      files in scan set                 : 23
+      claimed decodable (json/jsonl/magic): 14
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-6k-storage-repair.UtJ9He (classified by name: source/scratch copy)]
+      files in scan set                 : 18
+      claimed decodable (json/jsonl/magic): 11
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-cli-tracer-MxWUG3 (classified by name: source/scratch copy)]
+      files in scan set                 : 19
+      claimed decodable (json/jsonl/magic): 16
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-manual-6k-relaunch.hZO3GM (classified by name: source/scratch copy)]
+      files in scan set                 : 23
+      claimed decodable (json/jsonl/magic): 15
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [UNTRACKED SCRATCH results/h0-manual-6k.VEYGGo (classified by name: source/scratch copy)]
+      files in scan set                 : 17
+      claimed decodable (json/jsonl/magic): 10
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [LOOSE FILES results/* (non-pointer)]
+      files in scan set                 : 3
+      claimed decodable (json/jsonl/magic): 1
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+    [.dvc/cache]
+      files in scan set                 : 88
+      claimed decodable (json/jsonl/magic): 72
+      files containing a D1 marker byte string: 0
+      D1 verdict artifacts (schema_version d1-verdict/v2|v3): 0
+      schemaless signature hits (clauses_by_arm + contrasts): 0
+      contrast_kind: (none observed) ; out-of-vocabulary=0
+      evidence_class: (none observed) ; out-of-vocabulary=0
+      contrast_decision: (none observed) ; out-of-vocabulary=0
+      clause_status: (none observed) ; out-of-vocabulary=0
+      integrity_status: (none observed) ; out-of-vocabulary=0
+      adjudication_status: (none observed) ; out-of-vocabulary=0
+      disposition_status: (none observed) ; out-of-vocabulary=0
+      UNREADABLE: 0
+
+AUDIT SCRIPT
+------------
+    """FOR-1573 persisted D1 verdict vocabulary audit. Not committed."""
+    from __future__ import annotations
+
+    import argparse
+    import base64
+    import collections
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from entropic_substrate.kernel.verdict.d1_types import (
+        CLAUSE_STATUS,
+        CONTRAST_DECISIONS,
+        CONTRAST_KINDS,
+        EVIDENCE_CLASSES,
+        D1VerdictValidationError,
+    )
+    from entropic_substrate.ladder.file.d1_decision_validation import parse_review
+    from entropic_substrate.ladder.file.d1_validator import (
+        _parse_clauses_by_arm,
+        _parse_contrasts,
+        _parse_integrity,
+    )
+
+    SCHEMAS = {"d1-verdict/v2", "d1-verdict/v3"}
+    MARKERS = (b"d1-verdict/v", b"clauses_by_arm", b'"contrast_kind"')
+    ADJUDICATION_STATUS = {"OPEN", "RESOLVED", "NOT_REQUIRED"}
+    DISPOSITION_STATUS = {"OPEN", "RESOLVED"}
+    FIELDS = (
+        "contrast_kind",
+        "evidence_class",
+        "contrast_decision",
+        "clause_status",
+        "integrity_status",
+        "adjudication_status",
+        "disposition_status",
+    )
+    LEGAL = {
+        "contrast_kind": CONTRAST_KINDS,
+        "evidence_class": EVIDENCE_CLASSES,
+        "contrast_decision": CONTRAST_DECISIONS,
+        "clause_status": CLAUSE_STATUS,
+        "integrity_status": CLAUSE_STATUS,
+        "adjudication_status": ADJUDICATION_STATUS,
+        "disposition_status": DISPOSITION_STATUS,
+    }
+
+
+    class Unreadable(Exception):
+        """A claimed-decodable file or base64 field could not be decoded."""
+
+
+    def is_artifact(node: object) -> bool:
+        return type(node) is dict and node.get("schema_version") in SCHEMAS
+
+
+    def is_signature(node: object) -> bool:
+        return type(node) is dict and "clauses_by_arm" in node and "contrasts" in node
+
+
+    def tally(node: dict, counts: dict[str, collections.Counter]) -> None:
+        for contrast in node.get("contrasts", []) if type(node.get("contrasts")) is list else []:
+            if type(contrast) is dict:
+                counts["contrast_kind"][json.dumps(contrast.get("contrast_kind"))] += 1
+                counts["evidence_class"][json.dumps(contrast.get("evidence_class"))] += 1
+                counts["contrast_decision"][json.dumps(contrast.get("decision"))] += 1
+        by_arm = node.get("clauses_by_arm")
+        if type(by_arm) is dict:
+            for clauses in by_arm.values():
+                if type(clauses) is dict:
+                    for clause in clauses.values():
+                        if type(clause) is dict:
+                            counts["clause_status"][json.dumps(clause.get("status"))] += 1
+        integrity = node.get("integrity")
+        if type(integrity) is dict:
+            counts["integrity_status"][json.dumps(integrity.get("status"))] += 1
+        review = node.get("review")
+        adjudication = review.get("adjudication") if type(review) is dict else None
+        if type(adjudication) is dict:
+            counts["adjudication_status"][json.dumps(adjudication.get("status"))] += 1
+            for item in adjudication.get("dispositions", []) if type(
+                adjudication.get("dispositions")
+            ) is list else []:
+                if type(item) is dict:
+                    counts["disposition_status"][json.dumps(item.get("status"))] += 1
+
+
+    def real_parse(node: dict) -> str:
+        """Read the vocabulary-bearing sections back through the production parsers."""
+        try:
+            _parse_contrasts(node.get("contrasts"), allow_gaps=True)
+            _parse_clauses_by_arm(node.get("clauses_by_arm"))
+            _parse_integrity(node.get("integrity"))
+            parse_review(node.get("review"))
+        except D1VerdictValidationError as exc:
+            return f"REJECTED {exc.code} at {exc.path}"
+        except Exception as exc:  # reported, never swallowed
+            return f"PARSER-ERROR {type(exc).__name__}: {exc}"
+        return "PARSED"
+
+
+    def walk(node, path, source, found):
+        if is_artifact(node) or is_signature(node):
+            found.append((source, path, "artifact" if is_artifact(node) else "signature", node))
+        if type(node) is dict:
+            for key, value in node.items():
+                child = f"{path}.{key}" if path else str(key)
+                if type(value) is str and key.endswith("_base64"):
+                    try:
+                        raw = base64.b64decode(value, validate=True)
+                    except Exception as error:
+                        raise Unreadable(f"{source}:{child}: invalid base64: {error}") from error
+                    try:
+                        decoded = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    walk(decoded, f"{child}(base64)", source, found)
+                else:
+                    walk(value, child, source, found)
+        elif type(node) is list:
+            for index, item in enumerate(node):
+                walk(item, f"{path}[{index}]", source, found)
+
+
+    def magic_json(paths: list[Path]) -> set[Path]:
+        if not paths:
+            return set()
+        proc = subprocess.run(
+            ["file", "-f", "-"],
+            input="\n".join(str(p) for p in paths),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        hits = set()
+        for line in proc.stdout.splitlines():
+            name, _, desc = line.rpartition(": ")
+            if "JSON data" in desc:
+                hits.add(Path(name))
+        return hits
+
+
+    def scan(label: str, files: list[Path], out: list[str]) -> dict:
+        claimed = sorted(
+            {p for p in files if p.suffix in (".json", ".jsonl")} | magic_json(files)
+        )
+        found, unreadable, markers = [], [], []
+        for path in files:
+            try:
+                blob = path.read_bytes()
+            except OSError as exc:
+                unreadable.append(f"{path}: {exc}")
+                continue
+            if any(m in blob for m in MARKERS):
+                markers.append(str(path))
+        for path in claimed:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                unreadable.append(f"{path}: {exc}")
+                continue
+            docs = []
+            try:
+                if path.suffix == ".jsonl":
+                    for number, line in enumerate(text.splitlines(), 1):
+                        if line.strip():
+                            docs.append((f"{path}:{number}", json.loads(line)))
+                else:
+                    try:
+                        docs.append((str(path), json.loads(text)))
+                    except json.JSONDecodeError:
+                        for number, line in enumerate(text.splitlines(), 1):
+                            if line.strip():
+                                docs.append((f"{path}:{number}", json.loads(line)))
+            except json.JSONDecodeError as exc:
+                unreadable.append(f"{path}: JSONDecodeError {exc}")
+                continue
+            try:
+                for source, doc in docs:
+                    walk(doc, "", source, found)
+            except Unreadable as exc:
+                unreadable.append(str(exc))
+        counts = {name: collections.Counter() for name in FIELDS}
+        verdicts = []
+        for source, path, kind, node in found:
+            tally(node, counts)
+            verdicts.append((source, path, kind, real_parse(node)))
+        out.append(f"[{label}]")
+        out.append(f"  files in scan set                 : {len(files)}")
+        out.append(f"  claimed decodable (json/jsonl/magic): {len(claimed)}")
+        out.append(f"  files containing a D1 marker byte string: {len(markers)}")
+        for item in markers:
+            out.append(f"    marker file: {item}")
+        out.append(f"  D1 verdict artifacts (schema_version d1-verdict/v2|v3): "
+                   f"{sum(1 for v in verdicts if v[2] == 'artifact')}")
+        out.append(f"  schemaless signature hits (clauses_by_arm + contrasts): "
+                   f"{sum(1 for v in verdicts if v[2] == 'signature')}")
+        for source, path, kind, result in verdicts:
+            out.append(f"    {kind} {source} {path or '<root>'} -> {result}")
+        for name in FIELDS:
+            entries = []
+            bad = 0
+            for value, number in sorted(counts[name].items()):
+                raw = json.loads(value)
+                legal = type(raw) is str and raw in LEGAL[name]
+                bad += 0 if legal else number
+                entries.append(f"{value}x{number}{'' if legal else ' OUT-OF-VOCABULARY'}")
+            out.append(f"  {name}: {', '.join(entries) if entries else '(none observed)'}"
+                       f" ; out-of-vocabulary={bad}")
+        out.append(f"  UNREADABLE: {len(unreadable)}")
+        for item in unreadable:
+            out.append(f"    {item}")
+        return {"artifacts": len(verdicts), "unreadable": len(unreadable)}
+
+
+    def main() -> None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--control", type=Path)
+        args = parser.parse_args()
+        out: list[str] = []
+        if args.control:
+            files = sorted(p for p in args.control.rglob("*") if p.is_file())
+            scan(f"CONTROL {args.control}", files, out)
+            print("\n".join(out))
+            return
+        tracked = subprocess.run(
+            ["git", "ls-files"], capture_output=True, text=True, check=True
+        ).stdout.splitlines()
+        scan("TRACKED TREE (git ls-files)", [Path(p) for p in tracked if Path(p).is_file()], out)
+        results = Path("results")
+        pointer_outs = {
+            "captured": "results/captured.dvc",
+            "h-image-publication-79a4be2": "results/h-image-publication-79a4be2.dvc",
+            "h-image-publication-88d1a25": "results/h-image-publication-88d1a25.dvc",
+            "h-image-publication-9a6300a": "results/h-image-publication-9a6300a.dvc",
+            "h-image-publication-b576df4": "results/h-image-publication-b576df4.dvc",
+        }
+        for name in pointer_outs:
+            root = results / name
+            scan(f"DVC OUTPUT results/{name}", sorted(p for p in root.rglob("*") if p.is_file()), out)
+        scratch = sorted(
+            entry for entry in results.iterdir()
+            if entry.is_dir() and entry.name not in pointer_outs
+        )
+        for entry in scratch:
+            scan(f"UNTRACKED SCRATCH results/{entry.name} (classified by name: source/scratch copy)",
+                 sorted(p for p in entry.rglob("*") if p.is_file()), out)
+        loose = sorted(e for e in results.iterdir() if e.is_file() and e.suffix != ".dvc")
+        scan("LOOSE FILES results/* (non-pointer)", loose, out)
+        scan(".dvc/cache", sorted(p for p in Path(".dvc/cache").rglob("*") if p.is_file()), out)
+        print("\n".join(out))
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+
+CONTROL BUILDER
+---------------
+    """Builds the FOR-1573 audit control corpus from the test fixture. Not committed."""
+    import base64
+    import copy
+    import json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "tests")
+    from d1_verdict_v2_fixtures import machine_verdict  # noqa: E402
+
+    root = Path(sys.argv[1])
+    root.mkdir(parents=True)
+    good = machine_verdict()
+    (root / "valid.json").write_text(json.dumps(good))
+    (root / "valid_line.jsonl").write_text("{}\n" + json.dumps(good) + "\n")
+    bad = copy.deepcopy(good)
+    bad["contrasts"][0]["decision"] = "MAYBE"
+    (root / "oov_decision.json").write_text(json.dumps(bad))
+    badclause = copy.deepcopy(good)
+    badclause["clauses_by_arm"]["sg"]["language"]["status"] = "BROKEN"
+    (root / "oov_clause_b64.json").write_text(
+        json.dumps({"wrapper_base64": base64.b64encode(json.dumps(badclause).encode()).decode()})
+    )
+    sig = {"clauses_by_arm": good["clauses_by_arm"], "contrasts": good["contrasts"],
+           "integrity": {"status": "WEIRD"}}
+    (root / "schemaless_signature.json").write_text(json.dumps(sig))
+    (root / "broken.json").write_text("{not json")
+    (root / "notes.txt").write_text("mentions d1-verdict/v2 in prose only\n")
