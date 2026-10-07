@@ -15,6 +15,8 @@ from entropic_substrate.kernel.verdict.d1_types import (
     CONTRAST_DECISIONS,
     CONTRAST_KINDS,
     EVIDENCE_CLASSES,
+    REVIEW_ADJUDICATION_STATUSES,
+    REVIEW_FINDING_STATUSES,
     ClauseStatus,
     ContrastDecision,
     ContrastKind,
@@ -276,6 +278,8 @@ _ENUMS = (
         (EVIDENCE_CLASSES, _PARENT_TIP_EVIDENCE_CLASSES),
         (CONTRAST_KINDS, _PARENT_TIP_CONTRAST_KINDS),
         (CONTRAST_DECISIONS, _PARENT_TIP_CONTRAST_DECISIONS),
+        (REVIEW_ADJUDICATION_STATUSES, _PARENT_TIP_ADJUDICATION_STATUS),
+        (REVIEW_FINDING_STATUSES, _PARENT_TIP_DISPOSITION_STATUS),
     ],
 )
 def test_legacy_vocabulary_sets_equal_the_parent_tip_literals_as_plain_strings(

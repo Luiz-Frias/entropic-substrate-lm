@@ -105,6 +105,15 @@ VERDICTS: Final[frozenset[str]] = frozenset(
 EVIDENCE_CLASSES: Final[frozenset[str]] = frozenset(member.value for member in VerdictEvidenceClass)
 CONTRAST_KINDS: Final[frozenset[str]] = frozenset(member.value for member in ContrastKind)
 CONTRAST_DECISIONS: Final[frozenset[str]] = frozenset(member.value for member in ContrastDecision)
+# Module-level, not rebuilt per parse: measured 2026-10-06 with dis, the parent-tip
+# literal `x not in {"OPEN", ...}` compiles to one folded frozenset constant, while
+# a set comprehension in the parser allocates a new set on every call.
+REVIEW_ADJUDICATION_STATUSES: Final[frozenset[str]] = frozenset(
+    member.value for member in ReviewAdjudicationStatus
+)
+REVIEW_FINDING_STATUSES: Final[frozenset[str]] = frozenset(
+    member.value for member in ReviewFindingStatus
+)
 CONTRAST_VOCABULARY: Final = "d1-contrast/v1"
 
 type JsonScalar = str | int | float | bool | None
