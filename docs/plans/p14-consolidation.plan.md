@@ -443,6 +443,10 @@ Also settled before the interview: FOR-1581 CANCELED as a byte-identical duplica
 | DN-LEDGER | Rotate the main checkout's `launch-queue.jsonl` to `launch-queue.hexagonal-refactor.jsonl` at prelaunch; the p14 rows were appended to the live file because other lanes were still writing it. |
 | DN-LEAN-BOX | The Lean tail timebox, set by the operator at launch. |
 | DN-1614-READ-OLD | Only if the FOR-1614 audit finds untrimmed persisted records: the read-old window for them. |
+| DN-1632-SEAM (2026-10-06) | FOR-1632: `closure/d1_runpod_billing_parser.py` keeps its local hooks because the strict-JSON door has no `parse_float` seam (billed amounts are `Decimal`); ruling W4-21 retained it and left the acceptance count at "falls by 16". Amend the door with a `parse_float` seam, or keep the one holdout. |
+| DN-1626-REPOINT (2026-10-05/06) | FOR-1626: three BOUNDARY SHA sites stay on `require_sha256_hex_any_case` by rulings W1-16, W3-21 and W4-26 (`d1_registered_design` blob_sha256, `d1_primitives` encoder-initialization digest, `d1_trainer_object_transport` attempt/request digests); the repoint changes a caller-visible exception type at two of them. Repoint with the tests restated, or keep. |
+| DN-1633-HOOK (2026-10-07) | FOR-1633: the commit-msg gitlint hook blocked over-length messages from an interactive shell but let four agent commits through this sprint (mechanism not isolated; repro recipe on the ticket). A `.pre-commit-config.yaml` or hook-install change is operator-ruled. |
+| DN-1573-DVC (2026-10-07) | FOR-1573's persisted-verdict audit is PARTIAL: `results/captured.dvc` (30 of 76 files), `results/h-image-publication-3b93854.dvc` and `results/field-pretrain-s42.jsonl.dvc` were never fetched. Authorize `dvc pull` of the three pointers and a re-run of the quoted audit script, or accept the zero over the scanned set. |
 
 ---
 

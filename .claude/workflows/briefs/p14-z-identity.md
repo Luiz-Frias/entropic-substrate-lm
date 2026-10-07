@@ -75,7 +75,7 @@ The one identity rail: every edit to a reader-tuple member lands here, and the c
 Machine-checkable, one line each.
 
 - RED-first fault injection: `os.open` failing at descent step 2 and at the last step, at each of the three call sites, closes every opened descriptor exactly once and raises the site's own error; a descriptor-accounting fake counts opens and closes.
-- All five directory sites call the one helper; `git grep -n 'def _directory' src/entropic_substrate/composition` is empty; CLI `--help` snapshot unchanged.
+- All five directory sites call the one helper; `git grep -n 'def _directory' src/entropic_substrate/composition/cli.py src/entropic_substrate/composition/capture_cli.py src/entropic_substrate/composition/span_cli.py src/entropic_substrate/composition/source_cli.py` is empty (measured 2026-10-07, PR #331: the unscoped grep over `composition/` always hits the unrelated static `_directory` in `composition/wiring/d1_campaign_controller_factory.py:213`, present at the epoch and at every parent; ruling 16e); CLI `--help` snapshot unchanged.
 - `summarize_span_gains` and `summarize_score_gains` produce byte-identical summaries to the parent for their fixtures.
 - Conductor evidence in the PR body: `tools/regime_rows.py` output for both tables, `tests/test_identity_epoch.py` and `tests/test_regime_rows.py` green, the `read-old-table.md` row, and the member count changed.
 - The lane's own diff excludes `tests/test_identity_epoch.py` and `docs/identity/*`; only the conductor's re-pin commit touches them.
