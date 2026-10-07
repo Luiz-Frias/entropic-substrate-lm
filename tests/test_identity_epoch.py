@@ -413,6 +413,25 @@ still real), and the 3.12.15 rows are ADDED, computed with
 checkout; the first CI run at this tip is the live confirmation). The
 source-derived assertions below are untouched. The floating patch pin is the
 root cause and is recorded as a separate decision for the toolchain owner.
+p14-z-identity RE-PIN (ruling R-PIN, design-gate DG-A, MEASURED 2026-10-07):
+the identity rail's ONE conductor commit carries the lane's staged change
+set for FOR-1589 (a dir_fd descent helper owning the descriptor lifecycle
+in ``kernel/artifacts.py``), FOR-1588 (one artifact-directory helper for
+the five CLI sites) and FOR-1596 (shared score-gain summary arithmetic,
+moved out of the reader-hashed bytes of ``core.probe.score_gain`` into
+``core/probe/predictive_score_gain.py``, which is not a member). 6 of the
+51 checkpoint members changed bytes (``composition.capture_cli``,
+``composition.cli``, ``composition.source_cli``, ``composition.span_cli``,
+``core.probe.score_gain``, ``kernel.artifacts``) and 1 of the 7 source
+members (``kernel.artifacts``); both labels and both module sets are
+unchanged. All six rows were re-measured with ``tools/regime_rows.py`` on
+the staged tree after ``ruff format --check`` reported a fixed point, and
+cross-checked by the lane with plain hashlib over the member files. The
+previous values (checkpoint 15ca5961 / 5bc5602e / 18823965, source
+aa4702a2 / 5ea5ca80 / 904eaa93) are retracted here, not silently
+overwritten (house rule 4). Both regime-row tests were RED on the staged
+tree before this re-pin (the brief's "type a digest instead of measuring
+it" arm, measured 2 failed / 5909 passed) and are GREEN after it.
 """
 
 from __future__ import annotations
@@ -549,30 +568,30 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "15ca5961c488ba8fc2cb17fba9d43e580fbaff82fb3efc28c609199f4772c79d",  # pragma: allowlist secret
+    ): "7b63779ad3e9ae6370280b0ae6cf4548eace096eca084561cf26a0aadf437b53",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "5bc5602ec70a0af083070d764bcdfaba75e7186359b6716cf6abf37b7ac0cd7c",  # pragma: allowlist secret
+    ): "8d46e4d3293b433e15c0744350791ad1f31b3217e8136d41dc11d66f609c0df5",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "18823965fe4bf9f1d8b2d34afbc5688cb1cfb7028300ab76688b43960c6dfc1f",  # pragma: allowlist secret
+    ): "40731d12ec7014e964be67575166536a615db39812a8ba3704aacbb5cdcf6674",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08",  # pragma: allowlist secret
+    ): "9978611df372f0b21e9ee7317b78a61859c4d94a8acef9d3dab3f8d93161e231",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84",  # pragma: allowlist secret
+    ): "d85b31442840d6e4c466f00e170d976d3621956a174089c645fcb065f1ba5fbc",  # pragma: allowlist secret
     (
         "3.12.15",
         "0.3.4",
-    ): "904eaa93db093eff0587b50d113a6af8b0594db5c9ef16e0fcdb10c00ccb25b0",  # pragma: allowlist secret
+    ): "fc7fad81f3adb884236cb7918ea7c13966f71127e17de3b5aa8040ba633dda68",  # pragma: allowlist secret
 }
 
 

@@ -7,6 +7,8 @@ import pytest
 from entropic_substrate.core.probe.predictive_score_gain import (
     PredictiveScore,
     ScoreBinding,
+    ScoreGain,
+    ScoreGainSummary,
     pair_score_gain,
     summarize_score_gains,
 )
@@ -76,3 +78,70 @@ def test_uniform_gain_is_zero_and_singleton_dispersion_is_explicit() -> None:
     summary = summarize_score_gains((pair,))
     assert summary.mean_gain == summary.negative_fraction == 0.0
     assert summary.sample_std_gain is None
+
+
+# Nondyadic, mixed-sign (before, after) log-probability pairs. The expected summaries below
+# were produced by running the parent implementation (f41e904) on exactly these records
+# before the shared arithmetic helper existed, so equality pins the parent byte for byte.
+_SCORE_PAIRS = ((-2.3, -1.1), (-0.7, -1.9), (-3.1, -0.4), (-1.7, -0.9), (-0.2, -0.9))
+
+
+def _records(count: int) -> tuple[ScoreGain, ...]:
+    binding = ScoreBinding("checkpoint", "probe", "codec", "heldout", "source")
+    return tuple(
+        pair_score_gain(
+            PredictiveScore(binding, 10 + 10 * i, 14 + 10 * i, 65, 4, before),
+            PredictiveScore(binding, 11 + 10 * i, 14 + 10 * i, 65, 3, after),
+        )
+        for i, (before, after) in enumerate(_SCORE_PAIRS[:count])
+    )
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (
+            3,
+            ScoreGainSummary(
+                3,
+                0.9,
+                1.9672315572906003,
+                0.3333333333333333,
+                2.033333333333333,
+                1.1333333333333333,
+            ),
+        ),
+        (
+            5,
+            ScoreGainSummary(
+                5,
+                0.5599999999999999,
+                1.5598076804529462,
+                0.4,
+                1.6,
+                1.04,
+            ),
+        ),
+        (1, ScoreGainSummary(1, 1.1999999999999997, None, 0.0, 2.3, 1.1)),
+    ],
+)
+def test_summary_is_byte_identical_to_the_parent_on_nondyadic_mixed_sign_records(
+    count: int, expected: ScoreGainSummary
+) -> None:
+    assert summarize_score_gains(_records(count)) == expected
+
+
+def test_summary_refusals_keep_their_own_messages_and_order() -> None:
+    first, second = _records(2)
+    other = replace(second.before.binding, source_id="other")
+    mixed = replace(
+        second,
+        before=replace(second.before, binding=other),
+        after=replace(second.after, binding=other),
+    )
+    with pytest.raises(ValueError, match=r"^cannot summarize empty score-gain evidence$"):
+        summarize_score_gains(())
+    with pytest.raises(ValueError, match=r"^cannot mix score bindings in one summary$"):
+        summarize_score_gains((first, mixed))
+    with pytest.raises(ValueError, match=r"^duplicate score-gain positions$"):
+        summarize_score_gains((first, first))

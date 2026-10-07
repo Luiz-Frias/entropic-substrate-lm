@@ -16,8 +16,8 @@ from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
+    normalize_d1_artifact_directory,
     normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
@@ -70,10 +70,11 @@ def cmd_source(args: argparse.Namespace) -> int:
         limit = row["max_artifact_bytes"]
         if type(limit) is not int or limit < 1:
             raise ValueError("source capture byte limit must be a positive integer")
-        relative = normalize_d1_relative_artifact_path(
-            row["output_root" if preparing else "source_root"], label="source output directory"
+        output = normalize_d1_artifact_directory(
+            root,
+            row["output_root" if preparing else "source_root"],
+            label="source output directory",
         )
-        output = normalize_d1_artifact_root(root / relative)
         if preparing:
             if row["revision"] != FINEWEB_REVISION:
                 raise ValueError("source revision differs from the pinned FineWeb revision")

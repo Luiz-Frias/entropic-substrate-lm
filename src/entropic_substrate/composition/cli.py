@@ -11,14 +11,16 @@ from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
+    normalize_d1_artifact_directory,
     normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.generation import read_generation, run_probe_generation
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
+
+_DIRECTORY_LABEL = "H command directory"
 
 
 def add_sentence_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
@@ -37,11 +39,6 @@ def _positive(value: object) -> int:
     if type(value) is not int or value < 1:
         raise ValueError("command byte limits and counters must be positive integers")
     return value
-
-
-def _directory(root: Path, value: object) -> Path:
-    relative = normalize_d1_relative_artifact_path(value, label="H command directory")
-    return normalize_d1_artifact_root(root / relative)
 
 
 def cmd_sentence(args: argparse.Namespace) -> int:
@@ -79,7 +76,10 @@ def cmd_sentence(args: argparse.Namespace) -> int:
         profile = HProfile.from_manifest(
             read_json(root, artifact_from_mapping(row["profile"]), max_bytes=artifact_limit)
         )
-        source, output = _directory(root, row["source_root"]), _directory(root, row["output_root"])
+        source, output = (
+            normalize_d1_artifact_directory(root, row["source_root"], label=_DIRECTORY_LABEL),
+            normalize_d1_artifact_directory(root, row["output_root"], label=_DIRECTORY_LABEL),
+        )
         if generation:
             training = artifact_from_mapping(row["training"])
             if inspect:
