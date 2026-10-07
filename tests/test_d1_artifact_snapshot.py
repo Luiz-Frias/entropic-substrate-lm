@@ -156,8 +156,14 @@ class _Ledger:
 
 
 @contextmanager
-def _accounted(fail_on: str | None) -> Iterator[_Ledger]:
+def _accounted(
+    fail_on: str | None, *, error: Callable[[str], BaseException] | None = None
+) -> Iterator[_Ledger]:
     """Count every os.open/os.close; fail the dir_fd-relative open of one named component.
+
+    ``error`` builds the injected exception from the component name; the default is the
+    EACCES ``OSError`` every descent arm uses. A ``BaseException`` factory (KeyboardInterrupt)
+    exercises the helper's non-``Exception`` closure path.
 
     A close of a non-live descriptor is recorded and NOT forwarded, because the next open in the
     walk reuses the number. Descriptors still live at exit are reported, then really closed.
@@ -167,7 +173,7 @@ def _accounted(fail_on: str | None) -> Iterator[_Ledger]:
 
     def tracked_open(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
         if fail_on is not None and dir_fd is not None and path == fail_on:
-            raise OSError(errno.EACCES, "injected", path)
+            raise error(path) if error is not None else OSError(errno.EACCES, "injected", path)
         descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
         ledger.live.add(descriptor)
         ledger.opened += 1
@@ -365,3 +371,39 @@ def test_artifact_directory_validates_the_relative_path_before_touching_the_root
         normalize_d1_artifact_directory(
             _tree(tmp_path), "dir-one/dir-two/dir-three/missing", label="capture command directory"
         )
+
+
+def test_a_keyboard_interrupt_mid_descent_still_closes_every_descriptor(tmp_path: Path) -> None:
+    """A KeyboardInterrupt mid-descent is a BaseException, not an OSError.
+
+    ``_descend_directories`` must close every descriptor it holds on ANY raise, so its
+    cleanup catches ``BaseException``; narrowing it to ``Exception`` leaks one descriptor
+    here (ruling 16b, mutant M1c2).
+    """
+    root = _tree(tmp_path)
+    (root.joinpath(*_COMPONENTS) / "file.bin").write_bytes(b"payload")
+    relative = "/".join((*_COMPONENTS, "file.bin"))
+    interrupt = KeyboardInterrupt("injected mid-descent")
+    with (
+        _accounted("dir-two", error=lambda _path: interrupt) as ledger,
+        pytest.raises(KeyboardInterrupt),
+    ):
+        read_d1_artifact_bytes(root, relative, label="probe")
+    _balanced(ledger)
+
+
+def test_a_final_file_open_failure_after_successful_descent_closes_the_directory_descriptor(
+    tmp_path: Path,
+) -> None:
+    """The final file open can fail after the descent succeeded.
+
+    The directory descriptor the helper returned is then owned by the caller, whose
+    ``except`` must close it; deleting that close in ``_open_artifact_descriptor`` leaks one
+    descriptor here (ruling 16b, mutant M1i).
+    """
+    root = _tree(tmp_path)
+    relative = "/".join((*_COMPONENTS, "file.bin"))
+    with _accounted("file.bin") as ledger, pytest.raises(D1ArtifactSnapshotError) as caught:
+        read_d1_artifact_bytes(root, relative, label="probe")
+    _injected_cause(caught.value)
+    _balanced(ledger)
