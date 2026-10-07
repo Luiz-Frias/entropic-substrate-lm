@@ -272,6 +272,44 @@ def test_a_mid_descent_open_failure_closes_each_descriptor_once_and_raises_the_s
     _balanced(ledger)
 
 
+def _nul_site_root(tmp_path: Path) -> Callable[[], object]:
+    root = _tree(tmp_path) / _COMPONENTS[0] / _COMPONENTS[1] / "dir\x00three"
+    return lambda: normalize_d1_artifact_root(root)
+
+
+def _nul_site_read(tmp_path: Path) -> Callable[[], object]:
+    root = _tree(tmp_path)
+    relative = "/".join((*_COMPONENTS[:2], "dir\x00three", "file.bin"))
+    return lambda: read_d1_artifact_bytes(root, relative, label="probe")
+
+
+def _nul_site_publish(tmp_path: Path) -> Callable[[], object]:
+    root = _tree(tmp_path)
+    relative = "/".join((*_COMPONENTS[:2], "dir\x00three", "out.bin"))
+    return lambda: publish_d1_atomic_bytes(root, relative, b"payload", label="handoff")
+
+
+_NUL_SITES = {"root-open": _nul_site_root, "read": _nul_site_read, "publish": _nul_site_publish}
+
+
+@pytest.mark.parametrize("site", _NUL_SITES)
+def test_a_non_oserror_raise_mid_descent_still_closes_every_descriptor(
+    site: str, tmp_path: Path
+) -> None:
+    """An embedded NUL passes path normalisation, so os.open raises ValueError mid-walk.
+
+    Two directory opens have succeeded by then; the helper must close the held descriptor for
+    a raise that is not an OSError. The surfaced type is the site's own concern (publication
+    lets the ValueError through unwrapped), so only the underlying ValueError is pinned here.
+    """
+    call = _NUL_SITES[site](tmp_path)
+    with _accounted(None) as ledger, pytest.raises((D1ArtifactSnapshotError, ValueError)) as caught:
+        call()
+    assert isinstance(caught.value.__cause__ or caught.value, ValueError)
+    assert ledger.opened >= 2
+    _balanced(ledger)
+
+
 def test_publication_passes_a_root_failure_through_unwrapped(tmp_path: Path) -> None:
     root = _tree(tmp_path)
     with _accounted(root.name) as ledger, pytest.raises(D1ArtifactSnapshotError) as caught:

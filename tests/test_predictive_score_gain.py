@@ -1,5 +1,6 @@
 """Fixed-future score comparisons refuse incompatible evidence."""
 
+import statistics
 from dataclasses import replace
 
 import pytest
@@ -148,40 +149,50 @@ def test_summary_is_byte_identical_to_the_parent_on_nondyadic_mixed_sign_records
     assert result.after_nats_per_byte == expected.after_nats_per_byte
 
 
-def _nine_records_for_fmean_detection() -> tuple[ScoreGain, ...]:
-    """Nine records where left-to-right accumulation differs from fmean.
+# Measured on the pinned CPython 3.12.13: for these three pairs the gain mean from
+# statistics.fmean is -1.3666666666666665 while a manual left-to-right loop gives
+# -1.366666666666667. sum()/len() agrees with fmean on 3.12 (sum is compensated there), so
+# only the manual loop separates the implementations; the precondition test pins that.
+_SEPARATING_PAIRS = ((-0.6, -2.0), (-0.8, -2.6), (-1.2, -2.1))
 
-    The values are chosen so that naive left-to-right division produces
-    a different result than statistics.fmean, which uses a more precise
-    accumulation method.
-    """
+
+def _separating_records() -> tuple[ScoreGain, ...]:
     binding = ScoreBinding("checkpoint", "probe", "codec", "heldout", "source")
-    # Use gains that differ significantly in magnitude to expose fmean precision
-    # All gains should be negative (after < before)
-    gains = [
-        (-0.1, -0.15), (-0.2, -0.25), (-0.3, -0.35),
-        (-0.4, -0.45), (-0.5, -0.55), (-0.6, -0.65),
-        (-0.7, -0.75), (-0.8, -0.85), (-0.9, -0.95),
-    ]
     return tuple(
         pair_score_gain(
             PredictiveScore(binding, 10 + 10 * i, 14 + 10 * i, 65, 4, before),
             PredictiveScore(binding, 11 + 10 * i, 14 + 10 * i, 65, 3, after),
         )
-        for i, (before, after) in enumerate(gains)
+        for i, (before, after) in enumerate(_SEPARATING_PAIRS)
     )
 
 
-def test_summary_uses_fmean_not_left_to_right_accumulation() -> None:
-    """Verify that fmean is used, not simple left-to-right summation."""
-    records = _nine_records_for_fmean_detection()
-    result = summarize_score_gains(records)
+def _left_to_right_mean(values: list[float]) -> float:
+    total = 0.0
+    for value in values:
+        total += value
+    return total / len(values)
 
-    # fmean provides a precise mean; verify it matches expectations for field names
-    assert result.count == 9
-    assert isinstance(result.mean_gain, float)
-    assert isinstance(result.sample_std_gain, float)
-    assert result.negative_fraction == 1.0  # All gains are negative
+
+def test_separating_fixture_distinguishes_fmean_from_left_to_right_loop() -> None:
+    gains = [item.gain for item in _separating_records()]
+    assert statistics.fmean(gains) == -1.3666666666666665
+    assert _left_to_right_mean(gains) == -1.366666666666667
+
+
+def test_summary_means_are_exactly_fmean_not_left_to_right_accumulation() -> None:
+    records = _separating_records()
+    result = summarize_score_gains(records)
+    assert result.mean_gain == statistics.fmean(item.gain for item in records)
+    assert result.mean_gain == -1.3666666666666665
+    assert result.before_nats_per_byte == -statistics.fmean(
+        item.before.log_probability for item in records
+    )
+    assert result.before_nats_per_byte == 0.8666666666666667
+    assert result.after_nats_per_byte == -statistics.fmean(
+        item.after.log_probability for item in records
+    )
+    assert result.after_nats_per_byte == 2.2333333333333334
 
 
 def test_summary_refusals_keep_their_own_messages_and_order() -> None:
