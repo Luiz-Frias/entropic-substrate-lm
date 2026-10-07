@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
@@ -385,20 +386,36 @@ def _verdict() -> ValidatedD1Verdict:
     return _validated(machine_verdict())
 
 
-_FIELDS = {
-    "contrast_kind": lambda **over: replace(_verdict().contrasts[0], **over),
-    "evidence_class": lambda **over: replace(_verdict().contrasts[0], **over),
-    "decision": lambda **over: replace(_verdict().contrasts[0], **over),
-    "clause_status": lambda **over: replace(
-        _verdict().clauses_by_arm["sg"]["noncollapse"], **{"status": over["value"]}
-    ),
-    "integrity_status": lambda **over: replace(_verdict().integrity, status=over["value"]),
-    "adjudication_status": lambda **over: replace(
-        _verdict().review.adjudication, status=over["value"]
-    ),
-    "disposition_status": lambda **over: D1ReviewFindingDisposition(
+def _contrast_with(**over: object) -> object:
+    return replace(_verdict().contrasts[0], **over)
+
+
+def _clause_with(**over: object) -> object:
+    return replace(_verdict().clauses_by_arm["sg"]["noncollapse"], **{"status": over["value"]})
+
+
+def _integrity_with(**over: object) -> object:
+    return replace(_verdict().integrity, status=over["value"])
+
+
+def _adjudication_with(**over: object) -> object:
+    return replace(_verdict().review.adjudication, status=over["value"])
+
+
+def _disposition_with(**over: object) -> object:
+    return D1ReviewFindingDisposition(
         finding_id="MAJOR-1", status=over["value"], rationale="r", evidence_sha256=None
-    ),
+    )
+
+
+_FIELDS: dict[str, Callable[..., object]] = {
+    "contrast_kind": _contrast_with,
+    "evidence_class": _contrast_with,
+    "decision": _contrast_with,
+    "clause_status": _clause_with,
+    "integrity_status": _integrity_with,
+    "adjudication_status": _adjudication_with,
+    "disposition_status": _disposition_with,
 }
 
 
