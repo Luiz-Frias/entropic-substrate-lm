@@ -21,6 +21,9 @@ from entropic_substrate.kernel.verdict.d1_types import (
     ClauseStatus,
     ContrastDecision,
     ContrastKind,
+    D1Clause,
+    D1Contrast,
+    D1Integrity,
     D1ReviewAdjudication,
     D1ReviewFindingDisposition,
     D1VerdictValidationError,
@@ -386,23 +389,23 @@ def _verdict() -> ValidatedD1Verdict:
     return _validated(machine_verdict())
 
 
-def _contrast_with(**over: object) -> object:
+def _contrast_with(**over: object) -> D1Contrast:
     return replace(_verdict().contrasts[0], **over)
 
 
-def _clause_with(**over: object) -> object:
+def _clause_with(**over: object) -> D1Clause:
     return replace(_verdict().clauses_by_arm["sg"]["noncollapse"], **{"status": over["value"]})
 
 
-def _integrity_with(**over: object) -> object:
+def _integrity_with(**over: object) -> D1Integrity:
     return replace(_verdict().integrity, status=over["value"])
 
 
-def _adjudication_with(**over: object) -> object:
+def _adjudication_with(**over: object) -> D1ReviewAdjudication:
     return replace(_verdict().review.adjudication, status=over["value"])
 
 
-def _disposition_with(**over: object) -> object:
+def _disposition_with(**over: object) -> D1ReviewFindingDisposition:
     return D1ReviewFindingDisposition(
         finding_id="MAJOR-1", status=over["value"], rationale="r", evidence_sha256=None
     )
@@ -466,11 +469,11 @@ def test_the_two_review_vocabularies_do_not_merge() -> None:
             evidence_sha256=None,
         )
     # Both enums have their own members.
-    adjudication = _build("adjudication_status", ReviewAdjudicationStatus.NOT_REQUIRED)  # type: ignore[arg-type]
-    assert adjudication.status is ReviewAdjudicationStatus.NOT_REQUIRED  # type: ignore[attr-defined]
+    adjudication = _adjudication_with(value=ReviewAdjudicationStatus.NOT_REQUIRED)
+    assert adjudication.status is ReviewAdjudicationStatus.NOT_REQUIRED
     for member in (ReviewFindingStatus.OPEN, ReviewFindingStatus.RESOLVED):
-        disposition = _build("disposition_status", member)  # type: ignore[arg-type]
-        assert disposition.status is member  # type: ignore[attr-defined]
+        disposition = _disposition_with(value=member)
+        assert disposition.status is member
 
 
 def test_construction_holds_the_member_and_it_equals_the_old_string() -> None:
