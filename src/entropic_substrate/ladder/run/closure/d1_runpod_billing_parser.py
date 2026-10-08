@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
 
 from entropic_substrate.kernel.codec.strict_json import strict_loads
@@ -88,6 +88,8 @@ def parse_runpodctl_billing_observation(
         decoded: object = strict_loads(raw, fail=_fail, parse_float=Decimal)
     except RunpodBillingSchemaError:
         raise
+    except InvalidOperation as error:
+        _fail("billing response number is not a valid decimal", error)
     except (UnicodeError, json.JSONDecodeError) as error:
         _fail("billing response is not valid UTF-8 JSON", error)
     if type(decoded) is not list:
