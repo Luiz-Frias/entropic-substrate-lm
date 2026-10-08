@@ -24,7 +24,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -52,6 +52,8 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 __all__ = [
     "EvalResult",
     "Trainer",
+    "autocast_for",
+    "build_adamw_decay_groups",
     "cosine_lr",
     "resolve_device",
     "resolve_results_path",
@@ -110,6 +112,45 @@ def cosine_lr(step: int, *, base_lr: float, warmup: int, total: int, min_ratio: 
     progress = (step - warmup) / max(total - warmup, 1)
     coeff = 0.5 * (1.0 + math.cos(math.pi * progress))
     return base_lr * (min_ratio + (1.0 - min_ratio) * coeff)
+
+
+def build_adamw_decay_groups(
+    module: nn.Module,
+    *,
+    lr: float,
+    betas: tuple[float, float],
+    weight_decay: float,
+) -> torch.optim.Optimizer:
+    """AdamW over ``module``'s trainable parameters, split into decay / no-decay groups.
+
+    No weight decay on 1-D tensors: biases, norm gains, nGPT alpha/sqk/suv/sz,
+    and the learnable curvatures (decaying kappa toward 0 would silently bias
+    the geometry MoE toward Euclidean). ``parameters()`` de-duplicates tied
+    weights by identity, so a tied table is decayed once. ``eps`` is fixed at
+    1e-8, the value both callers have always used.
+    """
+    decay, no_decay = [], []
+    for param in module.parameters():
+        if not param.requires_grad:
+            continue
+        (no_decay if param.ndim < 2 else decay).append(param)
+    groups: list[dict[str, Any]] = [
+        {"params": decay, "weight_decay": weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]
+    return torch.optim.AdamW(groups, lr=lr, betas=betas, eps=1e-8)
+
+
+def autocast_for(device: torch.device, amp_dtype: Literal["bf16", "fp16", "off"]) -> torch.autocast:
+    """Ambient autocast for one step: disabled when ``amp_dtype`` is off or on cpu.
+
+    CPU autocast is bf16-only and the CPU path exists for smoke runs, where the
+    extra dtype churn buys nothing.
+    """
+    if amp_dtype == "off" or device.type == "cpu":
+        return torch.autocast(device_type=device.type, enabled=False)
+    torch_dtype = torch.bfloat16 if amp_dtype == "bf16" else torch.float16
+    return torch.autocast(device_type=device.type, dtype=torch_dtype)
 
 
 def _require_loss(out: LMOutput, phase: str) -> torch.Tensor:
@@ -274,26 +315,13 @@ class Trainer:
         return inner  # type: ignore[return-value]
 
     def _build_optimizer(self) -> torch.optim.Optimizer:
-        decay, no_decay = [], []
-        for param in self.model.parameters():
-            if not param.requires_grad:
-                continue
-            # No weight decay on 1-D tensors: biases, norm gains, nGPT alpha/
-            # sqk/suv/sz, and the learnable curvatures (decaying kappa toward 0
-            # would silently bias the geometry MoE toward Euclidean).
-            (no_decay if param.ndim < 2 else decay).append(param)
-        groups: list[dict[str, Any]] = [
-            {"params": decay, "weight_decay": self.cfg.train.weight_decay},
-            {"params": no_decay, "weight_decay": 0.0},
-        ]
-        return torch.optim.AdamW(groups, lr=self.cfg.train.lr, betas=self.cfg.train.betas, eps=1e-8)
+        train = self.cfg.train
+        return build_adamw_decay_groups(
+            self.model, lr=train.lr, betas=train.betas, weight_decay=train.weight_decay
+        )
 
-    def _autocast(self):
-        dtype = self.cfg.train.amp_dtype
-        if dtype == "off" or self.device.type == "cpu":
-            return torch.autocast(device_type=self.device.type, enabled=False)
-        torch_dtype = torch.bfloat16 if dtype == "bf16" else torch.float16
-        return torch.autocast(device_type=self.device.type, dtype=torch_dtype)
+    def _autocast(self) -> torch.autocast:
+        return autocast_for(self.device, self.cfg.train.amp_dtype)
 
     def _set_lr(self) -> float:
         lr = cosine_lr(

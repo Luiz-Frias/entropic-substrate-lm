@@ -53,7 +53,13 @@ from torch import nn
 
 from entropic_substrate.core.corpus.batching import SequenceSampler
 from entropic_substrate.core.substrate.field_encoder import FieldEncoder
-from entropic_substrate.historical.e_series.train import cosine_lr, resolve_device, seed_everything
+from entropic_substrate.historical.e_series.train import (
+    autocast_for,
+    build_adamw_decay_groups,
+    cosine_lr,
+    resolve_device,
+    seed_everything,
+)
 from entropic_substrate.kernel.runtime.checkpoint import CHECKPOINT_FORMAT_VERSION
 from entropic_substrate.kernel.runtime.config import EXPERIMENTS, Config, resolve_experiment_config
 from entropic_substrate.kernel.runtime.logging import logger
@@ -155,32 +161,6 @@ def _refuse_incompatible(cfg: Config) -> None:
         raise ValueError(msg)
 
 
-def autocast_context(
-    device: torch.device, amp_dtype: Literal["bf16", "fp16", "off"]
-) -> torch.autocast:
-    """Ambient autocast for one step — mirrors ``Trainer._autocast`` exactly.
-
-    Including the cpu-disables-amp rule: CPU autocast is bf16-only and the
-    CPU path here exists for smoke runs, where the extra dtype churn buys
-    nothing. Mirrored rather than shared because ``Trainer._autocast`` is a
-    method on a trainer that owns a backbone, a corpus and an optimiser —
-    none of which this lane builds.
-
-    Nothing measurable rides on it TODAY: the fp32 island in
-    :func:`field_cross_entropy` nests inside this context and, in this
-    lane, that island covers the entire gradient path by construction (the
-    encoder forward AND the CE), so ``amp_dtype`` cannot change this run's
-    numerics. It is kept because the step's dtype policy must be the
-    trainer's, not an accident of what this lane happens to compute — the
-    same reason ``_field_loss_terms``' island binds unconditionally rather
-    than only under bf16.
-    """
-    if amp_dtype == "off" or device.type == "cpu":
-        return torch.autocast(device_type=device.type, enabled=False)
-    torch_dtype = torch.bfloat16 if amp_dtype == "bf16" else torch.float16
-    return torch.autocast(device_type=device.type, dtype=torch_dtype)
-
-
 def field_cross_entropy(
     encoder: FieldEncoder, x: torch.Tensor, y: torch.Tensor, *, device_type: str
 ) -> torch.Tensor:
@@ -225,22 +205,9 @@ def _require_finite(loss: torch.Tensor, phase: str, step: int) -> float:
 
 
 def _build_optimizer(encoder: FieldEncoder, cfg: Config) -> torch.optim.Optimizer:
-    """AdamW with ``Trainer._build_optimizer``'s decay/no-decay split.
-
-    Same rule, same reason: no weight decay on 1-D tensors (biases and norm
-    gains). ``parameters()`` de-duplicates the tied ``head.weight`` /
-    ``wte.weight`` pair by identity, so the tied table is decayed once.
-    """
-    decay, no_decay = [], []
-    for param in encoder.parameters():
-        if not param.requires_grad:
-            continue
-        (no_decay if param.ndim < 2 else decay).append(param)
-    groups: list[dict[str, Any]] = [
-        {"params": decay, "weight_decay": cfg.train.weight_decay},
-        {"params": no_decay, "weight_decay": 0.0},
-    ]
-    return torch.optim.AdamW(groups, lr=cfg.train.lr, betas=cfg.train.betas, eps=1e-8)
+    return build_adamw_decay_groups(
+        encoder, lr=cfg.train.lr, betas=cfg.train.betas, weight_decay=cfg.train.weight_decay
+    )
 
 
 def _set_lr(optimizer: torch.optim.Optimizer, cfg: Config, step: int) -> float:
@@ -282,7 +249,7 @@ def _evaluate(
     losses: list[float] = []
     with torch.no_grad():
         for x, y in sampler.iter_batches(num_batches):
-            with autocast_context(device, amp_dtype):
+            with autocast_for(device, amp_dtype):
                 loss = field_cross_entropy(encoder, x, y, device_type=device.type)
             losses.append(_require_finite(loss, "eval", step))
     encoder.train()
@@ -389,7 +356,7 @@ def run_field_pretrain(
     while step < total:
         lr = _set_lr(optimizer, cfg, step)
         x, y = train_sampler.batch()
-        with autocast_context(resolved, amp_dtype):
+        with autocast_for(resolved, amp_dtype):
             loss = field_cross_entropy(encoder, x, y, device_type=resolved.type)
         step += 1
         loss_value = _require_finite(loss, "train", step)

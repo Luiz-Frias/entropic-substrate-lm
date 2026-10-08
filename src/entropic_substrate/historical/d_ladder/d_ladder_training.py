@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from typing import cast
 
 import torch
@@ -97,6 +97,18 @@ def result_metrics(result: LadderPredictiveResult) -> dict[str, object]:
     return metrics
 
 
+def resource_phase(
+    resources: LadderResources | None, phase: ResourcePhase
+) -> AbstractContextManager[None]:
+    """Measure ``phase`` when a meter is present; a plain null context otherwise.
+
+    ``resources is None`` is a real state (smoke runs carry no meter) that
+    ``run_ladder`` distinguishes from scientific mode, so it is never replaced
+    by a stand-in meter.
+    """
+    return nullcontext() if resources is None else resources.measure(phase)
+
+
 def train_ladder_step(
     system: LadderPredictiveSystem,
     optimizer: torch.optim.Optimizer,
@@ -112,7 +124,7 @@ def train_ladder_step(
     optimizer.zero_grad(set_to_none=True)
     for group in optimizer.param_groups:
         group["lr"] = d1_learning_rate(protocol.optimization, successful_step=step)
-    phase = nullcontext() if resources is None else resources.measure(ResourcePhase.TRAIN)
+    phase = resource_phase(resources, ResourcePhase.TRAIN)
     with phase:
         batch = paired_predictive_batch(
             sampler, max(system.spec.horizons), reservation=system.spec.sampling_horizon_reservation
@@ -171,7 +183,7 @@ def evaluate_ladder(
     records: list[dict[str, object]] = []
     states: list[torch.Tensor] = []
     online = target = 0
-    phase = nullcontext() if resources is None else resources.measure(ResourcePhase.EVAL)
+    phase = resource_phase(resources, ResourcePhase.EVAL)
     with phase:
         for _ in range(protocol.evaluation.num_batches):
             batch = paired_predictive_batch(

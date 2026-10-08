@@ -61,3 +61,26 @@ def test_reader_rejects_forged_measurements(tmp_path: Path) -> None:
         load_smoke_model(request, checkpoint)
     with pytest.raises(ValueError, match="digest"):
         load_smoke_model(request, checkpoint, expected_sha256="0" * 64)
+
+
+def test_load_ladder_model_wrapper_is_gone_and_smoke_loader_calls_the_bound_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOR-1606: the one-line wrapper had a single caller; that caller binds directly."""
+    from entropic_substrate.historical.d_ladder import d_ladder_artifacts
+
+    assert not hasattr(d_ladder_artifacts, "load_ladder_model")
+
+    request = SmokeRequest(tiny_rung_spec("d2-l", seed=1), max_steps=1)
+    checkpoint = tmp_path / "step-000001.pt"
+    sentinel = object()
+    calls: list[tuple[object, ...]] = []
+
+    def _bound(spec, manifest, path, *, expected_sha256=None):
+        calls.append((spec, manifest, path, expected_sha256))
+        return sentinel
+
+    monkeypatch.setattr(d_ladder_artifacts, "load_bound_ladder_model", _bound)
+    observed = load_smoke_model(request, checkpoint, expected_sha256="1" * 64)
+    assert observed is sentinel
+    assert calls == [(request.spec, request.manifest, checkpoint, "1" * 64)]

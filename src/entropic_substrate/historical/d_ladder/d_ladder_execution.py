@@ -27,6 +27,7 @@ from entropic_substrate.historical.d_ladder.d_ladder_resources import LadderReso
 from entropic_substrate.historical.d_ladder.d_ladder_training import (
     evaluate_ladder,
     ladder_optimizer,
+    resource_phase,
     train_ladder_step,
 )
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import run_start_to_mapping
@@ -246,10 +247,7 @@ def run_ladder(
                 seed=request.spec.seed,
                 device=device,
             )
-            calibration_phase = (
-                nullcontext() if resources is None else resources.measure(ResourcePhase.TRAIN)
-            )
-            with calibration_phase:
+            with resource_phase(resources, ResourcePhase.TRAIN):
                 observed = system.fit_mean_displacement_baseline(
                     paired_predictive_batch(
                         calibration,
