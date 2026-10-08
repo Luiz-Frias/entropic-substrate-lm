@@ -163,8 +163,13 @@ def _count_calls(tree: ast.AST, bound_names: set[str]) -> int:
     return count
 
 
-def _scan_live_call_counts(src_root: Path) -> tuple[Counter[str], bool]:
+def _scan_live_call_counts(
+    src_root: Path, repo_root: Path = _REPO_ROOT
+) -> tuple[Counter[str], bool]:
     """AST-scan src_root for every call-site reference to the new symbol.
+
+    ``repo_root`` only relativizes the reported paths; it defaults to the real
+    repository and is threaded so the end-to-end control can scan a fixture tree.
 
     Returns (path -> call count, positive_control_found). The positive
     control is the function definition itself, inside d1_primitives.py --
@@ -186,7 +191,7 @@ def _scan_live_call_counts(src_root: Path) -> tuple[Counter[str], bool]:
         bound = _bound_names_for_file(tree, module_dotted, _is_package(path))
         call_count = _count_calls(tree, bound)
         if call_count:
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(repo_root).as_posix()
             counts[rel] = call_count
     return counts, positive_control
 
@@ -218,6 +223,44 @@ def test_call_counter_counts_a_known_call() -> None:
     bound = _bound_names_for_file(tree, "entropic_substrate.kernel.codec.strict_json", False)
     assert bound == {_NEW_NAME, "aliased", "relative"}
     assert _count_calls(tree, bound) == 4
+
+
+def test_live_scan_aggregates_a_known_caller_end_to_end(tmp_path: Path) -> None:
+    """Positive control of ``_scan_live_call_counts`` itself, on a filesystem.
+
+    ``test_call_counter_counts_a_known_call`` drives only the per-file helpers, so
+    an end-state ``live_counts == {}`` would stay green if the scan dropped its
+    aggregation write or resolved relative imports against the wrong package
+    (``_is_package`` always True). This builds a small ``entropic_substrate``
+    tree: the definition module, one relative-aliased caller in a NON-package
+    file, and a package ``__init__`` that must not be counted. The scan must
+    report exactly that one caller with one call.
+    """
+    src = tmp_path / "src"
+    identity = src / "entropic_substrate" / "kernel" / "identity"
+    codec = src / "entropic_substrate" / "kernel" / "codec"
+    identity.mkdir(parents=True)
+    codec.mkdir(parents=True)
+    (src / "entropic_substrate" / "__init__.py").write_text("", encoding="utf-8")
+    (src / "entropic_substrate" / "kernel" / "__init__.py").write_text("", encoding="utf-8")
+    (identity / "__init__.py").write_text("", encoding="utf-8")
+    (codec / "__init__.py").write_text("", encoding="utf-8")
+    (identity / "d1_primitives.py").write_text(
+        f"def {_NEW_NAME}(value, *, label):\n    return value\n", encoding="utf-8"
+    )
+    (codec / "caller.py").write_text(
+        f"from ..identity.d1_primitives import {_NEW_NAME} as relative\n"
+        "\n"
+        "\n"
+        "def check(value):\n"
+        "    relative(value, label='control')\n",
+        encoding="utf-8",
+    )
+
+    counts, positive_control = _scan_live_call_counts(src, repo_root=tmp_path)
+
+    assert positive_control
+    assert counts == Counter({"src/entropic_substrate/kernel/codec/caller.py": 1})
 
 
 def _parse_audit(text: str) -> tuple[dict[str, int], list[dict[str, str]]]:
