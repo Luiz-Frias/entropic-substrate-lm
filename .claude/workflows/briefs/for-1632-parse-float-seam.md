@@ -61,7 +61,7 @@ Duplicate-key and non-finite messages at the billing parser become the door's wo
 ## ACCEPTANCE
 
 - RED-first in `tests/test_strict_json.py`: (a) `strict_loads('{"a": 0.0017170833889394999}', fail=..., parse_float=Decimal)` returns `{"a": Decimal("0.0017170833889394999")}` exactly (`==` and `str()` equality); (b) with `parse_float=Decimal`, `NaN`, `Infinity` and `-Infinity` constants are still refused through `fail` with the existing messages; (c) with `parse_float=None` the overflow token `1e999` is still refused (existing test stays green); (d) with `parse_float=Decimal` the token `1e999` decodes to a finite `Decimal` (`Decimal("1E+999").is_finite()`), matching what `json.loads(parse_float=Decimal)` admitted at the billing site before; (e) a `parse_float` returning a non-finite `float` is refused through `fail`.
-- `tests/test_d1_runpod_billing_parser.py` green unmodified (the 19-digit amount survives); `tests/test_strict_json_adoption_run.py` green with `_PENDING == frozenset()`.
+- `tests/test_d1_runpod_billing_parser.py` green with its existing assertions unmodified (the 19-digit amount survives); additive rows are admissible when they pin the exception-surface invariant (as landed: `897291f` added three rows pinning that out-of-range decimal tokens raise `RunpodBillingSchemaError`, closing a pre-existing bare `decimal.InvalidOperation` escape); `tests/test_strict_json_adoption_run.py` green with `_PENDING == frozenset()`.
 - `grep -rn '_pairs\|_nonfinite' src/entropic_substrate/ladder/run/closure/d1_runpod_billing_parser.py` is empty.
 - Guard teeth by mutation, both arms quoted (below).
 - remap_check at the tip over the mapping RE-DERIVED per `docs/plans/measurements/p13-sweep-remap.txt`: inversions <= 1, package cycles <= 4.
@@ -83,7 +83,7 @@ Duplicate-key and non-finite messages at the billing parser become the door's wo
 - `src/entropic_substrate/ladder/run/closure/d1_runpod_billing_parser.py`
 - `tests/test_strict_json.py`
 - `tests/test_strict_json_adoption_run.py`
-- `tests/test_d1_runpod_billing_parser.py` (only if an assertion the change itself invalidates must be restated; say so in the report)
+- `tests/test_d1_runpod_billing_parser.py` (existing assertions restated only when the change itself invalidates them; additive rows pinning the parser's own exception type are admissible; say so in the report. Corrected 2026-10-08 after PR #334: the original wording was narrower than the landed `897291f`, recorded in that PR's body)
 - `.secrets.baseline` (mechanical companion, digest literals only, stated in the PR body)
 
 Never edit: `tests/test_identity_epoch.py`, `docs/identity/*`, `tools/regime_rows.py`, `.pre-commit-config.yaml`, `.github/workflows/*`, `justfile`, `scripts/run_ladder.sh`, `tools/mapping.json`, the manifest, the plan, briefs, `pyproject.toml`, `uv.lock`.

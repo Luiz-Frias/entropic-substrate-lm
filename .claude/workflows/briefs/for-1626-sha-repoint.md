@@ -15,7 +15,7 @@ Authoritative brief for one `td-phase-lifecycle.cascade` run, written 2026-10-08
 | `repoToplevel`       | `/Users/luizfrias/CursorAI/entropic-substrate-lm`, the MAIN checkout, never a worktree                                                                                           |
 | publish              | the cascade's publish stage: `gt submit --draft --no-interactive` once, stacked on the parent                                                                                    |
 
-The branch does NOT exist at launch: FIRST ACT create it off the parent at the `startTip` in your args (`git checkout -b mythwave/for-1626-sha-repoint`, then `gt track --parent mythwave/for-1632-parse-float-seam --no-interactive`); record the 40-hex.
+The branch EXISTS at launch: the conductor created it with `git checkout -b mythwave/for-1626-sha-repoint a6cac92` (the published FOR-1632 head, passed explicitly as the start point so the branch base is the declared `startTip`, not whatever HEAD happened to be: CodeRabbit finding on PR #334) and committed this brief correction as its first commit; `gt track --parent mythwave/for-1632-parse-float-seam` records the parent. Do not recreate it; verify `git merge-base --is-ancestor a6cac92 HEAD` and implement on top of the `startTip` in your args.
 
 ## Contract surface owned
 
