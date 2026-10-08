@@ -38,6 +38,9 @@ from entropic_substrate.kernel.verdict.d1_types import (
     EVIDENCE_CLASSES,
     ROOT_FIELDS,
     VERDICTS,
+    ClauseStatus,
+    ContrastDecision,
+    ContrastKind,
     D1ArmEvidence,
     D1Clause,
     D1Contrast,
@@ -50,6 +53,7 @@ from entropic_substrate.kernel.verdict.d1_types import (
     D1Successor,
     JsonValue,
     PreregistrationIdentity,
+    VerdictEvidenceClass,
 )
 from entropic_substrate.ladder.file.d1_decision_validation import (
     parse_review,
@@ -423,7 +427,7 @@ def _parse_contrasts(value: object, *, allow_gaps: bool = False) -> tuple[D1Cont
         parsed.append(
             D1Contrast(
                 contrast_id=contrast_id,
-                contrast_kind=contrast_kind,
+                contrast_kind=ContrastKind(contrast_kind),
                 terms=terms,
                 endpoint=endpoint,
                 estimate=estimate,
@@ -435,9 +439,9 @@ def _parse_contrasts(value: object, *, allow_gaps: bool = False) -> tuple[D1Cont
                 margins=MappingProxyType(margins),
                 n=n,
                 df=df,
-                evidence_class=evidence_class,
+                evidence_class=VerdictEvidenceClass(evidence_class),
                 decision_vocabulary=vocabulary,
-                decision=decision,
+                decision=ContrastDecision(decision),
                 evidence_hash=hash_value(contrast["evidence_hash"], path=f"{path}.evidence_hash"),
                 unavailable=unavailable,
             )
@@ -501,7 +505,7 @@ def _parse_clauses(value: object, *, path: str) -> Mapping[str, D1Clause]:
             ),
             threshold=number_or_none(clause["threshold"], path=f"{clause_path}.threshold"),
             margin=number_or_none(clause["margin"], path=f"{clause_path}.margin"),
-            status=status(clause["status"], path=f"{clause_path}.status"),
+            status=ClauseStatus(status(clause["status"], path=f"{clause_path}.status")),
             evidence_hash=hash_value(clause["evidence_hash"], path=f"{clause_path}.evidence_hash"),
         )
     return MappingProxyType(parsed)
@@ -551,7 +555,7 @@ def _parse_integrity(value: object) -> D1Integrity:
             raise error("invalid_integrity_boolean", f"integrity.{name}", "must be boolean")
         booleans[name] = raw
     parsed = D1Integrity(
-        status=status(integrity["status"], path="integrity.status"),
+        status=ClauseStatus(status(integrity["status"], path="integrity.status")),
         roster_complete=booleans["roster_complete"],
         pairing_verified=booleans["pairing_verified"],
         data_order_verified=booleans["data_order_verified"],

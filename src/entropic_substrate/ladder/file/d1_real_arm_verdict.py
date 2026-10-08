@@ -25,6 +25,9 @@ from entropic_substrate.kernel.verdict.d1_statistical_gaps import (
 from entropic_substrate.kernel.verdict.d1_types import (
     D1_STABILIZATION_ARM_IDS,
     VERDICTS,
+    ClauseStatus,
+    ContrastDecision,
+    ContrastKind,
 )
 from entropic_substrate.ladder.file.d1_filing import canonical_machine_verdict_bytes
 from entropic_substrate.ladder.file.d1_filing_graph import (
@@ -142,16 +145,28 @@ def _evidence_hash(*, analysis_digest: str, role: str, value: object) -> dict[st
 def _contrast_decision(kind: str, row: Mapping[str, object], margin: float) -> str:
     lower, upper = row["interval_lower"], row["interval_upper"]
     if lower is None or upper is None:
-        return "INTERACTION_INCONCLUSIVE" if kind == "FACTORIAL_INTERACTION" else "INCONCLUSIVE"
+        return (
+            ContrastDecision.INTERACTION_INCONCLUSIVE.value
+            if kind == ContrastKind.FACTORIAL_INTERACTION
+            else ContrastDecision.INCONCLUSIVE.value
+        )
     low, high = float(cast(int | float, lower)), float(cast(int | float, upper))
     outside = low > margin or high < -margin
-    if kind == "FACTORIAL_INTERACTION":
-        return "INTERACTION_DETECTED" if outside else "INTERACTION_INCONCLUSIVE"
+    if kind == ContrastKind.FACTORIAL_INTERACTION:
+        return (
+            ContrastDecision.INTERACTION_DETECTED.value
+            if outside
+            else ContrastDecision.INTERACTION_INCONCLUSIVE.value
+        )
     if low > margin:
-        return "FAVORS_LEFT"
+        return ContrastDecision.FAVORS_LEFT.value
     if high < -margin:
-        return "FAVORS_RIGHT"
-    return "PRACTICALLY_NULL" if low >= -margin and high <= margin else "INCONCLUSIVE"
+        return ContrastDecision.FAVORS_RIGHT.value
+    return (
+        ContrastDecision.PRACTICALLY_NULL.value
+        if low >= -margin and high <= margin
+        else ContrastDecision.INCONCLUSIVE.value
+    )
 
 
 def _contrast_rows(
@@ -318,7 +333,7 @@ def _integrity_manifest(integrity: D1RecomputedIntegrity) -> dict[str, object]:
         "evidence_hash": {"algorithm": "sha256", "digest": integrity.evidence_digest},
         "pairing_verified": integrity.pairing_verified,
         "roster_complete": integrity.roster_complete,
-        "status": "PASS" if integrity.passed else "FAIL",
+        "status": ClauseStatus.PASS.value if integrity.passed else ClauseStatus.FAIL.value,
     }
 
 
