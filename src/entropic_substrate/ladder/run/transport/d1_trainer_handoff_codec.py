@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import NoReturn
 
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
@@ -15,6 +15,7 @@ from entropic_substrate.kernel.artifacts import (
     relative_d1_artifact_path,
     snapshot_d1_artifact,
 )
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     run_start_from_mapping,
@@ -132,13 +133,14 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} must be a JSON object with string keys")
+    )
 
 
 def _exact(value: dict[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unexpected = exact_keys(value, keys)
+    if missing or unexpected:
         _fail(f"{label} keys must be exact")
 
 
@@ -647,15 +649,6 @@ def serialize_d1_trainer_handoff(
     ).encode()
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"trainer handoff contains duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_trainer_handoff(
     payload: bytes,
     *,
@@ -664,11 +657,7 @@ def parse_d1_trainer_handoff(
     if type(payload) is not bytes or not payload:
         _fail("trainer handoff payload must be nonempty bytes")
     try:
-        value = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(f"non-finite JSON constant {constant}"),
-        )
+        value = strict_loads(payload, fail=_fail)
     except D1TrainerHandoffCodecError:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

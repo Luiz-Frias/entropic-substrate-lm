@@ -15,7 +15,9 @@ from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final, Protocol, cast
+from typing import Final, NoReturn, Protocol, cast
+
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 
 __all__ = [
     "D1_CLI_MANIFEST_SCHEMA",
@@ -124,17 +126,8 @@ def _invalid(command: D1CliCommand, error: Exception) -> D1CliOutcome:
     )
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise D1CliInvalidEvidence(f"D1 command manifest has duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> object:
-    raise D1CliInvalidEvidence(f"D1 command manifest contains non-finite JSON constant {value!r}")
+def _reject(reason: str) -> NoReturn:
+    raise D1CliInvalidEvidence(f"D1 command manifest {reason}")
 
 
 def _read_manifest(command: D1CliCommand, path: Path) -> D1CliInvocation:
@@ -145,11 +138,7 @@ def _read_manifest(command: D1CliCommand, path: Path) -> D1CliInvocation:
         raise D1CliInvalidEvidence("D1 command manifest must be a regular non-symlink file")
     try:
         raw = lexical.read_text(encoding="utf-8")
-        value: object = json.loads(
-            raw,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value = strict_loads(raw, fail=_reject)
     except D1CliInvalidEvidence:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:

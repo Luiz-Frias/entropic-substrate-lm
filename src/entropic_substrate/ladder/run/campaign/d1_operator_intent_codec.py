@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import PurchaseOption, QuotedRate
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
@@ -75,13 +76,17 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"D1 operator intent {label} must be an object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value,
+        fail=lambda _reason: _fail(
+            f"D1 operator intent {label} must be an object with string keys"
+        ),
+    )
 
 
 def _exact(value: Mapping[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unexpected = exact_keys(value, keys)
+    if missing or unexpected:
         _fail(f"D1 operator intent {label} keys must be exact")
 
 
@@ -233,15 +238,6 @@ def serialize_d1_operator_intent(intent: D1OperatorLaunchIntent) -> str:
     return canonical_json(intent.manifest)
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate D1 operator intent key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_confirmatory_operator_intent(
     payload: str,
     *,
@@ -250,13 +246,7 @@ def parse_d1_confirmatory_operator_intent(
     if type(payload) is not str or not payload:
         _fail("D1 operator intent payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(
-                f"non-finite D1 operator intent constant {constant}"
-            ),
-        )
+        value = strict_loads(payload, fail=_fail)
     except D1OperatorIntentCodecError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:
