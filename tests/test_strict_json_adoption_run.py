@@ -784,6 +784,22 @@ def test_object_transport_request_check_precedes_request_missing() -> None:
         )
 
 
+def test_object_transport_request_mismatch_is_refused_with_its_own_typed_error() -> None:
+    # Pins the request_mismatch check, which no other test reaches: every other
+    # start test either omits the staged request or passes the staged digest.
+    # The digest here is well-formed lowercase but differs from the staged request.
+    payload = b"request-payload"
+    real = hashlib.sha256(payload).hexdigest()
+    other = real[:-1] + ("0" if real[-1] != "0" else "1")
+    assert other != real and other.lower() == other
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _started_transport(directory, stage_request=True, payload=payload)
+        with pytest.raises(D1ObjectMailboxTransportError) as caught:
+            transport.start_trainer(_POD, _ATTEMPT, other)
+        assert type(caught.value) is D1ObjectMailboxTransportError
+        assert (caught.value.stage, caught.value.code) == ("start", "request_mismatch")
+
+
 def test_object_transport_attempt_digest_is_refused_with_one_typed_error() -> None:
     # FOR-1626: the malformed arm used to escape as a bare ValueError while the
     # mixed-case arm raised the typed error; both now share ("identity",
