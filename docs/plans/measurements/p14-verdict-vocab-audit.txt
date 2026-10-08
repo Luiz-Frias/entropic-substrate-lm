@@ -804,3 +804,59 @@ CONTROL BUILDER
     (root / "schemaless_signature.json").write_text(json.dumps(sig))
     (root / "broken.json").write_text("{not json")
     (root / "notes.txt").write_text("mentions d1-verdict/v2 in prose only\n")
+
+Completion addendum (2026-10-08, conductor; DN-1573-DVC ruled by the operator)
+-----------------------------------------------------------------------------
+Operator ruling 2026-10-08: `dvc pull` of the three UNSCANNED pointers was
+authorized; the pulled bytes are removed from local storage once this record
+exists (the R2 remote keeps them; this file is the record).
+
+Pull (from the repo root, `.env` credentials via mise):
+    dvc pull results/captured.dvc results/h-image-publication-3b93854.dvc \
+             results/field-pretrain-s42.jsonl.dvc
+    2026-10-08T14:34:32Z .. 14:34:44Z, exit 0, "38 files fetched and 43 files
+    added"; `dvc status` on the three pointers afterwards: "Data and pipelines
+    are up to date". Materialized: results/captured 76/76 files (46 before),
+    results/h-image-publication-3b93854 12/12 files, results/field-pretrain-
+    s42.jsonl 4769 B; .dvc/cache grew from 88 to 126 files.
+
+Re-run of the AUDIT SCRIPT quoted above, byte-identical, at the merged p14 tip
+da4d35cbff05aa61b234b1a1e080e24303225eed (refactor/p14-consolidation, tree
+clean), 2026-10-08T14:35:39Z .. 14:35:50Z, exit 0:
+    TRACKED TREE                          1069 files, 58 decodable, 18 marker
+                                          files (all source/tests/measurements)
+    DVC OUTPUT results/captured           76 files, 76 decodable  -> 0 / 0 / 0
+    DVC OUTPUT h-image-publication-79a4be2 7, 88d1a25 12, 9a6300a 9, b576df4 8
+                                          -> 0 / 0 / 0 each
+    results/h-image-publication-3b93854   12 files, 9 decodable  -> 0 / 0 / 0
+      (reported by the script under its UNTRACKED SCRATCH heading: the
+      script classifies the materialization state by name against the
+      pointer set it read at authoring; the directory now holds the pulled
+      12-file output and every file in it was scanned)
+    LOOSE FILES results/*                 4 files (incl. field-pretrain-
+                                          s42.jsonl), 2 decodable -> 0 / 0 / 0
+    .dvc/cache                            126 files, 109 decodable -> 0 / 0 / 0
+    Scratch directories (13, by name)     0 artifacts, marker hits are Python
+                                          source copies as before
+    where "a / b / c" = D1 verdict artifacts / schemaless signature hits /
+    values outside any vocabulary; UNREADABLE = 0 in every set.
+Control (CONTROL BUILDER quoted above, fresh directory): 4 artifacts found,
+1 schemaless signature, out-of-vocabulary contrast_decision "MAYBE" x1,
+clause_status "BROKEN" x1, integrity_status "WEIRD" x1, UNREADABLE 1 -- the
+detector still has teeth on the same run.
+
+Result: the FOR-1573 audit is COMPLETE, no longer PARTIAL. Zero persisted D1
+verdict artifacts exist anywhere in the tracked tree, the seven DVC outputs,
+the cache or the scratch copies; the read-old window stays pinned by the
+fixture literals in tests/d1_verdict_v2_fixtures.py only.
+
+Removal (2026-10-08T14:50:33Z, per the same ruling): the two outputs that
+were absent before the pull were removed again from the workspace
+(results/h-image-publication-3b93854/, results/field-pretrain-s42.jsonl) and
+their blobs from .dvc/cache (the 3b93854 .dir manifest, 893e3722..., and the
+five blobs unique to that bundle); the six blobs it shares with the other
+h-image-publication bundles were kept because those bundles still reference
+them, and results/captured stays materialized at 76/76 (it was half present
+before and is the E-series analysis corpus). `dvc status` afterwards reports
+the two pointers as "not in cache", results/captured as up to date; the cache
+holds 119 files (88 before the pull).
