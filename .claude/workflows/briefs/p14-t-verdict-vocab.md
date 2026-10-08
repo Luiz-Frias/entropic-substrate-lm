@@ -17,6 +17,8 @@ Authoritative brief for one `td-phase-lifecycle.cascade` lane, written 2026-09-2
 | trunk                                 | `refactor/p14-consolidation`                                                                     |
 | publish                               | `just ship-it` inside the lifecycle; never a bare `gt submit` (house rule 1)                     |
 
+Ruled 2026-10-06 (conductor clause 21, operator ruling that every remaining phase stacks linearly): the actual parent was `mythwave/p14-c-hook-1541`, the head of the published chain at launch, not `mythwave/p14-j-run`; the envelope check used `git diff --name-only 119081a...HEAD` and the PR body quotes both forms.
+
 ## Contract surface owned
 
 | contract                                                                                                                   | kind | frozen_after |
@@ -143,10 +145,10 @@ Never edit, in this phase:
 
 ## Guard teeth by mutation
 
-| mutation                                                | must go RED                             |
-| ------------------------------------------------------- | --------------------------------------- |
-| drop the `__post_init__` check on `D1Contrast.decision` | the out-of-vocabulary construction test |
-| serialize `.name` instead of `.value`                   | the byte-identical round-trip test      |
+| mutation                                                     | must go RED                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| drop the `__post_init__` check on `D1Contrast.decision`      | the out-of-vocabulary construction test                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| respell one wire value (e.g. `FAVORS_LEFT = "FAVOURS_LEFT"`) | the byte-identical round-trip test, the legacy-set parity pin and the enum wire-literal pin (measured 2026-10-06 at PR #330: 9 failed / 142 passed). The row originally read "serialize `.name` instead of `.value`"; that mutant is EQUIVALENT by construction, because every member's name equals its wire value (pinned by `test_enum_values_are_the_parent_tip_wire_literals_and_names_mirror_them`; measured GREEN at all 16 serializer sites), and was retracted in the phase's commit bodies |
 
 ## Planned commit branches
 

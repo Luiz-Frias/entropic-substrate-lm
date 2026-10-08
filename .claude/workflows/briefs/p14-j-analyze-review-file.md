@@ -170,12 +170,12 @@ Never edit, in this phase:
 
 ## Guard teeth by mutation
 
-| mutation                                                                             | must go RED                                                 |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| restore the `(int, float)` pre-filter                                                | the `D1CosineGap` test                                      |
-| point `d1_external_analysis_control.py`'s SHA check at `require_sha256_hex_any_case` | its mixed-case digest test                                  |
-| re-add a local `_strict_pairs` in `d1_review_adjudication.py`                        | the AST guard                                               |
-| pass `fail=` raising `ValueError` in `d1_machine_analysis_binding.py`                | the existing test asserting `D1MachineAnalysisBindingError` |
+| mutation                                                                             | must go RED                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| restore the `(int, float)` pre-filter                                                | the `D1CosineGap` test                                                                                                                                                                                                                            |
+| point `d1_external_analysis_control.py`'s SHA check at `require_sha256_hex_any_case` | its mixed-case digest test                                                                                                                                                                                                                        |
+| re-add a local `_strict_pairs` in `d1_review_adjudication.py`                        | the AST guard                                                                                                                                                                                                                                     |
+| pass `fail=` raising `ValueError` in `d1_machine_analysis_binding.py`                | the parametrized `D1MachineAnalysisBindingError` test this phase adds (W4-22, measured 2026-10-05: no pre-existing test reached that path, so the row's original premise, "the existing test", was false; the phase's own test carries the teeth) |
 
 ## Planned commit branches
 

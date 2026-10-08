@@ -106,3 +106,16 @@ src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:189 
 # explicit lowercase check per conductor ruling W1-16 (message pinned by
 # tests/test_d1_registered_design.py:111); FOR-1626 owns the eventual repoint
 # with that test. Rows above are the pre-wave-1 audit and are not rewritten.
+#
+# 2026-10-07 docs sweep (conductor): two more BOUNDARY rows RETAINED on
+# require_sha256_hex_any_case under FOR-1626, each by a conductor ruling at
+# its wave: row 39 (kernel/identity/d1_primitives.py
+# EncoderInitializationIdentity.__post_init__, then :227, now :204; ruling
+# W3-21, 2026-10-05, p14-t-dead: the encoder-initialization digest is an
+# identity-bearing value, its case contract stays with the kernel function)
+# and rows 93-94 (ladder/run/transport/d1_trainer_object_transport.py
+# _attempt and start_trainer; ruling W4-26, 2026-10-06, p14-j-run: the
+# repoint changed the caller-visible exception TYPE at the object-transport
+# digest sites, so the lane reverted it in 99aa3b8). With row 71 these are
+# the three retained sites FOR-1626 owns; every other BOUNDARY row above was
+# repointed by its owning phase (final counts recorded in the phase commits).
