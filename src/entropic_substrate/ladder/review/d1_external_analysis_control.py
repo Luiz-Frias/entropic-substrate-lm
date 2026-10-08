@@ -13,6 +13,12 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import NoReturn, SupportsIndex, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.kernel.verdict.d1_types import D1_OPAQUE_ARM_ALIAS_IDS
@@ -114,19 +120,6 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
     raise D1ExternalAnalysisControlError(message) from error
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate external analysis control key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite external analysis control constant {value!r}")
-
-
 def _canonical(value: Mapping[str, object]) -> bytes:
     return json.dumps(
         dict(value),
@@ -147,19 +140,15 @@ def _decode(
     if type(payload) is not bytes:
         raise TypeError(f"{label} payload must be bytes")
     try:
-        value: object = json.loads(
-            payload.decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload.decode("utf-8"), fail=_fail)
     except D1ExternalAnalysisControlError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
         _fail(f"{label} payload is invalid UTF-8 JSON", error)
-    if type(value) is not dict:
-        _fail(f"{label} payload must have an object root")
-    manifest = cast(dict[str, object], value)
-    if frozenset(manifest) != fields:
+    manifest = require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} payload must have an object root")
+    )
+    if any(exact_keys(manifest, fields)):
         _fail(f"{label} fields must be exact")
     if manifest["schema_version"] != schema:
         _fail(f"{label} schema_version is unsupported")
@@ -169,14 +158,9 @@ def _decode(
 
 
 def _sha256(value: object, *, label: str) -> str:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        _fail(f"{label} must be lowercase SHA-256")
-    return value
+    return require_lowercase_sha256(
+        value, fail=lambda _reason: _fail(f"{label} must be lowercase SHA-256")
+    )
 
 
 def _text(value: object, *, label: str) -> str:

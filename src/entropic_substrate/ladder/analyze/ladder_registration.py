@@ -12,10 +12,10 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, NoReturn, cast
 
 from entropic_substrate.core.corpus.batching import DATA_ORDER_DIGEST_BATCHES
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping
 from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     DualConfidenceReport,
@@ -27,6 +27,7 @@ from entropic_substrate.ladder.analyze.seed_sizing import (
     validate_hypothesis,
 )
 from entropic_substrate.ladder.capture.records.d1_telemetry_values import D1RunEvidence
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 if TYPE_CHECKING:
     from entropic_substrate.ladder.analyze.d1_capture import D1AdmittedAnalysisCapture
@@ -55,10 +56,12 @@ class StatisticalDesign:
 
 
 def _object(value: object, fields: str | None = None) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
+
+    def not_object(_reason: str) -> NoReturn:
         raise ValueError("statistical specification requires a JSON object")
-    result = cast(dict[str, object], value)
-    if fields is not None and set(result) != set(fields.split()):
+
+    result = require_mapping(value, fail=not_object)
+    if fields is not None and any(exact_keys(result, frozenset(fields.split()))):
         raise ValueError("statistical specification keys must be exact; no defaults")
     return result
 
@@ -101,7 +104,7 @@ def _sequence(value: object) -> list[object]:
 
 def _digest(value: object) -> str:
     result = _text(value)
-    require_sha256_hex_any_case(result, label="statistical identity")
+    require_lowercase_digest(result, label="statistical identity")
     return result
 
 

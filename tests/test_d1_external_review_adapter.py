@@ -12,11 +12,11 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
+import entropic_substrate.kernel.codec.strict_json as strict_json_module
 import entropic_substrate.ladder.review.d1_external_review_adapter as review_adapter_module
 from entropic_substrate.ladder.review.d1_external_review_adapter import (
     D1BoundedSubprocessRunner,
@@ -421,15 +421,8 @@ def test_json_recursion_failure_is_normalized_to_protocol_error(
     def recurse(*_args: object, **_kwargs: object) -> object:
         raise RecursionError("synthetic recursion")
 
-    monkeypatch.setattr(
-        review_adapter_module,
-        "json",
-        SimpleNamespace(
-            JSONDecodeError=json.JSONDecodeError,
-            dumps=json.dumps,
-            loads=recurse,
-        ),
-    )
+    # The decode seam is the strict_json door's stdlib ``loads`` since FOR-1604.
+    monkeypatch.setattr(strict_json_module, "loads", recurse)
     with pytest.raises(D1ExternalReviewError) as raised:
         _adapter(tmp_path, _Runner()).review(_request())
     assert raised.value.code == "protocol_encoding"
