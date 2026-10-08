@@ -12,14 +12,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
     require_commit,
     require_nonempty_string,
-    require_sha256_hex_any_case,
 )
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
@@ -70,6 +70,11 @@ class D1AdmissionBlocked:
             raise ValueError("blocked D1 admission refuses duplicate gap fields")
 
 
+def _blob_sha256_refused(reason: str) -> NoReturn:
+    msg = f"D1 preregistration blob_sha256 must be lowercase: {reason}"
+    raise ValueError(msg)
+
+
 @dataclass(frozen=True, slots=True)
 class D1PreregistrationArtifact:
     """Repository-relative path, committed blob content, and containing commit."""
@@ -85,9 +90,7 @@ class D1PreregistrationArtifact:
             raise ValueError("D1 preregistration path must be repository-relative POSIX")
         if ".." in parsed.parts:
             raise ValueError("D1 preregistration path forbids parent traversal")
-        require_sha256_hex_any_case(self.blob_sha256, label="D1 preregistration blob_sha256")
-        if self.blob_sha256 != self.blob_sha256.lower():
-            raise ValueError("D1 preregistration blob_sha256 must be lowercase")
+        require_lowercase_sha256(self.blob_sha256, fail=_blob_sha256_refused)
         require_commit(self.commit, label="D1 preregistration commit")
         if self.commit != self.commit.lower():
             raise ValueError("D1 preregistration commit must be lowercase")

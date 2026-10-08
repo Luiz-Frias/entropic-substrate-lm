@@ -109,6 +109,9 @@ def test_contract_must_bind_the_exact_family_and_seed_roster() -> None:
         ({"path": "/absolute/prereg.md"}, "repository-relative"),
         ({"path": "docs/../prereg.md"}, "parent traversal"),
         ({"blob_sha256": "A" * 64}, "lowercase"),
+        ({"blob_sha256": "a" * 63}, "D1 preregistration blob_sha256 must be lowercase"),
+        ({"blob_sha256": "g" * 64}, "D1 preregistration blob_sha256 must be lowercase"),
+        ({"blob_sha256": "a" * 65}, "D1 preregistration blob_sha256 must be lowercase"),
         ({"commit": "A" * 40}, "lowercase"),
     ],
 )

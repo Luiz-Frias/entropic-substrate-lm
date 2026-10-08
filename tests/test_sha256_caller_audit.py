@@ -18,6 +18,17 @@ Neither name is imported at module (collection) level, precisely so a
 single collection-time ImportError cannot red every arm at once (no guard
 teeth would show for any one of them) -- see the brief's guard-teeth
 recipe and house rule 5.
+
+FOR-1626 end state (conductor ruling R1, 2026-10-08): the three retained
+BOUNDARY sites were repointed to ``require_lowercase_sha256``, so
+``require_sha256_hex_any_case`` has ZERO callers in ``src`` and stays defined
+(retirement is FOR-1636). The live scan therefore asserts it finds no call
+site, where it used to assert it found at least one. That empty-scan guard
+conflated a misrooted scan with a finished migration; the definition-found
+control still catches a misrooted scan, and
+``test_call_counter_counts_a_known_call`` catches a counter that returns
+nothing, which the end-state assertion alone could not (an always-empty
+counter satisfies ``== {}``).
 """
 
 from __future__ import annotations
@@ -180,6 +191,27 @@ def _scan_live_call_counts(src_root: Path) -> tuple[Counter[str], bool]:
     return counts, positive_control
 
 
+def test_call_counter_counts_a_known_call() -> None:
+    """Positive control of the live scan's own per-file composition.
+
+    The end-state assertion (``live_counts == {}``) is satisfied by a counter
+    that finds nothing, so the counter is proven here on a snippet that imports
+    the helper by absolute name and calls it once. ``module_dotted`` is NOT the
+    definition module, so the binding must come from the ImportFrom.
+    """
+    snippet = (
+        f"from {_MODULE_DOTTED} import {_NEW_NAME}\n"
+        "\n"
+        "\n"
+        "def check(value):\n"
+        f"    {_NEW_NAME}(value, label='control')\n"
+    )
+    tree = ast.parse(snippet)
+    bound = _bound_names_for_file(tree, "entropic_substrate.kernel.codec.strict_json", False)
+    assert bound == {_NEW_NAME}
+    assert _count_calls(tree, bound) == 1
+
+
 def _parse_audit(text: str) -> tuple[dict[str, int], list[dict[str, str]]]:
     header: dict[str, int] = {}
     rows: list[dict[str, str]] = []
@@ -256,7 +288,11 @@ def test_caller_audit_is_committed_and_covers_the_live_tree() -> None:
         f"scan positive control failed: no {_NEW_NAME} definition found under {_SRC_ROOT} "
         "-- the scan is misrooted or the rename has not landed"
     )
-    assert live_counts, f"live scan of {_SRC_ROOT} found zero call sites -- misrooted scan"
+    assert live_counts == {}, (
+        f"{_NEW_NAME} has live call sites {dict(live_counts)}; FOR-1626 repointed every "
+        "boundary caller to require_lowercase_sha256, so a new caller needs a ruling and "
+        "an audit row"
+    )
 
     audited_counts: Counter[str] = Counter()
     for row in rows:
