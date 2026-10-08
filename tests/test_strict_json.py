@@ -177,6 +177,10 @@ class _InfFloat(float):
     """A float subclass carrying infinity, to prove subclasses cannot bypass the check."""
 
 
+class _InfDecimal(Decimal):
+    """A Decimal subclass carrying non-finite values, so subclasses cannot bypass the check."""
+
+
 class _Sentinel:
     """Neither float nor Decimal: the door returns it unchanged."""
 
@@ -258,6 +262,9 @@ def test_parse_float_is_called_once_per_float_token_with_the_raw_token() -> None
         pytest.param(Decimal("Infinity"), id="decimal-inf"),
         pytest.param(Decimal("-Infinity"), id="decimal-negative-inf"),
         pytest.param(Decimal("NaN"), id="decimal-nan"),
+        pytest.param(_InfDecimal("Infinity"), id="decimal-subclass-inf"),
+        pytest.param(_InfDecimal("-Infinity"), id="decimal-subclass-negative-inf"),
+        pytest.param(_InfDecimal("NaN"), id="decimal-subclass-nan"),
     ],
 )
 def test_parse_float_result_that_is_non_finite_is_refused_through_fail(
