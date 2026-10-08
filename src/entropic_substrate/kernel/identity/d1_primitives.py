@@ -193,29 +193,6 @@ class EvidenceClass(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class EncoderShape:
-    """Legacy width-only contract retained for narrow adapter compatibility."""
-
-    online_width: int
-    target_width: int
-
-    def __post_init__(self) -> None:
-        if type(self.online_width) is not int or self.online_width < 1:
-            msg = "online_width must be a positive integer"
-            raise ValueError(msg)
-        if type(self.target_width) is not int or self.target_width < 1:
-            msg = "target_width must be a positive integer"
-            raise ValueError(msg)
-        if self.online_width != self.target_width:
-            msg = "D1 requires equal widths for online and target encoders"
-            raise ValueError(msg)
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {"online_width": self.online_width, "target_width": self.target_width}
-
-
-@dataclass(frozen=True, slots=True)
 class EncoderInitializationIdentity:
     """Immutable initialization construction used by the causal encoder factory."""
 

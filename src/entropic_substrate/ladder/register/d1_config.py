@@ -22,7 +22,6 @@ from entropic_substrate.ladder.register.d1_config_profile import (
 __all__ = [
     "D1LaunchProfile",
     "D1LaunchScale",
-    "d1_configs_dir",
     "load_d1_execution_catalog",
     "load_d1_profile",
     "load_d1_profile_catalog",
@@ -30,11 +29,6 @@ __all__ = [
 
 _PROFILE_ORDER: Final = ("d1-none", "d1-sg", "d1-ac", "d1-both")
 _OVERLAY_KEYS: Final = ("kind", "encoder", "future_law", "data", "train")
-
-
-def d1_configs_dir() -> Path:
-    """Locate D1 YAMLs through the repository's shared config locator."""
-    return configs_dir()
 
 
 def load_d1_profile(
@@ -74,10 +68,10 @@ def load_d1_profile_catalog(
     selected = (
         tuple(Path(path) for path in paths)
         if paths is not None
-        else tuple(d1_configs_dir() / f"{name}.yaml" for name in _PROFILE_ORDER)
+        else tuple(configs_dir() / f"{name}.yaml" for name in _PROFILE_ORDER)
     )
     overlay_name = "d1-tiny.yaml" if tiny_target == "host_cpu" else "d1-gpu-tiny.yaml"
-    overlay = d1_configs_dir() / overlay_name if tiny else None
+    overlay = configs_dir() / overlay_name if tiny else None
     profiles = tuple(load_d1_profile(path, tiny_overlay_path=overlay) for path in selected)
     by_name = {profile.name: profile for profile in profiles}
     if len(profiles) != len(D1Arm) or set(by_name) != set(_PROFILE_ORDER):

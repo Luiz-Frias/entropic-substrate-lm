@@ -6,18 +6,19 @@ import yaml
 
 from d1_runtime_fixtures import runtime_batch, runtime_system
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.kernel.runtime.config import configs_dir
+from entropic_substrate.ladder.register.d1_config import load_d1_profile
 
 pytestmark = pytest.mark.unit
 
 
 def test_cpu_tiny_cannot_silently_select_an_accelerator(tmp_path) -> None:
-    payload = yaml.safe_load((d1_configs_dir() / "d1-tiny.yaml").read_text())
+    payload = yaml.safe_load((configs_dir() / "d1-tiny.yaml").read_text())
     payload["train"]["device"] = "auto"
     overlay = tmp_path / "tiny.yaml"
     overlay.write_text(yaml.safe_dump(payload))
     with pytest.raises(ValueError, match="CPU"):
-        load_d1_profile(d1_configs_dir() / "d1-both.yaml", tiny_overlay_path=overlay)
+        load_d1_profile(configs_dir() / "d1-both.yaml", tiny_overlay_path=overlay)
 
 
 @pytest.mark.parametrize("dtype", [torch.int64, torch.float64])

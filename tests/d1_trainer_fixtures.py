@@ -21,8 +21,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
     unavailable_resource_activation_registration,
 )
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, EvidenceClass
-from entropic_substrate.kernel.runtime.config import merge_dicts
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir
+from entropic_substrate.kernel.runtime.config import configs_dir, merge_dicts
 from entropic_substrate.ladder.register.d1_config_profile import (
     D1LaunchScale,
     parse_d1_profile_payload,
@@ -57,7 +56,7 @@ def micro_plan(
     seed: int = 17,
     save_interval: int = 1,
 ) -> SmokeD1RunPlan:
-    path = d1_configs_dir() / f"d1-{arm.value}.yaml"
+    path = configs_dir() / f"d1-{arm.value}.yaml"
     payload = read_d1_profile_mapping(path)
     profile = parse_d1_profile_payload(
         merge_dicts(

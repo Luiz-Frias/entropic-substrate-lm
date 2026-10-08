@@ -14,7 +14,7 @@ from entropic_substrate.core.latent.future_law import (
     MeanDisplacementBaseline,
 )
 from entropic_substrate.core.latent.state import LatentTrajectory
-from entropic_substrate.core.latent.targets import FutureTarget
+from entropic_substrate.core.latent.target_values import FutureTarget
 from entropic_substrate.core.observation.contracts import CodecIdentity
 from predictive_state_helpers import codec_identity, fit_mean_baseline
 

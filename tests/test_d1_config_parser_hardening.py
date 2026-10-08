@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.kernel.runtime.config import configs_dir
+from entropic_substrate.ladder.register.d1_config import load_d1_profile
 
 pytestmark = pytest.mark.unit
 
 
 def _payload() -> dict[str, object]:
-    value = yaml.safe_load((d1_configs_dir() / "d1-none.yaml").read_text(encoding="utf-8"))
+    value = yaml.safe_load((configs_dir() / "d1-none.yaml").read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     return value
 
