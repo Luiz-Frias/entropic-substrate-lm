@@ -234,7 +234,7 @@ def _quality_metrics(value: object) -> dict[str, float]:
 class D1MetricExtractor:
     """Project one canonical D1 EVAL event without manufacturing missing evidence."""
 
-    def extract(self, event: object) -> ExtractedMetrics | None:
+    def extract(self, event: D1JournalEvent) -> ExtractedMetrics | None:
         if type(event) is not D1JournalEvent:
             raise TypeError("D1 metric extraction requires D1JournalEvent")
         if event.event_kind is not JournalEventKind.EVAL:

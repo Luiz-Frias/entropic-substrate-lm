@@ -40,7 +40,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.run_descriptor import (
@@ -414,6 +414,25 @@ class MlflowSink:
         # a cold server on a small VM.
         deadline = time.monotonic() + _STARTUP_COLD_BUDGET_S
         attempt = 0
+
+        def _abort_or_backoff(exc: Exception) -> None:
+            # Shared by both phases so the policy is ONE policy: a non-cold
+            # failure or an exhausted deadline raises the abort; a cold one
+            # sleeps and returns so the caller's loop retries.
+            nonlocal attempt
+            if not _is_cold_start(exc) or time.monotonic() >= deadline:
+                msg = f"MLflow tracking unreachable/misconfigured at {tracking_uri!r}: {exc}"
+                raise MlflowStartupError(msg) from exc
+            attempt += 1
+            backoff = min(2.0**attempt, 8.0)
+            logger.warning(
+                f"mlflow: {tracking_uri} answered but read-timed-out "
+                f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
+            )
+            time.sleep(backoff)
+
+        # PHASE 1: the three create calls. A cold timeout here retries the whole
+        # phase, which is safe only until create_run has RETURNED.
         while True:
             try:
                 experiment = client.get_experiment_by_name(experiment_name)
@@ -426,6 +445,21 @@ class MlflowSink:
                     experiment_id, tags={str(k): str(v) for k, v in (tags or {}).items()}
                 )
                 self._run_id = run.info.run_id
+                break
+            except MlflowStartupError:
+                raise
+            except Exception as exc:
+                _abort_or_backoff(exc)
+
+        # PHASE 2 (FOR-1578): run_id is captured, so a cold timeout on set_tag or
+        # a log_param retries ONLY those writes (both idempotent for the same
+        # value: set_tag overwrites, log_param of an equal value is a no-op) and
+        # never re-enters create_run, which would mint a second run and orphan
+        # the first. Same policy, same deadline, same MlflowStartupError on a
+        # non-cold failure or past the deadline; these writes stay under the
+        # abort policy, never under the best-effort guard.
+        while True:
+            try:
                 client.set_tag(self._run_id, "mlflow.runName", run_name)
                 for key, value in (params or {}).items():
                     client.log_param(self._run_id, key, value)
@@ -433,16 +467,7 @@ class MlflowSink:
             except MlflowStartupError:
                 raise
             except Exception as exc:
-                if not _is_cold_start(exc) or time.monotonic() >= deadline:
-                    msg = f"MLflow tracking unreachable/misconfigured at {tracking_uri!r}: {exc}"
-                    raise MlflowStartupError(msg) from exc
-                attempt += 1
-                backoff = min(2.0**attempt, 8.0)
-                logger.warning(
-                    f"mlflow: {tracking_uri} answered but read-timed-out "
-                    f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
-                )
-                time.sleep(backoff)
+                _abort_or_backoff(exc)
 
         # DATASET LINEAGE (best-effort, own guard) — deliberately OUTSIDE the
         # retry loop above: a corrupt/malformed pointer is neither a cold
@@ -492,7 +517,8 @@ class MlflowSink:
         the worker frees a slot (backpressure, never a drop).
         """
         try:
-            extracted = self._metric_extractor.extract(record)
+            # Static bridge only: the port hands over an object, the protocol types a dict.
+            extracted = self._metric_extractor.extract(cast(dict[str, object], record))
             if extracted is None or not extracted.metrics:
                 return
             item = _QueuedRecord(

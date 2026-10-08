@@ -327,3 +327,10 @@ def test_d1_extractor_refuses_cursor_mismatch_and_mlflow_counts_it_best_effort()
     )
     mirror.log(malformed)
     assert mirror.failed_writes == 1
+
+
+def test_d1_extractor_refuses_a_non_event_input() -> None:
+    """The runtime refusal survives the static narrowing, message byte-identical."""
+    with pytest.raises(TypeError) as exc_info:
+        D1MetricExtractor().extract({"event": "eval"})  # type: ignore[arg-type]
+    assert str(exc_info.value) == "D1 metric extraction requires D1JournalEvent"
