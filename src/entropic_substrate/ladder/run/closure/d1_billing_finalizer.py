@@ -162,26 +162,8 @@ def _handoff_manifest(handoff: D1TrainerHandoff) -> dict[str, object]:
     }
 
 
-def finalize_d1_billing(
-    *,
-    plan: object,
-    segment_starts: object,
-    segment_terminations: object,
-    provider_billings: object,
-    handoff: object,
-    journal_path: object,
-    expected_journal_state: object,
-) -> D1BillingFinalization:
+def finalize_d1_billing(request: D1BillingFinalizationRequest) -> D1BillingFinalization:
     """Reconcile every physical segment, then durably close one logical D1 run."""
-    request = D1BillingFinalizationRequest(
-        plan=plan,  # type: ignore[arg-type]
-        segment_starts=segment_starts,  # type: ignore[arg-type]
-        segment_terminations=segment_terminations,  # type: ignore[arg-type]
-        provider_billings=provider_billings,  # type: ignore[arg-type]
-        handoff=handoff,  # type: ignore[arg-type]
-        journal_path=journal_path,  # type: ignore[arg-type]
-        expected_journal_state=expected_journal_state,  # type: ignore[arg-type]
-    )
     events = _validate_plan_and_journal(request)
     billing = reconcile_logical_billing(
         request.segment_starts,

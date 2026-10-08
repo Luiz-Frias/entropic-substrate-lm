@@ -36,6 +36,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_values import (
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
@@ -256,13 +257,15 @@ class D1ExcludedOperator:
         self._pod = None
         billing = self._runpod.billing(placement.pod_id, start=start)
         finalization = finalize_d1_billing(
-            plan=plan,
-            segment_starts=(*prior_starts, start),
-            segment_terminations=(*(history.terminations if history else ()), termination),
-            provider_billings=(*(history.billings if history else ()), billing),
-            handoff=export.handoff,
-            journal_path=candidate.journal_path,
-            expected_journal_state=stopped.journal_state,
+            D1BillingFinalizationRequest(
+                plan=plan,
+                segment_starts=(*prior_starts, start),
+                segment_terminations=(*(history.terminations if history else ()), termination),
+                provider_billings=(*(history.billings if history else ()), billing),
+                handoff=export.handoff,
+                journal_path=candidate.journal_path,
+                expected_journal_state=stopped.journal_state,
+            )
         )
         failed = isinstance(export.handoff, D1TrainerFailureHandoff)
         self.attempt_ledger = self.attempt_ledger.transition(

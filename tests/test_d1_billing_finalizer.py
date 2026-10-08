@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -43,6 +43,9 @@ from entropic_substrate.ladder.capture.resource.resource_billing_reconciliation 
     LogicalBillingMissingCost,
     LogicalBillingReconciliation,
 )
+from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
+    D1BillingFinalizationRequest,
+)
 from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.ladder.run.trainer.d1_fresh_trainer import D1FreshRunLocations, run_d1_fresh
 from entropic_substrate.ladder.run.trainer.d1_resume_runtime import D1ResumeRunLocations
@@ -60,13 +63,15 @@ def _finalize(
     provider: TerminalProviderBillingEvidence,
 ):
     return finalize_d1_billing(
-        plan=case.plan,
-        segment_starts=(case.start,),
-        segment_terminations=(case.termination,),
-        provider_billings=(provider,),
-        handoff=case.completion,
-        journal_path=case.journal_path,
-        expected_journal_state=case.completion.journal_state,
+        D1BillingFinalizationRequest(
+            plan=case.plan,
+            segment_starts=(case.start,),
+            segment_terminations=(case.termination,),
+            provider_billings=(provider,),
+            handoff=case.completion,
+            journal_path=case.journal_path,
+            expected_journal_state=case.completion.journal_state,
+        )
     )
 
 
@@ -188,13 +193,15 @@ def test_failed_trainer_finalizes_billing_but_never_claims_quality_export(
     )
 
     finalized = finalize_d1_billing(
-        plan=plan,
-        segment_starts=(start,),
-        segment_terminations=(termination,),
-        provider_billings=(provider_bill(start),),
-        handoff=handoff,
-        journal_path=journal_path,
-        expected_journal_state=handoff.termination.journal_state,
+        D1BillingFinalizationRequest(
+            plan=plan,
+            segment_starts=(start,),
+            segment_terminations=(termination,),
+            provider_billings=(provider_bill(start),),
+            handoff=handoff,
+            journal_path=journal_path,
+            expected_journal_state=handoff.termination.journal_state,
+        )
     )
 
     assert finalized.trainer_outcome == "failed"
@@ -256,16 +263,18 @@ def test_resumed_completion_preserves_discarded_tail_work_and_segment_billing(
     )
 
     finalized = finalize_d1_billing(
-        plan=case.plan,
-        segment_starts=(first, second),
-        segment_terminations=terminations,
-        provider_billings=(
-            provider_bill(first, record="first"),
-            provider_bill(second, record="second"),
-        ),
-        handoff=completion,
-        journal_path=case.journal_path,
-        expected_journal_state=completion.journal_state,
+        D1BillingFinalizationRequest(
+            plan=case.plan,
+            segment_starts=(first, second),
+            segment_terminations=terminations,
+            provider_billings=(
+                provider_bill(first, record="first"),
+                provider_bill(second, record="second"),
+            ),
+            handoff=completion,
+            journal_path=case.journal_path,
+            expected_journal_state=completion.journal_state,
+        )
     )
 
     assert type(finalized.billing) is LogicalBillingReconciliation
@@ -287,13 +296,15 @@ def test_currency_mismatch_never_appends(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         finalize_d1_billing(
-            plan=case.plan,
-            segment_starts=(case.start,),
-            segment_terminations=(case.termination,),
-            provider_billings=(provider_bill(case.start, currency="EUR"),),
-            handoff=case.completion,
-            journal_path=case.journal_path,
-            expected_journal_state=case.completion.journal_state,
+            D1BillingFinalizationRequest(
+                plan=case.plan,
+                segment_starts=(case.start,),
+                segment_terminations=(case.termination,),
+                provider_billings=(provider_bill(case.start, currency="EUR"),),
+                handoff=case.completion,
+                journal_path=case.journal_path,
+                expected_journal_state=case.completion.journal_state,
+            )
         )
 
     assert case.journal_path.read_bytes() == before
@@ -308,6 +319,28 @@ def test_tampered_terminal_checkpoint_refuses_export_before_journal_append(
 
     with pytest.raises(Exception, match="checkpoint"):
         _finalize(case, provider_bill(case.start))
+
+    assert case.journal_path.read_bytes() == before
+
+
+def test_request_without_a_typed_plan_is_refused_before_any_journal_read(
+    tmp_path: Path,
+) -> None:
+    case = completed_case(tmp_path)
+    before = case.journal_path.read_bytes()
+
+    with pytest.raises(TypeError, match="typed run plan"):
+        finalize_d1_billing(
+            D1BillingFinalizationRequest(
+                plan=cast(Any, None),
+                segment_starts=(case.start,),
+                segment_terminations=(case.termination,),
+                provider_billings=(provider_bill(case.start),),
+                handoff=case.completion,
+                journal_path=case.journal_path,
+                expected_journal_state=case.completion.journal_state,
+            )
+        )
 
     assert case.journal_path.read_bytes() == before
 

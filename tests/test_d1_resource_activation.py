@@ -32,10 +32,17 @@ class _Samples:
         return (PowerSample(0, 100.0), PowerSample(1_000_000_000, 100.0))
 
 
+class _GappedSamples:
+    def samples(self) -> tuple[PowerSample, ...]:
+        return (PowerSample(0, 100.0), PowerSample(3_000_000_000, 100.0))
+
+
 class _Lifecycle:
-    def __init__(self, registration: PowerSamplingRegistration) -> None:
+    def __init__(
+        self, registration: PowerSamplingRegistration, source: object | None = None
+    ) -> None:
         self.registration = registration
-        self.sample_source = _Samples()
+        self.sample_source = _Samples() if source is None else source
         self.entered = self.exited = 0
 
     def __enter__(self) -> _Lifecycle:
@@ -165,3 +172,45 @@ def test_power_registration_and_lifecycle_must_be_explicit_and_identical() -> No
     )
     with pytest.raises(ValueError, match="registration"):
         factory.fresh(start_provenance())
+
+
+def test_factory_fresh_and_resume_forward_the_registered_power_gap() -> None:
+    registration = _registration()
+    factory = D1ProductionResourceActivationFactory(
+        registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
+        flop_model=_flops(),
+        power_registration=registration,
+        power_lifecycle_factory=lambda start, _registration: _Lifecycle(
+            registration, _GappedSamples() if start.execution_segment_index == 1 else None
+        ),
+    )
+    first = factory.fresh(start_provenance())
+    first.meter.record_positions(ResourcePhase.TRAIN, online_positions=1, target_positions=1)
+    ledger = ResourceLedger(start_provenance(), monotonic_origin_ns=0, meter_strategy=first.meter)
+    ledger.record_eval(
+        online_positions=1,
+        target_positions=1,
+        training_step=1,
+        observed_at=STARTED_AT,
+        monotonic_ns=1_000_000_000,
+    )
+
+    resumed = factory.resume(start_provenance(1, "f" * 64), ledger.current_state())
+
+    assert registration.max_gap_seconds == 2.0
+    assert isinstance(resumed.meter.snapshot(trainer_wall_seconds=4.0).energy_joules, EvidenceGap)
+
+    fresh_gapped = D1ProductionResourceActivationFactory(
+        registration_digest="a" * 64,
+        meter_provider="torch-cuda+nvml",
+        device_scope="cuda:0",
+        power_registration=registration,
+        power_lifecycle_factory=lambda _start, _registration: _Lifecycle(
+            registration, _GappedSamples()
+        ),
+    ).fresh(start_provenance())
+    assert isinstance(
+        fresh_gapped.meter.snapshot(trainer_wall_seconds=4.0).energy_joules, EvidenceGap
+    )

@@ -12,11 +12,13 @@ import pytest
 import entropic_substrate.ladder.run.campaign.d1_operator_controller as controller_module
 from d1_billing_finalizer_fixtures import billing_gap, provider_bill
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
+    EvidenceGap,
     RunStartProvenance,
     SegmentStartMode,
     execution_segment_id,
 )
 from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.capture.resource.resource_billing import (
     BillingGap,
     ExecutionSegmentTermination,
@@ -33,10 +35,12 @@ from entropic_substrate.ladder.run.campaign.d1_operator_controller import (
 )
 from entropic_substrate.ladder.run.campaign.d1_operator_evidence import (
     D1ExportedTrainerHandoff,
+    D1TrainerExportReceipt,
     verify_d1_trainer_export,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
 )
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyRecord,
@@ -50,6 +54,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
 from .test_d1_finalized_cell_custody_values import _attest, _finalized_case
 from .test_d1_operator_controller import (
     _artifact,
+    _Case,
     _case,
     _Clock,
     _Custody,
@@ -190,8 +195,8 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
     finalized_cell = _attest(_finalized_case(tmp_path / "finalized-cell"))
     custody_captured: dict[str, object] = {}
 
-    def finalize(**kwargs: object) -> D1BillingFinalization:
-        captured.update(kwargs)
+    def finalize(request: D1BillingFinalizationRequest) -> D1BillingFinalization:
+        captured["request"] = request
         return finalized
 
     monkeypatch.setattr(controller_module, "verify_d1_trainer_export", lambda _: receipt)
@@ -276,8 +281,9 @@ def test_resume_uses_next_segment_without_recording_a_second_scientific_look(
         else D1LaunchAttemptStatus.COMPLETED
     )
     assert result.attempt_ledger.events[-1].status is expected_status
-    assert captured["segment_starts"] == (start0, start1)
-    assert captured["segment_terminations"] == (prior_termination, result.termination)
+    request = cast(D1BillingFinalizationRequest, captured["request"])
+    assert request.segment_starts == (start0, start1)
+    assert request.segment_terminations == (prior_termination, result.termination)
     assert result.queue_admissible is (outcome == "admissible")
     if outcome in {"admissible", "billing_gap"}:
         assert custody_captured["segment_starts"] == (start0, start1)
@@ -334,3 +340,123 @@ def test_resume_refuses_nonconsecutive_segment_before_provider_auth(tmp_path: Pa
     with pytest.raises(ValueError, match="next execution segment"):
         controller.execute_resume(invalid, history=history)
     assert events == []
+
+
+def _export_before_finalization(
+    tmp_path: Path,
+) -> tuple[_Case, D1FreshRunCompletion, D1TrainerExportReceipt]:
+    case = _case(tmp_path)
+    fresh = cast(D1FreshRunCompletion, case.handoff)
+    export = verify_d1_trainer_export(D1ExportedTrainerHandoff(fresh, case.journal_path))
+    return case, fresh, export
+
+
+@pytest.mark.parametrize("handoff_kind", ["completed", "failed_with_defect"])
+def test_shared_custody_decision_persists_a_finalized_cell_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    handoff_kind: str,
+) -> None:
+    case, fresh, export = _export_before_finalization(tmp_path)
+    defect = object()
+    if handoff_kind == "failed_with_defect":
+        export = replace(
+            export,
+            handoff=D1TrainerFailureHandoff(fresh.termination, "RuntimeError", "numerical defect"),
+        )
+        monkeypatch.setattr(controller_module, "_terminal_defect", lambda *_args: defect)
+    finalized_cell = _attest(_finalized_case(tmp_path / "finalized-cell"))
+    attested: dict[str, object] = {}
+
+    def attest(**kwargs: object) -> D1FinalizedCellCustodyRecord:
+        attested.update(kwargs)
+        return finalized_cell
+
+    monkeypatch.setattr(controller_module, "attest_d1_finalized_cell_custody", attest)
+    monkeypatch.setattr(
+        controller_module, "identify_d1_finalized_journal", lambda *_args: finalized_cell.journal
+    )
+    events: list[str] = []
+
+    artifact, record = controller_module._persist_finalization_artifact(
+        _Custody(events),
+        intent=case.intent,
+        segment_starts=(cast(RunStartProvenance, case.start),),
+        ledger=D1LaunchAttemptLedger(),
+        finalization=cast(D1BillingFinalization, object()),
+        export=export,
+        journal_path=case.journal_path,
+    )
+
+    assert events == ["persist_finalized_cell"]
+    assert record is finalized_cell
+    assert artifact.content_hash.digest == finalized_cell.record_digest
+    assert attested["checkpoint"] == export.checkpoint
+    assert attested["numerical_defect"] is (
+        defect if handoff_kind == "failed_with_defect" else None
+    )
+
+
+@pytest.mark.parametrize("reason", ["failed_without_defect", "checkpoint_gap"])
+def test_shared_custody_decision_persists_plain_finalization_otherwise(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+) -> None:
+    case, fresh, export = _export_before_finalization(tmp_path)
+    if reason == "failed_without_defect":
+        export = replace(
+            export,
+            handoff=D1TrainerFailureHandoff(fresh.termination, "RuntimeError", "no defect"),
+        )
+    else:
+        export = replace(
+            export,
+            checkpoint=EvidenceGap("terminal_checkpoint", "no checkpoint handoff"),
+            quality_export_ready=False,
+        )
+
+    def never_attest(**_kwargs: object) -> object:
+        raise AssertionError("plain finalization must not mint a finalized-cell record")
+
+    monkeypatch.setattr(controller_module, "attest_d1_finalized_cell_custody", never_attest)
+    events: list[str] = []
+
+    artifact, record = controller_module._persist_finalization_artifact(
+        _Custody(events),
+        intent=case.intent,
+        segment_starts=(cast(RunStartProvenance, case.start),),
+        ledger=D1LaunchAttemptLedger(),
+        finalization=cast(D1BillingFinalization, object()),
+        export=export,
+        journal_path=case.journal_path,
+    )
+
+    assert events == ["persist_finalization"]
+    assert record is None
+    assert artifact.path == "operator/persist_finalization.json"
+
+
+@pytest.mark.parametrize("outcome", ["admissible", "trainer_failure"])
+def test_resume_closure_routes_custody_through_the_shared_helper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+) -> None:
+    calls: list[dict[str, object]] = []
+    shared = controller_module._persist_finalization_artifact
+
+    def spy(
+        custody: object, **kwargs: object
+    ) -> tuple[ArtifactIdentity, D1FinalizedCellCustodyRecord | None]:
+        calls.append(kwargs)
+        return shared(custody, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(controller_module, "_persist_finalization_artifact", spy)
+
+    test_resume_uses_next_segment_without_recording_a_second_scientific_look(
+        tmp_path, monkeypatch, outcome
+    )
+
+    assert len(calls) == 1
+    assert len(cast(tuple[object, ...], calls[0]["segment_starts"])) == 2
