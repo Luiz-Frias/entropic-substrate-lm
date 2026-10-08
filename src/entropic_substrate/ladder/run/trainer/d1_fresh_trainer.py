@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -13,7 +13,6 @@ from entropic_substrate.kernel.evidence_class.resource_provenance_codec import r
 from entropic_substrate.ladder.capture.records.d1_journal import AuthoritativeRunJournal
 from entropic_substrate.ladder.capture.records.d1_journal_values import (
     D1JournalEvent,
-    FrozenJson,
     JournalCheckpointState,
     JournalEventKind,
 )
@@ -23,13 +22,10 @@ from entropic_substrate.ladder.run.resource.d1_resource_activation import (
     UnavailableResourceActivationFactory,
 )
 from entropic_substrate.ladder.run.trainer.d1_calibration import D1BaselineCalibrator
-from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
-    D1PrimarySecondaryFailure,
-    D1SecondaryFailureEvidence,
-    D1SecondaryFailureStage,
-)
 from entropic_substrate.ladder.run.trainer.d1_terminal_failure import (
-    terminal_numerical_defect_for_failure,
+    _trainer_failure,
+    next_trainer_event,
+    trainer_event,
 )
 from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
     D1TrainerClock,
@@ -41,7 +37,6 @@ from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
 from entropic_substrate.ladder.run.transport.d1_trainer_handoff import (
     D1FreshRunCompletion,
     D1FreshRunFailure,
-    D1TrainerFailureHandoff,
     capture_d1_trainer_termination,
 )
 
@@ -82,45 +77,6 @@ class D1FreshJournal(Protocol):
 type D1FreshJournalFactory = Callable[[Path, D1JournalEvent], D1FreshJournal]
 
 
-def _event(
-    plan: D1RunPlan,
-    kind: JournalEventKind,
-    *,
-    sequence: int,
-    successful_step: int,
-    payload: Mapping[str, object],
-) -> D1JournalEvent:
-    return D1JournalEvent(
-        event_kind=kind,
-        event_seq=sequence,
-        logical_run_id=plan.logical_run_id,
-        execution_digest=plan.run.execution_digest,
-        aggregation_digest=plan.run.aggregation_digest,
-        construction_digest=plan.run.construction_digest,
-        family_digest=plan.profile.family.family_digest,
-        run_class=plan.run.run_class,
-        successful_step=successful_step,
-        payload=cast(Mapping[str, FrozenJson], payload),
-    )
-
-
-def _next_event(
-    journal: D1FreshJournal,
-    plan: D1RunPlan,
-    kind: JournalEventKind,
-    *,
-    successful_step: int,
-    payload: Mapping[str, object],
-) -> D1JournalEvent:
-    return _event(
-        plan,
-        kind,
-        sequence=journal.state.last_event_sequence + 1,
-        successful_step=successful_step,
-        payload=payload,
-    )
-
-
 def run_d1_fresh(
     *,
     plan: D1RunPlan,
@@ -152,7 +108,7 @@ def run_d1_fresh(
         origin=origin,
         meter_strategy=activation.meter,
     )
-    start_event = _event(
+    start_event = trainer_event(
         plan,
         JournalEventKind.RUN_START,
         sequence=0,
@@ -182,7 +138,7 @@ def run_d1_fresh(
             )
             ledger.record_baseline(target_positions=baseline.source_span_positions)
             journal.append(
-                _next_event(
+                next_trainer_event(
                     journal,
                     plan,
                     JournalEventKind.BASELINE_CALIBRATED,
@@ -239,77 +195,15 @@ def run_d1_fresh(
                 error = caught.primary
             else:
                 error = caught
-            trainer_ended_at = active_clock.utc_now()
-            secondary_failure: D1SecondaryFailureEvidence | None = None
-            failure_cause: BaseException = error
-            try:
-                ledger.record_meter_observation(monotonic_ns=active_clock.monotonic_ns())
-            except Exception as meter_error:
-                secondary_failure = D1SecondaryFailureEvidence.from_error(
-                    D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
-                    meter_error,
-                )
-                failure_cause = D1PrimarySecondaryFailure(
-                    error,
-                    meter_error,
-                    secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
-                )
-            journal_cursor = journal.state
-            resource_ledger_state = ledger.current_state()
-            error_message = str(error) or repr(error)
-            failure_payload: dict[str, object] = {
-                "error_message": error_message,
-                "error_type": type(error).__name__,
-                "execution_segment_id": start.execution_segment_id,
-                "execution_segment_index": start.execution_segment_index,
-                "journal_cursor": journal_cursor.manifest,
-                "logical_run_id": start.logical_run_id,
-                "model_successful_step": model_successful_step,
-                "operator_finalization_required": True,
-                "resource_ledger_state": resource_ledger_state.manifest,
-                "rollback_claimed": False,
-                "secondary_failure": (
-                    None if secondary_failure is None else secondary_failure.manifest
-                ),
-                "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
-            }
-            numerical_defect = terminal_numerical_defect_for_failure(
+            handoff, failure_cause = _trainer_failure(
+                plan,
+                journal,
+                ledger,
+                start,
+                active_clock,
+                successful_step,
+                model_successful_step,
                 error,
-                plan=plan,
-                start=start,
-                resource_state=resource_ledger_state,
-                successful_step=successful_step,
-                checkpoint_sha256=latest_checkpoint_sha256,
-            )
-            if numerical_defect is not None:
-                failure_payload["numerical_defect"] = numerical_defect.manifest
-            try:
-                journal.append(
-                    _next_event(
-                        journal,
-                        plan,
-                        JournalEventKind.TRAINER_ABORTED,
-                        successful_step=successful_step,
-                        payload=failure_payload,
-                    )
-                )
-            except Exception as append_error:
-                raise D1PrimarySecondaryFailure(
-                    failure_cause,
-                    append_error,
-                    secondary_stage=D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
-                ) from error
-            termination = capture_d1_trainer_termination(
-                start=start,
-                trainer_ended_at=trainer_ended_at,
-                successful_step=successful_step,
-                model_successful_step=model_successful_step,
-                journal_state=journal.state,
-                resource_ledger_state=resource_ledger_state,
-            )
-            handoff = D1TrainerFailureHandoff.from_error(
-                termination,
-                error,
-                secondary_failure=secondary_failure,
+                latest_checkpoint_sha256,
             )
             raise D1FreshRunFailure(handoff) from failure_cause

@@ -8,6 +8,7 @@ from types import MappingProxyType
 
 import pytest
 
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1StateMomentAccessors
 from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1QualityEvidence,
     D1RunStatus,
@@ -117,3 +118,18 @@ def test_no_tail_quarantine_evidence_is_typed_and_immutable() -> None:
     assert evidence.artifact_sha256 is None
     with pytest.raises(TypeError):
         evidence.manifest["kind"] = "quarantined_tail"  # type: ignore[index]
+
+
+def test_state_accessors_come_from_the_shared_mixin_and_stay_slotted() -> None:
+    evidence = _quality()
+    moments = evidence.state_moments
+    assert isinstance(evidence, D1StateMomentAccessors)
+    assert evidence.state_mean == moments.mean
+    assert evidence.state_variance == moments.variance
+    assert evidence.state_covariance_eigenvalues == moments.covariance_eigenvalues
+    assert evidence.effective_rank == moments.effective_rank
+    assert evidence.state_variance != evidence.state_mean
+    assert not hasattr(evidence, "__dict__")
+    for name in ("state_mean", "state_variance", "state_covariance_eigenvalues", "effective_rank"):
+        assert name not in vars(D1QualityEvidence)
+        assert name in vars(D1StateMomentAccessors)
