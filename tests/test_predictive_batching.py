@@ -143,3 +143,96 @@ def test_horizon_one_preserves_the_legacy_seeded_offset_stream() -> None:
     assert torch.equal(predictive_batch.online_observations, legacy_x)
     assert torch.equal(predictive_batch.language_targets, legacy_y)
     assert predictive.data_order_digest() == legacy.data_order_digest()
+
+
+def _legacy_offset_oracle(
+    *, train: bool, seed: int, n: int, seq_len: int, batch_size: int, draws: int
+) -> tuple[list[list[int]], torch.Tensor]:
+    """Offsets and final generator state of the deleted ``SequenceSampler._starts``.
+
+    Copied from the parent tip (68332cc) before its deletion: one
+    ``torch.randint(0, n - seq_len, (batch_size,))`` per train draw, and the
+    strided modular grid with a cursor per eval draw.
+    """
+    max_start = n - seq_len - 1
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+    out: list[list[int]] = []
+    for cursor in range(draws):
+        if train:
+            out.append(torch.randint(0, max_start + 1, (batch_size,), generator=generator).tolist())
+        else:
+            stride = max(max_start // max(batch_size, 1), 1)
+            base = (cursor * batch_size * stride) % (max_start + 1)
+            out.append(((base + np.arange(batch_size) * stride) % (max_start + 1)).tolist())
+    return out, generator.get_state()
+
+
+@pytest.mark.parametrize("train", [True, False])
+def test_batch_draws_the_legacy_offsets_and_consumes_the_legacy_rng(train: bool) -> None:
+    """``batch()`` and ``predictive_batch(1)`` both draw the parent tip's offset stream.
+
+    The generator-state comparison pins the draw ORDER and COUNT: a second
+    ``torch.randint`` per batch leaves different state even when the first
+    draw happens to match.
+    """
+    n, seq_len, batch_size, draws = 64, 5, 3, 6
+    expected, expected_state = _legacy_offset_oracle(
+        train=train, seed=29, n=n, seq_len=seq_len, batch_size=batch_size, draws=draws
+    )
+    legacy = SequenceSampler(
+        _numbered_split(n), batch_size=batch_size, seq_len=seq_len, train=train, seed=29
+    )
+    predictive = SequenceSampler(
+        _numbered_split(n), batch_size=batch_size, seq_len=seq_len, train=train, seed=29
+    )
+    for offsets in expected:
+        x, _y = legacy.batch()
+        assert x[:, 0].tolist() == offsets
+        assert predictive.predictive_batch(horizon=1).source_starts.tolist() == offsets
+    assert torch.equal(legacy.generator.get_state(), expected_state)
+    assert torch.equal(predictive.generator.get_state(), expected_state)
+    assert legacy.data_order_digest() == predictive.data_order_digest()
+
+
+def test_batch_places_tensors_on_a_non_cpu_device() -> None:
+    """The non-CUDA accelerator branch (``meta`` stands in for mps) moves both tensors."""
+    sampler = SequenceSampler(_numbered_split(), batch_size=2, seq_len=4, device="meta")
+    x, y = sampler.batch()
+    assert x.device.type == "meta"
+    assert y.device.type == "meta"
+    batch = sampler.predictive_batch(horizon=2)
+    assert batch.online_observations.device.type == "meta"
+    assert batch.language_targets.device.type == "meta"
+    assert batch.target_encoder_context.device.type == "meta"
+    assert batch.source_starts.device.type == "cpu"
+
+
+class _RecordingTensor:
+    """Stand-in that records the placement calls a CUDA device would receive."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def pin_memory(self) -> _RecordingTensor:
+        self.calls.append("pin_memory")
+        return self
+
+    def to(self, device: torch.device, *, non_blocking: bool = False) -> _RecordingTensor:
+        self.calls.append(f"to({device.type}, non_blocking={non_blocking})")
+        return self
+
+
+def test_device_placement_helper_pins_then_copies_only_for_cuda() -> None:
+    """MEASURED 2026-08-20 (comment in the helper): mps must never see ``pin_memory``."""
+    from entropic_substrate.core.corpus.batching import _to_device
+
+    cuda = _RecordingTensor()
+    assert _to_device(cuda, torch.device("cuda")) is cuda  # type: ignore[arg-type]
+    assert cuda.calls == ["pin_memory", "to(cuda, non_blocking=True)"]
+
+    mps = _RecordingTensor()
+    assert _to_device(mps, torch.device("mps")) is mps  # type: ignore[arg-type]
+    assert mps.calls == ["to(mps, non_blocking=False)"]
+
+    cpu = torch.zeros(2, dtype=torch.int64)
+    assert _to_device(cpu, torch.device("cpu")) is cpu

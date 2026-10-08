@@ -9,7 +9,10 @@ from typing import ClassVar
 
 import torch
 
-from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.core.observation.contracts import (
+    CodecIdentity,
+    validate_observation_ids,
+)
 
 __all__ = ["ByteObservationCodec"]
 
@@ -71,25 +74,7 @@ class ByteObservationCodec:
 
     def decode(self, observation_ids: torch.Tensor) -> bytes:
         """Invert :meth:`encode`, refusing non-byte-valued observation IDs."""
-        if type(observation_ids) is not torch.Tensor:
-            msg = "byte codec observation_ids must be a torch.Tensor"
-            raise TypeError(msg)
-        if observation_ids.ndim != 1:
-            msg = f"byte codec observation_ids must be rank-1, got {observation_ids.ndim}"
-            raise ValueError(msg)
-        if observation_ids.dtype != torch.int64:
-            msg = f"byte codec observation_ids must be int64, got {observation_ids.dtype}"
-            raise TypeError(msg)
-        ids = observation_ids.detach().to(device="cpu")
-        if ids.numel() and (int(ids.min()) < 0 or int(ids.max()) >= self.cardinality):
-            msg = "byte codec observation_ids must be in [0, 255]"
-            raise ValueError(msg)
+        ids = validate_observation_ids(
+            observation_ids, owner="byte codec", cardinality=self.cardinality
+        )
         return bytes(ids.tolist())
-
-    def encode_bytes(self, source: bytes) -> torch.Tensor:
-        """Explicit-name alias for :meth:`encode`."""
-        return self.encode(source)
-
-    def decode_ids(self, observation_ids: torch.Tensor) -> bytes:
-        """Explicit-name alias for :meth:`decode`."""
-        return self.decode(observation_ids)

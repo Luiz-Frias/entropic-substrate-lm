@@ -136,6 +136,21 @@ class PredictiveBatch:
                 raise ValueError(msg)
 
 
+def _to_device(tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
+    """Place one host batch tensor on ``device``; CPU is returned as is."""
+    if device.type == "cuda":
+        # pin_memory is a CUDA page-locked host-buffer optimization and is
+        # only meaningful on that path. MEASURED 2026-08-20 (torch 2.13,
+        # mps): the previous `!= "cpu"` guard sent mps through
+        # pin_memory().to("mps"), which raises "Attempted to set the
+        # storage of a tensor on device cpu to a storage on different
+        # device mps:0" — first batch, every time.
+        return tensor.pin_memory().to(device, non_blocking=True)
+    if device.type != "cpu":
+        return tensor.to(device)
+    return tensor
+
+
 class SequenceSampler:
     """Sample ``(batch, seq_len)`` next-token-prediction pairs.
 
@@ -165,7 +180,6 @@ class SequenceSampler:
         self.train = train
         self.device = torch.device(device)
         self.generator = torch.Generator(device="cpu").manual_seed(seed)
-        self._max_start = n - seq_len - 1
         self._eval_cursor = 0
         self._order_hasher = hashlib.sha256()
         self._order_batches = 0
@@ -190,57 +204,24 @@ class SequenceSampler:
         cursor = state.get("eval_cursor", 0)
         self._eval_cursor = int(cursor) if isinstance(cursor, int) else 0
 
-    def _starts(self) -> np.ndarray:
-        if self.train:
-            idx = torch.randint(
-                0,
-                self._max_start + 1,
-                (self.batch_size,),
-                generator=self.generator,
-            )
-            starts = idx.numpy()
-            if self._order_batches < DATA_ORDER_DIGEST_BATCHES:
-                # '<i8' pins width AND byte order: the digest is pairing
-                # evidence that travels via captured JSONLs, so it must be
-                # comparable across machines, not just across processes.
-                self._order_hasher.update(starts.astype("<i8").tobytes())
-                self._order_batches += 1
-            return starts
-        stride = max(self._max_start // max(self.batch_size, 1), 1)
-        base = (self._eval_cursor * self.batch_size * stride) % (self._max_start + 1)
-        self._eval_cursor += 1
-        offsets = (base + np.arange(self.batch_size) * stride) % (self._max_start + 1)
-        return offsets
-
     def batch(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Draw one ``(inputs, targets)`` pair of shape ``(B, T)`` int64."""
-        starts = self._starts()
+        starts = self._predictive_starts(1)
         tokens = self.split.tokens
         xs = np.stack([tokens[s : s + self.seq_len] for s in starts])
         ys = np.stack([tokens[s + 1 : s + 1 + self.seq_len] for s in starts])
-        x = torch.from_numpy(xs.astype(np.int64))
-        y = torch.from_numpy(ys.astype(np.int64))
-        if self.device.type == "cuda":
-            # pin_memory is a CUDA page-locked host-buffer optimization and is
-            # only meaningful on that path. MEASURED 2026-08-20 (torch 2.13,
-            # mps): the previous `!= "cpu"` guard sent mps through
-            # pin_memory().to("mps"), which raises "Attempted to set the
-            # storage of a tensor on device cpu to a storage on different
-            # device mps:0" — first batch, every time.
-            x = x.pin_memory().to(self.device, non_blocking=True)
-            y = y.pin_memory().to(self.device, non_blocking=True)
-        elif self.device.type != "cpu":
-            x = x.to(self.device)
-            y = y.to(self.device)
+        x = _to_device(torch.from_numpy(xs.astype(np.int64)), self.device)
+        y = _to_device(torch.from_numpy(ys.astype(np.int64)), self.device)
         return x, y
 
     def _predictive_starts(self, horizon: int) -> np.ndarray:
         """Draw offsets that leave the complete target-encoder context in-bounds.
 
-        For ``horizon == 1`` this uses the exact legacy range and RNG call of
-        :meth:`_starts`; that makes the new D1 path directly comparable to the
-        historical sequence sampler.  Longer horizons reduce only the legal
-        final source offset.
+        ``horizon == 1`` is the legacy sequence sampler's range and RNG call
+        (one ``torch.randint`` per train draw, the strided modular grid per eval
+        draw), and :meth:`batch` samples through it, so the historical and D1
+        paths cannot drift apart.  Longer horizons reduce only the legal final
+        source offset.
         """
         if type(horizon) is not int or horizon < 1:
             msg = f"horizon must be a positive integer, got {horizon!r}"
@@ -262,6 +243,9 @@ class SequenceSampler:
             )
             starts = idx.numpy()
             if self._order_batches < DATA_ORDER_DIGEST_BATCHES:
+                # '<i8' pins width AND byte order: the digest is pairing
+                # evidence that travels via captured JSONLs, so it must be
+                # comparable across machines, not just across processes.
                 self._order_hasher.update(starts.astype("<i8").tobytes())
                 self._order_batches += 1
             return starts
@@ -282,17 +266,9 @@ class SequenceSampler:
         online = np.stack([tokens[start : start + self.seq_len] for start in starts])
         language = np.stack([tokens[start + 1 : start + 1 + self.seq_len] for start in starts])
         context = np.stack([tokens[start : start + self.seq_len + horizon] for start in starts])
-        online_tensor = torch.from_numpy(online.astype(np.int64))
-        language_tensor = torch.from_numpy(language.astype(np.int64))
-        context_tensor = torch.from_numpy(context.astype(np.int64))
-        if self.device.type == "cuda":
-            online_tensor = online_tensor.pin_memory().to(self.device, non_blocking=True)
-            language_tensor = language_tensor.pin_memory().to(self.device, non_blocking=True)
-            context_tensor = context_tensor.pin_memory().to(self.device, non_blocking=True)
-        elif self.device.type != "cpu":
-            online_tensor = online_tensor.to(self.device)
-            language_tensor = language_tensor.to(self.device)
-            context_tensor = context_tensor.to(self.device)
+        online_tensor = _to_device(torch.from_numpy(online.astype(np.int64)), self.device)
+        language_tensor = _to_device(torch.from_numpy(language.astype(np.int64)), self.device)
+        context_tensor = _to_device(torch.from_numpy(context.astype(np.int64)), self.device)
         return PredictiveBatch(
             online_observations=online_tensor,
             language_targets=language_tensor,

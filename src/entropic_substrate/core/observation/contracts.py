@@ -20,6 +20,7 @@ __all__ = [
     "ObservationAlignment",
     "ObservationCodecPort",
     "SourceSpan",
+    "validate_observation_ids",
 ]
 
 
@@ -179,3 +180,29 @@ class ObservationCodecPort(Protocol):
     def encode(self, source: bytes) -> torch.Tensor: ...
 
     def decode(self, observation_ids: torch.Tensor) -> bytes: ...
+
+
+def validate_observation_ids(
+    observation_ids: torch.Tensor, *, owner: str, cardinality: int
+) -> torch.Tensor:
+    """Check one decode input and return it detached on the CPU.
+
+    The decode-side checks every byte codec shares, in their fixed order: a
+    real tensor, rank 1, int64, then every value inside ``[0, cardinality)``.
+    ``owner`` names the codec in the refusal text.  Empty input is valid.
+    Each codec's one-line encode guard stays inline in that codec.
+    """
+    if type(observation_ids) is not torch.Tensor:
+        msg = f"{owner} observation_ids must be a torch.Tensor"
+        raise TypeError(msg)
+    if observation_ids.ndim != 1:
+        msg = f"{owner} observation_ids must be rank-1, got {observation_ids.ndim}"
+        raise ValueError(msg)
+    if observation_ids.dtype != torch.int64:
+        msg = f"{owner} observation_ids must be int64, got {observation_ids.dtype}"
+        raise TypeError(msg)
+    ids = observation_ids.detach().to(device="cpu")
+    if ids.numel() and (int(ids.min()) < 0 or int(ids.max()) >= cardinality):
+        msg = f"{owner} observation_ids must be in range [0, {cardinality - 1}]"
+        raise ValueError(msg)
+    return ids

@@ -15,8 +15,10 @@ from entropic_substrate.core.observation.contracts import (
     EncodedObservations,
     ObservationAlignment,
     SourceSpan,
+    validate_observation_ids,
 )
 from entropic_substrate.core.observation.modules import LanguageReadout, LearnedObservationAdapter
+from entropic_substrate.core.observation.permuted_byte_codec import PermutedByteObservationCodec
 
 pytestmark = pytest.mark.unit
 
@@ -125,3 +127,65 @@ def test_value_contracts_fail_loudly_on_invalid_spans_and_byte_ids() -> None:
         ObservationAlignment.predictive(start=0, sequence_length=4, horizon=0)
     with pytest.raises(ValueError, match="0, 255"):
         ByteObservationCodec().decode(torch.tensor([256], dtype=torch.int64))
+
+
+def test_byte_codec_exposes_only_encode_and_decode() -> None:
+    """FOR-1593: the explicit-name aliases had zero callers and are gone."""
+    assert not hasattr(ByteObservationCodec, "encode_bytes")
+    assert not hasattr(ByteObservationCodec, "decode_ids")
+
+
+@pytest.mark.parametrize(
+    ("ids", "error", "match"),
+    [
+        ([0, 1], TypeError, "owner-x observation_ids must be a torch.Tensor"),
+        (
+            torch.zeros(1, 2, dtype=torch.int64),
+            ValueError,
+            "owner-x observation_ids must be rank-1, got 2",
+        ),
+        (
+            torch.zeros(2, dtype=torch.int32),
+            TypeError,
+            "owner-x observation_ids must be int64, got torch.int32",
+        ),
+        (
+            torch.tensor([-1], dtype=torch.int64),
+            ValueError,
+            r"owner-x observation_ids must be in range \[0, 6\]",
+        ),
+        (
+            torch.tensor([7], dtype=torch.int64),
+            ValueError,
+            r"owner-x observation_ids must be in range \[0, 6\]",
+        ),
+    ],
+)
+def test_validate_observation_ids_refuses_each_decode_hazard_with_its_owner(
+    ids: object, error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
+        validate_observation_ids(ids, owner="owner-x", cardinality=7)  # type: ignore[arg-type]
+
+
+def test_validate_observation_ids_checks_rank_before_dtype_and_passes_empty_and_edges() -> None:
+    with pytest.raises(ValueError, match="rank-1"):
+        validate_observation_ids(torch.zeros(1, 1), owner="o", cardinality=7)
+    empty = validate_observation_ids(torch.empty(0, dtype=torch.int64), owner="o", cardinality=7)
+    assert empty.numel() == 0
+    edges = torch.tensor([0, 6], dtype=torch.int64)
+    out = validate_observation_ids(edges, owner="o", cardinality=7)
+    assert out.device.type == "cpu"
+    assert out.tolist() == [0, 6]
+
+
+def test_both_codecs_route_decode_through_the_shared_validator() -> None:
+    """Each codec's decode refuses with ITS owner string, from the one validator."""
+    with pytest.raises(
+        ValueError, match=r"^byte codec observation_ids must be in range \[0, 255\]$"
+    ):
+        ByteObservationCodec().decode(torch.tensor([256], dtype=torch.int64))
+    with pytest.raises(
+        ValueError, match=r"^permuted byte observation_ids must be in range \[0, 255\]$"
+    ):
+        PermutedByteObservationCodec.from_seed(1).decode(torch.tensor([-1], dtype=torch.int64))

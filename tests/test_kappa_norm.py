@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import math
 
 import pytest
 import torch
 
 from entropic_substrate.core.geometry.kappa import KAPPA_MAX, KAPPA_MIN
-from entropic_substrate.core.geometry.kappa_norm import GatedKappaNorm, UnitNorm
+from entropic_substrate.core.substrate.blocks import GatedKappaNorm, UnitNorm
 
 pytestmark = pytest.mark.unit
 
@@ -161,3 +162,15 @@ def test_sequence_pooled_gate_routes_all_tokens_together() -> None:
     layer(torch.randn(1, 12, 16))
     # A single pooled routing decision for the whole sequence.
     assert max(layer.stats.gate_fraction) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_norm_family_lives_beside_build_norm_with_no_forwarding_module() -> None:
+    """FOR-1597: the geometry package's ``kappa_norm`` is deleted, never a re-export shim."""
+    geometry = importlib.import_module("entropic_substrate.core.geometry")
+    assert importlib.util.find_spec(f"{geometry.__name__}.kappa_norm") is None
+
+
+def test_state_dict_keys_do_not_depend_on_the_defining_module() -> None:
+    """Checkpoints address parameters by attribute path, not by import path."""
+    assert list(GatedKappaNorm(8).state_dict()) == ["kappa", "gate.weight"]
+    assert list(UnitNorm().state_dict()) == []

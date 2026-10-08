@@ -9,7 +9,10 @@ from typing import ClassVar
 
 import torch
 
-from entropic_substrate.core.observation.contracts import CodecIdentity
+from entropic_substrate.core.observation.contracts import (
+    CodecIdentity,
+    validate_observation_ids,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,19 +117,9 @@ class PermutedByteObservationCodec:
 
     def decode(self, observation_ids: torch.Tensor) -> bytes:
         """Invert an integer observation sequence exactly, including empty input."""
-        if type(observation_ids) is not torch.Tensor:
-            msg = "permuted byte observation_ids must be a torch.Tensor"
-            raise TypeError(msg)
-        if observation_ids.ndim != 1:
-            msg = "permuted byte observation_ids must be rank-1"
-            raise ValueError(msg)
-        if observation_ids.dtype != torch.int64:
-            msg = "permuted byte observation_ids must be int64"
-            raise TypeError(msg)
-        values = observation_ids.detach().cpu()
-        if values.numel() and (int(values.min()) < 0 or int(values.max()) >= self.cardinality):
-            msg = "permuted byte observation_ids must be in range [0, 255]"
-            raise ValueError(msg)
+        values = validate_observation_ids(
+            observation_ids, owner="permuted byte", cardinality=self.cardinality
+        )
         inverse = self.inverse_mapping
         return bytes(inverse[index] for index in values.tolist())
 
