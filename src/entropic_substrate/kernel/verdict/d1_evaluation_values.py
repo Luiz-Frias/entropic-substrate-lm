@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys
+
 TARGET_PREDICTED_EXACT_MATCH_SEMANTIC: Final = "elementwise_fp32_equality_v1"
 
 
@@ -46,12 +48,12 @@ def parse_d1_cosine(value: object) -> float | D1CosineGap:
         if not math.isfinite(value) or not 0.0 <= value <= 2.0:
             raise ValueError("D1 cosine must be finite and in [0, 2]")
         return value
-    if not isinstance(value, Mapping) or set(value) != {
-        "schema_version",
-        "reason",
-        "affected_positions",
-        "total_positions",
-    }:
+    if not isinstance(value, Mapping) or any(
+        exact_keys(
+            value,
+            frozenset({"schema_version", "reason", "affected_positions", "total_positions"}),
+        )
+    ):
         raise ValueError("D1 cosine gap requires exact versioned fields")
     if value["schema_version"] != "d1-cosine-gap-v1" or value["reason"] != "undefined_zero_norm":
         raise ValueError("D1 cosine gap schema or reason is unknown")

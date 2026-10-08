@@ -8,8 +8,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.identity.d1_primitives import RunClass
 
 JOURNAL_EVENT_SCHEMA: Final = "d1-authoritative-event-v1"
@@ -240,17 +241,10 @@ def canonical_event_line(event: D1JournalEvent) -> bytes:
     )
 
 
-def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _error("duplicate_field", key, "duplicate JSON object key")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value: str) -> object:
-    raise _error("nonfinite_json", "json", f"{value} is not a finite JSON number")
+def _decode_fail(reason: str) -> NoReturn:
+    # strict_loads reasons: "duplicate key: ..." versus the two non-finite forms.
+    code = "duplicate_field" if reason.startswith("duplicate key") else "nonfinite_json"
+    raise _error(code, "json", reason)
 
 
 def parse_event_line(line: bytes) -> D1JournalEvent:
@@ -266,11 +260,7 @@ def parse_event_line(line: bytes) -> D1JournalEvent:
     except UnicodeDecodeError as exc:
         raise _error("invalid_encoding", "line", "event must be valid UTF-8") from exc
     try:
-        raw = json.loads(
-            text,
-            object_pairs_hook=_strict_object,
-            parse_constant=_reject_constant,
-        )
+        raw = strict_loads(text, fail=_decode_fail)
     except D1JournalError:
         raise
     except (json.JSONDecodeError, UnicodeError) as exc:

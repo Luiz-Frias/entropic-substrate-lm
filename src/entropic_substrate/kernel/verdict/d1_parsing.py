@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from math import isfinite
 from types import MappingProxyType
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys
 from entropic_substrate.kernel.lifecycle import (
     ArtifactIdentity,
     ContentHash,
@@ -35,17 +36,15 @@ def object_optional(
 ) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise error("invalid_type", path, "must be an object")
-    actual: set[str] = set()
-    for key in value:
-        if not isinstance(key, str):
-            raise error("invalid_field_name", path, "object field names must be strings")
-        actual.add(key)
-    missing = sorted(required - actual)
-    unknown = sorted(actual - required - optional)
+    if any(not isinstance(key, str) for key in value):
+        raise error("invalid_field_name", path, "object field names must be strings")
+    missing, unknown = exact_keys(value, required, optional)
     if missing:
-        raise error("missing_field", path, f"missing required field(s): {', '.join(missing)}")
+        raise error(
+            "missing_field", path, f"missing required field(s): {', '.join(sorted(missing))}"
+        )
     if unknown:
-        raise error("unknown_field", path, f"unknown field(s): {', '.join(unknown)}")
+        raise error("unknown_field", path, f"unknown field(s): {', '.join(sorted(unknown))}")
     return value
 
 

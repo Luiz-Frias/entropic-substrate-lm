@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256, strict_loads
 from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import (
     D1CapturePartitionProof,
     D1HeterogeneousCaptureAggregate,
@@ -168,28 +168,11 @@ class D1CaptureAggregateDeclaration:
         return hashlib.sha256(self.canonical_json.encode("utf-8")).hexdigest()
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate aggregate JSON key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite aggregate JSON constant {value!r}")
-
-
 def parse_d1_capture_aggregate_declaration(payload: str) -> D1CaptureAggregateDeclaration:
     if type(payload) is not str or not payload:
         _fail("aggregate payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except D1CaptureAggregateHydrationError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:
@@ -262,13 +245,10 @@ def serialize_d1_capture_aggregate(aggregate: D1HeterogeneousCaptureAggregate) -
 
 
 def _expected_digest(value: str) -> str:
-    try:
-        require_sha256_hex_any_case(value, label="expected aggregate manifest digest")
-    except (TypeError, ValueError) as error:
-        _fail("expected aggregate manifest digest must be lowercase SHA-256", error)
-    if value != value.lower():
-        _fail("expected aggregate manifest digest must be lowercase SHA-256")
-    return value
+    return require_lowercase_sha256(
+        value,
+        fail=lambda _reason: _fail("expected aggregate manifest digest must be lowercase SHA-256"),
+    )
 
 
 def hydrate_d1_capture_aggregate(

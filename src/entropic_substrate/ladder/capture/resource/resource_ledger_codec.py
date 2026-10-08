@@ -6,6 +6,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import Money, execution_segment_id
 from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 from entropic_substrate.ladder.capture.resource.resource_ledger import ResourceLedgerState
@@ -221,24 +222,11 @@ def serialize_resource_ledger_state_line(state: ResourceLedgerState) -> str:
     )
 
 
-def _reject_constant(value: str) -> NoReturn:
-    _fail(f"non-finite JSON constant {value!r} is forbidden")
-
-
-def _duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    mapping: dict[str, object] = {}
-    for key, value in pairs:
-        if key in mapping:
-            _fail(f"duplicate JSON key {key!r}")
-        mapping[key] = value
-    return mapping
-
-
 def parse_resource_ledger_state_line(line: str) -> ResourceLedgerState:
     if type(line) is not str or not line.strip():
         _fail("resource ledger state line must be nonblank")
     try:
-        value = json.loads(line, object_pairs_hook=_duplicates, parse_constant=_reject_constant)
+        value = strict_loads(line, fail=_fail)
     except json.JSONDecodeError as exc:
         _fail("resource ledger state line is invalid JSON", exc)
     return resource_ledger_state_from_mapping(value)

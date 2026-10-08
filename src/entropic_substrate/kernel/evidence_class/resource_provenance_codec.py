@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     BillingRoundingPolicy,
     BillingUnit,
@@ -106,13 +107,13 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object with string keys")
-    return value
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} must be a JSON object with string keys")
+    )
 
 
 def _exact(mapping: dict[str, object], keys: set[str], *, label: str) -> None:
-    if set(mapping) != keys:
+    if any(exact_keys(mapping, frozenset(keys))):
         _fail(f"{label} keys must be exact")
 
 
@@ -313,28 +314,11 @@ def serialize_run_start_line(start: RunStartProvenance) -> str:
     )
 
 
-def _reject_constant(value: str) -> NoReturn:
-    _fail(f"non-finite JSON constant {value!r} is forbidden")
-
-
-def _no_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate JSON key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_run_start_line(line: str) -> RunStartProvenance:
     if type(line) is not str or not line.strip():
         _fail("resource segment start JSON line must be nonblank")
     try:
-        value = json.loads(
-            line,
-            object_pairs_hook=_no_duplicates,
-            parse_constant=_reject_constant,
-        )
+        value = strict_loads(line, fail=_fail)
     except json.JSONDecodeError as error:
         _fail("resource segment start line is invalid JSON", error)
     return run_start_from_mapping(value)
