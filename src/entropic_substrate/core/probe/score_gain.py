@@ -1,11 +1,10 @@
 """Span-aware realized predictive score differences, never mutual information."""
 
 import math
-import statistics
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
-from entropic_substrate.core.probe.predictive_score_gain import ScoreBinding
+from entropic_substrate.core.probe.predictive_score_gain import ScoreBinding, gain_statistics
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,12 +111,4 @@ def summarize_span_gains(records: tuple[SpanScoreGain, ...]) -> SpanGainSummary:
         keys.append((binding.source_id, item.span_start, item.before.target_position))
     if len(set(keys)) != len(keys):
         raise ValueError("duplicate span score positions")
-    gains = [item.gain for item in records]
-    return SpanGainSummary(
-        len(records),
-        statistics.fmean(gains),
-        statistics.stdev(gains) if len(gains) > 1 else None,
-        sum(value < 0 for value in gains) / len(gains),
-        -statistics.fmean(item.before.log_probability for item in records),
-        -statistics.fmean(item.after.log_probability for item in records),
-    )
+    return SpanGainSummary(*gain_statistics(records))

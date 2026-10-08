@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import stat
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
@@ -16,6 +17,7 @@ __all__ = [
     "D1ArtifactSnapshotError",
     "artifact_from_mapping",
     "artifact_mapping",
+    "normalize_d1_artifact_directory",
     "normalize_d1_artifact_root",
     "normalize_d1_relative_artifact_path",
     "object_fields",
@@ -58,18 +60,29 @@ def _absolute_path(value: Path, *, label: str) -> Path:
     return Path(os.path.abspath(value))
 
 
+def _descend_directories(descriptor: int, parts: Sequence[str]) -> int:
+    """Walk ``parts`` beneath ``descriptor`` without following symlinks, owning every handle.
+
+    Consumes ``descriptor``: on return it is closed and the result names the last directory; on
+    any raise every descriptor the walk held is closed. Callers must therefore never close or
+    track the argument afterwards, only the result.
+    """
+    try:
+        for part in parts:
+            next_descriptor = os.open(part, _DIRECTORY_FLAGS, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
 def _open_directory_path(path: Path, *, label: str) -> int:
     descriptor: int | None = None
     try:
-        descriptor = os.open(path.anchor, _DIRECTORY_FLAGS)
-        for part in path.parts[1:]:
-            next_descriptor = os.open(
-                part,
-                _DIRECTORY_FLAGS,
-                dir_fd=descriptor,
-            )
-            os.close(descriptor)
-            descriptor = next_descriptor
+        anchor_descriptor = os.open(path.anchor, _DIRECTORY_FLAGS)
+        descriptor = _descend_directories(anchor_descriptor, path.parts[1:])
         if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
             _fail(f"{label} must be a real directory")
         return descriptor
@@ -95,6 +108,12 @@ def normalize_d1_relative_artifact_path(value: object, *, label: str) -> str:
     if not path.parts or path.is_absolute() or ".." in path.parts or path.as_posix() != value:
         _fail(f"{label} path must remain normalized below its artifact root")
     return value
+
+
+def normalize_d1_artifact_directory(root: Path, value: object, *, label: str) -> Path:
+    """Admit one existing directory named by a canonical relative path beneath ``root``."""
+    relative = normalize_d1_relative_artifact_path(value, label=label)
+    return normalize_d1_artifact_root(root / relative)
 
 
 def relative_d1_artifact_path(root: Path, value: Path, *, label: str) -> str:
@@ -130,11 +149,8 @@ def _open_artifact_descriptor(
     parts = PurePosixPath(relative).parts
     directory_fd: int | None = None
     try:
-        directory_fd = _open_directory_path(admitted_root, label="D1 artifact root")
-        for part in parts[:-1]:
-            next_descriptor = os.open(part, _DIRECTORY_FLAGS, dir_fd=directory_fd)
-            os.close(directory_fd)
-            directory_fd = next_descriptor
+        root_fd = _open_directory_path(admitted_root, label="D1 artifact root")
+        directory_fd = _descend_directories(root_fd, parts[:-1])
         file_fd = os.open(parts[-1], _FILE_FLAGS, dir_fd=directory_fd)
         return admitted_root.joinpath(*parts), directory_fd, file_fd
     except (OSError, ValueError) as error:
@@ -251,11 +267,8 @@ def publish_d1_atomic_bytes(
     published_fd: int | None = None
     digest = hashlib.sha256(payload).hexdigest()
     try:
-        directory_fd = _open_directory_path(admitted_root, label="D1 artifact root")
-        for part in parts[:-1]:
-            next_descriptor = os.open(part, _DIRECTORY_FLAGS, dir_fd=directory_fd)
-            os.close(directory_fd)
-            directory_fd = next_descriptor
+        root_fd = _open_directory_path(admitted_root, label="D1 artifact root")
+        directory_fd = _descend_directories(root_fd, parts[:-1])
         try:
             os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
         except FileNotFoundError:

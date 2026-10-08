@@ -10,8 +10,8 @@ from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
+    normalize_d1_artifact_directory,
     normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
@@ -22,6 +22,8 @@ from entropic_substrate.ladder.run.trace_capture import (
     read_model_trace,
 )
 
+_DIRECTORY_LABEL = "capture command directory"
+
 
 def add_capture_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
     for name in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
@@ -30,12 +32,6 @@ def add_capture_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         )
         parser.add_argument("--root", required=True, type=Path)
         parser.add_argument("--manifest", required=True)
-
-
-def _directory(root: Path, value: object) -> Path:
-    return normalize_d1_artifact_root(
-        root / normalize_d1_relative_artifact_path(value, label="capture command directory")
-    )
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
@@ -78,7 +74,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
         if inspect:
             reader = inspect_model_custody if custody else read_model_trace
             result = reader(
-                _directory(root, row["capture_root"]),
+                normalize_d1_artifact_directory(root, row["capture_root"], label=_DIRECTORY_LABEL),
                 artifact_from_mapping(row["capture"]),
                 **limits,
             )
@@ -94,13 +90,15 @@ def cmd_capture(args: argparse.Namespace) -> int:
             diagnostics = row["diagnostic_roots"] if diagnostics_enabled else []
             if type(diagnostics) is not list:
                 raise ValueError("diagnostic roots must be an explicit array")
-            destination = _directory(root, row["destination"])
+            destination = normalize_d1_artifact_directory(
+                root, row["destination"], label=_DIRECTORY_LABEL
+            )
             captured = capture_model_trace(
-                _directory(root, row["output_root"]),
+                normalize_d1_artifact_directory(root, row["output_root"], label=_DIRECTORY_LABEL),
                 artifact_from_mapping(row["training"]),
                 artifact_from_mapping(row["generation"]),
                 profile,
-                _directory(root, row["source_root"]),
+                normalize_d1_artifact_directory(root, row["source_root"], label=_DIRECTORY_LABEL),
                 destination,
                 forensic_roots=tuple(artifact_from_mapping(item) for item in extra),
                 diagnostic_roots=tuple(artifact_from_mapping(item) for item in diagnostics),
