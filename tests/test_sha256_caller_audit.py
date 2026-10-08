@@ -195,21 +195,29 @@ def test_call_counter_counts_a_known_call() -> None:
     """Positive control of the live scan's own per-file composition.
 
     The end-state assertion (``live_counts == {}``) is satisfied by a counter
-    that finds nothing, so the counter is proven here on a snippet that imports
-    the helper by absolute name and calls it once. ``module_dotted`` is NOT the
-    definition module, so the binding must come from the ImportFrom.
+    that finds nothing, so the counter is proven here on a snippet with one live
+    call of each shape the scan must count: an absolute import called by name, an
+    aliased absolute import, a relative import (resolved against the snippet's
+    module, which is NOT the definition module), and an attribute call. A counter
+    that drops any one of those branches under-counts and fails the total.
     """
     snippet = (
         f"from {_MODULE_DOTTED} import {_NEW_NAME}\n"
+        f"from {_MODULE_DOTTED} import {_NEW_NAME} as aliased\n"
+        f"from ..identity.d1_primitives import {_NEW_NAME} as relative\n"
+        "import entropic_substrate.kernel.identity.d1_primitives as d1\n"
         "\n"
         "\n"
         "def check(value):\n"
         f"    {_NEW_NAME}(value, label='control')\n"
+        "    aliased(value, label='control')\n"
+        "    relative(value, label='control')\n"
+        f"    d1.{_NEW_NAME}(value, label='control')\n"
     )
     tree = ast.parse(snippet)
     bound = _bound_names_for_file(tree, "entropic_substrate.kernel.codec.strict_json", False)
-    assert bound == {_NEW_NAME}
-    assert _count_calls(tree, bound) == 1
+    assert bound == {_NEW_NAME, "aliased", "relative"}
+    assert _count_calls(tree, bound) == 4
 
 
 def _parse_audit(text: str) -> tuple[dict[str, int], list[dict[str, str]]]:

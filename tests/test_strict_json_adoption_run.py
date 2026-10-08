@@ -800,6 +800,34 @@ def test_object_transport_request_mismatch_is_refused_with_its_own_typed_error()
         assert (caught.value.stage, caught.value.code) == ("start", "request_mismatch")
 
 
+def test_object_transport_request_digest_check_keeps_session_ordering() -> None:
+    # Teeth for the position of the request check: it runs AFTER the session and
+    # attempt checks in start_trainer. With a mixed-case request digest, an unknown
+    # pod, a wrong attempt, and a non-canonical attempt must still surface their
+    # ordering/identity errors, not request_noncanonical. Moving the request check
+    # above the session call would turn all three into request_noncanonical.
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _started_transport(directory, stage_request=True, payload=b"request")
+        with pytest.raises(D1ObjectMailboxTransportError) as unknown_pod:
+            transport.start_trainer("pod-sha-456", _ATTEMPT, _MIXED)
+        assert (unknown_pod.value.stage, unknown_pod.value.code) == (
+            "ordering",
+            "session_missing",
+        )
+        with pytest.raises(D1ObjectMailboxTransportError) as wrong_attempt:
+            transport.start_trainer(_POD, "b" * 64, _MIXED)
+        assert (wrong_attempt.value.stage, wrong_attempt.value.code) == (
+            "ordering",
+            "attempt_mismatch",
+        )
+        with pytest.raises(D1ObjectMailboxTransportError) as noncanonical_attempt:
+            transport.start_trainer(_POD, _MIXED, _MIXED)
+        assert (noncanonical_attempt.value.stage, noncanonical_attempt.value.code) == (
+            "identity",
+            "attempt_noncanonical",
+        )
+
+
 def test_object_transport_attempt_digest_is_refused_with_one_typed_error() -> None:
     # FOR-1626: the malformed arm used to escape as a bare ValueError while the
     # mixed-case arm raised the typed error; both now share ("identity",
