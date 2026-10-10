@@ -119,3 +119,11 @@ src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:189 
 # require_sha256_hex_any_case stays defined with zero callers in src; retiring
 # the public name is FOR-1636. The live scan in
 # tests/test_sha256_caller_audit.py now asserts that end state directly.
+#
+# 2026-10-10 FOR-1636 (operator ruling): require_sha256_hex_any_case is RETIRED,
+# its definition deleted from kernel/identity/d1_primitives.py, so the sentence
+# above that it "stays defined with zero callers in src" is superseded. This
+# file is now frozen history of the migration: the rows above record where the
+# any-case predicate was called before FOR-1615, wave 1 and FOR-1626 repointed
+# every site to require_lowercase_sha256, and none of them is a live call site.
+# Counts and rows are untouched by this note.
