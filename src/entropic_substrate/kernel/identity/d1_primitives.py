@@ -36,16 +36,6 @@ def require_nonempty_string(value: str, *, label: str) -> None:
         raise ValueError(msg)
 
 
-def require_sha256_hex_any_case(value: str, *, label: str) -> None:
-    """Refuse any identity that is not a complete SHA-256 digest."""
-    if type(value) is not str or len(value) != _SHA256_LENGTH:
-        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
-        raise ValueError(msg)
-    if any(character not in string.hexdigits for character in value):
-        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
-        raise ValueError(msg)
-
-
 def require_commit(value: str, *, label: str) -> None:
     """Accept a short or full hexadecimal VCS commit identity."""
     if type(value) is not str or not 7 <= len(value) <= _SHA256_LENGTH:

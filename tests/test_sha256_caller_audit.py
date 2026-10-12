@@ -21,14 +21,35 @@ recipe and house rule 5.
 
 FOR-1626 end state (conductor ruling R1, 2026-10-08): the three retained
 BOUNDARY sites were repointed to ``require_lowercase_sha256``, so
-``require_sha256_hex_any_case`` has ZERO callers in ``src`` and stays defined
-(retirement is FOR-1636). The live scan therefore asserts it finds no call
-site, where it used to assert it found at least one. That empty-scan guard
-conflated a misrooted scan with a finished migration; the definition-found
-control still catches a misrooted scan, and
-``test_call_counter_counts_a_known_call`` catches a counter that returns
-nothing, which the end-state assertion alone could not (an always-empty
-counter satisfies ``== {}``).
+``require_sha256_hex_any_case`` had ZERO callers in ``src``. At that rung it
+stayed defined and the live scan asserted it found no call site.
+
+FOR-1636 end state (operator ruling 2026-10-10): the SHA sequence FOR-1615 ->
+FOR-1626 -> FOR-1636 is closed. ``require_sha256_hex_any_case`` is REMOVED, so
+the name no longer resolves from ``kernel.identity.d1_primitives``
+(``test_any_case_name_no_longer_resolves``) and the live scan finds neither a
+call site NOR a definition. ``docs/plans/measurements/p14-sha-callers.txt`` is
+frozen history of the migration; its header and rows are still checked for
+internal consistency below, and nothing is audited against the live tree any
+more because there is nothing left to call.
+
+Retracted by the FOR-1636 commit: (1) "stays defined (retirement is FOR-1636)"
+is no longer true, the definition is gone; (2) "the definition-found control
+still catches a misrooted scan" is no longer true, because with the definition
+gone the expected scan result ``({}, False)`` is exactly what an empty or
+misrooted scan returns. The misroot guard is now
+``test_live_scan_root_contains_the_definition_module``, computed outside the
+scan. RED for both new arms was measured with ``git diff --quiet
+ee2c13ae421c70f1315315f8b862afc902af1b80 -- src`` exiting 0 (``src`` identical
+to the parent tree; HEAD was 5289ca6e02d4ca89eb230bb8893ec832c45a174b, the
+brief commit): the pin fails on `hasattr`, the end state fails on the
+definition-present message.
+
+``test_call_counter_counts_a_known_call`` and
+``test_live_scan_aggregates_a_known_caller_end_to_end`` build their own
+definition and caller on synthetic trees, so they keep proving the scan can
+find a call and a definition; the end-state assertion alone could not (an
+always-empty scan satisfies ``== {}``).
 """
 
 from __future__ import annotations
@@ -45,13 +66,10 @@ pytestmark = pytest.mark.unit
 _MODULE_DOTTED = "entropic_substrate.kernel.identity.d1_primitives"
 _OLD_NAME = "require_sha256"
 _NEW_NAME = "require_sha256_hex_any_case"
-_LABEL = "test digest"
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
 _AUDIT_PATH = _REPO_ROOT / "docs" / "plans" / "measurements" / "p14-sha-callers.txt"
-
-_EXPECTED_MESSAGE = f"{_LABEL} must be a 64-character hexadecimal SHA-256 digest"
 
 
 def test_old_name_no_longer_resolves() -> None:
@@ -67,36 +85,18 @@ def test_old_name_no_longer_resolves() -> None:
         )
 
 
-def test_any_case_accepts_and_rejects() -> None:
-    """require_sha256_hex_any_case accepts any-case hex, rejects the same way require_sha256 did."""
-    from entropic_substrate.kernel.identity.d1_primitives import (
-        require_sha256_hex_any_case,
+def test_any_case_name_no_longer_resolves() -> None:
+    """The any-case predicate is retired (FOR-1636); no alias, no stub."""
+    module = importlib.import_module(_MODULE_DOTTED)
+    assert not hasattr(module, _NEW_NAME), (
+        f"{_MODULE_DOTTED} must not carry an attribute named {_NEW_NAME} "
+        "after FOR-1636; boundary digests use require_lowercase_sha256 and "
+        "no compatibility alias is permitted"
     )
-
-    upper = "ABCDEF0123456789" * 4
-    mixed = "aBcDeF0123456789" * 4
-    assert len(upper) == 64
-    assert len(mixed) == 64
-
-    # must not raise
-    require_sha256_hex_any_case(upper, label=_LABEL)
-    require_sha256_hex_any_case(mixed, label=_LABEL)
-
-    too_short = upper[:-1]
-    too_long = upper + "0"
-    non_hex = "G" + upper[1:]
-    assert len(too_short) == 63
-    assert len(too_long) == 65
-    assert len(non_hex) == 64
-
-    for bad in (too_short, too_long, non_hex):
-        with pytest.raises(ValueError) as excinfo:
-            require_sha256_hex_any_case(bad, label=_LABEL)
-        assert str(excinfo.value) == _EXPECTED_MESSAGE
-
-    with pytest.raises(ValueError) as excinfo:
-        require_sha256_hex_any_case(12345, label=_LABEL)  # type: ignore[arg-type]
-    assert str(excinfo.value) == _EXPECTED_MESSAGE
+    with pytest.raises(ImportError):
+        from entropic_substrate.kernel.identity.d1_primitives import (  # noqa: F401
+            require_sha256_hex_any_case,
+        )
 
 
 def _is_package(path: Path) -> bool:
@@ -171,12 +171,14 @@ def _scan_live_call_counts(
     ``repo_root`` only relativizes the reported paths; it defaults to the real
     repository and is threaded so the end-to-end control can scan a fixture tree.
 
-    Returns (path -> call count, positive_control_found). The positive
-    control is the function definition itself, inside d1_primitives.py --
-    an empty or misrooted scan must fail loud, never pass silently.
+    Returns (path -> call count, definition_found). ``definition_found`` is
+    True when d1_primitives.py defines the symbol. Since FOR-1636 the live
+    expectation is ``({}, False)``, which an empty or misrooted scan also
+    returns; the misroot guard is therefore
+    ``test_live_scan_root_contains_the_definition_module``, not this flag.
     """
     counts: Counter[str] = Counter()
-    positive_control = False
+    definition_found = False
     py_files = sorted(src_root.rglob("*.py"))
     for path in py_files:
         try:
@@ -187,13 +189,13 @@ def _scan_live_call_counts(
         if module_dotted == _MODULE_DOTTED:
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef) and node.name == _NEW_NAME:
-                    positive_control = True
+                    definition_found = True
         bound = _bound_names_for_file(tree, module_dotted, _is_package(path))
         call_count = _count_calls(tree, bound)
         if call_count:
             rel = path.relative_to(repo_root).as_posix()
             counts[rel] = call_count
-    return counts, positive_control
+    return counts, definition_found
 
 
 def test_call_counter_counts_a_known_call() -> None:
@@ -300,11 +302,30 @@ def _parse_audit(text: str) -> tuple[dict[str, int], list[dict[str, str]]]:
     return header, rows
 
 
-def test_caller_audit_is_committed_and_covers_the_live_tree() -> None:
-    """The audit file exists, is internally consistent, and audits >= live.
+def test_live_scan_root_contains_the_definition_module() -> None:
+    """Non-vacuous root control for the end-state scan.
 
-    Fails loud (never skip/xfail) on a missing audit file, an empty or
-    misrooted live scan, or a missing positive control.
+    The end-state result ``({}, False)`` is also what an empty or misrooted scan
+    returns, so absence alone proves nothing. This asserts the scan root really
+    contains the module that used to define the symbol, under the scan's own
+    ``_module_dotted`` mapping. It is computed outside ``_scan_live_call_counts``.
+    """
+    assert _SRC_ROOT.is_dir(), f"scan root is not a directory: {_SRC_ROOT}"
+    mapped = {_module_dotted(path, _SRC_ROOT) for path in _SRC_ROOT.rglob("*.py")}
+    assert _MODULE_DOTTED in mapped, (
+        f"no *.py under {_SRC_ROOT} maps to {_MODULE_DOTTED}; the end-state scan "
+        "would pass vacuously"
+    )
+
+
+def test_caller_audit_is_committed_and_covers_the_live_tree() -> None:
+    """The frozen audit file is internally consistent and the live tree is clean.
+
+    End state (FOR-1636): the live scan of ``src`` finds no call site and no
+    definition. Fails loud (never skip/xfail) on a missing audit file, an
+    inconsistent header, or any surviving reference. That the scan actually
+    covered the definition module is pinned separately by
+    ``test_live_scan_root_contains_the_definition_module``.
     """
     assert _AUDIT_PATH.is_file(), f"audit file missing: {_AUDIT_PATH}"
 
@@ -333,28 +354,12 @@ def test_caller_audit_is_committed_and_covers_the_live_tree() -> None:
         f"{len(audited_files)} distinct audited files"
     )
 
-    assert _SRC_ROOT.is_dir(), f"scan root is not a directory: {_SRC_ROOT}"
-    live_counts, positive_control = _scan_live_call_counts(_SRC_ROOT)
-    assert positive_control, (
-        f"scan positive control failed: no {_NEW_NAME} definition found under {_SRC_ROOT} "
-        "-- the scan is misrooted or the rename has not landed"
+    live_counts, definition_found = _scan_live_call_counts(_SRC_ROOT)
+    assert not definition_found, (
+        f"{_NEW_NAME} is defined again under {_SRC_ROOT}; FOR-1636 retired it and "
+        "boundary digests use require_lowercase_sha256"
     )
     assert live_counts == {}, (
-        f"{_NEW_NAME} has live call sites {dict(live_counts)}; FOR-1626 repointed every "
-        "boundary caller to require_lowercase_sha256, so a new caller needs a ruling and "
-        "an audit row"
+        f"{_NEW_NAME} has live call sites {dict(live_counts)}; FOR-1636 retired the "
+        "name, so any reference is a defect, not an audit row"
     )
-
-    audited_counts: Counter[str] = Counter()
-    for row in rows:
-        audited_counts[row["path"]] += 1
-
-    for path, live_count in live_counts.items():
-        assert path in audited_counts, (
-            f"{path} calls {_NEW_NAME} but has no row in the audit "
-            f"({_AUDIT_PATH.relative_to(_REPO_ROOT)})"
-        )
-        assert live_count <= audited_counts[path], (
-            f"{path}: live call count {live_count} exceeds audited count "
-            f"{audited_counts[path]} -- the audit undercounts this file"
-        )
