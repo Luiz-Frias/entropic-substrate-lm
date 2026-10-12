@@ -8,9 +8,10 @@ import pytest
 import yaml
 
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.runtime.config import configs_dir
+from entropic_substrate.ladder.register import d1_config
 from entropic_substrate.ladder.register.d1_config import (
     D1LaunchScale,
-    d1_configs_dir,
     load_d1_profile,
     load_d1_profile_catalog,
 )
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.unit
 
 
 def _payload(name: str) -> dict[str, object]:
-    value = yaml.safe_load((d1_configs_dir() / f"{name}.yaml").read_text(encoding="utf-8"))
+    value = yaml.safe_load((configs_dir() / f"{name}.yaml").read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     return value
 
@@ -55,10 +56,17 @@ def test_catalog_refuses_cross_profile_family_drift(tmp_path: Path) -> None:
 
 
 def test_tiny_overlay_cannot_select_a_scientific_arm(tmp_path: Path) -> None:
-    overlay = yaml.safe_load((d1_configs_dir() / "d1-tiny.yaml").read_text(encoding="utf-8"))
+    overlay = yaml.safe_load((configs_dir() / "d1-tiny.yaml").read_text(encoding="utf-8"))
     assert isinstance(overlay, dict)
     overlay["arm"] = "both"
     path = tmp_path / "overlay.yaml"
     path.write_text(yaml.safe_dump(overlay), encoding="utf-8")
     with pytest.raises(ValueError, match="unknown keys"):
-        load_d1_profile(d1_configs_dir() / "d1-none.yaml", tiny_overlay_path=path)
+        load_d1_profile(configs_dir() / "d1-none.yaml", tiny_overlay_path=path)
+
+
+def test_retired_d1_config_dir_alias_is_absent() -> None:
+    """FOR-1600: callers use the shared locator; the D1 alias stays deleted."""
+    retired = "d1_configs" + "_dir"
+    assert not hasattr(d1_config, retired)
+    assert retired not in d1_config.__all__

@@ -14,10 +14,15 @@ from d1_runtime_fixtures import fit_runtime_baseline, runtime_family
 from entropic_substrate.core.corpus.batching import SequenceSampler, TokenSplit
 from entropic_substrate.core.latent.initialization import SeededD1BranchInitializer
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
+from entropic_substrate.kernel.verdict.d1_evaluation_values import D1StateMomentAccessors
 from entropic_substrate.ladder.register.d1_execution import D1AmpPolicy
 from entropic_substrate.ladder.register.d1_family import build_d1_experiment_family
 from entropic_substrate.ladder.run.construction.runtime import D1PredictiveSystem
-from entropic_substrate.ladder.run.trainer.d1_evaluation import D1ChannelMoments, D1Evaluator
+from entropic_substrate.ladder.run.trainer.d1_evaluation import (
+    D1ChannelMoments,
+    D1EvalResult,
+    D1Evaluator,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -377,3 +382,18 @@ def test_result_is_immutable_and_evaluation_fails_loud_on_invalid_evidence() -> 
             D1Evaluator().evaluate(system=system, sampler=_sampler())
     finally:
         handle.remove()
+
+
+def test_state_accessors_come_from_the_shared_mixin_and_stay_slotted() -> None:
+    result = D1Evaluator().evaluate(system=_system(), sampler=_sampler())
+    moments = result.state_moments
+    assert isinstance(result, D1StateMomentAccessors)
+    assert result.state_mean == moments.mean
+    assert result.state_variance == moments.variance
+    assert result.state_covariance_eigenvalues == moments.covariance_eigenvalues
+    assert result.effective_rank == moments.effective_rank
+    assert result.state_variance != result.state_mean
+    assert not hasattr(result, "__dict__")
+    for name in ("state_mean", "state_variance", "state_covariance_eigenvalues", "effective_rank"):
+        assert name not in vars(D1EvalResult)
+        assert name in vars(D1StateMomentAccessors)

@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.ladder.run.campaign.d1_operator_values import (
     D1ImageBuildRequest,
     D1ImmutableImage,
@@ -26,27 +27,14 @@ def _error(subject: str, detail: str, cause: Exception | None = None) -> NoRetur
     raise error from cause
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate build metadata key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    raise ValueError(f"non-finite build metadata constant {value!r}")
+def _reject(reason: str) -> NoReturn:
+    raise ValueError(f"build metadata {reason}")
 
 
 def _metadata(path: Path, *, subject: str) -> str:
     try:
         raw = path.read_text(encoding="utf-8")
-        payload: object = json.loads(
-            raw,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        payload = strict_loads(raw, fail=_reject)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         _error(subject, f"build metadata is invalid: {error}", error)
     if type(payload) is not dict:

@@ -50,6 +50,7 @@ from entropic_substrate.ladder.run.campaign.d1_operator_values import (
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import (
     D1BillingFinalization,
+    D1BillingFinalizationRequest,
 )
 from entropic_substrate.ladder.run.closure.d1_billing_finalizer import finalize_d1_billing
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
@@ -101,6 +102,40 @@ def _terminal_defect(
     if run.status is not D1RunStatus.TRAINER_ABORTED or run.trainer_abort is None:
         return None
     return run.trainer_abort.numerical_defect
+
+
+def _persist_finalization_artifact(
+    custody: D1OperatorCustodyPort,
+    *,
+    intent: D1OperatorLaunchIntent,
+    segment_starts: tuple[RunStartProvenance, ...],
+    ledger: D1LaunchAttemptLedger,
+    finalization: D1BillingFinalization,
+    export: D1TrainerExportReceipt,
+    journal_path: Path,
+) -> tuple[ArtifactIdentity, D1FinalizedCellCustodyRecord | None]:
+    """Persist the finalized-cell record when the run owns terminal evidence, else the bare form.
+
+    A cell record needs a checkpoint identity and either a completed run or a
+    failure that carries a terminal numerical defect; every other terminal
+    state persists the finalization alone.
+    """
+    handoff = export.handoff
+    failed = isinstance(handoff, D1TrainerFailureHandoff)
+    defect = _terminal_defect(intent, journal_path) if failed else None
+    if not (isinstance(export.checkpoint, ArtifactIdentity) and (not failed or defect is not None)):
+        return custody.persist_finalization(finalization), None
+    cell = attest_d1_finalized_cell_custody(
+        intent=intent,
+        segment_starts=segment_starts,
+        attempt_ledger=ledger,
+        finalization=finalization,
+        journal=identify_d1_finalized_journal(journal_path, finalization),
+        checkpoint=export.checkpoint,
+        quarantined_siblings=_quarantined_siblings(handoff),
+        numerical_defect=defect,
+    )
+    return custody.persist_finalized_cell(cell), cell
 
 
 class D1OperatorCustodyPort(Protocol):
@@ -373,13 +408,15 @@ class D1SequentialOperatorController:
             handoff = export.handoff
             stopped = handoff.termination
             finalization = finalize_d1_billing(
-                plan=intent.plan,
-                segment_starts=(start,),
-                segment_terminations=(termination,),
-                provider_billings=(billing,),
-                handoff=handoff,
-                journal_path=candidate.journal_path,
-                expected_journal_state=stopped.journal_state,
+                D1BillingFinalizationRequest(
+                    plan=intent.plan,
+                    segment_starts=(start,),
+                    segment_terminations=(termination,),
+                    provider_billings=(billing,),
+                    handoff=handoff,
+                    journal_path=candidate.journal_path,
+                    expected_journal_state=stopped.journal_state,
+                )
             )
             failed = isinstance(handoff, D1TrainerFailureHandoff)
             ledger = ledger.transition(
@@ -393,25 +430,15 @@ class D1SequentialOperatorController:
             self._custody.persist_attempt_ledger(ledger)
             self.attempt_ledger = ledger
             queue_admissible = not failed and billing.provider_billing_complete
-            defect = _terminal_defect(intent, candidate.journal_path) if failed else None
-            finalized_cell: D1FinalizedCellCustodyRecord | None = None
-            if isinstance(export.checkpoint, ArtifactIdentity) and (
-                not failed or defect is not None
-            ):
-                journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-                finalized_cell = attest_d1_finalized_cell_custody(
-                    intent=intent,
-                    segment_starts=(start,),
-                    attempt_ledger=ledger,
-                    finalization=finalization,
-                    journal=journal,
-                    checkpoint=export.checkpoint,
-                    quarantined_siblings=_quarantined_siblings(handoff),
-                    numerical_defect=defect,
-                )
-                finalization_artifact = self._custody.persist_finalized_cell(finalized_cell)
-            else:
-                finalization_artifact = self._custody.persist_finalization(finalization)
+            finalization_artifact, finalized_cell = _persist_finalization_artifact(
+                self._custody,
+                intent=intent,
+                segment_starts=(start,),
+                ledger=ledger,
+                finalization=finalization,
+                export=export,
+                journal_path=candidate.journal_path,
+            )
             manager = manager.finalize_operator(
                 subject_id=subject,
                 actor=self._operator,
@@ -565,13 +592,15 @@ class D1SequentialOperatorController:
             handoff = export.handoff
             stopped = handoff.termination
             finalization = finalize_d1_billing(
-                plan=intent.plan,
-                segment_starts=(*history.starts, start),
-                segment_terminations=(*history.terminations, termination),
-                provider_billings=(*history.billings, billing),
-                handoff=handoff,
-                journal_path=candidate.journal_path,
-                expected_journal_state=stopped.journal_state,
+                D1BillingFinalizationRequest(
+                    plan=intent.plan,
+                    segment_starts=(*history.starts, start),
+                    segment_terminations=(*history.terminations, termination),
+                    provider_billings=(*history.billings, billing),
+                    handoff=handoff,
+                    journal_path=candidate.journal_path,
+                    expected_journal_state=stopped.journal_state,
+                )
             )
             failed = isinstance(handoff, D1TrainerFailureHandoff)
             ledger = self.attempt_ledger.transition(
@@ -585,25 +614,15 @@ class D1SequentialOperatorController:
             self._custody.persist_attempt_ledger(ledger)
             self.attempt_ledger = ledger
             queue_admissible = not failed and billing.provider_billing_complete
-            defect = _terminal_defect(intent, candidate.journal_path) if failed else None
-            finalized_cell: D1FinalizedCellCustodyRecord | None = None
-            if isinstance(export.checkpoint, ArtifactIdentity) and (
-                not failed or defect is not None
-            ):
-                journal = identify_d1_finalized_journal(candidate.journal_path, finalization)
-                finalized_cell = attest_d1_finalized_cell_custody(
-                    intent=intent,
-                    segment_starts=(*history.starts, start),
-                    attempt_ledger=ledger,
-                    finalization=finalization,
-                    journal=journal,
-                    checkpoint=export.checkpoint,
-                    quarantined_siblings=_quarantined_siblings(handoff),
-                    numerical_defect=defect,
-                )
-                artifact = self._custody.persist_finalized_cell(finalized_cell)
-            else:
-                artifact = self._custody.persist_finalization(finalization)
+            artifact, finalized_cell = _persist_finalization_artifact(
+                self._custody,
+                intent=intent,
+                segment_starts=(*history.starts, start),
+                ledger=ledger,
+                finalization=finalization,
+                export=export,
+                journal_path=candidate.journal_path,
+            )
             manager = manager.finalize_operator(
                 subject_id=subject,
                 actor=self._operator,

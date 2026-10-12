@@ -6,14 +6,15 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import NoReturn, cast
+from typing import NoReturn
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import RunStartProvenance
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     run_start_from_mapping,
     run_start_to_mapping,
 )
-from entropic_substrate.kernel.identity.d1_primitives import D1Arm, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import D1ProcessState
 from entropic_substrate.ladder.register.d1_launch_attempt_codec import (
@@ -24,6 +25,7 @@ from entropic_substrate.ladder.register.d1_launch_attempts import (
     D1LaunchAttemptLedger,
     D1LaunchAttemptStatus,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 _SCHEMA = "d1-campaign-checkpoint-v2"
 _ROOT_KEYS = frozenset(
@@ -76,7 +78,7 @@ def _text(value: object, *, label: str) -> str:
 
 def _sha(value: object, *, label: str) -> str:
     text = _text(value, label=label)
-    require_sha256(text, label=label)
+    require_lowercase_digest(text, label=label)
     return text
 
 
@@ -298,13 +300,12 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object")
-    return cast(dict[str, object], value)
+    return require_mapping(value, fail=lambda _reason: _fail(f"{label} must be a JSON object"))
 
 
 def _exact(value: Mapping[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unexpected = exact_keys(value, keys)
+    if missing or unexpected:
         _fail(f"{label} keys must be exact")
 
 
@@ -392,24 +393,11 @@ def serialize_campaign_checkpoint(checkpoint: D1CampaignCheckpoint) -> str:
     )
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate campaign checkpoint key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite campaign checkpoint constant {value!r}")
-
-
 def parse_campaign_checkpoint(payload: str) -> D1CampaignCheckpoint:
     if type(payload) is not str or not payload:
         _fail("campaign checkpoint payload must be nonempty text")
     try:
-        value: object = json.loads(payload, object_pairs_hook=_pairs, parse_constant=_nonfinite)
+        value = strict_loads(payload, fail=_fail)
     except D1CampaignCheckpointError:
         raise
     except json.JSONDecodeError as error:

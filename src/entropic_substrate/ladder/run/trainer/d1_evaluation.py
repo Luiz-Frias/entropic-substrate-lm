@@ -13,6 +13,7 @@ from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
     D1ChannelMoments,
     D1CosineGap,
+    D1StateMomentAccessors,
     validate_d1_cosine,
 )
 from entropic_substrate.ladder.capture.reader.d1_numerical_defect import d1_nonfinite_metric_error
@@ -39,7 +40,7 @@ def _close(left: float, right: float) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class D1EvalResult:
+class D1EvalResult(D1StateMomentAccessors):
     """Immutable full-precision scalar and latent-state evidence from one eval."""
 
     language_loss: float
@@ -194,22 +195,6 @@ class D1EvalResult:
     @property
     def target_predicted_exact_match_fraction(self) -> float:
         return self.target_predicted_exact_match_count / self.residual_elements
-
-    @property
-    def state_mean(self) -> tuple[float, ...]:
-        return self.state_moments.mean
-
-    @property
-    def state_variance(self) -> tuple[float, ...]:
-        return self.state_moments.variance
-
-    @property
-    def state_covariance_eigenvalues(self) -> tuple[float, ...]:
-        return self.state_moments.covariance_eigenvalues
-
-    @property
-    def effective_rank(self) -> float:
-        return self.state_moments.effective_rank
 
     @property
     def numerical_rank(self) -> int:

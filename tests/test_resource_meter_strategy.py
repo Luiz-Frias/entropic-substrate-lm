@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from d1_telemetry_fixtures import STARTED_AT, start_provenance
@@ -204,3 +206,45 @@ def test_resume_refuses_a_changed_flop_model_before_emitting_a_snapshot() -> Non
             ledger.current_state(),
             flop_model=_flops(train_online=12),
         )
+
+
+def test_restore_declares_exactly_the_constructor_ports_as_keyword_only() -> None:
+    restore = inspect.signature(D1ProductionResourceMeter.restore).parameters
+    init = inspect.signature(D1ProductionResourceMeter.__init__).parameters
+    ports = [name for name in init if name not in {"self", "start"}]
+
+    assert [name for name in restore if name not in {"start", "state"}] == ports
+    assert "max_power_gap_seconds" in ports
+    for name in ports:
+        assert restore[name].kind is inspect.Parameter.KEYWORD_ONLY
+        assert restore[name].default == init[name].default
+    assert all(p.kind is not inspect.Parameter.VAR_KEYWORD for p in restore.values())
+
+
+def test_restore_applies_the_registered_power_gap_to_the_resumed_segment() -> None:
+    first_meter = D1ProductionResourceMeter(
+        start_provenance(), flop_model=_flops(), power_samples=_power()
+    )
+    first_meter.record_positions(ResourcePhase.TRAIN, online_positions=1, target_positions=1)
+    ledger = ResourceLedger(start_provenance(), monotonic_origin_ns=0, meter_strategy=first_meter)
+    ledger.record_eval(
+        online_positions=1,
+        target_positions=1,
+        training_step=1,
+        observed_at=STARTED_AT,
+        monotonic_ns=1_000_000_000,
+    )
+    three_seconds_apart = _Power(PowerSample(0, 100.0), PowerSample(3_000_000_000, 100.0))
+
+    def resumed_energy(**ports: float) -> object:
+        resumed = D1ProductionResourceMeter.restore(
+            start_provenance(1, "f" * 64),
+            ledger.current_state(),
+            flop_model=_flops(),
+            power_samples=three_seconds_apart,
+            **ports,
+        )
+        return resumed.snapshot(trainer_wall_seconds=4.0).energy_joules
+
+    assert not isinstance(resumed_energy(), EvidenceGap)
+    assert isinstance(resumed_energy(max_power_gap_seconds=2.0), EvidenceGap)

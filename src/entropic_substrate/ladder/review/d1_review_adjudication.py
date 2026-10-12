@@ -11,6 +11,12 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import NoReturn, SupportsIndex, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 
 __all__ = [
@@ -52,13 +58,10 @@ D1_NO_MAJOR_PROMPT_DIRECTIVE = (
 
 
 def _sha(value: str, label: str) -> None:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise ValueError(f"{label} must be lowercase SHA-256")
+
+    require_lowercase_sha256(value, fail=fail)
 
 
 def _text(value: str, label: str) -> None:
@@ -66,26 +69,23 @@ def _text(value: str, label: str) -> None:
         raise ValueError(f"{label} must be nonempty and trimmed")
 
 
-def _strict_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"D1 review receipt duplicate field {key!r}")
-        result[key] = value
-    return result
+def _fail(reason: str) -> NoReturn:
+    raise ValueError(f"D1 review receipt {reason}")
 
 
 def _document(payload: bytes) -> Mapping[str, object]:
     if type(payload) is not bytes or not payload:
         raise ValueError("D1 review receipt must be nonempty bytes")
     try:
-        value = json.loads(payload, object_pairs_hook=_strict_pairs)
+        value = strict_loads(payload, fail=_fail)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("D1 review receipt must be UTF-8 JSON") from error
-    if type(value) is not dict:
+
+    def not_object(_reason: str) -> NoReturn:
         raise ValueError("D1 review receipt must have an object root")
-    data = cast(dict[str, object], value)
-    if frozenset(data) != _RECEIPT_FIELDS:
+
+    data = require_mapping(value, fail=not_object)
+    if any(exact_keys(data, _RECEIPT_FIELDS)):
         raise ValueError("D1 review receipt fields must match the v2 schema exactly")
     return data
 

@@ -20,6 +20,7 @@ from entropic_substrate.ladder.capture.custody.d1_capture_filesystem import (
 )
 from entropic_substrate.ladder.capture.custody.d1_capture_ports import (
     D1CaptureTransportError,
+    D1DvcPointerIdentity,
     D1GitPointerCommitEvidence,
 )
 from entropic_substrate.ladder.capture.custody.d1_capture_service import (
@@ -271,3 +272,74 @@ def test_missing_roster_cell_and_reader_refusal_have_no_export_or_live_fallback(
         service.capture(roster=roster, capture_inputs=inputs)
     assert inadmissible.value.code == "local_admission"
     assert events == ["export"]
+
+
+# FOR-1602: each class validates through ``self.binding`` so one site PER CLASS
+# knows the D1DvcBinding constructor shape. Construction must still refuse
+# eagerly, with the exceptions D1DvcBinding itself raises (messages measured
+# against e929910 src: these exact cases pass there).
+_GOOD_SHA = "a" * 64
+_GOOD_COMMIT = "b" * 40
+
+
+def _pointer_identity(pointer_path: str, pointer_sha256: str, object_id: str) -> object:
+    return D1DvcPointerIdentity(pointer_path, pointer_sha256, object_id)
+
+
+def _commit_evidence(pointer_path: str, pointer_sha256: str, object_id: str) -> object:
+    return D1GitPointerCommitEvidence(_GOOD_COMMIT, pointer_path, pointer_sha256, object_id)
+
+
+_INVALID_BINDINGS = [
+    ("results/captured.txt", _GOOD_SHA, _OBJECT_ID, "DVC pointer_path must name a .dvc file"),
+    (
+        "/abs/captured.dvc",
+        _GOOD_SHA,
+        _OBJECT_ID,
+        "DVC pointer_path must be a normalized repository-relative POSIX path",
+    ),
+    ("", _GOOD_SHA, _OBJECT_ID, "DVC pointer_path must be a nonempty path"),
+    (
+        _POINTER_PATH,
+        "A" * 64,
+        _OBJECT_ID,
+        "DVC pointer_sha256 must be 64 lowercase hexadecimal characters",
+    ),
+    (
+        _POINTER_PATH,
+        "a" * 63,
+        _OBJECT_ID,
+        "DVC pointer_sha256 must be 64 lowercase hexadecimal characters",
+    ),
+    (
+        _POINTER_PATH,
+        _GOOD_SHA,
+        "8" * 31 + ".dir",
+        "DVC object_id must be 32 lowercase hexadecimal characters",
+    ),
+]
+
+
+@pytest.mark.parametrize("build", [_pointer_identity, _commit_evidence])
+@pytest.mark.parametrize(("pointer_path", "sha", "object_id", "message"), _INVALID_BINDINGS)
+def test_invalid_binding_still_raises_at_construction_for_both_classes(
+    build: object, pointer_path: str, sha: str, object_id: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=f"^{message}$"):
+        build(pointer_path, sha, object_id)  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("build", [_pointer_identity, _commit_evidence])
+def test_valid_binding_round_trips_through_the_property_for_both_classes(build: object) -> None:
+    value = build(_POINTER_PATH, _GOOD_SHA, _OBJECT_ID)  # type: ignore[operator]
+    assert value.binding == D1DvcBinding(  # type: ignore[attr-defined]
+        state=D1DvcBindingState.BOUND,
+        pointer_path=_POINTER_PATH,
+        pointer_sha256=_GOOD_SHA,
+        object_id=_OBJECT_ID,
+    )
+
+
+def test_commit_evidence_still_refuses_a_non_lowercase_commit_before_the_binding() -> None:
+    with pytest.raises(ValueError, match=r"^pointer commit must be lowercase hexadecimal$"):
+        D1GitPointerCommitEvidence("B" * 40, "results/x", "A" * 64, "bad")

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import NamedTuple, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +96,50 @@ def pair_score_gain(before: PredictiveScore, after: PredictiveScore) -> ScoreGai
     return ScoreGain(before, after)
 
 
+class LogProbabilityScore(Protocol):
+    """One measured log probability, read only."""
+
+    @property
+    def log_probability(self) -> float: ...
+
+
+class GainRecord(Protocol):
+    """A before/after score pair with its signed log-probability difference."""
+
+    @property
+    def before(self) -> LogProbabilityScore: ...
+
+    @property
+    def after(self) -> LogProbabilityScore: ...
+
+    @property
+    def gain(self) -> float: ...
+
+
+class GainStatistics(NamedTuple):
+    """Positional order is the shared field order of both summary dataclasses."""
+
+    size: int
+    mean_gain: float
+    sample_std_gain: float | None
+    negative_fraction: float
+    before_nats_per_byte: float
+    after_nats_per_byte: float
+
+
+def gain_statistics(records: Sequence[GainRecord]) -> GainStatistics:
+    """Reduce already validated, nonempty pairs; callers own every refusal."""
+    gains = [item.gain for item in records]
+    return GainStatistics(
+        len(records),
+        statistics.fmean(gains),
+        statistics.stdev(gains) if len(gains) > 1 else None,
+        sum(value < 0 for value in gains) / len(gains),
+        -statistics.fmean(item.before.log_probability for item in records),
+        -statistics.fmean(item.after.log_probability for item in records),
+    )
+
+
 def summarize_score_gains(records: tuple[ScoreGain, ...]) -> ScoreGainSummary:
     """Summarize one bound sample; singleton sample deviation is undefined."""
     if not records:
@@ -103,12 +149,4 @@ def summarize_score_gains(records: tuple[ScoreGain, ...]) -> ScoreGainSummary:
     keys = [(item.before.state_position, item.before.target_position) for item in records]
     if len(set(keys)) != len(keys):
         raise ValueError("duplicate score-gain positions")
-    gains = [item.gain for item in records]
-    return ScoreGainSummary(
-        count=len(records),
-        mean_gain=statistics.fmean(gains),
-        sample_std_gain=statistics.stdev(gains) if len(gains) > 1 else None,
-        negative_fraction=sum(value < 0 for value in gains) / len(gains),
-        before_nats_per_byte=-statistics.fmean(item.before.log_probability for item in records),
-        after_nats_per_byte=-statistics.fmean(item.after.log_probability for item in records),
-    )
+    return ScoreGainSummary(*gain_statistics(records))

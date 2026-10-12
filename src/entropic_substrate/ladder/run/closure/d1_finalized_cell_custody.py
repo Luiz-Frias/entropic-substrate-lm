@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, SupportsIndex, cast
 
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
+)
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     validate_execution_segments,
@@ -24,7 +30,6 @@ from entropic_substrate.kernel.identity.d1_primitives import (
     RunClass,
     canonical_digest,
     canonical_json,
-    require_sha256,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.reader.d1_numerical_defect import (
@@ -78,21 +83,19 @@ def _fail(message: str, cause: Exception | None = None) -> NoReturn:
 def _sha(value: object, label: str) -> str:
     if type(value) is not str:
         _fail(f"{label} must be SHA-256 text")
-    try:
-        require_sha256(value, label=label)
-    except (TypeError, ValueError) as error:
-        _fail(f"{label} must be lowercase SHA-256", error)
+    require_lowercase_sha256(
+        value, fail=lambda _reason: _fail(f"{label} must be lowercase SHA-256")
+    )
     return value
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object")
-    return cast(dict[str, object], value)
+    return require_mapping(value, fail=lambda _reason: _fail(f"{label} must be a JSON object"))
 
 
 def _exact(value: Mapping[str, object], keys: frozenset[str], label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unexpected = exact_keys(value, keys)
+    if missing or unexpected:
         _fail(f"{label} fields must be exact")
 
 
@@ -474,20 +477,11 @@ def serialize_d1_finalized_cell_custody(record: D1FinalizedCellCustodyRecord) ->
     return canonical_json(record.manifest)
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate finalized-cell field {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_finalized_cell_custody(payload: str) -> D1FinalizedCellCustodyRecord:
     if type(payload) is not str or not payload:
         _fail("finalized-cell payload must be nonempty text")
     try:
-        root = _mapping(json.loads(payload, object_pairs_hook=_pairs), "finalized cell")
+        root = _mapping(strict_loads(payload, fail=_fail), "finalized cell")
     except D1FinalizedCellCustodyError:
         raise
     except (RecursionError, ValueError) as error:

@@ -17,7 +17,6 @@ from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_json,
     require_commit,
-    require_sha256,
 )
 from entropic_substrate.kernel.lifecycle import ActorIdentity, ActorRole, ArtifactIdentity
 from entropic_substrate.ladder.gate.ladder_campaign import (
@@ -26,6 +25,7 @@ from entropic_substrate.ladder.gate.ladder_campaign import (
     artifact_mapping,
     object_fields,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 
 
@@ -57,8 +57,8 @@ class RemoteLadderRequest:
         require_commit(self.code_commit, label="remote source commit")
         if len(self.code_commit) not in (40, 64):
             raise ValueError("remote source commit requires a full Git object identity")
-        require_sha256(self.attempt_sha256, label="remote attempt")
-        require_sha256(self.authorization_digest, label="remote expected authorization")
+        require_lowercase_digest(self.attempt_sha256, label="remote attempt")
+        require_lowercase_digest(self.authorization_digest, label="remote expected authorization")
         if type(self.start) is not RunStartProvenance:
             raise TypeError("remote request requires complete resource provenance")
         if type(self.operator) is not ActorIdentity or self.operator.role is not ActorRole.OPERATOR:

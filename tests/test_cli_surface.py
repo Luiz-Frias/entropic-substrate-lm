@@ -240,3 +240,147 @@ class TestMachineConsumedStdoutSitesArePinnedNotRouted:
         body = ast.get_source_segment(text, cmd_eval)
         assert body is not None, "cmd_eval has no source segment"
         assert "print(json.dumps(payload, sort_keys=True))" in body
+
+
+_D1_COMMANDS = frozenset(
+    {
+        "d1-campaign-run",
+        "d1-capture-finalize",
+        "d1-capture-prepare",
+        "d1-inspect",
+        "d1-run-fresh",
+        "d1-run-resume",
+    }
+)
+
+# command -> (module holding the handler, handler name). Imported inside main()
+# at call time (build_parser() already loaded the modules); no string-resolved
+# lazy wrapper since c45ac0a. Patching the module attribute reaches the dispatch.
+_FUNCTION_LOCAL_ROUTES: tuple[tuple[str, str, str], ...] = (
+    ("d-probe", "composition.wiring.d_ladder_cli", "cmd_d_probe"),
+    ("d-score-gain", "composition.wiring.d_ladder_probe_cli", "cmd_score_gain"),
+    ("h-train-probe", "composition.cli", "cmd_sentence"),
+    ("h-inspect-training", "composition.cli", "cmd_sentence"),
+    ("h-generate-probe", "composition.cli", "cmd_sentence"),
+    ("h-inspect-generation", "composition.cli", "cmd_sentence"),
+    ("h-capture-model", "composition.capture_cli", "cmd_capture"),
+    ("h-inspect-model", "composition.capture_cli", "cmd_capture"),
+    ("h-inspect-custody", "composition.capture_cli", "cmd_capture"),
+    ("h-diagnose-spans", "composition.span_cli", "cmd_span"),
+    ("h-inspect-spans", "composition.span_cli", "cmd_span"),
+    ("h-prepare-source", "composition.source_cli", "cmd_source"),
+    ("h-inspect-source", "composition.source_cli", "cmd_source"),
+)
+
+
+def _main_function() -> tuple[ast.FunctionDef, str]:
+    module = importlib.import_module("entropic_substrate.composition.entrypoints.cli")
+    assert module.__file__ is not None
+    text = Path(module.__file__).read_text(encoding="utf-8")
+    main = next(
+        node
+        for node in ast.parse(text).body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    return main, text
+
+
+def _reads_args_command(node: ast.AST) -> bool:
+    return any(
+        isinstance(inner, ast.Attribute)
+        and inner.attr == "command"
+        and isinstance(inner.value, ast.Name)
+        and inner.value.id == "args"
+        for inner in ast.walk(node)
+    )
+
+
+class TestMainDispatchesThroughOneTable:
+    def test_only_the_d1_early_return_branches_on_args_command(self) -> None:
+        main, _ = _main_function()
+        branches = [
+            node
+            for node in ast.walk(main)
+            if isinstance(node, ast.If) and _reads_args_command(node.test)
+        ]
+        # The D1 early return is the single sanctioned `if args.command` in main().
+        assert len(branches) == 1, [ast.unparse(node.test) for node in branches]
+        assert "D1CliCommand" in ast.unparse(branches[0].test)
+
+    def test_every_non_d1_subcommand_resolves_through_the_handlers_table(self) -> None:
+        main, _ = _main_function()
+        table = next(
+            node.value
+            for node in ast.walk(main)
+            if isinstance(node, ast.Assign | ast.AnnAssign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "handlers"
+                for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+            and isinstance(node.value, ast.Dict)
+        )
+        keys = {key.value for key in table.keys if isinstance(key, ast.Constant)}
+        assert len(keys) == len(table.keys), "handlers keys must be unique string literals"
+        assert keys == set(_FROZEN_SUBCOMMANDS) - _D1_COMMANDS
+
+    def test_handlers_table_values_are_statically_resolved_names(self) -> None:
+        # A string-resolved handler (``importlib.import_module`` + ``cast``) erases
+        # the handler's signature from the type checker and hides the edge from
+        # import-linter. Every table value must be a bare name bound by a static
+        # import, so changing a handler's arity is a basedpyright error here.
+        main, _ = _main_function()
+        table = next(
+            node.value
+            for node in ast.walk(main)
+            if isinstance(node, ast.Assign | ast.AnnAssign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "handlers"
+                for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+            and isinstance(node.value, ast.Dict)
+        )
+        non_names = [
+            ast.unparse(value) for value in table.values if not isinstance(value, ast.Name)
+        ]
+        assert non_names == [], non_names
+        source = Path(
+            importlib.import_module("entropic_substrate.composition.entrypoints.cli").__file__ or ""
+        ).read_text()
+        tree = ast.parse(source)
+        string_resolved = [
+            ast.unparse(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr == "import_module"
+        ]
+        assert string_resolved == [], string_resolved
+
+    @pytest.mark.parametrize(("command", "module_name", "handler"), _FUNCTION_LOCAL_ROUTES)
+    def test_function_local_handler_routes_return_value_and_receives_parsed_args(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        command: str,
+        module_name: str,
+        handler: str,
+    ) -> None:
+        import argparse
+
+        cli = importlib.import_module("entropic_substrate.composition.entrypoints.cli")
+        seen: list[argparse.Namespace] = []
+
+        def fake(args: argparse.Namespace) -> int:
+            seen.append(args)
+            return 37
+
+        namespace = argparse.Namespace(command=command)
+
+        class _Parser:
+            def parse_args(self, argv: object) -> argparse.Namespace:
+                del argv
+                return namespace
+
+        monkeypatch.setattr(cli, "build_parser", lambda: _Parser())
+        monkeypatch.setattr(
+            importlib.import_module(f"entropic_substrate.{module_name}"), handler, fake
+        )
+        assert cli.main([command]) == 37
+        assert seen == [namespace]

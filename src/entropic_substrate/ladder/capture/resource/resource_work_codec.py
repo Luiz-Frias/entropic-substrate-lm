@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import EvidenceGap, Money
 from entropic_substrate.kernel.identity.d1_primitives import EvidenceClass
 from entropic_substrate.ladder.capture.resource.resource_work import (
@@ -279,25 +280,12 @@ def serialize_resource_snapshot_line(snapshot: ResourceWorkSnapshot) -> str:
     )
 
 
-def _reject_constant(value: str) -> NoReturn:
-    _fail(f"non-finite JSON constant {value!r} is forbidden")
-
-
-def _no_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate JSON key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_resource_snapshot_line(line: str) -> ResourceWorkSnapshot:
     """Parse one nonblank canonical JSON line; this deliberately admits no journal semantics."""
     if type(line) is not str or not line.strip():
         _fail("resource snapshot JSON line must be nonblank")
     try:
-        value = json.loads(line, object_pairs_hook=_no_duplicates, parse_constant=_reject_constant)
+        value = strict_loads(line, fail=_fail)
     except json.JSONDecodeError as exc:
         _fail("resource snapshot JSON line is invalid JSON", exc)
     return resource_snapshot_from_mapping(value)

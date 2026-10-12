@@ -11,8 +11,9 @@ from entropic_substrate.historical.d_ladder.ladder_profile import (
     rung_profile_mapping,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.kernel.runtime.config import configs_dir
 from entropic_substrate.ladder.gate.ladder_campaign import artifact_mapping
-from entropic_substrate.ladder.register.d1_config import d1_configs_dir, load_d1_profile
+from entropic_substrate.ladder.register.d1_config import load_d1_profile
 from entropic_substrate.ladder.register.ladder import CoarseSpec, Rung, RungSpec, Treatment
 
 pytestmark = pytest.mark.unit
@@ -24,7 +25,7 @@ def write_artifact(root: Path, name: str, payload: bytes) -> ArtifactIdentity:
 
 
 def profile_chain(root: Path) -> tuple[ArtifactIdentity, RungSpec]:
-    content = (d1_configs_dir() / "d1-both.yaml").read_bytes()
+    content = (configs_dir() / "d1-both.yaml").read_bytes()
     base = write_artifact(root, "base.yaml", content)
     spec = RungSpec(load_d1_profile(root / "base.yaml").draft, Rung.D2, Treatment.S, 7)
     previous = None

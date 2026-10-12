@@ -5,6 +5,9 @@ adapters must enforce the request's object-byte cap before streaming any body.
 """
 
 import hashlib
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from entropic_substrate.kernel.artifacts import (
@@ -23,21 +26,122 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
 
 
+@dataclass
+class VerificationReadRetry:
+    """Bounded retry for a checkpoint-snapshot R2 VERIFICATION READ only.
+
+    Never wraps ``objects.publish``: no PUT is ever retried (house rule 3's
+    carve-out, operator-ruled 2026-09-28, FOR-1567 -- measured
+    ``D1TrainerS3ObjectError provider_failure`` on a checkpoint-snapshot
+    verification READ at 15:01:55Z). ``attempts`` (3 total: the first try plus
+    up to 2 retries) is the RULED count. ``backoff_seconds`` is a small,
+    fixed, non-random schedule and is UNMEASURED -- this comment makes no
+    claim that it saves wall-clock time; the wall-clock effect of this retry
+    is unmeasured offline, full stop. ``failures`` is mutated in place by
+    :func:`publish_verified_object` to accumulate every failed verification
+    read attempt observed while publishing one checkpoint snapshot, so the
+    caller can record the count in that event's ``publication`` block; it is
+    bookkeeping only, never itself part of the retry predicate.
+    """
+
+    attempts: int = 3
+    backoff_seconds: tuple[float, ...] = (0.05, 0.1)
+    sleep: Callable[[float], None] = time.sleep
+    failures: int = 0
+
+    def __post_init__(self) -> None:
+        if type(self.attempts) is not int or self.attempts < 1:
+            raise ValueError("verification-read retry requires a positive attempt budget")
+        if type(self.backoff_seconds) is not tuple or not all(
+            type(value) in (int, float) and not isinstance(value, bool) and value >= 0
+            for value in self.backoff_seconds
+        ):
+            raise ValueError("verification-read backoff schedule must be nonnegative numbers")
+        if type(self.failures) is not int or self.failures < 0:
+            raise ValueError("verification-read failure count must be a nonnegative integer")
+        if not callable(self.sleep):
+            raise TypeError("verification-read retry requires a callable sleep")
+
+
+def _verified_read(
+    objects: D1TrainerMailboxObjectPort,
+    key: str,
+    expected: D1TrainerMailboxObjectIdentity,
+    payload: bytes,
+    retry: VerificationReadRetry,
+    *,
+    budget: int,
+) -> D1TrainerMailboxObjectRead | None:
+    """Bounded, backed-off retry on ``objects.read`` alone.
+
+    A raised exception counts as a failed attempt and is retried up to
+    ``budget`` times total, then re-raised UNCHANGED (no wrapper type). A
+    read that returns cleanly but does not match ``expected``/``payload`` is
+    never retried -- it returns ``None`` on its first occurrence so the
+    caller raises its own contextual exception.
+    """
+    if budget < 1:
+        return None
+    for index in range(budget):
+        try:
+            received = objects.read(key)
+        except Exception:
+            retry.failures += 1
+            if index == budget - 1:
+                raise
+            retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
+            continue
+        if (
+            type(received) is D1TrainerMailboxObjectRead
+            and received.identity == expected
+            and received.payload == payload
+        ):
+            return received
+        return None
+    return None  # pragma: no cover - the loop above always returns or raises
+
+
 def publish_verified_object(
-    objects: D1TrainerMailboxObjectPort, key: str, payload: bytes
+    objects: D1TrainerMailboxObjectPort,
+    key: str,
+    payload: bytes,
+    *,
+    retry: VerificationReadRetry | None = None,
 ) -> D1TrainerMailboxObjectIdentity:
     expected = D1TrainerMailboxObjectIdentity(
         key, len(payload), hashlib.sha256(payload).hexdigest()
     )
-    actual = objects.publish(key, payload, expected_sha256=expected.sha256)
+    try:
+        actual = objects.publish(key, payload, expected_sha256=expected.sha256)
+    except Exception as publish_error:
+        if retry is None:
+            raise
+        # The adapter's own post-PUT readback (or collision-confirm read) can
+        # raise from inside objects.publish, before this function ever makes
+        # its own objects.read call. That failure already spent one
+        # verification-read attempt; recover it through the SAME counted,
+        # backed-off read loop used below -- never by re-issuing put_object
+        # or re-calling objects.publish.
+        retry.failures += 1
+        recovered = _verified_read(
+            objects, key, expected, payload, retry, budget=retry.attempts - 1
+        )
+        if recovered is None:
+            raise publish_error
+        return expected
     if type(actual) is not D1TrainerMailboxObjectIdentity or actual != expected:
         raise ValueError("worker publication identity mismatch")
-    received = objects.read(key)
-    if (
-        type(received) is not D1TrainerMailboxObjectRead
-        or received.identity != expected
-        or received.payload != payload
-    ):
+    if retry is None:
+        received = objects.read(key)
+        if (
+            type(received) is not D1TrainerMailboxObjectRead
+            or received.identity != expected
+            or received.payload != payload
+        ):
+            raise ValueError("worker publication readback identity mismatch")
+        return expected
+    received = _verified_read(objects, key, expected, payload, retry, budget=retry.attempts)
+    if received is None:
         raise ValueError("worker publication readback identity mismatch")
     return expected
 

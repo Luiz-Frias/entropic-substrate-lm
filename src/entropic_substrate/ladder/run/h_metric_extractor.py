@@ -81,7 +81,12 @@ class HTrainingStepExtractor:
             raise ValueError("the global step axis needs the profile's warmup length")
         self._warmup_steps = warmup_steps
 
-    def extract(self, event: object) -> ExtractedMetrics | None:
+    def extract(self, event: dict[str, object]) -> ExtractedMetrics | None:
+        return self._project(event)
+
+    def _project(self, event: object) -> ExtractedMetrics | None:
+        # Typed ``object`` so the runtime refusal of a non-dict survives the
+        # narrowed public signature (a checker would call that isinstance dead).
         if not isinstance(event, dict):
             return None
         schema = event.get("schema")

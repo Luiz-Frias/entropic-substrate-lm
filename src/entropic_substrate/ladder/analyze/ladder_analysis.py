@@ -24,7 +24,7 @@ from entropic_substrate.kernel.artifacts import (
     read_json_artifact,
     relative_d1_artifact_path,
 )
-from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
@@ -50,6 +50,7 @@ from entropic_substrate.ladder.gate.ladder_campaign import (
     actor_from_mapping,
     read_campaign_design,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 
 def parse_scientific_data_order(value: object, step: int) -> tuple[str, int] | None:
@@ -69,7 +70,7 @@ def parse_scientific_data_order(value: object, step: int) -> tuple[str, int] | N
         or count != min(step, DATA_ORDER_DIGEST_BATCHES)
     ):
         raise ValueError("data-order attestation must cover the complete bounded prefix")
-    require_sha256(digest, label="scientific data order")
+    require_lowercase_digest(digest, label="scientific data order")
     return digest, count
 
 
@@ -118,7 +119,6 @@ class D1RunReader:
                     tuple(
                         (name, item.quality.scalar_metric(name))
                         for name in sorted(D1_SCALAR_METRICS)
-                        if type(getattr(item.quality, name)) in (int, float)
                     ),
                 )
                 for item in run.evals

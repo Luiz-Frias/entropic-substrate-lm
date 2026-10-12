@@ -13,6 +13,15 @@ Subcommands
 ``field-pretrain``     train a standalone p_phi and save the checkpoint
                        ``field_mode="frozen"`` loads (E1.5c Repair 1)
 ``d1-*``               dispatch one strict D1 application manifest
+``d-probe``            run the D-ladder probe (handlers table)
+``d-score-gain``       score the D-ladder probe gain (handlers table)
+``h-*``                the H sentence, capture, span and source families
+                       (``h-train-probe``, ``h-inspect-training``,
+                       ``h-generate-probe``, ``h-inspect-generation``,
+                       ``h-capture-model``, ``h-inspect-model``,
+                       ``h-inspect-custody``, ``h-diagnose-spans``,
+                       ``h-inspect-spans``, ``h-prepare-source``,
+                       ``h-inspect-source``), routed through the handlers table
 """
 
 from __future__ import annotations
@@ -22,7 +31,7 @@ import dataclasses
 import json
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -1059,6 +1068,9 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     return 0
 
 
+type _Handler = Callable[[argparse.Namespace], int]
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -1090,7 +1102,15 @@ def main(
             )
         )
         return outcome.exit_code
-    handlers = {
+
+    from entropic_substrate.composition.capture_cli import cmd_capture
+    from entropic_substrate.composition.cli import cmd_sentence
+    from entropic_substrate.composition.source_cli import cmd_source
+    from entropic_substrate.composition.span_cli import cmd_span
+    from entropic_substrate.composition.wiring.d_ladder_cli import cmd_d_probe
+    from entropic_substrate.composition.wiring.d_ladder_probe_cli import cmd_score_gain
+
+    handlers: dict[str, _Handler] = {
         "train": cmd_train,
         "init-fisher": cmd_init_fisher,
         "eval": cmd_eval,
@@ -1099,39 +1119,25 @@ def main(
         "charts": cmd_charts,
         "embedding-geometry": cmd_embedding_geometry,
         "field-pretrain": cmd_field_pretrain,
+        "d-probe": cmd_d_probe,
+        "d-score-gain": cmd_score_gain,
+        "h-train-probe": cmd_sentence,
+        "h-inspect-training": cmd_sentence,
+        "h-generate-probe": cmd_sentence,
+        "h-inspect-generation": cmd_sentence,
+        "h-capture-model": cmd_capture,
+        "h-inspect-model": cmd_capture,
+        "h-inspect-custody": cmd_capture,
+        "h-diagnose-spans": cmd_span,
+        "h-inspect-spans": cmd_span,
+        "h-prepare-source": cmd_source,
+        "h-inspect-source": cmd_source,
     }
-    if args.command == "d-probe":
-        from entropic_substrate.composition.wiring.d_ladder_cli import cmd_d_probe
-
-        return cmd_d_probe(args)
-    if args.command == "d-score-gain":
-        from entropic_substrate.composition.wiring.d_ladder_probe_cli import cmd_score_gain
-
-        return cmd_score_gain(args)
-    if args.command in (
-        "h-train-probe",
-        "h-inspect-training",
-        "h-generate-probe",
-        "h-inspect-generation",
-    ):
-        from entropic_substrate.composition.cli import cmd_sentence
-
-        return cmd_sentence(args)
-    if args.command in ("h-capture-model", "h-inspect-model", "h-inspect-custody"):
-        from entropic_substrate.composition.capture_cli import cmd_capture
-
-        return cmd_capture(args)
-    if args.command in ("h-diagnose-spans", "h-inspect-spans"):
-        from entropic_substrate.composition.span_cli import cmd_span
-
-        return cmd_span(args)
-    if args.command in ("h-prepare-source", "h-inspect-source"):
-        from entropic_substrate.composition.source_cli import cmd_source
-
-        return cmd_source(args)
     try:
         return handlers[args.command](args)
     except CheckpointFormatError as exc:
+        # Scope: this fires only for the E/D commands whose import closure
+        # raises CheckpointFormatError; the h-* handlers do not reach it.
         # An ambiguous or too-new checkpoint is an expected, operator-actionable
         # condition — the guidance is in the message. Present it the way every
         # other gate here does (printed refusal, exit 2), not as a traceback

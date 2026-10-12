@@ -2,6 +2,7 @@
 
 import json
 import math
+import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,12 +24,54 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
 )
 from entropic_substrate.ladder.run.worker_execution import execute_probe_request
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
-from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
+from entropic_substrate.ladder.run.worker_snapshot import PublicationLedger, publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
+    VerificationReadRetry,
     materialize_probe_request,
     publish_verified_object,
     read_published_probe_request,
 )
+
+
+def _canonical(value: dict[str, object]) -> bytes:
+    return json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+
+
+# R2 stop marker door (FOR-1617): its own schema, distinct from the host
+# control message `h-probe-stop-v1` (worker/h_probe_controller.py,
+# h_probe_watchdog.py). Defined once here -- never in worker/h_probe_stop.py,
+# which would close an import cycle through worker_command.py -- and
+# imported by the verb, never duplicated.
+STOP_MARKER_SCHEMA = "h-probe-stop-marker-v1"
+
+
+def stop_marker_key(request: ProbeRequest) -> str:
+    return f"{request.prefix}/control/stop.json"
+
+
+def encode_stop_marker(request: ProbeRequest) -> bytes:
+    """A pure function of (schema name, request digest): no `at`, no nonce."""
+    return _canonical({"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest})
+
+
+def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
+    """True: stop this request. False: a marker for another request, ignored.
+
+    Everything else -- bad JSON/UTF-8, non-canonical bytes, a missing or
+    extra key, a foreign schema -- raises. The schema check runs before the
+    request digest check.
+    """
+    row = recovery_record(json.loads(payload), "schema request_sha256")
+    if row["schema"] != STOP_MARKER_SCHEMA:
+        raise ValueError("stop marker schema is foreign")
+    digest = row["request_sha256"]
+    if type(digest) is not str:
+        raise ValueError("stop marker request digest is invalid")
+    if digest != request.digest:
+        return False
+    if _canonical(row) != payload:
+        raise ValueError("stop marker is not canonical JSON")
+    return True
 
 
 def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
@@ -50,7 +93,7 @@ def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
 def _event(
     objects: D1TrainerMailboxObjectPort, request: ProbeRequest, name: str, value: dict[str, object]
 ) -> D1TrainerMailboxObjectIdentity:
-    payload = json.dumps(
+    payload = _canonical(
         {
             "schema": "h-worker-event-v1",
             "request_sha256": request.digest,
@@ -58,14 +101,40 @@ def _event(
             "scientific_authority": "none",
             "at": datetime.now(UTC).isoformat(),
             **value,
-        },
-        sort_keys=True,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode()
+        }
+    )
     if len(payload) > request.limits.max_object_bytes:
         raise ValueError("worker event exceeds its byte budget")
     return publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
+
+
+def _publication(
+    ledger: PublicationLedger,
+    ledgered_before: int,
+    paths: tuple[str, ...],
+    l3_seconds: float,
+    retry: VerificationReadRetry,
+    timing: dict[str, float],
+) -> dict[str, object]:
+    """The ONE `publication`-block builder shared by every leg that calls
+    :func:`~entropic_substrate.ladder.run.worker_snapshot.publish_worker_snapshot`
+    with a ledger (FOR-1567/pre-for-1567c). ``timing`` is the runner's L1/L2
+    mirror for the checkpoint leg, or an empty mapping for the final-snapshot
+    leg (see its call site for why that leg's L1/L2 are unmeasured, never
+    reused).
+    """
+    # +1 in both counts below: the snapshot MARKER itself (h-worker-snapshot-v1)
+    # is always a fresh key, never ledgered.
+    new_objects = (len(ledger) - ledgered_before) + 1
+    return {
+        "l1_seconds": timing.get("l1_seconds", 0.0),
+        "l2_seconds": timing.get("l2_seconds", 0.0),
+        "l3_seconds": l3_seconds,
+        "objects_put": new_objects,
+        "objects_skipped": len(paths) - (new_objects - 1),
+        "verification_reads": new_objects,
+        "retries": retry.failures,
+    }
 
 
 def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str, object]:
@@ -103,7 +172,7 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
         or row["successful_optimizer_steps"] != report["successful_optimizer_steps"]
     ):
         raise ValueError("worker result step count differs from admitted training")
-    if row["status"] == "paused":
+    if row["status"] in ("paused", "stopped_by_operator"):
         if report["status"] != "paused" or any(
             row[k] is not None for k in ("generation", "diagnostics", "capture", "verification")
         ):
@@ -167,6 +236,12 @@ def run_object_worker(
     request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
     maximum = request.limits.max_object_bytes
     stage = "materialization"
+    # Owned by exactly this ONE run_object_worker invocation (never
+    # module-level state): the checkpoint-snapshot publication ledger and
+    # the runner's L1/L2 timing mirror it is combined with in each
+    # checkpoint event's `publication` block (FOR-1567).
+    ledger: PublicationLedger = {}
+    publication_timing: dict[str, float] = {}
     try:
         materialize_probe_request(objects, marker, root, max_request_bytes=max_request_bytes)
         (root / "worker").mkdir()
@@ -203,12 +278,22 @@ def run_object_worker(
             total = row["successful_optimizer_steps"]
             if type(total) is not int or total < 1:
                 raise ValueError("worker checkpoint must report measured successful steps")
+            paths = _paths(root, ("run", "worker"))
+            retry = VerificationReadRetry()
+            ledgered_before = len(ledger)
+            l3_started = time.perf_counter()
             snapshot = publish_worker_snapshot(
                 objects,
                 request,
                 root,
-                _paths(root, ("run", "worker")),
+                paths,
                 name=f"checkpoint-{total:08d}",
+                ledger=ledger,
+                retry=retry,
+            )
+            l3_seconds = time.perf_counter() - l3_started
+            publication = _publication(
+                ledger, ledgered_before, paths, l3_seconds, retry, publication_timing
             )
             _event(
                 objects,
@@ -219,8 +304,34 @@ def run_object_worker(
                     "successful_optimizer_steps": total,
                     "training": artifact_reference(root, artifact),
                     "snapshot": asdict(snapshot),
+                    "publication": publication,
                 },
             )
+
+        def stop_requested() -> bool:
+            """One bounded read per call site; never retries an absent marker.
+
+            Reuses rung 1's :class:`VerificationReadRetry` for its attempt
+            count and backoff schedule only (its public fields), never its
+            private ``_verified_read`` (which needs an expected identity and
+            payload this poll does not have). A raised exception is retried
+            up to ``attempts`` total and then re-raised unchanged; a clean
+            ``None`` (absent) or an object read is never retried.
+            """
+            retry = VerificationReadRetry()
+            key = stop_marker_key(request)
+            received = None
+            for index in range(retry.attempts):
+                try:
+                    received = objects.read(key)
+                    break
+                except Exception:
+                    if index == retry.attempts - 1:
+                        raise
+                    retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
+            if received is None:
+                return False
+            return classify_stop_marker(received.payload, request)
 
         stage = "execution"
         result = execute_probe_request(
@@ -230,28 +341,65 @@ def run_object_worker(
             on_checkpoint=checkpoint,
             on_start=start,
             sink=sink,
+            publication_timing=publication_timing,
+            operator_stop=stop_requested,
         )
         result = _admit_result(root, request, result)
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)
         stage = "final_snapshot"
-        name = "paused" if result["status"] == "paused" else "complete"
+        name = (
+            "paused"
+            if result["status"] == "paused"
+            else "stopped"
+            if result["status"] == "stopped_by_operator"
+            else "complete"
+        )
+        final_paths = _paths(root, ("run", "capture", "verification", "worker"))
+        final_retry = VerificationReadRetry()
+        final_ledgered_before = len(ledger)
+        l3_started = time.perf_counter()
         snapshot = publish_worker_snapshot(
             objects,
             request,
             root,
-            _paths(root, ("run", "capture", "verification", "worker")),
+            final_paths,
             name=name,
+            ledger=ledger,
+            retry=final_retry,
         )
-        return _event(
-            objects,
-            request,
-            name,
-            {
-                "status": result["status"],
-                "result": artifact_reference(root, result_artifact),
-                "snapshot": asdict(snapshot),
-            },
+        l3_seconds = time.perf_counter() - l3_started
+        # DN-1567-C (operator, 2026-09-29): the final-snapshot leg -- shared
+        # by all three terminal names, no branch on `name` at this call site
+        # -- reuses the SAME run's ledger (never a fresh {}) and a fresh
+        # VerificationReadRetry(), exactly like the checkpoint leg.
+        #
+        # l1_seconds/l2_seconds are 0.0 here: NOT MEASURED for this leg. L1
+        # (seal_step's ancestor walk) and L2 (read_training_progress) time
+        # the training loop's own seal chain, and that walk already
+        # completed -- and was already reported -- on the last checkpoint-*
+        # event the runner emitted immediately before this terminal status
+        # (runner.py fires `on_checkpoint` at every seal boundary it
+        # reaches, unconditionally, including the final one). Reusing those
+        # same numbers here would double-report one measurement under two
+        # event names, not record a second one. Two further full-chain
+        # re-walks DO happen on this leg -- `worker_execution.py`'s own
+        # post-training `read_training_progress` call and `_admit_result`'s
+        # `read_training_progress` call above (:133 in this file) -- and
+        # neither is instrumented, so their cost is genuinely unmeasured
+        # here. 0.0 means "not measured for this leg", never "measured
+        # zero".
+        publication = _publication(
+            ledger, final_ledgered_before, final_paths, l3_seconds, final_retry, {}
         )
+        event_value: dict[str, object] = {
+            "status": result["status"],
+            "result": artifact_reference(root, result_artifact),
+            "snapshot": asdict(snapshot),
+            "publication": publication,
+        }
+        if result["status"] == "stopped_by_operator":
+            event_value["successful_optimizer_steps"] = result["successful_optimizer_steps"]
+        return _event(objects, request, name, event_value)
     except Exception as error:
         status = (
             "scientific_gap"

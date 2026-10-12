@@ -15,7 +15,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final
+from typing import Final, NoReturn
+
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 
 _SHA256_LENGTH: Final[int] = 64
 # v4 admits measured-zero gradients and typed undefined zero-vector cosine.
@@ -31,16 +33,6 @@ def require_nonempty_string(value: str, *, label: str) -> None:
     """Refuse blank construction identities at their boundary."""
     if type(value) is not str or not value.strip():
         msg = f"{label} must be a non-empty string"
-        raise ValueError(msg)
-
-
-def require_sha256(value: str, *, label: str) -> None:
-    """Refuse any identity that is not a complete SHA-256 digest."""
-    if type(value) is not str or len(value) != _SHA256_LENGTH:
-        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
-        raise ValueError(msg)
-    if any(character not in string.hexdigits for character in value):
-        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
         raise ValueError(msg)
 
 
@@ -192,27 +184,9 @@ class EvidenceClass(StrEnum):
     PROVIDER_BILLED = "provider_billed"
 
 
-@dataclass(frozen=True, slots=True)
-class EncoderShape:
-    """Legacy width-only contract retained for narrow adapter compatibility."""
-
-    online_width: int
-    target_width: int
-
-    def __post_init__(self) -> None:
-        if type(self.online_width) is not int or self.online_width < 1:
-            msg = "online_width must be a positive integer"
-            raise ValueError(msg)
-        if type(self.target_width) is not int or self.target_width < 1:
-            msg = "target_width must be a positive integer"
-            raise ValueError(msg)
-        if self.online_width != self.target_width:
-            msg = "D1 requires equal widths for online and target encoders"
-            raise ValueError(msg)
-
-    @property
-    def manifest(self) -> dict[str, object]:
-        return {"online_width": self.online_width, "target_width": self.target_width}
+def _construction_digest_refused(reason: str) -> NoReturn:
+    msg = f"encoder initialization digest must be a lowercase hexadecimal SHA-256 digest ({reason})"
+    raise ValueError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +198,7 @@ class EncoderInitializationIdentity:
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.name, label="encoder initialization name")
-        require_sha256(self.construction_digest, label="encoder initialization digest")
+        require_lowercase_sha256(self.construction_digest, fail=_construction_digest_refused)
 
     @property
     def manifest(self) -> dict[str, object]:

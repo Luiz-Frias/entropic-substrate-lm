@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
+from entropic_substrate.ladder.capture.ports.run_descriptor import LegacyMetricExtractor
 from entropic_substrate.ladder.capture.reader.sinks import (
     CompositeSink,
     ExtractedMetrics,
@@ -147,7 +151,117 @@ def test_mlflow_sink_uses_an_injected_extractor_without_mutating_the_event() -> 
     )
 
     sink.log(event)
+    sink.finish()
 
     assert extractor.seen == [event]
     assert event == before
     assert client._runs[sink.run_id].data.metrics == {"custom/measured/value": 1.2345678901234567}
+
+
+def test_legacy_extractor_ignores_a_non_mapping_and_a_non_eval_record() -> None:
+    """The runtime refusals survive the static narrowing (return None, never raise)."""
+    extractor = LegacyMetricExtractor()
+    assert extractor.extract("not-a-mapping") is None  # type: ignore[arg-type]
+    assert extractor.extract({"event": "train", "loss": 1.0}) is None
+    assert extractor.extract({"event": "eval", "step": 4, "loss": 1.5}) is not None
+
+
+# ---------------------------------------------------- typing fixture (FOR-1569)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_D1_MARKER = "# D1-MUST-FAIL"
+_H_EXTRACTOR_MARKER = "# H-MUST-FAIL"
+_LEGACY_EXTRACTOR_MARKER = "# LEGACY-MUST-FAIL"
+_D1_OBSERVER_MARKER = "# D1-OBSERVER-MUST-FAIL"
+_TYPING_FIXTURE = """
+from pathlib import Path
+
+from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.adapters.d1_observability import D1MlflowObserver
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.ports.run_descriptor import (
+    LegacyMetricExtractor,
+    TrackingRunDescriptor,
+)
+from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
+
+descriptor = TrackingRunDescriptor(run_name="r", tiny=True, params={}, tags={})
+results = Path("results.jsonl")
+h_extractor = HTrainingStepExtractor(warmup_steps=0)
+legacy_extractor = LegacyMetricExtractor()
+h_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=h_extractor
+)
+legacy_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=legacy_extractor
+)
+default_sink = build_sink_for_run(descriptor, results_path=results)
+d1_extractor = D1MetricExtractor()
+d1_sink = build_sink_for_run(
+    descriptor, results_path=results, metric_extractor=d1_extractor  # D1-MUST-FAIL
+)
+# Direct-call negatives: H and Legacy extractors cannot accept non-mapping inputs
+h_extract_bad = h_extractor.extract("x")  # H-MUST-FAIL
+legacy_extract_bad = legacy_extractor.extract(1)  # LEGACY-MUST-FAIL
+# D1MlflowObserver with incompatible extractor
+d1_observer_bad = D1MlflowObserver(client=object(), run_id="r", extractor=h_extractor)  # D1-OBSERVER-MUST-FAIL
+d1_observer_ok = D1MlflowObserver(client=object(), run_id="r", extractor=d1_extractor)
+
+"""
+
+
+def test_door_rejects_the_d1_extractor_and_admits_the_h_and_legacy_ones(
+    tmp_path: Path,
+) -> None:
+    """The narrowed extractor signatures are type errors at the four wrong-input sites.
+
+    FOR-1569: ``build_sink_for_run(metric_extractor=D1MetricExtractor())``, a direct
+    ``extract`` call on the H and legacy extractors with a non-mapping, and a
+    ``D1MlflowObserver`` built with the H extractor. The controls (H, legacy and
+    default through the door, the D1 extractor through the observer) must stay clean.
+
+    Run by the venv-pinned checker ``just typecheck`` uses, from the repo root so
+    the repo's basedpyright config applies and ``entropic_substrate`` resolves
+    (tests are excluded from the repo's own pass).
+    """
+    fixture = tmp_path / "typing_fixture.py"
+    fixture.write_text(_TYPING_FIXTURE, encoding="utf-8")
+    # Find all MUST-FAIL marker lines
+    must_fail_lines = [
+        number
+        for number, line in enumerate(_TYPING_FIXTURE.splitlines(), start=1)
+        if any(
+            m in line
+            for m in [
+                _D1_MARKER,
+                _H_EXTRACTOR_MARKER,
+                _LEGACY_EXTRACTOR_MARKER,
+                _D1_OBSERVER_MARKER,
+            ]
+        )
+    ]
+    result = subprocess.run(
+        [sys.executable, "-m", "basedpyright", "--outputjson", str(fixture)],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.stdout.strip(), (result.returncode, result.stderr)
+    report = json.loads(result.stdout)
+    diagnostics = [
+        (item.get("rule"), item["range"]["start"]["line"] + 1)
+        for item in report["generalDiagnostics"]
+    ]
+    assert report["summary"]["filesAnalyzed"] == 1
+    # Expect exactly 4 reportArgumentType diagnostics, one per MUST-FAIL marker
+    assert len(diagnostics) == 4, (diagnostics, result.stderr)
+    assert all(rule == "reportArgumentType" for rule, _ in diagnostics), (
+        diagnostics,
+        result.stderr,
+    )
+    assert sorted([line for _, line in diagnostics]) == sorted(must_fail_lines), (
+        diagnostics,
+        must_fail_lines,
+        result.stderr,
+    )

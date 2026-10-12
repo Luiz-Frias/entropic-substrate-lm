@@ -68,3 +68,23 @@ def test_empty_and_invalid_rows_remain_distinct_provider_outcomes() -> None:
             start=_start(),
             checked_at=datetime(2026, 8, 26, 18, tzinfo=UTC),
         )
+
+
+@pytest.mark.parametrize(
+    "amount_token",
+    ["1e9999999999999999999999", "-1e9999999999999999999999", "1e-9999999999999999999999"],
+)
+def test_decimal_signal_from_an_out_of_range_amount_token_is_a_schema_error(
+    amount_token: str,
+) -> None:
+    raw = (
+        f'[{{"amount":{amount_token},"podId":"pod-123",'
+        '"time":"2026-08-26 17:00:00","timeBilledMs":1000}]'
+    )
+    with pytest.raises(RunpodBillingSchemaError, match="not a valid decimal"):
+        parse_runpodctl_billing_observation(
+            raw,
+            pod_id="pod-123",
+            start=_start(),
+            checked_at=datetime(2026, 8, 26, 18, tzinfo=UTC),
+        )

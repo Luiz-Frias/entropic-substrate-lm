@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import require_mapping, strict_loads
 from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     D1ChannelMoments,
     D1CosineGap,
@@ -80,9 +81,9 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail("D1 evaluation must be a JSON object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail("D1 evaluation must be a JSON object with string keys")
+    )
 
 
 def _floating(value: object, *, field: str) -> float:
@@ -262,24 +263,11 @@ def serialize_d1_evaluation(result: D1EvalResult) -> bytes:
     ).encode()
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"D1 evaluation contains duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_evaluation(payload: bytes) -> D1EvalResult:
     if type(payload) is not bytes or not payload:
         _fail("D1 evaluation payload must be nonempty bytes")
     try:
-        value = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(f"non-finite JSON constant {constant}"),
-        )
+        value = strict_loads(payload, fail=_fail)
     except D1EvaluationCodecError:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

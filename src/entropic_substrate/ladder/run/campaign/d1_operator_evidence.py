@@ -18,7 +18,6 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import Evidenc
 from entropic_substrate.kernel.identity.d1_primitives import (
     canonical_digest,
     require_nonempty_string,
-    require_sha256,
 )
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 from entropic_substrate.kernel.lifecycle import (
@@ -39,6 +38,7 @@ from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
     D1RunStatus,
     D1TailQuarantineKind,
 )
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 from entropic_substrate.ladder.run.closure.d1_billing_finalization_values import D1TrainerHandoff
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
@@ -164,7 +164,7 @@ def attest_d1_trainer_start(
         (runtime_sha256, "runtime"),
         (command_sha256, "command"),
     ):
-        require_sha256(value, label=f"D1 trainer start {label}")
+        require_lowercase_digest(value, label=f"D1 trainer start {label}")
     if (
         type(trainer_started_at) is not datetime
         or trainer_started_at.tzinfo is None

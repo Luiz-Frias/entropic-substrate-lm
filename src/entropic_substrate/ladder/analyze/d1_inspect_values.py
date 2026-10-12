@@ -12,7 +12,6 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import RunStar
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     RunClass,
-    require_sha256,
 )
 from entropic_substrate.kernel.verdict.d1_evaluation_values import (
     TARGET_PREDICTED_EXACT_MATCH_SEMANTIC,
@@ -28,6 +27,7 @@ from entropic_substrate.ladder.capture.records.d1_telemetry_values import (
 )
 from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
 from entropic_substrate.ladder.register.d1_execution import PAIRWISE_COSINE_SEMANTIC
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 __all__ = [
     "D1_INSPECT_MAX_EVALUATIONS",
@@ -76,7 +76,7 @@ class D1InspectJournal:
         _nonempty(self.path, field="journal path")
         _nonempty(self.relative_path, field="journal relative_path")
         _count(self.byte_count, field="journal byte_count", positive=True)
-        require_sha256(self.sha256, label="D1 inspect journal sha256")
+        require_lowercase_digest(self.sha256, label="D1 inspect journal sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +102,7 @@ class D1InspectRun:
             "plan_digest",
             "authority_digest",
         ):
-            require_sha256(getattr(self, field), label=f"D1 inspect {field}")
+            require_lowercase_digest(getattr(self, field), label=f"D1 inspect {field}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +172,7 @@ class D1InspectCheckpoint:
 
     def __post_init__(self) -> None:
         _count(self.successful_step, field="checkpoint successful_step")
-        require_sha256(self.sha256, label="D1 inspect checkpoint sha256")
+        require_lowercase_digest(self.sha256, label="D1 inspect checkpoint sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,7 +289,7 @@ class D1InspectEventRef:
             raise TypeError("D1 inspect event kind must be nominal")
         _count(self.event_seq, field="event sequence")
         _count(self.successful_step, field="event successful_step")
-        require_sha256(self.event_sha256, label="D1 inspect event sha256")
+        require_lowercase_digest(self.event_sha256, label="D1 inspect event sha256")
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import NoReturn, Protocol, SupportsIndex
 
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
 from entropic_substrate.ladder.file.d1_filing_receipts import (
@@ -55,13 +56,10 @@ def _text(value: str, label: str) -> None:
 
 
 def _digest(value: str, label: str) -> None:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or value != value.lower()
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise ValueError(f"{label} must be lowercase SHA-256")
+
+    require_lowercase_sha256(value, fail=fail)
 
 
 def _canonical(value: object) -> str:

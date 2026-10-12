@@ -44,12 +44,7 @@ class D1DvcPointerIdentity:
     object_id: str
 
     def __post_init__(self) -> None:
-        D1DvcBinding(
-            state=D1DvcBindingState.BOUND,
-            pointer_path=self.pointer_path,
-            pointer_sha256=self.pointer_sha256,
-            object_id=self.object_id,
-        )
+        _ = self.binding  # eager validation through the one constructor site
 
     @property
     def binding(self) -> D1DvcBinding:
@@ -78,7 +73,7 @@ class D1GitPointerCommitEvidence:
             or any(character not in "0123456789abcdef" for character in self.commit)
         ):
             raise ValueError("pointer commit must be lowercase hexadecimal")
-        D1DvcPointerIdentity(self.pointer_path, self.pointer_sha256, self.object_id)
+        _ = self.binding  # eager validation through the one constructor site
 
     @property
     def binding(self) -> D1DvcBinding:

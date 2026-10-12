@@ -19,12 +19,9 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
     SegmentStartMode,
     execution_segment_id,
 )
-from entropic_substrate.kernel.identity.d1_primitives import (
-    RunClass,
-    require_nonempty_string,
-    require_sha256,
-)
+from entropic_substrate.kernel.identity.d1_primitives import RunClass, require_nonempty_string
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 _OCI_DIGEST: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FULL_COMMIT: Final = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -212,7 +209,7 @@ class D1OperatorLaunchIntent:
         elif self.resume_checkpoint_sha256 is None:
             raise ValueError("resume checkpoint is required for a later segment")
         else:
-            require_sha256(self.resume_checkpoint_sha256, label="resume checkpoint")
+            require_lowercase_digest(self.resume_checkpoint_sha256, label="resume checkpoint")
         if type(self.terminate_after_seconds) is not int or self.terminate_after_seconds < 1:
             raise ValueError("terminate_after_seconds must be a positive integer")
         execution = self.plan.run.execution
@@ -223,7 +220,7 @@ class D1OperatorLaunchIntent:
         if self.plan.run.run_class is RunClass.CONFIRMATORY:
             if self.registered_design_digest is None:
                 raise ValueError("confirmatory launch requires registered_design_digest")
-            require_sha256(
+            require_lowercase_digest(
                 self.registered_design_digest,
                 label="registered_design_digest",
             )

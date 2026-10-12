@@ -153,7 +153,9 @@ authoritative version:
    record in `docs/e-3-instruction.md`): per-head attention logits `−d_κ(q,k)²` with one
    learnable clamped curvature per head (init spread −1/0/+1); E2 is the exact κ=0 member
    (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
-   `core/geometry/kappa_norm.py` is retained but measured radially-annihilated (`≡ UnitNorm`,
+   `GatedKappaNorm` (now beside `build_norm` in `core/substrate/blocks.py`; the
+   `core/geometry/kappa_norm.py` module was retired in p14-t-core, FOR-1597, commit 82e584e)
+   is retained but measured radially-annihilated (`≡ UnitNorm`,
    pinned by regression test — curvature is relational and cannot act on a single point at
    a chart origin under a unit-norm contract). The anchored arms `e3-anchor` (per-head κ +
    global asymmetric anchors) and `e3-vantage` (global κ + per-head anchors; attribution

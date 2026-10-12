@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 import torch
 
 from entropic_substrate.core.latent.state import LatentTrajectory, TargetEncoder
-from entropic_substrate.core.latent.targets import (
+from entropic_substrate.core.latent.target_values import (
     FutureTarget,
     one_step_displacement,
     one_step_target_from_context,
@@ -46,3 +48,9 @@ def test_target_encoder_constructs_one_step_target_only_from_legal_t_plus_one_co
             context,
             ObservationAlignment.predictive(start=9, sequence_length=3, horizon=2),
         )
+
+
+def test_retired_targets_facade_is_not_importable() -> None:
+    """FOR-1594: callers import the owning modules, never a re-export facade."""
+    facade = "entropic_substrate.core.latent." + "targets"
+    assert importlib.util.find_spec(facade) is None

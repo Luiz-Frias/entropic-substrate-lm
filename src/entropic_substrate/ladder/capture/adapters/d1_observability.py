@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
-from entropic_substrate.ladder.capture.ports.run_descriptor import MetricExtractor
+from entropic_substrate.ladder.capture.ports.run_descriptor import ExtractedMetrics
 from entropic_substrate.ladder.capture.records.d1_journal import (
     AuthoritativeRunJournal,
     JournalTailQuarantineReceipt,
@@ -21,6 +21,7 @@ from entropic_substrate.ladder.capture.records.d1_journal_values import (
 
 __all__ = [
     "AuthoritativeJournalOnlyObserver",
+    "D1EventMetricExtractor",
     "D1JournalObserver",
     "D1MlflowMetricClient",
     "D1MlflowObserver",
@@ -55,10 +56,29 @@ class D1MlflowMetricClient(Protocol):
     ) -> object: ...
 
 
+@runtime_checkable
+class D1EventMetricExtractor(Protocol):
+    """Strategy projecting one durable D1 journal event into optional scalar metrics.
+
+    Typed on :class:`D1JournalEvent`, so it is NOT the record-shaped
+    ``MetricExtractor`` that ``build_sink_for_run`` consumes. The runtime
+    ``isinstance`` against this class checks only that ``extract`` exists; it
+    cannot tell this protocol apart from that one.
+    """
+
+    def extract(self, event: D1JournalEvent) -> ExtractedMetrics | None: ...
+
+
 def _require_observer(observer: object) -> D1JournalObserver:
     if not isinstance(observer, D1JournalObserver):
         raise TypeError("observer must implement D1JournalObserver")
     return observer
+
+
+def _require_extractor(extractor: object) -> D1EventMetricExtractor:
+    if not isinstance(extractor, D1EventMetricExtractor):
+        raise TypeError("extractor must implement MetricExtractor")
+    return extractor
 
 
 class D1MlflowObserver:
@@ -76,18 +96,17 @@ class D1MlflowObserver:
         *,
         client: object,
         run_id: str,
-        extractor: object | None = None,
+        extractor: D1EventMetricExtractor | None = None,
     ) -> None:
         if not isinstance(client, D1MlflowMetricClient):
             raise TypeError("client must implement the MLflow metric client contract")
         if type(run_id) is not str or not run_id.strip():
             raise ValueError("run_id must be a non-empty string")
-        selected: object = extractor if extractor is not None else D1MetricExtractor()
-        if not isinstance(selected, MetricExtractor):
-            raise TypeError("extractor must implement MetricExtractor")
         self._client = client
         self._run_id = run_id
-        self._extractor = selected
+        self._extractor = _require_extractor(
+            extractor if extractor is not None else D1MetricExtractor()
+        )
 
     def observe(self, event: D1JournalEvent) -> None:
         extracted = self._extractor.extract(event)

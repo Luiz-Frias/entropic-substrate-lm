@@ -12,7 +12,8 @@ from dataclasses import field as dataclass_field
 from enum import StrEnum
 from typing import NoReturn, Protocol, SupportsIndex
 
-from entropic_substrate.kernel.identity.d1_primitives import canonical_digest, require_sha256
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
+from entropic_substrate.kernel.identity.d1_primitives import canonical_digest
 from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1_ANALYSIS_EXECUTION_RECEIPT_SCHEMA,
     D1AnalysisExecutionReceipt,
@@ -55,10 +56,10 @@ __all__ = [
 
 
 def _sha256(value: str, *, label: str) -> None:
-    try:
-        require_sha256(value, label=label)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{label} must be a lowercase SHA-256 digest") from error
+    def fail(_reason: str) -> NoReturn:
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+
+    require_lowercase_sha256(value, fail=fail)
 
 
 def _commit(value: str) -> None:

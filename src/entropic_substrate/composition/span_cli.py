@@ -14,8 +14,8 @@ from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
+    normalize_d1_artifact_directory,
     normalize_d1_artifact_root,
-    normalize_d1_relative_artifact_path,
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
@@ -26,18 +26,14 @@ from entropic_substrate.ladder.run.span_diagnostics import (
 )
 from entropic_substrate.ladder.run.span_states import SpanPopulationGap
 
+_DIRECTORY_LABEL = "span command directory"
+
 
 def add_span_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
     for name in ("h-diagnose-spans", "h-inspect-spans"):
         parser = sub.add_parser(name, help="run or inspect report-only sentence score diagnostics")
         parser.add_argument("--root", required=True, type=Path)
         parser.add_argument("--manifest", required=True)
-
-
-def _directory(root: Path, value: object) -> Path:
-    return normalize_d1_artifact_root(
-        root / normalize_d1_relative_artifact_path(value, label="span command directory")
-    )
 
 
 def _config(value: object) -> ProbeConfig:
@@ -108,7 +104,10 @@ def cmd_span(args: argparse.Namespace) -> int:
                 root, artifact_from_mapping(row["profile"]), max_bytes=limits["max_artifact_bytes"]
             )
         )
-        source, output = _directory(root, row["source_root"]), _directory(root, row["output_root"])
+        source, output = (
+            normalize_d1_artifact_directory(root, row["source_root"], label=_DIRECTORY_LABEL),
+            normalize_d1_artifact_directory(root, row["output_root"], label=_DIRECTORY_LABEL),
+        )
         training = artifact_from_mapping(row["training"])
         if inspect:
             result = read_span_diagnostics(

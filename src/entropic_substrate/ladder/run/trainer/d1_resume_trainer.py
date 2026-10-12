@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -13,17 +12,10 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
 )
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     D1JournalObserver,
-    ObservedD1Journal,
 )
 from entropic_substrate.ladder.capture.records.d1_journal import JournalTailQuarantineReceipt
 from entropic_substrate.ladder.capture.records.d1_journal_values import (
-    D1JournalEvent,
-    FrozenJson,
     JournalCheckpointState,
-    JournalEventKind,
-)
-from entropic_substrate.ladder.capture.resource.resource_ledger import (
-    ResourceLedger,
 )
 from entropic_substrate.ladder.capture.resource.resource_work import ResourceWorkSnapshot
 from entropic_substrate.ladder.register.d1_plan import D1RunPlan
@@ -33,11 +25,6 @@ from entropic_substrate.ladder.run.resource.d1_resource_activation import (
 from entropic_substrate.ladder.run.trainer.checkpoint_repository import (
     D1CheckpointArtifactReceipt,
 )
-from entropic_substrate.ladder.run.trainer.d1_dual_failure import (
-    D1PrimarySecondaryFailure,
-    D1SecondaryFailureEvidence,
-    D1SecondaryFailureStage,
-)
 from entropic_substrate.ladder.run.trainer.d1_evaluation import D1EvalResult
 from entropic_substrate.ladder.run.trainer.d1_resume_runtime import (
     D1ResumeRunLocations,
@@ -45,7 +32,7 @@ from entropic_substrate.ladder.run.trainer.d1_resume_runtime import (
     restore_d1_resume_runtime,
 )
 from entropic_substrate.ladder.run.trainer.d1_terminal_failure import (
-    terminal_numerical_defect_for_failure,
+    _trainer_failure,
 )
 from entropic_substrate.ladder.run.trainer.d1_trainer_runtime import (
     D1TrainerClock,
@@ -184,114 +171,6 @@ class D1ResumeRunFailure(RuntimeError):
             f"D1 resumed trainer failed after step {handoff.termination.successful_step}: "
             f"{handoff.error_type}: {handoff.error_message}"
         )
-
-
-def _event(
-    plan: D1RunPlan,
-    journal: ObservedD1Journal,
-    kind: JournalEventKind,
-    step: int,
-    payload: Mapping[str, object],
-) -> D1JournalEvent:
-    return D1JournalEvent(
-        event_kind=kind,
-        event_seq=journal.state.last_event_sequence + 1,
-        logical_run_id=plan.logical_run_id,
-        execution_digest=plan.run.execution_digest,
-        aggregation_digest=plan.run.aggregation_digest,
-        construction_digest=plan.run.construction_digest,
-        family_digest=plan.profile.family.family_digest,
-        run_class=plan.run.run_class,
-        successful_step=step,
-        payload=cast(Mapping[str, FrozenJson], payload),
-    )
-
-
-def _trainer_failure(
-    plan: D1RunPlan,
-    journal: ObservedD1Journal,
-    ledger: ResourceLedger,
-    start: RunStartProvenance,
-    clock: D1TrainerClock,
-    step: int,
-    model_step: int,
-    error: Exception,
-    checkpoint_sha256: str | None,
-) -> tuple[D1TrainerFailureHandoff, BaseException]:
-    trainer_ended_at = clock.utc_now()
-    secondary_failure: D1SecondaryFailureEvidence | None = None
-    failure_cause: BaseException = error
-    try:
-        ledger.record_meter_observation(monotonic_ns=clock.monotonic_ns())
-    except Exception as meter_error:
-        secondary_failure = D1SecondaryFailureEvidence.from_error(
-            D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
-            meter_error,
-        )
-        failure_cause = D1PrimarySecondaryFailure(
-            error,
-            meter_error,
-            secondary_stage=D1SecondaryFailureStage.TERMINAL_METER_REFRESH,
-        )
-    journal_cursor = journal.state
-    resource_state = ledger.current_state()
-    error_message = str(error) or repr(error)
-    payload: dict[str, object] = {
-        "error_message": error_message,
-        "error_type": type(error).__name__,
-        "execution_segment_id": start.execution_segment_id,
-        "execution_segment_index": start.execution_segment_index,
-        "journal_cursor": journal_cursor.manifest,
-        "logical_run_id": start.logical_run_id,
-        "model_successful_step": model_step,
-        "operator_finalization_required": True,
-        "resource_ledger_state": resource_state.manifest,
-        "rollback_claimed": False,
-        "secondary_failure": (None if secondary_failure is None else secondary_failure.manifest),
-        "trainer_ended_at": trainer_ended_at.isoformat().replace("+00:00", "Z"),
-    }
-    numerical_defect = terminal_numerical_defect_for_failure(
-        error,
-        plan=plan,
-        start=start,
-        resource_state=resource_state,
-        successful_step=step,
-        checkpoint_sha256=checkpoint_sha256,
-    )
-    if numerical_defect is not None:
-        payload["numerical_defect"] = numerical_defect.manifest
-    try:
-        journal.append(
-            _event(
-                plan,
-                journal,
-                JournalEventKind.TRAINER_ABORTED,
-                step,
-                payload,
-            )
-        )
-    except Exception as append_error:
-        raise D1PrimarySecondaryFailure(
-            failure_cause,
-            append_error,
-            secondary_stage=D1SecondaryFailureStage.TRAINER_ABORT_APPEND,
-        ) from error
-    termination = capture_d1_trainer_termination(
-        start=start,
-        trainer_ended_at=trainer_ended_at,
-        successful_step=step,
-        model_successful_step=model_step,
-        journal_state=journal.state,
-        resource_ledger_state=resource_state,
-    )
-    return (
-        D1TrainerFailureHandoff.from_error(
-            termination,
-            error,
-            secondary_failure=secondary_failure,
-        ),
-        failure_cause,
-    )
 
 
 def run_d1_resume(

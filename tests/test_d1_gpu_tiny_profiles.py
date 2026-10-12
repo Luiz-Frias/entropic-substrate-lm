@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from entropic_substrate.kernel.runtime.config import configs_dir
 from entropic_substrate.ladder.register.d1_config import (
-    d1_configs_dir,
     load_d1_profile,
     load_d1_profile_catalog,
 )
@@ -74,9 +74,9 @@ def test_unknown_tiny_target_is_rejected() -> None:
 def test_gpu_overlay_rejects_axis_mutation_or_silent_cpu_fallback(
     tmp_path: Path, section: str, key: str, value: object, message: str
 ) -> None:
-    payload = yaml.safe_load((d1_configs_dir() / "d1-gpu-tiny.yaml").read_text())
+    payload = yaml.safe_load((configs_dir() / "d1-gpu-tiny.yaml").read_text())
     payload[section][key] = value
     overlay = tmp_path / "overlay.yaml"
     overlay.write_text(yaml.safe_dump(payload))
     with pytest.raises(ValueError, match=message):
-        load_d1_profile(d1_configs_dir() / "d1-both.yaml", tiny_overlay_path=overlay)
+        load_d1_profile(configs_dir() / "d1-both.yaml", tiny_overlay_path=overlay)

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     PurchaseOption,
     RunStartProvenance,
@@ -58,23 +59,15 @@ def _error(operation: str, subject: str, detail: str, cause: Exception | None = 
     raise error from None
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("provider JSON repeats a key")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    del value
+def _reject(reason: str) -> NoReturn:
+    if reason.startswith("duplicate key"):
+        raise ValueError("provider JSON repeats a key")
     raise ValueError("provider JSON contains a non-finite constant")
 
 
 def _decode(raw: str, *, operation: str, subject: str) -> dict[str, object]:
     try:
-        value: object = json.loads(raw, object_pairs_hook=_pairs, parse_constant=_nonfinite)
+        value = strict_loads(raw, fail=_reject)
     except (json.JSONDecodeError, ValueError):
         _error(operation, subject, "provider response is invalid JSON")
     if type(value) is not dict:
@@ -83,7 +76,8 @@ def _decode(raw: str, *, operation: str, subject: str) -> dict[str, object]:
 
 
 def _exact(value: dict[str, object], keys: set[str], *, operation: str, subject: str) -> None:
-    if set(value) != keys:
+    missing, unexpected = exact_keys(value, frozenset(keys))
+    if missing or unexpected:
         _error(operation, subject, "provider response keys differ from the adapter schema")
 
 
@@ -197,11 +191,7 @@ class RunpodctlD1Adapter:
         if not lines:
             return None
         try:
-            value: object = json.loads(
-                lines[-1],
-                object_pairs_hook=_pairs,
-                parse_constant=_nonfinite,
-            )
+            value = strict_loads(lines[-1], fail=_reject)
         except (json.JSONDecodeError, ValueError):
             return None
         if type(value) is not dict:

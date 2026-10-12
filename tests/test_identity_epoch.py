@@ -327,6 +327,70 @@ untouched: ``ladder.run.checkpoint`` is not one of h-source-reader-v3's seven
 fixed members, confirmed by re-measuring both source rows unchanged with the
 same tool invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
 
+pre-for-1567 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-09-28, p14 pre-phase rung FOR-1567, operator ruling 7
++ ruling R-PIN, design-gate ruling DG-A): h-checkpoint-reader-v2 changes
+because seven of its 51 members changed bytes -- ``ladder.run.seals`` (seal
+memo, incremental verification against the memoised parent),
+``ladder.run.worker_snapshot`` (in-process publication ledger),
+``ladder.run.worker_transport`` (bounded retry on verification READS only),
+``ladder.run.runner`` / ``ladder.run.worker_execution`` /
+``ladder.run.object_worker`` (per-leg publication timing carrier + the
+``publication`` block on checkpoint events) and
+``ladder.run.evaluation_records`` (memo passthrough, DG-B). Label and member
+set unchanged (the door is the label and the shape). Both rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point
+(the p6-core lesson). The OLD values they replace,
+``300334a9cce05c443e469e68ed1ce3bfd0ac008a2f68ed2f51403a0b2a3794c1``
+(local) and
+``c42a3d1adba0b4542abb66f6137be53ce5b6a8ca31ea7c00a8e1a576c4069a9f``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: none of the seven touched members is one of h-source-reader-v3's
+seven fixed members, confirmed by re-measuring both source rows unchanged with
+the same tool invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
+
+pre-for-1617 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-09-29, p14 pre-phase rung FOR-1617, operator ruling 7
++ ruling R-PIN, design-gate ruling DG-A carried over): h-checkpoint-reader-v2
+changes because two of its 51 members changed bytes --
+``ladder.run.object_worker`` (stop-marker schema, encoder and classifier, the
+bounded ``stop_requested`` poll at seal boundaries over the existing
+``VerificationReadRetry`` fields, and the ``stopped`` terminal wiring) and
+``ladder.run.worker_execution`` (the ``operator_stop`` poll composed with
+``request.pause`` inside ``stop_after_seal``). ``ladder.run.runner`` needed no
+byte change: it already exposed ``stop_after_seal`` once per seal boundary.
+Label and member set unchanged. Both rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point.
+The OLD values they replace,
+``ae100745d962684bfc82fc1f01e145b45045ad705185dd8bcbd64dab4b35e7d8``
+(local) and
+``37590887e88ca26e499a54453f16ad033af4f6f037a4cb55a8427836dd420b05``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: neither member is one of h-source-reader-v3's seven fixed members,
+confirmed by re-measuring both source rows unchanged with the same tool
+invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
+
+pre-for-1567c re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-09-29, p14 pre-phase rung FOR-1621, operator ruling
+DN-1567-C option C + ruling R-PIN, design-gate ruling DG-A carried over):
+h-checkpoint-reader-v2 changes because two of its 51 members changed bytes --
+``ladder.run.object_worker`` (one shared ``_publication`` block builder; the
+final-snapshot leg now reuses the run's publication ledger and a fresh
+``VerificationReadRetry`` and writes the ``publication`` block on every
+terminal event) and ``ladder.run.worker_completion`` (``admit_publication``,
+the single validator both readers reuse; the ``complete`` event admits the
+optional ``publication`` key, read-old/write-new). ``h_probe_events`` is not
+a member. Label and member set unchanged. Both rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point.
+The OLD values they replace,
+``44052b3f34f8f16843b5a35094583929932dfeff6ab42b9f3d9202063c6ca127``
+(local) and
+``072ef7770347234d6ca3045b349d69a608e002783b7d7b41e4956c3e0098c215``
+(CI), are retracted here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is
+untouched: neither member is one of h-source-reader-v3's seven fixed members,
+confirmed by re-measuring both source rows unchanged with the same tool
+invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -336,6 +400,38 @@ over tracked source confirms zero remaining importers of
 ``installed_d1_reader_source_files`` once this row is removed. This is the
 one D1 closure manifest row this phase's ruled bump touches; every other
 fixture value below stays byte-identical to p0/p1.
+CI regime row added (house rule 4, MEASURED 2026-10-02): the GitHub runners
+resolve mise's floating ``python = "3.12"`` to CPython 3.12.15 since
+2026-10-02 (run 37006785236 on PR #323, and the same signature on #320-#322),
+while the last green trunk run (36870794433 at b11855d, 2026-10-01) installed
+3.12.14, so ``h-checkpoint-reader-v2 has no fixture row for regime
+('3.12.15', '2.13.0+cpu')`` failed loud by name as this fixture is designed
+to. No reader member changed: the 3.12.14 rows are RETAINED (that regime is
+still real), and the 3.12.15 rows are ADDED, computed with
+``tools/regime_rows.py --python 3.12.15 --torch 2.13.0+cpu --pysbd 0.3.4``
+(the same instrument that produced the 3.12.14 rows, run on the macOS
+checkout; the first CI run at this tip is the live confirmation). The
+source-derived assertions below are untouched. The floating patch pin is the
+root cause and is recorded as a separate decision for the toolchain owner.
+p14-z-identity RE-PIN (ruling R-PIN, design-gate DG-A, MEASURED 2026-10-07):
+the identity rail's ONE conductor commit carries the lane's staged change
+set for FOR-1589 (a dir_fd descent helper owning the descriptor lifecycle
+in ``kernel/artifacts.py``), FOR-1588 (one artifact-directory helper for
+the five CLI sites) and FOR-1596 (shared score-gain summary arithmetic,
+moved out of the reader-hashed bytes of ``core.probe.score_gain`` into
+``core/probe/predictive_score_gain.py``, which is not a member). 6 of the
+51 checkpoint members changed bytes (``composition.capture_cli``,
+``composition.cli``, ``composition.source_cli``, ``composition.span_cli``,
+``core.probe.score_gain``, ``kernel.artifacts``) and 1 of the 7 source
+members (``kernel.artifacts``); both labels and both module sets are
+unchanged. All six rows were re-measured with ``tools/regime_rows.py`` on
+the staged tree after ``ruff format --check`` reported a fixed point, and
+cross-checked by the lane with plain hashlib over the member files. The
+previous values (checkpoint 15ca5961 / 5bc5602e / 18823965, source
+aa4702a2 / 5ea5ca80 / 904eaa93) are retracted here, not silently
+overwritten (house rule 4). Both regime-row tests were RED on the staged
+tree before this re-pin (the brief's "type a digest instead of measuring
+it" arm, measured 2 failed / 5909 passed) and are GREEN after it.
 """
 
 from __future__ import annotations
@@ -472,22 +568,30 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "300334a9cce05c443e469e68ed1ce3bfd0ac008a2f68ed2f51403a0b2a3794c1",  # pragma: allowlist secret
+    ): "7b63779ad3e9ae6370280b0ae6cf4548eace096eca084561cf26a0aadf437b53",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "c42a3d1adba0b4542abb66f6137be53ce5b6a8ca31ea7c00a8e1a576c4069a9f",  # pragma: allowlist secret
+    ): "8d46e4d3293b433e15c0744350791ad1f31b3217e8136d41dc11d66f609c0df5",  # pragma: allowlist secret
+    (
+        "3.12.15",
+        "2.13.0+cpu",
+    ): "40731d12ec7014e964be67575166536a615db39812a8ba3704aacbb5cdcf6674",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "aa4702a2f81f76acdff02fc24317124956723b96eddd0712959f797ca2531b08",  # pragma: allowlist secret
+    ): "9978611df372f0b21e9ee7317b78a61859c4d94a8acef9d3dab3f8d93161e231",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "5ea5ca801c573def18ef996bffe280e3517fc2c46edd2d4bdc0b62e58ef2be84",  # pragma: allowlist secret
+    ): "d85b31442840d6e4c466f00e170d976d3621956a174089c645fcb065f1ba5fbc",  # pragma: allowlist secret
+    (
+        "3.12.15",
+        "0.3.4",
+    ): "fc7fad81f3adb884236cb7918ea7c13966f71127e17de3b5aa8040ba633dda68",  # pragma: allowlist secret
 }
 
 

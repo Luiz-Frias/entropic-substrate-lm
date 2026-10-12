@@ -12,17 +12,18 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.identity.d1_primitives import (
     D1Arm,
     canonical_digest,
     require_commit,
     require_nonempty_string,
-    require_sha256,
 )
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
 from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 D1_REGISTERED_DESIGN_SCHEMA: Final = "d1-registered-design-v1"
 _DESIGN_ATTESTATION: Final = object()
@@ -69,6 +70,11 @@ class D1AdmissionBlocked:
             raise ValueError("blocked D1 admission refuses duplicate gap fields")
 
 
+def _blob_sha256_refused(reason: str) -> NoReturn:
+    msg = f"D1 preregistration blob_sha256 must be lowercase: {reason}"
+    raise ValueError(msg)
+
+
 @dataclass(frozen=True, slots=True)
 class D1PreregistrationArtifact:
     """Repository-relative path, committed blob content, and containing commit."""
@@ -84,9 +90,7 @@ class D1PreregistrationArtifact:
             raise ValueError("D1 preregistration path must be repository-relative POSIX")
         if ".." in parsed.parts:
             raise ValueError("D1 preregistration path forbids parent traversal")
-        require_sha256(self.blob_sha256, label="D1 preregistration blob_sha256")
-        if self.blob_sha256 != self.blob_sha256.lower():
-            raise ValueError("D1 preregistration blob_sha256 must be lowercase")
+        require_lowercase_sha256(self.blob_sha256, fail=_blob_sha256_refused)
         require_commit(self.commit, label="D1 preregistration commit")
         if self.commit != self.commit.lower():
             raise ValueError("D1 preregistration commit must be lowercase")
@@ -207,8 +211,8 @@ class D1RegisteredDesign:
     def __post_init__(self) -> None:
         if self._attestation is not _DESIGN_ATTESTATION:
             raise TypeError("D1RegisteredDesign is factory-only")
-        require_sha256(self.family_digest, label="D1 registered family_digest")
-        require_sha256(
+        require_lowercase_digest(self.family_digest, label="D1 registered family_digest")
+        require_lowercase_digest(
             self.decision_contract_digest,
             label="D1 registered decision_contract_digest",
         )
@@ -218,7 +222,7 @@ class D1RegisteredDesign:
         frozen: dict[str, str] = {}
         for arm in expected_arms:
             digest = self.arm_construction_digests[arm]
-            require_sha256(digest, label=f"D1 {arm} construction digest")
+            require_lowercase_digest(digest, label=f"D1 {arm} construction digest")
             frozen[arm] = digest
         object.__setattr__(self, "arm_construction_digests", MappingProxyType(frozen))
         _validate_seeds(self.registered_seeds)

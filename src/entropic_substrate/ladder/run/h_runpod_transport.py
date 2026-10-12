@@ -6,8 +6,9 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_probe_launch import (
     RUNPODCTL_SHA256,
@@ -49,17 +50,14 @@ class ProbePod:
     response_sha256: str
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate provider field")
-        result[key] = value
-    return result
+def _reject(reason: str) -> NoReturn:
+    if reason.startswith("duplicate key"):
+        raise ValueError("duplicate provider field")
+    raise ValueError("provider response contains a non-finite number")
 
 
 def _object(raw: str) -> dict[str, object]:
-    value: object = json.loads(raw, object_pairs_hook=_pairs)
+    value = strict_loads(raw, fail=_reject)
     # Reject nonfinite numbers at every depth, including otherwise ignored fields.
     json.dumps(value, allow_nan=False)
     if type(value) is not dict:
@@ -260,7 +258,7 @@ class HRunpodTransport:
         launch = self._launch(launch)
         raw = self._invoke(("pod", "list", "--all", "--name", launch.pod_name, "--output", "json"))
         try:
-            rows: object = json.loads(raw, object_pairs_hook=_pairs)
+            rows = strict_loads(raw, fail=_reject)
             json.dumps(rows, allow_nan=False)
             if type(rows) is not list:
                 raise ValueError("provider inventory must be an array")

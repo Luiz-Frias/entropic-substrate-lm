@@ -14,7 +14,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
-from entropic_substrate.ladder.run.worker_completion import admit_worker_runtime
+from entropic_substrate.ladder.run.worker_completion import admit_publication, admit_worker_runtime
 from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     worker_artifact,
@@ -26,6 +26,7 @@ _FIELDS = {
     "checkpoint": "successful_optimizer_steps training",
     "complete": "result",
     "paused": "result",
+    "stopped": "result successful_optimizer_steps",
     "failure": "stage error_type error_code evidence_delivery",
 }
 _STATUS = {
@@ -33,7 +34,23 @@ _STATUS = {
     "checkpoint": "checkpoint",
     "complete": "probe_workload_complete",
     "paused": "paused",
+    "stopped": "stopped_by_operator",
 }
+# FOR-1567/pre-for-1567c, design-gate rulings DG-C and DN-1567-C: a
+# `publication` block records per-leg seconds and object/retry counts. It
+# first appeared on checkpoint-* events only (DG-C); DN-1567-C (operator,
+# 2026-09-29) widened the door to every terminal event the final-snapshot
+# call site emits (`complete`, `paused`, `stopped`), since one call site
+# serves all three and the worker writes the block on all of them
+# unconditionally. Door: read-old tolerated for one rollback window (an
+# event of any of these kinds WITHOUT the block still admits), write-new
+# always. `started` and `failure` are NOT in this set -- an event of either
+# kind carrying `publication` still raises (the exact-key admission below
+# has no `extra` branch for them). The validator itself lives in
+# `worker_completion.py` (reused, not copied): this module already imports
+# `admit_worker_runtime` from there, so importing `admit_publication` too
+# adds no new edge, while the reverse import would close a cycle.
+_PUBLICATION_KINDS = ("checkpoint", "complete", "paused", "stopped")
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +143,8 @@ def read_probe_event(
     extra = ""
     if type(value) is dict and kind == "failure" and value.get("evidence_delivery") == "failed":
         extra = " delivery_error_type"
+    if type(value) is dict and kind in _PUBLICATION_KINDS and "publication" in value:
+        extra += " publication"
     row = recovery_record(value, f"{_COMMON} {_FIELDS[kind]}{extra}")
     if (
         row["schema"] != "h-worker-event-v1"
@@ -160,8 +179,21 @@ def read_probe_event(
             raise ValueError("worker checkpoint count differs from event or workload")
         steps = count
         worker_artifact(row["training"], "run")
+    elif kind == "stopped":
+        count = row["successful_optimizer_steps"]
+        if (
+            type(count) is not int
+            or not 1
+            <= count
+            <= request.profile.schedule.warmup_steps + request.profile.schedule.steps
+        ):
+            raise ValueError("worker stopped step differs from workload bounds")
+        steps = count
+        worker_artifact(row["result"], "worker")
     else:
         worker_artifact(row["result"], "worker")
+    if kind in _PUBLICATION_KINDS and "publication" in row:
+        admit_publication(row["publication"])
     snapshot = (
         None
         if kind == "failure" and row["evidence_delivery"] == "failed"

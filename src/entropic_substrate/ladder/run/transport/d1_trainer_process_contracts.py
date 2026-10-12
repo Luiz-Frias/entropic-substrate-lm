@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.kernel.codec.strict_json import strict_loads
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import D1RuntimeObservation
 
 __all__ = [
@@ -80,7 +82,7 @@ class D1TrainerAdapterPhase(StrEnum):
 
 def d1_trainer_request_path(attempt_sha256: str) -> str:
     """Derive the sole remote request target from the bootstrap attempt identity."""
-    require_sha256(attempt_sha256, label="D1 trainer request attempt")
+    require_lowercase_digest(attempt_sha256, label="D1 trainer request attempt")
     return normalize_d1_relative_artifact_path(
         f"requests/{attempt_sha256}.json",
         label="D1 trainer request",
@@ -89,7 +91,7 @@ def d1_trainer_request_path(attempt_sha256: str) -> str:
 
 def d1_trainer_runtime_report_path(attempt_sha256: str) -> str:
     """Derive the immutable runtime-report path for one bootstrap attempt."""
-    require_sha256(attempt_sha256, label="D1 trainer runtime-report attempt")
+    require_lowercase_digest(attempt_sha256, label="D1 trainer runtime-report attempt")
     return normalize_d1_relative_artifact_path(
         f"trainer-runtime-{attempt_sha256}.json",
         label="D1 trainer runtime report",
@@ -98,8 +100,8 @@ def d1_trainer_runtime_report_path(attempt_sha256: str) -> str:
 
 def d1_trainer_start_report_path(attempt_sha256: str, request_sha256: str) -> str:
     """Derive the immutable start-report path for one staged request attempt."""
-    require_sha256(attempt_sha256, label="D1 trainer start-report attempt")
-    require_sha256(request_sha256, label="D1 trainer start-report request")
+    require_lowercase_digest(attempt_sha256, label="D1 trainer start-report attempt")
+    require_lowercase_digest(request_sha256, label="D1 trainer start-report request")
     return normalize_d1_relative_artifact_path(
         f"trainer-start-{attempt_sha256}-{request_sha256}.json",
         label="D1 trainer start report",
@@ -126,28 +128,15 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
     raise ValueError(message) from error
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            _fail("D1 trainer report repeats a key")
-        value[key] = item
-    return value
-
-
-def _reject_constant(value: str) -> object:
-    del value
+def _reject(reason: str) -> NoReturn:
+    # The door's reason names the offending key; a pod report must never echo payload content.
+    if reason.startswith("duplicate key"):
+        _fail("D1 trainer report repeats a key")
     _fail("D1 trainer report contains a nonfinite constant")
 
 
 def _canonical(value: dict[str, object]) -> bytes:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
+    return canonical_json(value).encode()
 
 
 def _decode(payload: bytes, *, keys: frozenset[str], schema: str) -> dict[str, object]:
@@ -156,11 +145,7 @@ def _decode(payload: bytes, *, keys: frozenset[str], schema: str) -> dict[str, o
     value: object | None = None
     decode_failed = False
     try:
-        value = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=_reject_constant,
-        )
+        value = strict_loads(payload, fail=_reject)
     except (UnicodeDecodeError, json.JSONDecodeError):
         decode_failed = True
     except ValueError:
@@ -185,12 +170,7 @@ def _text(value: object, label: str) -> str:
 
 def _sha(value: object, label: str) -> str:
     text = _text(value, label)
-    try:
-        require_sha256(text, label=label)
-    except ValueError as error:
-        _fail(str(error), error)
-    if text.lower() != text:
-        _fail(f"{label} must use lowercase hexadecimal")
+    require_lowercase_digest(text, label=label)
     return text
 
 

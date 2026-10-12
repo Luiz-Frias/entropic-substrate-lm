@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_lowercase_sha256
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     RunStartProvenance,
     SegmentStartMode,
@@ -61,18 +62,15 @@ def require_mapping(value: object, *, path: str) -> dict[str, object]:
 
 
 def exact_fields(value: dict[str, object], keys: set[str] | frozenset[str], *, path: str) -> None:
-    if set(value) != set(keys):
+    if any(exact_keys(value, frozenset(keys))):
         raise gap("field_set", path, "missing or extra registered fields")
 
 
 def require_sha256(value: object, *, path: str) -> str:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    def fail(_reason: str) -> NoReturn:
         raise gap("invalid_sha256", path, "must be 64 lowercase hexadecimal characters")
-    return value
+
+    return require_lowercase_sha256(value, fail=fail)
 
 
 def positive_int(value: object, *, path: str) -> int:

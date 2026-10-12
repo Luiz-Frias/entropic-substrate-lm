@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, NoReturn
 
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.kernel.identity.d1_primitives import (
     EvidenceClass,
     RunClass,
     require_commit,
     require_nonempty_string,
-    require_sha256,
 )
 
 __all__ = [
@@ -22,9 +22,25 @@ __all__ = [
     "EvidenceEnvelope",
     "ExecutionIdentity",
     "PreregistrationIdentity",
+    "require_lowercase_digest",
 ]
 
 D1_TELEMETRY_SCHEMA_VERSION: Final[int] = 3
+
+
+def require_lowercase_digest(value: object, *, label: str) -> None:
+    """Refuse any identity that is not 64 lowercase hexadecimal characters.
+
+    The strict_json predicate with a ValueError channel, for the dataclass
+    constructors in ladder/register and ladder/gate whose boundary error is
+    a plain ValueError labelled with the field name.
+    """
+
+    def fail(_reason: str) -> NoReturn:
+        msg = f"{label} must be a 64-character hexadecimal SHA-256 digest"
+        raise ValueError(msg)
+
+    require_lowercase_sha256(value, fail=fail)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,9 +97,11 @@ class DataIdentity:
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.dataset_name, label="dataset_name")
-        require_sha256(self.dataset_digest, label="dataset_digest")
-        require_sha256(self.split_digest, label="split_digest")
-        require_sha256(self.sampler_construction_digest, label="sampler_construction_digest")
+        require_lowercase_digest(self.dataset_digest, label="dataset_digest")
+        require_lowercase_digest(self.split_digest, label="split_digest")
+        require_lowercase_digest(
+            self.sampler_construction_digest, label="sampler_construction_digest"
+        )
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -102,7 +120,7 @@ class DataOrderAttestation:
     data_order_digest: str
 
     def __post_init__(self) -> None:
-        require_sha256(self.data_order_digest, label="data_order_digest")
+        require_lowercase_digest(self.data_order_digest, label="data_order_digest")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -118,7 +136,7 @@ class CodeIdentity:
 
     def __post_init__(self) -> None:
         require_commit(self.commit, label="code commit")
-        require_sha256(self.repository_digest, label="repository_digest")
+        require_lowercase_digest(self.repository_digest, label="repository_digest")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -135,7 +153,9 @@ class ContainerIdentity:
         if not self.image_digest.startswith("sha256:"):
             msg = "container image_digest must start with 'sha256:'"
             raise ValueError(msg)
-        require_sha256(self.image_digest.removeprefix("sha256:"), label="container image digest")
+        require_lowercase_digest(
+            self.image_digest.removeprefix("sha256:"), label="container image digest"
+        )
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -153,7 +173,7 @@ class PreregistrationIdentity:
     def __post_init__(self) -> None:
         require_nonempty_string(self.path, label="preregistration path")
         require_commit(self.commit, label="preregistration commit")
-        require_sha256(self.family_digest, label="preregistration family_digest")
+        require_lowercase_digest(self.family_digest, label="preregistration family_digest")
 
     @property
     def manifest(self) -> dict[str, object]:

@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm, RunClass
 from entropic_substrate.ladder.capture.custody.d1_capture_aggregate import D1TerminalDefectInput
 from entropic_substrate.ladder.capture.custody.d1_capture_artifacts import (
@@ -317,24 +318,11 @@ def serialize_launch_roster(roster: D1LaunchRoster) -> str:
     return _canonical(launch_roster_to_mapping(roster))
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate capture-declaration JSON key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite capture-declaration JSON constant {value!r}")
-
-
 def _decode(payload: str, *, label: str) -> object:
     if type(payload) is not str or not payload:
         _fail(f"{label} payload must be nonempty text")
     try:
-        return json.loads(payload, object_pairs_hook=_pairs, parse_constant=_nonfinite)
+        return strict_loads(payload, fail=_fail)
     except D1CaptureDeclarationCodecError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:

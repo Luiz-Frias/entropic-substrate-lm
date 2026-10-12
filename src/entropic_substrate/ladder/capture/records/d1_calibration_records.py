@@ -2,7 +2,7 @@
 ``__legacy/d1_calibration.py``).
 
 RED-first split (ruling R-parallel; contract C17-p5): the immutable
-attestation type lives here, dataclass + ``require_sha256`` only, no torch/
+attestation type lives here, dataclass + ``require_lowercase_digest`` only, no torch/
 numpy import. The torch half imports and RE-EXPORTS this name (never
 redefines it) for the out-of-envelope importers still on the old dotted
 name; p8/p9 rewrite those, never this phase.
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 
 __all__ = ["D1BaselineCalibrationAttestation"]
 
@@ -43,7 +43,7 @@ class D1BaselineCalibrationAttestation:
             ("mean_parameter_digest", self.mean_parameter_digest),
             ("codec_digest", self.codec_digest),
         ):
-            require_sha256(value, label=label)
+            require_lowercase_digest(value, label=label)
         if type(self.initialization_seed) is not int or self.initialization_seed < 0:
             msg = "calibration initialization_seed must be nonnegative"
             raise ValueError(msg)

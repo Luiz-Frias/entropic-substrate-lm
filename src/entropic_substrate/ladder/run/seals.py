@@ -2,7 +2,7 @@
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
@@ -41,6 +41,39 @@ class SealedStep:
     journal: ArtifactIdentity
     chain_length: int
     seal_hashes: tuple[str, ...] = ()
+
+
+@dataclass
+class SealMemo:
+    """Seals THIS ``run_probe_training`` invocation has itself verified.
+
+    Owned by exactly one invocation (never module-level state, never an
+    ``lru_cache``, never shared across processes). Keyed by the seal
+    artifact's SHA-256 content digest alone -- the same content-addressed
+    identity :func:`read_seal`'s own cycle detector already trusts (its
+    ``seen`` set is digest-keyed, not path-keyed), because one seal
+    artifact is legitimately referenced with different path SPELLINGS
+    (absolute at the top-level caller, root-relative once round-tripped
+    through a journal's ``parent`` field via
+    :func:`~entropic_substrate.ladder.run.journal.artifact_reference`) while
+    remaining exactly the same verified bytes. ``remember`` is public
+    (basedpyright strict forbids a cross-function protected member), but by
+    convention it is called ONLY from :func:`read_seal` itself, immediately
+    after it has verified that exact node by reading it back from disk
+    through its own per-node predicate; a writer's in-memory values (what
+    ``seal_step`` just constructed) are never written here directly. A
+    fresh, empty memo makes :func:`read_seal` walk the full chain exactly as
+    with ``memo=None`` -- this is what keeps a fresh-process resume an
+    unconditional full walk.
+    """
+
+    _verified: dict[str, SealedStep] = field(default_factory=dict)
+
+    def get(self, artifact: ArtifactIdentity) -> SealedStep | None:
+        return self._verified.get(artifact.content_hash.digest)
+
+    def remember(self, artifact: ArtifactIdentity, seal: SealedStep) -> None:
+        self._verified[artifact.content_hash.digest] = seal
 
 
 def _profile_binding(profile: HProfile, phase: SentencePhase, sampler: SentenceSampler) -> str:
@@ -93,23 +126,39 @@ def read_seal(
     *,
     max_bytes: int,
     max_source_bytes: int,
+    memo: SealMemo | None = None,
 ) -> SealedStep:
-    """Validate every ancestor; full tensor admission still occurs when resuming."""
+    """Validate every ancestor; full tensor admission still occurs when resuming.
+
+    ``memo``, when given, is trusted ONLY for seal identities THIS SAME
+    ``run_probe_training`` invocation has already verified (see
+    :class:`SealMemo`). A fresh, empty (or absent) memo walks the FULL chain
+    exactly as before -- this is what keeps every fresh process, and every
+    resume/pause/completion admission that passes ``memo=None``, an
+    unconditional full walk. When the walk reaches a node already in the
+    memo it stops there, trusts that ancestor's already-verified chain
+    state instead of re-reading it, and every node it DOES read is verified
+    through the identical per-node predicate as the full walk, then
+    remembered.
+    """
     corpus = read_prepared_corpus(
         source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
     )
-    nodes: list[tuple[SealedStep, int]] = []
+    nodes: list[tuple[SealedStep, int, ArtifactIdentity]] = []
     seen: set[str] = set()
-    chain_hashes: list[str] = []
     cursor: ArtifactIdentity | None = artifact
+    base: SealedStep | None = None
     while cursor is not None:
+        hit = None if memo is None else memo.get(cursor)
+        if hit is not None:
+            base = hit
+            break
         if (
             cursor.content_hash.digest in seen
             or len(seen) >= profile.schedule.warmup_steps + profile.schedule.steps
         ):
             raise ValueError("seal chain is cyclic or exceeds its step budget")
         seen.add(cursor.content_hash.digest)
-        chain_hashes.append(cursor.content_hash.digest)
         row = recovery_record(
             read_json(root, cursor, max_bytes=max_bytes),
             "schema run_identity phase step checkpoint journal",
@@ -174,16 +223,29 @@ def read_seal(
         start = measured["start_step"]
         if type(start) is not int:
             raise ValueError("journal start step must be integer")
-        nodes.append((SealedStep(phase, step, checkpoint, journal, 0), start))
+        nodes.append((SealedStep(phase, step, checkpoint, journal, 0), start, cursor))
         cursor = None if measured["parent"] is None else artifact_from_mapping(measured["parent"])
-    previous = None
-    for node, start in reversed(nodes):
+    total_length = len(nodes) + (0 if base is None else base.chain_length)
+    if total_length > profile.schedule.warmup_steps + profile.schedule.steps:
+        raise ValueError("seal chain is cyclic or exceeds its step budget")
+    previous = base
+    final = base
+    for node, start, node_artifact in reversed(nodes):
         _continuation(previous, node.phase, start, profile)
-        previous = node
-    final = nodes[0][0]
-    return SealedStep(
-        final.phase, final.step, final.checkpoint, final.journal, len(nodes), tuple(chain_hashes)
-    )
+        chain_length = 1 + (0 if previous is None else previous.chain_length)
+        seal_hashes = (node_artifact.content_hash.digest,) + (
+            () if previous is None else previous.seal_hashes
+        )
+        sealed = SealedStep(
+            node.phase, node.step, node.checkpoint, node.journal, chain_length, seal_hashes
+        )
+        if memo is not None:
+            memo.remember(node_artifact, sealed)
+        previous = sealed
+        final = sealed
+    if final is None:  # pragma: no cover - artifact is never None on entry
+        raise ValueError("seal chain requires at least one node")
+    return final
 
 
 def seal_step(
@@ -194,8 +256,15 @@ def seal_step(
     *,
     parent: ArtifactIdentity | None,
     max_bytes: int,
+    memo: SealMemo | None = None,
 ) -> ArtifactIdentity:
-    """Publish a receipt last; partial writes are not restart seals and are retained."""
+    """Publish a receipt last; partial writes are not restart seals and are retained.
+
+    ``memo``, when given, is passed straight through to :func:`read_seal`'s
+    lookup of ``parent`` -- see :class:`SealMemo`. A memo hit skips
+    re-walking ``parent``'s own ancestry (L1); it never changes which
+    continuation the new step is checked against.
+    """
     if type(prefix) is not str or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", prefix) is None:
         raise ValueError("seal prefix must be a safe segment identifier")
     if not rows or type(rows[0].get("step")) is not int:
@@ -210,6 +279,7 @@ def seal_step(
             engine.source_root,
             max_bytes=max_bytes,
             max_source_bytes=engine.max_source_bytes,
+            memo=memo,
         )
     )
     start = rows[0]["step"]

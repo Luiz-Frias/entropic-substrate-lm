@@ -95,9 +95,17 @@ class ExtractedMetrics:
 
 @runtime_checkable
 class MetricExtractor(Protocol):
-    """Strategy translating an authoritative event into optional MLflow metrics."""
+    """Strategy translating one authoritative JSON-object record into optional metrics.
 
-    def extract(self, event: object) -> ExtractedMetrics | None: ...
+    This is the protocol the run-descriptor door (``build_sink_for_run``) and
+    ``MlflowSink`` consume, so its input is the record shape the sink port
+    carries. An extractor typed on a narrower input (the D1 journal event) does
+    not satisfy it; that one has its own protocol beside ``D1MlflowObserver``.
+    The parameter is ``dict[str, object]`` so the H extractor (typed on that)
+    and the legacy one (typed on the wider ``Mapping[str, Any]``) both conform.
+    """
+
+    def extract(self, event: dict[str, object]) -> ExtractedMetrics | None: ...
 
 
 class LegacyMetricExtractor:
@@ -118,7 +126,12 @@ class LegacyMetricExtractor:
         "field_top1",
     )
 
-    def extract(self, event: object) -> ExtractedMetrics | None:
+    def extract(self, event: Mapping[str, Any]) -> ExtractedMetrics | None:
+        return self._project(event)
+
+    def _project(self, event: object) -> ExtractedMetrics | None:
+        # Typed ``object`` so the runtime refusal of a non-mapping survives the
+        # narrowed public signature (a checker would call that isinstance dead).
         if not isinstance(event, Mapping) or event.get("event") != "eval":
             return None
         step = int(event.get("step", 0))

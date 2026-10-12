@@ -14,8 +14,8 @@ from entropic_substrate.kernel.artifacts import (
     publish_d1_atomic_bytes,
     read_d1_artifact_bytes,
 )
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
@@ -132,9 +132,7 @@ class D1TrainerMailboxWorker:
             raise _error("attempt", "multiple attempts are present", "ValueError")
         candidate = entries[0]
         try:
-            require_sha256(candidate.name, label="D1 trainer mailbox attempt")
-            if candidate.name != candidate.name.lower():
-                raise ValueError("attempt digest is not lowercase")
+            require_lowercase_digest(candidate.name, label="D1 trainer mailbox attempt")
         except ValueError as cause:
             raise _error("attempt", "attempt identity is invalid", type(cause).__name__) from cause
         if candidate.is_symlink() or not candidate.is_dir():

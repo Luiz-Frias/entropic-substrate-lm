@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import cast
@@ -12,6 +11,7 @@ from entropic_substrate.composition.wiring.d1_cli import (
     D1CliInvalidEvidence,
     D1CliInvocation,
 )
+from entropic_substrate.kernel.identity.d1_primitives import canonical_json
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.capture.adapters.d1_observability import D1JournalObserver
 from entropic_substrate.ladder.register.d1_config import D1LaunchProfile
@@ -68,13 +68,7 @@ def _catalog(values: Iterable[D1LaunchProfile]) -> tuple[D1LaunchProfile, ...]:
 
 def _request_bytes(invocation: D1CliInvocation) -> bytes:
     try:
-        return json.dumps(
-            dict(invocation.payload),
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
+        return canonical_json(invocation.payload).encode()
     except (TypeError, ValueError) as error:
         raise D1CliInvalidEvidence(
             f"D1 trainer request payload is not canonical: {error}"

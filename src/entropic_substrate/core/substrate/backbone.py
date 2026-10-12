@@ -11,8 +11,14 @@ import torch.nn.functional as F
 from torch import nn
 
 from entropic_substrate.core.geometry.kappa import clamp_kappa
-from entropic_substrate.core.geometry.kappa_norm import GatedKappaNorm, KappaNormStats, UnitNorm
-from entropic_substrate.core.substrate.blocks import CausalSelfAttention, build_block, build_norm
+from entropic_substrate.core.substrate.blocks import (
+    CausalSelfAttention,
+    GatedKappaNorm,
+    KappaNormStats,
+    UnitNorm,
+    build_block,
+    build_norm,
+)
 from entropic_substrate.core.substrate.field_encoder import FieldEncoder, FieldEncoding
 from entropic_substrate.core.substrate.fisher import (
     build_fisher_init,

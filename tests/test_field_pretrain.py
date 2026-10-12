@@ -381,3 +381,163 @@ def test_reader_raises_on_a_non_integer_step(tmp_path: Path) -> None:
     )
     with pytest.raises(FieldPretrainGap, match="step"):
         read_field_pretrain_series(path)
+
+
+# ------------------------------------------- shared optimizer + autocast (FOR-1570)
+# ``Trainer`` and the pretrain lane used to each carry a copy of the AdamW
+# decay/no-decay split and the autocast dtype policy. These tests pin that both
+# now delegate to ONE free function each in ``train.py`` and that the
+# hyperparameters they produce are the historical values (eps = 1e-8 is pinned
+# as a literal so a change to the shared builder cannot move both callers in
+# lockstep and slip past an equality-only assertion).
+def _group_hyperparameters(optimizer: torch.optim.Optimizer) -> list[dict[str, object]]:
+    return [
+        {
+            "weight_decay": g["weight_decay"],
+            "lr": g["lr"],
+            "betas": g["betas"],
+            "eps": g["eps"],
+            "ndims": sorted({p.ndim for p in g["params"]}),
+        }
+        for g in optimizer.param_groups
+    ]
+
+
+def test_trainer_and_field_pretrain_build_the_same_optimizer(tmp_path: Path) -> None:
+    """Same config -> identical groups, betas, eps and weight decay through both callers."""
+    from entropic_substrate.historical.e_series import field_pretrain
+    from entropic_substrate.historical.e_series.train import Trainer
+
+    cfg = _pretrain_config(tmp_path)
+    cfg.train.weight_decay = 0.07
+    cfg.train.betas = (0.8, 0.95)
+    trainer = Trainer(cfg)
+    encoder = FieldEncoder(cfg.model)
+
+    via_trainer = _group_hyperparameters(trainer.optimizer)
+    via_pretrain = _group_hyperparameters(field_pretrain._build_optimizer(encoder, cfg))
+
+    assert via_trainer == via_pretrain
+    decay, no_decay = via_pretrain
+    assert decay["weight_decay"] == 0.07
+    assert no_decay["weight_decay"] == 0.0
+    assert decay["betas"] == no_decay["betas"] == (0.8, 0.95)
+    assert decay["eps"] == no_decay["eps"] == 1e-8
+    assert decay["lr"] == no_decay["lr"] == cfg.train.lr
+    assert all(n >= 2 for n in decay["ndims"])  # type: ignore[attr-defined]
+    assert all(n < 2 for n in no_decay["ndims"])  # type: ignore[attr-defined]
+
+
+def test_shared_builder_partitions_every_trainable_parameter_once() -> None:
+    """1-D (and 0-D) tensors get no decay; frozen ones are in no group; none is dropped."""
+    from entropic_substrate.historical.e_series.train import build_adamw_decay_groups
+
+    module = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.LayerNorm(3))
+    module[0].bias.requires_grad_(False)
+    optimizer = build_adamw_decay_groups(module, lr=1e-3, betas=(0.9, 0.99), weight_decay=0.1)
+
+    decay, no_decay = optimizer.param_groups
+    trainable = [p for p in module.parameters() if p.requires_grad]
+    assert decay["params"] == [module[0].weight]
+    assert no_decay["params"] == [module[1].weight, module[1].bias]
+    assert len(decay["params"]) + len(no_decay["params"]) == len(trainable)
+    assert (decay["weight_decay"], no_decay["weight_decay"]) == (0.1, 0.0)
+
+
+def test_shared_builder_yields_two_empty_groups_for_a_fully_frozen_module() -> None:
+    """Zero case, pinned at authoring (measured: torch accepts empty groups)."""
+    from entropic_substrate.historical.e_series.train import build_adamw_decay_groups
+
+    module = torch.nn.Linear(2, 2)
+    module.requires_grad_(False)
+    optimizer = build_adamw_decay_groups(module, lr=1e-3, betas=(0.9, 0.99), weight_decay=0.1)
+    assert [g["params"] for g in optimizer.param_groups] == [[], []]
+
+
+@pytest.mark.parametrize("device_type", ["cpu", "cuda", "mps"])
+@pytest.mark.parametrize("amp_dtype", ["bf16", "fp16", "off"])
+def test_autocast_for_dtype_policy_and_both_callers_share_it(
+    monkeypatch: pytest.MonkeyPatch, device_type: str, amp_dtype: str
+) -> None:
+    """off or cpu disables amp; otherwise bf16/fp16 map to the torch dtype.
+
+    ``torch.autocast`` is replaced by a recorder so the cuda/mps rows run on
+    any host (constructing the real thing on cuda raises without a GPU).
+    """
+    from entropic_substrate.historical.e_series import field_pretrain, train
+
+    calls: list[dict[str, object]] = []
+
+    def _spy(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(torch, "autocast", _spy)
+    device = torch.device(device_type)
+    train.autocast_for(device, amp_dtype)  # type: ignore[arg-type]
+    if amp_dtype == "off" or device_type == "cpu":
+        expected: dict[str, object] = {"device_type": device_type, "enabled": False}
+    else:
+        torch_dtype = torch.bfloat16 if amp_dtype == "bf16" else torch.float16
+        expected = {"device_type": device_type, "dtype": torch_dtype}
+    assert calls == [expected]
+    # Both callers reach the same function: no second copy of the policy exists.
+    assert field_pretrain.autocast_for is train.autocast_for
+
+
+@pytest.mark.parametrize("amp_dtype", ["bf16", "fp16", "off"])
+def test_trainer_autocast_delegates_to_the_shared_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, amp_dtype: str
+) -> None:
+    """Trainer._autocast forwards its device and cfg amp_dtype to ``autocast_for``.
+
+    The policy table above cannot see a caller that bypasses it: on cpu the shared
+    function disables amp whatever the dtype, so the delegation itself is spied.
+    """
+    from contextlib import nullcontext
+
+    from entropic_substrate.historical.e_series import train
+    from entropic_substrate.historical.e_series.train import Trainer
+
+    cfg = tiny_config(tmp_path)
+    cfg.train.amp_dtype = amp_dtype  # type: ignore[assignment]
+    trainer = Trainer(cfg)
+    seen: list[tuple[torch.device, str]] = []
+
+    def _spy(device: torch.device, amp_dtype: str) -> object:
+        seen.append((device, amp_dtype))
+        return nullcontext()
+
+    monkeypatch.setattr(train, "autocast_for", _spy)
+    trainer.device = torch.device("cuda")
+    trainer._autocast()  # pyright: ignore[reportPrivateUsage]
+    assert seen == [(torch.device("cuda"), amp_dtype)]
+
+
+def test_field_pretrain_call_sites_use_the_shared_autocast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Train loop and eval pass both go through ``autocast_for`` with cfg amp_dtype."""
+    from entropic_substrate.historical.e_series import field_pretrain
+
+    cfg = _pretrain_config(tmp_path)
+    # Non-default: the fixture's "off" would not tell a forwarded dtype from a
+    # hard-coded "off" (cpu autocast_for disables amp whatever the dtype).
+    cfg.train.amp_dtype = "fp16"
+    cfg.train.max_steps = 3
+    cfg.train.eval_interval = 3
+    real = field_pretrain.autocast_for
+    calls: list[str] = []
+
+    def _spy(device: torch.device, amp_dtype: str) -> object:
+        calls.append(amp_dtype)
+        return real(device, amp_dtype)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(field_pretrain, "autocast_for", _spy)
+    run_field_pretrain(
+        cfg, out_path=tmp_path / "p.pt", results_path=tmp_path / "r.jsonl", device="cpu"
+    )
+    # 3 train steps plus one eval pass (interval == total) of num_eval_batches batches,
+    # each through the shared function: a bypass at either site changes the count.
+    assert len(calls) == 3 + cfg.data.num_eval_batches
+    assert set(calls) == {"fp16"}

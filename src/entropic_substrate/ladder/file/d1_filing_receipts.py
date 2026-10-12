@@ -6,8 +6,9 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import NoReturn, Protocol, cast
 
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.ladder.analyze.d1_analysis_receipt_codec import (
     D1AnalysisExecutionReceipt,
     parse_d1_analysis_execution_receipt,
@@ -160,11 +161,13 @@ def _text(value: object, *, path: str) -> str:
 
 def _sha256(value: object, *, path: str) -> str:
     text = _text(value, path=path)
-    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
+
+    def fail(_reason: str) -> NoReturn:
         raise D1FilingGraphError(
             code="invalid_sha256", path=path, detail="must be lowercase SHA-256"
         )
-    return text
+
+    return require_lowercase_sha256(text, fail=fail)
 
 
 def parse_analysis_receipt(payload: bytes) -> D1AnalysisExecutionReceipt:

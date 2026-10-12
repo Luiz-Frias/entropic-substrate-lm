@@ -10,11 +10,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import NoReturn, cast
 
-from entropic_substrate.kernel.identity.d1_primitives import (
-    D1Arm,
-    canonical_digest,
-    require_sha256,
+from entropic_substrate.kernel.codec.strict_json import (
+    exact_keys,
+    require_lowercase_sha256,
+    require_mapping,
+    strict_loads,
 )
+from entropic_substrate.kernel.identity.d1_primitives import D1Arm, canonical_digest
 from entropic_substrate.kernel.lifecycle import SuccessorAuthorization
 from entropic_substrate.kernel.verdict.d1_contract import (
     D1DecisionContract,
@@ -26,6 +28,7 @@ from entropic_substrate.kernel.verdict.d1_contract import (
 )
 from entropic_substrate.kernel.verdict.d1_types import D1ContrastTerm, D1FamilyIdentity
 from entropic_substrate.ladder.register.d1_family import D1ExperimentFamily
+from entropic_substrate.ladder.register.d1_provenance import require_lowercase_digest
 from entropic_substrate.ladder.register.d1_registered_design import (
     D1AdmissionBlocked,
     D1PreregistrationArtifact,
@@ -108,13 +111,14 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _mapping(value: object, *, label: str) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"{label} must be a JSON object with string keys")
-    return cast(dict[str, object], value)
+    return require_mapping(
+        value, fail=lambda _reason: _fail(f"{label} must be a JSON object with string keys")
+    )
 
 
 def _exact(value: Mapping[str, object], keys: frozenset[str], *, label: str) -> None:
-    if frozenset(value) != keys:
+    missing, unknown = exact_keys(value, keys)
+    if missing or unknown:
         _fail(f"{label} keys must be exact")
 
 
@@ -371,28 +375,11 @@ def serialize_decision_contract(contract: D1DecisionContract) -> str:
     return _canonical(decision_contract_to_mapping(contract))
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate decision-contract JSON key {key!r}")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"non-finite decision-contract JSON constant {value!r}")
-
-
 def parse_decision_contract(payload: str) -> D1DecisionContract:
     if type(payload) is not str or not payload:
         _fail("decision contract payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except D1RegistrationCodecError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:
@@ -417,6 +404,10 @@ _PREREGISTRATION_KEYS = frozenset({"blob_sha256", "commit", "path"})
 _DESIGN_SCHEMA = "d1-registered-design-v1"
 
 
+def _refuse_preregistration_sha256(_reason: str) -> NoReturn:
+    raise ValueError("preregistration sha256 must be lowercase SHA-256")
+
+
 @dataclass(frozen=True, slots=True)
 class D1PreregistrationByteEvidence:
     """Stable raw preregistration bytes with self-verifying size and SHA-256."""
@@ -430,12 +421,7 @@ class D1PreregistrationByteEvidence:
             raise ValueError("preregistration payload must be nonempty bytes")
         if type(self.size_bytes) is not int or self.size_bytes != len(self.payload):
             raise ValueError("preregistration size_bytes differs from raw bytes")
-        try:
-            require_sha256(self.sha256, label="preregistration sha256")
-        except (TypeError, ValueError) as error:
-            raise ValueError("preregistration sha256 must be lowercase SHA-256") from error
-        if self.sha256 != self.sha256.lower():
-            raise ValueError("preregistration sha256 must be lowercase SHA-256")
+        require_lowercase_sha256(self.sha256, fail=_refuse_preregistration_sha256)
         if hashlib.sha256(self.payload).hexdigest() != self.sha256:
             raise ValueError("preregistration sha256 differs from raw bytes")
 
@@ -458,7 +444,7 @@ class D1RegisteredDesignDeclaration:
     def __post_init__(self) -> None:
         if type(self.family_identity) is not D1FamilyIdentity:
             raise TypeError("design declaration requires D1FamilyIdentity")
-        require_sha256(
+        require_lowercase_digest(
             self.decision_contract_digest,
             label="design declaration decision_contract_digest",
         )
@@ -490,13 +476,9 @@ class D1RegisteredDesignDeclaration:
 
 def _sha256_text(value: object, *, label: str) -> str:
     text = _text(value, label=label)
-    try:
-        require_sha256(text, label=label)
-    except ValueError as error:
-        _fail(f"{label} must be lowercase SHA-256", error)
-    if text != text.lower():
-        _fail(f"{label} must be lowercase SHA-256")
-    return text
+    return require_lowercase_sha256(
+        text, fail=lambda _reason: _fail(f"{label} must be lowercase SHA-256")
+    )
 
 
 def _design_preregistration(value: object) -> D1PreregistrationArtifact:
@@ -559,24 +541,11 @@ def serialize_registered_design(design: D1RegisteredDesign) -> str:
     return _canonical(registered_design_to_mapping(design))
 
 
-def _design_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"duplicate registered-design JSON key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_registered_design_declaration(payload: str) -> D1RegisteredDesignDeclaration:
     if type(payload) is not str or not payload:
         _fail("registered design payload must be nonempty text")
     try:
-        value: object = json.loads(
-            payload,
-            object_pairs_hook=_design_pairs,
-            parse_constant=_nonfinite,
-        )
+        value: object = strict_loads(payload, fail=_fail)
     except D1RegistrationCodecError:
         raise
     except (json.JSONDecodeError, UnicodeError) as error:

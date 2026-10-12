@@ -6,8 +6,9 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.lifecycle import (
     ActorIdentity,
     ActorRole,
@@ -303,17 +304,10 @@ def canonical_lifecycle_event_line(event: D1LifecycleEvent) -> bytes:
     )
 
 
-def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _error("duplicate_field", key, "duplicate JSON object key")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value: str) -> object:
-    raise _error("nonfinite_json", "json", f"{value} is not finite")
+def _decode_fail(reason: str) -> NoReturn:
+    # strict_loads reasons: "duplicate key: ..." versus the two non-finite forms.
+    code = "duplicate_field" if reason.startswith("duplicate key") else "nonfinite_json"
+    raise _error(code, "json", reason)
 
 
 def _parse_actor(value: object) -> ActorIdentity:
@@ -357,11 +351,7 @@ def parse_lifecycle_event_line(line: bytes) -> D1LifecycleEvent:
     if b"\n" in line[:-1]:
         raise _error("multiple_events", "line", "must contain exactly one event")
     try:
-        raw = json.loads(
-            line[:-1].decode("utf-8"),
-            object_pairs_hook=_strict_object,
-            parse_constant=_reject_constant,
-        )
+        raw = strict_loads(line[:-1].decode("utf-8"), fail=_decode_fail)
     except D1LifecycleValueError:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:

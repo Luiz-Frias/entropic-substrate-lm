@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Final, NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import exact_keys, require_mapping, strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance_codec import (
     ResourceProvenanceCodecGap,
     run_start_from_mapping,
@@ -223,10 +224,11 @@ def _fail(message: str, error: Exception | None = None) -> NoReturn:
 
 
 def _object(value: object, *, label: str, keys: set[str]) -> dict[str, object]:
-    if type(value) is not dict or any(type(key) is not str for key in value):
-        _fail(f"D1 inspect {label} must be an object with string keys")
-    result = cast(dict[str, object], value)
-    if set(result) != keys:
+    result = require_mapping(
+        value,
+        fail=lambda _reason: _fail(f"D1 inspect {label} must be an object with string keys"),
+    )
+    if any(exact_keys(result, frozenset(keys))):
         _fail(f"D1 inspect {label} keys must be exact")
     return result
 
@@ -523,15 +525,6 @@ def d1_inspect_result_from_mapping(value: object) -> D1InspectView:
         _fail(f"D1 inspect result is invalid: {error}", error)
 
 
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail(f"D1 inspect result contains duplicate key {key!r}")
-        result[key] = value
-    return result
-
-
 def parse_d1_inspect_result(payload: bytes) -> D1InspectView:
     """Admit one canonical UTF-8 JSON result under the same byte envelope."""
     if type(payload) is not bytes or not payload:
@@ -539,13 +532,7 @@ def parse_d1_inspect_result(payload: bytes) -> D1InspectView:
     if len(payload) > D1_INSPECT_MAX_RESULT_BYTES:
         _fail("D1 inspect result payload exceeds its byte limit")
     try:
-        value = json.loads(
-            payload,
-            object_pairs_hook=_pairs,
-            parse_constant=lambda constant: _fail(
-                f"D1 inspect result contains non-finite JSON constant {constant}"
-            ),
-        )
+        value = strict_loads(payload, fail=lambda reason: _fail(f"D1 inspect result: {reason}"))
     except D1InspectCodecError:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

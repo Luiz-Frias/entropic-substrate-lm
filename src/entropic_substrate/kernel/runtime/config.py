@@ -252,6 +252,12 @@ class TrainConfig:
     save_interval: int = 1000
     resume: str | None = None
 
+    def __post_init__(self) -> None:
+        # YAML parses ``betas: [0.9, 0.95]`` as a list and may carry ints; the
+        # declared type is tuple[float, float]. Normalising here makes the
+        # loader path and a code-constructed TrainConfig agree (FOR-1585).
+        self.betas = (float(self.betas[0]), float(self.betas[1]))
+
 
 @dataclass(slots=True)
 class Config:
@@ -335,11 +341,7 @@ def _build(cls: type, payload: Mapping[str, Any]) -> Any:
     if unknown:
         msg = f"unknown keys for {cls.__name__}: {sorted(unknown)}"
         raise ValueError(msg)
-    kwargs = dict(payload)
-    if cls is TrainConfig and "betas" in kwargs:
-        betas = kwargs["betas"]
-        kwargs["betas"] = (float(betas[0]), float(betas[1]))
-    return cls(**kwargs)
+    return cls(**payload)
 
 
 def config_from_dict(payload: Mapping[str, Any]) -> Config:
