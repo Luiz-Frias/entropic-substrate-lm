@@ -15,7 +15,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final
+from typing import Final, NoReturn
+
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 
 _SHA256_LENGTH: Final[int] = 64
 # v4 admits measured-zero gradients and typed undefined zero-vector cosine.
@@ -192,6 +194,11 @@ class EvidenceClass(StrEnum):
     PROVIDER_BILLED = "provider_billed"
 
 
+def _construction_digest_refused(reason: str) -> NoReturn:
+    msg = f"encoder initialization digest must be a lowercase hexadecimal SHA-256 digest ({reason})"
+    raise ValueError(msg)
+
+
 @dataclass(frozen=True, slots=True)
 class EncoderInitializationIdentity:
     """Immutable initialization construction used by the causal encoder factory."""
@@ -201,7 +208,7 @@ class EncoderInitializationIdentity:
 
     def __post_init__(self) -> None:
         require_nonempty_string(self.name, label="encoder initialization name")
-        require_sha256_hex_any_case(self.construction_digest, label="encoder initialization digest")
+        require_lowercase_sha256(self.construction_digest, fail=_construction_digest_refused)
 
     @property
     def manifest(self) -> dict[str, object]:

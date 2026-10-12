@@ -38,7 +38,7 @@ from types import MappingProxyType
 import pytest
 
 import entropic_substrate.composition.wiring.d1_cli as d1_cli_module
-from d1_launch_admission_fixtures import plan, profiles, start
+from d1_launch_admission_fixtures import PREREG_COMMIT, PREREG_PATH, plan, profiles, start
 from entropic_substrate.composition.entrypoints.d1_r2_trainer_mailbox_worker import (
     D1R2TrainerMailboxWorker,
     D1R2TrainerMailboxWorkerError,
@@ -50,7 +50,9 @@ from entropic_substrate.composition.wiring.d1_cli import (
     D1CliExitCode,
     D1CliInvocation,
 )
+from entropic_substrate.kernel.identity.d1_primitives import EncoderInitializationIdentity
 from entropic_substrate.ladder.capture.resource.resource_billing import ProviderBillingPending
+from entropic_substrate.ladder.register.d1_registered_design import D1PreregistrationArtifact
 from entropic_substrate.ladder.run.campaign import d1_campaign_checkpoint
 from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
     D1CampaignCheckpointError,
@@ -122,6 +124,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_worker import (
     D1TrainerMailboxWorkerError,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
+    D1ObjectMailboxTrainerTransport,
     D1ObjectMailboxTransportError,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_output_publication import (
@@ -701,38 +704,142 @@ _SITES = [
         ),
         ValueError,
     ),
+    _Site(
+        "object_transport_request",
+        lambda value: d1_trainer_object_transport._request(  # pyright: ignore[reportPrivateUsage]
+            value
+        ),
+        D1ObjectMailboxTransportError,
+        "request_noncanonical",
+    ),
     # composition
     _Site("r2_entrypoint_attempt", _r2_worker_attempt, D1R2TrainerMailboxWorkerError, "attempt"),
+    # FOR-1626 (DN-1626-REPOINT): the three sites once retained on the any-case door.
+    _Site(
+        "registered_design_blob_sha256",
+        lambda value: D1PreregistrationArtifact(
+            path=PREREG_PATH, blob_sha256=value, commit=PREREG_COMMIT
+        ),
+        ValueError,
+        "D1 preregistration blob_sha256 must be lowercase",
+    ),
+    _Site(
+        "encoder_initialization_digest",
+        lambda value: EncoderInitializationIdentity(name="encoder", construction_digest=value),
+        ValueError,
+        "lowercase hexadecimal SHA-256 digest",
+    ),
 ]
 
 
-# W4-26(b): the object-transport request digest is RETAINED at its parent form
-# (FOR-1626, third retained site). A mixed-case digest there is not refused as a
-# malformed digest: it passes the any-case door and is refused by the session's
-# own request_mismatch check, a D1ObjectMailboxTransportError. Repointing it at
-# the lowercase-only door would turn that into a bare ValueError (a type change
-# that standing ruling 17 forbids), so it is pinned here, apart from _SITES.
-def test_object_transport_request_digest_retains_its_parent_exception_type() -> None:
+# W4-26(b), restated by FOR-1626 (DN-1626-REPOINT, 2026-10-08): the object-transport
+# request digest used to be RETAINED on the any-case door, so a mixed-case digest
+# passed it and was refused later as request_mismatch (a malformed one escaped as a
+# bare ValueError). The conductor ruled the repoint: the request digest is refused
+# at the lowercase door with its own typed error, ("start", "request_noncanonical"),
+# raised at the position of the old any-case call (R2).
+def _started_transport(
+    directory: str, *, stage_request: bool, payload: bytes
+) -> D1ObjectMailboxTrainerTransport:
     from .test_d1_trainer_object_transport import _ObjectStore, _transport
 
+    transport = _transport(Path(directory).resolve(), _ObjectStore())
+    transport.bootstrap(_POD, _ATTEMPT)
+    if stage_request:
+        transport.write_request(_POD, _ATTEMPT, d1_trainer_request_path(_ATTEMPT), payload)
+    return transport
+
+
+def test_object_transport_request_digest_is_refused_with_its_own_typed_error() -> None:
     payload = b"request-payload"
     real = hashlib.sha256(payload).hexdigest()
     mixed = real[:-1] + ("A" if real[-1] != "A" else "B")
     assert mixed != real and mixed.lower() != mixed
     with tempfile.TemporaryDirectory() as directory:
-        transport = _transport(Path(directory).resolve(), _ObjectStore())
-        transport.bootstrap(_POD, _ATTEMPT)
-        transport.write_request(_POD, _ATTEMPT, d1_trainer_request_path(_ATTEMPT), payload)
+        transport = _started_transport(directory, stage_request=True, payload=payload)
+        for digest in (mixed, "z" * 64, real[:-1]):
+            with pytest.raises(D1ObjectMailboxTransportError) as caught:
+                transport.start_trainer(_POD, _ATTEMPT, digest)
+            assert type(caught.value) is D1ObjectMailboxTransportError
+            assert (caught.value.stage, caught.value.code) == ("start", "request_noncanonical")
+        # Positive control: the genuine lowercase digest still starts the trainer.
+        transport.start_trainer(_POD, _ATTEMPT, real)
+
+
+def test_object_transport_request_check_precedes_request_missing() -> None:
+    # R2 teeth: every other start test stages a request first, so moving the check
+    # below the request_missing check would leave them all green. With NO staged
+    # request, a lowercase digest is request_missing and a mixed-case one is
+    # request_noncanonical; only the check's position separates the two.
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _started_transport(directory, stage_request=False, payload=b"")
+        with pytest.raises(D1ObjectMailboxTransportError) as missing:
+            transport.start_trainer(_POD, _ATTEMPT, _DIGEST)
+        assert (missing.value.stage, missing.value.code) == ("start", "request_missing")
+        with pytest.raises(D1ObjectMailboxTransportError) as noncanonical:
+            transport.start_trainer(_POD, _ATTEMPT, _MIXED)
+        assert (noncanonical.value.stage, noncanonical.value.code) == (
+            "start",
+            "request_noncanonical",
+        )
+
+
+def test_object_transport_request_mismatch_is_refused_with_its_own_typed_error() -> None:
+    # Pins the request_mismatch check, which no other test reaches: every other
+    # start test either omits the staged request or passes the staged digest.
+    # The digest here is well-formed lowercase but differs from the staged request.
+    payload = b"request-payload"
+    real = hashlib.sha256(payload).hexdigest()
+    other = real[:-1] + ("0" if real[-1] != "0" else "1")
+    assert other != real and other.lower() == other
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _started_transport(directory, stage_request=True, payload=payload)
         with pytest.raises(D1ObjectMailboxTransportError) as caught:
-            transport.start_trainer(_POD, _ATTEMPT, mixed)
+            transport.start_trainer(_POD, _ATTEMPT, other)
         assert type(caught.value) is D1ObjectMailboxTransportError
         assert (caught.value.stage, caught.value.code) == ("start", "request_mismatch")
-        # Positive control: the genuine lowercase digest starts the trainer.
-        transport.start_trainer(_POD, _ATTEMPT, real)
-        # A digest that is not hex at all still fails at the any-case door.
-        with pytest.raises(ValueError) as malformed:
-            transport.start_trainer(_POD, _ATTEMPT, "z" * 64)
-        assert type(malformed.value) is ValueError
+
+
+def test_object_transport_request_digest_check_keeps_session_ordering() -> None:
+    # Teeth for the position of the request check: it runs AFTER the session and
+    # attempt checks in start_trainer. With a mixed-case request digest, an unknown
+    # pod, a wrong attempt, and a non-canonical attempt must still surface their
+    # ordering/identity errors, not request_noncanonical. Moving the request check
+    # above the session call would turn all three into request_noncanonical.
+    with tempfile.TemporaryDirectory() as directory:
+        transport = _started_transport(directory, stage_request=True, payload=b"request")
+        with pytest.raises(D1ObjectMailboxTransportError) as unknown_pod:
+            transport.start_trainer("pod-sha-456", _ATTEMPT, _MIXED)
+        assert (unknown_pod.value.stage, unknown_pod.value.code) == (
+            "ordering",
+            "session_missing",
+        )
+        with pytest.raises(D1ObjectMailboxTransportError) as wrong_attempt:
+            transport.start_trainer(_POD, "b" * 64, _MIXED)
+        assert (wrong_attempt.value.stage, wrong_attempt.value.code) == (
+            "ordering",
+            "attempt_mismatch",
+        )
+        with pytest.raises(D1ObjectMailboxTransportError) as noncanonical_attempt:
+            transport.start_trainer(_POD, _MIXED, _MIXED)
+        assert (noncanonical_attempt.value.stage, noncanonical_attempt.value.code) == (
+            "identity",
+            "attempt_noncanonical",
+        )
+
+
+def test_object_transport_attempt_digest_is_refused_with_one_typed_error() -> None:
+    # FOR-1626: the malformed arm used to escape as a bare ValueError while the
+    # mixed-case arm raised the typed error; both now share ("identity",
+    # "attempt_noncanonical"). The explicit lowercase branch is gone, so the
+    # door is the only thing standing between these values and the transport.
+    attempt = d1_trainer_object_transport._attempt  # pyright: ignore[reportPrivateUsage]
+    for digest in ("z" * 64, _DIGEST[:-1], _DIGEST + "1", _MIXED):
+        with pytest.raises(D1ObjectMailboxTransportError) as caught:
+            attempt(digest)
+        assert type(caught.value) is D1ObjectMailboxTransportError
+        assert (caught.value.stage, caught.value.code) == ("identity", "attempt_noncanonical")
+    assert attempt(_DIGEST) == _DIGEST
 
 
 @pytest.mark.parametrize("site", [pytest.param(site, id=site.name) for site in _SITES])

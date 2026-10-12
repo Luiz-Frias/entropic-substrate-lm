@@ -18,12 +18,12 @@
 # payload, or a dataclass __post_init__ fed from any of those (safe branch:
 # mixed-reachability sites are boundary). in-process = every caller path is
 # shown to be in-process (e.g. a hashlib digest computed in the same scope).
-# All 61 rows below are boundary; none is proven in-process on every path.
+# All 57 rows below are boundary; none is proven in-process on every path.
 #
-# importer_files: 34
-# files: 35
-# rows: 61
-# boundary: 61
+# importer_files: 33
+# files: 33
+# rows: 57
+# boundary: 57
 # in-process: 0
 #
 # owners (sprint-manifest.json phase ids):
@@ -31,12 +31,11 @@
 #   p14-t-historical: 2
 #   p14-j-kernel-capture: 4
 #   p14-j-analyze-review-file: 6
-#   p14-j-run: 14
-#   p14-t-dead: 1
+#   p14-j-run: 13
+#   p14-t-dead: 0
 #
 # columns: path:line | enclosing_symbol | class | evidence | owning_phase
 #
-src/entropic_substrate/kernel/identity/d1_primitives.py:227 | EncoderInitializationIdentity.__post_init__ | boundary | constructed via d1_config_profile._build_encoder(payload), a decoded-JSON boundary path | p14-t-dead
 src/entropic_substrate/composition/entrypoints/d1_r2_trainer_mailbox_worker.py:191 | D1R2TrainerMailboxWorker._attempt | boundary | attempt = relative.parts[0], a filesystem path segment | p14-j-run
 src/entropic_substrate/historical/d_ladder/d_ladder_remote_request.py:60 | RemoteLadderRequest.__post_init__ | boundary | attempt_sha256 dataclass field constructed from a remote request payload | p14-t-historical
 src/entropic_substrate/historical/d_ladder/d_ladder_remote_request.py:61 | RemoteLadderRequest.__post_init__ | boundary | authorization_digest dataclass field constructed from a remote request payload | p14-t-historical
@@ -68,7 +67,6 @@ src/entropic_substrate/ladder/register/d1_provenance.py:107 | DataOrderAttestati
 src/entropic_substrate/ladder/register/d1_provenance.py:123 | CodeIdentity.__post_init__ | boundary | repository_digest dataclass field constructed from a parsed provenance record | p14-j-register
 src/entropic_substrate/ladder/register/d1_provenance.py:140 | ContainerIdentity.__post_init__ | boundary | image_digest.removeprefix("sha256:") dataclass field constructed from a parsed provenance record | p14-j-register
 src/entropic_substrate/ladder/register/d1_provenance.py:160 | PreregistrationIdentity.__post_init__ | boundary | family_digest dataclass field constructed from a parsed provenance record | p14-j-register
-src/entropic_substrate/ladder/register/d1_registered_design.py:87 | D1PreregistrationArtifact.__post_init__ | boundary | blob_sha256 dataclass field constructed from a parsed preregistration artifact record | p14-j-register
 src/entropic_substrate/ladder/register/d1_registered_design.py:210 | D1RegisteredDesign.__post_init__ | boundary | family_digest dataclass field constructed from a parsed registered-design record | p14-j-register
 src/entropic_substrate/ladder/register/d1_registered_design.py:211 | D1RegisteredDesign.__post_init__ | boundary | decision_contract_digest dataclass field constructed from a parsed registered-design record | p14-j-register
 src/entropic_substrate/ladder/register/d1_registered_design.py:221 | D1RegisteredDesign.__post_init__ | boundary | arm_construction_digests[arm], parsed registered-design record entries | p14-j-register
@@ -90,32 +88,34 @@ src/entropic_substrate/ladder/run/construction/d1_r2_runtime_composition.py:80 |
 src/entropic_substrate/ladder/run/transport/d1_trainer_evidence_adapter.py:69 | _attempt | boundary | value parameter of a generic trainer attempt decoder | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_contracts.py:40 | _digest | boundary | value parameter of a generic mailbox-contract digest codec helper | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_worker.py:135 | D1TrainerMailboxWorker._attempt | boundary | candidate.name, a filesystem directory-entry name | p14-j-run
-src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py:75 | _attempt | boundary | value parameter of a generic trainer object-transport attempt decoder | p14-j-run
-src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py:256 | D1ObjectMailboxTrainerTransport.start_trainer | boundary | request_sha256 method parameter supplied at the trainer session boundary | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:83 | d1_trainer_request_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:92 | d1_trainer_runtime_report_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:101 | d1_trainer_start_report_path | boundary | attempt_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:102 | d1_trainer_start_report_path | boundary | request_sha256 function parameter used to build a remote artifact path | p14-j-run
 src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py:189 | _sha | boundary | text = _text(value, label), value parameter of a generic process-contract codec helper | p14-j-run
 #
-# 2026-10-01 wave 1 (PR #319): 20 of the 21 p14-j-register BOUNDARY rows
+# 2026-10-01 wave 1 (PR #319): 20 of the 21 p14-j-register BOUNDARY rows were
 # repointed to require_lowercase_sha256 via
-# ladder/register/d1_provenance.require_lowercase_digest; row 71
-# (d1_registered_design.py D1PreregistrationArtifact.__post_init__
-# blob_sha256, now :87-89) RETAINED on require_sha256_hex_any_case plus an
-# explicit lowercase check per conductor ruling W1-16 (message pinned by
-# tests/test_d1_registered_design.py:111); FOR-1626 owns the eventual repoint
-# with that test. Rows above are the pre-wave-1 audit and are not rewritten.
+# ladder/register/d1_provenance.require_lowercase_digest. Rows above are the
+# pre-wave-1 audit and are not rewritten, so d1_registered_design.py keeps the
+# historical rows :210, :211 and :221 although that file no longer calls
+# require_sha256_hex_any_case (its only remaining reference was the import and
+# the :88 call, both removed below).
 #
-# 2026-10-07 docs sweep (conductor): two more BOUNDARY rows RETAINED on
-# require_sha256_hex_any_case under FOR-1626, each by a conductor ruling at
-# its wave: row 39 (kernel/identity/d1_primitives.py
-# EncoderInitializationIdentity.__post_init__, then :227, now :204; ruling
-# W3-21, 2026-10-05, p14-t-dead: the encoder-initialization digest is an
-# identity-bearing value, its case contract stays with the kernel function)
-# and rows 93-94 (ladder/run/transport/d1_trainer_object_transport.py
-# _attempt and start_trainer; ruling W4-26, 2026-10-06, p14-j-run: the
-# repoint changed the caller-visible exception TYPE at the object-transport
-# digest sites, so the lane reverted it in 99aa3b8). With row 71 these are
-# the three retained sites FOR-1626 owns; every other BOUNDARY row above was
-# repointed by its owning phase (final counts recorded in the phase commits).
+# 2026-10-08 FOR-1626 (DN-1626-REPOINT, operator ruling): the last three
+# BOUNDARY sites retained on the any-case door were repointed to
+# kernel.codec.strict_json.require_lowercase_sha256 and their four rows are
+# REMOVED, not relabelled (the audit test admits only the classes boundary and
+# in-process): d1_primitives.py:227 (EncoderInitializationIdentity, ruling
+# W3-21, call then at :204), d1_registered_design.py:87 (blob_sha256, ruling
+# W1-16, call then at :88), d1_trainer_object_transport.py:75 (_attempt) and :256
+# (start_trainer request_sha256), ruling W4-26. Header before -> after, each
+# value derived from the rows that remain: files 35 -> 33 (d1_primitives.py and
+# d1_trainer_object_transport.py leave the table; d1_registered_design.py stays
+# through its three historical rows), rows 61 -> 57, boundary 61 -> 57,
+# in-process 0 -> 0, importer_files 34 -> 33 (every remaining audited file is an
+# importer of record, the definition module having left the table), owner file
+# tallies p14-j-run 14 -> 13 and p14-t-dead 1 -> 0 (sum 33 = files).
+# require_sha256_hex_any_case stays defined with zero callers in src; retiring
+# the public name is FOR-1636. The live scan in
+# tests/test_sha256_caller_audit.py now asserts that end state directly.

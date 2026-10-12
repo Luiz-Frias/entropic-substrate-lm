@@ -126,3 +126,36 @@ def test_initializer_refuses_shared_or_structurally_different_branch_pairs() -> 
 def test_identity_value_still_rejects_malformed_digest() -> None:
     with pytest.raises(ValueError, match="SHA-256"):
         EncoderInitializationIdentity(name=D1_ENCODER_INITIALIZATION_NAME, construction_digest="x")
+
+
+@pytest.mark.parametrize(
+    "digest",
+    [
+        "A" * 64,
+        "A" + "1" * 63,
+        "a" * 63 + "F",
+        "a" * 63,
+        "g" * 64,
+        "a" * 65,
+    ],
+    ids=["upper", "mixed-leading", "mixed-trailing", "short", "non-hex", "long"],
+)
+def test_identity_value_refuses_a_digest_that_is_not_lowercase_sha256(digest: str) -> None:
+    # FOR-1626 (DN-1626-REPOINT): the any-case door admitted the upper and mixed
+    # arms; the lowercase door refuses them with the same exception type.
+    with pytest.raises(ValueError, match="lowercase") as caught:
+        EncoderInitializationIdentity(
+            name=D1_ENCODER_INITIALIZATION_NAME, construction_digest=digest
+        )
+    assert type(caught.value) is ValueError
+    assert "SHA-256" in str(caught.value)
+
+
+def test_identity_value_admits_a_lowercase_digest_and_the_registered_constant_constructs() -> None:
+    # Positive control for the refusals above: the digest check, not the fixture.
+    admitted = EncoderInitializationIdentity(
+        name=D1_ENCODER_INITIALIZATION_NAME, construction_digest="a" * 64
+    )
+    assert admitted.construction_digest == "a" * 64
+    registered = default_d1_encoder_initialization_identity()
+    assert registered.construction_digest == registered.construction_digest.lower()

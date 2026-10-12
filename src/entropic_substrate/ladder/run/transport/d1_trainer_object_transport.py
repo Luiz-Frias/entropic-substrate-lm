@@ -8,14 +8,14 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     normalize_d1_relative_artifact_path,
     publish_d1_atomic_bytes,
 )
-from entropic_substrate.kernel.identity.d1_primitives import require_sha256_hex_any_case
+from entropic_substrate.kernel.codec.strict_json import require_lowercase_sha256
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxCommand,
@@ -71,11 +71,20 @@ def _error(stage: str, code: str) -> D1ObjectMailboxTransportError:
     return D1ObjectMailboxTransportError(stage=stage, code=code)
 
 
+def _attempt_refused(_reason: str) -> NoReturn:
+    raise _error("identity", "attempt_noncanonical")
+
+
+def _request_refused(_reason: str) -> NoReturn:
+    raise _error("start", "request_noncanonical")
+
+
 def _attempt(value: str) -> str:
-    require_sha256_hex_any_case(value, label="D1 trainer object attempt")
-    if value != value.lower():
-        raise _error("identity", "attempt_noncanonical")
-    return value
+    return require_lowercase_sha256(value, fail=_attempt_refused)
+
+
+def _request(value: str) -> str:
+    return require_lowercase_sha256(value, fail=_request_refused)
 
 
 @dataclass(slots=True)
@@ -253,7 +262,7 @@ class D1ObjectMailboxTrainerTransport:
 
     def start_trainer(self, pod_id: str, attempt_sha256: str, request_sha256: str) -> None:
         session = self._session(pod_id, attempt_sha256)
-        require_sha256_hex_any_case(request_sha256, label="D1 trainer object request")
+        _request(request_sha256)
         if session.request_sha256 is None:
             raise _error("start", "request_missing")
         if request_sha256 != session.request_sha256:
