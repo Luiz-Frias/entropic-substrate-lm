@@ -6,9 +6,10 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import NoReturn, cast
 
+from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.kernel.evidence_class.resource_provenance import (
     EvidenceGap,
     RunStartProvenance,
@@ -41,19 +42,6 @@ def _fail(detail: str, error: Exception | None = None) -> NoReturn:
     if error is None:
         raise RunpodBillingSchemaError(detail)
     raise RunpodBillingSchemaError(detail) from error
-
-
-def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail("billing JSON repeats a key")
-        result[key] = value
-    return result
-
-
-def _nonfinite(value: str) -> NoReturn:
-    _fail(f"billing JSON contains non-finite constant {value!r}")
 
 
 def _provider_timestamp(value: object) -> str:
@@ -97,14 +85,11 @@ def parse_runpodctl_billing_observation(
         raise TypeError("RunPod billing parser requires text stdout")
     observed_at = _checked_at(checked_at)
     try:
-        decoded: object = json.loads(
-            raw,
-            object_pairs_hook=_pairs,
-            parse_float=Decimal,
-            parse_constant=_nonfinite,
-        )
+        decoded: object = strict_loads(raw, fail=_fail, parse_float=Decimal)
     except RunpodBillingSchemaError:
         raise
+    except InvalidOperation as error:
+        _fail("billing response number is not a valid decimal", error)
     except (UnicodeError, json.JSONDecodeError) as error:
         _fail("billing response is not valid UTF-8 JSON", error)
     if type(decoded) is not list:

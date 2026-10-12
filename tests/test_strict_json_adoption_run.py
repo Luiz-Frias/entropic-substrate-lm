@@ -5,10 +5,13 @@ Five groups, one per acceptance bullet (FOR-1577, FOR-1582, FOR-1613):
 1. adoption -- an AST walk finds no local ``_pairs``-style strict-JSON hook
    definition left under ``ladder/run`` or in ``composition/wiring/d1_cli.py``
    (the identity-bearing ``ladder/run/journal.py`` is exempt, ruling 5; the
-   billing parser is a stated, test-pinned exception, see ``_PENDING``).
+   billing parser adopted the door in FOR-1632, so ``_PENDING`` is empty).
 2. codec boundary -- every adopted decoder raises its OWN exception type for
-   duplicate keys, non-finite constants, overflow floats and non-objects,
-   because ``fail=`` is wired to the decoder's own error channel.
+   duplicate keys, non-finite constants and non-objects, because ``fail=`` is
+   wired to the decoder's own error channel. Overflow floats are refused by
+   every decoder on the default float path; the billing parser decodes with
+   ``parse_float=Decimal``, admits them as finite Decimals, and is pinned
+   by its own test below, not by the shared cross-product.
 3. d1_cli -- ``_checked_payload`` stays the strict ``json.dumps`` admission
    gate (it is NOT folded into ``canonical_json``): a payload nesting a
    ``MappingProxyType`` is still an ``unexpected_defect``.
@@ -47,6 +50,7 @@ from entropic_substrate.composition.wiring.d1_cli import (
     D1CliExitCode,
     D1CliInvocation,
 )
+from entropic_substrate.ladder.capture.resource.resource_billing import ProviderBillingPending
 from entropic_substrate.ladder.run.campaign import d1_campaign_checkpoint
 from entropic_substrate.ladder.run.campaign.d1_campaign_checkpoint import (
     D1CampaignCheckpointError,
@@ -83,6 +87,10 @@ from entropic_substrate.ladder.run.closure import d1_finalized_cell_custody
 from entropic_substrate.ladder.run.closure.d1_finalized_cell_custody import (
     D1FinalizedCellCustodyError,
     parse_d1_finalized_cell_custody,
+)
+from entropic_substrate.ladder.run.closure.d1_runpod_billing_parser import (
+    RunpodBillingSchemaError,
+    parse_runpodctl_billing_observation,
 )
 from entropic_substrate.ladder.run.construction.d1_r2_runtime_composition import (
     D1BoundR2CheckpointSync,
@@ -141,13 +149,13 @@ _SRC = Path(__file__).resolve().parents[1] / "src" / "entropic_substrate"
 _RUN = _SRC / "ladder" / "run"
 _D1_CLI = _SRC / "composition" / "wiring" / "d1_cli.py"
 _EXEMPT = frozenset({"ladder/run/journal.py"})
-# FOR-1577 finding, verified by running the adoption against it: strict_loads
-# has no parse_float hook, so the billing parser (parse_float=Decimal, a
-# 19-digit amount pinned in tests/test_d1_runpod_billing_parser.py) cannot
-# adopt it without silently rounding billed amounts to float. The file keeps
-# its local hooks until the door grows a parse_float seam. Ruled W4-21
-# (option a, 2026-10-05): the exemption stands, the seam is FOR-1632.
-_PENDING = frozenset({"ladder/run/closure/d1_runpod_billing_parser.py"})
+# FOR-1577 finding: strict_loads had no parse_float hook, so the billing parser
+# (parse_float=Decimal, a 17-significant-digit amount pinned in
+# tests/test_d1_runpod_billing_parser.py) could not adopt it without rounding
+# billed amounts to float. Ruled W4-21 (option a, 2026-10-05): the exemption
+# stood until the door grew the seam. DN-1632-SEAM (2026-10-08) added it and
+# the parser adopted it in FOR-1632, so nothing is pending any more.
+_PENDING: frozenset[str] = frozenset()
 _FORBIDDEN = frozenset({"_pairs", "_strict_pairs", "_nonfinite", "_reject_constant"})
 
 _DIGEST = "1" * 64
@@ -192,13 +200,10 @@ def test_run_and_d1_cli_define_no_local_strict_json_hooks() -> None:
     assert found == {}
 
 
-def test_the_pending_exemption_is_exactly_the_billing_parser_and_still_needed() -> None:
-    # A stale exemption would hide a regression: when the billing parser adopts
-    # the door, this test goes RED and demands that _PENDING be emptied.
-    assert _PENDING == {"ladder/run/closure/d1_runpod_billing_parser.py"}
-    for rel in _PENDING:
-        names = _forbidden_definitions((_SRC / rel).read_text(encoding="utf-8"))
-        assert names, f"{rel} no longer defines a local hook: drop it from _PENDING"
+def test_no_adoption_exemption_is_pending() -> None:
+    # The billing parser adopted the door in FOR-1632; any new entry here would
+    # hide a local hook from the AST walk above and must be ruled, not slipped in.
+    assert _PENDING == frozenset()
 
 
 # --------------------------------------------------------------------------
@@ -323,6 +328,45 @@ def test_bytes_decoders_refuse_strict_json_violations_with_their_own_error(
     with pytest.raises(exception) as caught:
         decode(payload.encode())
     assert re.search(needle, str(caught.value)) is not None
+
+
+_BILLING_POD = "pod-123"
+_BILLING_CHECKED_AT = datetime(2026, 8, 26, 18, tzinfo=UTC)
+
+
+def _parse_billing(raw: str) -> object:
+    return parse_runpodctl_billing_observation(
+        raw,
+        pod_id=_BILLING_POD,
+        start=start(plan(profiles()[0], 101)),
+        checked_at=_BILLING_CHECKED_AT,
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "reason"),
+    [
+        ('[{"amount":1,"amount":2}]', "duplicate key: 'amount'"),
+        ("[NaN]", "non-finite constant: 'NaN'"),
+        ("[Infinity]", "non-finite constant: 'Infinity'"),
+        ("[-Infinity]", "non-finite constant: '-Infinity'"),
+    ],
+)
+def test_the_billing_parser_refuses_strict_json_violations_with_its_own_error(
+    raw: str, reason: str
+) -> None:
+    # Own test, not a row of the cross-product: it calls the public parser with
+    # a valid pod, start and checked_at so nothing refuses before the decode, and
+    # it pins the exact type so a fail= that raises a bare ValueError goes RED.
+    with pytest.raises(RunpodBillingSchemaError) as caught:
+        _parse_billing(raw)
+    assert type(caught.value) is RunpodBillingSchemaError
+    assert reason in str(caught.value)
+
+
+def test_the_billing_parser_fixture_admits_a_valid_response() -> None:
+    # Positive control for the row above: the refusals are the decode, not the arguments.
+    assert type(_parse_billing("[]")) is ProviderBillingPending
 
 
 # --------------------------------------------------------------------------
