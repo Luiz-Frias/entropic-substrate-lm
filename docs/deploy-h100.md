@@ -5,15 +5,23 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-3b93854.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-65542d4.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:f2469dc9acc4eea13d63ef91d2f28d753be6d29ebf97602c5cf67cd977986b78
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:762ed810ebaef60a2981eac1e7a78ffa271f7e46b71feaf557fd4b535daa0a9a
 ```
 
-Runtime source matches commit `3b93854201bcf05f097e7c1979c0231267367122` exactly.
+Runtime source matches commit `65542d49a810e50c70cfa52ef93676f2d0ee1108` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-10-12 (release v0.2.0, branch `fix/h-image-repin-v0.2.0`, operator go-ahead
+2026-10-12): the previous pin (`f2469dc9...`, source `3b93854`) is superseded; its capture
+`results/h-image-publication-3b93854.dvc` remains historical evidence. This image is built
+from the v0.2.0 release tip of `main`, the first tip that carries the whole p14 consolidation
+sprint and its four follow-ups (FOR-1633, FOR-1632, FOR-1626, FOR-1636), so the worker,
+transport and capture code a probe exercises matches the released tree. Same verifier and
+`h-prepare-source` manifest as the 3b93854 publication; the source replay's in-image capture
+admitted 491 documents / 1954698 bytes, corpus identity `cf938a0b...`.
 RE-PINNED 2026-09-26 (exit-gate lane, branch `mythwave/h-exit-gate`, operator go-ahead for the
 H tiny-probe wave): the previous pin (`6b4e68fa...`, source `88d1a25`) is superseded; its capture
 `results/h-image-publication-88d1a25.dvc` remains historical evidence. This image carries the
