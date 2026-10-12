@@ -67,11 +67,11 @@ hardware, topology capstones, and unregistered modality expansion are not implie
 ```bash
 mise trust && mise install   # pinned toolchain (python 3.12, uv, just, prek, ...)
 just setup                   # tools + uv sync --all-groups + prek hooks
-just check                   # quality gate: fmt-check + lint + typecheck + unit tests (= CI)
+just check                   # quality gate: fmt-check + lint + typecheck + unit tests + lint-imports (= CI)
 just test                    # unit tests only (CPU, <60s)
 just test-all                # unit + integration
-PYTHONPATH=src uv run pytest tests/test_kappa.py::test_name -m unit   # single test
-just train exp=e1-fisher     # exp ∈ {e0-byte, e0-bpe, e1-random, e1-fisher, e2, e3, tiny}
+PYTHONPATH=src uv run pytest tests/test_kappa_geometry.py::test_name -m unit   # single test
+just train exp=e1-fisher     # exp ∈ EXPERIMENTS in kernel/runtime/config.py; --tiny for a smoke run
 just eval ckpt=models/e3-latest.pt
 just download-data           # enwik8 → data/, then: dvc add data/enwik8 && dvc push
 just container-build         # podman build (CUDA 12.6 image; deploy: docs/deploy-h100.md)
@@ -154,7 +154,7 @@ authoritative version:
    learnable clamped curvature per head (init spread −1/0/+1); E2 is the exact κ=0 member
    (softmax shift-invariance), heads are the mixture-over-geometries. The earlier
    `GatedKappaNorm` (now beside `build_norm` in `core/substrate/blocks.py`; the
-   `core/geometry/kappa_norm.py` module was retired in p14-t-core, FOR-1597, commit 82e584e)
+   `core/geometry/kappa_norm.py` module was retired in p14-t-core, FOR-1597, landed as 3648a00)
    is retained but measured radially-annihilated (`≡ UnitNorm`,
    pinned by regression test — curvature is relational and cannot act on a single point at
    a chart origin under a unit-norm contract). The anchored arms `e3-anchor` (per-head κ +
