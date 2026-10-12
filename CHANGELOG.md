@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.2.0...v0.2.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deploy:** re-pin the H image to the v0.2.0 release tip ([cb2d852](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cb2d8522e6f87146c61c4d0ae50ab1c6b6e08aa4))
+* **deploy:** re-pin the H image to the v0.2.0 release tip ([#338](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/338)) ([73f6bcd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/73f6bcda870bb3f2f4fe40f61a6230a528e262c0))
+
+
+### Documentation
+
+* **plans:** add the refactor retrospective, correct the p14 register ([a34e8d2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/a34e8d2dd19de5d61fd94a6235fbf5bdfa8c2921))
+* **plans:** add the refactor retrospective, correct the p14 register ([#339](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/339)) ([7d7c375](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7d7c3757b4a56b257b4d79f6b44273cfbc8e9bfe))
+
 ## [0.2.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.1.0...v0.2.0) (2026-10-12)
 
 
