@@ -140,6 +140,23 @@ def _writer_threads() -> list[threading.Thread]:
     return [t for t in threading.enumerate() if t.name == _WRITER_THREAD_NAME]
 
 
+_WARNING_COLUMN = "| WARNING  | "
+
+
+def _warning_lines(capsys: pytest.CaptureFixture[str], needle: str) -> list[str]:
+    """The formatted WARNING lines on stderr that mention ``needle``.
+
+    FOR-1649: anchored on the level column of the production human format
+    (``<ts> | WARNING  | <message>``) and guarded against loguru's "Logging
+    error" block. A bare ``needle in line`` count also matches the one-line
+    ``Record was: {...}`` dump a closed sink writes, which carries the same
+    message text, so it passed while asserting on a dump.
+    """
+    err = capsys.readouterr().err
+    assert "Logging error" not in err, err
+    return [line for line in err.splitlines() if _WARNING_COLUMN in line and needle in line]
+
+
 # ------------------------------------------------------------------ (a) off-thread
 def test_log_returns_before_the_client_write_completes_and_never_writes_on_the_caller() -> None:
     client = _GatedClient()
@@ -242,7 +259,7 @@ def test_a_failed_batch_counts_every_record_it_carried_and_never_raises(
     client.gate.set()
     assert sink.flush() is True  # drained: every record settled, delivered or counted
     assert sink.failed_writes == 3
-    warnings = [line for line in capsys.readouterr().err.splitlines() if "metric batch" in line]
+    warnings = _warning_lines(capsys, "metric batch")
     assert len(warnings) == 2, f"one warning per failed batch, got {warnings}"
     sink.finish()
     assert client._runs[sink.run_id].data.tags["mlflow_failed_writes"] == "3"
@@ -315,16 +332,16 @@ def test_a_dead_worker_is_reported_at_the_next_log_and_at_finish(
     sink.log(_eval(2))  # must not raise, must not silently restart the worker
     assert {t.ident for t in _writer_threads()} <= before, "a dead writer was restarted"
     assert sink.failed_writes == 2
-    at_log = [line for line in capsys.readouterr().err.splitlines() if "worker died" in line]
+    at_log = _warning_lines(capsys, "worker died")
     assert len(at_log) == 1, at_log
 
     sink.log(_eval(3))
     assert sink.failed_writes == 3
-    again = [line for line in capsys.readouterr().err.splitlines() if "worker died" in line]
+    again = _warning_lines(capsys, "worker died")
     assert again == [], "reported once at log(), not once per record"
 
     sink.finish()
-    at_finish = [line for line in capsys.readouterr().err.splitlines() if "worker died" in line]
+    at_finish = _warning_lines(capsys, "worker died")
     assert len(at_finish) == 1, at_finish
     assert client._runs[sink.run_id].data.tags["mlflow_failed_writes"] == "3"
     assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
@@ -410,7 +427,7 @@ def test_finish_past_its_drain_budget_counts_stranded_records_and_still_terminat
         run = client._runs[sink.run_id]
         assert run.data.tags["mlflow_failed_writes"] == "3"
         assert run.data.tags["mlflow.status"] == "FINISHED"
-        budget = [line for line in capsys.readouterr().err.splitlines() if "drain" in line]
+        budget = _warning_lines(capsys, "drain")
         assert len(budget) == 1, budget
         assert "3 undelivered record(s)" in budget[0]
         assert "not joined" in budget[0], "an unjoined writer must be reported"
@@ -479,7 +496,7 @@ def test_log_after_finish_counts_the_record_and_starts_no_new_writer(
 
     assert sink.failed_writes == 1, "a record logged after finish() must be counted, not lost"
     assert _writer_threads() == [], "log() after finish() must never start a new writer"
-    warnings = [line for line in capsys.readouterr().err.splitlines() if "after finish" in line]
+    warnings = _warning_lines(capsys, "after finish")
     assert len(warnings) == 1, warnings
     assert client._runs[sink.run_id].data.metrics == {"loss": 1.0}, (
         "the post-finish record must never reach the client"

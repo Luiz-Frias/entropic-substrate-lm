@@ -137,7 +137,11 @@ def test_declared_softplus_era_loads_unchanged(
     tau = next(v for k, v in out["model"].items() if k.endswith("tau"))
     torch.testing.assert_close(tau, torch.full_like(tau, 0.5390461), atol=1e-7, rtol=0)
     assert out["format_version"] == CHECKPOINT_FORMAT_VERSION
-    assert TAU_SEMANTICS_ENV in capsys.readouterr().err  # declared, and said so
+    # Declared, and said so: as a formatted INFO line, not a loguru dump (FOR-1649;
+    # a bare substring check also matched the dump's `Record was: {...}` text).
+    err = capsys.readouterr().err
+    assert "Logging error" not in err, err
+    assert any("| INFO     | " in ln and TAU_SEMANTICS_ENV in ln for ln in err.splitlines()), err
 
 
 def test_declared_temperature_era_is_converted(

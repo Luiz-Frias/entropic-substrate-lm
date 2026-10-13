@@ -9,7 +9,9 @@ docstring in ``src/entropic_substrate/logging.py``).
 from __future__ import annotations
 
 import importlib
+import io
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -45,7 +47,10 @@ def test_configure_logging_rebinds_to_current_stderr(capsys: pytest.CaptureFixtu
     configure_logging(json_path=None)
     logger.info("marker-xyz-configure-rebinds")
     captured = capsys.readouterr()
-    assert "marker-xyz-configure-rebinds" in captured.err
+    # FOR-1649: a bare substring check also matched the `Record was: {...}`
+    # dump a stale sink writes, so it stayed green with the guard broken.
+    assert "Logging error" not in captured.err, captured.err
+    assert "| INFO     | marker-xyz-configure-rebinds" in captured.err
     assert "marker-xyz-configure-rebinds" not in captured.out
 
 
@@ -59,6 +64,94 @@ def test_report_bound_records_go_to_stdout_bare(capsys: pytest.CaptureFixture[st
     captured = capsys.readouterr()
     assert captured.out.strip() == "report-marker-42"
     assert "report-marker-42" not in captured.err
+
+
+class _CountingStream(io.StringIO):
+    """A StringIO that counts ``flush()`` calls (loguru's stream sink flushes per write)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushes = 0
+
+    def flush(self) -> None:
+        self.flushes += 1
+        super().flush()
+
+
+def _swap_stdio(monkeypatch: pytest.MonkeyPatch) -> tuple[_CountingStream, _CountingStream]:
+    """Install fresh stand-ins for stdout and stderr; return them in that order."""
+    out, err = _CountingStream(), _CountingStream()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    return out, err
+
+
+def test_default_binds_the_streams_current_at_configure_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOR-1649, default arm: ``resolve_streams`` off keeps the bind-at-call
+    behaviour every production caller relies on. A later swap of ``sys.stderr``
+    must NOT move the sink (the stream configured first keeps the line)."""
+    bound_out, bound_err = _swap_stdio(monkeypatch)
+    configure_logging(json_path=None)
+    later_out, later_err = _swap_stdio(monkeypatch)
+    logger.info("default-arm-human")
+    logger.bind(report=True).info("default-arm-report")
+    assert "| INFO     | default-arm-human" in bound_err.getvalue()
+    assert bound_out.getvalue() == "default-arm-report\n"
+    assert later_err.getvalue() == ""
+    assert later_out.getvalue() == ""
+
+
+def test_resolve_streams_follows_a_later_swap_of_both_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOR-1649, resolving arm: the sinks write to whatever ``sys.stderr`` /
+    ``sys.stdout`` is live at WRITE time, in the production human and report
+    shapes, and leave the streams current at configure time untouched."""
+    bound_out, bound_err = _swap_stdio(monkeypatch)
+    configure_logging(json_path=None, resolve_streams=True)
+    live_out, live_err = _swap_stdio(monkeypatch)
+    logger.warning("resolve-arm-human")
+    logger.bind(report=True).info("resolve-arm-report")
+    assert "| WARNING  | resolve-arm-human" in live_err.getvalue()
+    assert live_out.getvalue() == "resolve-arm-report\n"
+    assert bound_err.getvalue() == ""
+    assert bound_out.getvalue() == ""
+
+
+def test_resolve_streams_flushes_the_stream_it_resolved_after_each_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The report stream is block-buffered off a TTY; a sink that wrote
+    without flushing would hold a report line back. The resolving sink must
+    flush the stream it resolved, once per record."""
+    live_out, live_err = _swap_stdio(monkeypatch)
+    configure_logging(json_path=None, resolve_streams=True)
+    logger.info("flush-human")
+    logger.bind(report=True).info("flush-report")
+    assert live_err.flushes == 1
+    assert live_out.flushes == 1
+
+
+def test_resolve_streams_survives_a_closed_earlier_stream(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The failure this option exists for: a stream closed after configure
+    time (a finished capture phase) must not turn the next record into a
+    loguru "Logging error" dump."""
+    closed_out, closed_err = _swap_stdio(monkeypatch)
+    configure_logging(json_path=None, resolve_streams=True)
+    closed_out.close()
+    closed_err.close()
+    _, live_err = _swap_stdio(monkeypatch)
+    logger.error("after-close")
+    written = live_err.getvalue()
+    assert written.count("| ERROR    | after-close") == 1, written
+    # loguru prints its dump to the stderr live at failure time (here the
+    # stand-in), so the absence check must read that stream, not capsys.
+    assert "Logging error" not in written, written
+    assert "Logging error" not in capsys.readouterr().err
 
 
 def test_human_sink_carries_no_prefix_pollution_into_report_sink(
