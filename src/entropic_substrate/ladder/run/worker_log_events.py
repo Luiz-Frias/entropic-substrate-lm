@@ -13,6 +13,21 @@ JSON keys. Field values are limited to keys, sizes, digests, counts,
 durations, run ids, names and exception TYPE names, never ``str(exception)``
 of a provider error.
 
+Two vocabulary decisions are recorded here because the set is a frozen door:
+
+* ``sink.finish.end`` carries ``settled`` (did the metric drain finish inside its
+  budget) and ``stranded``, NOT the ``drained`` the brief first named. The
+  unmodified ``tests/test_mlflow_async_sink.py`` counts stderr lines containing
+  ``drain``, and under the pre-existing conftest sink defect those counts are
+  taken over loguru's error dump, so a ``drained=`` field would shift them.
+  ``settled`` is the ratified name; renaming it back is a vocabulary amendment
+  to be made only after the conftest fix lands beneath this change.
+* The missing-declared-log WARNING in ``MlflowSink.finish()`` binds no event. An
+  absent ``worker-log.jsonl`` is already visible as the absence of the artifact,
+  so the closed set is not widened for it;
+  ``test_a_declared_log_that_is_missing_warns_without_counting_or_raising`` pins
+  the warning text and that it carries no ``event`` key.
+
 Adapters under ``ladder.capture`` cannot import this module (layer edge
 ``capture -> run`` is not admitted), so they emit the literal names below;
 ``tests/test_h_worker_log_lines.py`` pins that the constant and the observed

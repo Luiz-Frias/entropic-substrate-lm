@@ -45,7 +45,6 @@ from entropic_substrate.ladder.run.object_worker import (
 )
 from entropic_substrate.ladder.run.runner import run_probe_training
 from entropic_substrate.ladder.run.worker_command import run_worker_command
-from entropic_substrate.ladder.run.worker_execution import narrated_stage
 from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
@@ -239,6 +238,39 @@ def test_evaluation_start_is_on_disk_while_the_evaluation_runs(
     ]
 
 
+def test_checkpoint_seal_is_logged_after_the_l1_window_closes(
+    log_file: Path, tmp_path: Path
+) -> None:
+    """FOR-1567 timing comparability: no emission inside the L1 window.
+
+    ``publication_timing["l1_seconds"]`` is assigned exactly when the L1 window
+    closes; at each such assignment the seal rows already on disk must number
+    0, 1, 2: the seal line for checkpoint N is written strictly after it.
+    """
+    bind_logs(log_file)
+    at_close: list[int] = []
+
+    class _Timing(dict[str, float]):
+        def __setitem__(self, name: str, value: float) -> None:
+            if name == "l1_seconds":
+                at_close.append(len(of(read_log(log_file), "checkpoint.seal")))
+            super().__setitem__(name, value)
+
+    template = engine(tmp_path)
+    output = tmp_path / "run"
+    output.mkdir()
+    run_probe_training(
+        template.profile,
+        template.source_root,
+        output,
+        max_source_bytes=1_000_000,
+        max_artifact_bytes=10_000_000,
+        publication_timing=_Timing(),
+    )
+    assert at_close == [0, 1, 2]
+    assert len(of(read_log(log_file), "checkpoint.seal")) == 3
+
+
 # --------------------------------------------------------------- (b) R2 publishes
 def test_publish_names_key_bytes_and_each_verification_read(
     log_file: Path, capsys: pytest.CaptureFixture[str]
@@ -324,6 +356,33 @@ def test_an_exhausted_retry_budget_warns_between_attempts_and_ends_nothing(
     assert len(of(rows, "publish.start")) == 1
 
 
+def test_a_publish_that_raises_after_landing_the_object_is_a_warning_retry_then_recovers(
+    log_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The path a real R2 post-PUT readback failure takes: ``objects.publish`` itself raises."""
+    bind_logs(log_file)
+    key = "k/publish-raised.json"
+
+    class _RaisesAfterLanding(_ObjectStore):
+        def publish(self, key: str, payload: bytes, *, expected_sha256: str) -> Any:
+            super().publish(key, payload, expected_sha256=expected_sha256)
+            raise RuntimeError("injected post-put readback failure")
+
+    slept: list[float] = []
+    retry = VerificationReadRetry(sleep=slept.append)
+    identity = publish_verified_object(_RaisesAfterLanding(), key, b"payload", retry=retry)
+    assert identity.key == key
+    rows = read_log(log_file)
+    (warning,) = of(rows, "publish.retry")
+    assert warning["level"] == "WARNING"
+    assert (warning["key"], warning["attempt"], warning["max_attempts"]) == (key, 1, 3)
+    assert warning["reason"] == "RuntimeError"
+    assert "injected post-put readback failure" not in json.dumps(rows)  # C9: no str(exc)
+    assert retry.failures == 1  # behaviour invariance (C8): the failure was already counted
+    assert index_of(rows, "publish.retry") < index_of(rows, "publish.end")
+    assert "WARNING" in capsys.readouterr().err
+
+
 def test_snapshot_publication_is_bracketed_and_every_object_put_is_reported(
     tmp_path: Path, log_file: Path
 ) -> None:
@@ -404,6 +463,10 @@ def test_object_worker_reports_stages_snapshots_and_the_completion_marker_once(
 
 def test_stage_start_is_on_disk_while_the_stage_body_runs(log_file: Path) -> None:
     # START-BEFORE-BLOCK (C6): stage.start must already be on disk while the stage body runs.
+    # Imported here, not at module level (C13): on the parent tree the symbol does not
+    # exist, and a module-level import would turn the whole file into one collection error.
+    from entropic_substrate.ladder.run.worker_execution import narrated_stage
+
     bind_logs(log_file)
     with narrated_stage("probe"):
         inside = [r["event"] for r in read_log(log_file)]
@@ -628,7 +691,7 @@ def test_a_failed_log_upload_is_counted_warned_and_never_skips_termination(
 
 
 def test_a_declared_log_that_is_missing_warns_without_counting_or_raising(
-    tmp_path: Path, log_file: Path
+    tmp_path: Path, log_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bind_logs(log_file)
     client = FakeMlflowClient()
@@ -636,6 +699,13 @@ def test_a_declared_log_that_is_missing_warns_without_counting_or_raising(
     sink.finish()
     assert sink.failed_writes == 0
     assert client._runs[sink.run_id].data.tags["mlflow.status"] == "FINISHED"
+    assert client.artifacts_logged == []  # nothing was uploaded
+    # The warning itself (brief: "missing file is a WARNING, never a raise"). It is a
+    # deliberate non-event: the closed vocabulary is not widened for an absent file,
+    # so the JSON row carries no `event` key (the closed-set test sees only bound names).
+    assert "worker log file" in capsys.readouterr().err
+    (warned,) = [r for r in read_log(log_file) if "worker log file" in r.get("message", "")]
+    assert warned["level"] == "WARNING" and "event" not in warned
 
 
 def test_the_log_path_may_not_alias_the_authoritative_results_file(tmp_path: Path) -> None:
@@ -780,6 +850,69 @@ def test_a_failed_run_ends_the_worker_exactly_once_with_its_stage_and_error_type
     assert end["error_type"] == "RuntimeError"
     assert "injected checkpoint upload failure" not in json.dumps(rows)  # C9: no str(exc)
     assert index_of(rows, "sink.finish.end", sink="jsonl") < index_of(rows, "worker.end")
+
+
+def test_a_stdout_write_that_fails_after_the_worker_ended_does_not_end_it_twice(
+    tmp_path: Path,
+) -> None:
+    """C15: ``worker.end`` exactly once, even when the final response write raises."""
+
+    class _BadOut(StringIO):
+        def write(self, text: str, /) -> int:
+            raise OSError("stdout closed")
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "bad-stdout-worker"
+    workspace.mkdir()
+    status = run_worker_command(
+        _run_args(workspace, tmp_path, marker),
+        environ={},
+        objects=objects,
+        stdout=_BadOut(),
+        stderr=StringIO(),
+    )
+    assert status == 2  # the refusal envelope is still returned
+    ends = of(read_log(worker_log_path(workspace)), "worker.end")
+    assert [r["status"] for r in ends] == ["ok"]
+
+
+def test_run_command_declares_the_worker_log_to_the_sink_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The production wiring: without ``log_path`` the log never reaches MLflow.
+
+    Every other test builds the sink itself; this one pins that the worker command
+    passes the file it writes (the sibling ``.observability`` directory, never a
+    path under the workspace root) to ``build_sink_for_run``.
+    """
+    from entropic_substrate.ladder.run import worker_command
+
+    declared: list[dict[str, Any]] = []
+    real = worker_command.build_sink_for_run
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        declared.append(dict(kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(worker_command, "build_sink_for_run", spy)
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "wiring-worker"
+    workspace.mkdir()
+    status = run_worker_command(
+        _run_args(workspace, tmp_path, marker),
+        environ={},
+        objects=objects,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    assert status == 0
+    (kwargs,) = declared
+    assert kwargs["log_path"] == worker_log_path(workspace)
+    assert kwargs["results_path"] == worker_log_path(workspace).with_name("metrics.jsonl")
 
 
 # --------------------------------------------------------- (e) closed set, both ways

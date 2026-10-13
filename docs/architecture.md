@@ -510,6 +510,8 @@ The H worker narrates its mechanisms (every R2 publish, retry, stop-marker obser
 write and sink finish) through `kernel.runtime.logging`, using the closed event vocabulary in
 `entropic_substrate.ladder.run.worker_log_events`. The structured copy, `worker-log.jsonl`, is uploaded
 to the MLflow run at sink finish as an operational mirror that never feeds a verdict.
+`sink.finish.end` reports `settled` and `stranded`; the names and the one deliberately event-less
+warning are recorded in that module's docstring.
 
 ## D1–D5 ladder
 

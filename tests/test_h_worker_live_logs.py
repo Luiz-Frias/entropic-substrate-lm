@@ -5,7 +5,7 @@ Modeled on ``tests/test_h_lane_live.py``: uses the ALREADY-RUNNING stack via
 ``MLFLOW_TRACKING_URI``, skipped outright when it is unset (so ``just
 test-all`` without a stack never reaches for a server), and picked up by
 ``scripts/run_container_test.sh`` phase 1 (``pytest -m integration``) with no
-edit to that script. Two legs:
+edit to that script. Three legs:
 
 1. The fast H path (the 2 ``codec_warmup`` + 4 ``prediction`` step profile)
    through a real MLflow run built by ``build_sink_for_run(..., log_path=...)``.
@@ -22,6 +22,12 @@ edit to that script. Two legs:
    asserted EMPTY. Missing R2 credentials FAIL LOUD here (this runs inside the
    gate, whose preflight already requires them); they never skip.
 
+3. The production wiring: ``run_worker_command(..., "--local-tiny")`` over the
+   in-memory object store with ``ENTROPIC_MLFLOW_TINY=1`` against the REAL
+   server. The worker command itself must declare the log (``log_path``), so the
+   run it builds lists ``results/worker-log.jsonl`` with ``worker.start`` in it.
+   Legs 1 and 2 build their own sinks and cannot see a dropped ``log_path=``.
+
 The MLflow run id and the R2 listing evidence are written under ``results/``
 (gitignored): the container gate's default pytest report never surfaces a
 passing test's stdout, so a file is the only way they reach the PR body.
@@ -32,12 +38,15 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_execution import engine
+from tests.test_sentence_worker_execution import prepared
 
 from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
@@ -45,9 +54,10 @@ from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDe
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.runner import run_probe_training
 from entropic_substrate.ladder.run.transport.d1_dvc_remote_config import load_d1_dvc_s3_remote
-from entropic_substrate.ladder.run.worker_command import build_worker_objects
+from entropic_substrate.ladder.run.worker_command import build_worker_objects, run_worker_command
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
+    publish_probe_request,
     publish_verified_object,
 )
 
@@ -55,6 +65,7 @@ MLFLOW_TRACKING_ENV = "MLFLOW_TRACKING_URI"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_ID_FILE = REPO_ROOT / "results" / "h-worker-live-logs-run-id.txt"
 R2_EVIDENCE_FILE = REPO_ROOT / "results" / "h-worker-live-logs-r2.txt"
+COMMAND_RUN_ID_FILE = REPO_ROOT / "results" / "h-worker-live-logs-command-run-id.txt"
 R2_TEST_PREFIX_ROOT = "tests/for-1637"
 
 pytestmark = [
@@ -192,3 +203,64 @@ def test_live_r2_publish_is_narrated_and_leaves_nothing_behind(
     names = [row["event"] for row in rows]
     assert names == ["publish.start", "publish.verify_read", "publish.end"], names
     assert rows[0]["bytes"] == len(payload) == rows[2]["bytes"]
+
+
+def test_live_worker_command_declares_its_log_to_the_tracking_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Leg 3: the PRODUCTION call path, not a hand-built sink.
+
+    ``mlflow_enabled`` reads ``os.environ`` (not the ``environ=`` argument handed
+    to the command), so the tiny opt-in is set on the process environment.
+    """
+    import mlflow.tracking
+
+    monkeypatch.setenv("ENTROPIC_MLFLOW_TINY", "1")
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "command-worker"
+    workspace.mkdir()
+    out, err = StringIO(), StringIO()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=objects,
+        stdout=out,
+        stderr=err,
+    )
+    assert status == 0, err.getvalue()
+
+    local = _rows(workspace.parent / f"{workspace.name}.observability" / "worker-log.jsonl")
+    (mlflow_row,) = [row for row in local if row.get("event") == "mlflow.run"]
+    run_id: str = mlflow_row["run_id"]
+    client = mlflow.tracking.MlflowClient(tracking_uri=os.environ[MLFLOW_TRACKING_ENV])
+    listed = sorted(item.path for item in client.list_artifacts(run_id, "results"))
+    print(f"live worker-command run id: {run_id}; results artifacts: {listed}")
+    COMMAND_RUN_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    COMMAND_RUN_ID_FILE.write_text(f"{run_id}\n{listed}\n")
+    assert "results/worker-log.jsonl" in listed, listed
+
+    downloaded = Path(
+        client.download_artifacts(run_id, "results/worker-log.jsonl", str(tmp_path / "dl"))
+    )
+    events = [row["event"] for row in _rows(downloaded) if "event" in row]
+    assert events[0] == "worker.start", events
+    assert "mlflow.run" in events and "checkpoint.seal" in events
