@@ -36,6 +36,7 @@ from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_
 from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
 from entropic_substrate.ladder.capture.adapters.mlflow import MlflowSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.run import object_worker
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.object_worker import (
     STOP_MARKER_SCHEMA,
@@ -539,6 +540,17 @@ def test_stage_start_is_on_disk_while_the_stage_body_runs(log_file: Path) -> Non
     assert inside == ["stage.start"]
 
 
+def test_a_raising_stage_logs_no_end_and_the_exception_propagates(log_file: Path) -> None:
+    # C5: .end is logged only after the operation returns; a raising stage logs no .end.
+    from entropic_substrate.ladder.run.worker_execution import narrated_stage
+
+    bind_logs(log_file)
+    with pytest.raises(RuntimeError, match="stage body failed"):
+        with narrated_stage("probe"):
+            raise RuntimeError("stage body failed")
+    assert [r["event"] for r in read_log(log_file)] == ["stage.start"]
+
+
 def test_a_stop_marker_is_reported_when_observed_and_a_failed_poll_is_a_warning(
     tmp_path: Path, log_file: Path
 ) -> None:
@@ -566,6 +578,28 @@ def test_a_stop_marker_is_reported_when_observed_and_a_failed_poll_is_a_warning(
     assert not [r for r in rows if "stop_marker.polled" in json.dumps(r)]
     (written,) = of(rows, "completion.written")
     assert written["marker"] == "stopped"
+
+
+def test_the_stop_poll_backs_off_between_failed_reads_on_the_existing_schedule(
+    tmp_path: Path, log_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # C8: one failed stop-marker poll sleeps exactly one backoff, on the retry schedule.
+    slept: list[float] = []
+    monkeypatch.setattr(
+        object_worker, "VerificationReadRetry", lambda: VerificationReadRetry(sleep=slept.append)
+    )
+    bind_logs(log_file)
+    request, inputs = prepared(tmp_path)
+    objects = _MarkerStore(
+        control_key=stop_marker_key(request),
+        control_payloads=(None, None, encode_stop_marker(request)),
+        raises=1,
+    )
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "stopped-worker"
+    workspace.mkdir()
+    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    assert slept == [0.05]
 
 
 def test_a_present_marker_for_another_request_is_never_reported_as_observed(
@@ -890,6 +924,85 @@ def test_the_tracking_run_line_is_an_event_and_never_carries_uri_credentials(
     (row,) = of(read_log(log_file), "mlflow.run")
     assert row["run_id"] == sink.run_id
     assert row["uri"] == "https://mlflow.example:5000/base"
+    assert "hunter2" not in log_file.read_text() and "hunter2" not in capsys.readouterr().err
+
+
+# ------------------------------------------- (d) write-failed sites on their rows
+class _ArtifactsDown(FakeMlflowClient):
+    def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:
+        raise ConnectionError("simulated artifact store outage")
+
+
+def _write_failed(rows: list[dict[str, Any]], needle: str) -> dict[str, Any]:
+    (row,) = [r for r in of(rows, "sink.write_failed") if needle in r["message"]]
+    return row
+
+
+def test_a_log_after_finish_is_a_write_failed_warning_on_the_json_row(log_file: Path) -> None:
+    bind_logs(log_file)
+    sink = _mlflow_sink(FakeMlflowClient())
+    sink.finish()
+    sink.log(_eval(1))
+    row = _write_failed(read_log(log_file), "after finish()")
+    assert (row["sink"], row["count"], row["level"]) == ("mlflow", 1, "WARNING")
+
+
+def test_a_dead_metric_writer_is_a_write_failed_warning_on_the_json_row(log_file: Path) -> None:
+    bind_logs(log_file)
+    sink = _mlflow_sink(FakeMlflowClient())
+    sink._worker_error = RuntimeError("boom")
+    sink.log(_eval(1))
+    row = _write_failed(read_log(log_file), "writer worker died")
+    assert (row["sink"], row["count"], row["level"]) == ("mlflow", 1, "WARNING")
+
+
+def test_an_extractor_failure_is_a_write_failed_warning_on_the_json_row(log_file: Path) -> None:
+    class _Boom:
+        def extract(self, record: object) -> object:
+            raise RuntimeError("boom")
+
+    bind_logs(log_file)
+    sink = _mlflow_sink(FakeMlflowClient(), metric_extractor=_Boom())
+    sink.log(_eval(1))
+    row = _write_failed(read_log(log_file), "metric write failed")
+    assert (row["sink"], row["count"], row["level"]) == ("mlflow", 1, "WARNING")
+
+
+def test_a_failed_artifact_upload_is_a_write_failed_warning_on_the_json_row(
+    log_file: Path, tmp_path: Path
+) -> None:
+    bind_logs(log_file)
+    sink = _mlflow_sink(_ArtifactsDown())
+    sink.log_artifact(tmp_path / "blob.bin")
+    row = _write_failed(read_log(log_file), "artifact upload failed")
+    assert (row["sink"], row["count"], row["level"]) == ("mlflow", 1, "WARNING")
+
+
+def test_a_failed_results_upload_is_a_write_failed_warning_on_the_json_row(
+    log_file: Path, tmp_path: Path
+) -> None:
+    results = tmp_path / "metrics.jsonl"
+    results.write_text("{}\n")
+    bind_logs(log_file)
+    sink = _mlflow_sink(_ArtifactsDown(), results_path=results)
+    sink.finish()
+    row = _write_failed(read_log(log_file), "results JSONL upload failed")
+    assert (row["sink"], row["count"], row["level"]) == ("mlflow", 1, "WARNING")
+
+
+def test_an_unparseable_tracking_uri_is_rendered_as_a_placeholder_never_its_secret(
+    log_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bind_logs(log_file)
+    sink = MlflowSink(
+        tracking_uri="http://operator:hunter2@[::1",  # pragma: allowlist secret
+        experiment_name="exp",
+        run_name="run",
+        client=FakeMlflowClient(),
+    )
+    sink.finish()
+    (row,) = of(read_log(log_file), "mlflow.run")
+    assert row["uri"] == "<unparseable tracking uri>"
     assert "hunter2" not in log_file.read_text() and "hunter2" not in capsys.readouterr().err
 
 
