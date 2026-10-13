@@ -15,8 +15,10 @@ constant in both directions.
 
 from __future__ import annotations
 
+import ast
 import json
 import threading
+import time
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -34,13 +36,16 @@ from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_
 from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
 from entropic_substrate.ladder.capture.adapters.mlflow import MlflowSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.object_worker import (
+    STOP_MARKER_SCHEMA,
     encode_stop_marker,
     run_object_worker,
     stop_marker_key,
 )
 from entropic_substrate.ladder.run.runner import run_probe_training
 from entropic_substrate.ladder.run.worker_command import run_worker_command
+from entropic_substrate.ladder.run.worker_execution import narrated_stage
 from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
@@ -203,6 +208,37 @@ def test_training_loop_narrates_phases_seals_and_evaluations(
     assert "evaluation.end global_step=6" in err
 
 
+def test_evaluation_start_is_on_disk_while_the_evaluation_runs(
+    log_file: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # START-BEFORE-BLOCK (C6): evaluation.start must already be on disk inside evaluate().
+    bind_logs(log_file)
+    original = SentenceExecution.evaluate
+    seen: list[list[str]] = []
+
+    def spy(self: SentenceExecution) -> Any:
+        seen.append(
+            [r["event"] for r in read_log(log_file) if r.get("event", "").startswith("evaluation.")]
+        )
+        return original(self)
+
+    monkeypatch.setattr(SentenceExecution, "evaluate", spy)
+    template = engine(tmp_path)
+    output = tmp_path / "run"
+    output.mkdir()
+    run_probe_training(
+        template.profile,
+        template.source_root,
+        output,
+        max_source_bytes=1_000_000,
+        max_artifact_bytes=10_000_000,
+    )
+    assert seen == [
+        ["evaluation.start"],
+        ["evaluation.start", "evaluation.end", "evaluation.start"],
+    ]
+
+
 # --------------------------------------------------------------- (b) R2 publishes
 def test_publish_names_key_bytes_and_each_verification_read(
     log_file: Path, capsys: pytest.CaptureFixture[str]
@@ -233,6 +269,20 @@ def test_publish_without_a_retry_object_still_reports_its_single_verification_re
     (verify,) = of(rows, "publish.verify_read")
     assert (verify["attempt"], verify["max_attempts"]) == (1, 1)
     assert [r["event"] for r in rows][-1] == "publish.end"
+
+
+def test_publish_start_is_on_disk_while_the_put_is_in_flight(log_file: Path) -> None:
+    # START-BEFORE-BLOCK (C6): the start row must already be on disk while the put is in flight.
+    bind_logs(log_file)
+    seen: list[list[str]] = []
+
+    class Spy(_ObjectStore):
+        def publish(self, key: str, payload: bytes, *, expected_sha256: str) -> Any:
+            seen.append([r["event"] for r in read_log(log_file) if r.get("key") == key])
+            return super().publish(key, payload, expected_sha256=expected_sha256)
+
+    publish_verified_object(Spy(), "k/a.json", b"x", retry=VerificationReadRetry())
+    assert seen == [["publish.start"]]
 
 
 def test_a_failed_verification_read_is_a_warning_retry_and_changes_no_budget(
@@ -352,6 +402,14 @@ def test_object_worker_reports_stages_snapshots_and_the_completion_marker_once(
     assert "completion.written key=" in capsys.readouterr().err
 
 
+def test_stage_start_is_on_disk_while_the_stage_body_runs(log_file: Path) -> None:
+    # START-BEFORE-BLOCK (C6): stage.start must already be on disk while the stage body runs.
+    bind_logs(log_file)
+    with narrated_stage("probe"):
+        inside = [r["event"] for r in read_log(log_file)]
+    assert inside == ["stage.start"]
+
+
 def test_a_stop_marker_is_reported_when_observed_and_a_failed_poll_is_a_warning(
     tmp_path: Path, log_file: Path
 ) -> None:
@@ -379,6 +437,27 @@ def test_a_stop_marker_is_reported_when_observed_and_a_failed_poll_is_a_warning(
     assert not [r for r in rows if "stop_marker.polled" in json.dumps(r)]
     (written,) = of(rows, "completion.written")
     assert written["marker"] == "stopped"
+
+
+def test_a_present_marker_for_another_request_is_never_reported_as_observed(
+    tmp_path: Path, log_file: Path
+) -> None:
+    # Negative arm (classify_stop_marker False): present, canonical, but another request's digest.
+    bind_logs(log_file)
+    request, inputs = prepared(tmp_path)
+    foreign = json.dumps(
+        {"schema": STOP_MARKER_SCHEMA, "request_sha256": "0" * 64}, sort_keys=True
+    ).encode()
+    objects = _MarkerStore(control_key=stop_marker_key(request), control_payloads=(foreign,))
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "foreign-marker-worker"
+    workspace.mkdir()
+    terminal = run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    rows = read_log(log_file)
+    assert terminal.key == f"{request.prefix}/complete.json"
+    assert of(rows, "stop_marker.observed") == []
+    assert of(rows, "stop_marker.retry") == []
+    assert [r["marker"] for r in of(rows, "completion.written")] == ["complete"]
 
 
 # ------------------------------------------------------------------- (d) sinks
@@ -460,6 +539,28 @@ def test_composite_finish_reports_each_sink_start_and_end_in_authoritative_first
     ends = of(rows, "sink.finish.end")
     assert [(r["settled"], r["stranded"]) for r in ends] == [(True, 0), (True, 0)]
     assert all(is_seconds(r["seconds"]) for r in ends)
+
+
+def test_mlflow_finish_start_is_on_disk_while_the_drain_is_blocked(log_file: Path) -> None:
+    # START-BEFORE-BLOCK (C6): sink.finish.start must already be on disk while the drain blocks.
+    bind_logs(log_file)
+    client = _GatedClient()
+    sink = _mlflow_sink(client, drain_timeout_seconds=30.0)
+    sink.log(_eval(1))
+    assert client.entered.wait(5.0)
+    finisher = threading.Thread(target=sink.finish)
+    finisher.start()
+    deadline = time.monotonic() + 3.0
+    started = False
+    while time.monotonic() < deadline and not started:
+        started = any(
+            r.get("event") == "sink.finish.start" and r.get("sink") == "mlflow"
+            for r in read_log(log_file)
+        )
+        time.sleep(0.01)
+    client.gate.set()
+    finisher.join(15.0)
+    assert started, "sink.finish.start was not on disk while the drain was still blocked"
 
 
 def test_a_bare_jsonl_sink_reports_its_own_finish_once(log_file: Path, tmp_path: Path) -> None:
@@ -753,3 +854,38 @@ def test_the_event_vocabulary_is_closed_both_ways(
     assert observed - H_WORKER_LOG_EVENTS == set(), "an emitted event is not in the vocabulary"
     assert H_WORKER_LOG_EVENTS - observed == set(), "a declared event is never emitted"
     capsys.readouterr()
+
+
+# ----------------------------------------------------------- (g) layer edge (C10)
+def test_ladder_capture_never_imports_the_run_layer() -> None:
+    """C10: the capture adapters never import ``ladder.run``; they emit literal event names.
+
+    ``import-linter`` cannot see this edge: ``capture`` and ``run`` both sit inside
+    the single ``ladder`` layer. This static walk resolves every import under
+    ``ladder/capture`` (relative and function-scope ones included) and fails on any
+    that lands in ``entropic_substrate.ladder.run``.
+    """
+    src = Path(__file__).resolve().parents[1] / "src"
+    forbidden = "entropic_substrate.ladder.run"
+    scanned = 0
+    offenders: list[str] = []
+    for path in sorted((src / "entropic_substrate" / "ladder" / "capture").rglob("*.py")):
+        scanned += 1
+        package = path.relative_to(src).with_suffix("").parts[:-1]
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+            if isinstance(node, ast.Import):
+                targets = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                head = package[: len(package) - (node.level - 1)] if node.level else ()
+                tail = tuple(node.module.split(".")) if node.module else ()
+                targets = [".".join((*head, *tail))]
+                targets += [".".join((*head, *tail, alias.name)) for alias in node.names]
+            else:
+                continue
+            offenders += [
+                f"{path.relative_to(src)}:{node.lineno} -> {target}"
+                for target in targets
+                if target == forbidden or target.startswith(forbidden + ".")
+            ]
+    assert scanned > 0, "the capture walk found no modules"
+    assert offenders == []
