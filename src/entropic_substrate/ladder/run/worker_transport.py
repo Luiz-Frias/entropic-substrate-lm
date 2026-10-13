@@ -16,12 +16,20 @@ from entropic_substrate.kernel.artifacts import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.worker_log_events import (
+    PUBLISH_END,
+    PUBLISH_RETRY,
+    PUBLISH_START,
+    PUBLISH_VERIFY_READ,
+    render,
 )
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
 
@@ -83,14 +91,39 @@ def _verified_read(
     if budget < 1:
         return None
     for index in range(budget):
+        read_started = time.perf_counter()
         try:
             received = objects.read(key)
-        except Exception:
+        except Exception as read_error:
             retry.failures += 1
             if index == budget - 1:
                 raise
+            # FOR-1637: a re-attempted read is narrated at WARNING. The attempt
+            # number counts the post-PUT readback that already failed inside
+            # objects.publish (budget == retry.attempts - 1 on that path), so
+            # it is derived by READING budget/retry.attempts, never by a new
+            # counter. `reason` is the exception TYPE name only (C9).
+            retry_fields = {
+                "key": key,
+                "attempt": retry.attempts - budget + index + 1,
+                "max_attempts": retry.attempts,
+                "reason": type(read_error).__name__,
+            }
+            logger.bind(event=PUBLISH_RETRY, **retry_fields).warning(
+                render(PUBLISH_RETRY, **retry_fields)
+            )
             retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
             continue
+        read_seconds = time.perf_counter() - read_started
+        read_fields = {
+            "key": key,
+            "attempt": retry.attempts - budget + index + 1,
+            "max_attempts": retry.attempts,
+            "seconds": read_seconds,
+        }
+        logger.bind(event=PUBLISH_VERIFY_READ, **read_fields).info(
+            render(PUBLISH_VERIFY_READ, **read_fields)
+        )
         if (
             type(received) is D1TrainerMailboxObjectRead
             and received.identity == expected
@@ -111,6 +144,20 @@ def publish_verified_object(
     expected = D1TrainerMailboxObjectIdentity(
         key, len(payload), hashlib.sha256(payload).hexdigest()
     )
+    # FOR-1637: `.start` BEFORE the put (a wedged put is then visible as a start
+    # with no end); `.end` only on a successful return, after the verification
+    # read. Nothing is logged inside a try body that implements retry (G8).
+    started = time.perf_counter()
+    logger.bind(event=PUBLISH_START, key=key, bytes=len(payload)).info(
+        render(PUBLISH_START, key=key, bytes=len(payload))
+    )
+
+    def ended() -> None:
+        seconds = time.perf_counter() - started
+        logger.bind(event=PUBLISH_END, key=key, bytes=len(payload), seconds=seconds).info(
+            render(PUBLISH_END, key=key, bytes=len(payload), seconds=seconds)
+        )
+
     try:
         actual = objects.publish(key, payload, expected_sha256=expected.sha256)
     except Exception as publish_error:
@@ -123,26 +170,44 @@ def publish_verified_object(
         # backed-off read loop used below -- never by re-issuing put_object
         # or re-calling objects.publish.
         retry.failures += 1
+        recovery_fields = {
+            "key": key,
+            "attempt": 1,
+            "max_attempts": retry.attempts,
+            "reason": type(publish_error).__name__,
+        }
+        logger.bind(event=PUBLISH_RETRY, **recovery_fields).warning(
+            render(PUBLISH_RETRY, **recovery_fields)
+        )
         recovered = _verified_read(
             objects, key, expected, payload, retry, budget=retry.attempts - 1
         )
         if recovered is None:
             raise publish_error
+        ended()
         return expected
     if type(actual) is not D1TrainerMailboxObjectIdentity or actual != expected:
         raise ValueError("worker publication identity mismatch")
     if retry is None:
+        read_started = time.perf_counter()
         received = objects.read(key)
+        read_seconds = time.perf_counter() - read_started
+        plain_read_fields = {"key": key, "attempt": 1, "max_attempts": 1, "seconds": read_seconds}
+        logger.bind(event=PUBLISH_VERIFY_READ, **plain_read_fields).info(
+            render(PUBLISH_VERIFY_READ, **plain_read_fields)
+        )
         if (
             type(received) is not D1TrainerMailboxObjectRead
             or received.identity != expected
             or received.payload != payload
         ):
             raise ValueError("worker publication readback identity mismatch")
+        ended()
         return expected
     received = _verified_read(objects, key, expected, payload, retry, budget=retry.attempts)
     if received is None:
         raise ValueError("worker publication readback identity mismatch")
+    ended()
     return expected
 
 

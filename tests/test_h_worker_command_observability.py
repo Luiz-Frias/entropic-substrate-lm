@@ -27,7 +27,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     request, inputs = prepared(tmp_path)
     objects = _ObjectStore()
@@ -77,6 +77,23 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     assert len(training) + len(evaluations) == len(records)
     assert all(r["status"] == "committed" for r in training)
     assert [r["step"] for r in training if r["phase"] == "prediction"]
+
+    # FOR-1637: the worker also narrates itself. The substrate's JSON sink is
+    # pointed at ``<workspace>.observability/worker-log.jsonl`` (beside
+    # metrics.jsonl) once the request is admitted, and the human stderr stream
+    # carries the same milestones as one sentence each (this is what the
+    # RunPod container log shows). The injected ``stderr`` stays the
+    # structured-error channel only: still empty on success.
+    assert error.getvalue() == ""
+    log_path = tmp_path / "command-worker.observability" / "worker-log.jsonl"
+    assert log_path.exists(), "the worker's structured log file must exist beside metrics.jsonl"
+    log_rows = [json.loads(line) for line in log_path.read_text().splitlines() if line]
+    assert log_rows and all("event" in row for row in log_rows if row["level"] != "DEBUG")
+    names = [row["event"] for row in log_rows]
+    assert "phase.start" in names and "completion.written" in names
+    human = capsys.readouterr().err
+    assert "phase.start phase=codec_warmup" in human
+    assert "completion.written key=" in human
 
 
 def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:

@@ -44,6 +44,7 @@ module — a loguru prefix on either is a hard break, not a formatting nit.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from datetime import UTC
 from pathlib import Path
@@ -96,12 +97,49 @@ def _report_format(_record: Record) -> str:
     return "{message}\n"
 
 
+# Keys the JSON sink owns: a bound field with one of these names can never
+# overwrite the record's own value (FOR-1637, G1).
+_JSON_BASE_KEYS = frozenset({"timestamp", "level", "logger", "message", "exception"})
+
+# Keys that ride in ``record["extra"]`` for the OTHER sinks' benefit and must
+# never reach the UTC-only JSON file. ``local_ts`` is written into the shared
+# per-call ``extra`` dict by ``_human_format`` (so it is present or absent
+# depending on handler order and the human filter); ``report`` is the stdout
+# routing flag. Excluded by NAME, never by "whatever the other sink left there".
+_JSON_EXCLUDED_EXTRA = frozenset({"local_ts", "report"})
+
+
+def _json_scalar(value: object) -> object:
+    """Coerce one bound value to a JSON scalar without ever raising.
+
+    Anything that is not ``None``/``bool``/``int``/``str``/finite ``float`` is
+    rendered with ``str()`` (a ``Path``, a dict, a set); a value whose ``str()``
+    itself raises degrades to its type name. This runs inside a loguru sink:
+    a raise here would drop the record and make loguru print its
+    "Logging error" block, and calling ``logger`` from here would trip its
+    re-entrancy guard, so neither is done (FOR-1637, G2).
+    """
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    try:
+        return str(value)
+    except Exception:
+        return f"<unprintable {type(value).__name__}>"
+
+
 def _json_sink(path: Path) -> Callable[[Message], None]:
     """Build a sink function appending one UTC-ISO-8601 JSON object per record.
 
     A sink *function* rather than ``format=`` on a stream sink: this needs
     full control of the timestamp representation (absolute UTC, explicit
     ``+00:00`` offset), not loguru's own ``serialize=True`` shape.
+
+    Fields bound with ``logger.bind(...)`` are carried as additional flat
+    keys (FOR-1637): scalars verbatim, anything else via ``str()``. The five
+    base keys are never overwritten and ``local_ts``/``report`` never appear.
+    Records without bound fields are byte-identical to the pre-FOR-1637 shape.
     """
 
     def sink(message: Message) -> None:
@@ -114,6 +152,10 @@ def _json_sink(path: Path) -> Callable[[Message], None]:
         }
         if record["exception"] is not None:
             payload["exception"] = str(record["exception"])
+        for key, value in record["extra"].items():
+            if type(key) is not str or key in _JSON_BASE_KEYS or key in _JSON_EXCLUDED_EXTRA:
+                continue
+            payload[key] = _json_scalar(value)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, sort_keys=True) + "\n")

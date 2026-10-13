@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from collections.abc import MutableMapping
 from pathlib import Path, PurePosixPath
 
@@ -13,6 +14,7 @@ from entropic_substrate.kernel.artifacts import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
@@ -20,6 +22,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.worker_log_events import SNAPSHOT_END, SNAPSHOT_START, render
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
@@ -112,6 +115,12 @@ def publish_worker_snapshot(
     marker = json.dumps(manifest, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
     if total + len(marker) > limits.max_total_bytes or len(marker) > limits.max_object_bytes:
         raise ValueError("worker snapshot byte budget exceeded")
+    # FOR-1637: bracket the publication of one named snapshot, so every
+    # publish.* line below it is attributable to (checkpoint-N | complete | ...).
+    snapshot_started = time.perf_counter()
+    logger.bind(event=SNAPSHOT_START, name=name, files=len(records)).info(
+        render(SNAPSHOT_START, name=name, files=len(records))
+    )
     for record in records:
         path = _path(record["path"])
         key = f"{request.prefix}/outputs/{path}"
@@ -130,9 +139,14 @@ def publish_worker_snapshot(
             # C2: the entry is added only AFTER this key's own verification
             # read has succeeded, never before.
             ledger[key] = (digest, len(payload))
-    return publish_verified_object(
+    published = publish_verified_object(
         objects, f"{request.prefix}/snapshots/{name}.json", marker, retry=retry
     )
+    snapshot_seconds = time.perf_counter() - snapshot_started
+    logger.bind(event=SNAPSHOT_END, name=name, files=len(records), seconds=snapshot_seconds).info(
+        render(SNAPSHOT_END, name=name, files=len(records), seconds=snapshot_seconds)
+    )
+    return published
 
 
 def materialize_worker_snapshot(

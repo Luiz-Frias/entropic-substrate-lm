@@ -11,6 +11,7 @@ from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.native_verification import read_native_verification
@@ -22,7 +23,13 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
-from entropic_substrate.ladder.run.worker_execution import execute_probe_request
+from entropic_substrate.ladder.run.worker_execution import execute_probe_request, narrated_stage
+from entropic_substrate.ladder.run.worker_log_events import (
+    COMPLETION_WRITTEN,
+    STOP_MARKER_OBSERVED,
+    STOP_MARKER_RETRY,
+    render,
+)
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
 from entropic_substrate.ladder.run.worker_snapshot import PublicationLedger, publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
@@ -90,6 +97,11 @@ def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(paths))
 
 
+# Terminal outcome markers (G12): `complete` is the contract; the others carry the
+# marker name so a stopped/paused/failed run leaves a diagnosable receipt too.
+_TERMINAL_MARKERS = frozenset({"complete", "paused", "stopped", "failure"})
+
+
 def _event(
     objects: D1TrainerMailboxObjectPort, request: ProbeRequest, name: str, value: dict[str, object]
 ) -> D1TrainerMailboxObjectIdentity:
@@ -105,7 +117,13 @@ def _event(
     )
     if len(payload) > request.limits.max_object_bytes:
         raise ValueError("worker event exceeds its byte budget")
-    return publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
+    identity = publish_verified_object(objects, f"{request.prefix}/{name}.json", payload)
+    if name in _TERMINAL_MARKERS:
+        # FOR-1637 (ruling D1): reported only AFTER the marker's put and its
+        # verification read returned; never for `started` or `checkpoint-*`.
+        written = {"key": identity.key, "bytes": identity.size_bytes, "marker": name}
+        logger.bind(event=COMPLETION_WRITTEN, **written).info(render(COMPLETION_WRITTEN, **written))
+    return identity
 
 
 def _publication(
@@ -243,7 +261,8 @@ def run_object_worker(
     ledger: PublicationLedger = {}
     publication_timing: dict[str, float] = {}
     try:
-        materialize_probe_request(objects, marker, root, max_request_bytes=max_request_bytes)
+        with narrated_stage("materialization"):
+            materialize_probe_request(objects, marker, root, max_request_bytes=max_request_bytes)
         (root / "worker").mkdir()
 
         def start(runtime: dict[str, object]) -> None:
@@ -325,13 +344,29 @@ def run_object_worker(
                 try:
                     received = objects.read(key)
                     break
-                except Exception:
+                except Exception as poll_error:
                     if index == retry.attempts - 1:
                         raise
+                    # FOR-1637: a re-attempted poll is a WARNING of its own event
+                    # (not publish.retry, and no event for a clean/absent poll).
+                    polled = {
+                        "key": key,
+                        "attempt": index + 1,
+                        "max_attempts": retry.attempts,
+                        "reason": type(poll_error).__name__,
+                    }
+                    logger.bind(event=STOP_MARKER_RETRY, **polled).warning(
+                        render(STOP_MARKER_RETRY, **polled)
+                    )
                     retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
             if received is None:
                 return False
-            return classify_stop_marker(received.payload, request)
+            stop = classify_stop_marker(received.payload, request)
+            if stop:
+                logger.bind(event=STOP_MARKER_OBSERVED, key=key).info(
+                    render(STOP_MARKER_OBSERVED, key=key)
+                )
+            return stop
 
         stage = "execution"
         result = execute_probe_request(
@@ -344,7 +379,8 @@ def run_object_worker(
             publication_timing=publication_timing,
             operator_stop=stop_requested,
         )
-        result = _admit_result(root, request, result)
+        with narrated_stage("result_admission"):
+            result = _admit_result(root, request, result)
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)
         stage = "final_snapshot"
         name = (

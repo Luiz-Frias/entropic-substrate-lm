@@ -2,12 +2,14 @@
 
 import os
 import time
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Generator, MutableMapping
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.kernel.runtime.paths import source_root
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
@@ -20,7 +22,27 @@ from entropic_substrate.ladder.run.span_diagnostics import run_span_diagnostics
 from entropic_substrate.ladder.run.trace_capture import capture_model_trace
 from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
 from entropic_substrate.ladder.run.worker.hardware import measure_hardware, verify_source_tree
+from entropic_substrate.ladder.run.worker_log_events import STAGE_END, STAGE_START, render
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
+
+
+@contextmanager
+def narrated_stage(stage: str) -> Generator[None]:
+    """Bracket one potentially blocking worker stage with ``stage.start``/``stage.end``.
+
+    FOR-1637: ``.start`` is logged BEFORE the stage runs, so a stage that never
+    returns is visible as a start with no end; ``.end`` (with ``seconds``) is
+    logged only when the stage returns. A raising stage logs no ``.end`` and
+    the exception propagates unchanged. Public because ``object_worker`` brackets
+    its own stages (materialization, result admission) with the same event pair.
+    """
+    started = time.perf_counter()
+    logger.bind(event=STAGE_START, stage=stage).info(render(STAGE_START, stage=stage))
+    yield
+    seconds = time.perf_counter() - started
+    logger.bind(event=STAGE_END, stage=stage, seconds=seconds).info(
+        render(STAGE_END, stage=stage, seconds=seconds)
+    )
 
 
 def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[str, object]:
@@ -114,7 +136,8 @@ def execute_probe_request(
     )
     if digest != request.digest or payload != request.payload:
         raise ValueError("worker materialized request identity mismatch")
-    runtime = _runtime(request, root, repo_root)
+    with narrated_stage("runtime_admission"):
+        runtime = _runtime(request, root, repo_root)
     profile, source, output = request.profile, root / "source", root / "run"
     read_prepared_corpus(
         source, ContentHash("sha256", profile.source_digest), max_bytes=limits.max_object_bytes
@@ -158,14 +181,15 @@ def execute_probe_request(
         sink=sink,
         publication_timing=publication_timing,
     )
-    training = read_training_progress(
-        output,
-        trained.receipt,
-        profile,
-        source,
-        max_source_bytes=limits.max_object_bytes,
-        max_artifact_bytes=limits.max_object_bytes,
-    )
+    with narrated_stage("training_readback"):
+        training = read_training_progress(
+            output,
+            trained.receipt,
+            profile,
+            source,
+            max_source_bytes=limits.max_object_bytes,
+            max_artifact_bytes=limits.max_object_bytes,
+        )
     result: dict[str, object] = {
         "schema": "h-probe-worker-result-v1",
         "request_sha256": request.digest,
@@ -183,50 +207,54 @@ def execute_probe_request(
     if trained.status == "paused":
         result["wall_seconds"] = time.perf_counter() - started
         return result
-    generated = run_probe_generation(
-        output,
-        trained.receipt,
-        profile,
-        source,
-        max_source_bytes=limits.max_object_bytes,
-        max_artifact_bytes=limits.max_object_bytes,
-    )
-    diagnostic = run_span_diagnostics(
-        output,
-        trained.receipt,
-        profile,
-        source,
-        request.probe,
-        max_source_bytes=limits.max_object_bytes,
-        max_artifact_bytes=limits.max_object_bytes,
-    )
+    with narrated_stage("generation"):
+        generated = run_probe_generation(
+            output,
+            trained.receipt,
+            profile,
+            source,
+            max_source_bytes=limits.max_object_bytes,
+            max_artifact_bytes=limits.max_object_bytes,
+        )
+    with narrated_stage("span_diagnostics"):
+        diagnostic = run_span_diagnostics(
+            output,
+            trained.receipt,
+            profile,
+            source,
+            request.probe,
+            max_source_bytes=limits.max_object_bytes,
+            max_artifact_bytes=limits.max_object_bytes,
+        )
     capture_root = root / "capture"
     capture_root.mkdir()
-    captured = capture_model_trace(
-        output,
-        trained.receipt,
-        generated.receipt,
-        profile,
-        source,
-        capture_root,
-        max_bytes=limits.max_object_bytes,
-        max_source_bytes=limits.max_object_bytes,
-        max_total_bytes=limits.max_total_bytes,
-        max_artifacts=limits.max_objects,
-        diagnostic_roots=(diagnostic,),
-    )
+    with narrated_stage("trace_capture"):
+        captured = capture_model_trace(
+            output,
+            trained.receipt,
+            generated.receipt,
+            profile,
+            source,
+            capture_root,
+            max_bytes=limits.max_object_bytes,
+            max_source_bytes=limits.max_object_bytes,
+            max_total_bytes=limits.max_total_bytes,
+            max_artifacts=limits.max_objects,
+            diagnostic_roots=(diagnostic,),
+        )
     verification_root = root / "verification"
     verification_root.mkdir()
-    verified = verify_native_capture(
-        capture_root,
-        captured,
-        verification_root,
-        request_id=ContentHash("sha256", request.digest),
-        max_bytes=limits.max_object_bytes,
-        max_source_bytes=limits.max_object_bytes,
-        max_total_bytes=limits.max_total_bytes,
-        max_artifacts=limits.max_objects,
-    )
+    with narrated_stage("native_verification"):
+        verified = verify_native_capture(
+            capture_root,
+            captured,
+            verification_root,
+            request_id=ContentHash("sha256", request.digest),
+            max_bytes=limits.max_object_bytes,
+            max_source_bytes=limits.max_object_bytes,
+            max_total_bytes=limits.max_total_bytes,
+            max_artifacts=limits.max_objects,
+        )
     result.update(
         status="probe_workload_complete",
         generation=_reference(root, "run", generated.receipt),

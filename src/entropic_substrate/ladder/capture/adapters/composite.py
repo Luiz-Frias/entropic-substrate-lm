@@ -37,6 +37,17 @@ across both files this door's construction path touches:
   ``MLFLOW_SYSTEM_METRICS_ENV`` (``mlflow.py:144``) and ``MlflowStartupError``
   (``mlflow.py:262``, raised at ``mlflow.py:292`` and ``mlflow.py:328``).
 
+**Amendment 2026-10-12 (FOR-1637, ASSUMED pending operator ratification, DN-1637-DOOR):**
+``build_sink_for_run`` gained ONE additive keyword-only parameter,
+``log_path: str | Path | None = None``, the worker's structured log file. It is
+threaded to :class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`,
+which uploads it beside ``results_path`` at ``finish()``. ``None`` (the default)
+keeps every existing caller byte-identical: no extra client call, no extra
+warning. ``TrackingRunDescriptor`` is unchanged (the file is a property of the
+process, not of the run descriptor). A ``log_path`` resolving to the same file
+as ``results_path`` is refused loudly (two writers in the authoritative
+telemetry file). Same shape as the ruled DN-1632-SEAM.
+
 p8 re-pointing any of these six names to their eventual landed home is a BODY
 edit to this function and to ``adapters/mlflow.py``, not a door violation --
 the door's signature and abort contract are unchanged by where the residue
@@ -109,6 +120,7 @@ def build_sink_for_run(
     results_path: str | Path,
     client: Any | None = None,
     metric_extractor: MetricExtractor | None = None,
+    log_path: str | Path | None = None,
 ) -> MetricSink:
     """Compose one authoritative JSONL sink plus an optional tracking mirror.
 
@@ -117,6 +129,11 @@ def build_sink_for_run(
     callers must let this abort BEFORE constructing a ``Trainer`` (see the
     CLI's ``cmd_train``), so a bad ``MLFLOW_TRACKING_URI`` never burns GPU
     hours.
+
+    ``log_path`` (amendment 2026-10-12, see the module docstring) names the
+    worker's structured log file. It is accepted identically in both branches:
+    the bare-JSONL branch (MLflow off) ignores it and uploads nothing; the
+    MLflow branch uploads it at ``finish()``. It may not alias ``results_path``.
     """
     # entropic_substrate.ladder.capture.reader.sinks residue (MLFLOW_*_ENV, mlflow_enabled,
     # the default experiment name) -- function-scope import, see module
@@ -130,6 +147,11 @@ def build_sink_for_run(
 
     if type(descriptor) is not TrackingRunDescriptor:
         raise TypeError("descriptor must be a TrackingRunDescriptor")
+    if log_path is not None and Path(log_path).resolve() == Path(results_path).resolve():
+        msg = (
+            "log_path must not alias results_path: the authoritative telemetry file has one writer"
+        )
+        raise ValueError(msg)
     jsonl = JsonlSink(results_path)
     if not mlflow_enabled(tiny=descriptor.tiny) and client is None:
         return jsonl
@@ -143,6 +165,7 @@ def build_sink_for_run(
         params=descriptor.params,
         tags=descriptor.tags,
         results_path=Path(results_path),
+        log_path=None if log_path is None else Path(log_path),
         config_hash=descriptor.config_hash,
         dataset_pointer_path=descriptor.dataset_pointer_path,
         dataset_split_spec=descriptor.dataset_split_spec,

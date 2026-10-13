@@ -6,13 +6,14 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import TextIO, cast
 
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
-from entropic_substrate.kernel.runtime.logging import configure_logging
+from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
@@ -31,6 +32,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import
     D1TrainerS3ObjectError,
 )
 from entropic_substrate.ladder.run.worker_completion import receive_worker_completion
+from entropic_substrate.ladder.run.worker_log_events import WORKER_END, WORKER_START, render
 from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
 from entropic_substrate.ladder.run.worker_transport import (
     publish_probe_request,
@@ -119,6 +121,12 @@ def run_worker_command(
 ) -> int:
     """Run one operation; report structured errors without credential/provider details."""
     stage = "arguments"
+    # FOR-1637: set once `worker.start` has been logged (i.e. after the request is
+    # admitted and the structured sink points at worker-log.jsonl); `worker.end`
+    # is logged exactly once per such run, after sink.finish(), on both exits.
+    # A run refused before that point logs neither: nothing was started.
+    worker_started: float | None = None
+    worker_ended = False
     try:
         args = _parser().parse_args(list(argv))
         if args.max_object_bytes < 1 or args.max_objects < 1:
@@ -159,6 +167,27 @@ def run_worker_command(
             observability_root = (
                 args.workspace_root.parent / f"{args.workspace_root.name}.observability"
             )
+            # FOR-1637 (G5): the ONE re-point of the substrate's JSON sink, here
+            # and nowhere else -- after admission, before build_sink_for_run, so
+            # worker.start, mlflow.run and every later line land in the file the
+            # MlflowSink uploads at finish(). configure_logging() removes every
+            # handler first, so nothing is printed twice.
+            worker_log = observability_root / "worker-log.jsonl"
+            configure_logging(json_path=worker_log)
+            worker_started = time.perf_counter()
+            logger.bind(
+                event=WORKER_START,
+                request_sha256=request.digest,
+                image=request.image,
+                code_commit=request.code_commit,
+            ).info(
+                render(
+                    WORKER_START,
+                    request_sha256=request.digest,
+                    image=request.image,
+                    code_commit=request.code_commit,
+                )
+            )
             sink = build_sink_for_run(
                 TrackingRunDescriptor(
                     run_name=f"h-worker-{request.profile.identity}",
@@ -167,6 +196,7 @@ def run_worker_command(
                     tags={"schema": "h-probe-worker-result-v1"},
                 ),
                 results_path=observability_root / "metrics.jsonl",
+                log_path=worker_log,
                 metric_extractor=HTrainingStepExtractor(
                     warmup_steps=request.profile.schedule.warmup_steps
                 ),
@@ -183,6 +213,9 @@ def run_worker_command(
                 )
             finally:
                 sink.finish()
+            worker_ended = True
+            ended = {"status": "ok", "seconds": time.perf_counter() - worker_started}
+            logger.bind(event=WORKER_END, **ended).info(render(WORKER_END, **ended))
             response = {
                 "status": "worker_returned",
                 "scientific_authority": "none",
@@ -227,6 +260,16 @@ def run_worker_command(
         stdout.write(json.dumps(response, sort_keys=True, allow_nan=False) + "\n")
         return 0
     except Exception as error:
+        if worker_started is not None and not worker_ended:
+            worker_ended = True
+            # C9/G21: the failing stage and the exception TYPE name only.
+            failed = {
+                "status": "failed",
+                "seconds": time.perf_counter() - worker_started,
+                "stage": stage,
+                "error_type": type(error).__name__,
+            }
+            logger.bind(event=WORKER_END, **failed).warning(render(WORKER_END, **failed))
         stderr.write(
             json.dumps(
                 {
