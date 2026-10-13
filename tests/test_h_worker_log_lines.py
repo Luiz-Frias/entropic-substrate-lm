@@ -927,6 +927,43 @@ def test_the_tracking_run_line_is_an_event_and_never_carries_uri_credentials(
     assert "hunter2" not in log_file.read_text() and "hunter2" not in capsys.readouterr().err
 
 
+class ReadTimeout(Exception):
+    """A transport read timeout: recognised by TYPE NAME, like the real one."""
+
+
+class _ColdOnce(FakeMlflowClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cold_replies = 1
+
+    def get_experiment_by_name(self, name: str) -> Any:
+        if self.cold_replies:
+            self.cold_replies -= 1
+            raise ReadTimeout("read timed out")
+        return super().get_experiment_by_name(name)
+
+
+def test_the_cold_start_retry_warning_never_carries_uri_credentials(
+    log_file: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CodeRabbit on PR 341: the warning lands in worker-log.jsonl, which finish() uploads."""
+    bind_logs(log_file)
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.capture.adapters.mlflow.time.sleep", lambda _s: None
+    )
+    sink = MlflowSink(
+        tracking_uri="https://operator:hunter2@mlflow.example:5000/base?token=q-secret-1#frag-secret-2",  # pragma: allowlist secret
+        experiment_name="exp",
+        run_name="run",
+        client=_ColdOnce(),
+    )
+    sink.finish()
+    on_disk, on_stderr = log_file.read_text(), capsys.readouterr().err
+    assert "https://mlflow.example:5000/base answered but read-timed-out" in on_stderr
+    for leaked in ("hunter2", "operator", "q-secret-1", "frag-secret-2", "token="):
+        assert leaked not in on_disk and leaked not in on_stderr, leaked
+
+
 # ------------------------------------------- (d) write-failed sites on their rows
 class _ArtifactsDown(FakeMlflowClient):
     def log_artifact(self, run_id: str, path: str, artifact_path: str | None = None) -> None:

@@ -448,7 +448,7 @@ class MlflowSink:
             attempt += 1
             backoff = min(2.0**attempt, 8.0)
             logger.warning(
-                f"mlflow: {tracking_uri} answered but read-timed-out "
+                f"mlflow: {_safe_tracking_uri(tracking_uri)} answered but read-timed-out "
                 f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
             )
             time.sleep(backoff)
