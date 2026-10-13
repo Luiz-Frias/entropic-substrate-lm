@@ -104,3 +104,48 @@ def test_setup_phase_warning_is_a_formatted_line_too(
     lines = [line for line in captured.err.splitlines() if "pin-setup-phase-marker" in line]
     assert len(lines) == 1, captured.err
     assert _HUMAN_WARNING in lines[0], lines[0]
+
+
+def test_setup_then_call_emissions_both_land_as_formatted_lines(
+    setup_phase_emission: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """FOR-1649 probe: a sink that caches the stream it resolved at FIRST write
+    would hold the SETUP phase's stream, closed by the call phase. The setup
+    emission is the first write here, so the call-phase emission below must
+    still reach the live capsys stream as a formatted line."""
+    logger.warning("pin-call-after-setup-marker")
+    captured = capsys.readouterr()
+    assert "Logging error" not in captured.err, captured.err
+    assert "Record was:" not in captured.err, captured.err
+    setup_lines = [line for line in captured.err.splitlines() if "pin-setup-phase-marker" in line]
+    call_lines = [
+        line for line in captured.err.splitlines() if "pin-call-after-setup-marker" in line
+    ]
+    assert len(setup_lines) == 1, captured.err
+    assert len(call_lines) == 1, captured.err
+    assert _HUMAN_WARNING in setup_lines[0], setup_lines[0]
+    assert _HUMAN_WARNING in call_lines[0], call_lines[0]
+
+
+@pytest.fixture
+def emission_before_capsys_is_requested() -> None:
+    """FOR-1649 probe: logs during setup WITHOUT requesting capsys itself.
+
+    The conftest's autouse fixture must be what starts capsys, so this line
+    lands in the capsys stream. If the conftest stopped requesting capsys,
+    capsys would not start until the test's own parameter resolves (after this
+    fixture), and the line would go to pytest's global capture instead.
+    """
+    logger.warning("pin-pre-capsys-setup-marker")
+
+
+def test_capsys_started_by_conftest_captures_a_setup_emission_with_no_capsys_request(
+    emission_before_capsys_is_requested: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured = capsys.readouterr()
+    assert "Logging error" not in captured.err, captured.err
+    lines = [line for line in captured.err.splitlines() if "pin-pre-capsys-setup-marker" in line]
+    assert len(lines) == 1, captured.err
+    assert _HUMAN_WARNING in lines[0], lines[0]

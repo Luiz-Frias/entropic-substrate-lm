@@ -120,6 +120,28 @@ def test_resolve_streams_follows_a_later_swap_of_both_streams(
     assert bound_out.getvalue() == ""
 
 
+def test_resolve_streams_follows_every_swap_not_only_the_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOR-1649 probe: a sink that caches the stream it resolved at its first
+    write would keep writing to the FIRST swapped stand-in after a second swap.
+    Emissions on both sides of two swaps must each land on the stream live at
+    their own write time."""
+    configure_logging(json_path=None, resolve_streams=True)
+    first_out, first_err = _swap_stdio(monkeypatch)
+    logger.warning("swap-one-human")
+    logger.bind(report=True).info("swap-one-report")
+    second_out, second_err = _swap_stdio(monkeypatch)
+    logger.warning("swap-two-human")
+    logger.bind(report=True).info("swap-two-report")
+    assert "| WARNING  | swap-one-human" in first_err.getvalue()
+    assert first_out.getvalue() == "swap-one-report\n"
+    assert "| WARNING  | swap-two-human" in second_err.getvalue()
+    assert second_out.getvalue() == "swap-two-report\n"
+    assert "swap-two-human" not in first_err.getvalue()
+    assert "swap-two-report" not in first_out.getvalue()
+
+
 def test_resolve_streams_flushes_the_stream_it_resolved_after_each_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

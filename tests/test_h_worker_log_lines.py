@@ -1095,7 +1095,9 @@ def test_run_command_brackets_the_worker_and_keeps_stdout_and_stderr_channels_cl
     assert index_of(rows, "worker.end") == len(rows) - 1
     assert index_of(rows, "sink.finish.end", sink="jsonl") < index_of(rows, "worker.end")
     assert "local_ts" not in json.dumps(rows) and '"report"' not in json.dumps(rows)
-    assert "worker.start request_sha256=" in capsys.readouterr().err
+    human = capsys.readouterr().err
+    assert "Logging error" not in human, human
+    assert "worker.start request_sha256=" in human
 
 
 def test_worker_start_carries_the_request_image_and_code_commit_unswapped(
