@@ -20,6 +20,7 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
+from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.worker_command import run_worker_command
 from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
@@ -96,7 +97,9 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     assert "completion.written key=" in human
 
 
-def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
+def test_request_admission_failure_never_touches_disk(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Guard-teeth companion: sink construction must sit AFTER admission,
     never before it -- a request this command refuses cannot leave a
     partial workspace behind (the existing worker/refused-worker contract
@@ -108,6 +111,9 @@ def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
     workspace = tmp_path / "refused-worker"
     workspace.mkdir()
     output, error = StringIO(), StringIO()
+    # Bind the substrate to THIS test's stderr (the autouse conftest sink writes
+    # into a stream capsys does not read; see tests/test_h_worker_log_lines.py).
+    configure_logging(json_path=None)
 
     status = run_worker_command(
         [
@@ -136,3 +142,7 @@ def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
     assert status == 2
     assert not output.getvalue() and not tuple(workspace.iterdir())
     assert json.loads(error.getvalue())["code"] == "worker_command_refused"
+    # S8c: the sibling observability root and the structured sink come AFTER
+    # admission too -- a refused request builds neither and narrates no start.
+    assert not (tmp_path / "refused-worker.observability").exists()
+    assert "worker.start" not in capsys.readouterr().err

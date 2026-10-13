@@ -142,6 +142,42 @@ def test_json_sink_survives_non_scalar_bound_values_without_a_logging_error_bloc
     assert "Logging error" not in capsys.readouterr().err
 
 
+class _Unprintable:
+    """A bound value whose ``str()`` raises: the sink must still write the record."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("str() deliberately fails")
+
+
+def _no_json_constant(name: str) -> object:
+    raise AssertionError(f"non-standard JSON constant {name} reached worker-log.jsonl")
+
+
+def test_json_sink_renders_non_finite_floats_as_strings_never_as_json_constants(
+    log_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """E5d: NaN/inf are not JSON; a bare NaN token would break every strict reader."""
+    bind_logs(log_file)
+    logger.bind(event="probe.float", ratio=float("nan"), top=float("inf")).info("non-finite")
+    (line,) = log_file.read_text().splitlines()
+    row = json.loads(line, parse_constant=_no_json_constant)
+    assert row["event"] == "probe.float"
+    assert row["ratio"] == "nan" and row["top"] == "inf"
+    assert "Logging error" not in capsys.readouterr().err
+
+
+def test_json_sink_keeps_the_record_when_a_bound_value_cannot_be_printed(
+    log_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """E5e: a ``str()`` that raises degrades to the type name; the row still lands."""
+    bind_logs(log_file)
+    logger.bind(event="probe.opaque", opaque=_Unprintable()).info("unprintable value")
+    (row,) = read_log(log_file)
+    assert row["event"] == "probe.opaque" and row["message"] == "unprintable value"
+    assert isinstance(row["opaque"], str) and "_Unprintable" in row["opaque"]
+    assert "Logging error" not in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------- (a) the runner
 def test_training_loop_narrates_phases_seals_and_evaluations(
     tmp_path: Path, log_file: Path, capsys: pytest.CaptureFixture[str]
@@ -380,7 +416,37 @@ def test_a_publish_that_raises_after_landing_the_object_is_a_warning_retry_then_
     assert "injected post-put readback failure" not in json.dumps(rows)  # C9: no str(exc)
     assert retry.failures == 1  # behaviour invariance (C8): the failure was already counted
     assert index_of(rows, "publish.retry") < index_of(rows, "publish.end")
+    # S1: the raised publish already spent attempt 1, so the recovery read is 2 of 3.
+    (verify,) = of(rows, "publish.verify_read")
+    assert (verify["key"], verify["attempt"], verify["max_attempts"]) == (key, 2, 3)
     assert "WARNING" in capsys.readouterr().err
+
+
+def test_a_failed_recovery_read_after_a_raised_publish_numbers_its_attempts_from_the_publish(
+    log_file: Path,
+) -> None:
+    """S1b: publish raised (attempt 1), the first recovery read fails (attempt 2),
+    the next read succeeds as attempt 3 of 3: every number continues the same sequence."""
+    bind_logs(log_file)
+    key = "k/publish-raised-then-flaky.json"
+
+    class _RaisesThenFlaky(_FlakyReadStore):
+        def publish(self, key: str, payload: bytes, *, expected_sha256: str) -> Any:
+            super().publish(key, payload, expected_sha256=expected_sha256)
+            raise RuntimeError("injected post-put readback failure")
+
+    store = _RaisesThenFlaky(fail_reads_remaining={key: 1})
+    retry = VerificationReadRetry(sleep=lambda _: None)
+    publish_verified_object(store, key, b"payload", retry=retry)
+    rows = read_log(log_file)
+    warnings = of(rows, "publish.retry")
+    assert [(w["attempt"], w["max_attempts"], w["reason"]) for w in warnings] == [
+        (1, 3, "RuntimeError"),
+        (2, 3, "_ReadFailure"),
+    ]
+    (verify,) = of(rows, "publish.verify_read")
+    assert (verify["attempt"], verify["max_attempts"]) == (3, 3)
+    assert retry.failures == 2  # behaviour invariance (C8): one per failed attempt
 
 
 def test_snapshot_publication_is_bracketed_and_every_object_put_is_reported(
@@ -548,6 +614,21 @@ class _GatedClient(FakeMlflowClient):
         self.entered.set()
         self.gate.wait(5.0)
         super().log_batch(run_id, metrics, params, tags, synchronous)
+
+
+class _GatedFailingClient(FakeMlflowClient):
+    """``log_batch`` blocks on ``gate`` and then rejects the batch: while it is
+    blocked on record 1, records 2 and 3 queue up and are coalesced into ONE batch."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = threading.Event()
+        self.entered = threading.Event()
+
+    def log_batch(self, *args: Any, **kwargs: Any) -> None:
+        self.entered.set()
+        self.gate.wait(5.0)
+        raise ConnectionError("simulated tracking outage during log_batch")
 
 
 def _mlflow_sink(client: FakeMlflowClient, **kwargs: Any) -> MlflowSink:
@@ -752,6 +833,49 @@ def test_a_failed_metric_batch_is_a_write_failed_warning_with_its_record_count(
     assert len([ln for ln in capsys.readouterr().err.splitlines() if "metric batch" in ln]) == 1
 
 
+def test_a_coalesced_failing_batch_reports_how_many_records_it_carried(
+    log_file: Path,
+) -> None:
+    """E16b: records 2 and 3 are one rejected batch, so ``count`` is 2, not 1."""
+    bind_logs(log_file)
+    client = _GatedFailingClient()
+    sink = _mlflow_sink(client)
+    try:
+        sink.log(_eval(1))
+        assert client.entered.wait(5.0), "the writer never picked record 1 up"
+        sink.log(_eval(2))
+        sink.log(_eval(3))
+    finally:
+        client.gate.set()
+    assert sink.flush() is True
+    sink.finish()
+    failed = [
+        r for r in of(read_log(log_file), "sink.write_failed") if "metric batch" in r["message"]
+    ]
+    assert [r["count"] for r in failed] == [1, 2]
+    assert sink.failed_writes == 3
+    assert "(2 record(s)" in failed[1]["message"]
+
+
+def test_the_tracking_run_line_drops_query_and_fragment_from_the_uri(
+    log_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """E8b: a token in the query string or fragment is as readable as userinfo."""
+    bind_logs(log_file)
+    sink = MlflowSink(
+        tracking_uri="https://mlflow.example:5000/base?token=q-secret-1#frag-secret-2",  # pragma: allowlist secret
+        experiment_name="exp",
+        run_name="run",
+        client=FakeMlflowClient(),
+    )
+    sink.finish()
+    (row,) = of(read_log(log_file), "mlflow.run")
+    assert row["uri"] == "https://mlflow.example:5000/base"
+    on_disk, on_stderr = log_file.read_text(), capsys.readouterr().err
+    for leaked in ("q-secret-1", "frag-secret-2", "token="):
+        assert leaked not in on_disk and leaked not in on_stderr, leaked
+
+
 def test_the_tracking_run_line_is_an_event_and_never_carries_uri_credentials(
     log_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -822,6 +946,44 @@ def test_run_command_brackets_the_worker_and_keeps_stdout_and_stderr_channels_cl
     assert index_of(rows, "sink.finish.end", sink="jsonl") < index_of(rows, "worker.end")
     assert "local_ts" not in json.dumps(rows) and '"report"' not in json.dumps(rows)
     assert "worker.start request_sha256=" in capsys.readouterr().err
+
+
+def test_worker_start_carries_the_request_image_and_code_commit_unswapped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S2: a local-tiny request has no image/commit (both None), so a swapped pair
+    would be invisible. Give the admitted request two DISTINCT values (set past the
+    dataclass validation, as a remote request would carry them) and stop the run
+    right after ``worker.start``."""
+    from entropic_substrate.ladder.run import worker_command
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    image = "ghcr.io/luiz-frias/entropic-substrate-lm@sha256:" + "d" * 64
+    commit = "c" * 40
+    object.__setattr__(request, "image", image)
+    object.__setattr__(request, "code_commit", commit)
+    monkeypatch.setattr(worker_command, "read_published_probe_request", lambda *_a, **_k: request)
+
+    def stop_here(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("stop right after worker.start")
+
+    monkeypatch.setattr(worker_command, "build_sink_for_run", stop_here)
+    workspace = tmp_path / "start-fields-worker"
+    workspace.mkdir()
+    status = run_worker_command(
+        _run_args(workspace, tmp_path, marker),
+        environ={},
+        objects=objects,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    assert status == 2
+    (start,) = of(read_log(worker_log_path(workspace)), "worker.start")
+    assert start["image"] == request.image == image
+    assert start["code_commit"] == request.code_commit == commit
+    assert f"image={image}" in capsys.readouterr().err
 
 
 def test_a_failed_run_ends_the_worker_exactly_once_with_its_stage_and_error_type(
