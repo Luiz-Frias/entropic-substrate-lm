@@ -113,7 +113,10 @@ def _run_schema_tag(run: Any, run_id: str) -> str | None:
     treated as untagged, i.e. the E lane. A tag that is present but not a
     string is a defect in the tracking data and raises.
     """
-    tags = getattr(getattr(run, "data", None), "tags", None)
+    try:
+        tags = run.data.tags
+    except AttributeError:
+        return None
     if tags is None:
         return None
     tag = tags.get(_SCHEMA_TAG)

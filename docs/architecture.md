@@ -489,6 +489,16 @@ The existing evidence architecture is retained:
 - checkpoints carry schema and construction identities; and
 - missing, partial, nonfinite, nonmonotonic, or incompatible evidence fails loudly.
 
+Capture runs two lanes, partitioned per run by the MLflow `schema` tag. A run with no tag, or a
+tag not starting with `h-`, is the E lane: every `results/*.jsonl` goes through
+`final_eval_record`. A run tagged `h-...` is the H lane: its `results/metrics.jsonl` must carry
+exactly one `run_start`, exactly one `run_end` (schema `h-run-lifecycle-v1`, written by the H
+worker through the run's metric sink and never projected to MLflow metrics) and at least one
+committed step row, and any other `results/*.jsonl` must be well-formed JSON lines; an
+inadmissible H run is refused with a named file, never skipped. H runs recorded before the
+lifecycle records existed are refused too, so capturing the shared experiment is not yet safe
+while such runs remain on the server.
+
 Evidence classes remain separate in every table and chart:
 
 - `MEASURED`
