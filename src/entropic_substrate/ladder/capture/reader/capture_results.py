@@ -25,9 +25,14 @@ inadmissible file raises :class:`~entropic_substrate.telemetry.TelemetryGap`
 nothing is ever captured silently. ``-tiny`` smoke runs are plumbing checks,
 not science — excluded unless explicitly asked for.
 
-An H-tagged run that never wrote the lifecycle records (a worker from before
-FOR-1639) is refused like any other inadmissible file; this module carries no
-legacy arm and no skip for it.
+An H-tagged FINISHED run with no ``h-run-lifecycle-v1`` records is refused whatever produced
+it: a worker from before FOR-1639, and the local tracer (schema ``h-tiny-trace-v1``, run name
+``h-tiny-trace-<identity>``) when it mirrors to MLflow under ``ENTROPIC_MLFLOW_TINY=1``. That
+tracer run name carries no ``-tiny`` suffix, so the ``include_tiny`` gate, which runs before
+the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
+that bypasses ``object_worker`` the ``-tiny`` run-name suffix, capturing an experiment that
+holds such a run makes ``capture-results`` exit 2. This module carries no legacy arm and no
+skip for these runs.
 """
 
 from __future__ import annotations

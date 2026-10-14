@@ -495,9 +495,14 @@ tag not starting with `h-`, is the E lane: every `results/*.jsonl` goes through
 exactly one `run_start`, exactly one `run_end` (schema `h-run-lifecycle-v1`, written by the H
 worker through the run's metric sink and never projected to MLflow metrics) and at least one
 committed step row, and any other `results/*.jsonl` must be well-formed JSON lines; an
-inadmissible H run is refused with a named file, never skipped. H runs recorded before the
-lifecycle records existed are refused too, so capturing the shared experiment is not yet safe
-while such runs remain on the server.
+inadmissible H run is refused with a named file, never skipped. An H-tagged run that is FINISHED but has no `h-run-lifecycle-v1` records is refused whatever
+produced it: a worker from before FOR-1639, and the local tracer (schema `h-tiny-trace-v1`,
+run name `h-tiny-trace-<identity>`) when it mirrors to MLflow under `ENTROPIC_MLFLOW_TINY=1`.
+The tracer's run name carries no `-tiny` suffix, so the `include_tiny` gate, which runs before
+the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
+that bypasses `object_worker` the `-tiny` run-name suffix, capturing an experiment that holds
+such a run makes `capture-results` exit 2. Capturing the shared experiment is therefore not yet
+safe while such runs remain on the server.
 
 Evidence classes remain separate in every table and chart:
 
