@@ -65,8 +65,16 @@ class _Info:
 
 
 @dataclass
+class _Data:
+    """The slice of ``mlflow.entities.RunData`` the capture partition reads."""
+
+    tags: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
 class _Run:
     info: _Info
+    data: _Data = field(default_factory=_Data)
 
 
 @dataclass
@@ -172,6 +180,231 @@ def test_unknown_experiment_name_fails_loud(tmp_path: Path) -> None:
     client = _client()
     with pytest.raises(LookupError):
         capture_finished_runs(client, ["no-such-experiment"], tmp_path / "cap")
+
+
+# ------------------------------------------------- H lane (FOR-1639, FOR-1641)
+H_SCHEMA_TAG = "h-probe-worker-result-v1"
+H_RUN = "h-worker-h0-fisher"
+LIFECYCLE = "h-run-lifecycle-v1"
+
+
+class _EPredicateApplied(Exception):
+    """Distinct sentinel: ``final_eval_record`` was applied to an H artifact."""
+
+
+def _h_lines(*, with_end: bool = True, with_step: bool = True) -> str:
+    rows: list[dict[str, object]] = [
+        {"schema": LIFECYCLE, "event": "run_start", "request_sha256": "a" * 64}
+    ]
+    if with_step:
+        rows.append(
+            {
+                "schema": "h-training-step-v2",
+                "status": "committed",
+                "phase": "prediction",
+                "step": 1,
+            }
+        )
+    if with_end:
+        rows.append(
+            {
+                "schema": LIFECYCLE,
+                "event": "run_end",
+                "status": "ok",
+                "wall_seconds": 1.0,
+                "successful_optimizer_steps": 1,
+            }
+        )
+    return "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+
+
+H_WORKER_LOG = json.dumps({"event": "worker.start", "level": "INFO"}) + "\n"
+
+
+def _h_run(
+    run_id: str = "run-h-0004", *, status: str = "FINISHED", tag: object = H_SCHEMA_TAG
+) -> _Run:
+    return _Run(
+        _Info(run_id=run_id, run_name=H_RUN, status=status),
+        _Data(tags={"schema": tag}),
+    )
+
+
+def _h_client(
+    *,
+    metrics: str | None = None,
+    worker_log: str = H_WORKER_LOG,
+    artifacts: list[str] | None = None,
+    extra_runs: list[_Run] | None = None,
+) -> FakeCaptureClient:
+    """An experiment holding one FINISHED H worker run (and optionally more)."""
+    metrics = _h_lines() if metrics is None else metrics
+    listed = (
+        artifacts
+        if artifacts is not None
+        else [
+            "results/metrics.jsonl",
+            "results/worker-log.jsonl",
+        ]
+    )
+    return FakeCaptureClient(
+        experiments={"entropic-substrate-lm": "exp-1"},
+        runs=[_h_run(), *(extra_runs or [])],
+        artifacts={"run-h-0004": listed},
+        payloads={
+            ("run-h-0004", "results/metrics.jsonl"): metrics,
+            ("run-h-0004", "results/worker-log.jsonl"): worker_log,
+        },
+    )
+
+
+@pytest.fixture
+def e_predicate_tripwire(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``final_eval_record`` raise a distinct sentinel on any H artifact.
+
+    Without this, an H file wrongly routed to the E predicate raises a plain
+    ``TelemetryGap`` ("no eval record") that a loose assertion cannot tell
+    apart from the H predicate's own refusal.
+    """
+    from entropic_substrate.ladder.capture.reader import capture_results as capture_mod
+
+    real = capture_mod.final_eval_record
+
+    def guarded(path: str | Path) -> dict[str, object]:
+        if H_RUN in Path(path).name:
+            raise _EPredicateApplied(str(path))
+        return real(path)
+
+    monkeypatch.setattr(capture_mod, "final_eval_record", guarded)
+
+
+def test_h_run_is_captured_under_run_scoped_names_via_the_h_predicate(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    client = _h_client()
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert sorted(p.name for p in captured) == [
+        f"{H_RUN}-run-h-00-metrics.jsonl",
+        f"{H_RUN}-run-h-00-worker-log.jsonl",
+    ]
+    assert (tmp_path / "cap" / f"{H_RUN}-run-h-00-metrics.jsonl").read_text() == _h_lines()
+
+
+def test_h_run_without_run_end_raises_the_h_predicates_refusal(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    client = _h_client(metrics=_h_lines(with_end=False))
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*exactly one run_end.*found 0"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    # evidence stays on disk, named in the exception (same idiom as the E lane)
+    assert (tmp_path / "cap" / f"{H_RUN}-run-h-00-metrics.jsonl").exists()
+
+
+def test_h_run_with_a_malformed_worker_log_raises(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    client = _h_client(worker_log=H_WORKER_LOG + "this is not json\n")
+    with pytest.raises(TelemetryGap, match=r"worker-log\.jsonl.*line 2.*not valid JSON"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+
+
+def test_h_run_without_a_metrics_artifact_raises_instead_of_capturing_the_log_alone(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """A worker that died before its first sink.log leaves only worker-log.jsonl;
+    MLflow still marks the run FINISHED. Capturing that alone would read as
+    success, so the run is refused before anything is downloaded."""
+    client = _h_client(artifacts=["results/worker-log.jsonl"])
+    with pytest.raises(TelemetryGap, match=r"run-h-0004.*results/metrics\.jsonl"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert client.download_calls == []
+
+
+def test_h_run_with_a_duplicated_metrics_artifact_raises(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    client = _h_client(
+        artifacts=["results/metrics.jsonl", "results/metrics.jsonl", "results/worker-log.jsonl"]
+    )
+    with pytest.raises(TelemetryGap, match=r"run-h-0004.*results/metrics\.jsonl"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert client.download_calls == []
+
+
+def test_a_refused_h_file_kept_on_disk_is_refused_again_on_rerun(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """The refused file stays on disk as evidence; a second invocation must not
+    skip it as 'already captured' and report a clean nothing-to-do."""
+    client = _h_client(metrics=_h_lines(with_end=False))
+    for _ in range(2):
+        with pytest.raises(TelemetryGap, match=r"exactly one run_end"):
+            capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert len(client.download_calls) == 1  # re-validated from disk, not re-downloaded
+
+
+def test_h_capture_is_idempotent_once_admitted(tmp_path: Path, e_predicate_tripwire: None) -> None:
+    client = _h_client()
+    first = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    again = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert len(first) == 2 and again == []
+    assert len(client.download_calls) == 2
+
+
+def test_e_run_beside_an_h_run_is_still_captured_through_the_e_predicate(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    e_run = _Run(_Info(run_id="run-full-0001", run_name="e1-fisher", status="FINISHED"))
+    client = _h_client(extra_runs=[e_run])
+    client.artifacts["run-full-0001"] = ["results/e1-fisher.jsonl"]
+    client.payloads[("run-full-0001", "results/e1-fisher.jsonl")] = ADMISSIBLE
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert sorted(p.name for p in captured) == [
+        "e1-fisher-run-full-e1-fisher.jsonl",
+        f"{H_RUN}-run-h-00-metrics.jsonl",
+        f"{H_RUN}-run-h-00-worker-log.jsonl",
+    ]
+
+
+def test_h_runs_still_obey_the_finished_gate(tmp_path: Path, e_predicate_tripwire: None) -> None:
+    client = _h_client()
+    client.runs.append(_h_run("run-h-0005", status="RUNNING"))
+    client.artifacts["run-h-0005"] = ["results/metrics.jsonl"]
+    capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert {run_id for run_id, _ in client.download_calls} == {"run-h-0004"}
+
+
+@pytest.mark.parametrize("tag", ["e1-result", "", "H-upper"])
+def test_a_non_h_schema_tag_stays_on_the_e_lane(tmp_path: Path, tag: str) -> None:
+    run = _Run(
+        _Info(run_id="run-full-0001", run_name="e1-fisher", status="FINISHED"),
+        _Data(tags={"schema": tag}),
+    )
+    client = _client()
+    client.runs[0] = run
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert [p.name for p in captured] == ["e1-fisher-run-full-e1-fisher.jsonl"]
+
+
+def test_a_run_object_without_data_is_the_e_lane(tmp_path: Path) -> None:
+    @dataclass
+    class _BareRun:
+        info: _Info
+
+    client = _client()
+    client.runs[0] = _BareRun(
+        _Info(run_id="run-full-0001", run_name="e1-fisher", status="FINISHED")
+    )  # type: ignore[assignment]
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert len(captured) == 1
+
+
+def test_a_non_string_schema_tag_raises_naming_the_run(tmp_path: Path) -> None:
+    client = _h_client()
+    client.runs[0] = _h_run(tag=7)
+    with pytest.raises(TypeError, match=r"run-h-0004.*schema"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert client.download_calls == []
 
 
 def test_dvc_commands_add_then_push_the_capture_dir(tmp_path: Path) -> None:
@@ -374,6 +607,44 @@ def test_cli_capture_results_unknown_experiment_is_a_controlled_refusal(
     )
     assert code == 2
     assert "not found on the tracking server" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("lane", "reason"),
+    [("e", "no eval record"), ("h", "exactly one run_end")],
+)
+def test_cli_capture_results_telemetry_gap_is_a_controlled_refusal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    lane: str,
+    reason: str,
+) -> None:
+    """FOR-1639: an inadmissible results file (either lane) makes the capture
+    lane raise TelemetryGap; cmd_capture_results must turn it into the same
+    controlled exit-2 refusal as an unknown experiment -- the file named on
+    stderr, no traceback -- instead of letting it escape main()."""
+    import mlflow.tracking
+
+    from entropic_substrate.composition.entrypoints.cli import main
+    from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV
+
+    fake = (
+        _client(payload=INADMISSIBLE)
+        if lane == "e"
+        else _h_client(metrics=_h_lines(with_end=False))
+    )
+    monkeypatch.setattr(mlflow.tracking, "MlflowClient", lambda *, tracking_uri: fake)
+    monkeypatch.setenv(MLFLOW_TRACKING_ENV, "http://fake-tracking-server.invalid")
+
+    dest = tmp_path / "cap"
+    code = main(["capture-results", "--dest", str(dest)])
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert reason in err
+    assert ".jsonl" in err and str(dest) in err
+    assert "Traceback" not in err
 
 
 @pytest.mark.parametrize("hostile", ["../escape", "nested/inner"])
