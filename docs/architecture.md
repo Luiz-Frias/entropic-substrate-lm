@@ -495,7 +495,15 @@ tag not starting with `h-`, is the E lane: every `results/*.jsonl` goes through
 exactly one `run_start`, exactly one `run_end` (schema `h-run-lifecycle-v1`, written by the H
 worker through the run's metric sink and never projected to MLflow metrics) and at least one
 committed step row, and any other `results/*.jsonl` must be well-formed JSON lines; an
-inadmissible H run is refused with a named file, never skipped. An H-tagged run that is FINISHED but has no `h-run-lifecycle-v1` records is refused whatever
+inadmissible H run is refused with a named file, never skipped. The `run_end` field
+`wall_seconds` is measured against a different end point on each arm, and the schema keeps both
+meanings under the one name: for `status: ok` it is the worker's own execution time, copied from
+the probe result before result admission and final-snapshot custody; for `status: failed` it is
+the elapsed time since execution began, read after failure custody (snapshot publish, verify-read
+retries, backoff). Consumers must not compare the two arms as one clock. A change to either
+meaning is a schema version bump, not an additive field.
+
+An H-tagged run that is FINISHED but has no `h-run-lifecycle-v1` records is refused whatever
 produced it: a worker from before FOR-1639, and the local tracer (schema `h-tiny-trace-v1`,
 run name `h-tiny-trace-<identity>`) when it mirrors to MLflow under `ENTROPIC_MLFLOW_TINY=1`.
 The tracer's run name carries no `-tiny` suffix, so the `include_tiny` gate, which runs before
