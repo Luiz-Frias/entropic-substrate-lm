@@ -33,20 +33,31 @@ run byte-for-byte as configured.
 
 from __future__ import annotations
 
+import json
 import os
+from io import StringIO
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
+from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_execution import engine
+from tests.test_sentence_worker_execution import prepared
 
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.adapters.mlflow import build_mlflow_client
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.capture.reader.capture_results import capture_finished_runs
+from entropic_substrate.ladder.capture.reader.h_telemetry import final_h_run_end
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.worker_command import run_worker_command
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 MLFLOW_TRACKING_ENV = "MLFLOW_TRACKING_URI"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_ID_FILE = REPO_ROOT / "results" / "h-lane-live-run-id.txt"
+CAPTURE_EVIDENCE_FILE = REPO_ROOT / "results" / "h-capture-live-run-id.txt"
 
 pytestmark = [
     pytest.mark.integration,
@@ -104,3 +115,74 @@ def test_live_h_training_steps_reach_a_real_mlflow_run(tmp_path: Path) -> None:
     RUN_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
     RUN_ID_FILE.write_text(f"{mlflow_sink.run_id}\n")
     assert {"objective", "aggregate_norm", "decoder_ce"} & set(metric_keys), metric_keys
+
+
+def test_live_h_worker_run_is_captured_by_the_capture_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOR-1639: the PRODUCTION call path, captured back off a real server.
+
+    ``run_worker_command --local-tiny`` builds the real sink with the
+    production ``h-probe-worker-result-v1`` tag (a test-invented tag would
+    prove nothing about the partition). ``build_sink_for_run`` reads the
+    experiment from ``os.environ``, not from the ``environ=`` handed to the
+    command, so the per-test experiment name is set on the process BEFORE the
+    command runs and capture is pointed at that experiment ONLY -- never the
+    default one, which holds other live tests' runs and any legacy H runs.
+    """
+    experiment = f"h-capture-live-{uuid4().hex}"
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", experiment)
+    monkeypatch.setenv("ENTROPIC_MLFLOW_TINY", "1")
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    workspace = tmp_path / "command-worker"
+    workspace.mkdir()
+    out, err = StringIO(), StringIO()
+
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=objects,
+        stdout=out,
+        stderr=err,
+    )
+    assert status == 0, err.getvalue()
+
+    log = workspace.parent / f"{workspace.name}.observability" / "worker-log.jsonl"
+    rows = [json.loads(line) for line in log.read_text().splitlines() if line]
+    (mlflow_row,) = [row for row in rows if row.get("event") == "mlflow.run"]
+    run_id: str = mlflow_row["run_id"]
+
+    client = build_mlflow_client(_tracking_uri())
+    captured = capture_finished_runs(client, [experiment], tmp_path / "captured")
+
+    names = sorted(path.name for path in captured)
+    CAPTURE_EVIDENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CAPTURE_EVIDENCE_FILE.write_text(f"{experiment}\n{run_id}\n{names}\n")
+    assert len(captured) == 2, names
+    assert all(f"-{run_id[:8]}-" in name for name in names), names
+    assert any(name.endswith("-metrics.jsonl") for name in names), names
+    assert any(name.endswith("-worker-log.jsonl") for name in names), names
+    (metrics,) = [path for path in captured if path.name.endswith("-metrics.jsonl")]
+    end = final_h_run_end(metrics)
+    assert end["status"] == "ok" and end["result_status"] == "probe_workload_complete"
+    # a second pass over the same destination is a clean no-op, not a re-capture
+    assert capture_finished_runs(client, [experiment], tmp_path / "captured") == []
