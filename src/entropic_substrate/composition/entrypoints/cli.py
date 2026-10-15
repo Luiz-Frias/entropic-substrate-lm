@@ -599,9 +599,11 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
         logger.error(f"capture-results: {gap}")
         return 2
     if not captured:
-        # Reached only when a fully admissible pass found nothing new: a refused
-        # pass raised above and moved nothing into dest (FOR-1650), so this can
-        # never mask admissible files stranded by an earlier refusal.
+        # Reached only when a fully admissible pass found nothing new: since
+        # FOR-1650 a refused pass raises above and moves nothing into dest, so
+        # no pass AFTER that fix can strand admissible files here. Files a
+        # pre-FOR-1650 checkout stranded in dest are still skipped as
+        # "already captured" and need one manual `dvc add <dest>` to be tracked.
         logger.info("capture-results: nothing new to capture")
         return 0
     if args.no_dvc:
