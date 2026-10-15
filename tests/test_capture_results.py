@@ -1218,3 +1218,33 @@ def test_a_pass_that_fails_before_any_download_creates_no_staging(tmp_path: Path
     with pytest.raises(LookupError):
         capture_finished_runs(_client(), ["no-such-experiment"], dest)
     assert not _pending_root(dest).exists()
+
+
+def test_cleanup_after_a_clean_pass_never_raises_and_never_deletes_uncommitted_content(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The pass directory is removed after the last rename with ``rmdir`` only: a
+    stray file inside it was not committed, so it is kept and logged by path, and
+    the committed result is still returned."""
+
+    class _Stray(FakeCaptureClient):
+        def download_artifacts(self, run_id: str, path: str, dst_path: str) -> str:
+            stray = Path(dst_path).parent / "stray.txt"
+            stray.write_text("not a committed file", encoding="utf-8")
+            return super().download_artifacts(run_id, path, dst_path)
+
+    base = _client()
+    client = _Stray(
+        experiments=base.experiments,
+        runs=base.runs,
+        artifacts=base.artifacts,
+        payloads=base.payloads,
+    )
+    dest = tmp_path / "cap"
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+
+    assert captured == [dest / E_NAME]
+    (stray,) = _staged_files(dest)
+    assert stray.name == "stray.txt"
+    assert stray.read_text(encoding="utf-8") == "not a committed file"
+    assert str(stray.parent) in capsys.readouterr().err

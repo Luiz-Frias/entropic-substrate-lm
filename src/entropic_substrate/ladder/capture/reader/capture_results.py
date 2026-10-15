@@ -159,12 +159,22 @@ class _CapturePass:
         return moved
 
     def _cleanup(self) -> None:
-        """Best-effort removal of a fully committed pass's directory; never raises."""
+        """Remove a fully committed pass's directory; never raises, never deletes content.
+
+        ``rmdir`` only, not ``rmtree``: after the last rename the pass directory
+        is empty, so removal succeeds. Anything still inside is not a committed
+        file, so it is left in place and logged with its path rather than
+        deleted.
+        """
         if self._dir is None:
             return
-        shutil.rmtree(self._dir, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            self._dir.rmdir()
         if self._dir.exists():
-            logger.warning(f"capture staging directory left behind after a clean pass: {self._dir}")
+            leftover = sorted(path.name for path in self._dir.iterdir())
+            logger.warning(
+                f"capture staging left behind after a clean pass: {self._dir} {leftover}"
+            )
             return
         with contextlib.suppress(OSError):
             self._root.rmdir()  # only succeeds when no refused pass's evidence remains
