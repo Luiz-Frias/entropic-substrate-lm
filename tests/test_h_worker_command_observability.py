@@ -194,6 +194,17 @@ LIFECYCLE = "h-run-lifecycle-v1"
 MAX_REQUEST = 1_000_000
 
 
+class _CheckpointUploadFails(_ObjectStore):
+    """Object store whose second checkpoint snapshot upload raises."""
+
+    def publish(
+        self, key: str, payload: bytes, *, expected_sha256: str
+    ) -> D1TrainerMailboxObjectIdentity:
+        if key.endswith("/snapshots/checkpoint-00000002.json"):
+            raise RuntimeError("injected checkpoint upload failure")
+        return super().publish(key, payload, expected_sha256=expected_sha256)
+
+
 class _ListSink:
     """A MetricSink double that keeps every record in order."""
 
@@ -283,15 +294,7 @@ def test_paused_and_operator_stopped_results_are_ok_run_ends_with_their_own_resu
 
 
 def test_training_failure_writes_exactly_one_failed_end_after_its_start(tmp_path: Path) -> None:
-    class BrokenCheckpoint(_ObjectStore):
-        def publish(
-            self, key: str, payload: bytes, *, expected_sha256: str
-        ) -> D1TrainerMailboxObjectIdentity:
-            if key.endswith("/snapshots/checkpoint-00000002.json"):
-                raise RuntimeError("injected checkpoint upload failure")
-            return super().publish(key, payload, expected_sha256=expected_sha256)
-
-    request, objects, marker, root = _worker(tmp_path, BrokenCheckpoint())
+    request, objects, marker, root = _worker(tmp_path, _CheckpointUploadFails())
     sink = _ListSink()
 
     with pytest.raises(RuntimeError, match="checkpoint upload failure"):
@@ -442,14 +445,6 @@ def test_the_failed_run_end_clock_origin_is_the_execution_call_not_materializati
     materialize_step = 5_000.0
     now = {"ticks": 1_000_000.0}
 
-    class FailingCheckpoint(_ObjectStore):
-        def publish(
-            self, key: str, payload: bytes, *, expected_sha256: str
-        ) -> D1TrainerMailboxObjectIdentity:
-            if key.endswith("/snapshots/checkpoint-00000002.json"):
-                raise RuntimeError("injected checkpoint upload failure")
-            return super().publish(key, payload, expected_sha256=expected_sha256)
-
     def fake_perf_counter() -> float:
         now["ticks"] += 10.0
         return now["ticks"]
@@ -462,7 +457,7 @@ def test_the_failed_run_end_clock_origin_is_the_execution_call_not_materializati
 
     monkeypatch.setattr(object_worker, "time", SimpleNamespace(perf_counter=fake_perf_counter))
     monkeypatch.setattr(object_worker, "materialize_probe_request", slow_materialize)
-    _, objects, marker, root = _worker(tmp_path, FailingCheckpoint())
+    _, objects, marker, root = _worker(tmp_path, _CheckpointUploadFails())
     sink = _ListSink()
 
     with pytest.raises(RuntimeError):
@@ -494,15 +489,7 @@ def test_a_failing_run_start_log_writes_no_run_end_and_surfaces_the_sink_error(
 def test_a_sink_failure_on_the_failed_end_surfaces_beside_the_original_error(
     tmp_path: Path,
 ) -> None:
-    class BrokenCheckpoint(_ObjectStore):
-        def publish(
-            self, key: str, payload: bytes, *, expected_sha256: str
-        ) -> D1TrainerMailboxObjectIdentity:
-            if key.endswith("/snapshots/checkpoint-00000002.json"):
-                raise RuntimeError("injected checkpoint upload failure")
-            return super().publish(key, payload, expected_sha256=expected_sha256)
-
-    request, objects, marker, root = _worker(tmp_path, BrokenCheckpoint())
+    request, objects, marker, root = _worker(tmp_path, _CheckpointUploadFails())
     sink = _ListSink(raise_on_event="run_end")
 
     with pytest.raises(ExceptionGroup) as raised:
@@ -564,15 +551,7 @@ def test_the_worker_file_is_admissible_to_the_h_capture_predicate(tmp_path: Path
 
 
 def test_a_failed_runs_file_stays_admissible_and_says_failed(tmp_path: Path) -> None:
-    class BrokenCheckpoint(_ObjectStore):
-        def publish(
-            self, key: str, payload: bytes, *, expected_sha256: str
-        ) -> D1TrainerMailboxObjectIdentity:
-            if key.endswith("/snapshots/checkpoint-00000002.json"):
-                raise RuntimeError("injected checkpoint upload failure")
-            return super().publish(key, payload, expected_sha256=expected_sha256)
-
-    _, objects, marker, root = _worker(tmp_path, BrokenCheckpoint())
+    _, objects, marker, root = _worker(tmp_path, _CheckpointUploadFails())
     metrics = tmp_path / "observability" / "metrics.jsonl"
 
     with pytest.raises(RuntimeError):
