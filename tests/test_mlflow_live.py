@@ -27,7 +27,7 @@ import pytest
 from entropic_substrate.historical.e_series.train import Trainer
 from entropic_substrate.ladder.capture.reader.mlflow_aggregate import aggregate
 from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV, build_sink
-from helpers import tiny_config
+from helpers import LIVE_GATE_BUCKET, list_keys_paginated, live_gate_run_prefix, tiny_config
 
 pytestmark = [
     pytest.mark.integration,
@@ -138,19 +138,29 @@ def test_live_artifact_round_trips_through_real_r2(tmp_path: Path) -> None:
         region_name="auto",
     )
     # NOTE: the real key layout is "<dest>/{experiment_id}/{run_id}/artifacts/..."
-    # — verified empirically (a prefix of "<dest>/{run_id}/" alone matches
-    # nothing; the experiment_id segment is load-bearing). Search broadly by
-    # run_id substring instead of assuming that internal layout. The prefix is
-    # the GATE'S OWN venue-split destination (compose.yaml) — listing the
-    # deployed server's "mlflow/" here would re-create the commingled read the
-    # split exists to end, and (MEASURED, first post-split gate run 2026-08-17)
-    # finds nothing: this very assertion failed with keys=[] until the probe
-    # followed the destination it verifies.
+    # — verified empirically 2026-08-17 (a prefix of "<dest>/{run_id}/" alone
+    # matches nothing; the experiment_id segment is load-bearing) and
+    # re-measured 2026-10-15 from the bucket listing. The prefix is the GATE'S
+    # OWN venue-split destination (compose.yaml) — listing the deployed
+    # server's "mlflow/" here would re-create the commingled read the split
+    # exists to end, and (MEASURED, first post-split gate run 2026-08-17) finds
+    # nothing: this very assertion failed with keys=[] until the probe followed
+    # the destination it verifies.
+    #
+    # RETRACTED 2026-10-15 (FOR-1653): the probe used to "search broadly by
+    # run_id substring" over ONE unpaginated list_objects_v2 call on the whole
+    # venue. list_objects_v2 returns at most 1000 keys per page; the venue had
+    # grown to 1089, page 1 ended at .../2/e7a22536.../ with IsTruncated=True,
+    # and a run sorting after it (eb8452dc...) failed this assertion with
+    # keys=[] while its artifact WAS in R2 on page 2. The probe now lists the
+    # one run's own prefix through the paginator (teeth:
+    # tests/test_live_gate_r2_listing.py).
     run_id = mlflow_sink.run_id  # type: ignore[attr-defined]
-    resp = s3.list_objects_v2(Bucket="entropic-substrate-lm", Prefix="mlflow-live-gate/")
-    keys = [o["Key"] for o in resp.get("Contents", []) if run_id in o["Key"]]
-    print(f"observed R2 object key(s) for run {run_id}: {keys}")
-    assert any(k.endswith(remote_path) for k in keys), (run_id, remote_path, keys)
+    experiment_id = client.get_run(run_id).info.experiment_id  # type: ignore[union-attr]
+    prefix = live_gate_run_prefix(experiment_id, run_id)
+    keys = list_keys_paginated(s3, LIVE_GATE_BUCKET, prefix)
+    print(f"observed R2 object key(s) under {prefix}: {keys}")
+    assert any(k.endswith(remote_path) for k in keys), (run_id, remote_path, prefix, keys)
 
 
 # --------------------------------------------------------------- acceptance #8/9
