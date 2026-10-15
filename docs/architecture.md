@@ -495,7 +495,11 @@ tag not starting with `h-`, is the E lane: every `results/*.jsonl` goes through
 exactly one `run_start`, exactly one `run_end` (schema `h-run-lifecycle-v1`, written by the H
 worker through the run's metric sink and never projected to MLflow metrics) and at least one
 committed step row, and any other `results/*.jsonl` must be well-formed JSON lines; an
-inadmissible H run is refused with a named file, never skipped. The `run_end` field
+inadmissible H run is refused with a named file, never skipped. A capture pass is atomic with
+respect to its destination in both lanes: every file is downloaded and validated in a per-pass
+staging directory `<dest>.pending/<pass-id>/`, a sibling of `dest` so `dvc add <dest>` never
+tracks it, and only a fully admissible pass is moved into `dest`; a refused pass moves nothing
+and keeps the refused file in staging as named evidence. The `run_end` field
 `wall_seconds` is measured against a different end point on each arm, and the schema keeps both
 meanings under the one name: for `status: ok` it is the worker's own execution time, copied from
 the probe result before result admission and final-snapshot custody; for `status: failed` it is

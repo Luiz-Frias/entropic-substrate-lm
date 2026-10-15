@@ -10,8 +10,10 @@ never captured silently.
 
 from __future__ import annotations
 
+import errno
 import io
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +35,27 @@ pytestmark = pytest.mark.unit
 
 ADMISSIBLE = json.dumps({"event": "eval", "step": 200, "nats_per_byte": 0.77}) + "\n"
 INADMISSIBLE = json.dumps({"event": "train", "step": 10}) + "\n"
+
+
+def _pending_root(dest: Path) -> Path:
+    """FOR-1650: the per-pass staging root, a SIBLING of ``dest`` (never inside it)."""
+    return Path(f"{dest}.pending")
+
+
+def _pass_dirs(dest: Path) -> list[Path]:
+    root = _pending_root(dest)
+    return sorted(root.iterdir()) if root.exists() else []
+
+
+def _staged_files(dest: Path) -> list[Path]:
+    """Every file under the staging root, whatever its depth."""
+    root = _pending_root(dest)
+    return sorted(path for path in root.rglob("*") if path.is_file()) if root.exists() else []
+
+
+def _entries(directory: Path) -> list[Path]:
+    """Every entry under ``directory`` at any depth: a suffix glob would miss a nested one."""
+    return sorted(directory.rglob("*"))
 
 
 def _checkpoint_bytes(*, step: int = 100, seed: int = 0, with_optimizer: bool = True) -> bytes:
@@ -298,10 +321,18 @@ def test_h_run_without_run_end_raises_the_h_predicates_refusal(
     tmp_path: Path, e_predicate_tripwire: None
 ) -> None:
     client = _h_client(metrics=_h_lines(with_end=False))
-    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*exactly one run_end.*found 0"):
-        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
-    # evidence stays on disk, named in the exception (same idiom as the E lane)
-    assert (tmp_path / "cap" / f"{H_RUN}-run-h-00-metrics.jsonl").exists()
+    dest = tmp_path / "cap"
+    with pytest.raises(
+        TelemetryGap, match=r"metrics\.jsonl.*exactly one run_end.*found 0"
+    ) as raised:
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    # FOR-1650 contract row 1: the evidence stays on disk, named in the exception,
+    # but in the pass's staging directory (a sibling of dest), never in dest.
+    (pass_dir,) = _pass_dirs(dest)
+    kept = pass_dir / f"{H_RUN}-run-h-00-metrics.jsonl"
+    assert kept.exists()
+    assert str(kept) in str(raised.value)
+    assert _entries(dest) == []
 
 
 def test_h_run_with_a_malformed_worker_log_raises(
@@ -339,12 +370,39 @@ def test_a_refused_h_file_kept_on_disk_is_refused_again_on_rerun(
     tmp_path: Path, e_predicate_tripwire: None
 ) -> None:
     """The refused file stays on disk as evidence; a second invocation must not
-    skip it as 'already captured' and report a clean nothing-to-do."""
+    skip it as 'already captured' and report a clean nothing-to-do.
+
+    FOR-1650 restates the mechanism, not the intent: the refused file now lives
+    in the pass's staging directory, never in ``dest``, so the rerun has
+    nothing in ``dest`` to re-validate and re-downloads (``download_calls ==
+    2``, was 1) and refuses again, each pass keeping its own evidence."""
     client = _h_client(metrics=_h_lines(with_end=False))
+    dest = tmp_path / "cap"
     for _ in range(2):
         with pytest.raises(TelemetryGap, match=r"exactly one run_end"):
-            capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
-    assert len(client.download_calls) == 1  # re-validated from disk, not re-downloaded
+            capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert len(client.download_calls) == 2
+    assert len(_pass_dirs(dest)) == 2
+    assert _entries(dest) == []
+
+
+def test_an_inadmissible_h_file_already_in_dest_is_refused_naming_the_dest_path(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """Contract row 2 (idempotency key): a file in ``dest`` that fails validation
+    is still refused, named, even though no pass produces one any more. This is
+    the H lane's re-validation of an existing ``dest`` file, and it also covers a
+    legacy ``dest`` that holds a refused file stranded before FOR-1650."""
+    client = _h_client()
+    dest = tmp_path / "cap"
+    dest.mkdir()
+    planted = dest / f"{H_RUN}-run-h-00-metrics.jsonl"
+    planted.write_text(_h_lines(with_end=False), encoding="utf-8")
+    with pytest.raises(TelemetryGap, match=r"exactly one run_end") as raised:
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert str(planted) in str(raised.value)
+    assert planted.read_text(encoding="utf-8") == _h_lines(with_end=False)  # evidence untouched
+    assert client.download_calls == []  # the planted file is validated, never re-downloaded
 
 
 def test_the_h_lane_captures_only_jsonl_artifacts(
@@ -586,15 +644,19 @@ def test_capture_checkpoints_strip_write_failure_leaves_no_corrupt_target(
         capture_checkpoints(client, ["entropic-substrate-lm"], dest)
     monkeypatch.setattr(torch, "save", real_save)
 
-    (target,) = dest.glob("*-final.pt")
+    # FOR-1650: the strip-swap runs in the pass's staging directory, so the
+    # failed pass moved nothing into dest at all; the intact ORIGINAL download
+    # is the one staged file.
+    assert _entries(dest) == []
+    (target,) = _staged_files(dest)
     # target must still be the intact ORIGINAL download, loadable and
     # carrying its optimizer state — the strip attempt never completed.
     reloaded = torch.load(target, map_location="cpu", weights_only=True)
     assert "optimizer" in reloaded
-    # Other arm: the failed strip must leave no residue either. `dest` is
-    # the directory cmd_capture_results hands to `dvc add`, so a surviving
-    # .partial sibling would be committed as tracked content.
-    assert list(dest.glob("*.partial")) == []
+    # Other arm: the failed strip must leave no `.partial` residue, neither in
+    # dest (which `dvc add` tracks) nor in staging.
+    assert list(dest.rglob("*.partial")) == []
+    assert list(_pending_root(dest).rglob("*.partial")) == []
 
 
 def test_capture_checkpoints_missing_required_key_raises_named_error(tmp_path: Path) -> None:
@@ -634,11 +696,15 @@ def test_capture_checkpoints_malformed_bytes_raise_checkpoint_format_error_loud(
 ) -> None:
     client = _ckpt_client(payload=b"not a torch checkpoint, just garbage bytes")
     dest = tmp_path / "ckpts"
-    with pytest.raises(CheckpointFormatError):
+    with pytest.raises(CheckpointFormatError) as raised:
         capture_checkpoints(client, ["entropic-substrate-lm"], dest)
-    # kept on disk as evidence, same idiom as the results lane's TelemetryGap
-    (kept,) = dest.glob("*-final.pt")
-    assert kept.exists()
+    # kept on disk as evidence, same idiom as the results lane's TelemetryGap;
+    # FOR-1650: in the pass's staging directory, named in the exception, and
+    # never in dest.
+    (kept,) = _staged_files(dest)
+    assert kept.name == "e1-fisher-run-full-e1-fisher-final.pt"
+    assert str(kept) in str(raised.value)
+    assert _entries(dest) == []
 
 
 def test_capture_checkpoints_unknown_experiment_name_fails_loud(tmp_path: Path) -> None:
@@ -851,3 +917,304 @@ def test_cli_success_path_runs_the_cloud_gate_after_push(
     assert code == 0
     # the affirmative remote check runs AFTER add+push, before success
     assert events == ["dvc add", "dvc push", f"verify {dest}"]
+
+
+# ------------------------------------------------ atomic pass (FOR-1650)
+# A capture pass lands in dest only when every file in it is admissible, in
+# both lanes. Every artifact is downloaded and validated in a per-pass staging
+# directory that is a SIBLING of dest (`<dest>.pending/<pass-id>/`, so `dvc add
+# <dest>` never tracks it); only a fully admissible pass is moved into dest.
+E_NAME = "e1-fisher-run-full-e1-fisher.jsonl"
+H_METRICS_NAME = f"{H_RUN}-run-h-00-metrics.jsonl"
+H_LOG_NAME = f"{H_RUN}-run-h-00-worker-log.jsonl"
+
+
+def _mixed_client(
+    *, h_first: bool, e_payload: str = ADMISSIBLE, h_metrics: str | None = None
+) -> FakeCaptureClient:
+    """One FINISHED E run and one FINISHED H run, in the given listing order."""
+    e_part = _client(payload=e_payload)
+    h_part = _h_client(metrics=h_metrics)
+    runs = [e_part.runs[0], h_part.runs[0]]
+    if h_first:
+        runs.reverse()
+    return FakeCaptureClient(
+        experiments=e_part.experiments,
+        runs=runs,
+        artifacts={**e_part.artifacts, **h_part.artifacts},
+        payloads={**e_part.payloads, **h_part.payloads},
+    )
+
+
+def _drop_run(client: FakeCaptureClient, run_id: str) -> None:
+    client.runs = [run for run in client.runs if run.info.run_id != run_id]
+
+
+def test_strand_e_run_before_a_refused_h_run_moves_nothing_then_captures_on_rerun(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """(a) The strand: an admissible E file used to land in dest before a later H
+    run was refused, and the next pass skipped it, returned [], and the CLI read
+    that as 'nothing new to capture'."""
+    client = _mixed_client(h_first=False, h_metrics=_h_lines(with_end=False))
+    dest = tmp_path / "cap"
+    with pytest.raises(TelemetryGap, match=r"exactly one run_end") as raised:
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+
+    assert _entries(dest) == []  # every entry at any depth, not a suffix glob
+    (pass_dir,) = _pass_dirs(dest)
+    assert pass_dir.parent == _pending_root(dest)
+    assert (pass_dir / E_NAME).read_text(encoding="utf-8") == ADMISSIBLE
+    refused = pass_dir / H_METRICS_NAME
+    assert refused.exists()
+    assert str(refused) in str(raised.value)
+
+    _drop_run(client, "run-h-0004")
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert captured == [dest / E_NAME]
+    assert (dest / E_NAME).read_text(encoding="utf-8") == ADMISSIBLE
+    assert [path.name for path in dest.iterdir()] == [E_NAME]
+    # the refused pass's evidence is untouched by the later, successful pass
+    assert refused.exists()
+
+
+def test_strand_h_run_before_a_refused_e_run_moves_nothing_then_captures_on_rerun(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """(b) The same with the H lane first and the E lane refused."""
+    client = _mixed_client(h_first=True, e_payload=INADMISSIBLE)
+    dest = tmp_path / "cap"
+    with pytest.raises(TelemetryGap, match=r"no eval record") as raised:
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+
+    assert _entries(dest) == []
+    (pass_dir,) = _pass_dirs(dest)
+    assert (pass_dir / H_METRICS_NAME).read_text(encoding="utf-8") == _h_lines()
+    assert (pass_dir / H_LOG_NAME).exists()
+    assert str(pass_dir / E_NAME) in str(raised.value)
+
+    client.payloads[("run-full-0001", "results/e1-fisher.jsonl")] = ADMISSIBLE
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert sorted(path.name for path in captured) == sorted([E_NAME, H_METRICS_NAME, H_LOG_NAME])
+    assert all(path.parent == dest and path.exists() for path in captured)
+
+
+def _two_ckpt_client(second_payload: bytes) -> FakeCaptureClient:
+    return FakeCaptureClient(
+        experiments={"entropic-substrate-lm": "exp-1"},
+        runs=[
+            _Run(_Info(run_id="run-aaaa-0001", run_name="e1-fisher", status="FINISHED")),
+            _Run(_Info(run_id="run-bbbb-0002", run_name="e1-random", status="FINISHED")),
+        ],
+        artifacts={
+            "run-aaaa-0001": ["checkpoints/e1-fisher-final.pt"],
+            "run-bbbb-0002": ["checkpoints/e1-random-final.pt"],
+        },
+        payloads={
+            ("run-aaaa-0001", "checkpoints/e1-fisher-final.pt"): _checkpoint_bytes(seed=1),
+            ("run-bbbb-0002", "checkpoints/e1-random-final.pt"): second_payload,
+        },
+    )
+
+
+def test_strand_checkpoint_lane_moves_nothing_when_a_later_checkpoint_is_refused(
+    tmp_path: Path,
+) -> None:
+    """(c) The checkpoint lane: an admissible checkpoint before a malformed one."""
+    client = _two_ckpt_client(b"not a torch checkpoint, just garbage bytes")
+    ckpt_dest = tmp_path / "ckpts"
+    with pytest.raises(CheckpointFormatError) as raised:
+        capture_checkpoints(client, ["entropic-substrate-lm"], ckpt_dest)
+
+    assert _entries(ckpt_dest) == []
+    (pass_dir,) = _pass_dirs(ckpt_dest)
+    assert (pass_dir / "e1-fisher-run-aaaa-e1-fisher-final.pt").exists()
+    refused = pass_dir / "e1-random-run-bbbb-e1-random-final.pt"
+    assert refused.exists()
+    assert str(refused) in str(raised.value)
+
+    _drop_run(client, "run-bbbb-0002")
+    captured = capture_checkpoints(client, ["entropic-substrate-lm"], ckpt_dest)
+    assert captured == [ckpt_dest / "e1-fisher-run-aaaa-e1-fisher-final.pt"]
+    reloaded = torch.load(captured[0], map_location="cpu", weights_only=True)
+    assert set(reloaded) == {"format_version", "step", "model", "config"}  # stripped, in dest
+    assert [path.name for path in ckpt_dest.iterdir()] == [captured[0].name]
+
+
+def test_cli_refuses_once_then_captures_never_reading_nothing_new(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """(d) After a refused pass the next pass must capture the admissible files.
+    Both exit-0 branches look alike by exit code, so each call's output is read
+    separately: the second must say '1 file(s) captured' and never 'nothing new
+    to capture', and run the DVC pair that the stranded pass never reached."""
+    import subprocess
+
+    import mlflow.tracking
+
+    import entropic_substrate.ladder.capture.reader.capture_results as capture_mod
+    from entropic_substrate.composition.entrypoints.cli import main
+    from entropic_substrate.ladder.capture.reader.sinks import MLFLOW_TRACKING_ENV
+
+    fake = _mixed_client(h_first=False, h_metrics=_h_lines(with_end=False))
+    monkeypatch.setattr(mlflow.tracking, "MlflowClient", lambda *, tracking_uri: fake)
+    monkeypatch.setenv(MLFLOW_TRACKING_ENV, "http://fake-tracking-server.invalid")
+    events: list[str] = []
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **_: events.append(" ".join(argv[:2])) or None
+    )
+    monkeypatch.setattr(
+        capture_mod, "verify_cloud_sync", lambda dest, **_: events.append(f"verify {dest}")
+    )
+
+    dest = tmp_path / "cap"
+    assert main(["capture-results", "--dest", str(dest)]) == 2
+    first = capsys.readouterr().err
+    assert "exactly one run_end" in first
+    assert events == []  # a refused pass reaches no DVC step
+
+    _drop_run(fake, "run-h-0004")
+    assert main(["capture-results", "--dest", str(dest)]) == 0
+    second = capsys.readouterr().err
+    assert "1 file(s) captured" in second
+    assert "nothing new to capture" not in second
+    assert events == ["dvc add", "dvc push", f"verify {dest}"]
+    assert [path.name for path in dest.iterdir()] == [E_NAME]
+
+
+def test_two_h_runs_in_one_pass_each_land_their_own_payload(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """Every H run carries ``results/metrics.jsonl``: if staging kept the
+    artifact-relative path, a second run's download would overwrite the first
+    run's staged file and ship green. Distinct payloads pin that each dest file
+    holds its OWN run's bytes."""
+    client = _h_client()
+    second_id = "cccccccc-0006"
+    second_metrics = _h_lines().replace("a" * 64, "b" * 64)
+    assert second_metrics != _h_lines()
+    client.runs.append(_h_run(second_id))
+    client.artifacts[second_id] = ["results/metrics.jsonl", "results/worker-log.jsonl"]
+    client.payloads[(second_id, "results/metrics.jsonl")] = second_metrics
+    client.payloads[(second_id, "results/worker-log.jsonl")] = H_WORKER_LOG + H_WORKER_LOG
+
+    dest = tmp_path / "cap"
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+
+    assert len(captured) == 4 and len({path.name for path in captured}) == 4
+    assert (dest / H_METRICS_NAME).read_text(encoding="utf-8") == _h_lines()
+    assert (dest / f"{H_RUN}-cccccccc-metrics.jsonl").read_text(encoding="utf-8") == second_metrics
+    assert (dest / H_LOG_NAME).read_text(encoding="utf-8") == H_WORKER_LOG
+    assert (dest / f"{H_RUN}-cccccccc-worker-log.jsonl").read_text(
+        encoding="utf-8"
+    ) == H_WORKER_LOG * 2
+
+
+@pytest.mark.parametrize("lane", ["e", "h"])
+def test_a_target_name_claimed_earlier_in_the_pass_is_skipped_first_wins(
+    tmp_path: Path, e_predicate_tripwire: None, lane: str
+) -> None:
+    """Two runs sharing a name and an 8-char id prefix collide on one flat
+    target. The parent skipped the second because the first was already in dest;
+    staging keeps that: first wins, the second is never downloaded over the
+    staged file, and nothing is returned twice."""
+    if lane == "e":
+        client = _client()
+        client.runs = [
+            client.runs[0],
+            _Run(_Info(run_id="run-full-0009", run_name="e1-fisher", status="FINISHED")),
+        ]
+        client.artifacts["run-full-0009"] = ["results/e1-fisher.jsonl"]
+        client.payloads[("run-full-0009", "results/e1-fisher.jsonl")] = (
+            json.dumps({"event": "eval", "step": 1, "nats_per_byte": 9.0}) + "\n"
+        )
+        expected = [E_NAME]
+    else:
+        client = _h_client()
+        client.runs.append(_h_run("run-h-0009"))
+        client.artifacts["run-h-0009"] = ["results/metrics.jsonl", "results/worker-log.jsonl"]
+        client.payloads[("run-h-0009", "results/metrics.jsonl")] = _h_lines().replace(
+            "a" * 64, "b" * 64
+        )
+        client.payloads[("run-h-0009", "results/worker-log.jsonl")] = H_WORKER_LOG
+        expected = [H_METRICS_NAME, H_LOG_NAME]
+
+    dest = tmp_path / "cap"
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert sorted(path.name for path in captured) == expected
+    assert {run_id for run_id, _ in client.download_calls} == {
+        "run-full-0001" if lane == "e" else "run-h-0004"
+    }
+    first_payload = (dest / expected[0]).read_text(encoding="utf-8")
+    assert "9.0" not in first_payload and "b" * 64 not in first_payload
+
+
+def test_a_mid_pass_download_failure_of_any_kind_moves_nothing(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """Atomicity holds for ANY exception, not only the two refusal types the CLI
+    catches: an MLflow/OSError mid-pass would otherwise strand the files already
+    moved, exactly as a refusal did."""
+
+    class _Flaky(FakeCaptureClient):
+        def download_artifacts(self, run_id: str, path: str, dst_path: str) -> str:
+            if path.endswith("worker-log.jsonl"):
+                raise OSError(errno.EIO, "simulated network failure mid-pass")
+            return super().download_artifacts(run_id, path, dst_path)
+
+    base = _mixed_client(h_first=False)
+    client = _Flaky(
+        experiments=base.experiments,
+        runs=base.runs,
+        artifacts=base.artifacts,
+        payloads=base.payloads,
+    )
+    dest = tmp_path / "cap"
+    with pytest.raises(OSError, match="simulated network failure"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert _entries(dest) == []
+    assert (_pass_dirs(dest)[0] / E_NAME).exists()
+
+
+def test_the_commit_moves_by_os_replace_and_fails_loud_without_copying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cross-filesystem staging setup must fail at the first rename with
+    nothing moved; it must never degrade to copy-then-delete (shutil.move)."""
+    from entropic_substrate.ladder.capture.reader import capture_results as capture_mod
+
+    real_replace = os.replace
+    commit_attempts: list[str] = []
+
+    def _cross_device(src: str | Path, dst: str | Path) -> None:
+        if Path(dst).parent == tmp_path / "cap":
+            commit_attempts.append(str(dst))
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(capture_mod.os, "replace", _cross_device)
+    client = _client()
+    dest = tmp_path / "cap"
+    with pytest.raises(OSError, match="cross-device"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert len(commit_attempts) == 1
+    assert _entries(dest) == []
+    assert [path.name for path in _staged_files(dest)] == [E_NAME]
+
+
+def test_a_fully_admissible_pass_leaves_no_staging_behind(tmp_path: Path) -> None:
+    client = _client()
+    dest = tmp_path / "cap"
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert len(captured) == 1
+    assert not _pending_root(dest).exists()
+    # a pass with nothing new (the idempotent re-run) leaves none either
+    assert capture_finished_runs(client, ["entropic-substrate-lm"], dest) == []
+    assert not _pending_root(dest).exists()
+
+
+def test_a_pass_that_fails_before_any_download_creates_no_staging(tmp_path: Path) -> None:
+    dest = tmp_path / "cap"
+    with pytest.raises(LookupError):
+        capture_finished_runs(_client(), ["no-such-experiment"], dest)
+    assert not _pending_root(dest).exists()

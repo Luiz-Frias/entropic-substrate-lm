@@ -25,6 +25,18 @@ inadmissible file raises :class:`~entropic_substrate.telemetry.TelemetryGap`
 nothing is ever captured silently. ``-tiny`` smoke runs are plumbing checks,
 not science — excluded unless explicitly asked for.
 
+A capture pass is atomic with respect to ``dest`` (FOR-1650), in both lanes.
+Every artifact of the pass is downloaded and validated in a per-pass staging
+directory ``<dest>.pending/<pass-id>/``, a SIBLING of ``dest`` so that
+``dvc add <dest>`` can never track it. Only after the whole pass has validated
+are its files moved into ``dest`` (``os.replace``) and returned. A refused or
+failed pass moves nothing: ``dest`` is exactly as it was, and the staging
+directory stays as evidence (the refused file is named in the exception). So "a
+file in ``dest``" means "captured by a fully admissible pass", and the
+``target.exists()`` idempotency key keeps that meaning. Before this, a refusal
+midway left the admissible files already moved into ``dest`` untracked, the next
+pass skipped them, and the CLI read that as "nothing new to capture".
+
 An H-tagged FINISHED run with no ``h-run-lifecycle-v1`` records is refused whatever produced
 it: a worker from before FOR-1639, and the local tracer (schema ``h-tiny-trace-v1``, run name
 ``h-tiny-trace-<identity>``) when it mirrors to MLflow under ``ENTROPIC_MLFLOW_TINY=1``. That
@@ -37,11 +49,12 @@ skip for these runs.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess  # nosec B404 -- verify_cloud_sync runs `dvc status` with a fixed argv
-import tempfile
+import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -78,19 +91,83 @@ def _resolve_experiment_ids(client: Any, experiment_names: Sequence[str]) -> lis
     return experiment_ids
 
 
-def _download_artifact(
-    client: Any, run_id: str, artifact_path: str, dest: Path, target: Path
-) -> None:
-    """Download one MLflow artifact straight to ``target`` inside ``dest``.
+class _CapturePass:
+    """One capture pass: stage and validate everything, then commit it to ``dest``.
 
-    ``download_artifacts`` recreates the artifact tree under whatever ``dst``
-    it is given; staging in a scratch dir first (then moving the one file we
-    want) keeps ``dest`` holding only the flat capture set, shared by both
-    the results-JSONL and the checkpoint capture lanes below.
+    Files are staged flat under ``<dest>.pending/<pass-id>/`` (a sibling of
+    ``dest``, built with the same ``f"{dest}..."`` idiom as
+    :func:`verify_cloud_sync`'s pointer path), named exactly as they will be in
+    ``dest``. The staging directory is created at the first download, so a pass
+    that fails before downloading anything leaves no trace.
+
+    :meth:`commit` is the pass's only effect on ``dest`` and its last fallible
+    step. Callers run it after their whole loop, never from a handler, so ANY
+    exception before it (a refusal, a bad run name, an MLflow or OS error, an
+    interrupt) leaves ``dest`` unchanged and the staging directory in place.
     """
-    with tempfile.TemporaryDirectory(dir=dest) as scratch:
-        local = Path(client.download_artifacts(run_id, artifact_path, scratch))
-        shutil.move(str(local), target)
+
+    def __init__(self, dest: Path) -> None:
+        self.dest = dest
+        self._root = Path(f"{dest}.pending")
+        self._dir: Path | None = None
+        self._staged: list[Path] = []
+
+    def claims(self, name: str) -> bool:
+        """True when ``name`` is already staged in this pass (first wins)."""
+        return any(path.name == name for path in self._staged)
+
+    def stage(self, client: Any, run_id: str, artifact_path: str, name: str) -> Path:
+        """Download one MLflow artifact into staging as ``name`` and return its path.
+
+        ``download_artifacts`` recreates the artifact tree under whatever ``dst``
+        it is given, and every H run carries the same ``results/metrics.jsonl``.
+        So each download lands in a scratch directory of its own, is renamed to
+        its flat, run-scoped ``name`` using the path ``download_artifacts``
+        RETURNS, and the scratch directory is removed before the next download:
+        no two artifacts ever share a relative path in staging, and a staged file
+        is never overwritten.
+        """
+        if self._dir is None:
+            self._dir = self._root / uuid.uuid4().hex
+            self._dir.mkdir(parents=True)
+        staged = self._dir / name
+        scratch = self._dir / ".download"
+        local = Path(client.download_artifacts(run_id, artifact_path, str(scratch)))
+        os.replace(local, staged)
+        shutil.rmtree(scratch, ignore_errors=True)
+        self._staged.append(staged)
+        return staged
+
+    def commit(self) -> list[Path]:
+        """Move every staged file into ``dest`` and return the ``dest`` paths.
+
+        ``os.replace`` only, never ``shutil.move``: across filesystems the latter
+        silently falls back to copy-then-delete, which is not atomic, and a
+        cross-filesystem staging setup must fail loud at the first rename with
+        nothing moved. Nothing that can fail for a non-rename reason runs between
+        the first and the last rename; the staging directory is removed only
+        after the last one and its removal can never raise.
+        """
+        moved: list[Path] = []
+        for staged in self._staged:
+            target = self.dest / staged.name
+            os.replace(staged, target)
+            moved.append(target)
+        self._cleanup()
+        for target in moved:
+            logger.info(f"captured {target}")
+        return moved
+
+    def _cleanup(self) -> None:
+        """Best-effort removal of a fully committed pass's directory; never raises."""
+        if self._dir is None:
+            return
+        shutil.rmtree(self._dir, ignore_errors=True)
+        if self._dir.exists():
+            logger.warning(f"capture staging directory left behind after a clean pass: {self._dir}")
+            return
+        with contextlib.suppress(OSError):
+            self._root.rmdir()  # only succeeds when no refused pass's evidence remains
 
 
 def _validated_run_name(name: str) -> str:
@@ -131,16 +208,22 @@ def _run_schema_tag(run: Any, run_id: str) -> str | None:
     return tag
 
 
-def _capture_h_run(client: Any, run_id: str, run_name: str, dest: Path) -> list[Path]:
-    """Capture one H-lane run's ``results/*.jsonl`` through the H predicates.
+def _capture_h_run(
+    client: Any, run_id: str, run_name: str, dest: Path, staging: _CapturePass
+) -> None:
+    """Stage and validate one H-lane run's ``results/*.jsonl`` through the H predicates.
 
     The run must carry exactly one ``results/metrics.jsonl``: a worker that
     died before its first ``sink.log`` still finishes its MLflow run, and
-    capturing its ``worker-log.jsonl`` alone would read as success. A file
-    already in ``dest`` is re-validated rather than skipped, so a refused file
-    kept on disk as evidence is refused again on the next invocation instead
-    of reading as "nothing new to capture". Returns only the newly captured
-    paths.
+    capturing its ``worker-log.jsonl`` alone would read as success. Downloads
+    go to the pass's staging directory and are committed to ``dest`` by the
+    caller only when the WHOLE pass is admissible (FOR-1650), so a refusal here
+    moves nothing and the refused file stays in staging, named in the exception.
+    A file already in ``dest`` is re-validated rather than skipped, so one that
+    fails validation (for example stranded there before FOR-1650) is refused
+    again on the next invocation instead of reading as "nothing new to
+    capture"; it is not returned, being already captured. A target name already
+    staged earlier in this pass is skipped, first wins.
     """
     paths = [
         artifact.path
@@ -154,22 +237,19 @@ def _capture_h_run(client: Any, run_id: str, run_name: str, dest: Path) -> list[
             f"among {sorted(paths)} — refusing to capture its other files alone"
         )
         raise TelemetryGap(msg)
-    captured: list[Path] = []
     for artifact_path in paths:
-        target = dest / f"{run_name}-{run_id[:8]}-{Path(artifact_path).name}"
-        fresh = not target.exists()
-        if fresh:
-            _download_artifact(client, run_id, artifact_path, dest, target)
+        name = f"{run_name}-{run_id[:8]}-{Path(artifact_path).name}"
+        if staging.claims(name):
+            continue
+        local = dest / name
+        if not local.exists():
+            local = staging.stage(client, run_id, artifact_path, name)
         # Admissibility gate — raises TelemetryGap; the file stays on disk as
         # evidence, named in the exception message.
         if artifact_path == _H_METRICS_ARTIFACT:
-            final_h_run_end(target)
+            final_h_run_end(local)
         else:
-            require_json_object_lines(target)
-        if fresh:
-            captured.append(target)
-            logger.info(f"captured {target}")
-    return captured
+            require_json_object_lines(local)
 
 
 def capture_finished_runs(
@@ -179,11 +259,18 @@ def capture_finished_runs(
     *,
     include_tiny: bool = False,
 ) -> list[Path]:
-    """Download every FINISHED run's results JSONLs into ``dest``.
+    """Download every FINISHED run's results JSONLs into ``dest``, atomically.
 
-    Returns the newly captured paths; files already present in ``dest`` are
-    skipped (idempotent — re-running after new runs finish captures only the
-    delta, and ``dvc add`` on the directory picks up exactly that delta).
+    The pass is atomic with respect to ``dest`` (FOR-1650): every file is
+    downloaded and validated in the pass's staging directory
+    ``<dest>.pending/<pass-id>/`` and moved into ``dest`` only once the whole
+    pass is admissible. Any exception (a refusal, an MLflow or OS error)
+    moves nothing and leaves the staging directory as evidence.
+
+    Returns the newly captured paths, in ``dest``; files already present in
+    ``dest`` are skipped (idempotent — re-running after new runs finish
+    captures only the delta, and ``dvc add`` on the directory picks up
+    exactly that delta).
 
     Runs are partitioned by their ``schema`` tag (see the module docstring):
     the E lane below is unchanged; an ``h-`` tagged run takes the H lane
@@ -194,7 +281,7 @@ def capture_finished_runs(
     dest.mkdir(parents=True, exist_ok=True)
     experiment_ids = _resolve_experiment_ids(client, experiment_names)
 
-    captured: list[Path] = []
+    staging = _CapturePass(dest)
     for run in client.search_runs(experiment_ids, max_results=500):
         info = run.info
         if info.status != "FINISHED":
@@ -204,22 +291,20 @@ def capture_finished_runs(
         run_name = _validated_run_name(info.run_name)
         schema_tag = _run_schema_tag(run, info.run_id)
         if schema_tag is not None and schema_tag.startswith(_H_SCHEMA_PREFIX):
-            captured.extend(_capture_h_run(client, info.run_id, run_name, dest))
+            _capture_h_run(client, info.run_id, run_name, dest, staging)
             continue
         for artifact in client.list_artifacts(info.run_id, _RESULTS_PREFIX):
             if not artifact.path.endswith(".jsonl"):
                 continue
-            target = dest / f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
-            if target.exists():
+            name = f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
+            if (dest / name).exists() or staging.claims(name):
                 continue
-            _download_artifact(client, info.run_id, artifact.path, dest, target)
+            staged = staging.stage(client, info.run_id, artifact.path, name)
             # Admissibility gate — raises TelemetryGap on a file the readers
-            # would refuse; target stays on disk as evidence, named in the
-            # exception message.
-            final_eval_record(target)
-            captured.append(target)
-            logger.info(f"captured {target}")
-    return captured
+            # would refuse; the staged file stays on disk as evidence, named in
+            # the exception message, and nothing of this pass reaches dest.
+            final_eval_record(staged)
+    return staging.commit()
 
 
 def capture_checkpoints(
@@ -230,10 +315,13 @@ def capture_checkpoints(
     include_tiny: bool = False,
     strip_optimizer: bool = True,
 ) -> list[Path]:
-    """Download every FINISHED run's FINAL checkpoint into ``dest``.
+    """Download every FINISHED run's FINAL checkpoint into ``dest``, atomically.
 
     Mirrors :func:`capture_finished_runs`'s FINISHED / ``-tiny`` / idempotent
-    contract, over ``checkpoints/*-final.pt`` artifacts instead of
+    / atomic-pass contract (FOR-1650: each checkpoint is downloaded, validated
+    and stripped in the pass's staging directory ``<dest>.pending/<pass-id>/``,
+    one at a time to keep the disk budget below, and moved into ``dest`` only
+    once EVERY checkpoint of the pass is admissible), over ``checkpoints/*-final.pt`` artifacts instead of
     ``results/*.jsonl``. Only the ``-final.pt`` twin is captured — the
     ``-best.pt`` checkpoint lives under the same ``checkpoints/`` prefix, but
     E1.5-D's diagnostics compare a run's FINAL trained state against its
@@ -245,8 +333,8 @@ def capture_checkpoints(
     admissibility gate every other checkpoint reader in this repo uses —
     rather than telemetry's JSONL predicate. A malformed/truncated ``.pt``
     raises :class:`~entropic_substrate.checkpoint.CheckpointFormatError`
-    naming the path; the file is kept on disk as evidence, same idiom as
-    :func:`capture_finished_runs`'s ``TelemetryGap``.
+    naming the staged path; the file is kept in staging as evidence, same
+    idiom as :func:`capture_finished_runs`'s ``TelemetryGap``.
 
     ``strip_optimizer`` (default ``True``): re-saves the downloaded
     checkpoint as ``{format_version, step, model, config}`` only. The
@@ -262,7 +350,7 @@ def capture_checkpoints(
     dest.mkdir(parents=True, exist_ok=True)
     experiment_ids = _resolve_experiment_ids(client, experiment_names)
 
-    captured: list[Path] = []
+    staging = _CapturePass(dest)
     for run in client.search_runs(experiment_ids, max_results=500):
         info = run.info
         if info.status != "FINISHED":
@@ -273,19 +361,19 @@ def capture_checkpoints(
         for artifact in client.list_artifacts(info.run_id, _CHECKPOINT_PREFIX):
             if not artifact.path.endswith(_FINAL_SUFFIX):
                 continue
-            target = dest / f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
-            if target.exists():
+            name = f"{run_name}-{info.run_id[:8]}-{Path(artifact.path).name}"
+            if (dest / name).exists() or staging.claims(name):
                 continue
-            _download_artifact(client, info.run_id, artifact.path, dest, target)
+            staged = staging.stage(client, info.run_id, artifact.path, name)
             try:
-                raw = torch.load(target, map_location="cpu", weights_only=True)
+                raw = torch.load(staged, map_location="cpu", weights_only=True)
             except Exception as exc:  # re-raised as a named, typed refusal below
                 msg = (
-                    f"{target}: could not be loaded as a torch checkpoint ({exc}) — "
+                    f"{staged}: could not be loaded as a torch checkpoint ({exc}) — "
                     "kept on disk as evidence"
                 )
                 raise CheckpointFormatError(msg) from exc
-            state = normalize_checkpoint(raw, source=str(target))
+            state = normalize_checkpoint(raw, source=str(staged))
             # Validated unconditionally, not only under strip_optimizer: a
             # checkpoint missing these keys is not one Trainer.state_dict()
             # ever wrote regardless of whether THIS call strips it — leaving
@@ -296,7 +384,7 @@ def capture_checkpoints(
             missing = [key for key in ("step", "model", "config") if key not in state]
             if missing:
                 msg = (
-                    f"{target}: normalized checkpoint is missing required key(s) "
+                    f"{staged}: normalized checkpoint is missing required key(s) "
                     f"{missing} — not a checkpoint Trainer.state_dict() ever wrote, "
                     "kept on disk as evidence"
                 )
@@ -312,30 +400,29 @@ def capture_checkpoints(
                     "model": model_state,
                     "config": state["config"],
                 }
-                # Atomic swap, not in-place: `target.exists()` above is the
-                # idempotency key this loop re-checks on every future
-                # invocation, so a strip write interrupted partway through
-                # would otherwise leave a truncated file sitting AT that
-                # exact path — corrupt, but still "captured" forever as far
-                # as this function is concerned. Writing the stripped
-                # payload to a sibling path first and swapping it in with
-                # `os.replace` (same filesystem, so it is atomic) means a
-                # failed strip leaves the ORIGINAL, still-valid download in
-                # place instead.
-                tmp_target = target.with_suffix(target.suffix + ".partial")
+                # Atomic swap, not in-place, and inside staging: a strip write
+                # interrupted partway through would otherwise leave a truncated
+                # file at the staged path that the rest of this pass (and the
+                # evidence a refused pass keeps) would take for the real
+                # checkpoint. Writing the stripped payload to a sibling path
+                # first and swapping it in with `os.replace` (same directory,
+                # so it is atomic) means a failed strip leaves the ORIGINAL,
+                # still-valid download in place instead. The swap happens per
+                # file, before the next download, so staging never holds more
+                # than one unstripped checkpoint.
+                tmp_target = staged.with_suffix(staged.suffix + ".partial")
                 try:
                     torch.save(stripped, tmp_target)
-                    os.replace(tmp_target, target)
+                    os.replace(tmp_target, staged)
                 finally:
-                    # An interrupted strip leaves the .partial sibling
-                    # behind; `dvc add <dest>` (cmd_capture_results, after
-                    # this function returns) would otherwise track that
-                    # orphan alongside the real capture set. A no-op once
-                    # os.replace has already consumed it.
+                    # An interrupted strip leaves the .partial sibling behind
+                    # in staging; remove it so the evidence a failed pass keeps
+                    # is the original download alone. A no-op once os.replace
+                    # has already consumed it. (It could never reach `dest`:
+                    # only the pass's staged names are committed, and a
+                    # committed pass has no failed strip.)
                     tmp_target.unlink(missing_ok=True)
-            captured.append(target)
-            logger.info(f"captured {target}")
-    return captured
+    return staging.commit()
 
 
 def dvc_commands(dest: str | Path) -> list[list[str]]:
