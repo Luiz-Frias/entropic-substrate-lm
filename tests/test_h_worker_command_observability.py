@@ -431,6 +431,48 @@ def test_the_failed_run_end_clock_is_read_after_failure_custody(
     assert end["wall_seconds"] >= custody_step, end["wall_seconds"]
 
 
+def test_the_failed_run_end_clock_origin_is_the_execution_call_not_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented START point of the failed run_end clock (docs/architecture.md):
+    the origin is read immediately before the execute_probe_request call, so time
+    spent materializing the request does not count. The wrapped materializer
+    advances the shared fake clock by a large step; a clock origin read at the top
+    of run_object_worker would include it and push wall_seconds past that step."""
+    materialize_step = 5_000.0
+    now = {"ticks": 1_000_000.0}
+
+    class FailingCheckpoint(_ObjectStore):
+        def publish(
+            self, key: str, payload: bytes, *, expected_sha256: str
+        ) -> D1TrainerMailboxObjectIdentity:
+            if key.endswith("/snapshots/checkpoint-00000002.json"):
+                raise RuntimeError("injected checkpoint upload failure")
+            return super().publish(key, payload, expected_sha256=expected_sha256)
+
+    def fake_perf_counter() -> float:
+        now["ticks"] += 10.0
+        return now["ticks"]
+
+    real_materialize = object_worker.materialize_probe_request
+
+    def slow_materialize(*args: Any, **kwargs: Any) -> Any:
+        now["ticks"] += materialize_step
+        return real_materialize(*args, **kwargs)
+
+    monkeypatch.setattr(object_worker, "time", SimpleNamespace(perf_counter=fake_perf_counter))
+    monkeypatch.setattr(object_worker, "materialize_probe_request", slow_materialize)
+    _, objects, marker, root = _worker(tmp_path, FailingCheckpoint())
+    sink = _ListSink()
+
+    with pytest.raises(RuntimeError):
+        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+
+    end = sink.records[-1]
+    assert end["event"] == "run_end" and end["status"] == "failed"
+    assert end["wall_seconds"] < materialize_step, end["wall_seconds"]
+
+
 def test_a_failing_run_start_log_writes_no_run_end_and_surfaces_the_sink_error(
     tmp_path: Path,
 ) -> None:

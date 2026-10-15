@@ -347,6 +347,32 @@ def test_a_refused_h_file_kept_on_disk_is_refused_again_on_rerun(
     assert len(client.download_calls) == 1  # re-validated from disk, not re-downloaded
 
 
+def test_the_h_lane_captures_only_jsonl_artifacts(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """The H lane filters the run's results/ listing to ``.jsonl`` files: a
+    plain-text sibling and a directory entry are never downloaded, so neither can
+    reach the JSON-object-lines check and raise."""
+    client = _h_client(
+        artifacts=[
+            "results/metrics.jsonl",
+            "results/worker-log.jsonl",
+            "results/notes.txt",
+            "results/sub",
+        ]
+    )
+    client.payloads[("run-h-0004", "results/notes.txt")] = "plain text, not json\n"
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert sorted(p.name for p in captured) == [
+        f"{H_RUN}-run-h-00-metrics.jsonl",
+        f"{H_RUN}-run-h-00-worker-log.jsonl",
+    ]
+    assert sorted(path for _, path in client.download_calls) == [
+        "results/metrics.jsonl",
+        "results/worker-log.jsonl",
+    ]
+
+
 def test_h_capture_is_idempotent_once_admitted(tmp_path: Path, e_predicate_tripwire: None) -> None:
     client = _h_client()
     first = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
