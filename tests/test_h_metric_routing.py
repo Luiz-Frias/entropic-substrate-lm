@@ -31,15 +31,21 @@ class _FakeSink:
 
     def __init__(self) -> None:
         self.records: list[Mapping[str, Any]] = []
+        # DN-1643-PORT: annotate rows are kept apart from `records`, which stays the
+        # schema-bearing stream every assertion below indexes by ``row["schema"]``.
+        self.annotations: list[dict[str, str]] = []
         self.finished = False
 
     def log(self, record: Mapping[str, Any]) -> None:
         self.records.append(record)
 
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        self.annotations.append(dict(tags))
+
     def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
         raise AssertionError("H training-step routing must never call log_artifact")
 
-    def finish(self) -> None:
+    def finish(self, *, status: str = "FINISHED") -> None:
         self.finished = True
 
 
@@ -343,3 +349,23 @@ def test_the_workers_lifecycle_records_are_not_projected_either(tmp_path: Path) 
     assert all(extractor.extract(r) is None for r in lifecycle)
     steps = [r for r in sink.records if r.get("schema") == "h-training-step-v2"]
     assert steps and all(extractor.extract(r) is not None for r in steps)
+    # FOR-1642: the checkpoint evidence the worker annotates yields nothing either, in
+    # the shape JsonlSink writes it (`{"event": "annotate", **tags}`, no schema key).
+    assert sink.annotations
+    assert all(extractor.extract({"event": "annotate", **t}) is None for t in sink.annotations)
+
+
+def test_an_annotate_record_yields_no_metrics_from_the_h_extractor() -> None:
+    """FOR-1642 (DN-1643-PORT): annotate rows share the authoritative JSONL with the
+    step rows, but they carry no ``schema``; the extractor must project nothing from
+    them, so a checkpoint annotation can never become a metric point."""
+    extractor = HTrainingStepExtractor(warmup_steps=2)
+    annotate = {
+        "event": "annotate",
+        "checkpoint/00000002/key": "run/snapshots/checkpoint-00000002.json",
+        "checkpoint/00000002/size_bytes": "812",
+    }
+    assert extractor.extract(annotate) is None
+    # Control: the same extractor does project a committed step row.
+    step = {"schema": "h-training-step-v2", "status": "committed", "phase": "prediction", "step": 1}
+    assert extractor.extract(step) is not None

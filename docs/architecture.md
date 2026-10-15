@@ -507,14 +507,54 @@ the elapsed time since execution began, read after failure custody (snapshot pub
 retries, backoff). Consumers must not compare the two arms as one clock. A change to either
 meaning is a schema version bump, not an additive field.
 
-An H-tagged run that is FINISHED but has no `h-run-lifecycle-v1` records is refused whatever
-produced it: a worker from before FOR-1639, and the local tracer (schema `h-tiny-trace-v1`,
-run name `h-tiny-trace-<identity>`) when it mirrors to MLflow under `ENTROPIC_MLFLOW_TINY=1`.
-The tracer's run name carries no `-tiny` suffix, so the `include_tiny` gate, which runs before
-the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
-that bypasses `object_worker` the `-tiny` run-name suffix, capturing an experiment that holds
-such a run makes `capture-results` exit 2. Capturing the shared experiment is therefore not yet
-safe while such runs remain on the server.
+Capture admits MLflow runs by status through an allowlist that is lane-aware (DN-1642-FAILED-CAPTURE,
+2026-10-15). The E lane admits `FINISHED` only. The H lane admits `FINISHED` and `FAILED`: the H
+worker and the local probe terminate their MLflow run `FAILED` on every raised exit, and a failed H
+run that committed a step is evidence, its `run_end` saying `failed`. Every other status
+(`RUNNING`, `SCHEDULED`, `KILLED`) is skipped on both lanes before any tag is read, and a `FAILED`
+run that is not `h-` tagged is skipped without further checks. The admissibility predicate is the
+same for both statuses, so a `FAILED` H run that died before its first committed step, before
+`run_start`, or without `metrics.jsonl` is refused and fails the pass with exit 2, exactly as it
+would under `FINISHED`. Checkpoint capture stays `FINISHED`-only; H runs upload no checkpoints.
+
+An H-tagged run with no `h-run-lifecycle-v1` records is refused whatever produced it: a worker from
+before FOR-1639 is. The local tiny tracer (schema `h-tiny-trace-v1`) and the local `h-train-probe`
+(schema `h-train-probe-v1`) bypass `object_worker` and write none, so they name their runs with the
+`-tiny` suffix (`h-tiny-trace-<identity>-tiny`, `h-train-probe-<identity>-tiny`; TRACER-PARTITION,
+2026-10-14). The `include_tiny` gate runs before the lane partition, so capture excludes them by
+default and refuses them loudly under `include_tiny`, exactly as it treats E smoke runs.
+
+### H run surface (FOR-1642, FOR-1643, FOR-1644)
+
+Every H producer that mirrors to MLflow (the pod worker, the local tiny tracer, the local
+`h-train-probe`) builds its run through `build_sink_for_run` with one descriptor shape:
+
+| field | value |
+| ----- | ----- |
+| params | `exp` (profile name), `seed`, `config_hash`, `git_sha`, `run_class`, `precision`, `image` |
+| tags | `schema` (per producer), `exp`, `config_hash` |
+
+`config_hash` is `h_config_hash(profile)`: the first 12 hex of `sha256` over the canonical profile
+manifest with the top-level sweep `seed` removed. `HProfile.identity` hashes the whole manifest and so
+differs per seed; the grouping key must not, or every seed of a sweep would be a group of one.
+`source_seed` stays in the hash, so runs on differently sampled sources do not group. `git_sha` and
+`image` are the verified request's `code_commit` and `image` on the worker and are OMITTED, never
+`None` and never a placeholder, where no verified value exists: a `local_tiny` worker request has
+neither, and the tracer and the probe have no image (they carry `git_sha()` of the local checkout).
+Aggregating H runs by this key is a later slice (FOR-1648); this one only makes them groupable.
+
+The `MetricSink` door gained two additive members on 2026-10-15 (DN-1643-PORT, operator ruling
+2026-10-14, same shape as DN-1637-DOOR). `annotate(tags)` attaches `str -> str` run tags: the JSONL
+sink appends `{"event": "annotate", **tags}` (no `schema` key, so no schema-keyed reader counts it),
+the MLflow sink sets one tag per key, best-effort and counted like every other write after startup.
+`finish(*, status="FINISHED")` takes `FINISHED` or `FAILED`; the MLflow sink terminates the run with
+it and the JSONL sink ignores it. A no-argument `finish()` is unchanged on every adapter.
+
+Per sealed checkpoint the worker annotates its run with `checkpoint/<step:08d>/key`, `/sha256`,
+`/size_bytes` and `/publication_seconds`, after the checkpoint event is published. They are the fields
+of the snapshot marker `publish_worker_snapshot` returns (the identity `materialize_worker_snapshot`
+accepts and which binds the sealed files' hashes), and `publication_seconds` is the same measured
+`l3_seconds` the event's `publication` block carries. Custody stays in R2; the tags only point at it.
 
 Evidence classes remain separate in every table and chart:
 

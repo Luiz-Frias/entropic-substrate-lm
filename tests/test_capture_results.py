@@ -1283,3 +1283,201 @@ def test_cleanup_after_a_clean_pass_never_raises_and_never_deletes_uncommitted_c
     assert stray.name == "stray.txt"
     assert stray.read_text(encoding="utf-8") == "not a committed file"
     assert str(stray.parent) in capsys.readouterr().err
+
+
+# ------------------------------- FOR-1642: lane-aware status gate, tracer partition
+# DN-1642-FAILED-CAPTURE (conductor 2026-10-15, option A) and TRACER-PARTITION
+# (conductor 2026-10-14). The status gate is an ALLOWLIST: FINISHED on both
+# lanes, FAILED on the H lane only, every other status skipped on both lanes
+# before any tag read or run-name validation.
+
+_FAILED_H_PREFIX = "ffffffff"
+
+
+def _h_failed_lines() -> str:
+    """An H run that committed a step and then failed: a ``failed`` run_end."""
+    rows = [json.loads(line) for line in _h_lines().splitlines()]
+    rows[-1] = rows[-1] | {"status": "failed", "result_status": "execution_defect"}
+    return "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+
+
+def _add_h_run(
+    client: FakeCaptureClient,
+    run_id: str,
+    *,
+    status: str,
+    metrics: str,
+    run_name: str = H_RUN,
+    tag: object = H_SCHEMA_TAG,
+) -> None:
+    client.runs.append(_h_run(run_id, status=status, run_name=run_name, tag=tag))
+    client.artifacts[run_id] = ["results/metrics.jsonl", "results/worker-log.jsonl"]
+    client.payloads[(run_id, "results/metrics.jsonl")] = metrics
+    client.payloads[(run_id, "results/worker-log.jsonl")] = H_WORKER_LOG
+
+
+def test_a_failed_h_run_with_a_committed_step_is_captured_beside_a_finished_one(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """M7: the H lane admits FAILED as well as FINISHED. Each run is captured with
+    its own ``run_end`` (``ok`` and ``failed`` respectively)."""
+    client = _h_client()
+    failed_id = f"{_FAILED_H_PREFIX}-0006"
+    _add_h_run(client, failed_id, status="FAILED", metrics=_h_failed_lines())
+
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+
+    names = sorted(p.name for p in captured)
+    assert names == sorted(
+        [
+            f"{H_RUN}-run-h-00-metrics.jsonl",
+            f"{H_RUN}-run-h-00-worker-log.jsonl",
+            f"{H_RUN}-{_FAILED_H_PREFIX}-metrics.jsonl",
+            f"{H_RUN}-{_FAILED_H_PREFIX}-worker-log.jsonl",
+        ]
+    )
+    from entropic_substrate.ladder.capture.reader.h_telemetry import final_h_run_end
+
+    ok = final_h_run_end(tmp_path / "cap" / f"{H_RUN}-run-h-00-metrics.jsonl")
+    failed = final_h_run_end(tmp_path / "cap" / f"{H_RUN}-{_FAILED_H_PREFIX}-metrics.jsonl")
+    assert (ok["status"], failed["status"]) == ("ok", "failed")
+
+
+def test_a_failed_h_run_that_never_trained_still_refuses_the_whole_pass(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """The consequence DN-1642-FAILED-CAPTURE names: admission is the same predicate,
+    so a FAILED run with no committed step is refused exactly as under FINISHED."""
+    client = _h_client()
+    run_id = f"{_FAILED_H_PREFIX}-0006"
+    never_trained = _h_lines(with_step=False)
+    _add_h_run(client, run_id, status="FAILED", metrics=never_trained)
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*at least one committed"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert list((tmp_path / "cap").glob("*")) == []
+
+
+def test_a_failed_e_run_is_still_skipped_with_no_download(tmp_path: Path) -> None:
+    """The E lane stays FINISHED-only: a FAILED E run is skipped, never downloaded."""
+    client = _client()
+    client.runs.append(_Run(_Info(run_id="run-fail-0009", run_name="e1-fisher", status="FAILED")))
+    client.artifacts["run-fail-0009"] = ["results/e1-fisher.jsonl"]
+    client.payloads[("run-fail-0009", "results/e1-fisher.jsonl")] = ADMISSIBLE
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert [p.name for p in captured] == ["e1-fisher-run-full-e1-fisher.jsonl"]
+    assert {run_id for run_id, _ in client.download_calls} == {"run-full-0001"}
+
+
+def test_a_failed_non_h_run_is_skipped_before_name_validation(tmp_path: Path) -> None:
+    """A FAILED run that is not h- tagged is skipped with no other exception: the
+    run name is validated only for an admitted run, so an unsafe name on a FAILED
+    E run does not start raising."""
+    client = _client()
+    client.runs.append(_Run(_Info(run_id="run-fail-0009", run_name="../evil", status="FAILED")))
+    client.runs.append(
+        _Run(
+            _Info(run_id="run-fail-0010", run_name="../evil", status="FAILED"),
+            _Data(tags={"schema": "e1-result"}),
+        )
+    )
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert [p.name for p in captured] == ["e1-fisher-run-full-e1-fisher.jsonl"]
+
+
+@pytest.mark.parametrize("status", ["RUNNING", "SCHEDULED", "KILLED"])
+def test_every_status_outside_finished_and_failed_is_skipped_on_both_lanes(
+    tmp_path: Path, status: str, e_predicate_tripwire: None
+) -> None:
+    """The gate is an allowlist, not a denylist of RUNNING: a KILLED or SCHEDULED run
+    is skipped on the H lane too, before any tag read (the tag here is not even a
+    string, which would raise if it were read)."""
+    client = _h_client()
+    # Hostile name AND a non-string tag: either would raise if the gate read them.
+    client.runs.append(_h_run("bbbbbbbb-0007", status=status, run_name="../not-validated", tag=7))
+    client.artifacts["bbbbbbbb-0007"] = ["results/metrics.jsonl"]
+    client.payloads[("bbbbbbbb-0007", "results/metrics.jsonl")] = _h_lines()
+    client.runs.append(_Run(_Info(run_id="cccccccc-0008", run_name="e1-fisher", status=status)))
+    client.artifacts["cccccccc-0008"] = ["results/e1-fisher.jsonl"]
+    client.payloads[("cccccccc-0008", "results/e1-fisher.jsonl")] = ADMISSIBLE
+
+    capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+
+    assert {run_id for run_id, _ in client.download_calls} == {"run-h-0004"}
+
+
+def test_the_tiny_gate_and_name_validation_apply_to_a_failed_h_run(tmp_path: Path) -> None:
+    client = _h_client()
+    _add_h_run(
+        client,
+        f"{_FAILED_H_PREFIX}-0006",
+        status="FAILED",
+        metrics=_h_failed_lines(),
+        run_name=f"{H_RUN}-tiny",
+    )
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "default")
+    assert {p.name for p in captured} == {
+        f"{H_RUN}-run-h-00-metrics.jsonl",
+        f"{H_RUN}-run-h-00-worker-log.jsonl",
+    }
+    hostile = _h_client()
+    _add_h_run(
+        hostile,
+        f"{_FAILED_H_PREFIX}-0006",
+        status="FAILED",
+        metrics=_h_failed_lines(),
+        run_name="../evil",
+    )
+    with pytest.raises(ValueError, match="not a safe filename component"):
+        capture_finished_runs(hostile, ["entropic-substrate-lm"], tmp_path / "hostile")
+
+
+def test_the_checkpoint_lane_stays_finished_only(tmp_path: Path) -> None:
+    """DN-1642-FAILED-CAPTURE scopes the lane-aware gate to capture_finished_runs only:
+    capture_checkpoints still skips a FAILED run (H runs upload no checkpoints)."""
+    client = _ckpt_client()
+    client.runs.append(_Run(_Info(run_id="run-fail-0009", run_name="e1-other", status="FAILED")))
+    client.artifacts["run-fail-0009"] = ["checkpoints/e1-other-final.pt"]
+    client.payloads[("run-fail-0009", "checkpoints/e1-other-final.pt")] = _checkpoint_bytes(seed=9)
+    capture_checkpoints(client, ["entropic-substrate-lm"], tmp_path / "ckpts")
+    assert {run_id for run_id, _ in client.download_calls} == {"run-full-0001"}
+
+
+def test_the_local_tracer_run_is_excluded_by_default_and_refused_when_opted_in(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """TRACER-PARTITION (a0, M6): the REAL tracer's run name, not a hand-typed one.
+
+    The tracer writes step rows and no lifecycle records, so it must not reach the
+    H lane by default. The descriptor is captured from ``run_tiny_trace`` itself, so
+    dropping the ``-tiny`` suffix there turns this RED (the run is then refused).
+    """
+    from tests.test_h_tiny_tracer import LIMIT, _Builder, _local_profile
+
+    from entropic_substrate.composition.wiring.h_tiny_tracer import run_tiny_trace
+
+    (tmp_path / "tracer-fixture").mkdir()
+    local, source = _local_profile(tmp_path / "tracer-fixture")
+    builder = _Builder()
+    run_tiny_trace(
+        local,
+        source,
+        tmp_path / "trace",
+        max_source_bytes=LIMIT,
+        max_artifact_bytes=LIMIT,
+        sink_builder=builder,
+    )
+    descriptor = builder.calls[0]["descriptor"]
+    step_only = json.dumps(
+        {"schema": "h-training-step-v2", "status": "committed", "phase": "prediction", "step": 1},
+        sort_keys=True,
+    )
+    client = _h_client(metrics=step_only + "\n")
+    client.runs[0] = _h_run(tag=str(descriptor.tags["schema"]), run_name=descriptor.run_name)
+
+    assert descriptor.run_name.endswith("-tiny")
+    skipped = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "default")
+    assert skipped == [] and client.download_calls == []
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*exactly one run_start.*found 0"):
+        capture_finished_runs(
+            client, ["entropic-substrate-lm"], tmp_path / "opted-in", include_tiny=True
+        )

@@ -50,6 +50,10 @@ for this digest.
 The next image rebuild carries FOR-1637: the H worker's log-event vocabulary and the
 `worker-log.jsonl` MLflow artifact; the pin above does not contain them.
 
+The next image rebuild also carries the H run surface (FOR-1642): the grouping key and descriptor
+params on every H run, the per-checkpoint evidence tags, and a `FAILED` MLflow status when the
+worker raises; the pin above does not contain them.
+
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.

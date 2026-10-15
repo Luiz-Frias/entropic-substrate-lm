@@ -37,6 +37,10 @@ across both files this door's construction path touches:
   ``MLFLOW_SYSTEM_METRICS_ENV`` (``mlflow.py:144``) and ``MlflowStartupError``
   (``mlflow.py:262``, raised at ``mlflow.py:292`` and ``mlflow.py:328``).
 
+**Amendment 2026-10-15 (DN-1643-PORT):** :class:`CompositeSink` gained ``annotate(tags)`` and
+``finish(*, status)`` with the :class:`MetricSink` door; ``build_sink_for_run``'s signature is
+untouched.
+
 **Amendment 2026-10-12 (FOR-1637, ASSUMED pending operator ratification, DN-1637-DOOR):**
 ``build_sink_for_run`` gained ONE additive keyword-only parameter,
 ``log_path: str | Path | None = None``, the worker's structured log file. It is
@@ -68,7 +72,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
+from entropic_substrate.ladder.capture.adapters.jsonl import (
+    DEFAULT_FINISH_STATUS,
+    JsonlSink,
+    require_annotation,
+    require_finish_status,
+)
 from entropic_substrate.ladder.capture.adapters.mlflow import MlflowSink
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import (
@@ -103,10 +112,22 @@ class CompositeSink:
         for sink in self._best_effort:
             sink.log_artifact(path, artifact_path=artifact_path)
 
-    def finish(self) -> None:
-        self._authoritative.finish()
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        # Validated here too (not only per adapter), so a refused mapping reaches NO leg.
+        checked = require_annotation(tags)
+        self._authoritative.annotate(checked)
         for sink in self._best_effort:
-            sink.finish()
+            sink.annotate(checked)
+
+    def finish(self, *, status: str = DEFAULT_FINISH_STATUS) -> None:
+        # DN-1643-PORT: refused BEFORE the authoritative leg finishes, so a bad status
+        # cannot leave the run half-terminated. The default call stays byte-identical:
+        # it passes nothing, so a sink that predates ``status`` is still finishable.
+        require_finish_status(status)
+        passed = {} if status == DEFAULT_FINISH_STATUS else {"status": status}
+        self._authoritative.finish(**passed)
+        for sink in self._best_effort:
+            sink.finish(**passed)
 
     @property
     def best_effort(self) -> tuple[MetricSink, ...]:

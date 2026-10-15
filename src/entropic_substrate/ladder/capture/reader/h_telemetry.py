@@ -11,11 +11,19 @@ naming the file and the reason, and no empty value is ever returned.
 
 A ``metrics.jsonl`` is admissible iff it holds exactly one ``run_start``,
 exactly one ``run_end`` and at least one committed ``h-training-step-v2``
-row. There is deliberately no ``status == "ok"`` condition: MLflow marks
-every H run FINISHED (``MlflowSink.finish`` is unconditional), so the stream
-is the only place a failed run can be told from a complete one, and a failed
-run that committed a step is still evidence. Whether the run succeeded is the
+row. There is deliberately no ``status == "ok"`` condition: a failed run
+that committed a step is still evidence. Whether the run succeeded is the
 returned ``run_end`` record's ``status``, for the caller to read.
+
+RETRACTION (house rule 4, FOR-1642, conductor 2026-10-15, DN-1642-FAILED-CAPTURE): this
+docstring used to give, as the reason for that rule, "MLflow marks every H run FINISHED
+(``MlflowSink.finish`` is unconditional), so the stream is the only place a failed run can
+be told from a complete one". That premise was true when written (slice 3) and is FALSE
+since DN-1643-PORT: ``MetricSink.finish`` takes a status and the H worker and the local
+probe terminate their MLflow run ``FAILED`` on every raised exit. The rule it justified
+stands for a different reason, the one above; the run_end record, not the MLflow status,
+remains the evidence of how a run ended, and ``capture_finished_runs`` now admits an
+H-lane ``FAILED`` run through this same predicate.
 
 The schema strings are this module's own literals: the capture layer never
 imports from ``ladder/run``. Emitter-to-reader agreement is pinned by a test

@@ -166,6 +166,161 @@ def test_legacy_extractor_ignores_a_non_mapping_and_a_non_eval_record() -> None:
     assert extractor.extract({"event": "eval", "step": 4, "loss": 1.5}) is not None
 
 
+# ------------------------------------------- DN-1643-PORT: annotate / finish(status)
+# The MetricSink door gains two ADDITIVE members (operator ruling 2026-10-14):
+# ``annotate(tags)`` and ``finish(*, status="FINISHED")``. The no-argument
+# ``finish()`` is byte-identical on every adapter.
+
+
+def _mlflow_sink(client: FakeMlflowClient) -> MlflowSink:
+    return MlflowSink(
+        tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
+    )
+
+
+def _status(client: FakeMlflowClient, sink: MlflowSink) -> str | None:
+    return client._runs[sink.run_id].data.tags.get("mlflow.status")
+
+
+def test_the_port_declares_annotate_and_a_keyword_only_status(tmp_path: Path) -> None:
+    import inspect
+
+    from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
+
+    assert callable(MetricSink.annotate)  # type: ignore[attr-defined]
+    parameter = inspect.signature(MetricSink.finish).parameters["status"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY and parameter.default == "FINISHED"
+    for sink in (
+        JsonlSink(tmp_path / "a.jsonl"),
+        _mlflow_sink(FakeMlflowClient()),
+        CompositeSink(JsonlSink(tmp_path / "b.jsonl")),
+    ):
+        assert isinstance(sink, MetricSink)
+
+
+def test_jsonl_annotate_appends_one_event_record_with_the_log_serialization(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "run.jsonl"
+    sink = JsonlSink(path)
+    sink.annotate({"checkpoint/00000002/key": "k", "a": "b"})
+    sink.log({"event": "eval", "step": 1})
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == json.dumps(
+        {"event": "annotate", "checkpoint/00000002/key": "k", "a": "b"}, sort_keys=True
+    )
+    assert json.loads(lines[1]) == {"event": "eval", "step": 1}
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [{1: "v"}, {"k": 1}, {"k": None}, {"event": "x"}, {"schema": "x"}, {"": "v"}],
+    ids=["int-key", "int-value", "none-value", "event-key", "schema-key", "empty-key"],
+)
+def test_annotate_refuses_non_string_pairs_and_reserved_keys_on_every_adapter(
+    tmp_path: Path, tags: dict[object, object]
+) -> None:
+    client = FakeMlflowClient()
+    mlflow = _mlflow_sink(client)
+    path = tmp_path / "run.jsonl"
+    jsonl = JsonlSink(path)
+    composite = CompositeSink(JsonlSink(tmp_path / "c.jsonl"), _mlflow_sink(client))
+    for sink in (jsonl, mlflow, composite):
+        with pytest.raises((TypeError, ValueError)):
+            sink.annotate(tags)  # type: ignore[arg-type]
+    assert not path.exists() or path.read_text(encoding="utf-8") == ""
+    assert not (tmp_path / "c.jsonl").exists() or (tmp_path / "c.jsonl").read_text() == ""
+    assert "1" not in client._runs[mlflow.run_id].data.tags
+
+
+def test_mlflow_annotate_sets_one_tag_per_key(tmp_path: Path) -> None:
+    """M4: an annotate that does nothing leaves the fake client with no set_tag."""
+    client = FakeMlflowClient()
+    sink = _mlflow_sink(client)
+    sink.annotate({"checkpoint/00000002/sha256": "ab" * 32, "x": "y"})
+    tags = client._runs[sink.run_id].data.tags
+    assert tags["checkpoint/00000002/sha256"] == "ab" * 32 and tags["x"] == "y"
+    assert sink.failed_writes == 0
+
+
+def test_mlflow_annotate_counts_a_client_failure_and_never_raises() -> None:
+    client = FakeMlflowClient()
+    sink = _mlflow_sink(client)
+    client.kill()
+    sink.annotate({"k": "v", "k2": "v2"})
+    assert sink.failed_writes >= 1
+
+
+def test_composite_annotate_fans_out_authoritative_first(tmp_path: Path) -> None:
+    client = FakeMlflowClient()
+    mlflow = _mlflow_sink(client)
+    path = tmp_path / "run.jsonl"
+    CompositeSink(JsonlSink(path), mlflow).annotate({"k": "v"})
+    assert json.loads(path.read_text(encoding="utf-8")) == {"event": "annotate", "k": "v"}
+    assert client._runs[mlflow.run_id].data.tags["k"] == "v"
+
+
+def test_a_no_argument_finish_still_terminates_finished_on_every_adapter(tmp_path: Path) -> None:
+    client = FakeMlflowClient()
+    mlflow = _mlflow_sink(client)
+    mlflow.finish()
+    assert _status(client, mlflow) == "FINISHED"
+    JsonlSink(tmp_path / "a.jsonl").finish()
+    composite_client = FakeMlflowClient()
+    inner = _mlflow_sink(composite_client)
+    CompositeSink(JsonlSink(tmp_path / "b.jsonl"), inner).finish()
+    assert _status(composite_client, inner) == "FINISHED"
+
+
+def test_finish_with_failed_terminates_the_run_failed(tmp_path: Path) -> None:
+    """M5 depends on this: the status travels to ``set_terminated`` unchanged."""
+    client = FakeMlflowClient()
+    sink = _mlflow_sink(client)
+    sink.finish(status="FAILED")
+    assert _status(client, sink) == "FAILED"
+    composite_client = FakeMlflowClient()
+    inner = _mlflow_sink(composite_client)
+    CompositeSink(JsonlSink(tmp_path / "b.jsonl"), inner).finish(status="FAILED")
+    assert _status(composite_client, inner) == "FAILED"
+    JsonlSink(tmp_path / "c.jsonl").finish(status="FAILED")
+
+
+@pytest.mark.parametrize("bad", ["BOGUS", "RUNNING", "finished", "", None, 1])
+def test_finish_refuses_a_status_outside_the_closed_vocabulary_before_any_side_effect(
+    tmp_path: Path, bad: object
+) -> None:
+    client = FakeMlflowClient()
+    mlflow = _mlflow_sink(client)
+    jsonl = JsonlSink(tmp_path / "a.jsonl")
+    inner_jsonl = JsonlSink(tmp_path / "b.jsonl")
+    composite_client = FakeMlflowClient()
+    inner = _mlflow_sink(composite_client)
+    composite = CompositeSink(inner_jsonl, inner)
+    for sink in (jsonl, mlflow, composite):
+        with pytest.raises((TypeError, ValueError)):
+            sink.finish(status=bad)  # type: ignore[arg-type]
+    # Nothing finished: the authoritative leg of the composite is not narrated or
+    # closed, the MLflow runs are still open, and a later valid finish terminates.
+    assert _status(client, mlflow) is None and _status(composite_client, inner) is None
+    assert inner_jsonl._finished is False and jsonl._finished is False  # pyright: ignore[reportPrivateUsage]
+    composite.finish(status="FAILED")
+    mlflow.finish()
+    assert _status(composite_client, inner) == "FAILED" and _status(client, mlflow) == "FINISHED"
+
+
+def test_finish_status_is_keyword_only(tmp_path: Path) -> None:
+    with pytest.raises(TypeError):
+        JsonlSink(tmp_path / "a.jsonl").finish("FAILED")  # type: ignore[misc]
+
+
+def test_a_second_finish_is_a_no_op_whatever_its_status() -> None:
+    client = FakeMlflowClient()
+    sink = _mlflow_sink(client)
+    sink.finish(status="FAILED")
+    sink.finish(status="FINISHED")
+    assert _status(client, sink) == "FAILED"
+
+
 # ---------------------------------------------------- typing fixture (FOR-1569)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _D1_MARKER = "# D1-MUST-FAIL"

@@ -13,6 +13,9 @@ now exports (ACCEPTANCE item, design-gate risk, conductor 2026-09-21):
   see that module's docstring). Together they are the run-descriptor door:
   the one construction seam every later phase (p8's ``d1_tracking_descriptor``
   included) consumes. Changing either's shape is a ruled, one-way-door event.
+  The sink those produce is the :class:`~entropic_substrate.ladder.capture.ports.metric_sink.MetricSink`
+  door, which gained ``annotate(tags)`` and ``finish(*, status)`` additively on 2026-10-15
+  (DN-1643-PORT, operator ruling 2026-10-14); this shape is untouched by it.
 * **Co-resident, editable by p8** (this module's other symbols):
   :class:`TrackingValue`, :class:`ExtractedMetrics`, :class:`MetricExtractor`,
   :class:`LegacyMetricExtractor` (with its kappa-metrics derivation). p8 owns

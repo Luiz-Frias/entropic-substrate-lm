@@ -54,6 +54,12 @@ from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus, write_prepared_corpus
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.capture.reader.sinks import (
+    CONFIG_HASH_TAG,
+    EXP_TAG,
+    git_sha,
+    h_config_hash,
+)
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.runner import TrainingProgress, run_probe_training
 
@@ -149,12 +155,26 @@ def run_tiny_trace(
         raise ValueError("the local tracer runs only local_tiny profiles")
     output = trace_root / "run"
     output.mkdir(parents=True)
+    # FOR-1642: the H run surface (params exp/seed/config_hash/git_sha/run_class/precision,
+    # tags schema/exp/config_hash). `image` is omitted: a local tracer has no image, and a
+    # placeholder would be unverified. The `-tiny` run-name suffix is TRACER-PARTITION
+    # (conductor 2026-10-14): this producer bypasses object_worker and so writes no
+    # h-run-lifecycle-v1 records; the suffix lets capture_results' include_tiny gate keep
+    # it off the H lane, exactly as E smoke runs are kept off the E lane.
+    chash = h_config_hash(profile)
     sink = sink_builder(
         TrackingRunDescriptor(
-            run_name=f"h-tiny-trace-{profile.identity}",
+            run_name=f"h-tiny-trace-{profile.identity}-tiny",
             tiny=True,
-            params={"run_class": profile.run_class, "precision": profile.precision},
-            tags={"schema": "h-tiny-trace-v1"},
+            params={
+                EXP_TAG: profile.name,
+                "seed": profile.seed,
+                CONFIG_HASH_TAG: chash,
+                "git_sha": git_sha(),
+                "run_class": profile.run_class,
+                "precision": profile.precision,
+            },
+            tags={"schema": "h-tiny-trace-v1", EXP_TAG: profile.name, CONFIG_HASH_TAG: chash},
         ),
         results_path=trace_root / "observability" / "metrics.jsonl",
         metric_extractor=HTrainingStepExtractor(warmup_steps=profile.schedule.warmup_steps),

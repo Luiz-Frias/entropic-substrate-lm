@@ -16,6 +16,7 @@ from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.capture.reader.sinks import CONFIG_HASH_TAG, EXP_TAG, h_config_hash
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.object_worker import run_object_worker
@@ -188,12 +189,34 @@ def run_worker_command(
                     code_commit=request.code_commit,
                 )
             )
+            # FOR-1642: the H run surface. `config_hash` (the seed-aggregation grouping
+            # key) is `h_config_hash(profile)`, identical in params and tags. `git_sha`
+            # and `image` come from the VERIFIED request, unswapped, and are OMITTED when
+            # the request has none (a local_tiny request forbids both): MLflow params
+            # cannot be None, and a local `git_sha()` would put an unverified HEAD under
+            # a verified key.
+            chash = h_config_hash(request.profile)
+            params: dict[str, str | int] = {
+                EXP_TAG: request.profile.name,
+                "seed": request.profile.seed,
+                CONFIG_HASH_TAG: chash,
+                "run_class": request.profile.run_class,
+                "precision": request.profile.precision,
+            }
+            if request.code_commit is not None:
+                params["git_sha"] = request.code_commit
+            if request.image is not None:
+                params["image"] = request.image
             sink = build_sink_for_run(
                 TrackingRunDescriptor(
                     run_name=f"h-worker-{request.profile.identity}",
                     tiny=True,
-                    params={"run_class": request.profile.run_class},
-                    tags={"schema": "h-probe-worker-result-v1"},
+                    params=params,
+                    tags={
+                        "schema": "h-probe-worker-result-v1",
+                        EXP_TAG: request.profile.name,
+                        CONFIG_HASH_TAG: chash,
+                    },
                 ),
                 results_path=observability_root / "metrics.jsonl",
                 log_path=worker_log,
@@ -201,6 +224,13 @@ def run_worker_command(
                     warmup_steps=request.profile.schedule.warmup_steps
                 ),
             )
+            # DN-1643-PORT: the run terminates FINISHED iff run_object_worker RETURNED.
+            # Every raised exit, BaseException included (KeyboardInterrupt, SystemExit),
+            # leaves the FAILED default in place and finishes the sink FAILED exactly
+            # once; the exception itself is untouched and still reaches the handler
+            # below (stage worker_execution, exit 2). Finishing here, not after the try,
+            # keeps sink.finish before worker.end on both exits.
+            terminal_status = "FAILED"
             try:
                 stage = "worker_execution"
                 result = run_object_worker(
@@ -211,8 +241,9 @@ def run_worker_command(
                     repo_root=args.repo_root,
                     sink=sink,
                 )
+                terminal_status = "FINISHED"
             finally:
-                sink.finish()
+                sink.finish(status=terminal_status)
             worker_ended = True
             ended = {"status": "ok", "seconds": time.perf_counter() - worker_started}
             logger.bind(event=WORKER_END, **ended).info(render(WORKER_END, **ended))
