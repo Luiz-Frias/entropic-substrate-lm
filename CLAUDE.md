@@ -92,7 +92,10 @@ These live here, inline, rather than in a `HOUSE-RULES.md` imported with `@` —
 **measured 2026-08-14: `@`-imports do not expand.** A sentinel placed in an imported
 file came back ABSENT from a fresh `claude --print`, while a control question answered
 correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itself.
-(A gitignored `CLAUDE.local.md` is likewise never loaded — humans only.)
+(`CLAUDE.local.md`: measured 2026-08-14 as NOT loaded by `claude --print`; RETRACTED
+2026-10-14, its contents appeared verbatim in a Claude Code desktop session's system
+prompt. It is gitignored, so only this checkout sees it; anything every clone must see
+still belongs here.)
 
 1. **Publish with `just ship-it`, never a bare `gt submit`.** The live gate is the only
    thing in this repo that runs the MLflow stack: `tests/test_mlflow_live.py` `skipif`s
@@ -135,8 +138,13 @@ personal (`justfile.local`, gitignored) because they need an API key.
 ## Historical E-series architecture
 
 The components below describe retained E-series implementations. The current forward
-architecture is the codec-separated predictor above. Its local generative path is implemented;
-complete flywheel integration and remote validation remain open.
+architecture is the codec-separated predictor above. Status (2026-10-14): the local
+generative path is implemented and unit-tested; remote validation is partial (2026-09-28:
+both carriers passed prediction step 1 at solver budget 64 on H100; 2026-10-12: both
+carriers reached 1000/1000 steps of a paired 1K plumbing probe on A100 and wedged in the
+final leg with no completion receipt). No H run has completed; no H capture, analysis,
+review or verdict exists. In flight: the H observability parity stack (FOR-1640, draft
+PRs from #341 onward), then an image rebuild from its merged tip and the probe re-run.
 
 Three swappable components under a standard decoder-only transformer, selected per
 experiment by `configs/*.yaml` (init × block × norm) — `docs/architecture.md` is the
