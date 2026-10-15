@@ -122,8 +122,6 @@ def _run_schema_tag(run: Any, run_id: str) -> str | None:
         tags = run.data.tags
     except AttributeError:
         return None
-    if tags is None:
-        return None
     tag = tags.get(_SCHEMA_TAG)
     if tag is None:
         return None
