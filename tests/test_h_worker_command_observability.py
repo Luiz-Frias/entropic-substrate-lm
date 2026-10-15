@@ -17,6 +17,7 @@ import re
 from collections.abc import Mapping
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -349,6 +350,47 @@ def test_failure_before_the_run_started_writes_neither_record(
 
     assert sink.records == []
     assert f"{request.prefix}/failure.json" in objects.values
+
+
+def test_a_failure_whose_evidence_delivery_also_fails_writes_one_failed_run_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ExceptionGroup exit (a failed failure-snapshot delivery) still closes
+    the run with one failed run_end after its run_start, and that run_end's
+    wall_seconds is the span of the fake clock (whole ticks, small), not a
+    constant or the unstarted 0.0 clock."""
+
+    class BrokenDelivery(_ObjectStore):
+        def publish(
+            self, key: str, payload: bytes, *, expected_sha256: str
+        ) -> D1TrainerMailboxObjectIdentity:
+            if key.endswith("/snapshots/checkpoint-00000002.json") or key.endswith(
+                "/snapshots/failure.json"
+            ):
+                raise RuntimeError("injected evidence delivery failure")
+            return super().publish(key, payload, expected_sha256=expected_sha256)
+
+    now = {"ticks": 1_000_000.0}
+
+    def fake_perf_counter() -> float:
+        now["ticks"] += 10.0
+        return now["ticks"]
+
+    monkeypatch.setattr(object_worker, "time", SimpleNamespace(perf_counter=fake_perf_counter))
+    _, objects, marker, root = _worker(tmp_path, BrokenDelivery())
+    sink = _ListSink()
+
+    with pytest.raises(ExceptionGroup):
+        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+
+    assert [r["event"] for r in _lifecycle(sink)] == ["run_start", "run_end"]
+    assert sink.records[0]["event"] == "run_start"
+    end = sink.records[-1]
+    assert end["event"] == "run_end" and end["status"] == "failed"
+    assert end["result_status"] == "execution_defect"
+    assert end["successful_optimizer_steps"] is None
+    wall = end["wall_seconds"]
+    assert wall % 10.0 == 0.0 and 0.0 < wall <= 1000.0, wall
 
 
 def test_a_sink_failure_on_the_failed_end_surfaces_beside_the_original_error(

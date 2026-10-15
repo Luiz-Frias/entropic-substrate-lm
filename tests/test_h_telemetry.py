@@ -115,6 +115,15 @@ def test_no_committed_step_raises(tmp_path: Path, rows: list[dict[str, Any]]) ->
         final_h_run_end(path)
 
 
+def test_a_foreign_committed_row_is_not_a_training_step(tmp_path: Path) -> None:
+    """The step filter checks the schema as well as the status: a committed row
+    of another schema does not stand in for an h-training-step-v2 row."""
+    foreign = {"schema": "h-predictive-evaluation-v1", "status": "committed"}
+    path = _write(tmp_path / "metrics.jsonl", [_start(), foreign, _end()])
+    with pytest.raises(TelemetryGap, match=r"at least one committed h-training-step-v2"):
+        final_h_run_end(path)
+
+
 def test_a_wrong_schema_lifecycle_row_does_not_count(tmp_path: Path) -> None:
     impostor = {**_end(), "schema": "h-run-lifecycle-v0"}
     path = _write(tmp_path / "metrics.jsonl", [_start(), _step(), impostor])

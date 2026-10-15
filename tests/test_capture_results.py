@@ -367,14 +367,18 @@ def test_e_run_beside_an_h_run_is_still_captured_through_the_e_predicate(
 
 
 def test_h_runs_still_obey_the_finished_gate(tmp_path: Path, e_predicate_tripwire: None) -> None:
+    # A distinct 8-char prefix: run-h-0005 would share run-h-00 with run-h-0004,
+    # so its target file would already exist and the download would be skipped.
     client = _h_client()
-    client.runs.append(_h_run("run-h-0005", status="RUNNING"))
-    client.artifacts["run-h-0005"] = ["results/metrics.jsonl"]
+    running = "bbbbbbbb-0005"
+    client.runs.append(_h_run(running, status="RUNNING"))
+    client.artifacts[running] = ["results/metrics.jsonl"]
+    client.payloads[(running, "results/metrics.jsonl")] = _h_lines()
     capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
     assert {run_id for run_id, _ in client.download_calls} == {"run-h-0004"}
 
 
-@pytest.mark.parametrize("tag", ["e1-result", "", "H-upper"])
+@pytest.mark.parametrize("tag", ["e1-result", "", "H-upper", "hello", "h", "hx-1"])
 def test_a_non_h_schema_tag_stays_on_the_e_lane(tmp_path: Path, tag: str) -> None:
     run = _Run(
         _Info(run_id="run-full-0001", run_name="e1-fisher", status="FINISHED"),
@@ -384,6 +388,22 @@ def test_a_non_h_schema_tag_stays_on_the_e_lane(tmp_path: Path, tag: str) -> Non
     client.runs[0] = run
     captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
     assert [p.name for p in captured] == ["e1-fisher-run-full-e1-fisher.jsonl"]
+
+
+def test_an_h_tiny_trace_run_without_lifecycle_records_is_refused_on_the_h_lane(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """Ruling 7: the h- prefix stands, so the local tracer's h-tiny-trace-v1 runs
+    take the H lane and are refused for carrying no lifecycle records."""
+    step_only = json.dumps(
+        {"schema": "h-training-step-v2", "status": "committed", "phase": "prediction", "step": 1},
+        sort_keys=True,
+    )
+    client = _h_client(metrics=step_only + "\n")
+    client.runs[0] = _h_run(tag="h-tiny-trace-v1")
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*exactly one run_start.*found 0"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert client.download_calls == [("run-h-0004", "results/metrics.jsonl")]
 
 
 def test_a_run_object_without_data_is_the_e_lane(tmp_path: Path) -> None:
