@@ -393,6 +393,62 @@ def test_a_failure_whose_evidence_delivery_also_fails_writes_one_failed_run_end(
     assert wall % 10.0 == 0.0 and 0.0 < wall <= 1000.0, wall
 
 
+def test_the_failed_run_end_clock_is_read_after_failure_custody(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented end point of the failed run_end clock (docs/architecture.md):
+    wall_seconds is read AFTER failure custody (snapshot publish, verify-read
+    retries, backoff), so the time custody takes counts. The injected delivery
+    failure advances the shared fake clock by a large step while custody runs;
+    a run_end whose clock was read before custody would not include it."""
+    custody_step = 5_000.0
+    now = {"ticks": 1_000_000.0}
+
+    class SlowBrokenDelivery(_ObjectStore):
+        def publish(
+            self, key: str, payload: bytes, *, expected_sha256: str
+        ) -> D1TrainerMailboxObjectIdentity:
+            if key.endswith("/snapshots/failure.json"):
+                now["ticks"] += custody_step
+                raise RuntimeError("injected evidence delivery failure")
+            if key.endswith("/snapshots/checkpoint-00000002.json"):
+                raise RuntimeError("injected checkpoint upload failure")
+            return super().publish(key, payload, expected_sha256=expected_sha256)
+
+    def fake_perf_counter() -> float:
+        now["ticks"] += 10.0
+        return now["ticks"]
+
+    monkeypatch.setattr(object_worker, "time", SimpleNamespace(perf_counter=fake_perf_counter))
+    _, objects, marker, root = _worker(tmp_path, SlowBrokenDelivery())
+    sink = _ListSink()
+
+    with pytest.raises(ExceptionGroup):
+        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+
+    end = sink.records[-1]
+    assert end["event"] == "run_end" and end["status"] == "failed"
+    assert end["wall_seconds"] >= custody_step, end["wall_seconds"]
+
+
+def test_a_failing_run_start_log_writes_no_run_end_and_surfaces_the_sink_error(
+    tmp_path: Path,
+) -> None:
+    """Pairing at its other end: run_end is written only for a run_start that
+    start() actually logged. When the run_start log itself fails, the stream
+    stays record-free, the failure marker is still published, and the sink's
+    own error is the one that surfaces."""
+    request, objects, marker, root = _worker(tmp_path)
+    sink = _ListSink(raise_on_event="run_start")
+
+    with pytest.raises(OSError, match="injected sink failure on run_start"):
+        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+
+    assert sink.records == []
+    assert f"{request.prefix}/failure.json" in objects.values
+    assert f"{request.prefix}/complete.json" not in objects.values
+
+
 def test_a_sink_failure_on_the_failed_end_surfaces_beside_the_original_error(
     tmp_path: Path,
 ) -> None:

@@ -222,10 +222,14 @@ H_WORKER_LOG = json.dumps({"event": "worker.start", "level": "INFO"}) + "\n"
 
 
 def _h_run(
-    run_id: str = "run-h-0004", *, status: str = "FINISHED", tag: object = H_SCHEMA_TAG
+    run_id: str = "run-h-0004",
+    *,
+    status: str = "FINISHED",
+    tag: object = H_SCHEMA_TAG,
+    run_name: str = H_RUN,
 ) -> _Run:
     return _Run(
-        _Info(run_id=run_id, run_name=H_RUN, status=status),
+        _Info(run_id=run_id, run_name=run_name, status=status),
         _Data(tags={"schema": tag}),
     )
 
@@ -376,6 +380,35 @@ def test_h_runs_still_obey_the_finished_gate(tmp_path: Path, e_predicate_tripwir
     client.payloads[(running, "results/metrics.jsonl")] = _h_lines()
     capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
     assert {run_id for run_id, _ in client.download_calls} == {"run-h-0004"}
+
+
+def test_the_tiny_gate_runs_before_the_h_lane_partition(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """Characterization pin (GREEN at the parent, where the gate precedes the
+    partition by construction): an h- tagged FINISHED run named ``*-tiny`` is
+    skipped by default with zero downloads, and under ``include_tiny=True`` it
+    takes the H lane. The module docstring and docs/architecture.md state this
+    ordering as fact; slice 4's -tiny run-name remedy for local H producers
+    depends on it."""
+    tiny_name = f"{H_RUN}-tiny"
+    client = _h_client()
+    client.runs[0] = _h_run(run_name=tiny_name)
+
+    skipped = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "default")
+    assert skipped == []
+    assert client.download_calls == []
+
+    captured = capture_finished_runs(
+        client, ["entropic-substrate-lm"], tmp_path / "opted-in", include_tiny=True
+    )
+    assert sorted(p.name for p in captured) == [
+        f"{tiny_name}-run-h-00-metrics.jsonl",
+        f"{tiny_name}-run-h-00-worker-log.jsonl",
+    ]
+    # H lane, not E lane: the tripwire would have raised on the E predicate,
+    # and the metrics file carries the lifecycle records the H predicate admits.
+    assert (tmp_path / "opted-in" / f"{tiny_name}-run-h-00-metrics.jsonl").read_text() == _h_lines()
 
 
 @pytest.mark.parametrize("tag", ["e1-result", "", "H-upper", "hello", "h", "hx-1"])
