@@ -1202,6 +1202,41 @@ def test_the_commit_moves_by_os_replace_and_fails_loud_without_copying(
     assert [path.name for path in _staged_files(dest)] == [E_NAME]
 
 
+def test_a_rename_failing_midway_through_the_commit_rolls_back_to_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename that fails AFTER the first one landed (EACCES, ENOSPC on a
+    metadata-full filesystem) must not leave the earlier files stranded in dest:
+    the pass rolls them back into staging, then raises, and the rerun captures
+    the whole pass."""
+    from entropic_substrate.ladder.capture.reader import capture_results as capture_mod
+
+    real_replace = os.replace
+    commit_renames: list[str] = []
+
+    def _fail_second_commit_rename(src: str | Path, dst: str | Path) -> None:
+        if Path(dst).parent == tmp_path / "cap" and Path(src).parent.parent.name == "cap.pending":
+            commit_renames.append(str(dst))
+            if len(commit_renames) == 2:
+                raise OSError(errno.ENOSPC, "No space left on device")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(capture_mod.os, "replace", _fail_second_commit_rename)
+    client = _mixed_client(h_first=False)
+    dest = tmp_path / "cap"
+    with pytest.raises(OSError, match="No space left"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert len(commit_renames) == 2  # the first landed, the second failed
+    assert _entries(dest) == []  # the first was rolled back: dest is as it was
+    assert sorted(path.name for path in _staged_files(dest)) == sorted(
+        [E_NAME, H_METRICS_NAME, H_LOG_NAME]
+    )
+
+    monkeypatch.undo()
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], dest)
+    assert sorted(path.name for path in captured) == sorted([E_NAME, H_METRICS_NAME, H_LOG_NAME])
+
+
 def test_a_fully_admissible_pass_leaves_no_staging_behind(tmp_path: Path) -> None:
     client = _client()
     dest = tmp_path / "cap"

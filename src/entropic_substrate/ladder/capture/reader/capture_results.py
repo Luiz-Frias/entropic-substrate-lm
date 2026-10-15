@@ -147,16 +147,28 @@ class _CapturePass:
         nothing moved. Nothing that can fail for a non-rename reason runs between
         the first and the last rename; the staging directory is removed only
         after the last one and its removal can never raise.
+
+        A rename that fails after earlier ones landed (``EACCES``, ``ENOSPC``)
+        rolls those back into staging before the error propagates, so ``dest``
+        is as it was and the whole pass is retried next time. The rollback is
+        best effort: if a rollback rename itself fails, that file stays in
+        ``dest`` and the original error still propagates.
         """
-        moved: list[Path] = []
-        for staged in self._staged:
-            target = self.dest / staged.name
-            os.replace(staged, target)
-            moved.append(target)
+        moved: list[tuple[Path, Path]] = []
+        try:
+            for staged in self._staged:
+                target = self.dest / staged.name
+                os.replace(staged, target)
+                moved.append((staged, target))
+        except BaseException:
+            for staged, target in reversed(moved):
+                with contextlib.suppress(OSError):
+                    os.replace(target, staged)
+            raise
         self._cleanup()
-        for target in moved:
+        for _, target in moved:
             logger.info(f"captured {target}")
-        return moved
+        return [target for _, target in moved]
 
     def _cleanup(self) -> None:
         """Remove a fully committed pass's directory; never raises, never deletes content.
