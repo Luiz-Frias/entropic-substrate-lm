@@ -195,3 +195,38 @@ def test_json_object_lines_rejects_a_non_object_line(tmp_path: Path) -> None:
     path = _write(tmp_path / "worker-log.jsonl", ['"just a string"'])
     with pytest.raises(TelemetryGap, match=r"line 1.*not a JSON object"):
         require_json_object_lines(path)
+
+
+# ----------------------------------------------------- undecodable bytes (CR)
+_READERS = pytest.mark.parametrize(
+    "reader", [final_h_run_end, require_json_object_lines], ids=["metrics", "other-artifact"]
+)
+
+
+@_READERS
+def test_non_utf8_bytes_raise_telemetry_gap_naming_file_and_line(
+    tmp_path: Path, reader: Any
+) -> None:
+    """A corrupt byte is an inadmissible file, not a UnicodeDecodeError.
+
+    ``UnicodeDecodeError`` is a ``ValueError``: it would slip past
+    ``except TelemetryGap`` in ``cmd_capture_results`` and end as a traceback.
+    Line 1 is valid, so the reported line number is the honest one.
+    """
+    path = tmp_path / "metrics.jsonl"
+    path.write_bytes(json.dumps(_start()).encode() + b"\n" + b'{"detail": "\xff\xfe"}\n')
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*line 2.*not valid UTF-8"):
+        reader(path)
+
+
+@_READERS
+def test_valid_multibyte_utf8_is_not_mistaken_for_corruption(tmp_path: Path, reader: Any) -> None:
+    """Control for the UTF-8 refusal: a well-formed non-ASCII line must still
+    pass the line check, so the refusal above is the corrupt byte and not
+    non-ASCII text in general."""
+    rows = [_start(), {**_step(), "detail": "café → ok"}, _end()]
+    path = tmp_path / "metrics.jsonl"
+    path.write_bytes(
+        b"\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True).encode() for r in rows) + b"\n"
+    )
+    reader(path)

@@ -41,14 +41,24 @@ def _json_object_lines(path: Path) -> list[dict[str, Any]]:
     """Every non-blank line of ``path`` as a JSON object, or a TelemetryGap.
 
     Unlike the E reader's silent skip of non-dict values, a line that parses
-    to anything but an object is a defect in the stream and raises.
+    to anything but an object is a defect in the stream and raises. The file
+    is read as bytes and decoded per line so a corrupt byte is refused as a
+    ``TelemetryGap`` naming its line. Measured 2026-10-15 (RED run of
+    ``tests/test_h_telemetry.py``): a text-mode read raised
+    ``UnicodeDecodeError`` out of the iteration, which is not a
+    ``TelemetryGap`` and so is not caught by ``cmd_capture_results``.
     """
     if not path.exists():
         msg = f"{path}: no such file — the H run never wrote telemetry here"
         raise TelemetryGap(msg)
     records: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for number, line in enumerate(handle, start=1):
+    with path.open("rb") as handle:
+        for number, raw in enumerate(handle, start=1):
+            try:
+                line = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                msg = f"{path}: line {number} is not valid UTF-8 ({exc}) — corrupt write?"
+                raise TelemetryGap(msg) from exc
             if not line.strip():
                 continue
             try:
