@@ -29,11 +29,26 @@ when EVERY attempt the search returns is terminal. The tick's step and ``run_sta
 come from the NEWEST attempt (greatest ``start_time``; the response order, which MLflow
 serves newest-first, when no start time is given), never from the highest step across
 attempts; a live attempt takes precedence over a newer terminal one, because the arm is
-then still live. The tick carries the attempt count as ``attempts``. Residual gap: before
-a retry's run exists (its pod still allocating) the only same-named run is the earlier
-terminal attempt, so the monitor reads the arm terminal. Closing that needs a
-launch-specific run identity (a tag or name carrying the request digest or nonce) in
-``worker_command.py``, a slice-4 surface and a reader-tuple member, filed as FOR-1657.
+then still live. The tick carries the attempt count as ``attempts``. The newest-first
+claim is measured against the installed mlflow-skinny 3.15.0 client-side store
+(``mlflow/store/tracking/sqlalchemy_store.py``, ``_get_orderby_clauses`` at line 9372,
+which appends ``start_time DESC`` and then ``run_uuid``); the tracking SERVER's version is
+not measured here, so the ``start_time`` sort above is the load-bearing pin and the
+response order only breaks ties. The search returns at most ``_SEARCH_RESULTS`` (five)
+rows: a declared limit of five attempts PER LAUNCH on the tag-bound path (a pod restart
+duplicates a run only a few times), with no paging.
+
+Launch identity (FOR-1657, 2026-10-16): the worker tags its run ``request_sha256`` with
+the request digest (``ladder/run/worker_command.py``, the descriptor tag dict), and every
+``--launch-file`` arm searches ``attributes.run_name = '<name>' AND tags.request_sha256 =
+'<digest>'`` (the digest from ``parse_probe_launch(...).request.digest``). The attempts
+rule above then ranges over ONE launch: an earlier launch's terminal run of the same name
+no longer stands in for a retry whose pod is still allocating (that arm reads
+``run_not_found`` and keeps ticking). The residual gap of the name-only search is therefore
+CLOSED for launch-file arms and still OPEN for ``--run-name`` arms, which keep the bare
+name filter and so can mix attempts from different launches. Compatibility boundary: a
+launch-file arm finds only runs from a worker image built at or after this slice; a run
+from an older image carries no tag and is visible only through ``--run-name``.
 
 Exit codes (three honest exits plus usage and interrupt): 0 every arm's run reached
 a terminal MLflow status; 3 the tick budget was exhausted with arms still running; 1
@@ -60,8 +75,9 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
-from entropic_substrate.kernel.runtime.logging import configure_logging, logger
+from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.h_probe_launch import H_SERIES_EXPERIMENT, parse_probe_launch
+from entropic_substrate.ladder.run.worker.h_probe_host_log import emit
 from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_MONITOR_END,
     HOST_MONITOR_TICK,
@@ -72,7 +88,6 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     STATE_RUN_NOT_FOUND,
     STATE_STEP,
     progress_fields,
-    render,
 )
 
 __all__ = [
@@ -102,6 +117,8 @@ EXIT_INTERRUPTED = 130
 STEP_METRIC_KEY = "phase_index"
 _TERMINAL_RUN_STATUSES = frozenset({"FINISHED", "FAILED", "KILLED"})
 _RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}")
+# The worker's ``request_sha256`` tag: a sha256 hex digest (full-string match only).
+_REQUEST_SHA256 = re.compile(r"[0-9a-f]{64}")
 _SEARCH_RESULTS = 5
 # A response bound, not a retry or timeout: a hostile or broken server cannot make this
 # process buffer without limit.
@@ -125,7 +142,9 @@ class RunReading:
 
 
 class RunSource(Protocol):
-    def latest(self, experiment_name: str, run_name: str) -> RunReading: ...
+    def latest(
+        self, experiment_name: str, run_name: str, *, request_sha256: str | None = None
+    ) -> RunReading: ...
 
 
 def run_name_for(profile_identity: str) -> str:
@@ -197,9 +216,16 @@ class MlflowRestSource:
             raise ValueError("tracking response must be an object")
         return cast(dict[str, object], value)
 
-    def latest(self, experiment_name: str, run_name: str) -> RunReading:
+    def latest(
+        self, experiment_name: str, run_name: str, *, request_sha256: str | None = None
+    ) -> RunReading:
         if _RUN_NAME.fullmatch(run_name) is None:
             raise ValueError("run name must be a safe identifier")
+        if request_sha256 is not None and _REQUEST_SHA256.fullmatch(request_sha256) is None:
+            raise ValueError("request digest must be 64 lowercase hex characters")
+        run_filter = f"attributes.run_name = '{run_name}'"
+        if request_sha256 is not None:
+            run_filter += f" AND tags.request_sha256 = '{request_sha256}'"
         try:
             experiment = self._call(
                 "GET",
@@ -213,7 +239,7 @@ class MlflowRestSource:
                     "experiment_ids": [
                         cast(dict[str, object], experiment["experiment"])["experiment_id"]
                     ],
-                    "filter": f"attributes.run_name = '{run_name}'",
+                    "filter": run_filter,
                     "max_results": _SEARCH_RESULTS,
                 },
             )
@@ -286,10 +312,7 @@ def _arm_reading(runs: object) -> RunReading:
 class _Arm:
     run_name: str
     total: int | None
-
-
-def _emit(level: str, event: str, **fields: object) -> None:
-    getattr(logger.bind(event=event, **fields), level)(render(event, **fields))
+    request_sha256: str | None = None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -319,7 +342,11 @@ def _arms(args: argparse.Namespace) -> list[_Arm]:
         request = parse_probe_launch(payload, max_bytes=args.max_launch_bytes).request
         schedule = request.profile.schedule
         arms.append(
-            _Arm(run_name_for(request.profile.identity), schedule.warmup_steps + schedule.steps)
+            _Arm(
+                run_name_for(request.profile.identity),
+                schedule.warmup_steps + schedule.steps,
+                request.digest,
+            )
         )
     for name in cast(list[str], args.run_name):
         if _RUN_NAME.fullmatch(name) is None:
@@ -377,7 +404,13 @@ def run_wave_monitor(
             terminal = 0
             for arm in arms:
                 try:
-                    reading = source.latest(H_SERIES_EXPERIMENT, arm.run_name)
+                    reading = (
+                        source.latest(H_SERIES_EXPERIMENT, arm.run_name)
+                        if arm.request_sha256 is None
+                        else source.latest(
+                            H_SERIES_EXPERIMENT, arm.run_name, request_sha256=arm.request_sha256
+                        )
+                    )
                 except Exception:
                     reading = RunReading(STATE_READ_FAILED)
                 fields = progress_fields(
@@ -390,24 +423,24 @@ def run_wave_monitor(
                     fields["run_status"] = reading.run_status
                 if reading.attempts is not None:
                     fields["attempts"] = reading.attempts
-                _emit("info", HOST_MONITOR_TICK, run_name=arm.run_name, tick=done, **fields)
+                emit("info", HOST_MONITOR_TICK, run_name=arm.run_name, tick=done, **fields)
                 terminal += (
                     reading.arm_terminal
                     if reading.arm_terminal is not None
                     else reading.run_status in _TERMINAL_RUN_STATUSES
                 )
             if terminal == len(arms):
-                _emit("info", HOST_MONITOR_END, outcome="all_runs_terminal", ticks=done)
+                emit("info", HOST_MONITOR_END, outcome="all_runs_terminal", ticks=done)
                 return EXIT_OK
             if done < ticks:
                 sleep(interval)
-        _emit("warning", HOST_MONITOR_END, outcome="budget_exhausted", ticks=done)
+        emit("warning", HOST_MONITOR_END, outcome="budget_exhausted", ticks=done)
         return EXIT_EXHAUSTED
     except KeyboardInterrupt:
-        _emit("warning", HOST_MONITOR_END, outcome="interrupted", ticks=done)
+        emit("warning", HOST_MONITOR_END, outcome="interrupted", ticks=done)
         return EXIT_INTERRUPTED
     except Exception as error:
-        _emit(
+        emit(
             "error", HOST_MONITOR_END, outcome="failed", error_type=type(error).__name__, ticks=done
         )
         return EXIT_FAILED

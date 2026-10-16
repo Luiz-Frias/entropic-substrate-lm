@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import base64
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -36,7 +37,11 @@ from entropic_substrate.composition.entrypoints.h_wave_monitor import (
 )
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.h_probe_launch import H_SERIES_EXPERIMENT
-from entropic_substrate.ladder.run.worker import h_probe_controller, h_probe_log_events
+from entropic_substrate.ladder.run.worker import (
+    h_probe_controller,
+    h_probe_host_log,
+    h_probe_log_events,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -68,14 +73,26 @@ class Source:
     """A scripted client: one reading per call, the last one repeating."""
 
     def __init__(self, *readings: RunReading | Exception) -> None:
-        self.readings, self.calls = list(readings), []
+        self.readings, self.calls, self.keywords = list(readings), [], []
 
-    def latest(self, experiment: str, run_name: str) -> RunReading:
+    def latest(self, experiment: str, run_name: str, **keywords: str) -> RunReading:
         self.calls.append((experiment, run_name))
+        self.keywords.append(keywords)
         item = self.readings[min(len(self.calls) - 1, len(self.readings) - 1)]
         if isinstance(item, BaseException):
             raise item
         return item
+
+
+class StrictSource:
+    """The slice-5 two-parameter source: any extra argument is a TypeError."""
+
+    def __init__(self, *readings: RunReading) -> None:
+        self.readings, self.calls = list(readings), []
+
+    def latest(self, experiment: str, run_name: str) -> RunReading:
+        self.calls.append((experiment, run_name))
+        return self.readings[min(len(self.calls) - 1, len(self.readings) - 1)]
 
 
 def argv(*extra: str, ticks: str = "3") -> list[str]:
@@ -110,6 +127,7 @@ def test_every_tick_names_the_arm_and_the_source_and_exhaustion_is_its_own_exit(
         7.0,
     ]  # the interval between ticks, none after the last
     assert source.calls == [(H_SERIES_EXPERIMENT, "h-worker-a")] * 3
+    assert source.keywords == [{}] * 3  # a --run-name arm makes the slice-5 call, nothing added
     for tick, number in zip(ticks, (1, 2, 3), strict=True):
         assert tick["run_name"] == "h-worker-a" and tick["tick"] == number
         assert tick["source"] == "mlflow_metric" and tick["state"] == "step" and tick["step"] == 5
@@ -269,9 +287,38 @@ def test_an_arm_comes_from_a_parsed_launch_record_with_the_workers_run_name(tmp_
     expected = f"h-worker-{value.request.profile.identity}"  # ladder/run/worker_command.py:212
     assert run_name_for(value.request.profile.identity) == expected
     assert source.calls == [(H_SERIES_EXPERIMENT, expected)] and code == EXIT_EXHAUSTED
+    # FOR-1657: the launch's own request digest binds the arm, as a keyword-only argument
+    assert source.keywords == [{"request_sha256": value.request.digest}]
     (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
     schedule = value.request.profile.schedule
     assert tick["run_name"] == expected and tick["total"] == schedule.warmup_steps + schedule.steps
+    assert "request_sha256" not in tick and value.request.digest not in tick["message"]
+
+
+def test_a_run_name_arm_reads_through_a_strict_two_parameter_source(tmp_path: Path) -> None:
+    """The slice-5 source contract still holds on the --run-name path: a source that takes
+    exactly (experiment, run_name) reads a real step, not a swallowed TypeError."""
+    source = StrictSource(RunReading("step", 4, "FINISHED"))
+    code, records = go(source, "--run-name", "h-worker-a", ticks="2")
+    assert code == EXIT_OK and source.calls == [(H_SERIES_EXPERIMENT, "h-worker-a")]
+    (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert tick["state"] == "step" and tick["step"] == 4
+    (end,) = [r for r in records if r["event"] == "host.monitor.end"]
+    assert end["outcome"] == "all_runs_terminal"
+
+
+def test_two_launch_files_of_one_identity_are_still_one_arm_and_refused(tmp_path: Path) -> None:
+    value = launch()
+    (tmp_path / "a.json").write_bytes(value.payload)
+    (tmp_path / "b.json").write_bytes(value.payload)
+    code, records = go(
+        Source(RunReading("step", 1, "FINISHED")),
+        "--launch-file", str(tmp_path / "a.json"),
+        "--launch-file", str(tmp_path / "b.json"),
+        "--max-launch-bytes", "1000000",
+    )  # fmt: skip
+    assert code == EXIT_FAILED
+    assert next(r for r in records if r["event"] == "host.monitor.end")["outcome"] == "failed"
 
 
 def test_the_experiment_is_the_one_in_tree_constant() -> None:
@@ -289,7 +336,9 @@ def test_the_experiment_is_the_one_in_tree_constant() -> None:
 def test_the_controller_and_the_monitor_build_their_lines_with_the_one_shared_builder() -> None:
     assert monitor.progress_fields is h_probe_log_events.progress_fields
     assert h_probe_controller.progress_fields is h_probe_log_events.progress_fields
-    assert monitor.render is h_probe_log_events.render is h_probe_controller.render
+    # the components emit through h_probe_host_log.emit, which renders through the one leaf
+    assert monitor.emit is h_probe_controller.emit is h_probe_host_log.emit
+    assert h_probe_host_log.render is h_probe_log_events.render
     builder_defs = [
         path.name for path in PKG.rglob("*.py") if "def progress_fields" in path.read_text()
     ]
@@ -373,10 +422,156 @@ def test_the_rest_source_asks_the_h_series_experiment_for_the_named_run_with_the
     assert search.get_method() == "POST" and search.full_url == URI + "/api/2.0/mlflow/runs/search"
     body = json.loads(search.data)
     assert body["experiment_ids"] == ["7"]
-    assert body["filter"] == "attributes.run_name = 'h-worker-abc'"
+    assert body["filter"] == "attributes.run_name = 'h-worker-abc'"  # the --run-name path
     assert {t for _, t in opener.requests} == {4.5}
     expected = "Basic " + base64.b64encode(f"{SECRET_USER}:{SECRET_PASSWORD}".encode()).decode()
     assert lookup.get_header("Authorization") == expected
+
+
+def test_a_digest_bound_search_ands_the_request_tag_into_the_filter() -> None:
+    digest = "ab" * 32
+    opener = Opener(EXPERIMENT, {"runs": [run_row("RUNNING", ("phase_index", 12))]})
+    reading = rest(opener).latest("h-series", "h-worker-abc", request_sha256=digest)
+    assert reading == RunReading("step", 12, "RUNNING", attempts=1)
+    body = json.loads(opener.requests[1][0].data)
+    assert body["filter"] == (
+        f"attributes.run_name = 'h-worker-abc' AND tags.request_sha256 = '{digest}'"
+    )
+    assert body["max_results"] == 5
+
+
+@pytest.mark.parametrize(
+    "digest",
+    [
+        "",
+        "ab" * 32 + "\n",  # re.match / re.search with ^...$ admit this; fullmatch refuses
+        "AB" * 32,  # uppercase hex
+        "a" * 63,
+        "a" * 65,
+        "a" * 63 + "'",
+        "a" * 32 + "' OR '1'='1",
+        "g" * 64,
+    ],
+)
+def test_a_digest_that_could_break_the_filter_is_refused_before_any_request(digest: str) -> None:
+    opener = Opener(EXPERIMENT)
+    with pytest.raises(ValueError):
+        rest(opener).latest("h-series", "h-worker-abc", request_sha256=digest)
+    assert not opener.requests
+
+
+class FilterOpener:
+    """An MLflow stand-in that answers ``runs/search`` as a function of the POSTED filter.
+
+    Rows carry a hidden (name, digest) pair; the filter's name term and optional digest term
+    are evaluated against it. A filter this stand-in does not recognise is recorded and
+    raised, never answered with an empty run list.
+    """
+
+    FILTER = re.compile(
+        r"attributes\.run_name = '([A-Za-z0-9_.-]+)'(?: AND tags\.request_sha256 = '([0-9a-f]{64})')?"
+    )
+
+    def __init__(self, *rows: tuple[str, str, dict[str, Any]]) -> None:
+        self.rows, self.filters, self.unrecognized = list(rows), [], []
+
+    def __call__(self, request: Any, timeout: float) -> Response:
+        if request.get_method() == "GET":
+            return Response(EXPERIMENT)
+        text = json.loads(request.data)["filter"]
+        self.filters.append(text)
+        match = self.FILTER.fullmatch(text)
+        if match is None:
+            self.unrecognized.append(text)
+            raise AssertionError(f"unrecognised filter: {text!r}")
+        name, digest = match.groups()
+        return Response({"runs": [r for n, d, r in self.rows if n == name and digest in (None, d)]})
+
+
+def launch_arm_wave(
+    tmp_path: Path, *rows: tuple[str, str, dict[str, Any]], ticks: str = "2"
+) -> tuple[Any, int, list[dict[str, Any]], FilterOpener]:
+    value = launch()
+    (tmp_path / "launch.json").write_bytes(value.payload)
+    name = run_name_for(value.request.profile.identity)
+    opener = FilterOpener(*((name if n == "SELF" else n, d, r) for n, d, r in rows))
+    with captured() as records:
+        code = run_wave_monitor(
+            argv("--launch-file", str(tmp_path / "launch.json"),
+                 "--max-launch-bytes", "1000000", ticks=ticks),
+            environ={},
+            source_factory=lambda _env, _timeout: rest(opener),
+            sleep=lambda _seconds: None,
+        )  # fmt: skip
+    events = [r for r in records if r.get("event", "").startswith("host.monitor")]
+    return value, code, events, opener
+
+
+OLD_ATTEMPT_DIGEST = "0" * 64
+
+
+def test_a_launch_arm_reads_its_own_run_never_an_older_attempt_of_the_same_name(
+    tmp_path: Path,
+) -> None:
+    """FOR-1657: the old FAILED attempt (another launch, same identity, hence same name)
+    and this launch's RUNNING run share a name; only the tag separates them."""
+    value = launch()
+    old = run_row("FAILED", ("phase_index", 8), start_time=1000)
+    own = run_row("RUNNING", ("phase_index", 3), start_time=2000)
+    value, code, events, opener = launch_arm_wave(
+        tmp_path, ("SELF", OLD_ATTEMPT_DIGEST, old), ("SELF", value.request.digest, own)
+    )
+    assert not opener.unrecognized
+    assert opener.filters[0].endswith(f"AND tags.request_sha256 = '{value.request.digest}'")
+    assert code == EXIT_EXHAUSTED
+    ticks = [r for r in events if r["event"] == "host.monitor.tick"]
+    assert len(ticks) == 2
+    for tick in ticks:
+        assert tick["state"] == "step" and tick["step"] == 3
+        assert tick["run_status"] == "RUNNING" and tick["attempts"] == 1
+    (end,) = [r for r in events if r["event"] == "host.monitor.end"]
+    assert end["outcome"] == "budget_exhausted"
+
+
+def test_a_launch_arm_whose_run_does_not_exist_yet_is_not_found_beside_an_old_attempt(
+    tmp_path: Path,
+) -> None:
+    """The gap FOR-1657 closes: the retry's pod is still allocating, only the earlier
+    terminal attempt exists, and the arm must NOT read terminal."""
+    old = run_row("FAILED", ("phase_index", 8), start_time=1000)
+    _value, code, events, opener = launch_arm_wave(tmp_path, ("SELF", OLD_ATTEMPT_DIGEST, old))
+    assert not opener.unrecognized
+    assert code == EXIT_EXHAUSTED
+    ticks = [r for r in events if r["event"] == "host.monitor.tick"]
+    assert [t["state"] for t in ticks] == ["run_not_found", "run_not_found"]
+    assert all("attempts" not in t and "step" not in t for t in ticks)
+    (end,) = [r for r in events if r["event"] == "host.monitor.end"]
+    assert end["outcome"] == "budget_exhausted" and end["outcome"] != "all_runs_terminal"
+
+
+def test_attempts_of_one_launch_are_still_counted_and_every_one_must_be_terminal(
+    tmp_path: Path,
+) -> None:
+    """DN-1646-ATTEMPTS stands on the tag-bound path: a restart duplicate of the SAME
+    request (same digest) is a second attempt, live beside a terminal one."""
+    value = launch()
+    done = run_row("FAILED", ("phase_index", 2), start_time=1000)
+    live = run_row("RUNNING", ("phase_index", 5), start_time=900)
+    _value, code, events, _opener = launch_arm_wave(
+        tmp_path, ("SELF", value.request.digest, done), ("SELF", value.request.digest, live),
+        ticks="1",
+    )  # fmt: skip
+    (tick,) = [r for r in events if r["event"] == "host.monitor.tick"]
+    assert code == EXIT_EXHAUSTED and tick["attempts"] == 2 and tick["run_status"] == "RUNNING"
+
+
+def test_the_rest_source_falls_back_to_the_bare_name_filter_without_a_digest() -> None:
+    opener = FilterOpener(
+        ("h-worker-abc", OLD_ATTEMPT_DIGEST, run_row("FAILED", ("phase_index", 8)))
+    )
+    reading = rest(opener).latest("h-series", "h-worker-abc")
+    assert opener.filters == ["attributes.run_name = 'h-worker-abc'"]
+    assert reading.state == "step" and reading.attempts == 1
 
 
 def test_the_step_is_the_per_step_training_metric_only_and_the_best_same_named_run_wins() -> None:
