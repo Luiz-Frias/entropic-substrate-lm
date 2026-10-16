@@ -216,6 +216,7 @@ def run_worker_command(
                         "schema": "h-probe-worker-result-v1",
                         EXP_TAG: request.profile.name,
                         CONFIG_HASH_TAG: chash,
+                        "request_sha256": request.digest,
                     },
                 ),
                 results_path=observability_root / "metrics.jsonl",
