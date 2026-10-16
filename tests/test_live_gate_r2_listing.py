@@ -24,7 +24,7 @@ class _TwoPageS3:
     """A client whose first page is truncated, the state measured 2026-10-15."""
 
     page_one: ClassVar[dict[str, Any]] = {
-        "Contents": [{"Key": "p/2/e7a2/artifacts/a.pt"}],
+        "Contents": [{"Key": "p/2/eb84/artifacts/a.pt"}],
         "IsTruncated": True,
         "NextContinuationToken": "t1",
     }
@@ -64,7 +64,7 @@ def test_the_run_prefix_is_scoped_below_the_gate_venue() -> None:
 def test_list_keys_paginated_walks_past_a_truncated_first_page() -> None:
     s3 = _TwoPageS3()
     keys = list_keys_paginated(s3, LIVE_GATE_BUCKET, "p/2/eb84/")
-    assert keys == ["p/2/e7a2/artifacts/a.pt", "p/2/eb84/artifacts/b.pt"], keys
+    assert keys == ["p/2/eb84/artifacts/a.pt", "p/2/eb84/artifacts/b.pt"], keys
     assert s3.calls, "the client was never asked"
     assert all(c["api"] == "paginate" for c in s3.calls), s3.calls
     assert s3.calls[0]["Bucket"] == LIVE_GATE_BUCKET
