@@ -580,6 +580,18 @@ to the MLflow run at sink finish as an operational mirror that never feeds a ver
 `sink.finish.end` reports `settled` and `stranded`; the names and the one deliberately event-less
 warning are recorded in that module's docstring.
 
+The H host side narrates itself the same way (FOR-1645). The four host entry points,
+`h_probe_command`, `h_probe_stop`, `h_tiny_tracer` and `composition.entrypoints.h_wave_monitor`,
+call `configure_logging()` first in `main`; the controller defines no `main` and runs inside the
+command process, so its events ride that substrate. The closed host vocabulary is
+`entropic_substrate.ladder.run.worker.h_probe_log_events` (every name starts with `host.`, disjoint
+from the worker's), and every host record binds the launch's `pod_name` so concurrent arms that
+share a JSON log can be told apart. The controller asks the provider about the attributed pod on every
+poll: an absent pod with no published terminal ends the loop as the named `provider_absent`
+observation instead of waiting for the deadline. Progress has two evidence sources that are never
+interchangeable: the controller's R2 `checkpoint-N` events (seal granularity) and the wave monitor's
+MLflow `phase_index` metric (every step), and each line names its source.
+
 ## D1–D5 ladder
 
 | Rung | Isolated question | Primary comparison | Advancement rule |

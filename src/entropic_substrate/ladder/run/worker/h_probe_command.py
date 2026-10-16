@@ -14,6 +14,7 @@ from entropic_substrate.kernel.artifacts import (
     normalize_d1_artifact_root,
     read_d1_artifact_bytes,
 )
+from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
 from entropic_substrate.ladder.run.h_probe_process import (
     WatchdogProcessConfig,
@@ -155,5 +156,17 @@ def run_probe_command(
         return 130 if isinstance(error, KeyboardInterrupt) else 1
 
 
+def main(argv: Sequence[str] | None = None) -> int:
+    """Entry point: the log substrate first, then the unchanged command.
+
+    The controller runs inside this process, so its host events (the closed
+    vocabulary in ``worker.h_probe_log_events``) land on this stderr and in the
+    structured JSON sink. The stdout success JSON and the stderr failure JSON are
+    unchanged single lines, and no host event is emitted after either of them.
+    """
+    configure_logging()
+    return run_probe_command(sys.argv[1:] if argv is None else argv, environ=os.environ)
+
+
 if __name__ == "__main__":
-    raise SystemExit(run_probe_command(sys.argv[1:], environ=os.environ))
+    raise SystemExit(main())

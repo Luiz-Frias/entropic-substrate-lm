@@ -553,3 +553,83 @@ def test_expiry_without_intent_does_not_claim_a_terminated_run(tmp_path: Path) -
     )
     assert result["status"] == "expired_without_intent" and result["termination_verified"] is False
     assert provider.deletions == []
+
+
+def test_a_cancelled_stop_for_an_attributed_pod_already_absent_terminates_without_deleting(
+    tmp_path: Path,
+) -> None:
+    """FOR-1638 / G6: the controller's provider_absent outcome stops with reason 'cancelled' for an
+    attributed pod the provider no longer lists. Proven against the REAL watchdog (the controller
+    tests' fake guard returns a canned 'terminated' record and would prove nothing): the watchdog
+    certifies absence on its own account-matched ``get_owned`` None and never issues a delete."""
+    spec = replace(launch(), controller_timeout_seconds=3, watchdog_timeout_seconds=6)
+    directory, provider = root(tmp_path), Provider(spec)  # the pod is already absent
+    clock = [0.0]
+
+    def wait(seconds: float) -> None:
+        if clock[0] == 0:
+            with own_probe_role(directory, spec, "controller") as controller:
+                declare(controller)
+                controller.write(
+                    "stop",
+                    {
+                        "schema": "h-probe-stop-v1",
+                        "guard_pid": os.getpid(),
+                        "reason": "cancelled",
+                        "pod_id": "owned-pod",
+                    },
+                    max_bytes=10_000,
+                )
+        clock[0] += seconds
+
+    result = run_probe_watchdog(
+        directory,
+        spec,
+        provider,
+        poll_seconds=1,
+        max_control_bytes=10_000,
+        monotonic=lambda: clock[0],
+        wait=wait,
+    )
+    assert result["status"] == "terminated" and result["pod_id"] == "owned-pod"
+    assert result["termination_verified"] is True and result["attributed_pod_absent"] is True
+    assert result["inventory_verified"] is True and result["unattributed_pod_ids"] == []
+    assert result["reason"] == "cancelled" and result["guard_fault"] is None
+    assert provider.deletions == [] and clock[0] < 3
+
+
+def test_a_cancelled_stop_is_not_certified_when_the_account_changed(tmp_path: Path) -> None:
+    """The absence only counts on the supervised account (the same check the controller makes)."""
+    spec = replace(launch(), controller_timeout_seconds=3, watchdog_timeout_seconds=6)
+    directory, provider = root(tmp_path), Provider(spec)
+    clock = [0.0]
+
+    def wait(seconds: float) -> None:
+        if clock[0] == 0:
+            with own_probe_role(directory, spec, "controller") as controller:
+                declare(controller)
+                controller.write(
+                    "stop",
+                    {
+                        "schema": "h-probe-stop-v1",
+                        "guard_pid": os.getpid(),
+                        "reason": "cancelled",
+                        "pod_id": "owned-pod",
+                    },
+                    max_bytes=10_000,
+                )
+            provider.account_id = "someone-else"
+        clock[0] += seconds
+
+    with pytest.raises(ProbeWatchdogFailure) as caught:
+        run_probe_watchdog(
+            directory,
+            spec,
+            provider,
+            poll_seconds=1,
+            max_control_bytes=10_000,
+            monotonic=lambda: clock[0],
+            wait=wait,
+        )
+    assert caught.value.record["termination_verified"] is False
+    assert caught.value.record["status"] == "cleanup_unresolved"

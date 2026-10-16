@@ -212,6 +212,7 @@ def _emit(root: Path, value: dict[str, object]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_logging()
     args = _parser().parse_args(argv)
     out = cast(Path, args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -282,5 +283,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    configure_logging()
     sys.exit(main())
