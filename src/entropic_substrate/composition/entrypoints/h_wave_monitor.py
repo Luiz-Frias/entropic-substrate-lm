@@ -23,6 +23,18 @@ from ``MLFLOW_TRACKING_URI`` and basic-auth credentials from
 ``MLFLOW_TRACKING_USERNAME`` / ``MLFLOW_TRACKING_PASSWORD``; none of them is ever
 rendered, and a URI carrying userinfo is refused unread.
 
+Attempts (DN-1646-ATTEMPTS, 2026-10-16): a fresh-nonce retry keeps ``profile.identity``,
+so same-named runs in the experiment are ATTEMPTS of one arm. An arm is terminal only
+when EVERY attempt the search returns is terminal. The tick's step and ``run_status``
+come from the NEWEST attempt (greatest ``start_time``; the response order, which MLflow
+serves newest-first, when no start time is given), never from the highest step across
+attempts; a live attempt takes precedence over a newer terminal one, because the arm is
+then still live. The tick carries the attempt count as ``attempts``. Residual gap: before
+a retry's run exists (its pod still allocating) the only same-named run is the earlier
+terminal attempt, so the monitor reads the arm terminal. Closing that needs a
+launch-specific run identity (a tag or name carrying the request digest or nonce) in
+``worker_command.py``, a slice-4 surface and a reader-tuple member, filed as FOR-1657.
+
 Exit codes (three honest exits plus usage and interrupt): 0 every arm's run reached
 a terminal MLflow status; 3 the tick budget was exhausted with arms still running; 1
 failure (unusable launch, tracking URI or source); 2 usage; 130 interrupt. Nothing
@@ -43,7 +55,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -98,11 +110,18 @@ _MAX_RESPONSE_BYTES = 4_194_304
 
 @dataclass(frozen=True, slots=True)
 class RunReading:
-    """What one read of one arm's run established. ``step`` exists iff ``state == 'step'``."""
+    """What one read of one arm established. ``step`` exists iff ``state == 'step'``.
+
+    ``step`` and ``run_status`` are the displayed attempt's. ``attempts`` (same-named runs
+    seen) and ``arm_terminal`` (every attempt terminal; ``None`` = judge ``run_status``
+    alone) are additive facts that never take part in equality.
+    """
 
     state: str
     step: int | None = None
     run_status: str | None = None
+    attempts: int | None = field(default=None, compare=False)
+    arm_terminal: bool | None = field(default=None, compare=False)
 
 
 class RunSource(Protocol):
@@ -207,23 +226,31 @@ class MlflowRestSource:
         except (ValueError, KeyError, TypeError):
             return RunReading(STATE_READ_FAILED)
         try:
-            return _best_reading(runs.get("runs", []))
+            return _arm_reading(runs.get("runs", []))
         except (ValueError, KeyError, TypeError):
             return RunReading(STATE_READ_FAILED)
 
 
-def _best_reading(runs: object) -> RunReading:
-    """The run with the highest step among same-named runs; none at all is 'not found'."""
+def _arm_reading(runs: object) -> RunReading:
+    """One arm from its same-named runs (attempts); none at all is 'not found'.
+
+    The displayed attempt is the newest, a live attempt taking precedence over a newer
+    terminal one; the arm is terminal only when every attempt is.
+    """
     if type(runs) is not list:
         raise ValueError("runs must be a list")
     if not runs:
         return RunReading(STATE_RUN_NOT_FOUND)
-    readings: list[RunReading] = []
+    readings: list[tuple[int, RunReading]] = []
     for run in runs:
         row = cast(dict[str, object], run)
-        status = cast(dict[str, object], row["info"])["status"]
+        info = cast(dict[str, object], row["info"])
+        status = info["status"]
         if type(status) is not str:
             raise ValueError("run status must be text")
+        started = info.get("start_time", 0)
+        if type(started) is not int:
+            raise ValueError("run start time must be an integer")
         metrics = cast(dict[str, object], row["data"]).get("metrics", [])
         if type(metrics) is not list:
             raise ValueError("run metrics must be a list")
@@ -235,11 +262,24 @@ def _best_reading(runs: object) -> RunReading:
         if any(type(step) is not int or step < 1 for step in steps):
             raise ValueError("metric steps must be positive integers")
         readings.append(
-            RunReading(STATE_STEP, max(steps), status)
-            if steps
-            else RunReading(STATE_NO_PROGRESS, None, status)
+            (
+                started,
+                RunReading(STATE_STEP, max(steps), status)
+                if steps
+                else RunReading(STATE_NO_PROGRESS, None, status),
+            )
         )
-    return max(readings, key=lambda reading: reading.step or 0)  # first wins a tie
+    newest_first = [reading for _, reading in sorted(readings, key=lambda item: -item[0])]  # stable
+    shown = next(
+        (r for r in newest_first if r.run_status not in _TERMINAL_RUN_STATUSES), newest_first[0]
+    )
+    return RunReading(
+        shown.state,
+        shown.step,
+        shown.run_status,
+        attempts=len(newest_first),
+        arm_terminal=all(r.run_status in _TERMINAL_RUN_STATUSES for r in newest_first),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,8 +388,14 @@ def run_wave_monitor(
                 )
                 if reading.run_status is not None:
                     fields["run_status"] = reading.run_status
+                if reading.attempts is not None:
+                    fields["attempts"] = reading.attempts
                 _emit("info", HOST_MONITOR_TICK, run_name=arm.run_name, tick=done, **fields)
-                terminal += reading.run_status in _TERMINAL_RUN_STATUSES
+                terminal += (
+                    reading.arm_terminal
+                    if reading.arm_terminal is not None
+                    else reading.run_status in _TERMINAL_RUN_STATUSES
+                )
             if terminal == len(arms):
                 _emit("info", HOST_MONITOR_END, outcome="all_runs_terminal", ticks=done)
                 return EXIT_OK

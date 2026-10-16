@@ -346,9 +346,15 @@ def rest(
 EXPERIMENT = {"experiment": {"experiment_id": "7"}}
 
 
-def run_row(status: str, *metrics: tuple[str, int]) -> dict[str, Any]:
+def run_row(
+    status: str, *metrics: tuple[str, int], start_time: int | None = None
+) -> dict[str, Any]:
     return {
-        "info": {"run_id": "r", "status": status},
+        "info": {
+            "run_id": "r",
+            "status": status,
+            **({} if start_time is None else {"start_time": start_time}),
+        },
         "data": {
             "metrics": [{"key": k, "value": 1.0, "step": s, "timestamp": 0} for k, s in metrics]
         },
@@ -383,6 +389,84 @@ def test_the_step_is_the_per_step_training_metric_only_and_the_best_same_named_r
     assert reading == RunReading("step", 8, "RUNNING")
     only_system = rest(Opener(EXPERIMENT, {"runs": [runs[2]]})).latest("h-series", "h-worker-abc")
     assert only_system == RunReading("no_progress_yet", None, "RUNNING")
+
+
+def attempts_wave(*runs: dict[str, Any], ticks: str = "2") -> tuple[int, list[dict[str, Any]]]:
+    """The real monitor over the real REST source; the search answers repeat per tick."""
+    answers: list[object] = []
+    for _ in range(int(ticks)):
+        answers += [EXPERIMENT, {"runs": list(runs)}]
+    opener = Opener(*answers)
+    with captured() as records:
+        code = run_wave_monitor(
+            argv("--run-name", "h-worker-abc", ticks=ticks),
+            environ={},
+            source_factory=lambda _env, _timeout: rest(opener),
+            sleep=lambda _seconds: None,
+        )
+    return code, [r for r in records if r.get("event", "").startswith("host.monitor")]
+
+
+def test_a_live_retry_beside_an_older_terminal_attempt_is_not_a_terminal_arm() -> None:
+    """DN-1646-ATTEMPTS: same-named runs are attempts of one arm (a fresh-nonce retry keeps
+    ``profile.identity``). The newest-first search answer is [newer RUNNING step 3, older
+    FAILED step 8]: the arm is live, and the tick reads the newest attempt, not step 8."""
+    code, records = attempts_wave(
+        run_row("RUNNING", ("phase_index", 3), start_time=2000),
+        run_row("FAILED", ("phase_index", 8), start_time=1000),
+    )
+    assert code == EXIT_EXHAUSTED
+    ticks = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert len(ticks) == 2
+    for tick in ticks:
+        assert tick["state"] == "step" and tick["step"] == 3
+        assert tick["run_status"] == "RUNNING" and tick["attempts"] == 2
+        assert "step=3" in tick["message"] and "attempts=2" in tick["message"]
+    (end,) = [r for r in records if r["event"] == "host.monitor.end"]
+    assert end["outcome"] == "budget_exhausted" and end["ticks"] == 2
+
+
+def test_the_newest_attempt_is_by_start_time_not_by_the_order_of_the_answer() -> None:
+    code, records = attempts_wave(  # oldest-first answer; start_time decides
+        run_row("FAILED", ("phase_index", 8), start_time=1000),
+        run_row("RUNNING", ("phase_index", 3), start_time=2000),
+        ticks="1",
+    )
+    (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert code == EXIT_EXHAUSTED
+    assert tick["step"] == 3 and tick["run_status"] == "RUNNING"
+
+
+def test_an_arm_is_terminal_only_when_every_attempt_is_and_reads_the_newest() -> None:
+    code, records = attempts_wave(
+        run_row("FINISHED", ("phase_index", 6), start_time=2000),
+        run_row("FAILED", ("phase_index", 8), start_time=1000),
+        ticks="3",
+    )
+    assert code == EXIT_OK
+    (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert tick["step"] == 6 and tick["run_status"] == "FINISHED" and tick["attempts"] == 2
+    (end,) = [r for r in records if r["event"] == "host.monitor.end"]
+    assert end["outcome"] == "all_runs_terminal" and end["ticks"] == 1
+
+
+def test_a_live_older_attempt_keeps_the_arm_live_beside_a_newer_terminal_one() -> None:
+    code, records = attempts_wave(
+        run_row("FAILED", ("phase_index", 2), start_time=2000),
+        run_row("RUNNING", ("phase_index", 5), start_time=1000),
+        ticks="1",
+    )
+    (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert code == EXIT_EXHAUSTED and tick["run_status"] == "RUNNING" and tick["attempts"] == 2
+
+
+def test_a_single_run_reads_as_one_attempt_and_a_failed_read_carries_no_count() -> None:
+    _code, records = attempts_wave(run_row("RUNNING", ("phase_index", 4)), ticks="1")
+    (tick,) = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert tick["attempts"] == 1
+    _code, failed = go(Source(RunReading("read_failed")), "--run-name", "h-worker-a", ticks="1")
+    (bad,) = [r for r in failed if r["event"] == "host.monitor.tick"]
+    assert "attempts" not in bad
 
 
 @pytest.mark.parametrize(
