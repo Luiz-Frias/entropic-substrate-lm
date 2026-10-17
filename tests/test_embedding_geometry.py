@@ -488,6 +488,18 @@ def test_cli_embedding_geometry_reports_unpaired_seeds_never_drops_them(
     assert len(payload["results"]) == 1
 
 
+def _assert_error_line(capsys: pytest.CaptureFixture[str], needle: str) -> None:
+    """``needle`` appears on a formatted ERROR line of stderr (FOR-1649).
+
+    Anchored on the level column of the production human format and guarded
+    against loguru's "Logging error" block: a bare ``needle in err`` also
+    matched the one-line ``Record was: {...}`` dump a closed sink writes.
+    """
+    err = capsys.readouterr().err
+    assert "Logging error" not in err, err
+    assert any("| ERROR    | " in ln and needle in ln for ln in err.splitlines()), err
+
+
 def test_cli_embedding_geometry_requires_both_arms(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["embedding-geometry", "--ckpt-a", "somewhere.pt"])
     assert code == 2
@@ -504,7 +516,7 @@ def test_cli_embedding_geometry_zero_pairs_is_a_controlled_refusal(
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=9, embedding_init="random_sphere")
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
-    assert "no seed-paired checkpoints" in capsys.readouterr().err
+    _assert_error_line(capsys, "no seed-paired checkpoints")
 
 
 def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(
@@ -517,7 +529,7 @@ def test_cli_embedding_geometry_default_embedding_init_is_a_loud_refusal(
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=6)
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
-    assert "no init table exists" in capsys.readouterr().err
+    _assert_error_line(capsys, "no init table exists")
 
 
 def test_cli_embedding_geometry_field_state_source_is_a_loud_refusal(
@@ -545,7 +557,7 @@ def test_cli_embedding_geometry_field_state_source_is_a_loud_refusal(
     ckpt_b = _train_and_capture_final(tmp_path / "b", seed=6, embedding_init="fisher_sqrt")
     code = main(["embedding-geometry", "--ckpt-a", str(ckpt_a), "--ckpt-b", str(ckpt_b), "--json"])
     assert code == 2
-    assert "state_source" in capsys.readouterr().err
+    _assert_error_line(capsys, "state_source")
 
 
 def test_cli_embedding_geometry_duplicate_seed_on_one_side_is_a_loud_refusal(
@@ -567,7 +579,7 @@ def test_cli_embedding_geometry_duplicate_seed_on_one_side_is_a_loud_refusal(
         ]
     )
     assert code == 2
-    assert "ambiguous pairing" in capsys.readouterr().err
+    _assert_error_line(capsys, "ambiguous pairing")
 
 
 def test_cli_embedding_geometry_malformed_checkpoint_is_a_loud_refusal(
@@ -581,7 +593,7 @@ def test_cli_embedding_geometry_malformed_checkpoint_is_a_loud_refusal(
     # Raised as CheckpointFormatError (not ValueError), so it is caught by
     # main()'s OUTER handler, not cmd_embedding_geometry's own ValueError
     # catch — the message still names the offending path.
-    assert "garbage.pt" in capsys.readouterr().err
+    _assert_error_line(capsys, "garbage.pt")
 
 
 # ------------------------------------------------ init-table cache (FOR-920)

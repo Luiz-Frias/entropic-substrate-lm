@@ -93,6 +93,7 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     names = [row["event"] for row in log_rows]
     assert "phase.start" in names and "completion.written" in names
     human = capsys.readouterr().err
+    assert "Logging error" not in human, human
     assert "phase.start phase=codec_warmup" in human
     assert "completion.written key=" in human
 

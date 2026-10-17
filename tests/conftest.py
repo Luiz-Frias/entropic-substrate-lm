@@ -67,45 +67,50 @@ def _deterministic() -> None:
 
 @pytest.fixture(autouse=True)
 def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
-    """Rebind loguru's sinks to the CURRENT per-test stdio streams.
+    """Install loguru sinks that follow pytest's capsys stream swaps.
 
     loguru binds a stream sink to the literal object passed to
-    ``logger.add()`` at call time. pytest's ``capsys`` swaps
-    ``sys.stdout``/``sys.stderr`` with a fresh object per test; a sink
-    configured once (at import time, or by an earlier test that went
-    through a CLI entry point) would keep writing to a stream a LATER
-    test's ``capsys.readouterr()`` never reads from — every DECISION-NEEDED
-    / gate-text assertion in this suite would then silently start asserting
-    on empty output while still reporting green (see
-    ``entropic_substrate.logging``'s module docstring).
+    ``logger.add()`` at call time. pytest's ``capsys`` gives each capture
+    PHASE (setup, call, teardown) a fresh ``sys.stdout``/``sys.stderr`` and
+    closes the previous phase's stream when the phase ends
+    (``_pytest/capture.py`` 9.1.1: ``item_capture`` per phase,
+    ``CaptureFixture._start`` builds a new ``MultiCapture``,
+    ``SysCaptureBase.done`` closes the tmpfile). Sinks bound here, during
+    fixture SETUP, would hold the setup phase's stream: closed by the time
+    the test body runs, so a body-time ``logger.*`` call produced loguru's
+    "Logging error" dump instead of a line, and a ``capsys.readouterr()``
+    substring check still passed against the dump's ``Record was: {...}``
+    text (see ``entropic_substrate.kernel.runtime.logging``'s module
+    docstring).
 
-    Declaring ``capsys`` as a parameter (not just importing it) makes this
-    fixture DEPEND on it, so pytest instantiates capsys's stream swap
-    before this fixture's body runs — reconfiguring the sinks any earlier
-    would just rebind to the stream capsys is about to replace.
+    RETRACTION (FOR-1649, house rule 4): this docstring used to say capsys
+    swaps "a fresh object per test" and that a setup-time rebind therefore
+    followed it. Measured false: the swap is per phase, and the object this
+    fixture saw at setup was not the one the test body wrote to
+    (``tests/test_conftest_sink_binding.py`` pins both facts).
+
+    ``resolve_streams=True`` makes the sinks look ``sys.stdout``/``sys.stderr``
+    up on every write, so they follow every phase's swap. Declaring
+    ``capsys`` as a parameter still matters: it makes pytest start capsys
+    before this body runs, so the setup-phase emissions are captured too.
 
     ``json_path=None``: the structured JSON sink is exercised directly by
     ``tests/test_logging.py``; every other test in this ~300+-test suite
     would otherwise append to ``logs/entropic-substrate.jsonl`` on every
     run for no reason.
 
-    TEARDOWN removes the sinks before yielding control back to pytest:
-    capsys tears down (and closes) its captured streams in the REVERSE of
-    fixture-setup order, i.e. AFTER this fixture's teardown runs (this
-    fixture depends on capsys, so capsys's own finalizer runs later). Any
-    log emission that lands in the window between one test's teardown and
-    the next test's setup — e.g. a slow-to-join background thread started
-    by a live integration test — would otherwise write to an
-    already-closed stream object and loguru's ``catch=True`` default would
-    print "Logging error in Loguru Handler ... ValueError: I/O operation
-    on closed file" noise into the run. Removing the sinks here closes that
-    window: a late emission after this point hits zero handlers and is
-    dropped silently, which is the correct behavior for teardown-window
-    noise (the message has already served its purpose or never mattered).
+    TEARDOWN removes the sinks before yielding control back to pytest. With
+    write-time resolution a late emission (e.g. a slow-to-join background
+    thread started by a live integration test) no longer hits a closed
+    stream, but a sink that a test body bound through a production CLI entry
+    point (``configure_logging()`` without ``resolve_streams``) still holds a
+    call-phase stream that is closed at the end of that phase; removing the
+    sinks here closes that window for the teardown phase: a late emission
+    after this point hits zero handlers and is dropped silently.
     """
     from entropic_substrate.kernel.runtime.logging import configure_logging
 
-    configure_logging(json_path=None)
+    configure_logging(json_path=None, resolve_streams=True)
     yield
     logger.remove()
 
