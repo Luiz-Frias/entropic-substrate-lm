@@ -50,6 +50,7 @@ __all__ = [
     "HOST_STOP_MARKER_REQUESTED",
     "HOST_STOP_MARKER_UNCONFIRMED",
     "HOST_TERMINAL_OBSERVED",
+    "HOST_TERMINAL_PROBE_TRANSIENT",
     "HOST_WATCHDOG_JOIN_END",
     "HOST_WATCHDOG_JOIN_START",
     "H_HOST_LOG_EVENTS",
@@ -74,6 +75,7 @@ HOST_POLL_TICK = "host.poll.tick"
 HOST_PROGRESS_UNAVAILABLE = "host.progress.unavailable"
 HOST_PROVIDER_TRANSIENT = "host.provider.transient"
 HOST_TERMINAL_OBSERVED = "host.terminal.observed"
+HOST_TERMINAL_PROBE_TRANSIENT = "host.terminal_probe.transient"
 HOST_PROVIDER_ABSENT_OBSERVED = "host.provider_absent.observed"
 HOST_STOP_HANDOFF = "host.stop.handoff"
 HOST_WATCHDOG_JOIN_START = "host.watchdog_join.start"
@@ -94,6 +96,7 @@ H_HOST_LOG_EVENTS: frozenset[str] = frozenset(
         HOST_PROGRESS_UNAVAILABLE,
         HOST_PROVIDER_TRANSIENT,
         HOST_TERMINAL_OBSERVED,
+        HOST_TERMINAL_PROBE_TRANSIENT,
         HOST_PROVIDER_ABSENT_OBSERVED,
         HOST_STOP_HANDOFF,
         HOST_WATCHDOG_JOIN_START,
