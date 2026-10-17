@@ -608,3 +608,21 @@ def test_a_d1_error_after_the_capture_began_is_not_a_marker_probe_tick(
     assert not _terminal_probe_lines(records) and guard.control.records["stop"]["reason"] == (
         "cancelled"
     )
+
+
+def test_an_absent_pod_with_a_transient_probe_read_defers_to_the_next_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOR-1665 C7: a tick whose marker read raised is not a None, so provider absence is
+    deferred; the next tick re-reads the markers and the published terminal is collected."""
+    guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    provider.present = False
+    _script_collect(monkeypatch, [_timeout_error(), _COMPLETE])
+    with _warnings() as records:
+        result = run()
+    assert result["status"] == "terminal_collected" and result["failure_stages"] == []
+    assert result["collection"] == _COMPLETE and result["error_types"] == []
+    assert result["terminal_probe_transient_count"] == 1
+    assert clock[0] == 1, "the absence was deferred one poll interval, not named on tick one"
+    assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
+    assert guard.control.records["stop"]["reason"] == "capture_verified"

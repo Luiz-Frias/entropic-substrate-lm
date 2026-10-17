@@ -412,6 +412,7 @@ def run_probe_controller(
             stage = "provider_ownership"
             absent = _owned_pod_absent(guard, provider, pod_id, pod_name, account_id)
             stage = "terminal_capture"
+            transient_before = probe_tally.count
             collection = _probe_terminal(objects, guard, pod_id, pod_name, root, probe_tally)
             if collection is not None:
                 emit(
@@ -422,9 +423,12 @@ def run_probe_controller(
                     workload_verified=collection.get("workload_verified"),
                 )
                 break
-            if absent:
-                # The None, the account match and a terminal-capture attempt AFTER it
-                # (above) all hold: a published terminal is never shadowed (C7).
+            # A tick whose marker read raised did not return None: it is a transient, so the
+            # absence is deferred to the next tick, which re-asks the provider and re-reads
+            # the markers (FOR-1665). Otherwise the None, the account match and a
+            # terminal-capture attempt AFTER it (above) all hold: a published terminal is
+            # never shadowed (C7).
+            if absent and probe_tally.count == transient_before:
                 stage = "provider_absent"
                 emit("warning", HOST_PROVIDER_ABSENT_OBSERVED, pod_name=pod_name, pod_id=pod_id)
                 raise ProbeProviderAbsent
