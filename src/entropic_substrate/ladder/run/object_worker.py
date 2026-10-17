@@ -352,6 +352,25 @@ def run_object_worker(
                     "publication": publication,
                 },
             )
+            if sink is not None:
+                # FOR-1642 (DN-1643-PORT): the sealed checkpoint's custody evidence on the
+                # run itself, so the MLflow run answers "which checkpoints exist and where"
+                # without an R2 listing. Only after the checkpoint event was published, and
+                # only here: never for `started` or the final snapshot. The values are the
+                # snapshot MARKER identity publish_worker_snapshot returned (the identity
+                # materialize_worker_snapshot accepts, binding the sealed files' sha256s),
+                # and the SAME l3_seconds float the event's `publication` block carries
+                # (`float(tag) == publication.l3_seconds`): no new clock. Tag values are
+                # strings (MetricSink.annotate refuses anything else).
+                evidence = f"checkpoint/{total:08d}"
+                sink.annotate(
+                    {
+                        f"{evidence}/key": snapshot.key,
+                        f"{evidence}/sha256": snapshot.sha256,
+                        f"{evidence}/size_bytes": str(snapshot.size_bytes),
+                        f"{evidence}/publication_seconds": repr(l3_seconds),
+                    }
+                )
 
         def stop_requested() -> bool:
             """One bounded read per call site; never retries an absent marker.

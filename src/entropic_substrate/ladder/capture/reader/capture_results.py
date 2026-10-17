@@ -37,14 +37,27 @@ file in ``dest``" means "captured by a fully admissible pass", and the
 midway left the admissible files already moved into ``dest`` untracked, the next
 pass skipped them, and the CLI read that as "nothing new to capture".
 
-An H-tagged FINISHED run with no ``h-run-lifecycle-v1`` records is refused whatever produced
-it: a worker from before FOR-1639, and the local tracer (schema ``h-tiny-trace-v1``, run name
-``h-tiny-trace-<identity>``) when it mirrors to MLflow under ``ENTROPIC_MLFLOW_TINY=1``. That
-tracer run name carries no ``-tiny`` suffix, so the ``include_tiny`` gate, which runs before
-the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
-that bypasses ``object_worker`` the ``-tiny`` run-name suffix, capturing an experiment that
-holds such a run makes ``capture-results`` exit 2. This module carries no legacy arm and no
-skip for these runs.
+Status gate (DN-1642-FAILED-CAPTURE, conductor 2026-10-15, option A). The gate is an
+allowlist, lane-aware: the E lane admits ``FINISHED`` only; the H lane admits ``FINISHED``
+and ``FAILED``, because a failed H run that committed a step is evidence (the worker now
+terminates its MLflow run ``FAILED`` on its exception path and its ``run_end`` says
+``failed``). Every other status (``RUNNING``, ``SCHEDULED``, ``KILLED``) is skipped on both
+lanes before any tag is read or any run name validated. A ``FAILED`` run that is not
+``h-`` tagged is skipped without further checks, so the E lane observably keeps its
+FINISHED-only gate. The same admissibility predicate applies, so a ``FAILED`` H run that
+died before its first committed step, before ``run_start``, or without ``metrics.jsonl``
+is refused and fails the whole pass with exit 2, exactly as the same run would under
+``FINISHED``. ``capture_checkpoints`` keeps its FINISHED-only gate (H runs upload no
+checkpoints).
+
+An H-tagged run with no ``h-run-lifecycle-v1`` records is refused whatever produced it: a
+worker from before FOR-1639 is. The local tracer (schema ``h-tiny-trace-v1``) and the local
+``h-train-probe`` (schema ``h-train-probe-v1``) bypass ``object_worker`` and write none, so
+since FOR-1642 (TRACER-PARTITION, conductor 2026-10-14) they name their runs with the
+``-tiny`` suffix (``h-tiny-trace-<identity>-tiny``, ``h-train-probe-<identity>-tiny``): the
+``include_tiny`` gate, which runs before the lane partition, excludes them by default and,
+when opted in, they are refused here as lifecycle-less. This module carries no legacy arm
+and no skip for these runs.
 """
 
 from __future__ import annotations
@@ -75,6 +88,9 @@ _RESULTS_PREFIX = "results"
 _CHECKPOINT_PREFIX = "checkpoints"
 _FINAL_SUFFIX = "-final.pt"
 _TINY_SUFFIX = "-tiny"
+_FINISHED_STATUS = "FINISHED"
+_FAILED_STATUS = "FAILED"
+_CAPTURE_STATUSES = (_FINISHED_STATUS, _FAILED_STATUS)
 _SCHEMA_TAG = "schema"
 _H_SCHEMA_PREFIX = "h-"
 _H_METRICS_ARTIFACT = f"{_RESULTS_PREFIX}/metrics.jsonl"
@@ -281,7 +297,10 @@ def capture_finished_runs(
     *,
     include_tiny: bool = False,
 ) -> list[Path]:
-    """Download every FINISHED run's results JSONLs into ``dest``, atomically.
+    """Download every admitted run's results JSONLs into ``dest``, atomically.
+
+    Admitted means ``FINISHED`` (both lanes) or ``FAILED`` on the H lane only; see the
+    module docstring's status gate (DN-1642-FAILED-CAPTURE).
 
     The pass is atomic with respect to ``dest`` (FOR-1650): every file is
     downloaded and validated in the pass's staging directory
@@ -296,8 +315,8 @@ def capture_finished_runs(
 
     Runs are partitioned by their ``schema`` tag (see the module docstring):
     the E lane below is unchanged; an ``h-`` tagged run takes the H lane
-    through :func:`_capture_h_run`. The FINISHED, ``-tiny`` and run-name gates
-    run first, for both lanes.
+    through :func:`_capture_h_run`. The status, ``-tiny`` and run-name gates run
+    first (a ``FAILED`` run is admitted only if it is ``h-`` tagged).
     """
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -306,8 +325,16 @@ def capture_finished_runs(
     staging = _CapturePass(dest)
     for run in client.search_runs(experiment_ids, max_results=500):
         info = run.info
-        if info.status != "FINISHED":
+        # Allowlist, never a RUNNING denylist: SCHEDULED and KILLED are skipped on both
+        # lanes before any tag read (DN-1642-FAILED-CAPTURE).
+        if info.status not in _CAPTURE_STATUSES:
             continue
+        if info.status == _FAILED_STATUS:
+            # FAILED is admitted on the H lane only. The lane is decided first, with the
+            # unchanged tag reader, so a FAILED E run is skipped with no further check.
+            failed_tag = _run_schema_tag(run, info.run_id)
+            if failed_tag is None or not failed_tag.startswith(_H_SCHEMA_PREFIX):
+                continue
         if not include_tiny and info.run_name.endswith(_TINY_SUFFIX):
             continue
         run_name = _validated_run_name(info.run_name)

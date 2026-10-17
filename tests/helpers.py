@@ -13,10 +13,14 @@ import yaml
 from entropic_substrate.kernel.runtime.config import Config, DataConfig, ModelConfig, TrainConfig
 
 __all__ = [
+    "LIVE_GATE_BUCKET",
+    "LIVE_GATE_PREFIX",
     "assert_bitwise_equal",
     "assert_no_foreign_mlflow_stack",
     "capture_container_logs",
     "discover_host_port",
+    "list_keys_paginated",
+    "live_gate_run_prefix",
     "load_compose",
     "mlflow_command",
     "mlflow_service_config",
@@ -28,6 +32,42 @@ __all__ = [
 ]
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The live gate's own venue-split artifact destination (compose.yaml
+# --artifacts-destination, pinned by tests/test_compose_config.py). The server
+# proxies artifacts, so a run reports an mlflow-artifacts:/ URI; its R2 keys
+# live under "<prefix>/<experiment_id>/<run_id>/artifacts/..." (verified
+# 2026-08-17 and re-measured 2026-10-15 from the bucket listing).
+LIVE_GATE_BUCKET = "entropic-substrate-lm"
+LIVE_GATE_PREFIX = "mlflow-live-gate/"
+
+
+def live_gate_run_prefix(experiment_id: str, run_id: str) -> str:
+    """The ONE run's key prefix under the gate venue, never the venue itself.
+
+    MEASURED 2026-10-15 (FOR-1653): the venue held 1089 keys, so an
+    unpaginated ``list_objects_v2(Prefix=LIVE_GATE_PREFIX)`` returned the
+    first 1000 and the run under test sat on page 2; the gate went red with
+    ``keys=[]`` while the artifact was in R2. Scoping to the run bounds the
+    listing by that run's artifact count instead of the gate's history.
+    """
+    return f"{LIVE_GATE_PREFIX}{experiment_id}/{run_id}/"
+
+
+def list_keys_paginated(s3: Any, bucket: str, prefix: str) -> list[str]:
+    """Every key under ``prefix``, through the list_objects_v2 paginator.
+
+    One ``list_objects_v2`` call returns at most 1000 keys; the paginator
+    follows ``NextContinuationToken`` so a truncated first page is never
+    mistaken for the whole listing (see ``live_gate_run_prefix``).
+    """
+    paginator = s3.get_paginator("list_objects_v2")
+    return [
+        obj["Key"]
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix)
+        for obj in page.get("Contents", [])
+    ]
+
 
 # The label podman/podman-compose stamps on every container of a compose
 # service. Verified empirically (2026-08-14, podman 6.0.1 client / 5.8.3 server,

@@ -16,7 +16,16 @@ from entropic_substrate.kernel.artifacts import (
     read_d1_artifact_bytes,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+from entropic_substrate.ladder.capture.reader.sinks import (
+    CONFIG_HASH_TAG,
+    EXP_TAG,
+    git_sha,
+    h_config_hash,
+)
 from entropic_substrate.ladder.run.generation import read_generation, run_probe_generation
+from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
 
@@ -140,18 +149,65 @@ def cmd_sentence(args: argparse.Namespace) -> int:
                     raise ValueError("pause point must select a declared seal boundary")
                 pause = (phase, step)
             resume = None if row["resume"] is None else artifact_from_mapping(row["resume"])
+            # FOR-1644: the probe is tracked like the other H producers. The results file
+            # is a SIBLING of the output root, never inside it: run_probe_training
+            # refuses a fresh run whose root is non-empty, and JsonlSink creates its
+            # parent. A sibling of an output root that normalization keeps under --root
+            # stays under --root. JsonlSink appends, so a FRESH run over a results file a
+            # previous run left is refused here (a validation refusal, exit 2) instead of
+            # silently mixing two runs; a RESUME continues its paused invocation's file.
+            results_path = output.parent / f"{output.name}.observability" / "metrics.jsonl"
+            if resume is None and results_path.exists():
+                raise ValueError("fresh probe results file already exists; resume it or remove it")
+            # The sink is built only here, after every validation refusal and after the
+            # stage leaves "validation": a sink-construction failure (MlflowStartupError
+            # is a RuntimeError) is an execution defect, never an invalid request.
             stage = "execution"
-            progress = run_probe_training(
-                profile,
-                source,
-                output,
-                max_source_bytes=source_limit,
-                max_artifact_bytes=artifact_limit,
-                resume=resume,
-                stop_after_seal=None
-                if pause is None
-                else lambda phase, step: (phase, step) == pause,
+            chash = h_config_hash(profile)
+            sink = build_sink_for_run(
+                TrackingRunDescriptor(
+                    # `-tiny` suffix: TRACER-PARTITION (FOR-1642). The probe writes no
+                    # h-run-lifecycle-v1 records, so capture_results must keep it off the
+                    # H lane by default, exactly as for the local tiny tracer.
+                    run_name=f"h-train-probe-{profile.identity}-tiny",
+                    tiny=True,
+                    params={
+                        EXP_TAG: profile.name,
+                        "seed": profile.seed,
+                        CONFIG_HASH_TAG: chash,
+                        "git_sha": git_sha(),
+                        "run_class": profile.run_class,
+                        "precision": profile.precision,
+                    },
+                    tags={
+                        "schema": "h-train-probe-v1",
+                        EXP_TAG: profile.name,
+                        CONFIG_HASH_TAG: chash,
+                    },
+                ),
+                results_path=results_path,
+                metric_extractor=HTrainingStepExtractor(warmup_steps=profile.schedule.warmup_steps),
             )
+            # DN-1643-PORT: FINISHED iff run_probe_training RETURNED; every raised exit,
+            # BaseException included, finishes the sink FAILED exactly once and leaves
+            # the exception to the handler below untouched.
+            terminal_status = "FAILED"
+            try:
+                progress = run_probe_training(
+                    profile,
+                    source,
+                    output,
+                    max_source_bytes=source_limit,
+                    max_artifact_bytes=artifact_limit,
+                    resume=resume,
+                    stop_after_seal=None
+                    if pause is None
+                    else lambda phase, step: (phase, step) == pause,
+                    sink=sink,
+                )
+                terminal_status = "FINISHED"
+            finally:
+                sink.finish(status=terminal_status)
             result = {
                 "status": progress.status,
                 "scientific_authority": "none",

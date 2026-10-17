@@ -12,6 +12,19 @@ Adapters behind this port: :class:`entropic_substrate.ladder.capture.adapters.js
 (authoritative), :class:`entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`
 (best-effort), fanned out by
 :class:`entropic_substrate.ladder.capture.adapters.composite.CompositeSink`.
+
+**Amendment 2026-10-15 (FOR-1642/1643/1644, DN-1643-PORT, operator ruling 2026-10-14,
+option A; same shape as DN-1637-DOOR):** the door gains two ADDITIVE members and
+nothing else. ``annotate(tags)`` attaches ``str -> str`` run tags (the H worker's
+per-checkpoint evidence): :class:`~entropic_substrate.ladder.capture.adapters.jsonl.JsonlSink`
+appends ``{"event": "annotate", **tags}`` (no ``schema`` key, so no schema-keyed reader
+counts it), :class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink` sets one
+run tag per key, best-effort and counted like every other write after startup.
+``finish(*, status="FINISHED")`` takes the closed vocabulary ``{"FINISHED", "FAILED"}``:
+:class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink` terminates the run
+with it, :class:`~entropic_substrate.ladder.capture.adapters.jsonl.JsonlSink` ignores it,
+and :class:`~entropic_substrate.ladder.capture.adapters.composite.CompositeSink` fans both
+out. A no-argument ``finish()`` is byte-identical to the pre-amendment one on every adapter.
 """
 
 from __future__ import annotations
@@ -35,6 +48,13 @@ class MetricSink(Protocol):
         """Attach a file (a checkpoint) to this run."""
         ...
 
-    def finish(self) -> None:
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        """Attach ``str -> str`` run tags (DN-1643-PORT). The keys ``event`` and ``schema``
+        are reserved for the record stream and refused."""
+        ...
+
+    def finish(self, *, status: str = "FINISHED") -> None:
         """Close out the run. Idempotent — safe to call more than once."""
+        # DN-1643-PORT: ``status`` is "FINISHED" (default) or "FAILED"; any other value is
+        # refused with a ValueError before any side effect.
         ...

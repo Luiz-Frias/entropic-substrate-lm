@@ -44,6 +44,11 @@ from typing import Any, Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit, urlunsplit
 
 from entropic_substrate.kernel.runtime.logging import logger
+from entropic_substrate.ladder.capture.adapters.jsonl import (
+    DEFAULT_FINISH_STATUS,
+    require_annotation,
+    require_finish_status,
+)
 from entropic_substrate.ladder.capture.ports.run_descriptor import (
     LegacyMetricExtractor,
     MetricExtractor,
@@ -739,6 +744,26 @@ class MlflowSink:
                 f"mlflow: artifact upload failed for {path} (#{failed}): {exc}"
             )
 
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        """Set one run tag per key (DN-1643-PORT), best-effort after startup.
+
+        The mapping is validated first and a contract violation raises (a caller
+        defect, not a tracking blip). Each ``set_tag`` is then written synchronously on
+        the caller's thread with the same call shape as this class's other tag writes,
+        never through the metric writer queue, so the drain accounting is untouched. A
+        client failure is counted on the existing failed-writes counter and logged as
+        the existing ``sink.write_failed`` event; it never raises and never skips the
+        remaining keys.
+        """
+        for key, value in require_annotation(tags).items():
+            try:
+                self._client.set_tag(self._run_id, key, value)
+            except Exception as exc:
+                failed = self._count_failed(1)
+                logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
+                    f"mlflow: run tag {key!r} failed (#{failed}): {exc}"
+                )
+
     def _log_dvc_pointer_if_present(self, path: Path) -> None:
         """Best-effort: if ``<path>.dvc`` already exists, log its md5 + remote.
 
@@ -764,7 +789,10 @@ class MlflowSink:
         if remote:
             self._client.set_tag(self._run_id, f"dvc/{path.name}_remote", remote)
 
-    def finish(self) -> None:
+    def finish(self, *, status: str = DEFAULT_FINISH_STATUS) -> None:
+        # DN-1643-PORT: validated at entry, before the idempotence flag, so a refused
+        # status changes no state. The first finish's status wins; later calls no-op.
+        require_finish_status(status)
         if self._finished:
             return
         self._finished = True
@@ -863,7 +891,7 @@ class MlflowSink:
                     "tracking write(s) — results/*.jsonl is authoritative and complete "
                     "regardless; MLflow is the derived, best-effort view."
                 )
-            self._client.set_terminated(self._run_id, status="FINISHED")
+            self._client.set_terminated(self._run_id, status=status)
         except Exception as exc:
             self._count_failed(1)
             logger.warning(f"mlflow: finish() failed: {exc}")

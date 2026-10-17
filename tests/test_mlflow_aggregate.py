@@ -443,3 +443,84 @@ def test_cli_mlflow_aggregate_reports_mlflow_exception_as_controlled_refusal(
         ["mlflow-aggregate", "--tracking-uri", f"sqlite:///{tmp_path}/mlflow.db"]
     )
     assert code == 2
+
+
+# ------------------------------------------------ FOR-1642: H leaf runs (K16, G11)
+def _h_leaf(client: FakeMlflowClient, tmp_path: Path, *, seed: int) -> str:
+    """One H run created through the REAL descriptor path: ``build_sink_for_run`` over a
+    fake client, with the config_hash derived from a real profile by ``h_config_hash``."""
+    from dataclasses import replace
+
+    from tests.test_sentence_profile import profile as make_profile
+
+    from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+    from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
+    from entropic_substrate.ladder.capture.reader.sinks import (
+        CONFIG_HASH_TAG,
+        EXP_TAG,
+        h_config_hash,
+    )
+
+    base = make_profile()
+    swept = replace(base, seed=seed)
+    chash = h_config_hash(swept)
+    sink = build_sink_for_run(
+        TrackingRunDescriptor(
+            run_name=f"h-worker-{swept.identity}",
+            tiny=True,
+            params={EXP_TAG: swept.name, "seed": swept.seed, CONFIG_HASH_TAG: chash},
+            tags={
+                "schema": "h-probe-worker-result-v1",
+                EXP_TAG: swept.name,
+                CONFIG_HASH_TAG: chash,
+            },
+        ),
+        results_path=tmp_path / f"h-leaf-{seed}.jsonl",
+        client=client,
+    )
+    sink.finish()
+    return sink.best_effort[0].run_id  # type: ignore[attr-defined]
+
+
+def test_h_seed_runs_share_one_group_and_the_group_key_is_the_config_hash(
+    tmp_path: Path,
+) -> None:
+    """M1: runs created for sweep seeds of ONE H profile are leaves of ONE group.
+
+    A grouping key that included ``seed`` (the failure ``h_config_hash``'s docstring
+    names) would split these three runs into three groups of one.
+    """
+    from entropic_substrate.ladder.capture.reader.mlflow_aggregate import (
+        _group_by_config_hash,  # pyright: ignore[reportPrivateUsage]
+        _leaf_runs,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    client = FakeMlflowClient()
+    exp_id = client.create_experiment("exp")
+    ids = [_h_leaf(client, tmp_path, seed=seed) for seed in (1, 2, 3)]
+    groups = _group_by_config_hash(_leaf_runs(client, exp_id))
+    assert len(groups) == 1
+    ((chash, runs),) = groups.items()
+    assert len(chash) == 12 and sorted(r.info.run_id for r in runs) == sorted(ids)
+
+
+def test_aggregate_over_complete_h_leaves_creates_no_parent_and_writes_no_tag(
+    tmp_path: Path,
+) -> None:
+    """K16 baseline (G11): three H leaves sharing a config_hash, n_seeds equal to the
+    leaf count, so aggregate() reaches the metrics-completeness branch. H leaves carry
+    none of DEFAULT_METRICS, so nothing is aggregated: no parent run is created and no
+    tag is written on any leaf (the H aggregation itself is FOR-1648)."""
+    client = FakeMlflowClient()
+    client.create_experiment("exp")
+    for seed in (1, 2, 3):
+        _h_leaf(client, tmp_path, seed=seed)
+    runs_before = len(client._runs)
+    tags_before = {run_id: dict(run.data.tags) for run_id, run in client._runs.items()}
+
+    summaries = aggregate(client, experiment_name="exp", n_seeds=3)
+
+    assert summaries == []
+    assert len(client._runs) == runs_before
+    assert not any(r.data.tags.get(PARENT_TAG) == "1" for r in client._runs.values())
+    assert {run_id: dict(run.data.tags) for run_id, run in client._runs.items()} == tags_before

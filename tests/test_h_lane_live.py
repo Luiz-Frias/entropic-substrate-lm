@@ -186,3 +186,121 @@ def test_live_h_worker_run_is_captured_by_the_capture_lane(
     assert end["status"] == "ok" and end["result_status"] == "probe_workload_complete"
     # a second pass over the same destination is a clean no-op, not a re-capture
     assert capture_finished_runs(client, [experiment], tmp_path / "captured") == []
+
+
+# ------------------------------------------------------------------ FOR-1642 / 1643 / 1644
+# The H run surface observed on a REAL server through the real client: the descriptor
+# params and tags, the per-checkpoint evidence tags, and the terminal status by outcome.
+# Each test uses its own experiment name (never the default one) and writes the observed
+# values to results/ (gitignored) because the container gate's pytest report never
+# surfaces a passing test's stdout.
+SURFACE_EVIDENCE_FILE = REPO_ROOT / "results" / "h-run-surface-live.txt"
+
+
+def _run_local_tiny_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, store: _ObjectStore, label: str
+) -> tuple[int, str, str, StringIO]:
+    experiment = f"h-surface-live-{label}-{uuid4().hex}"
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", experiment)
+    monkeypatch.setenv("ENTROPIC_MLFLOW_TINY", "1")
+    request, inputs = prepared(tmp_path)
+    marker = publish_probe_request(store, request, inputs)
+    workspace = tmp_path / f"{label}-worker"
+    workspace.mkdir()
+    err = StringIO()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=store,
+        stdout=StringIO(),
+        stderr=err,
+    )
+    log = workspace.parent / f"{workspace.name}.observability" / "worker-log.jsonl"
+    rows = [json.loads(line) for line in log.read_text().splitlines() if line]
+    (mlflow_row,) = [row for row in rows if row.get("event") == "mlflow.run"]
+    return status, experiment, mlflow_row["run_id"], err
+
+
+def test_live_h_worker_run_carries_the_descriptor_and_the_checkpoint_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M2/M4 (live arms): drop the config_hash tag or make annotate a no-op and this is RED."""
+    status, experiment, run_id, err = _run_local_tiny_worker(
+        tmp_path, monkeypatch, _ObjectStore(), "ok"
+    )
+    assert status == 0, err.getvalue()
+    import mlflow.tracking
+
+    run = mlflow.tracking.MlflowClient(tracking_uri=_tracking_uri()).get_run(run_id)
+    (tmp_path / "again").mkdir()
+    profile = prepared(tmp_path / "again")[0].profile
+    from entropic_substrate.ladder.capture.reader.sinks import h_config_hash
+
+    chash = h_config_hash(profile)
+    params, tags = run.data.params, run.data.tags
+    assert params["exp"] == profile.name and params["seed"] == str(profile.seed)
+    assert params["config_hash"] == chash
+    assert params["run_class"] == "local_tiny" and params["precision"] == profile.precision
+    assert "git_sha" not in params and "image" not in params  # G1: local_tiny has neither
+    assert tags["exp"] == profile.name and tags["config_hash"] == chash
+    assert tags["schema"] == "h-probe-worker-result-v1"
+    checkpoint_tags = {k: v for k, v in tags.items() if k.startswith("checkpoint/")}
+    assert checkpoint_tags, "no checkpoint evidence tags reached the server"
+    steps = sorted({k.split("/")[1] for k in checkpoint_tags})
+    for step in steps:
+        assert {
+            f"checkpoint/{step}/{f}" for f in ("key", "sha256", "size_bytes", "publication_seconds")
+        } <= set(checkpoint_tags)
+        assert len(checkpoint_tags[f"checkpoint/{step}/sha256"]) == 64
+        assert float(checkpoint_tags[f"checkpoint/{step}/publication_seconds"]) > 0
+    assert run.info.status == "FINISHED"
+    SURFACE_EVIDENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SURFACE_EVIDENCE_FILE.write_text(
+        f"experiment={experiment}\nrun_id={run_id}\nstatus={run.info.status}\n"
+        f"params={json.dumps(dict(params), sort_keys=True)}\n"
+        f"tags={json.dumps({k: v for k, v in tags.items() if not k.startswith('mlflow.')}, sort_keys=True)}\n"
+    )
+
+
+def test_live_a_failed_h_worker_run_terminates_failed_and_is_captured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M5 (live arm) + M7 (live arm): a forced failure AFTER run_start terminates the
+    server-side run FAILED, and capture_finished_runs admits it on the H lane."""
+    from tests.test_h_worker_command_observability import _CheckpointUploadFails
+
+    status, experiment, run_id, _ = _run_local_tiny_worker(
+        tmp_path, monkeypatch, _CheckpointUploadFails(), "failed"
+    )
+    assert status == 2
+    import mlflow.tracking
+
+    client = build_mlflow_client(_tracking_uri())
+    run = mlflow.tracking.MlflowClient(tracking_uri=_tracking_uri()).get_run(run_id)
+    assert run.info.status == "FAILED"
+
+    captured = capture_finished_runs(client, [experiment], tmp_path / "captured")
+    names = sorted(path.name for path in captured)
+    assert any(name.endswith("-metrics.jsonl") for name in names), names
+    (metrics,) = [path for path in captured if path.name.endswith("-metrics.jsonl")]
+    assert final_h_run_end(metrics)["status"] == "failed"
+    with SURFACE_EVIDENCE_FILE.open("a") as handle:
+        handle.write(f"failed_experiment={experiment}\nfailed_run_id={run_id}\n")
+        handle.write(f"failed_status={run.info.status}\ncaptured={names}\n")

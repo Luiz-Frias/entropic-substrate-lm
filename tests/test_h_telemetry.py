@@ -230,3 +230,26 @@ def test_valid_multibyte_utf8_is_not_mistaken_for_corruption(tmp_path: Path, rea
         b"\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True).encode() for r in rows) + b"\n"
     )
     reader(path)
+
+
+def test_annotate_records_do_not_disturb_the_admissibility_predicate(tmp_path: Path) -> None:
+    """FOR-1642 (DN-1643-PORT): ``MetricSink.annotate`` lands in the authoritative
+    JSONL as ``{"event": "annotate", **tags}`` with NO ``schema`` key. The predicate
+    counts lifecycle records by schema and committed steps by schema, so annotate
+    rows between them change neither the admissibility nor the returned run_end."""
+    checkpoint = {
+        "event": "annotate",
+        "checkpoint/00000002/key": "run/snapshots/checkpoint-00000002.json",
+        "checkpoint/00000002/sha256": "ab" * 32,
+        "checkpoint/00000002/size_bytes": "812",
+        "checkpoint/00000002/publication_seconds": "0.25",
+    }
+    path = _write(
+        tmp_path / "metrics.jsonl", [_start(), _step(), checkpoint, _step(step=2), _end()]
+    )
+    assert final_h_run_end(path) == _end()
+    # An annotate row never counts as the evidence it sits beside: a file holding
+    # only annotate rows between the lifecycle pair is still "never trained".
+    bare = _write(tmp_path / "bare.jsonl", [_start(), checkpoint, _end()])
+    with pytest.raises(TelemetryGap, match=r"at least one committed h-training-step-v2"):
+        final_h_run_end(bare)

@@ -87,16 +87,21 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     # rows to the sink is a small change"): the sink now also mirrors each
     # sealed evaluation report, so the training assertions filter on their
     # schema and the evaluation rows are asserted present, not tolerated.
-    training = [r for r in records if r["schema"] == "h-training-step-v2"]
-    evaluations = [r for r in records if r["schema"] == "h-predictive-evaluation-v1"]
+    training = [r for r in records if r.get("schema") == "h-training-step-v2"]
+    evaluations = [r for r in records if r.get("schema") == "h-predictive-evaluation-v1"]
     assert training, "no committed H training-step rows reached the sink"
     assert evaluations, "no sealed evaluation reports reached the sink"
     # RESTATED 2026-10-14 (FOR-1639): the worker also writes its two
     # h-run-lifecycle-v1 records through the sink, so totality now counts them.
     # The all-schemas guard is kept, not dropped: every record is one of the
     # three known schemas.
-    lifecycle = [r for r in records if r["schema"] == "h-run-lifecycle-v1"]
-    assert len(training) + len(evaluations) + len(lifecycle) == len(records)
+    lifecycle = [r for r in records if r.get("schema") == "h-run-lifecycle-v1"]
+    # RESTATED 2026-10-15 (FOR-1642, DN-1643-PORT): the worker also annotates each sealed
+    # checkpoint through the sink; those rows are `{"event": "annotate", ...}` and carry
+    # no `schema` key. The totality guard is kept with a fourth, named bucket.
+    annotations = [r for r in records if r.get("event") == "annotate"]
+    assert annotations and all("schema" not in r for r in annotations)
+    assert len(training) + len(evaluations) + len(lifecycle) + len(annotations) == len(records)
     # FOR-1639: exactly one run_start, first, and one run_end, last.
     assert [r["event"] for r in lifecycle] == ["run_start", "run_end"]
     assert records[0]["event"] == "run_start"
@@ -210,6 +215,9 @@ class _ListSink:
 
     def __init__(self, *, raise_on_event: str | None = None) -> None:
         self.records: list[Mapping[str, Any]] = []
+        # DN-1643-PORT: annotate rows are kept apart from `records`, which stays the
+        # ordered schema-bearing stream every existing assertion indexes.
+        self.annotations: list[dict[str, str]] = []
         self.raise_on_event = raise_on_event
 
     def log(self, record: Mapping[str, Any]) -> None:
@@ -220,7 +228,10 @@ class _ListSink:
     def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
         raise AssertionError("the lifecycle records never use log_artifact")
 
-    def finish(self) -> None:
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        self.annotations.append(dict(tags))
+
+    def finish(self, *, status: str = "FINISHED") -> None:
         raise AssertionError("run_object_worker does not own the sink's lifecycle")
 
 
@@ -561,3 +572,302 @@ def test_a_failed_runs_file_stays_admissible_and_says_failed(tmp_path: Path) -> 
 
     end = final_h_run_end(metrics)
     assert end["status"] == "failed" and end["successful_optimizer_steps"] is None
+
+
+# ------------------------------------------------------------------ FOR-1642 / FOR-1643
+# Checkpoint evidence per sealed checkpoint (DN-1643-PORT) and the worker's terminal
+# status by outcome. The evidence is the SNAPSHOT MARKER identity that
+# publish_worker_snapshot returns (the identity materialize_worker_snapshot accepts),
+# annotated only after the checkpoint event is published, never for the final snapshot.
+
+_EVIDENCE_FIELDS = ("key", "sha256", "size_bytes", "publication_seconds")
+
+
+class _OrderedSink(_ListSink):
+    """Remembers which objects were already published when each annotate arrived."""
+
+    def __init__(self, objects: _ObjectStore) -> None:
+        super().__init__()
+        self._objects = objects
+        self.published_at_annotate: list[list[str]] = []
+
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        self.published_at_annotate.append(list(self._objects.publishes))
+        super().annotate(tags)
+
+
+def _checkpoint_events(objects: _ObjectStore, prefix: str) -> dict[int, dict[str, Any]]:
+    events: dict[int, dict[str, Any]] = {}
+    for key, payload in objects.values.items():
+        match = re.fullmatch(re.escape(prefix) + r"/checkpoint-(\d{8})\.json", key)
+        if match:
+            events[int(match.group(1))] = json.loads(payload)
+    return events
+
+
+def test_every_sealed_checkpoint_is_evidenced_on_the_run_by_its_snapshot_marker(
+    tmp_path: Path,
+) -> None:
+    """M4 (worker half): one annotate per sealed checkpoint, the four tags equal to the
+    snapshot marker the checkpoint event records, publication_seconds the event's own
+    measured l3_seconds (equality under float(), so no new clock), and the annotation
+    arrives only after the checkpoint event was published."""
+    request, objects, marker, root = _worker(tmp_path)
+    sink = _OrderedSink(objects)
+
+    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+
+    events = _checkpoint_events(objects, request.prefix)
+    assert events, "the fast profile must seal at least one checkpoint"
+    assert len(sink.annotations) == len(events)  # none for `started` or the final snapshot
+    for annotation, (total, event), published in zip(
+        sink.annotations, sorted(events.items()), sink.published_at_annotate, strict=True
+    ):
+        base = f"checkpoint/{total:08d}"
+        assert set(annotation) == {f"{base}/{field}" for field in _EVIDENCE_FIELDS}
+        assert all(type(v) is str for v in annotation.values())
+        snapshot = event["snapshot"]
+        assert snapshot["key"] == f"{request.prefix}/snapshots/checkpoint-{total:08d}.json"
+        assert annotation[f"{base}/key"] == snapshot["key"]
+        assert annotation[f"{base}/sha256"] == snapshot["sha256"]
+        assert annotation[f"{base}/size_bytes"] == str(snapshot["size_bytes"])
+        assert (
+            float(annotation[f"{base}/publication_seconds"]) == event["publication"]["l3_seconds"]
+        )
+        assert f"{request.prefix}/checkpoint-{total:08d}.json" in published
+
+
+def test_checkpoint_evidence_lands_in_the_authoritative_jsonl_and_leaves_it_admissible(
+    tmp_path: Path,
+) -> None:
+    _, objects, marker, root = _worker(tmp_path)
+    metrics = tmp_path / "observability" / "metrics.jsonl"
+
+    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=JsonlSink(metrics))
+
+    rows = [json.loads(line) for line in metrics.read_text().splitlines() if line]
+    annotations = [r for r in rows if r.get("event") == "annotate"]
+    assert annotations and all("schema" not in r for r in annotations)
+    assert any(k.endswith("/sha256") for k in annotations[0])
+    assert final_h_run_end(metrics)["status"] == "ok"
+
+
+class _RecordingSink:
+    """Wraps the REAL sink (so the run is exercised end to end) and records the lifecycle."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.finishes: list[str] = []
+        self.annotations: list[dict[str, str]] = []
+
+    def log(self, record: Mapping[str, Any]) -> None:
+        self.inner.log(record)
+
+    def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
+        self.inner.log_artifact(path, artifact_path=artifact_path)
+
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        self.annotations.append(dict(tags))
+        self.inner.annotate(tags)
+
+    def finish(self, *, status: str = "FINISHED") -> None:
+        self.finishes.append(status)
+        self.inner.finish(status=status)
+
+
+def _command(
+    tmp_path: Path, store: _ObjectStore, monkeypatch: pytest.MonkeyPatch, name: str
+) -> tuple[list[_RecordingSink], int, StringIO, Path]:
+    from entropic_substrate.ladder.run import worker_command
+
+    request, inputs = prepared(tmp_path)
+    marker = publish_probe_request(store, request, inputs)
+    workspace = tmp_path / name
+    workspace.mkdir()
+    built: list[_RecordingSink] = []
+    real = worker_command.build_sink_for_run
+
+    def spy(*args: Any, **kwargs: Any) -> _RecordingSink:
+        built.append(_RecordingSink(real(*args, **kwargs)))
+        return built[-1]
+
+    monkeypatch.setattr(worker_command, "build_sink_for_run", spy)
+    error = StringIO()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=store,
+        stdout=StringIO(),
+        stderr=error,
+    )
+    return built, status, error, tmp_path / f"{name}.observability" / "metrics.jsonl"
+
+
+def test_a_returned_worker_finishes_its_sink_finished_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built, status, error, metrics = _command(tmp_path, _ObjectStore(), monkeypatch, "ok-worker")
+    assert status == 0, error.getvalue()
+    (sink,) = built
+    assert sink.finishes == ["FINISHED"]
+    assert sink.annotations, "the command threads the sink the evidence is annotated on"
+    assert final_h_run_end(metrics)["status"] == "ok"
+
+
+def test_a_raising_worker_finishes_its_sink_failed_and_keeps_its_exit_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M5: the run terminates FAILED on the exception path, the original exception still
+    reaches the outer handler unchanged (stage worker_execution, exit 2), and the run_end
+    in the authoritative JSONL says failed."""
+    built, status, error, metrics = _command(
+        tmp_path, _CheckpointUploadFails(), monkeypatch, "failing-worker"
+    )
+    assert status == 2
+    report = json.loads(error.getvalue())
+    assert report["stage"] == "worker_execution" and report["error_type"] == "RuntimeError"
+    (sink,) = built
+    assert sink.finishes == ["FAILED"]
+    assert final_h_run_end(metrics)["status"] == "failed"
+
+
+@pytest.mark.parametrize("exc", [KeyboardInterrupt(), SystemExit(4)])
+def test_an_interrupted_worker_finishes_its_sink_failed_and_the_interrupt_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exc: BaseException
+) -> None:
+    """G2: an `except Exception: failed = True` shape would terminate an interrupted run
+    FINISHED. Every raised exit, BaseException included, is FAILED."""
+    from entropic_substrate.ladder.run import worker_command
+
+    def interrupt(*_a: object, **_k: object) -> object:
+        raise exc
+
+    monkeypatch.setattr(worker_command, "run_object_worker", interrupt)
+    store = _ObjectStore()
+    built: list[_RecordingSink] = []
+    real = worker_command.build_sink_for_run
+
+    def spy(*args: Any, **kwargs: Any) -> _RecordingSink:
+        built.append(_RecordingSink(real(*args, **kwargs)))
+        return built[-1]
+
+    monkeypatch.setattr(worker_command, "build_sink_for_run", spy)
+    request, inputs = prepared(tmp_path)
+    marker = publish_probe_request(store, request, inputs)
+    workspace = tmp_path / "interrupted-worker"
+    workspace.mkdir()
+    with pytest.raises(type(exc)):
+        run_worker_command(
+            [
+                "run",
+                "--repo-root",
+                str(tmp_path),
+                "--max-object-bytes",
+                "10000000",
+                "--max-objects",
+                "100",
+                "--workspace-root",
+                str(workspace),
+                "--request-key",
+                marker.key,
+                "--request-sha256",
+                marker.sha256,
+                "--request-size",
+                str(marker.size_bytes),
+                "--local-tiny",
+            ],
+            environ={},
+            objects=store,
+            stdout=StringIO(),
+            stderr=StringIO(),
+        )
+    (sink,) = built
+    assert sink.finishes == ["FAILED"]
+
+
+def test_a_refused_request_builds_no_run_and_finishes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K13: the admission-failure path builds no sink, so nothing is created to finish."""
+    from entropic_substrate.ladder.run import worker_command
+
+    built: list[object] = []
+    monkeypatch.setattr(worker_command, "build_sink_for_run", lambda *a, **k: built.append((a, k)))
+    request, inputs = prepared(tmp_path)
+    store = _ObjectStore()
+    marker = publish_probe_request(store, request, inputs)
+    workspace = tmp_path / "refused-worker-2"
+    workspace.mkdir()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+        ],
+        environ={"RUNPOD_POD_ID": "test-owned-pod"},
+        objects=store,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    assert status == 2 and built == []
+
+
+def test_checkpoint_evidence_reaches_the_mlflow_run_tags_through_the_real_adapters(
+    tmp_path: Path,
+) -> None:
+    """M4: the worker's annotate lands as run tags on a (fake-client) MLflow run, and the
+    composite carries the same evidence into the authoritative JSONL."""
+    from tests.test_sinks import FakeMlflowClient
+
+    from entropic_substrate.ladder.capture.adapters.composite import CompositeSink
+    from entropic_substrate.ladder.capture.adapters.mlflow import MlflowSink
+
+    request, objects, marker, root = _worker(tmp_path)
+    client = FakeMlflowClient()
+    mlflow = MlflowSink(
+        tracking_uri="http://fake", experiment_name="exp", run_name="run", client=client
+    )
+    metrics = tmp_path / "observability" / "metrics.jsonl"
+    sink = CompositeSink(JsonlSink(metrics), mlflow)
+
+    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+    sink.finish()
+
+    tags = client._runs[mlflow.run_id].data.tags
+    events = _checkpoint_events(objects, request.prefix)
+    assert events
+    for total, event in events.items():
+        base = f"checkpoint/{total:08d}"
+        assert tags[f"{base}/key"] == event["snapshot"]["key"]
+        assert tags[f"{base}/sha256"] == event["snapshot"]["sha256"]
+        assert float(tags[f"{base}/publication_seconds"]) == event["publication"]["l3_seconds"]
+    assert mlflow.failed_writes == 0

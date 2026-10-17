@@ -59,7 +59,7 @@ import json
 import os
 import subprocess  # nosec B404 -- git_sha() only, fixed argv, see its own nosec
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from entropic_substrate.kernel.runtime.config import Config
 from entropic_substrate.kernel.runtime.paths import RepoLayoutError, repo_root
@@ -73,6 +73,11 @@ from entropic_substrate.ladder.capture.ports.run_descriptor import (
     MetricExtractor,
     TrackingRunDescriptor,
 )
+
+if TYPE_CHECKING:
+    # Annotation only. `core.sentence.profile` loads torch; this module must not
+    # (tests/test_h_run_descriptor.py pins that `import ...reader.sinks` leaves torch out).
+    from entropic_substrate.core.sentence.profile import HProfile
 
 __all__ = [
     "MLFLOW_EXPERIMENT_ENV",
@@ -215,6 +220,29 @@ def config_hash(cfg: Config) -> str:
     payload = cfg.to_dict()
     payload["train"] = {k: v for k, v in payload["train"].items() if k != "seed"}
     serialized = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:12]
+
+
+def h_config_hash(profile: HProfile) -> str:
+    """The H run grouping key: ``sha256(canonical manifest minus the sweep seed)[:12]``.
+
+    FOR-1642 (K7, G8). The H counterpart of :func:`config_hash` for a run built from an
+    :class:`~entropic_substrate.core.sentence.profile.HProfile`. ``HProfile.identity``
+    hashes the WHOLE manifest, so it differs per seed and would make every seed of a
+    sweep its own group of one, the failure :func:`config_hash`'s docstring names. The
+    top-level ``seed`` (the sweep axis) is therefore removed; ``source_seed`` is KEPT, so
+    runs on differently sampled sources do not group (conductor ruling 2026-10-14).
+
+    Computed from ``profile.manifest`` (the dict ``identity`` itself hashes) with the same
+    serialization as ``identity`` (sorted keys, compact separators). Changing it silently
+    would split every seed group across image builds; a golden value pins it in
+    ``tests/test_h_run_descriptor.py``. Same 12 lowercase hex shape as :func:`config_hash`,
+    which ``mlflow_aggregate``'s boundary regex requires.
+
+    Deliberately NOT in ``__all__``: that tuple is the pinned 18-name compat surface.
+    """
+    manifest = {key: value for key, value in profile.manifest.items() if key != "seed"}
+    serialized = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:12]
 
 
