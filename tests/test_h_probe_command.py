@@ -11,6 +11,7 @@ from tests.test_h_probe_launch import launch
 
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import WatchdogProcessConfig
+from entropic_substrate.ladder.run.worker import h_probe_command
 from entropic_substrate.ladder.run.worker.h_probe_command import run_probe_command
 from entropic_substrate.ladder.run.worker.h_probe_controller import ProbeControllerFailure
 
@@ -159,3 +160,20 @@ def test_invalid_launch_never_reaches_provider_or_guard(
     assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) != 0
     assert stdout.getvalue() == ""
     assert not (tmp_path / "workspace/control").exists()
+
+
+def test_main_configures_the_substrate_before_it_runs_the_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C10: ``main`` is the entry point; ``configure_logging()`` strictly precedes the run and
+    the run receives the argv it was given, so the command's own contract is unchanged."""
+    order: list[object] = []
+    monkeypatch.setattr(h_probe_command, "configure_logging", lambda: order.append("logging"))
+
+    def run(argv: object, *, environ: object) -> int:
+        order.append(("run", list(argv)))  # type: ignore[call-overload]
+        return 7
+
+    monkeypatch.setattr(h_probe_command, "run_probe_command", run)
+    assert h_probe_command.main(["--flag", "x"]) == 7
+    assert order == ["logging", ("run", ["--flag", "x"])]

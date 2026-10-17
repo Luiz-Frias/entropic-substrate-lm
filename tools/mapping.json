@@ -2004,13 +2004,35 @@
       "dest": "entropic_substrate.ladder.run.worker",
       "layer": "ladder",
       "action": "move",
-      "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)"
+      "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)",
+      "entrypoint": true
     },
     "entropic_substrate.h_probe_controller": {
       "dest": "entropic_substrate.ladder.run.worker",
       "layer": "ladder",
       "action": "move",
       "note": "added at epoch bbe7976; H probe plane (p4-h-tracer)"
+    },
+    "entropic_substrate.ladder.run.worker.h_probe_stop": {
+      "dest": "entropic_substrate.ladder.run.worker",
+      "layer": "ladder",
+      "action": "move",
+      "note": "DN-OBS-CONF entry point; born at its landed address after epoch bbe7976 (fb514fa, 2026-09-29), so no pre-move name exists",
+      "entrypoint": true
+    },
+    "entropic_substrate.composition.wiring.h_tiny_tracer": {
+      "dest": "entropic_substrate.composition.wiring",
+      "layer": "composition",
+      "action": "move",
+      "note": "DN-OBS-CONF entry point; born at its landed address after epoch bbe7976 (2a320c7, 2026-09-27), so no pre-move name exists",
+      "entrypoint": true
+    },
+    "entropic_substrate.composition.entrypoints.h_wave_monitor": {
+      "dest": "entropic_substrate.composition.entrypoints",
+      "layer": "composition",
+      "action": "move",
+      "note": "DN-OBS-CONF entry point; born at its landed address after epoch bbe7976 (FOR-1646, slice 5 of FOR-1640), so no pre-move name exists",
+      "entrypoint": true
     },
     "entropic_substrate.d1_training_step_records": {
       "dest": "entropic_substrate.ladder.capture.records",

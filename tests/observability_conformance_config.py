@@ -80,15 +80,26 @@ PRINT_ALLOWLIST: frozenset[str] = frozenset(
 # `tools/mapping.json`, at their LANDED names, partitioned into CONFORMING
 # (calls `configure_logging()` first in `main()`) and NOT_YET_CONFORMED (the
 # other four, pinned by name with the reason beside each). len(CONFORMING) +
-# len(NOT_YET_CONFORMED) must equal 7 and len(CONFORMING) must be >= 2 --
+# len(NOT_YET_CONFORMED) must equal 11 and len(CONFORMING) must be >= 2 --
 # asserted by the test, not here, so a future edit to this file that drops an
 # entrypoint by accident is still caught.
+#
+# AMENDED 2026-10-16 (FOR-1645, DN-OBS-CONF): the universe is ELEVEN. Four H host
+# entry points join as CONFORMING, so len(CONFORMING) is 7 and len(NOT_YET) stays 4.
 # ---------------------------------------------------------------------------
 CONFORMING_ENTRYPOINTS: frozenset[str] = frozenset(
     {
         "entropic_substrate.composition.entrypoints.cli",
         "entropic_substrate.ladder.run.worker_command",
         "entropic_substrate.ladder.capture.reader.telemetry",
+        # DN-OBS-CONF (operator 2026-10-13; FOR-1645, conductor DN-1645-CONTROLLER-ENTRY = B,
+        # 2026-10-16): the four H host ENTRY POINTS join the universe as CONFORMING. The
+        # controller (ladder.run.worker.h_probe_controller) is a library the command process
+        # runs; it defines no main(), so it is deliberately absent here and has no mapping row.
+        "entropic_substrate.ladder.run.worker.h_probe_command",
+        "entropic_substrate.ladder.run.worker.h_probe_stop",
+        "entropic_substrate.composition.wiring.h_tiny_tracer",
+        "entropic_substrate.composition.entrypoints.h_wave_monitor",
     }
 )
 

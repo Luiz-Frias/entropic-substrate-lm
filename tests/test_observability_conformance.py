@@ -4,7 +4,9 @@ Per the PRIORITY AMENDMENT (ruling P-1): observability wiring is the ONE
 behaviour-change class permitted inside a structural phase, scoped to log
 routing, metric routing and entry-point configuration. This module is the
 contract every later phase conforms to as it moves more of the tree; it is
-NOT edited again until p13 (the eventual sweep). Per-phase editable state
+NOT edited again until p13 (the eventual sweep), except that DN-OBS-CONF
+(operator 2026-10-13, applied 2026-10-16 by FOR-1645) unfroze its entry-point
+universe assertions, and only those, for four H host entry points. Per-phase editable state
 (the entry-point partition, the print allowlist, the sink-construction
 seam) lives in ``tests/observability_conformance_config.py`` beside it
 (ENTRY-POINT ARM RULING, conductor 2026-09-21, wf_3b1acf4d-36f) -- never
@@ -164,15 +166,25 @@ def test_entrypoint_partition_covers_all_seven_rows_with_at_least_two_conforming
     The universe-size cross-check against the frozen file stays: it still
     proves the partition below covers exactly as many entry points as the
     frozen map ever named."""
+    # RETRACTED 2026-10-16 (DN-OBS-CONF, FOR-1645): this test's name and the "seven"
+    # wording above (and in the banner) describe the universe as it stood at p13. Four H
+    # host entry points (h_probe_command, h_probe_stop, h_tiny_tracer, h_wave_monitor)
+    # joined as CONFORMING and tools/mapping.json gained their entrypoint:true rows, so the
+    # universe is ELEVEN. The function name and that wording are retracted by this reference,
+    # not renamed (the contract file is otherwise frozen).
     mapping_rows = _mapping_entrypoints()
-    assert len(mapping_rows) == 7, (
-        f"tools/mapping.json names {len(mapping_rows)} entrypoint:true row(s), expected 7 "
-        "-- the partition below is defined over exactly seven rows"
+    assert len(mapping_rows) == 11, (
+        f"tools/mapping.json names {len(mapping_rows)} entrypoint:true row(s), expected 11 "
+        "-- the partition below is defined over exactly eleven rows"
     )
     assert occ.CONFORMING_ENTRYPOINTS == {
         "entropic_substrate.composition.entrypoints.cli",
         "entropic_substrate.ladder.run.worker_command",
         "entropic_substrate.ladder.capture.reader.telemetry",
+        "entropic_substrate.ladder.run.worker.h_probe_command",
+        "entropic_substrate.ladder.run.worker.h_probe_stop",
+        "entropic_substrate.composition.wiring.h_tiny_tracer",
+        "entropic_substrate.composition.entrypoints.h_wave_monitor",
     }
     assert occ.NOT_YET_CONFORMED_ENTRYPOINTS == {
         "entropic_substrate.composition.entrypoints.__main__",
@@ -183,7 +195,7 @@ def test_entrypoint_partition_covers_all_seven_rows_with_at_least_two_conforming
     assert set(occ.NOT_YET_CONFORMED_REASONS) == occ.NOT_YET_CONFORMED_ENTRYPOINTS
     assert all(occ.NOT_YET_CONFORMED_REASONS.values()), "every NOT_YET reason must be non-empty"
     assert not (occ.CONFORMING_ENTRYPOINTS & occ.NOT_YET_CONFORMED_ENTRYPOINTS)
-    assert len(occ.CONFORMING_ENTRYPOINTS) + len(occ.NOT_YET_CONFORMED_ENTRYPOINTS) == 7
+    assert len(occ.CONFORMING_ENTRYPOINTS) + len(occ.NOT_YET_CONFORMED_ENTRYPOINTS) == 11
     assert len(occ.CONFORMING_ENTRYPOINTS) >= 2
 
 

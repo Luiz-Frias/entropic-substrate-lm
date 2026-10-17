@@ -1,11 +1,33 @@
-"""Explicit H0-only deployment choices for the pinned Runpod command boundary."""
+"""Explicit H0-only deployment choices for the pinned Runpod command boundary.
+
+LAUNCH SCHEMA v3 (FOR-1647, DN-OBS-TEMPLATE, operator 2026-10-13). The pod
+environment is a seven-key BASE (four R2/MLflow secret references, the S3
+endpoint reference, the tiny opt-in and the tracking URI) plus DECLARED
+EXTENSIONS drawn from a CLOSED registry (``EXTENSION_REGISTRY``: an immutable
+module constant, no registration function, no discovery, no env or CLI
+selection; adding an extension is a source edit). Each extension contributes
+exactly one environment key. The manifest records each extension's name AND
+its parameters, so ``parse_probe_launch`` rebuilds an identical environment.
+The H0 wave launches with ``named_experiment("h-series")`` and
+``system_metrics()``: nine keys.
+
+READ-OLD (documentation of an in-tree parse, NOT a reader-identity bump):
+``parse_probe_launch`` reads a ``h0-probe-launch-v2`` payload as the same
+class with ``manifest_schema == "h0-probe-launch-v2"`` and no extensions. A
+v2-read launch re-renders v2: its payload, digest, pod name and workspace are
+the bytes it was read from, and it never compares equal to a v3 launch. Every
+launch built in-process renders v3 (write-new). v1 stays refused. The v2 read
+window retires at the next launch-schema bump; this module implements no
+retirement today.
+"""
 
 import hashlib
 import json
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
+from types import MappingProxyType
 from typing import cast
 
 from entropic_substrate.core.sentence.recovery_state import recovery_record
@@ -20,8 +42,103 @@ RUNPODCTL_SHA256 = (
 )
 
 
+LAUNCH_SCHEMA_V2 = "h0-probe-launch-v2"
+LAUNCH_SCHEMA_V3 = "h0-probe-launch-v3"
+# The H lane's experiment. Exactly one definition in the tree: the wave monitor
+# reads this constant, and a launch selects it with ``named_experiment``.
+H_SERIES_EXPERIMENT = "h-series"
+
+_EXTENSION_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+
+
 def _json(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+
+
+@dataclass(frozen=True, slots=True)
+class _ExtensionSpec:
+    """One registry row: the single env key an extension contributes."""
+
+    env_key: str
+    parameters: tuple[str, ...]
+    value: Callable[[Mapping[str, str]], str]
+
+
+# CLOSED registry, in canonical (registry) order. The env keys equal the consumer
+# constants ``ladder.capture.reader.sinks.MLFLOW_EXPERIMENT_ENV`` and
+# ``MLFLOW_SYSTEM_METRICS_ENV``; tests/test_h_probe_launch.py pins that equality
+# and that "true" is a literal ``adapters.mlflow._system_metrics_logging_enabled``
+# accepts, so a rename on the consumer side cannot silently orphan a launch.
+EXTENSION_REGISTRY: Mapping[str, _ExtensionSpec] = MappingProxyType(
+    {
+        "named_experiment": _ExtensionSpec(
+            "MLFLOW_EXPERIMENT_NAME", ("name",), lambda params: params["name"]
+        ),
+        "system_metrics": _ExtensionSpec(
+            "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", (), lambda _: "true"
+        ),
+    }
+)
+
+_BASE_ENVIRONMENT_KEYS = frozenset(
+    {
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "MLFLOW_TRACKING_URI",
+        "MLFLOW_TRACKING_USERNAME",
+        "MLFLOW_TRACKING_PASSWORD",
+        "MLFLOW_S3_ENDPOINT_URL",
+        "ENTROPIC_MLFLOW_TINY",
+    }
+)
+_extension_keys = [spec.env_key for spec in EXTENSION_REGISTRY.values()]
+if len(set(_extension_keys)) != len(_extension_keys) or _BASE_ENVIRONMENT_KEYS & set(
+    _extension_keys
+):
+    raise RuntimeError("launch extension environment keys must not collide")
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchExtension:
+    """A declared, validated member of the closed registry; its name and parameters
+    are what the manifest records."""
+
+    name: str
+    parameters: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        spec = EXTENSION_REGISTRY.get(self.name) if type(self.name) is str else None
+        if spec is None:
+            raise ValueError("launch extension is not in the closed registry")
+        if type(self.parameters) is not tuple or any(
+            type(pair) is not tuple
+            or len(pair) != 2
+            or type(pair[0]) is not str
+            or type(pair[1]) is not str
+            or _EXTENSION_VALUE.fullmatch(pair[1]) is None
+            for pair in self.parameters
+        ):
+            raise ValueError("launch extension parameters must be safe identifier text")
+        if tuple(key for key, _ in self.parameters) != spec.parameters:
+            raise ValueError("launch extension parameters differ from its registry declaration")
+
+    @property
+    def env_value(self) -> str:
+        return EXTENSION_REGISTRY[self.name].value(dict(self.parameters))
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return {"name": self.name, "params": dict(self.parameters)}
+
+
+def named_experiment(name: str) -> LaunchExtension:
+    """Route the pod's MLflow runs into the named experiment."""
+    return LaunchExtension("named_experiment", (("name", name),))
+
+
+def system_metrics() -> LaunchExtension:
+    """Turn on MLflow's own system-metrics monitor in the pod."""
+    return LaunchExtension("system_metrics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +166,12 @@ class H0ProbeLaunch:
     controller_timeout_seconds: int
     watchdog_timeout_seconds: int
     cost_guard: str
+    # Schema state, not a subclass: a launch read from v2 is the same class with
+    # ``manifest_schema == LAUNCH_SCHEMA_V2``. Neither name may equal one of the six
+    # fixed manifest keys, because ``manifest`` and ``parse_probe_launch`` both
+    # iterate ``fields()``.
+    extensions: tuple[LaunchExtension, ...] = ()
+    manifest_schema: str = LAUNCH_SCHEMA_V3
 
     def __post_init__(self) -> None:
         if type(self.request) is not ProbeRequest:
@@ -103,19 +226,35 @@ class H0ProbeLaunch:
                 )
         if len(set(secret_names)) != len(secret_names):
             raise ValueError("provider secret-reference names must be distinct")
+        if self.manifest_schema not in (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3):
+            raise ValueError("launch manifest schema is not admitted")
+        if type(self.extensions) is not tuple or any(
+            type(item) is not LaunchExtension for item in self.extensions
+        ):
+            raise ValueError("launch extensions must be a tuple of declared extensions")
+        declared = [item.name for item in self.extensions]
+        if declared != [name for name in EXTENSION_REGISTRY if name in declared] or len(
+            set(declared)
+        ) != len(declared):
+            raise ValueError("launch extensions must be unique and in registry order")
+        if self.manifest_schema == LAUNCH_SCHEMA_V2 and self.extensions:
+            raise ValueError("a v2 launch declares no extensions")
 
     @property
     def manifest(self) -> dict[str, object]:
-        return {
-            "schema": "h0-probe-launch-v2",
+        row: dict[str, object] = {
+            "schema": self.manifest_schema,
             "scientific_authority": "none",
             "spending_authority": "none",
             "provider_deadline": None,
             "runpodctl_version": RUNPODCTL_VERSION,
             "runpodctl_sha256": RUNPODCTL_SHA256,
-            **{f.name: getattr(self, f.name) for f in fields(self) if f.name != "request"},
+            **{f.name: getattr(self, f.name) for f in fields(self) if f.name in _BASE_FIELDS},
             "request": self.request.manifest,
         }
+        if self.manifest_schema == LAUNCH_SCHEMA_V3:
+            row["extensions"] = [item.manifest for item in self.extensions]
+        return row
 
     @property
     def payload(self) -> bytes:
@@ -149,8 +288,11 @@ class H0ProbeLaunch:
         env contract; the S3 endpoint reference feeds the artifact upload of the
         JSONL mirror. Exactly seven keys; validate_template compares the whole
         mapping, so a template missing any reference or the opt-in is refused.
+
+        v3: the seven base keys, then each declared extension's one key in registry
+        order (nine keys for the H0 wave). ``validate_template`` compares the union.
         """
-        return {
+        environment = {
             "AWS_ACCESS_KEY_ID": f"{{{{ RUNPOD_SECRET_{self.r2_access_secret_name} }}}}",
             "AWS_SECRET_ACCESS_KEY": f"{{{{ RUNPOD_SECRET_{self.r2_private_secret_name} }}}}",
             "MLFLOW_TRACKING_URI": f"{{{{ RUNPOD_SECRET_{self.mlflow_uri_secret_name} }}}}",
@@ -159,6 +301,9 @@ class H0ProbeLaunch:
             "MLFLOW_S3_ENDPOINT_URL": f"{{{{ RUNPOD_SECRET_{self.mlflow_s3_endpoint_secret_name} }}}}",
             "ENTROPIC_MLFLOW_TINY": "1",
         }
+        for item in self.extensions:
+            environment[EXTENSION_REGISTRY[item.name].env_key] = item.env_value
+        return environment
 
     def validate_template(self, value: object) -> None:
         """Check a pinned-CLI template get result before creating the pod.
@@ -249,8 +394,20 @@ class H0ProbeLaunch:
         )
 
 
+_BASE_FIELDS = frozenset(
+    f.name
+    for f in fields(H0ProbeLaunch)
+    if f.name not in ("request", "extensions", "manifest_schema")
+)
+
+
 def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
-    """Require every deployment choice and canonical bytes; never fill defaults."""
+    """Require every deployment choice and canonical bytes; never fill defaults.
+
+    Schema-first: the key list is chosen by the declared schema before any key is
+    checked. Only the v2 branch supplies an empty extension set (the documented
+    read-old); a v3 payload without ``extensions`` is refused.
+    """
     if (
         type(max_bytes) is not int
         or max_bytes < 1
@@ -258,13 +415,17 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         or not 0 < len(payload) <= max_bytes
     ):
         raise ValueError("H0 deployment exceeds its explicit byte budget")
-    names = " ".join(f.name for f in fields(H0ProbeLaunch))
+    decoded = json.loads(payload)
+    schema = decoded.get("schema") if type(decoded) is dict else None
+    if schema not in (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3):
+        raise ValueError("H0 deployment scope or authority mismatch")
+    names = " ".join(sorted(_BASE_FIELDS | {"request"}))
+    keys = f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names}"
     row = recovery_record(
-        json.loads(payload),
-        f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names}",
+        decoded, keys + (" extensions" if schema == LAUNCH_SCHEMA_V3 else "")
     ).copy()
     if (
-        row.pop("schema") != "h0-probe-launch-v2"
+        row.pop("schema") != schema
         or row.pop("scientific_authority") != "none"
         or row.pop("spending_authority") != "none"
         or row.pop("provider_deadline") is not None
@@ -272,9 +433,24 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         or row.pop("runpodctl_sha256") != RUNPODCTL_SHA256
     ):
         raise ValueError("H0 deployment scope or authority mismatch")
+    extensions: list[LaunchExtension] = []
+    if schema == LAUNCH_SCHEMA_V3:
+        declared = row.pop("extensions")
+        if type(declared) is not list:
+            raise ValueError("launch extensions must be a list")
+        for item in declared:
+            entry = recovery_record(item, "name params")
+            params = entry["params"]
+            if type(params) is not dict or any(type(v) is not str for v in params.values()):
+                raise ValueError("launch extension parameters must be text")
+            extensions.append(
+                LaunchExtension(
+                    cast(str, entry["name"]), tuple(cast(dict[str, str], params).items())
+                )
+            )
     row["request"] = parse_probe_request(_json(row["request"]), max_bytes=max_bytes)
     factory = cast(Callable[..., H0ProbeLaunch], H0ProbeLaunch)
-    result = factory(**row)
+    result = factory(**row, extensions=tuple(extensions), manifest_schema=cast(str, schema))
     if result.payload != payload:
         raise ValueError("H0 deployment must use canonical JSON")
     return result

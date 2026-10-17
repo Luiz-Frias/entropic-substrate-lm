@@ -54,6 +54,19 @@ The next image rebuild also carries the H run surface (FOR-1642): the grouping k
 params on every H run, the per-checkpoint evidence tags, and a `FAILED` MLflow status when the
 worker raises; the pin above does not contain them.
 
+LAUNCH SCHEMA v3 (FOR-1647, DN-OBS-TEMPLATE; the dated RE-PINNED paragraphs above name `h0-probe-launch-v2`
+as of their dates and are not rewritten). The pod environment is the seven-key base plus declared
+extensions from a closed registry; the H0 wave declares `named_experiment("h-series")` and
+`system_metrics()`, so the template carries NINE environment keys (`MLFLOW_EXPERIMENT_NAME=h-series`
+and `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` beyond the seven). The nine-key template is created by
+the conductor at the image rebuild ceremony; no template is created, and no template id is recorded
+here, until that ceremony has measured one. `validate_template` compares the whole environment, so a
+template missing either extension key is refused before any pod is created. Runs launched with
+`named_experiment` land in the MLflow experiment `h-series`, not the default. `capture-results` selects
+runs by experiment name and defaults to `$MLFLOW_EXPERIMENT_NAME` or `entropic-substrate-lm`
+(`composition/entrypoints/cli.py`, `ladder/capture/reader/capture_results.py`), so capturing these runs
+needs `--experiment h-series`; without it a capture finds none of them.
+
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.
