@@ -592,6 +592,12 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
         # the missing-tracking-URI check above, not an unhandled traceback.
         logger.error(f"capture-results: {exc}")
         return 2
+    except TelemetryGap as gap:
+        # An inadmissible results file (either lane's predicate): the file is
+        # kept on disk as evidence and named in the message. Controlled
+        # refusal, never a traceback; nothing is captured silently.
+        logger.error(f"capture-results: {gap}")
+        return 2
     if not captured:
         logger.info("capture-results: nothing new to capture")
         return 0

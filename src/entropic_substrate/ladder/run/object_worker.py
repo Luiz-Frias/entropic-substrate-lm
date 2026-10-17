@@ -51,6 +51,12 @@ def _canonical(value: dict[str, object]) -> bytes:
 # imported by the verb, never duplicated.
 STOP_MARKER_SCHEMA = "h-probe-stop-marker-v1"
 
+# h-run-lifecycle-v1 (FOR-1639): the run_start / run_end records this worker
+# writes through its MetricSink. Read back by
+# ladder.capture.reader.h_telemetry.final_h_run_end, which holds its own copy
+# of the literal (the capture layer never imports from ladder/run).
+LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
+
 
 def stop_marker_key(request: ProbeRequest) -> str:
     return f"{request.prefix}/control/stop.json"
@@ -260,12 +266,18 @@ def run_object_worker(
     # checkpoint event's `publication` block (FOR-1567).
     ledger: PublicationLedger = {}
     publication_timing: dict[str, float] = {}
+    # h-run-lifecycle-v1 pairing (FOR-1639): run_end is written only for a
+    # run_start that start() logged earlier in THIS invocation, and the failed
+    # run_end's clock starts immediately before execute_probe_request.
+    started_logged = False
+    executed_at = 0.0
     try:
         with narrated_stage("materialization"):
             materialize_probe_request(objects, marker, root, max_request_bytes=max_request_bytes)
         (root / "worker").mkdir()
 
         def start(runtime: dict[str, object]) -> None:
+            nonlocal started_logged
             started = write_json(
                 root,
                 "worker/start.json",
@@ -291,6 +303,20 @@ def run_object_worker(
                     "snapshot": asdict(snapshot),
                 },
             )
+            if sink is not None:
+                sink.log(
+                    {
+                        "schema": LIFECYCLE_SCHEMA,
+                        "event": "run_start",
+                        "request_sha256": request.digest,
+                        "image": request.image,
+                        "code_commit": request.code_commit,
+                        "profile_identity": request.profile.identity,
+                        "run_class": request.profile.run_class,
+                        "runtime": runtime,
+                    }
+                )
+                started_logged = True
 
         def checkpoint(artifact: ArtifactIdentity) -> None:
             row = read_json(root, artifact, max_bytes=maximum)
@@ -369,6 +395,7 @@ def run_object_worker(
             return stop
 
         stage = "execution"
+        executed_at = time.perf_counter()
         result = execute_probe_request(
             request,
             root,
@@ -435,7 +462,7 @@ def run_object_worker(
         }
         if result["status"] == "stopped_by_operator":
             event_value["successful_optimizer_steps"] = result["successful_optimizer_steps"]
-        return _event(objects, request, name, event_value)
+        terminal = _event(objects, request, name, event_value)
     except Exception as error:
         status = (
             "scientific_gap"
@@ -455,16 +482,40 @@ def run_object_worker(
             "detail": str(error),
         }
         try:
-            (root / "worker").mkdir(exist_ok=True)
-            write_json(root, "worker/failure.json", failure, max_bytes=maximum)
-            snapshot = publish_worker_snapshot(
-                objects,
-                request,
-                root,
-                _paths(root, ("run", "capture", "verification", "worker")),
-                name="failure",
-            )
-        except Exception as delivery_error:
+            try:
+                (root / "worker").mkdir(exist_ok=True)
+                write_json(root, "worker/failure.json", failure, max_bytes=maximum)
+                snapshot = publish_worker_snapshot(
+                    objects,
+                    request,
+                    root,
+                    _paths(root, ("run", "capture", "verification", "worker")),
+                    name="failure",
+                )
+            except Exception as delivery_error:
+                try:
+                    _event(
+                        objects,
+                        request,
+                        "failure",
+                        {
+                            "status": status,
+                            "stage": stage,
+                            "error_type": type(error).__name__,
+                            "error_code": getattr(error, "code", type(error).__name__),
+                            "snapshot": None,
+                            "evidence_delivery": "failed",
+                            "delivery_error_type": type(delivery_error).__name__,
+                        },
+                    )
+                except Exception as notification_error:
+                    raise ExceptionGroup(
+                        "worker failure and unavailable evidence delivery",
+                        [error, delivery_error, notification_error],
+                    ) from error
+                raise ExceptionGroup(
+                    "worker failure and evidence delivery defects", [error, delivery_error]
+                ) from error
             try:
                 _event(
                     objects,
@@ -475,35 +526,50 @@ def run_object_worker(
                         "stage": stage,
                         "error_type": type(error).__name__,
                         "error_code": getattr(error, "code", type(error).__name__),
-                        "snapshot": None,
-                        "evidence_delivery": "failed",
-                        "delivery_error_type": type(delivery_error).__name__,
+                        "snapshot": asdict(snapshot),
+                        "evidence_delivery": "captured",
                     },
                 )
             except Exception as notification_error:
                 raise ExceptionGroup(
-                    "worker failure and unavailable evidence delivery",
-                    [error, delivery_error, notification_error],
+                    "worker failure and terminal publication defect", [error, notification_error]
                 ) from error
-            raise ExceptionGroup(
-                "worker failure and evidence delivery defects", [error, delivery_error]
-            ) from error
-        try:
-            _event(
-                objects,
-                request,
-                "failure",
-                {
-                    "status": status,
-                    "stage": stage,
-                    "error_type": type(error).__name__,
-                    "error_code": getattr(error, "code", type(error).__name__),
-                    "snapshot": asdict(snapshot),
-                    "evidence_delivery": "captured",
-                },
-            )
-        except Exception as notification_error:
-            raise ExceptionGroup(
-                "worker failure and terminal publication defect", [error, notification_error]
-            ) from error
-        raise
+            raise
+        except Exception as propagated:
+            # Every exit of this arm (the three ExceptionGroup raises and the
+            # bare raise above) lands here, after R2 custody was attempted in
+            # full. A sink defect surfaces beside the original error, never
+            # replaces it, and a healthy sink leaves the propagated exception
+            # exactly as the arm raised it.
+            if started_logged and sink is not None:
+                try:
+                    sink.log(
+                        {
+                            "schema": LIFECYCLE_SCHEMA,
+                            "event": "run_end",
+                            "status": "failed",
+                            "result_status": status,
+                            "wall_seconds": time.perf_counter() - executed_at,
+                            "successful_optimizer_steps": None,
+                        }
+                    )
+                except Exception as sink_error:
+                    raise ExceptionGroup(
+                        "worker failure and lifecycle sink defect", [propagated, sink_error]
+                    ) from propagated
+            raise
+    # Written only after the terminal marker above was published, and outside
+    # the try: a sink defect here must not publish a failure marker after a
+    # complete/paused/stopped one, so it propagates as the sink's own error.
+    if started_logged and sink is not None:
+        sink.log(
+            {
+                "schema": LIFECYCLE_SCHEMA,
+                "event": "run_end",
+                "status": "ok",
+                "result_status": result["status"],
+                "wall_seconds": result["wall_seconds"],
+                "successful_optimizer_steps": result["successful_optimizer_steps"],
+            }
+        )
+    return terminal

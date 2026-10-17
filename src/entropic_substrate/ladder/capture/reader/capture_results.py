@@ -9,11 +9,30 @@ hold R2 credentials, pulls those artifacts down, validates each one through
 predicate every other JSONL consumer uses), and hands the capture directory to
 DVC.
 
+Two lanes, partitioned by the run's ``schema`` tag. A run with no ``schema``
+tag, or a tag that does not start with ``h-``, is the E lane: every
+``results/*.jsonl`` goes through ``final_eval_record``. A run whose tag starts
+with ``h-`` (the H worker's ``h-probe-worker-result-v1``) is the H lane: its
+``results/metrics.jsonl`` must be admissible through
+:func:`~entropic_substrate.ladder.capture.reader.h_telemetry.final_h_run_end`
+(exactly one ``run_start``, one ``run_end`` and a committed step row) and any
+other ``results/*.jsonl`` (``worker-log.jsonl``) must be well-formed JSON
+lines. The lane is chosen per run, never by a flag that could skip runs.
+
 Measurement path: it fails LOUD. An unknown experiment raises, an
 inadmissible file raises :class:`~entropic_substrate.telemetry.TelemetryGap`
 (the offending file is kept on disk as evidence, named in the exception), and
 nothing is ever captured silently. ``-tiny`` smoke runs are plumbing checks,
 not science — excluded unless explicitly asked for.
+
+An H-tagged FINISHED run with no ``h-run-lifecycle-v1`` records is refused whatever produced
+it: a worker from before FOR-1639, and the local tracer (schema ``h-tiny-trace-v1``, run name
+``h-tiny-trace-<identity>``) when it mirrors to MLflow under ``ENTROPIC_MLFLOW_TINY=1``. That
+tracer run name carries no ``-tiny`` suffix, so the ``include_tiny`` gate, which runs before
+the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
+that bypasses ``object_worker`` the ``-tiny`` run-name suffix, capturing an experiment that
+holds such a run makes ``capture-results`` exit 2. This module carries no legacy arm and no
+skip for these runs.
 """
 
 from __future__ import annotations
@@ -31,7 +50,11 @@ import torch
 
 from entropic_substrate.kernel.runtime.checkpoint import CheckpointFormatError, normalize_checkpoint
 from entropic_substrate.kernel.runtime.logging import logger
-from entropic_substrate.ladder.capture.reader.telemetry import final_eval_record
+from entropic_substrate.ladder.capture.reader.h_telemetry import (
+    final_h_run_end,
+    require_json_object_lines,
+)
+from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap, final_eval_record
 
 __all__ = ["capture_checkpoints", "capture_finished_runs", "dvc_commands", "verify_cloud_sync"]
 
@@ -39,6 +62,9 @@ _RESULTS_PREFIX = "results"
 _CHECKPOINT_PREFIX = "checkpoints"
 _FINAL_SUFFIX = "-final.pt"
 _TINY_SUFFIX = "-tiny"
+_SCHEMA_TAG = "schema"
+_H_SCHEMA_PREFIX = "h-"
+_H_METRICS_ARTIFACT = f"{_RESULTS_PREFIX}/metrics.jsonl"
 
 
 def _resolve_experiment_ids(client: Any, experiment_names: Sequence[str]) -> list[str]:
@@ -85,6 +111,67 @@ def _validated_run_name(name: str) -> str:
     return name
 
 
+def _run_schema_tag(run: Any, run_id: str) -> str | None:
+    """The run's ``schema`` tag, or None when the run carries none.
+
+    A run object with no ``data`` or no ``tags`` (an older client, a fake) is
+    treated as untagged, i.e. the E lane. A tag that is present but not a
+    string is a defect in the tracking data and raises.
+    """
+    try:
+        tags = run.data.tags
+    except AttributeError:
+        return None
+    tag = tags.get(_SCHEMA_TAG)
+    if tag is None:
+        return None
+    if not isinstance(tag, str):
+        msg = f"run {run_id}: tag {_SCHEMA_TAG!r} is {type(tag).__name__}, not a string"
+        raise TypeError(msg)
+    return tag
+
+
+def _capture_h_run(client: Any, run_id: str, run_name: str, dest: Path) -> list[Path]:
+    """Capture one H-lane run's ``results/*.jsonl`` through the H predicates.
+
+    The run must carry exactly one ``results/metrics.jsonl``: a worker that
+    died before its first ``sink.log`` still finishes its MLflow run, and
+    capturing its ``worker-log.jsonl`` alone would read as success. A file
+    already in ``dest`` is re-validated rather than skipped, so a refused file
+    kept on disk as evidence is refused again on the next invocation instead
+    of reading as "nothing new to capture". Returns only the newly captured
+    paths.
+    """
+    paths = [
+        artifact.path
+        for artifact in client.list_artifacts(run_id, _RESULTS_PREFIX)
+        if artifact.path.endswith(".jsonl")
+    ]
+    if paths.count(_H_METRICS_ARTIFACT) != 1:
+        msg = (
+            f"run {run_id} ({run_name}): an H run must carry exactly one "
+            f"{_H_METRICS_ARTIFACT}, found {paths.count(_H_METRICS_ARTIFACT)} "
+            f"among {sorted(paths)} — refusing to capture its other files alone"
+        )
+        raise TelemetryGap(msg)
+    captured: list[Path] = []
+    for artifact_path in paths:
+        target = dest / f"{run_name}-{run_id[:8]}-{Path(artifact_path).name}"
+        fresh = not target.exists()
+        if fresh:
+            _download_artifact(client, run_id, artifact_path, dest, target)
+        # Admissibility gate — raises TelemetryGap; the file stays on disk as
+        # evidence, named in the exception message.
+        if artifact_path == _H_METRICS_ARTIFACT:
+            final_h_run_end(target)
+        else:
+            require_json_object_lines(target)
+        if fresh:
+            captured.append(target)
+            logger.info(f"captured {target}")
+    return captured
+
+
 def capture_finished_runs(
     client: Any,
     experiment_names: Sequence[str],
@@ -97,6 +184,11 @@ def capture_finished_runs(
     Returns the newly captured paths; files already present in ``dest`` are
     skipped (idempotent — re-running after new runs finish captures only the
     delta, and ``dvc add`` on the directory picks up exactly that delta).
+
+    Runs are partitioned by their ``schema`` tag (see the module docstring):
+    the E lane below is unchanged; an ``h-`` tagged run takes the H lane
+    through :func:`_capture_h_run`. The FINISHED, ``-tiny`` and run-name gates
+    run first, for both lanes.
     """
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -110,6 +202,10 @@ def capture_finished_runs(
         if not include_tiny and info.run_name.endswith(_TINY_SUFFIX):
             continue
         run_name = _validated_run_name(info.run_name)
+        schema_tag = _run_schema_tag(run, info.run_id)
+        if schema_tag is not None and schema_tag.startswith(_H_SCHEMA_PREFIX):
+            captured.extend(_capture_h_run(client, info.run_id, run_name, dest))
+            continue
         for artifact in client.list_artifacts(info.run_id, _RESULTS_PREFIX):
             if not artifact.path.endswith(".jsonl"):
                 continue

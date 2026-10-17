@@ -489,6 +489,29 @@ The existing evidence architecture is retained:
 - checkpoints carry schema and construction identities; and
 - missing, partial, nonfinite, nonmonotonic, or incompatible evidence fails loudly.
 
+Capture runs two lanes, partitioned per run by the MLflow `schema` tag. A run with no tag, or a
+tag not starting with `h-`, is the E lane: every `results/*.jsonl` goes through
+`final_eval_record`. A run tagged `h-...` is the H lane: its `results/metrics.jsonl` must carry
+exactly one `run_start`, exactly one `run_end` (schema `h-run-lifecycle-v1`, written by the H
+worker through the run's metric sink and never projected to MLflow metrics) and at least one
+committed step row, and any other `results/*.jsonl` must be well-formed JSON lines; an
+inadmissible H run is refused with a named file, never skipped. The `run_end` field
+`wall_seconds` is measured against a different end point on each arm, and the schema keeps both
+meanings under the one name: for `status: ok` it is the worker's own execution time, copied from
+the probe result before result admission and final-snapshot custody; for `status: failed` it is
+the elapsed time since execution began, read after failure custody (snapshot publish, verify-read
+retries, backoff). Consumers must not compare the two arms as one clock. A change to either
+meaning is a schema version bump, not an additive field.
+
+An H-tagged run that is FINISHED but has no `h-run-lifecycle-v1` records is refused whatever
+produced it: a worker from before FOR-1639, and the local tracer (schema `h-tiny-trace-v1`,
+run name `h-tiny-trace-<identity>`) when it mirrors to MLflow under `ENTROPIC_MLFLOW_TINY=1`.
+The tracer's run name carries no `-tiny` suffix, so the `include_tiny` gate, which runs before
+the lane partition, does not exclude it. Until FOR-1642 (slice 4) gives every local H producer
+that bypasses `object_worker` the `-tiny` run-name suffix, capturing an experiment that holds
+such a run makes `capture-results` exit 2. Capturing the shared experiment is therefore not yet
+safe while such runs remain on the server.
+
 Evidence classes remain separate in every table and chart:
 
 - `MEASURED`

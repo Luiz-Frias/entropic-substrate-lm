@@ -57,7 +57,7 @@ Minimum event set (names are the contract; fields in parentheses are required):
 - `publish.verify_read` (key, attempt, max_attempts, seconds) at INFO; `publish.retry` (key, attempt, max_attempts, reason) at WARNING
 - `stop_marker.observed` (key) at INFO; `stop_marker.polled` is NOT an event (no per-poll noise)
 - `completion.written` (key, bytes)
-- `sink.finish.start` / `sink.finish.end` (sink, drained, stranded, seconds); `sink.drain_exceeded` (sink, budget_seconds, stranded) at WARNING; `sink.write_failed` (sink, count) at WARNING
+- `sink.finish.start` / `sink.finish.end` (sink, settled, stranded, seconds; the field shipped as `settled`, conductor ruling 2026-10-13: a `drained` key would have doubled the "drain" substring under the capsys dump FOR-1649 removes); `sink.drain_exceeded` (sink, budget_seconds, stranded) at WARNING; `sink.write_failed` (sink, count) at WARNING
 - `mlflow.run` (run_id, uri) already exists in prose form; keep it and add the `event` field
 
 The human stderr line keeps the substrate's existing format (`<ts> | LEVEL | message`); the

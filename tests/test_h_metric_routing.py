@@ -278,3 +278,68 @@ def test_evaluation_reports_reach_the_sink_after_their_receipt(tmp_path: Path) -
     for report in evaluations:
         assert report["step"] in steps_seen
         assert report["meaning"] == "importance_weighted_log_marginal_estimate"
+
+
+def test_lifecycle_records_never_reach_the_mlflow_metric_surface() -> None:
+    """FOR-1639: h-run-lifecycle-v1 records are stream rows only. The extractor
+    projects exactly two schemas and returns None for anything else, and the
+    MlflowSink drops a None projection, so the lifecycle records ride the
+    authoritative JSONL without becoming MLflow metrics. Characterization pin
+    over hand-built records (GREEN before the emitter exists); its teeth are
+    mutation M5, which teaches the extractor the schema."""
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    start = {
+        "schema": "h-run-lifecycle-v1",
+        "event": "run_start",
+        "request_sha256": "a" * 64,
+        "runtime": {"kind": "local_tiny"},
+    }
+    end = {
+        "schema": "h-run-lifecycle-v1",
+        "event": "run_end",
+        "status": "ok",
+        "result_status": "probe_workload_complete",
+        "wall_seconds": 1.5,
+        "successful_optimizer_steps": 6,
+    }
+    assert extractor.extract(start) is None
+    assert extractor.extract(end) is None
+    # a step row with the same payload fields DOES project: only the schema
+    # keeps the lifecycle records off the metric surface
+    step = {
+        "schema": "h-training-step-v2",
+        "status": "committed",
+        "phase": "prediction",
+        "step": 1,
+        "objective": 1.0,
+        "wall_seconds": 1.5,
+    }
+    assert extractor.extract(step) is not None
+    assert extractor.extract({**step, "schema": "h-run-lifecycle-v1"}) is None
+
+
+def test_the_workers_lifecycle_records_are_not_projected_either(tmp_path: Path) -> None:
+    """Emitter-sourced companion: the records the REAL worker writes (not a
+    hand-built dict) yield None from the extractor, while its step rows still
+    project. RED before the emitter exists: there is no lifecycle record."""
+    from tests.test_d1_trainer_object_transport import _ObjectStore
+    from tests.test_sentence_worker_execution import prepared
+
+    from entropic_substrate.ladder.run.object_worker import run_object_worker
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    root = tmp_path / "object-worker"
+    root.mkdir()
+    sink = _FakeSink()
+
+    run_object_worker(objects, marker, root, max_request_bytes=1_000_000, sink=sink)
+
+    extractor = HTrainingStepExtractor(warmup_steps=request.profile.schedule.warmup_steps)
+    lifecycle = [r for r in sink.records if r.get("schema") == "h-run-lifecycle-v1"]
+    assert [r["event"] for r in lifecycle] == ["run_start", "run_end"]
+    assert all(extractor.extract(r) is None for r in lifecycle)
+    steps = [r for r in sink.records if r.get("schema") == "h-training-step-v2"]
+    assert steps and all(extractor.extract(r) is not None for r in steps)
