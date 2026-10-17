@@ -5,15 +5,25 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-65542d4.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-dbe9709.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:762ed810ebaef60a2981eac1e7a78ffa271f7e46b71feaf557fd4b535daa0a9a
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:96e985048fd96da14d4f80c598a72bf7ead604a50ecd8f2b952d6efb06c44606
 ```
 
-Runtime source matches commit `65542d49a810e50c70cfa52ef93676f2d0ee1108` exactly.
+Runtime source matches commit `dbe97094358ca349ce20ee1a396ae44d1c7700aa` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-10-17 (H observability parity, branch `fix/h-image-repin-parity`, operator
+go-ahead 2026-10-17): the previous pin (`762ed810...`, source `65542d4`) is superseded; its
+capture `results/h-image-publication-65542d4.dvc` remains historical evidence. This image is
+built from the `main` tip that carries the whole H observability parity stack (PRs #341 to
+#347: FOR-1637, FOR-1649, FOR-1639/1641, FOR-1650, FOR-1642/1643/1644/1653, FOR-1645/1646/1647/1638,
+FOR-1657/1659), so the worker log vocabulary, the run surface, the launch schema v3 and the
+request-digest run tag a probe exercises match the released tree. Same verifier and
+`h-prepare-source` manifest as the 65542d4 publication; the source replay's in-image capture
+admitted 491 documents / 1954698 bytes, corpus identity `cf938a0b...`. The nine-key RunPod
+template for this image is `3n4y0ba76d` (`mythwave-h0-dbe9709-parity`; see LAUNCH SCHEMA v3 below).
 RE-PINNED 2026-10-12 (release v0.2.0, branch `fix/h-image-repin-v0.2.0`, operator go-ahead
 2026-10-12): the previous pin (`f2469dc9...`, source `3b93854`) is superseded; its capture
 `results/h-image-publication-3b93854.dvc` remains historical evidence. This image is built
@@ -47,12 +57,14 @@ scientific confirmation, or successor eligibility. Paid 6K validation is authori
 but completion requires the worker's verified artifacts. Do not substitute `latest`
 for this digest.
 
-The next image rebuild carries FOR-1637: the H worker's log-event vocabulary and the
-`worker-log.jsonl` MLflow artifact; the pin above does not contain them.
+The pin above (source `dbe9709`) carries FOR-1637: the H worker's log-event vocabulary and the
+`worker-log.jsonl` MLflow artifact. (Until 2026-10-17 this paragraph said the pin did not
+contain them, which was true of the 65542d4 pin.)
 
-The next image rebuild also carries the H run surface (FOR-1642): the grouping key and descriptor
+The pin above also carries the H run surface (FOR-1642): the grouping key and descriptor
 params on every H run, the per-checkpoint evidence tags, and a `FAILED` MLflow status when the
-worker raises; the pin above does not contain them.
+worker raises, plus the `request_sha256` run tag (FOR-1657). (Until 2026-10-17 this paragraph
+said the pin did not contain them, which was true of the 65542d4 pin.)
 
 LAUNCH SCHEMA v3 (FOR-1647, DN-OBS-TEMPLATE; the dated RE-PINNED paragraphs above name `h0-probe-launch-v2`
 as of their dates and are not rewritten). The pod environment is the seven-key base plus declared
@@ -60,7 +72,9 @@ extensions from a closed registry; the H0 wave declares `named_experiment("h-ser
 `system_metrics()`, so the template carries NINE environment keys (`MLFLOW_EXPERIMENT_NAME=h-series`
 and `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` beyond the seven). The nine-key template is created by
 the conductor at the image rebuild ceremony; no template is created, and no template id is recorded
-here, until that ceremony has measured one. `validate_template` compares the whole environment, so a
+here, until that ceremony has measured one. MEASURED 2026-10-17: template `3n4y0ba76d`
+(`mythwave-h0-dbe9709-parity`, nine keys, image `96e985048fd9...`) was created at the dbe9709 rebuild
+ceremony and read back whole. `validate_template` compares the whole environment, so a
 template missing either extension key is refused before any pod is created. Runs launched with
 `named_experiment` land in the MLflow experiment `h-series`, not the default. `capture-results` selects
 runs by experiment name and defaults to `$MLFLOW_EXPERIMENT_NAME` or `entropic-substrate-lm`
