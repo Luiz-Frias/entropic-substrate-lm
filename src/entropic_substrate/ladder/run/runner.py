@@ -12,11 +12,20 @@ from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import artifact_from_mapping, normalize_d1_artifact_root
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.seals import SealMemo, read_seal, resume_seal, seal_step
+from entropic_substrate.ladder.run.worker_log_events import (
+    CHECKPOINT_SEAL,
+    EVALUATION_END,
+    EVALUATION_START,
+    PHASE_END,
+    PHASE_START,
+    render,
+)
 
 
 @dataclass(frozen=True)
@@ -233,6 +242,11 @@ def run_probe_training(
     prefix = uuid4().hex
     pending: list[dict[str, object]] = []
     memo = SealMemo()
+    # FOR-1637: the phase being narrated, its first step and its wall clock.
+    # Emission is O(phases + seals + evaluations), never per step (C7).
+    narrated_phase: str | None = None
+    phase_from = 0
+    phase_clock = 0.0
     try:
         execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
         if last_seal is not None:
@@ -242,7 +256,29 @@ def run_probe_training(
                 execution.phase == "codec_warmup"
                 and execution.step == profile.schedule.warmup_steps
             ):
+                if narrated_phase == "codec_warmup":
+                    phase_seconds = time.perf_counter() - phase_clock
+                    ended = {
+                        "phase": "codec_warmup",
+                        "step_from": phase_from,
+                        "step_to": execution.step,
+                        "seconds": phase_seconds,
+                    }
+                    logger.bind(event=PHASE_END, **ended).info(render(PHASE_END, **ended))
+                    narrated_phase = None
                 execution.begin_prediction()
+            if narrated_phase != execution.phase:
+                narrated_phase = execution.phase
+                phase_from = execution.step
+                phase_clock = time.perf_counter()
+                started = {
+                    "phase": execution.phase,
+                    "step_from": phase_from,
+                    "step_to": profile.schedule.warmup_steps
+                    if execution.phase == "codec_warmup"
+                    else profile.schedule.steps,
+                }
+                logger.bind(event=PHASE_START, **started).info(render(PHASE_START, **started))
             step_row = execution.advance()
             pending.append(step_row)
             if sink is not None:
@@ -259,6 +295,7 @@ def run_probe_training(
                 final or evaluate or execution.step % profile.schedule.checkpoint_interval == 0
             ):
                 continue
+            seal_clock = time.perf_counter()
             l1_started = None if publication_timing is None else time.perf_counter()
             last_seal = seal_step(
                 root,
@@ -271,8 +308,23 @@ def run_probe_training(
             )
             if publication_timing is not None and l1_started is not None:
                 publication_timing["l1_seconds"] = time.perf_counter() - l1_started
+            # AFTER the l1_seconds assignment: no emission inside the L1 window
+            # (FOR-1567 timing comparability).
+            sealed = {
+                "phase": execution.phase,
+                "step": execution.step,
+                "global_step": execution.step
+                + (profile.schedule.warmup_steps if execution.phase == "prediction" else 0),
+                "seconds": time.perf_counter() - seal_clock,
+            }
+            logger.bind(event=CHECKPOINT_SEAL, **sealed).info(render(CHECKPOINT_SEAL, **sealed))
             pending.clear()
             if evaluate:
+                evaluation_global_step = execution.step + profile.schedule.warmup_steps
+                evaluation_clock = time.perf_counter()
+                logger.bind(event=EVALUATION_START, global_step=evaluation_global_step).info(
+                    render(EVALUATION_START, global_step=evaluation_global_step)
+                )
                 report = execution.evaluate()
                 report["checkpoint_seal"] = artifact_reference(root, last_seal)
                 evaluation = write_json(
@@ -289,6 +341,18 @@ def run_probe_training(
                     max_bytes=max_artifact_bytes,
                     max_source_bytes=max_source_bytes,
                     memo=memo,
+                )
+                evaluation_seconds = time.perf_counter() - evaluation_clock
+                logger.bind(
+                    event=EVALUATION_END,
+                    global_step=evaluation_global_step,
+                    seconds=evaluation_seconds,
+                ).info(
+                    render(
+                        EVALUATION_END,
+                        global_step=evaluation_global_step,
+                        seconds=evaluation_seconds,
+                    )
                 )
                 if sink is not None:
                     # EXIT-GATE LANE (2026-09-26): the sealed, reader-admitted
@@ -351,6 +415,14 @@ def run_probe_training(
             if on_checkpoint is not None:
                 on_checkpoint(artifact_from_mapping(artifact_reference(root, receipt)))
             if complete or stopped:
+                phase_seconds = time.perf_counter() - phase_clock
+                ended = {
+                    "phase": execution.phase,
+                    "step_from": phase_from,
+                    "step_to": execution.step,
+                    "seconds": phase_seconds,
+                }
+                logger.bind(event=PHASE_END, **ended).info(render(PHASE_END, **ended))
                 return _progress(
                     root, "training_complete" if complete else "paused", last_seal, receipt
                 )

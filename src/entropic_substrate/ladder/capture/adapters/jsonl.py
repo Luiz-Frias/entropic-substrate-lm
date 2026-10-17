@@ -14,9 +14,12 @@ gets softened.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+from entropic_substrate.kernel.runtime.logging import logger
 
 __all__ = ["JsonlSink"]
 
@@ -24,9 +27,10 @@ __all__ = ["JsonlSink"]
 class JsonlSink:
     """AUTHORITATIVE. Byte-identical to ``Trainer.log()``'s pre-port serialisation."""
 
-    __slots__ = ("path",)
+    __slots__ = ("_finished", "path")
 
     def __init__(self, path: str | Path) -> None:
+        self._finished = False
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -40,4 +44,16 @@ class JsonlSink:
         return None
 
     def finish(self) -> None:
-        return None
+        # FOR-1637: the authoritative sink narrates its own finish (once per
+        # instance; CompositeSink finishes it first, so its `.end` is already in
+        # the worker log the MLflow sink uploads). Literal event names: this
+        # adapter may not import the worker's vocabulary module (layer edge).
+        if self._finished:
+            return
+        self._finished = True
+        started = time.perf_counter()
+        logger.bind(event="sink.finish.start", sink="jsonl").info("sink.finish.start sink=jsonl")
+        seconds = time.perf_counter() - started
+        logger.bind(
+            event="sink.finish.end", sink="jsonl", settled=True, stranded=0, seconds=seconds
+        ).info(f"sink.finish.end sink=jsonl settled=True stranded=0 seconds={seconds:.3f}")

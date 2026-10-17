@@ -20,6 +20,7 @@ import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
+from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.worker_command import run_worker_command
 from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     request, inputs = prepared(tmp_path)
     objects = _ObjectStore()
@@ -78,8 +79,27 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     assert all(r["status"] == "committed" for r in training)
     assert [r["step"] for r in training if r["phase"] == "prediction"]
 
+    # FOR-1637: the worker also narrates itself. The substrate's JSON sink is
+    # pointed at ``<workspace>.observability/worker-log.jsonl`` (beside
+    # metrics.jsonl) once the request is admitted, and the human stderr stream
+    # carries the same milestones as one sentence each (this is what the
+    # RunPod container log shows). The injected ``stderr`` stays the
+    # structured-error channel only: still empty on success.
+    assert error.getvalue() == ""
+    log_path = tmp_path / "command-worker.observability" / "worker-log.jsonl"
+    assert log_path.exists(), "the worker's structured log file must exist beside metrics.jsonl"
+    log_rows = [json.loads(line) for line in log_path.read_text().splitlines() if line]
+    assert log_rows and all("event" in row for row in log_rows if row["level"] != "DEBUG")
+    names = [row["event"] for row in log_rows]
+    assert "phase.start" in names and "completion.written" in names
+    human = capsys.readouterr().err
+    assert "phase.start phase=codec_warmup" in human
+    assert "completion.written key=" in human
 
-def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
+
+def test_request_admission_failure_never_touches_disk(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Guard-teeth companion: sink construction must sit AFTER admission,
     never before it -- a request this command refuses cannot leave a
     partial workspace behind (the existing worker/refused-worker contract
@@ -91,6 +111,9 @@ def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
     workspace = tmp_path / "refused-worker"
     workspace.mkdir()
     output, error = StringIO(), StringIO()
+    # Bind the substrate to THIS test's stderr (the autouse conftest sink writes
+    # into a stream capsys does not read; see tests/test_h_worker_log_lines.py).
+    configure_logging(json_path=None)
 
     status = run_worker_command(
         [
@@ -119,3 +142,7 @@ def test_request_admission_failure_never_touches_disk(tmp_path: Path) -> None:
     assert status == 2
     assert not output.getvalue() and not tuple(workspace.iterdir())
     assert json.loads(error.getvalue())["code"] == "worker_command_refused"
+    # S8c: the sibling observability root and the structured sink come AFTER
+    # admission too -- a refused request builds neither and narrates no start.
+    assert not (tmp_path / "refused-worker.observability").exists()
+    assert "worker.start" not in capsys.readouterr().err

@@ -506,6 +506,13 @@ tokens only where captured. It cannot call estimated FLOPs, accelerator-active t
 provider cost measured. A missing counter removes the corresponding comparison; it does not
 authorize a substitute.
 
+The H worker narrates its mechanisms (every R2 publish, retry, stop-marker observation, completion
+write and sink finish) through `kernel.runtime.logging`, using the closed event vocabulary in
+`entropic_substrate.ladder.run.worker_log_events`. The structured copy, `worker-log.jsonl`, is uploaded
+to the MLflow run at sink finish as an operational mirror that never feeds a verdict.
+`sink.finish.end` reports `settled` and `stranded`; the names and the one deliberately event-less
+warning are recorded in that module's docstring.
+
 ## D1–D5 ladder
 
 | Rung | Isolated question | Primary comparison | Advancement rule |

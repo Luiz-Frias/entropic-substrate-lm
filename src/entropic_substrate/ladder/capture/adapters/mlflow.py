@@ -41,6 +41,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
+from urllib.parse import urlsplit, urlunsplit
 
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.run_descriptor import (
@@ -254,6 +255,22 @@ def _is_already_exists(exc: BaseException) -> bool:
     return getattr(exc, "error_code", None) == "RESOURCE_ALREADY_EXISTS"
 
 
+def _safe_tracking_uri(uri: str) -> str:
+    """The tracking URI WITHOUT userinfo, query or fragment, for log lines.
+
+    The worker log is uploaded to the MLflow artifact store, so anything it
+    renders is readable by every MLflow reader (FOR-1637). Credentials are
+    environment variables today, but the URI is caller-controlled: never
+    render what may carry a secret.
+    """
+    try:
+        parts = urlsplit(uri)
+        netloc = parts.netloc.rsplit("@", 1)[-1]
+        return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except ValueError:
+        return "<unparseable tracking uri>"
+
+
 class MlflowSink:
     """BEST-EFFORT AFTER STARTUP. See module docstring for the full contract.
 
@@ -298,6 +315,7 @@ class MlflowSink:
         params: Mapping[str, Any] | None = None,
         tags: Mapping[str, Any] | None = None,
         results_path: str | Path | None = None,
+        log_path: str | Path | None = None,
         config_hash: str | None = None,
         dataset_pointer_path: str | Path | None = None,
         dataset_split_spec: Mapping[str, Any] | None = None,
@@ -380,6 +398,10 @@ class MlflowSink:
         # forget). None => nothing to upload, e.g. tests that only probe
         # metric fan-out.
         self._results_path = Path(results_path) if results_path is not None else None
+        # The worker's structured log (FOR-1637, ruling D3): uploaded beside the
+        # results at finish() ONLY when the caller declared one. None => no extra
+        # client call and no extra warning, byte-identical to before.
+        self._log_path = Path(log_path) if log_path is not None else None
         # Citation-registry key (config_hash()'s output) — None => the caller
         # never gave one, and register_citation() becomes a no-op rather than
         # guessing a value that would silently collide across configs.
@@ -426,7 +448,7 @@ class MlflowSink:
             attempt += 1
             backoff = min(2.0**attempt, 8.0)
             logger.warning(
-                f"mlflow: {tracking_uri} answered but read-timed-out "
+                f"mlflow: {_safe_tracking_uri(tracking_uri)} answered but read-timed-out "
                 f"(attempt {attempt}); cold server, retrying in {backoff:.0f}s"
             )
             time.sleep(backoff)
@@ -502,7 +524,10 @@ class MlflowSink:
                 self._failed_writes += 1
                 logger.warning(f"mlflow: system metrics monitor failed to start: {exc}")
 
-        logger.info(f"mlflow: tracking run {run_name!r} at {tracking_uri} (run_id={self._run_id})")
+        safe_uri = _safe_tracking_uri(tracking_uri)
+        logger.bind(event="mlflow.run", run_id=self._run_id, uri=safe_uri).info(
+            f"mlflow: tracking run {run_name!r} at {safe_uri} (run_id={self._run_id})"
+        )
 
     def _count_failed(self, records: int) -> int:
         with self._lock:
@@ -528,7 +553,9 @@ class MlflowSink:
             )
         except Exception as exc:
             failed = self._count_failed(1)
-            logger.warning(f"mlflow: metric write failed (#{failed}): {exc}")
+            logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
+                f"mlflow: metric write failed (#{failed}): {exc}"
+            )
             return
         # Check-and-count under the lock the worker's _die() takes: a record is
         # either pending when the worker dies (counted there), sees the dead
@@ -559,14 +586,14 @@ class MlflowSink:
                     self._death_reported_at_log = True
             failed = self._failed_writes
         if after_finish:
-            logger.warning(
+            logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
                 f"mlflow: log() called after finish() (#{failed} failed write); "
                 "the record is counted as failed, never delivered"
             )
             return
         if dead is not None:
             if report_death:
-                logger.warning(
+                logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
                     f"mlflow: metric writer worker died ({dead!r}); this and every later "
                     f"record is counted as a failed write (#{failed}), never restarted"
                 )
@@ -624,7 +651,7 @@ class MlflowSink:
             except Exception as exc:
                 carried = {index for index, _ in chunk}
                 failed |= carried
-                logger.warning(
+                logger.bind(event="sink.write_failed", sink="mlflow", count=len(carried)).warning(
                     f"mlflow: metric batch failed ({len(carried)} record(s), "
                     f"{len(chunk)} metric(s)): {exc}"
                 )
@@ -708,7 +735,9 @@ class MlflowSink:
             self._log_dvc_pointer_if_present(path)
         except Exception as exc:
             failed = self._count_failed(1)
-            logger.warning(f"mlflow: artifact upload failed for {path} (#{failed}): {exc}")
+            logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
+                f"mlflow: artifact upload failed for {path} (#{failed}): {exc}"
+            )
 
     def _log_dvc_pointer_if_present(self, path: Path) -> None:
         """Best-effort: if ``<path>.dvc`` already exists, log its md5 + remote.
@@ -739,6 +768,14 @@ class MlflowSink:
         if self._finished:
             return
         self._finished = True
+        # FOR-1637: bracket the finish so a finish that never returns (a hung
+        # artifact upload, a hung set_terminated) is visible as a start with no
+        # end. Literal event names (layer edge: no import of the worker's
+        # vocabulary). The sentences avoid every word the FOR-1622 stderr pins
+        # count ('drain', 'worker died', 'metric batch', 'after finish'): the
+        # drain outcome travels as the `settled`/`stranded` fields.
+        finish_started = time.perf_counter()
+        logger.bind(event="sink.finish.start", sink="mlflow").info("sink.finish.start sink=mlflow")
         # DRAIN FIRST (FOR-1622): every queued metric must land before
         # set_terminated below, bounded by drain_timeout_seconds.
         drained = self.flush()
@@ -758,7 +795,12 @@ class MlflowSink:
             )
         elif not drained:
             state = "joined" if joined else "not joined, still busy (daemon, abandoned)"
-            logger.warning(
+            logger.bind(
+                event="sink.drain_exceeded",
+                sink="mlflow",
+                budget_seconds=self._drain_timeout_s,
+                stranded=stranded,
+            ).warning(
                 f"mlflow: metric drain exceeded its {self._drain_timeout_s:g}s budget; "
                 f"{stranded} undelivered record(s) counted as failed writes; writer {state}"
             )
@@ -789,7 +831,30 @@ class MlflowSink:
                     )
             except Exception as exc:
                 self._count_failed(1)
-                logger.warning(f"mlflow: results JSONL upload failed: {exc}")
+                logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
+                    f"mlflow: results JSONL upload failed: {exc}"
+                )
+        # The worker's structured log (FOR-1637, ruling D3), uploaded AFTER the
+        # results and BEFORE the termination block, under its own guard: a failed
+        # upload is counted and warned, never raised, and never skips
+        # set_terminated. The JSON sink is synchronous, so the file is complete
+        # up to this call. With no declared log_path nothing here runs.
+        if self._log_path is not None:
+            try:
+                if self._log_path.exists():
+                    self._client.log_artifact(
+                        self._run_id, str(self._log_path), artifact_path="results"
+                    )
+                else:
+                    logger.warning(
+                        f"mlflow: worker log file {self._log_path} missing at finish() — "
+                        "skipping the derived upload"
+                    )
+            except Exception as exc:
+                self._count_failed(1)
+                logger.bind(event="sink.write_failed", sink="mlflow", count=1).warning(
+                    f"mlflow: worker log upload failed: {exc}"
+                )
         try:
             if self._failed_writes:
                 self._client.set_tag(self._run_id, "mlflow_failed_writes", str(self._failed_writes))
@@ -802,6 +867,17 @@ class MlflowSink:
         except Exception as exc:
             self._count_failed(1)
             logger.warning(f"mlflow: finish() failed: {exc}")
+        finish_seconds = time.perf_counter() - finish_started
+        logger.bind(
+            event="sink.finish.end",
+            sink="mlflow",
+            settled=drained,
+            stranded=stranded,
+            seconds=finish_seconds,
+        ).info(
+            f"sink.finish.end sink=mlflow settled={drained} stranded={stranded} "
+            f"seconds={finish_seconds:.3f}"
+        )
 
     @property
     def failed_writes(self) -> int:
