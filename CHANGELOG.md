@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.2.1...v0.3.0) (2026-10-17)
+
+
+### Features
+
+* **capture:** FOR-1639 H runs take their own capture lane ([#343](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/343)) ([fd88937](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/fd88937f5d4abf80db9c03773ceb721e0c41bdcc))
+* **capture:** FOR-1642 H run surface, checkpoint evidence, FAILED ([#345](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/345)) ([68bae8c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/68bae8c6434c0059b0e3b0ea51fb76fb8b0b4c00))
+* **h-host:** host substrate, provider-aware controller, v3 launch ([#346](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/346)) ([c2c47d0](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c2c47d0f0e0e68bf35f772b49fafc791a4d17405))
+* **h-worker:** FOR-1657 tag every H run with its request digest ([#347](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/347)) ([dbe9709](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dbe97094358ca349ce20ee1a396ae44d1c7700aa))
+
+
+### Bug Fixes
+
+* **capture:** FOR-1650 commit a capture pass only when all admissible ([#344](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/344)) ([c280a84](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c280a8474752c1e0240b00e765498433d464b132))
+* **deploy:** re-pin the H image to the observability parity tip ([#349](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/349)) ([8aec100](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8aec1008d15db3ebb725424550a24f96627d7433))
+* **logging:** FOR-1649 capsys tests assert on real log lines ([#342](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/342)) ([80575ea](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/80575eaf141e16a5f1576d68569e5cdbfcbd0ac3))
+* **run:** H worker narrates every mechanism through the log substrate (FOR-1637) ([#341](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/341)) ([8b29b46](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8b29b4642cbab96e6eade1dd7ec9fe9778fec87b))
+
 ## [0.2.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.2.0...v0.2.1) (2026-10-12)
 
 
