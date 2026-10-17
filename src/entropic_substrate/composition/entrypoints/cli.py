@@ -599,6 +599,9 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
         logger.error(f"capture-results: {gap}")
         return 2
     if not captured:
+        # Reached only when a fully admissible pass found nothing new: a refused
+        # pass raised above and moved nothing into dest (FOR-1650), so this can
+        # never mask admissible files stranded by an earlier refusal.
         logger.info("capture-results: nothing new to capture")
         return 0
     if args.no_dvc:
