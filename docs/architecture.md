@@ -543,6 +543,8 @@ differs per seed; the grouping key must not, or every seed of a sweep would be a
 neither, and the tracer and the probe have no image (they carry `git_sha()` of the local checkout).
 Aggregating H runs by this key is a later slice (FOR-1648); this one only makes them groupable.
 
+The pod worker alone also tags its run `request_sha256` (the request digest, 64 lowercase hex; the run name stays `h-worker-<identity>`), and the wave monitor binds every `--launch-file` arm by that tag, so a fresh-nonce retry is never read as an earlier launch's run of the same name (FOR-1657).
+
 The `MetricSink` door gained two additive members on 2026-10-15 (DN-1643-PORT, operator ruling
 2026-10-14, same shape as DN-1637-DOOR). `annotate(tags)` attaches `str -> str` run tags: the JSONL
 sink appends `{"event": "annotate", **tags}` (no `schema` key, so no schema-keyed reader counts it),

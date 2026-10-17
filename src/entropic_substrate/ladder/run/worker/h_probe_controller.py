@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Protocol
 
 from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
-from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.h_probe_collection import collect_probe_terminal
 from entropic_substrate.ladder.run.h_probe_control import read_probe_control
 from entropic_substrate.ladder.run.h_probe_events import read_probe_event
@@ -33,6 +32,7 @@ from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     allocate_probe_once,
     provider_error_code,
 )
+from entropic_substrate.ladder.run.worker.h_probe_host_log import emit
 from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_ALLOCATION_END,
     HOST_ALLOCATION_START,
@@ -52,7 +52,6 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     STATE_STEP,
     checkpoint_steps,
     progress_fields,
-    render,
 )
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
 
@@ -85,12 +84,6 @@ class ProbeProviderAbsent(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("provider reports the attributed pod absent without terminal evidence")
-
-
-def _emit(level: str, event: str, pod_name: str, **fields: object) -> None:
-    """One host event: structured fields through ``bind``, one human sentence."""
-    bound: dict[str, object] = {"pod_name": pod_name, **fields}
-    getattr(logger.bind(event=event, **bound), level)(render(event, **bound))
 
 
 class _CheckpointProgress:
@@ -230,7 +223,7 @@ def _owned_pod_absent(
     except ProbeProviderError as error:
         if error.code not in _TRANSIENT_PROVIDER_CODES:
             raise
-        _emit("warning", HOST_PROVIDER_TRANSIENT, pod_name, code=error.code)
+        emit("warning", HOST_PROVIDER_TRANSIENT, pod_name=pod_name, code=error.code)
         return False
 
 
@@ -248,13 +241,13 @@ def _progress_tick(
         )
         if step is not None:
             fields["last_event"] = f"checkpoint-{step:08d}"
-        _emit("info", HOST_POLL_TICK, pod_name, **fields)
+        emit("info", HOST_POLL_TICK, pod_name=pod_name, **fields)
     except Exception as error:
         fields = progress_fields(source=SOURCE_R2_CHECKPOINT, state=STATE_READ_FAILED)
-        _emit(
+        emit(
             "warning",
             HOST_PROGRESS_UNAVAILABLE,
-            pod_name,
+            pod_name=pod_name,
             error_type=type(error).__name__,
             **fields,
         )
@@ -328,21 +321,21 @@ def run_probe_controller(
     try:
         if clock() >= deadline:
             raise TimeoutError("controller deadline expired before allocation")
-        _emit("info", HOST_ALLOCATION_START, pod_name)
+        emit("info", HOST_ALLOCATION_START, pod_name=pod_name)
         try:
             pod = allocate_probe_once(guard, provider, objects)
         except BaseException as error:
-            _emit(
+            emit(
                 "warning",
                 HOST_ALLOCATION_END,
-                pod_name,
+                pod_name=pod_name,
                 outcome="failed",
                 error_type=type(error).__name__,
             )
             raise
-        _emit("info", HOST_ALLOCATION_END, pod_name, outcome="created")
+        emit("info", HOST_ALLOCATION_END, pod_name=pod_name, outcome="created")
         pod_id = pod.pod_id
-        _emit("info", HOST_POD_ATTRIBUTED, pod_name, pod_id=pod_id)
+        emit("info", HOST_POD_ATTRIBUTED, pod_name=pod_name, pod_id=pod_id)
         stage = "allocation_custody"
         guard.control.write(
             "pod",
@@ -368,10 +361,10 @@ def run_probe_controller(
                 max_marker_bytes=guard.launch.request.limits.max_object_bytes,
             )
             if collection is not None:
-                _emit(
+                emit(
                     "info",
                     HOST_TERMINAL_OBSERVED,
-                    pod_name,
+                    pod_name=pod_name,
                     reported_outcome=collection.get("reported_outcome"),
                     workload_verified=collection.get("workload_verified"),
                 )
@@ -380,7 +373,7 @@ def run_probe_controller(
                 # The None, the account match and a terminal-capture attempt AFTER it
                 # (above) all hold: a published terminal is never shadowed (C7).
                 stage = "provider_absent"
-                _emit("warning", HOST_PROVIDER_ABSENT_OBSERVED, pod_name, pod_id=pod_id)
+                emit("warning", HOST_PROVIDER_ABSENT_OBSERVED, pod_name=pod_name, pod_id=pod_id)
                 raise ProbeProviderAbsent
             _progress_tick(progress, objects, pod_name)
             remaining = deadline - clock()
@@ -430,7 +423,7 @@ def run_probe_controller(
             },
             max_bytes=guard.config.max_control_bytes,
         )
-        _emit("info", HOST_STOP_HANDOFF, pod_name, reason=reason, pod_id=recorded_id)
+        emit("info", HOST_STOP_HANDOFF, pod_name=pod_name, reason=reason, pod_id=recorded_id)
     except BaseException as error:
         errors.append(error)
         failure_stages.append("stop_handoff")
@@ -444,10 +437,10 @@ def run_probe_controller(
             errors.append(error)
             failure_stages.append("emergency_cleanup")
             emergency = {"status": "emergency_failed", "owned_pod_absent": False}
-        _emit(
+        emit(
             "warning",
             HOST_EMERGENCY_CLEANUP,
-            pod_name,
+            pod_name=pod_name,
             outcome=emergency["status"],
             acknowledgement=emergency.get("acknowledgement"),
             owned_pod_absent=emergency["owned_pod_absent"],
@@ -475,9 +468,9 @@ def run_probe_controller(
             timeout += (
                 3 * guard.config.provider_timeout_seconds + guard.config.shutdown_timeout_seconds
             )
-        _emit("info", HOST_WATCHDOG_JOIN_START, pod_name, timeout_seconds=float(timeout))
+        emit("info", HOST_WATCHDOG_JOIN_START, pod_name=pod_name, timeout_seconds=float(timeout))
         watchdog = guard.wait_result(timeout_seconds=timeout)
-        _emit("info", HOST_WATCHDOG_JOIN_END, pod_name, status=watchdog.get("status"))
+        emit("info", HOST_WATCHDOG_JOIN_END, pod_name=pod_name, status=watchdog.get("status"))
         if not _termination(watchdog, pod_id):
             raise ValueError("watchdog did not verify this allocation's complete termination")
     except BaseException as error:
@@ -486,10 +479,10 @@ def run_probe_controller(
         if watchdog is None:
             # The join itself failed. A join that returned a record whose termination was not
             # verified already narrated that record's status above.
-            _emit(
+            emit(
                 "warning",
                 HOST_WATCHDOG_JOIN_END,
-                pod_name,
+                pod_name=pod_name,
                 status="join_failed",
                 error_type=type(error).__name__,
             )

@@ -5,7 +5,7 @@ the local ``h-train-probe``) builds its run through ``build_sink_for_run`` with 
 descriptor shape:
 
     params = {exp, seed, config_hash, git_sha, run_class, precision, image}
-    tags   = {schema, exp, config_hash}
+    tags   = {schema, exp, config_hash}   (the pod worker alone adds request_sha256, FOR-1657)
 
 ``config_hash`` is ``h_config_hash(profile)``: ``sha256(canonical manifest minus the
 sweep ``seed``)[:12]``, the key ``mlflow_aggregate`` groups seed runs by. ``git_sha`` and
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from dataclasses import replace
@@ -126,6 +127,7 @@ def test_the_tracer_declares_the_h_run_surface(tmp_path: Path) -> None:
         EXP_TAG: local.name,
         CONFIG_HASH_TAG: chash,
     }
+    assert "request_sha256" not in descriptor.tags  # a tracer has no request (FOR-1657)
     assert "image" not in descriptor.params
     assert descriptor.config_hash is None  # the citation key stays E-only (K7)
     assert call["results_path"] == tmp_path / "trace" / "observability" / "metrics.jsonl"
@@ -214,7 +216,11 @@ def test_a_local_tiny_worker_omits_git_sha_and_image(
         "schema": "h-probe-worker-result-v1",
         EXP_TAG: request.profile.name,
         CONFIG_HASH_TAG: chash,
+        # FOR-1657: the launch-bound identity the wave monitor binds an arm by
+        "request_sha256": request.digest,
     }
+    assert re.fullmatch(r"[0-9a-f]{64}", descriptor.tags["request_sha256"])
+    assert "request_sha256" not in descriptor.params  # a tag only; the E-level params stay
     assert descriptor.run_name == f"h-worker-{request.profile.identity}"  # unchanged
     assert descriptor.config_hash is None and descriptor.tiny is True
 
@@ -230,6 +236,9 @@ def test_a_remote_shaped_worker_carries_the_request_commit_and_image_unswapped(
     assert descriptor.params["git_sha"] == commit and descriptor.params["image"] == image
     assert descriptor.params[CONFIG_HASH_TAG] == h_config_hash(request.profile)
     assert descriptor.tags[CONFIG_HASH_TAG] == descriptor.params[CONFIG_HASH_TAG]
+    assert descriptor.tags["request_sha256"] == request.digest  # FOR-1657
+    assert re.fullmatch(r"[0-9a-f]{64}", descriptor.tags["request_sha256"])
+    assert descriptor.run_name == f"h-worker-{request.profile.identity}"  # the name is unchanged
     # G4: the call keeps its keyword shape (descriptor positional, three keywords).
     assert {"results_path", "log_path", "metric_extractor"} <= set(kwargs)
 
@@ -272,3 +281,4 @@ def test_the_local_probe_declares_the_h_run_surface(
         EXP_TAG: template.profile.name,
         CONFIG_HASH_TAG: chash,
     }
+    assert "request_sha256" not in descriptor.tags  # the local probe has no request (FOR-1657)

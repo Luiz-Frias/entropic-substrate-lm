@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TextIO
 
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
-from entropic_substrate.kernel.runtime.logging import configure_logging, logger
+from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.h_probe_events import read_probe_event
 from entropic_substrate.ladder.run.h_probe_launch import parse_probe_launch
 from entropic_substrate.ladder.run.object_worker import (
@@ -31,21 +31,15 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.worker.h_probe_host_log import emit
 from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_STOP_MARKER_CONFIRMED,
     HOST_STOP_MARKER_REQUESTED,
     HOST_STOP_MARKER_UNCONFIRMED,
-    render,
 )
 from entropic_substrate.ladder.run.worker_command import build_worker_objects
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
 from entropic_substrate.ladder.run.worker_transport import publish_verified_object
-
-
-def _emit(level: str, event: str, pod_name: str, **fields: object) -> None:
-    """One host event: structured fields through ``bind``, one human sentence."""
-    bound: dict[str, object] = {"pod_name": pod_name, **fields}
-    getattr(logger.bind(event=event, **bound), level)(render(event, **bound))
 
 
 def request_stop(
@@ -144,7 +138,7 @@ def run_probe_stop(
             max_objects=request.limits.max_objects,
         )
         pod_name = launch.pod_name
-        _emit("info", HOST_STOP_MARKER_REQUESTED, pod_name, wait_seconds=args.wait_seconds)
+        emit("info", HOST_STOP_MARKER_REQUESTED, pod_name=pod_name, wait_seconds=args.wait_seconds)
         keys = request_stop(
             objects,
             request,
@@ -154,7 +148,12 @@ def run_probe_stop(
             sleep=time.sleep,
         )
         if keys is None:
-            _emit("warning", HOST_STOP_MARKER_UNCONFIRMED, pod_name, wait_seconds=args.wait_seconds)
+            emit(
+                "warning",
+                HOST_STOP_MARKER_UNCONFIRMED,
+                pod_name=pod_name,
+                wait_seconds=args.wait_seconds,
+            )
             stderr.write(
                 json.dumps(
                     {"status": "stop_not_confirmed", "scientific_authority": "none"},
@@ -164,7 +163,7 @@ def run_probe_stop(
                 + "\n"
             )
             return 1
-        _emit("info", HOST_STOP_MARKER_CONFIRMED, pod_name, keys=len(keys))
+        emit("info", HOST_STOP_MARKER_CONFIRMED, pod_name=pod_name, keys=len(keys))
         stdout.write(
             json.dumps(
                 {"status": "stopped", "scientific_authority": "none", "keys": list(keys)},

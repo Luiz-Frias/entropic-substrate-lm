@@ -250,7 +250,8 @@ def test_live_h_worker_run_carries_the_descriptor_and_the_checkpoint_evidence(
 
     run = mlflow.tracking.MlflowClient(tracking_uri=_tracking_uri()).get_run(run_id)
     (tmp_path / "again").mkdir()
-    profile = prepared(tmp_path / "again")[0].profile
+    request = prepared(tmp_path / "again")[0]
+    profile = request.profile
     from entropic_substrate.ladder.capture.reader.sinks import h_config_hash
 
     chash = h_config_hash(profile)
@@ -261,6 +262,7 @@ def test_live_h_worker_run_carries_the_descriptor_and_the_checkpoint_evidence(
     assert "git_sha" not in params and "image" not in params  # G1: local_tiny has neither
     assert tags["exp"] == profile.name and tags["config_hash"] == chash
     assert tags["schema"] == "h-probe-worker-result-v1"
+    assert tags["request_sha256"] == request.digest  # FOR-1657: the launch-bound identity
     checkpoint_tags = {k: v for k, v in tags.items() if k.startswith("checkpoint/")}
     assert checkpoint_tags, "no checkpoint evidence tags reached the server"
     steps = sorted({k.split("/")[1] for k in checkpoint_tags})
