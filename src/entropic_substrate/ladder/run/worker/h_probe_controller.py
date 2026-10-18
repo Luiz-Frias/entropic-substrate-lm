@@ -247,13 +247,18 @@ def _probe_terminal(
     root: Path,
     tally: _TerminalProbeTally,
 ) -> dict[str, object] | None:
-    """One per-poll terminal observation; a failed marker READ is a logged tick (FOR-1665).
+    """One per-poll terminal observation; a RECOVERABLE marker READ failure is a logged tick.
 
-    Mirrors ``_owned_pod_absent``: a ``D1TrainerS3ObjectError`` is emitted as a named
-    WARNING and the poll continues at the existing cadence (no counter abort, sleep or
-    timeout is added); the controller deadline and the watchdog remain the only removal
-    authorities. Only that type is transient: the conflicting-claims ``ValueError`` and
-    every other error propagate into the existing failure path. An error raised after the
+    Mirrors ``_owned_pod_absent``: a ``D1TrainerS3ObjectError`` the adapter classifies as
+    recoverable (``is_recoverable``) is emitted as a named WARNING and the poll continues at
+    the existing cadence (no counter abort, sleep or timeout is added); the controller
+    deadline and the watchdog remain the only removal authorities for it. RETRACTED
+    (FOR-1667): this docstring and the FOR-1665 pin once said every ``D1TrainerS3ObjectError``
+    is transient. It is not: a permanent code (an integrity code, or an auth or request-shape
+    provider failure) cannot be cured by the next tick, so it propagates at once with the
+    stage ``terminal_capture`` instead of masking itself, and the provider-absent exit,
+    behind the deadline. The conflicting-claims ``ValueError`` and every other error also
+    propagate into the existing failure path. An error raised after the
     capture began (the destination is no longer empty) is not a marker probe: a retry
     would meet the fresh-destination refusal, so it propagates with its partial evidence.
     The payload is ``safe_diagnostic()`` only (never a message, URL, key or request id).
@@ -267,7 +272,7 @@ def _probe_terminal(
             max_marker_bytes=guard.launch.request.limits.max_object_bytes,
         )
     except D1TrainerS3ObjectError as error:
-        if any(root.iterdir()):
+        if any(root.iterdir()) or not error.is_recoverable():
             raise
         diagnostic = error.safe_diagnostic()
         tally.count += 1
@@ -423,11 +428,11 @@ def run_probe_controller(
                     workload_verified=collection.get("workload_verified"),
                 )
                 break
-            # A tick whose marker read raised did not return None: it is a transient, so the
-            # absence is deferred to the next tick, which re-asks the provider and re-reads
-            # the markers (FOR-1665). Otherwise the None, the account match and a
-            # terminal-capture attempt AFTER it (above) all hold: a published terminal is
-            # never shadowed (C7).
+            # A tick whose marker read raised a RECOVERABLE error did not return None: it is a
+            # transient (a permanent read already propagated above), so the absence is deferred
+            # to the next tick, which re-asks the provider and re-reads the markers (FOR-1665).
+            # Otherwise the None, the account match and a terminal-capture attempt AFTER it
+            # (above) all hold: a published terminal is never shadowed (C7).
             if absent and probe_tally.count == transient_before:
                 stage = "provider_absent"
                 emit("warning", HOST_PROVIDER_ABSENT_OBSERVED, pod_name=pod_name, pod_id=pod_id)

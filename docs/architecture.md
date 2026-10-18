@@ -590,7 +590,11 @@ command process, so its events ride that substrate. The closed host vocabulary i
 from the worker's), and every host record binds the launch's `pod_name` so concurrent arms that
 share a JSON log can be told apart. The controller asks the provider about the attributed pod on every
 poll: an absent pod with no published terminal ends the loop as the named `provider_absent`
-observation instead of waiting for the deadline. Progress has two evidence sources that are never
+observation instead of waiting for the deadline. A failed terminal-marker read follows the same
+split (FOR-1665, FOR-1667): the adapter's `is_recoverable()` classifies it, a permanent object-read
+code (an integrity code, or an auth or request-shape provider failure) fails the controller on the
+first tick, and a recoverable one is a logged tick bounded by the deadline. Progress has two
+evidence sources that are never
 interchangeable: the controller's R2 `checkpoint-N` events (seal granularity) and the wave monitor's
 MLflow `phase_index` metric (every step), and each line names its source.
 

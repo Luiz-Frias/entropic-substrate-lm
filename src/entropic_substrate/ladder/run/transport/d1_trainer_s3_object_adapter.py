@@ -30,6 +30,27 @@ class D1S3ClientPort(Protocol):
     def list_objects_v2(self, **kwargs: object) -> Mapping[str, object]: ...
 
 
+# FOR-1667: a failed object READ that retrying the same request cannot cure. The adapter owns
+# this classification (it raises the codes); callers filter on ``is_recoverable``. A deny-list
+# of known-permanent facts, so a code nobody has seen yet stays recoverable: a wrongly-killed
+# healthy run loses its evidence tail, a permanent read polled to a deadline is bounded.
+_INTEGRITY_CODES = frozenset({"response_invalid", "metadata_invalid", "byte_limit", "object_bytes"})
+_PERMANENT_PROVIDER_CODES = frozenset(
+    {
+        "AccessDenied",
+        "InvalidAccessKeyId",
+        "SignatureDoesNotMatch",
+        "ExpiredToken",
+        "InvalidToken",
+        "NoSuchBucket",
+        "InvalidArgument",
+        "AuthorizationHeaderMalformed",
+        "RequestTimeTooSkewed",
+    }
+)
+_PERMANENT_HTTP_STATUSES = frozenset({400, 403})
+
+
 class D1TrainerS3ObjectError(RuntimeError):
     """One bounded S3 protocol, identity, or immutability failure."""
 
@@ -106,6 +127,26 @@ class D1TrainerS3ObjectError(RuntimeError):
             else "unrecognized",
             "http_status": status if type(status) is int and 100 <= status <= 599 else None,
         }
+
+    def is_recoverable(self) -> bool:
+        """False only for a read failure a retry cannot cure (FOR-1667).
+
+        Reads the allowlisted ``safe_diagnostic()`` facts and nothing else (never the message,
+        a key, a URL or a request id). Permanent: an integrity code, or a ``provider_failure``
+        whose provider code is an auth or request-shape code, whose HTTP status is 400 or 403,
+        or whose cause is a ``ParamValidationError``. Everything else, including every
+        ``unrecognized`` fact, a connection or timeout cause, and a 5xx, is recoverable.
+        """
+        facts = self.safe_diagnostic()
+        if facts["code"] in _INTEGRITY_CODES:
+            return False
+        if facts["code"] != "provider_failure":
+            return True
+        return not (
+            facts["provider_code"] in _PERMANENT_PROVIDER_CODES
+            or facts["http_status"] in _PERMANENT_HTTP_STATUSES
+            or facts["cause_type"] == "ParamValidationError"
+        )
 
 
 def _error(operation: str, code: str) -> D1TrainerS3ObjectError:
