@@ -690,7 +690,10 @@ def test_a_permanent_object_read_code_fails_on_the_first_tick(
     assert record["failure_stages"] == ["terminal_capture"]
     assert record["error_types"] == ["D1TrainerS3ObjectError"]
     assert record["terminal_probe_transient_count"] == 0
-    assert record["last_terminal_probe_error"] is None and record["collection"] is None
+    # Ruling (g): the permanent read is not absorbed (count 0, no transient line) but the
+    # result names the code that ended the run, like _owned_pod_absent's provider_error_code.
+    assert record["last_terminal_probe_error"] == error.safe_diagnostic()
+    assert record["collection"] is None
     assert not _terminal_probe_lines(records)
     assert guard.control.records["stop"]["reason"] == "cancelled" and not provider.deleted
 
@@ -702,12 +705,14 @@ def test_an_absent_pod_with_a_permanent_read_fails_at_the_read_not_the_deadline(
     """C1 (b)(iii): a permanent read propagates before the absence deferral is consulted."""
     _guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
     provider.present = False
-    _script_collect(monkeypatch, [make()])
+    error = make()
+    _script_collect(monkeypatch, [error])
     with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
         run()
     record = caught.value.record
     assert clock[0] == 0 and record["failure_stages"] == ["terminal_capture"]
     assert record["error_types"] == ["D1TrainerS3ObjectError"]
+    assert record["last_terminal_probe_error"] == error.safe_diagnostic()
     assert not _terminal_probe_lines(records) and record["terminal_probe_transient_count"] == 0
     assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
 

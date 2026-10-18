@@ -233,7 +233,14 @@ def _owned_pod_absent(
 
 @dataclass
 class _TerminalProbeTally:
-    """What the per-tick terminal probe absorbed: advisory, never an exit authority."""
+    """What the per-tick terminal probe observed: advisory, never an exit authority.
+
+    ``count`` is the number of RECOVERABLE read failures absorbed as logged ticks. RETRACTED
+    (FOR-1667): ``last_error`` is no longer "the last absorbed error"; it is the
+    ``safe_diagnostic()`` of the last classified read failure, absorbed (recoverable) or
+    propagated (permanent, so the result record names the code that ended the run while
+    ``count`` stays 0 for it).
+    """
 
     count: int = 0
     last_error: dict[str, str | int | None] | None = None
@@ -272,9 +279,12 @@ def _probe_terminal(
             max_marker_bytes=guard.launch.request.limits.max_object_bytes,
         )
     except D1TrainerS3ObjectError as error:
-        if any(root.iterdir()) or not error.is_recoverable():
+        if any(root.iterdir()):
             raise
         diagnostic = error.safe_diagnostic()
+        if not error.is_recoverable():
+            tally.last_error = diagnostic
+            raise
         tally.count += 1
         tally.last_error = diagnostic
         emit(
