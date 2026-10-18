@@ -236,7 +236,20 @@ def test_training_loop_narrates_phases_seals_and_evaluations(
         rows, "evaluation.end", global_step=4
     )
     # Cardinality (C7): nothing per step. 6 steps ran; no event is per step.
-    assert len(rows) == 2 + 2 + 3 + 2 + 2, [r.get("event") for r in rows]
+    # The final +2 is the FOR-1662 completion admission pair: exactly one
+    # admission.start and one admission.end for the whole run, none for the
+    # mid-training checkpoint walks (and this run passes no on_checkpoint).
+    completion_admission_pair = 2
+    assert len(rows) == 2 + 2 + 3 + 2 + 2 + completion_admission_pair, [
+        r.get("event") for r in rows
+    ]
+    (admitted,) = of(rows, "admission.end")
+    assert (admitted["caller"], admitted["root"], admitted["memo"]) == (
+        "completion",
+        "run",
+        "fresh",
+    )
+    assert index_of(rows, "evaluation.end", global_step=6) < index_of(rows, "admission.start")
 
     err = capsys.readouterr().err
     assert "phase.start phase=codec_warmup step_from=0 step_to=2" in err

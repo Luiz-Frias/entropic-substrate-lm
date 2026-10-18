@@ -4,6 +4,7 @@ import math
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import overload
 from uuid import uuid4
 
 import torch
@@ -21,7 +22,7 @@ from entropic_substrate.ladder.capture.resource.resource_meter_models import Res
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress
-from entropic_substrate.ladder.run.seals import SealedStep, read_seal, resume_seal
+from entropic_substrate.ladder.run.seals import SealedStep, SealMemo, read_seal, resume_seal
 from entropic_substrate.ladder.run.span_probe_artifacts import (
     SpanProbeBundle,
     capture_span_probes,
@@ -42,6 +43,7 @@ def _trained(
     source: Path,
     source_limit: int,
     artifact_limit: int,
+    memo: SealMemo | None = None,
 ) -> tuple[dict[str, object], SealedStep]:
     row = read_training_progress(
         root,
@@ -50,6 +52,7 @@ def _trained(
         source,
         max_source_bytes=source_limit,
         max_artifact_bytes=artifact_limit,
+        memo=memo,
     )
     if row["status"] != "training_complete":
         raise ValueError("span diagnostics require complete sealed training")
@@ -60,6 +63,7 @@ def _trained(
         source,
         max_bytes=artifact_limit,
         max_source_bytes=source_limit,
+        memo=memo,
     )
     return row, seal
 
@@ -119,6 +123,13 @@ def _duration(value: object) -> None:
         raise ValueError("diagnostic duration must be finite and nonnegative")
 
 
+# ``@overload`` stubs: type-checker only (no runtime effect). ``composition/span_cli.py``
+# calls ``read_span_diagnostics`` and ``run_span_diagnostics`` with ``**limits``
+# where ``limits: dict[str, int]``; a checker would match that dict against the
+# ``memo`` keyword and report an int passed as a memo at a frozen call site.
+# The first stub of each is the memo-less signature those callers see, the
+# second the memo-bearing one the worker uses (see ``trace_capture``).
+@overload
 def read_span_diagnostics(
     root: Path,
     artifact: ArtifactIdentity,
@@ -128,13 +139,43 @@ def read_span_diagnostics(
     *,
     max_source_bytes: int,
     max_artifact_bytes: int,
+) -> dict[str, object]: ...
+
+
+@overload
+def read_span_diagnostics(
+    root: Path,
+    artifact: ArtifactIdentity,
+    training: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    *,
+    max_source_bytes: int,
+    max_artifact_bytes: int,
+    memo: SealMemo | None,
+) -> dict[str, object]: ...
+
+
+def read_span_diagnostics(
+    root: Path,
+    artifact: ArtifactIdentity,
+    training: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    *,
+    max_source_bytes: int,
+    max_artifact_bytes: int,
+    memo: SealMemo | None = None,
 ) -> dict[str, object]:
     """Verify checkpoint/source bindings and replay frozen scores, not model forward states.
 
     The selected model states are content-bound producer evidence. This reader
     does not claim a second forward execution or grant scientific eligibility.
+    ``memo`` is the same-process, same-root admission memo or ``None`` (full walk).
     """
-    _, seal = _trained(root, training, profile, source_root, max_source_bytes, max_artifact_bytes)
+    _, seal = _trained(
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+    )
     row = recovery_record(
         read_json(root, artifact, max_bytes=max_artifact_bytes),
         "schema run_identity run_class scientific_authority status validation_scope training checkpoint probe_bundle collection summaries",
@@ -180,6 +221,7 @@ def read_span_diagnostics(
     return row
 
 
+@overload
 def run_span_diagnostics(
     root: Path,
     training: ArtifactIdentity,
@@ -189,10 +231,39 @@ def run_span_diagnostics(
     *,
     max_source_bytes: int,
     max_artifact_bytes: int,
+) -> ArtifactIdentity: ...
+
+
+@overload
+def run_span_diagnostics(
+    root: Path,
+    training: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    config: ProbeConfig,
+    *,
+    max_source_bytes: int,
+    max_artifact_bytes: int,
+    memo: SealMemo | None,
+) -> ArtifactIdentity: ...
+
+
+def run_span_diagnostics(
+    root: Path,
+    training: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    config: ProbeConfig,
+    *,
+    max_source_bytes: int,
+    max_artifact_bytes: int,
+    memo: SealMemo | None = None,
 ) -> ArtifactIdentity:
     """Restore the actual trained checkpoint before collecting any fitting states."""
     config.__post_init__()
-    row, seal = _trained(root, training, profile, source_root, max_source_bytes, max_artifact_bytes)
+    row, seal = _trained(
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+    )
     prefix = uuid4().hex
     stage = "restore"
     bundle_artifact = None
@@ -204,6 +275,7 @@ def run_span_diagnostics(
                 artifact_from_mapping(row["last_seal"]),
                 execution,
                 max_bytes=max_artifact_bytes,
+                memo=memo,
             )
             collection: dict[str, dict[str, object]] = {}
             states = []
@@ -282,6 +354,7 @@ def run_span_diagnostics(
             source_root,
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
+            memo=memo,
         )
         return receipt
     except Exception as error:

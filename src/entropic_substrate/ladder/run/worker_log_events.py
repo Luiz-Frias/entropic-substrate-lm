@@ -37,6 +37,10 @@ set of emitted ``event`` names are equal in both directions.
 from __future__ import annotations
 
 __all__ = [
+    "ADMISSION_CALLERS",
+    "ADMISSION_END",
+    "ADMISSION_ROOTS",
+    "ADMISSION_START",
     "CHECKPOINT_SEAL",
     "COMPLETION_WRITTEN",
     "EVALUATION_END",
@@ -88,6 +92,23 @@ SINK_FINISH_END = "sink.finish.end"
 SINK_DRAIN_EXCEEDED = "sink.drain_exceeded"
 SINK_WRITE_FAILED = "sink.write_failed"
 MLFLOW_RUN = "mlflow.run"
+# FOR-1662: one pair per top-level admission site of the final leg, never per
+# node, per call or per step. ``caller`` and ``root`` are CLOSED sets (never a
+# filesystem path, so no operator-home string reaches a published log).
+ADMISSION_START = "admission.start"
+ADMISSION_END = "admission.end"
+ADMISSION_CALLERS: frozenset[str] = frozenset(
+    {
+        "completion",
+        "training_readback",
+        "generation",
+        "span_diagnostics",
+        "trace_capture",
+        "native_verification",
+        "result_admission",
+    }
+)
+ADMISSION_ROOTS: frozenset[str] = frozenset({"run", "capture"})
 
 H_WORKER_LOG_EVENTS: frozenset[str] = frozenset(
     {
@@ -114,6 +135,8 @@ H_WORKER_LOG_EVENTS: frozenset[str] = frozenset(
         SINK_DRAIN_EXCEEDED,
         SINK_WRITE_FAILED,
         MLFLOW_RUN,
+        ADMISSION_START,
+        ADMISSION_END,
     }
 )
 

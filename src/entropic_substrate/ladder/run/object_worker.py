@@ -16,6 +16,7 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.native_verification import read_native_verification
 from entropic_substrate.ladder.run.runner import read_training_progress
+from entropic_substrate.ladder.run.seals import SealMemo, narrated_admission
 from entropic_substrate.ladder.run.span_states import SpanPopulationGap
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
@@ -161,7 +162,9 @@ def _publication(
     }
 
 
-def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str, object]:
+def _admit_result(
+    root: Path, request: ProbeRequest, value: object, memo: SealMemo | None = None
+) -> dict[str, object]:
     row = recovery_record(
         value,
         "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds",
@@ -183,14 +186,18 @@ def _admit_result(root: Path, request: ProbeRequest, value: object) -> dict[str,
         raise ValueError("worker result duration is invalid")
     maximum = request.limits.max_object_bytes
     training = worker_artifact(row["training"], "run")
-    report = read_training_progress(
-        root / "run",
-        training,
-        request.profile,
-        root / "source",
-        max_source_bytes=maximum,
-        max_artifact_bytes=maximum,
-    )
+    # ``memo`` is the /run memo this process's completion walk populated (None
+    # for a path that did not run training here: nothing is reused or measured).
+    with narrated_admission("result_admission", "run", memo):
+        report = read_training_progress(
+            root / "run",
+            training,
+            request.profile,
+            root / "source",
+            max_source_bytes=maximum,
+            max_artifact_bytes=maximum,
+            memo=memo,
+        )
     if (
         type(row["successful_optimizer_steps"]) is not int
         or row["successful_optimizer_steps"] != report["successful_optimizer_steps"]
@@ -266,6 +273,10 @@ def run_object_worker(
     # checkpoint event's `publication` block (FOR-1567).
     ledger: PublicationLedger = {}
     publication_timing: dict[str, float] = {}
+    # FOR-1662: the /run root's admission memo, handed back by
+    # execute_probe_request (a caller-owned out-parameter, like
+    # publication_timing). Owned by this ONE invocation, never module-level.
+    admission_memos: dict[str, SealMemo] = {}
     # h-run-lifecycle-v1 pairing (FOR-1639): run_end is written only for a
     # run_start that start() logged earlier in THIS invocation, and the failed
     # run_end's clock starts immediately before execute_probe_request.
@@ -424,9 +435,10 @@ def run_object_worker(
             sink=sink,
             publication_timing=publication_timing,
             operator_stop=stop_requested,
+            admission_memos=admission_memos,
         )
         with narrated_stage("result_admission"):
-            result = _admit_result(root, request, result)
+            result = _admit_result(root, request, result, admission_memos.get("run"))
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)
         stage = "final_snapshot"
         name = (
@@ -463,13 +475,17 @@ def run_object_worker(
         # (runner.py fires `on_checkpoint` at every seal boundary it
         # reaches, unconditionally, including the final one). Reusing those
         # same numbers here would double-report one measurement under two
-        # event names, not record a second one. Two further full-chain
-        # re-walks DO happen on this leg -- `worker_execution.py`'s own
-        # post-training `read_training_progress` call and `_admit_result`'s
-        # `read_training_progress` call above (:133 in this file) -- and
-        # neither is instrumented, so their cost is genuinely unmeasured
-        # here. 0.0 means "not measured for this leg", never "measured
-        # zero".
+        # event names, not record a second one.
+        #
+        # RETRACTION (house rule 4, FOR-1662): this comment used to say two
+        # further FULL-CHAIN re-walks happen on this leg (`worker_execution.py`'s
+        # post-training readback and `_admit_result`'s `read_training_progress`)
+        # and that neither is instrumented, citing a line (:133) that no
+        # longer points there. Now both reuse the /run memo the runner's
+        # completion walk populated (they read the chain from memory, not from
+        # disk) and each is instrumented by its own `admission.start`/
+        # `admission.end` pair. Those seconds are NEVER reused in this block:
+        # 0.0 still means "not measured for this leg", never "measured zero".
         publication = _publication(
             ledger, final_ledgered_before, final_paths, l3_seconds, final_retry, {}
         )
