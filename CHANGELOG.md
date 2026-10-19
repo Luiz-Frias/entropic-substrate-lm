@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.0...v0.3.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **h-host:** FOR-1665 defer provider absence on a transient probe read ([daa756d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/daa756da0aca54a1385723b207aec5368f3e427e))
+* **h-host:** FOR-1665 tolerate transient R2 error on terminal probe ([daa756d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/daa756da0aca54a1385723b207aec5368f3e427e))
+* **h-host:** FOR-1665 tolerate transient R2 error on terminal probe ([#351](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/351)) ([daa756d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/daa756da0aca54a1385723b207aec5368f3e427e))
+* **h-host:** FOR-1667 permanent D1 read codes fail fast on probe ([#353](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/353)) ([dc9c655](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dc9c6558e4e23ed45b6a3c89be5a49cb4aa72f6a))
+* **h-run:** FOR-1662 one admission walk per root; stages reuse the memo ([4b7f3bd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/4b7f3bd3a4c8379cb5eb368794886fd9eb597a56))
+* **h-run:** FOR-1662 one admission walk per root; stages reuse the memo ([#352](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/352)) ([4b7f3bd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/4b7f3bd3a4c8379cb5eb368794886fd9eb597a56))
+
+
+### Documentation
+
+* **briefs:** FOR-1662 brief amended after the design gate, D1 to D5 ([4b7f3bd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/4b7f3bd3a4c8379cb5eb368794886fd9eb597a56))
+
 ## [0.3.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.2.1...v0.3.0) (2026-10-17)
 
 
