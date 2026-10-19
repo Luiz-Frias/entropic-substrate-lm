@@ -233,6 +233,11 @@ function laneArgs(lane, common, startTip) {
     // ruling on an implement-stage DECISION reaches a resumed lane without
     // invalidating its cached recon/design-gate results.
     implRuling: common.implRuling,
+    // PORT (entropic-substrate-lm, FOR-1666, 2026-10-17): optional args.conductorCommits
+    // passthrough — the cascade admits conductor-owned-path commits (identity
+    // re-pins under DG-A) only when their SHAs are listed here; without it a
+    // lane resumed after a REPIN-HANDOFF blocks at gate-check:ownership.
+    conductorCommits: common.conductorCommits,
   }
 }
 // GUARD-PIN END laneArgs
@@ -678,6 +683,7 @@ const laneResults = await parallel(
               checkout: A.checkout,
               lanePolicy: A.lanePolicy,
               implRuling: typeof A.implRuling === 'string' && A.implRuling.trim() ? A.implRuling : undefined,
+              conductorCommits: Array.isArray(A.conductorCommits) && A.conductorCommits.length ? A.conductorCommits : undefined,
             },
             provision.startTip,
           ),
