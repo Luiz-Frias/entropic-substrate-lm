@@ -21,6 +21,11 @@ import math
 from typing import cast
 
 from entropic_substrate.ladder.capture.ports.run_descriptor import ExtractedMetrics
+from entropic_substrate.ladder.run.worker_log_events import (
+    ADMISSION_END,
+    WORKER_STAGE_SCHEMA,
+    project_worker_stage_record,
+)
 
 __all__ = ["HTrainingStepExtractor"]
 
@@ -71,6 +76,15 @@ class HTrainingStepExtractor:
     finite row contributes only its gap count. The authoritative journal and the
     evaluation artifacts are untouched; this remains the additive mirror.
 
+    Final-leg stage and admission measurements (``h-worker-stage-v1``, FOR-1669) are
+    projected as ``stage/<stage>/seconds`` and ``admission/<caller>/{seconds,seals_walked,
+    evaluations,journals_read}`` onto the LAST global step a committed training row
+    placed on the axis. They carry no step of their own, so a record seen before any
+    training row is refused (``None``), never given a guessed step; evaluation reports
+    and uncommitted rows do not move that anchor. MEASURED 2026-10-19 on the local tiny
+    worker: ``materialization`` and ``runtime_admission`` end before the first training
+    row and are therefore not mirrored; every later stage is.
+
     Returns ``None`` for every other event, exactly like
     :class:`~entropic_substrate.ladder.capture.ports.run_descriptor.LegacyMetricExtractor`
     returns ``None`` for a non-``eval`` E-series event.
@@ -80,6 +94,9 @@ class HTrainingStepExtractor:
         if type(warmup_steps) is not int or warmup_steps < 0:
             raise ValueError("the global step axis needs the profile's warmup length")
         self._warmup_steps = warmup_steps
+        # The global step of the last COMMITTED training row projected; ``None`` until
+        # one was. The only state this extractor keeps (FOR-1669).
+        self._last_training_step: int | None = None
 
     def extract(self, event: dict[str, object]) -> ExtractedMetrics | None:
         return self._project(event)
@@ -94,6 +111,8 @@ class HTrainingStepExtractor:
             return self._training(event)
         if schema == "h-predictive-evaluation-v1":
             return self._evaluation(event)
+        if schema == WORKER_STAGE_SCHEMA:
+            return self._worker_stage(event)
         return None
 
     def _training(self, event: dict[str, object]) -> ExtractedMetrics | None:
@@ -109,7 +128,27 @@ class HTrainingStepExtractor:
             if value is not None:
                 metrics[key] = value
         offset = 0 if phase == "codec_warmup" else self._warmup_steps
+        self._last_training_step = step + offset
         return ExtractedMetrics(step=step + offset, metrics=metrics)
+
+    def _worker_stage(self, event: dict[str, object]) -> ExtractedMetrics | None:
+        if self._last_training_step is None:
+            return None
+        record = project_worker_stage_record(event)
+        if record is None:
+            return None
+        seconds = cast(float, record["seconds"])
+        if record["event"] == ADMISSION_END:
+            prefix = f"admission/{record['caller']}"
+            metrics = {
+                f"{prefix}/seconds": seconds,
+                f"{prefix}/seals_walked": float(cast(int, record["seals_walked"])),
+                f"{prefix}/evaluations": float(cast(int, record["evaluations"])),
+                f"{prefix}/journals_read": float(cast(int, record["journals_read"])),
+            }
+        else:
+            metrics = {f"stage/{record['stage']}/seconds": seconds}
+        return ExtractedMetrics(step=self._last_training_step, metrics=metrics)
 
     def _evaluation(self, event: dict[str, object]) -> ExtractedMetrics | None:
         step = event.get("step")

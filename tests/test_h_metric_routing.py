@@ -369,3 +369,136 @@ def test_an_annotate_record_yields_no_metrics_from_the_h_extractor() -> None:
     # Control: the same extractor does project a committed step row.
     step = {"schema": "h-training-step-v2", "status": "committed", "phase": "prediction", "step": 1}
     assert extractor.extract(step) is not None
+
+
+# ---------------------------------------------------------------------------
+# FOR-1669: final-leg stage/admission measurements, projected onto the LAST
+# global step a training row placed on the axis (never a guessed step).
+# ---------------------------------------------------------------------------
+def _training_row(phase: str, step: int, *, status: str = "committed") -> dict[str, object]:
+    return {"schema": "h-training-step-v2", "status": status, "phase": phase, "step": step}
+
+
+def _stage_end(stage: str = "generation", seconds: object = 12.5) -> dict[str, object]:
+    return {
+        "schema": "h-worker-stage-v1",
+        "event": "stage.end",
+        "stage": stage,
+        "seconds": seconds,
+    }
+
+
+def _admission_end(**overrides: object) -> dict[str, object]:
+    record: dict[str, object] = {
+        "schema": "h-worker-stage-v1",
+        "event": "admission.end",
+        "caller": "generation",
+        "root": "run",
+        "memo": "shared",
+        "seals_walked": 0,
+        "evaluations": 3,
+        "journals_read": 0,
+        "seconds": 155.25,
+    }
+    record.update(overrides)
+    return record
+
+
+def test_a_stage_end_projects_its_seconds_onto_the_last_training_global_step() -> None:
+    """The axis assertion carries the teeth for mutation M4: a prediction row at raw step 2
+    with a 1000-step warmup sits at global step 1002, which is neither 0 nor the raw 2."""
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    placed = extractor.extract(_training_row("prediction", 2))
+    assert placed is not None and placed.step == 1002
+
+    out = extractor.extract(_stage_end("generation", 12.5))
+
+    assert out is not None
+    assert out.step == 1002
+    assert out.metrics == {"stage/generation/seconds": 12.5}
+
+
+def test_an_admission_end_projects_its_four_measurements_onto_the_same_step() -> None:
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    extractor.extract(_training_row("prediction", 2))
+
+    out = extractor.extract(_admission_end())
+
+    assert out is not None
+    assert out.step == 1002
+    assert out.metrics == {
+        "admission/generation/seconds": 155.25,
+        "admission/generation/seals_walked": 0.0,
+        "admission/generation/evaluations": 3.0,
+        "admission/generation/journals_read": 0.0,
+    }
+
+
+def test_a_stage_record_before_any_training_row_is_refused_not_guessed() -> None:
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    assert extractor.extract(_stage_end()) is None
+    assert extractor.extract(_admission_end()) is None
+    # Control: the same extractor projects the same record once a training row placed the axis.
+    extractor.extract(_training_row("codec_warmup", 3))
+    out = extractor.extract(_stage_end())
+    assert out is not None and out.step == 3
+
+
+def test_only_a_committed_training_row_moves_the_stage_axis() -> None:
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    extractor.extract(_training_row("prediction", 2))
+    # An uncommitted row, a row with no phase and a sealed evaluation report all carry a
+    # step of their own; none of them is a training row the axis may follow.
+    assert extractor.extract(_training_row("prediction", 9, status="pending")) is None
+    assert (
+        extractor.extract({"schema": "h-training-step-v2", "status": "committed", "step": 9})
+        is None
+    )
+    report = {
+        "schema": "h-predictive-evaluation-v1",
+        "step": 5,
+        "examples": [
+            {"by_sample_count": {"2": [{"log_estimate": -1.0, "effective_sample_size": 1.0}]}}
+        ],
+    }
+    evaluated = extractor.extract(report)
+    assert evaluated is not None and evaluated.step == 1005
+
+    out = extractor.extract(_stage_end())
+    assert out is not None and out.step == 1002
+
+    extractor.extract(_training_row("prediction", 3))
+    moved = extractor.extract(_stage_end())
+    assert moved is not None and moved.step == 1003
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        _stage_end("not_a_stage"),
+        _stage_end("generation", float("nan")),
+        _stage_end("generation", float("inf")),
+        _stage_end("generation", -1.0),
+        _stage_end("generation", True),
+        _stage_end("generation", "12.5"),
+        _stage_end("generation", None),
+        {**_stage_end(), "event": "stage.start"},
+        {**_stage_end(), "event": "evaluation.end"},
+        {k: v for k, v in _stage_end().items() if k != "seconds"},
+        _admission_end(caller="bogus"),
+        _admission_end(root="/home/operator/run"),
+        _admission_end(memo="stale"),
+        _admission_end(seconds=float("nan")),
+        _admission_end(seals_walked=-1),
+        _admission_end(evaluations=True),
+        _admission_end(journals_read=1.5),
+        {**_admission_end(), "event": "admission.start"},
+        {k: v for k, v in _admission_end().items() if k != "journals_read"},
+    ],
+)
+def test_an_out_of_vocabulary_or_malformed_stage_record_is_refused(
+    record: dict[str, object],
+) -> None:
+    extractor = HTrainingStepExtractor(warmup_steps=1000)
+    extractor.extract(_training_row("prediction", 2))
+    assert extractor.extract(record) is None

@@ -52,6 +52,17 @@ process, not of the run descriptor). A ``log_path`` resolving to the same file
 as ``results_path`` is refused loudly (two writers in the authoritative
 telemetry file). Same shape as the ruled DN-1632-SEAM.
 
+**Amendment 2026-10-19 (FOR-1669):** ``build_sink_for_run`` installs ONE loguru handler beside the
+composite when it is given a ``metric_extractor``, mirroring the worker's ``stage.end`` and
+``admission.end`` log lines into the sink as ``h-worker-stage-v1`` records (see
+:class:`CompositeSink`); ``finish()`` removes it first. Signature and abort semantics are
+untouched. This module may not import ``ladder.run`` (the capture layer's edge, pinned by
+``tests/test_h_worker_log_lines.py::test_ladder_capture_never_imports_the_run_layer``), so
+the event names, the schema and the field list below are literals; the closed vocabulary is
+enforced where the record is PROJECTED (``worker_log_events.project_worker_stage_record``,
+called by ``HTrainingStepExtractor``), and ``tests/test_h_stage_metrics_bridge.py`` pins the
+literals against it.
+
 p8 re-pointing any of these six names to their eventual landed home is a BODY
 edit to this function and to ``adapters/mlflow.py``, not a door violation --
 the door's signature and abort contract are unchanged by where the residue
@@ -68,10 +79,12 @@ aborting before ``Trainer`` construction.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+import weakref
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.adapters.jsonl import (
     DEFAULT_FINISH_STATUS,
     JsonlSink,
@@ -87,6 +100,34 @@ from entropic_substrate.ladder.capture.ports.run_descriptor import (
 
 __all__ = ["CompositeSink", "build_sink_for_run"]
 
+# FOR-1669: the log-substrate bridge. Literals, never imports from ``ladder.run`` (layer edge).
+_BRIDGE_EVENTS = frozenset({"stage.end", "admission.end"})
+_BRIDGE_SCHEMA = "h-worker-stage-v1"
+_BRIDGE_FIELDS = (
+    "event",
+    "stage",
+    "caller",
+    "root",
+    "memo",
+    "seals_walked",
+    "evaluations",
+    "journals_read",
+    "seconds",
+)
+_BRIDGE_MEMOS = frozenset({"fresh", "shared"})
+
+
+def _is_bridge_event(record: Mapping[str, Any]) -> bool:
+    return record["extra"].get("event") in _BRIDGE_EVENTS
+
+
+def _remove_handler(handler_id: int) -> None:
+    try:
+        logger.remove(handler_id)
+    except ValueError:
+        # Already gone: ``configure_logging()`` removes every handler with no id.
+        pass
+
 
 class CompositeSink:
     """Fans one ``Trainer.log()``/``log_artifact()`` call out to N sinks.
@@ -101,6 +142,52 @@ class CompositeSink:
     def __init__(self, authoritative: MetricSink, *best_effort: MetricSink) -> None:
         self._authoritative = authoritative
         self._best_effort = best_effort
+        self._bridge_off: Callable[[], object] | None = None
+
+    def attach_stage_bridge(self) -> None:
+        """Mirror the worker's ``stage.end`` / ``admission.end`` log lines into this sink.
+
+        FOR-1669. MEASURED 2026-10-19 (wave ``h0-plumbing-1k-v3.HEpP7g``): the final-leg
+        stages and their admission walks were in neither a metric nor a tag, only in log
+        lines, so a RUNNING run with only ``system/*`` metrics could not be told from a
+        hang. ONE handler on the process logger turns each such line into a
+        ``h-worker-stage-v1`` record and logs it through this sink (the extractor places it
+        on the training axis or refuses it); an ``admission.end`` also annotates
+        ``admission/<caller>/memo``. The handler holds this sink WEAKLY and is removed by
+        :meth:`finish` before any leg finishes, or when the sink is collected unfinished,
+        so a sink that nobody finished cannot keep writing to its file for the rest of the
+        process. Calling it twice is a no-op.
+        """
+        if self._bridge_off is not None:
+            return
+        target = weakref.ref(self)
+
+        def forward(message: Any) -> None:
+            sink = target()
+            if sink is not None:
+                sink._mirror_stage_event(message.record["extra"])  # pyright: ignore[reportPrivateUsage]
+
+        handler_id = logger.add(forward, level="INFO", filter=_is_bridge_event)
+        self._bridge_off = weakref.finalize(self, _remove_handler, handler_id)
+
+    def _mirror_stage_event(self, extra: Mapping[str, Any]) -> None:
+        # A mirror failure must never reach the worker's logging call. The MLflow leg counts
+        # its own failures (``sink.write_failed`` sink=mlflow); the authoritative JSONL leg has
+        # no counter, so a failure here is reported under its own sink name.
+        try:
+            fields = {name: extra[name] for name in _BRIDGE_FIELDS if name in extra}
+            self.log({"schema": _BRIDGE_SCHEMA, **fields})
+            caller, memo = fields.get("caller"), fields.get("memo")
+            if (
+                fields.get("event") == "admission.end"
+                and isinstance(caller, str)
+                and memo in _BRIDGE_MEMOS
+            ):
+                self.annotate({f"admission/{caller}/memo": memo})
+        except Exception as exc:
+            logger.bind(event="sink.write_failed", sink="stage_bridge", count=1).warning(
+                f"stage bridge: mirroring a {extra.get('event')} line failed: {type(exc).__name__}"
+            )
 
     def log(self, record: Mapping[str, Any]) -> None:
         self._authoritative.log(record)
@@ -124,6 +211,11 @@ class CompositeSink:
         # cannot leave the run half-terminated. The default call stays byte-identical:
         # it passes nothing, so a sink that predates ``status`` is still finishable.
         require_finish_status(status)
+        # FOR-1669: the bridge goes first, so a stage line logged after this point lands
+        # nothing and is not counted as a failed write on a leg that is already finished.
+        if self._bridge_off is not None:
+            self._bridge_off()
+            self._bridge_off = None
         passed = {} if status == DEFAULT_FINISH_STATUS else {"status": status}
         self._authoritative.finish(**passed)
         for sink in self._best_effort:
@@ -193,4 +285,7 @@ def build_sink_for_run(
         client=client,
         metric_extractor=metric_extractor,
     )
-    return CompositeSink(jsonl, mlflow_sink)
+    composite = CompositeSink(jsonl, mlflow_sink)
+    if metric_extractor is not None:
+        composite.attach_stage_bridge()
+    return composite
