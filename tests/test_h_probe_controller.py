@@ -8,6 +8,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from botocore.exceptions import (
+    ClientError,
+    ParamValidationError,
+    ReadTimeoutError,
+)
 from tests.test_h_probe_launch import launch
 
 from entropic_substrate.kernel.runtime.logging import logger
@@ -465,7 +470,11 @@ _COMPLETE: dict[str, object] = {
 
 @contextmanager
 def _warnings() -> Iterator[list[dict[str, Any]]]:
-    """Every substrate record emitted inside the block: level, message and bound extras."""
+    """Every substrate record emitted inside the block: level, message and bound extras.
+
+    A copy of ``captured`` in tests/test_h_probe_log_events.py, which imports this module
+    (``setup``), so importing it back is circular: the fold the FOR-1667 brief allowed
+    "if convenient" is not."""
     records: list[dict[str, Any]] = []
 
     def sink(message: Any) -> None:
@@ -500,8 +509,42 @@ def _script_collect(monkeypatch: pytest.MonkeyPatch, outcomes: list[object]) -> 
     return calls
 
 
+def _object_error(code: str, cause: BaseException | None = None) -> D1TrainerS3ObjectError:
+    error = D1TrainerS3ObjectError(operation="read", code=code)
+    error.__cause__ = cause
+    return error
+
+
+def _client_error(code: str, status: int) -> ClientError:
+    return ClientError(
+        {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject"
+    )
+
+
 def _timeout_error() -> D1TrainerS3ObjectError:
-    return D1TrainerS3ObjectError(operation="read", code="provider_failure")
+    """A RECOVERABLE read failure (FOR-1667): the FOR-1665 envelope arms mean this one."""
+    return _object_error("provider_failure", ReadTimeoutError(endpoint_url="https://r2.invalid"))
+
+
+# FOR-1667: the permanent shapes (id -> the error the adapter raises), each fatal on tick one.
+_PERMANENT_READS = {
+    "response_invalid": lambda: _object_error("response_invalid"),
+    "metadata_invalid": lambda: _object_error("metadata_invalid"),
+    "byte_limit": lambda: _object_error("byte_limit"),
+    "object_bytes": lambda: _object_error("object_bytes"),
+    "access_denied_403": lambda: _object_error(
+        "provider_failure", _client_error("AccessDenied", 403)
+    ),
+    "param_validation": lambda: _object_error(
+        "provider_failure", ParamValidationError(report="bad Key")
+    ),
+}
+_TRANSIENT_CAUSES = {
+    "read_timeout": lambda: _timeout_error(),
+    "slow_down_503": lambda: _object_error("provider_failure", _client_error("SlowDown", 503)),
+    "unrecognized_cause": lambda: _object_error("provider_failure", RuntimeError("unrecognized")),
+    "no_cause": lambda: _object_error("provider_failure"),
+}
 
 
 def test_a_transient_terminal_probe_error_is_a_logged_tick_not_a_terminal(
@@ -545,7 +588,10 @@ def test_a_run_without_a_transient_probe_error_records_zero_and_no_diagnostic(
 def test_a_terminal_probe_that_fails_every_tick_ends_at_the_deadline_not_at_the_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """C1 (b): the deadline is the only removal authority; the read error is never the exit."""
+    """C1 (b), the TRANSIENT arm: a recoverable read failure never ends the run; the
+    deadline does. RETRACTED by FOR-1667: this pin once read "the read error is never the
+    exit" for EVERY D1 error, which the permanent-code tests below show was wrong (a
+    permanent code fails on the first tick); the claim now holds for recoverable reads."""
     guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
     error = _timeout_error()
     _script_collect(monkeypatch, [error])
@@ -626,3 +672,77 @@ def test_an_absent_pod_with_a_transient_probe_read_defers_to_the_next_tick(
     assert clock[0] == 1, "the absence was deferred one poll interval, not named on tick one"
     assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
     assert guard.control.records["stop"]["reason"] == "capture_verified"
+
+
+# --------------------------------------------- FOR-1667: permanent codes fail fast
+@pytest.mark.parametrize("make", _PERMANENT_READS.values(), ids=_PERMANENT_READS.keys())
+def test_a_permanent_object_read_code_fails_on_the_first_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make: Callable[[], D1TrainerS3ObjectError]
+) -> None:
+    """C1 (b)(i): not a logged tick and not the deadline: the read error is the exit."""
+    guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    error = make()
+    _script_collect(monkeypatch, [error])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 0, "failed on tick one: no poll interval passed"
+    assert record["failure_stages"] == ["terminal_capture"]
+    assert record["error_types"] == ["D1TrainerS3ObjectError"]
+    assert record["terminal_probe_transient_count"] == 0
+    # Ruling (g): the permanent read is not absorbed (count 0, no transient line) but the
+    # result names the code that ended the run, like _owned_pod_absent's provider_error_code.
+    assert record["last_terminal_probe_error"] == error.safe_diagnostic()
+    assert record["collection"] is None
+    assert not _terminal_probe_lines(records)
+    assert guard.control.records["stop"]["reason"] == "cancelled" and not provider.deleted
+
+
+@pytest.mark.parametrize("make", _PERMANENT_READS.values(), ids=_PERMANENT_READS.keys())
+def test_an_absent_pod_with_a_permanent_read_fails_at_the_read_not_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make: Callable[[], D1TrainerS3ObjectError]
+) -> None:
+    """C1 (b)(iii): a permanent read propagates before the absence deferral is consulted."""
+    _guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    provider.present = False
+    error = make()
+    _script_collect(monkeypatch, [error])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 0 and record["failure_stages"] == ["terminal_capture"]
+    assert record["error_types"] == ["D1TrainerS3ObjectError"]
+    assert record["last_terminal_probe_error"] == error.safe_diagnostic()
+    assert not _terminal_probe_lines(records) and record["terminal_probe_transient_count"] == 0
+    assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
+
+
+@pytest.mark.parametrize("make", _TRANSIENT_CAUSES.values(), ids=_TRANSIENT_CAUSES.keys())
+def test_a_recoverable_read_every_tick_keeps_the_for_1665_deadline_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make: Callable[[], D1TrainerS3ObjectError]
+) -> None:
+    """C1 (b)(ii): connection, server and unrecognized causes stay logged ticks."""
+    _guard, _provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    error = make()
+    _script_collect(monkeypatch, [error])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 3 and record["terminal_probe_transient_count"] == 3
+    assert record["failure_stages"] == ["deadline"] and record["error_types"] == ["TimeoutError"]
+    assert [line["attempt"] for line in _terminal_probe_lines(records)] == [1, 2, 3]
+
+
+def test_an_absent_pod_with_a_recoverable_read_every_tick_defers_to_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C1 (b)(iv): the absence deferral keys on a transient tick, as in FOR-1665."""
+    _guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    provider.present = False
+    _script_collect(monkeypatch, [_timeout_error()])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 3 and record["failure_stages"] == ["deadline"]
+    assert record["terminal_probe_transient_count"] == 3
+    assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]

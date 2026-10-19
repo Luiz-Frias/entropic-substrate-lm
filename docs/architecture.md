@@ -590,7 +590,11 @@ command process, so its events ride that substrate. The closed host vocabulary i
 from the worker's), and every host record binds the launch's `pod_name` so concurrent arms that
 share a JSON log can be told apart. The controller asks the provider about the attributed pod on every
 poll: an absent pod with no published terminal ends the loop as the named `provider_absent`
-observation instead of waiting for the deadline. Progress has two evidence sources that are never
+observation instead of waiting for the deadline. A failed terminal-marker read follows the same
+split (FOR-1665, FOR-1667): the adapter's `is_recoverable()` classifies it, a permanent object-read
+code (an integrity code, or an auth or request-shape provider failure) fails the controller on the
+first tick, and a recoverable one is a logged tick bounded by the deadline. Progress has two
+evidence sources that are never
 interchangeable: the controller's R2 `checkpoint-N` events (seal granularity) and the wave monitor's
 MLflow `phase_index` metric (every step), and each line names its source.
 
@@ -708,4 +712,4 @@ measured property of the model.
 The execution-level decomposition, issue hierarchy, gates, and Linear identifiers live in
 `docs/pivoted-implementation.plan.md`.
 
-**Admission walk once per process (FOR-1662, 2026-10-17).** A completed or paused probe run performs one memo-less full-chain admission walk per artifact root in the worker process: the runner's completion call starts from an empty `SealMemo`, verifies every seal node through the unchanged per-node predicate and returns the populated memo beside the receipt. The later stages of the same process that read the same `/run` root (training readback, generation, span diagnostics, the `/run` model-trace capture, result admission) reuse that memo and read no seal from disk twice; the capture root is a different root and is walked once with its own memo, because the memo is keyed by digest alone and the capture holds byte-identical copies. A fresh process (resume, host replay, the composition entry points) has no memo and still walks the full chain. The worker log records each site as an `admission.start` / `admission.end` pair with caller, root, memo (fresh or shared), seals_walked, evaluations, journals_read and seconds. Measured on the 2026-10-17 paired 1K probe before this change: 880 s per memo-less walk, repeated in every final-leg stage.
+**Admission walk once per artifact root per process (FOR-1662, 2026-10-17; heading corrected 2026-10-18 after review, it previously said "once per process").** A completed or paused probe run performs one full-chain admission walk per artifact root in the worker process, each from a fresh empty `SealMemo` (not `memo=None`): the runner's completion call starts from an empty `SealMemo`, verifies every seal node through the unchanged per-node predicate and returns the populated memo beside the receipt. The later stages of the same process that read the same `/run` root (training readback, generation, span diagnostics, the `/run` model-trace capture, result admission) reuse that memo and read no seal from disk twice; the capture root is a different root and is walked once with its own memo, because the memo is keyed by digest alone and the capture holds byte-identical copies. A fresh process (resume, host replay, the composition entry points) has no memo and still walks the full chain. The worker log records each site as an `admission.start` / `admission.end` pair with caller, root, memo (fresh or shared), seals_walked, evaluations, journals_read and seconds. Measured on the 2026-10-17 paired 1K probe before this change: 880 s per memo-less walk, repeated in every final-leg stage.

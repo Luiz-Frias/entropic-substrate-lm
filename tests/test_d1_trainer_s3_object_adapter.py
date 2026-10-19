@@ -6,6 +6,15 @@ import hashlib
 from dataclasses import dataclass, field
 
 import pytest
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ParamValidationError,
+    ProxyConnectionError,
+    ReadTimeoutError,
+)
 
 from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
     Boto3D1TrainerMailboxObjectAdapter,
@@ -270,3 +279,106 @@ def test_adapter_requires_safe_bucket_and_positive_object_bound(
             bucket=bucket,
             max_objects=maximum,  # type: ignore[arg-type]
         )
+
+
+# ------------------------------------------- FOR-1667: recoverability of one object-read error
+def _client_error(code: str, status: int) -> ClientError:
+    return ClientError(
+        {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject"
+    )
+
+
+def _read_error(code: str, cause: BaseException | None = None) -> D1TrainerS3ObjectError:
+    error = D1TrainerS3ObjectError(operation="read", code=code)
+    error.__cause__ = cause
+    return error
+
+
+_PERMANENT_PROVIDER = [
+    ("AccessDenied", 403),
+    ("InvalidAccessKeyId", 403),
+    ("SignatureDoesNotMatch", 403),
+    ("ExpiredToken", 400),
+    ("InvalidToken", 400),
+    ("NoSuchBucket", 404),
+    ("InvalidArgument", 400),
+    ("AuthorizationHeaderMalformed", 400),
+    ("RequestTimeTooSkewed", 403),
+]
+
+
+@pytest.mark.parametrize(
+    "code", ["response_invalid", "metadata_invalid", "byte_limit", "object_bytes"]
+)
+def test_an_integrity_code_is_never_recoverable(code: str) -> None:
+    assert _read_error(code).is_recoverable() is False
+
+
+@pytest.mark.parametrize(("provider_code", "status"), _PERMANENT_PROVIDER)
+def test_a_provider_failure_with_an_auth_or_request_shape_code_is_not_recoverable(
+    provider_code: str, status: int
+) -> None:
+    cause = _client_error(provider_code, status)
+    assert _read_error("provider_failure", cause).is_recoverable() is False
+
+
+@pytest.mark.parametrize("status", [400, 403])
+def test_a_provider_failure_with_a_400_or_403_status_alone_is_not_recoverable(status: int) -> None:
+    cause = _ClientFailure("SomethingNew", status)
+    error = _read_error("provider_failure", cause)
+    assert error.safe_diagnostic()["provider_code"] == "unrecognized"
+    assert error.is_recoverable() is False
+
+
+def test_a_provider_failure_with_a_param_validation_cause_is_not_recoverable() -> None:
+    cause = ParamValidationError(report="bad Key")
+    assert _read_error("provider_failure", cause).is_recoverable() is False
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        EndpointConnectionError(endpoint_url="https://r2.invalid"),
+        ConnectTimeoutError(endpoint_url="https://r2.invalid"),
+        ReadTimeoutError(endpoint_url="https://r2.invalid"),
+        ConnectionClosedError(endpoint_url="https://r2.invalid"),
+        ProxyConnectionError(proxy_url="http://proxy.invalid"),
+        _client_error("SlowDown", 503),
+        _client_error("InternalError", 500),
+        _client_error("ServiceUnavailable", 503),
+        _client_error("SomethingNew", 500),
+        RuntimeError("an unrecognized cause"),
+        None,
+    ],
+    ids=lambda cause: "no-cause" if cause is None else type(cause).__name__,
+)
+def test_a_provider_failure_from_a_connection_or_server_cause_is_recoverable(
+    cause: BaseException | None,
+) -> None:
+    assert _read_error("provider_failure", cause).is_recoverable() is True
+
+
+def test_an_unrecognized_provider_code_without_a_permanent_status_is_recoverable() -> None:
+    error = _read_error("provider_failure", _ClientFailure("SomethingNew", 502))
+    assert error.safe_diagnostic()["provider_code"] == "unrecognized"
+    assert error.is_recoverable() is True
+
+
+@pytest.mark.parametrize(
+    "cause", [ReadTimeoutError(endpoint_url="x"), ConnectionClosedError(endpoint_url="x")]
+)
+def test_a_body_read_with_a_timeout_or_closed_connection_is_recoverable(
+    cause: BaseException,
+) -> None:
+    assert _read_error("body_read", cause).is_recoverable() is True
+
+
+def test_an_unrecognized_error_code_is_recoverable() -> None:
+    assert _read_error("a_code_the_adapter_never_raised").is_recoverable() is True
+
+
+def test_recoverability_never_reads_the_message() -> None:
+    cause = _client_error("SlowDown", 503)
+    error = _read_error("provider_failure", cause)
+    error.args = ("AccessDenied 403 byte_limit",)
+    assert error.is_recoverable() is True
