@@ -51,6 +51,9 @@ from entropic_substrate.ladder.run.h_runpod_transport import ProbeAccount, Probe
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
+from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
+    D1TrainerS3ObjectError,
+)
 from entropic_substrate.ladder.run.worker import h_probe_controller as controller
 from entropic_substrate.ladder.run.worker import h_probe_log_events as events
 from entropic_substrate.ladder.run.worker.h_probe_controller import (
@@ -118,7 +121,10 @@ def test_the_vocabulary_is_a_stdlib_only_leaf_outside_the_reader_identity() -> N
 
 
 def test_the_host_vocabulary_is_closed_and_disjoint_from_the_worker_vocabulary() -> None:
-    assert len(events.H_HOST_LOG_EVENTS) == 17
+    # RETRACTED 2026-10-17 (FOR-1665): 17 was the previous measured count; the host gained
+    # host.terminal_probe.transient, and `len(events.H_HOST_LOG_EVENTS)` now measures 18.
+    assert len(events.H_HOST_LOG_EVENTS) == 18
+    assert events.HOST_TERMINAL_PROBE_TRANSIENT == "host.terminal_probe.transient"
     assert all(name.startswith("host.") for name in events.H_HOST_LOG_EVENTS)
     assert not events.H_HOST_LOG_EVENTS & H_WORKER_LOG_EVENTS
     constants = {
@@ -522,6 +528,8 @@ def test_the_result_record_keeps_its_keys_and_status_vocabulary(
         "schema", "scientific_authority", "request_sha256", "launch_sha256", "pod_id", "pod",
         "status", "workload_verified", "termination_verified", "collection", "watchdog",
         "emergency_cleanup", "error_types", "provider_error_code", "failure_stages",
+        # ADDITIVE 2026-10-17 (FOR-1665): every key above is kept, these two are new.
+        "terminal_probe_transient_count", "last_terminal_probe_error",
     }  # fmt: skip
 
 
@@ -614,7 +622,10 @@ def _scenario_controller(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> lis
     with pytest.MonkeyPatch.context() as patch:
         (tmp_path / "ok").mkdir(parents=True)
         guard, provider, _c, clock, _r = setup(tmp_path / "ok", patch, None)
-        _collect_sequence(patch, [None, TERMINAL])
+        # FOR-1665: the first tick's marker read raises (the terminal-probe transient event)
+        _collect_sequence(
+            patch, [D1TrainerS3ObjectError(operation="read", code="provider_failure"), TERMINAL]
+        )
         _presence(patch, {"checkpoint-00000002"})
         tries = [0]
         base = provider.get_owned

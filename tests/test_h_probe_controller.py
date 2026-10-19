@@ -1,14 +1,16 @@
 """Controller composition tests use explicit fake provider/guardian observations."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from tests.test_h_probe_launch import launch
 
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
 from entropic_substrate.ladder.run.h_probe_watchdog import UNCERTAIN_ABSENT_CONFIRMATIONS
 from entropic_substrate.ladder.run.h_runpod_transport import (
@@ -18,6 +20,9 @@ from entropic_substrate.ladder.run.h_runpod_transport import (
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
+    D1TrainerS3ObjectError,
 )
 from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     ProbeAllocationHandoffError,
@@ -447,3 +452,177 @@ def test_emergency_cleanup_refuses_a_changed_account(
         run()
     assert not provider.deleted and provider.present
     assert caught.value.record["emergency_cleanup"]["status"] == "emergency_failed"
+
+
+# --------------------------------------------- FOR-1665: transient terminal-probe read
+_CONTROLLER = "entropic_substrate.ladder.run.worker.h_probe_controller"
+_COMPLETE: dict[str, object] = {
+    "reported_outcome": "probe_workload_complete",
+    "workload_verified": True,
+    "capture_status": "native_completion_receipt_verified",
+}
+
+
+@contextmanager
+def _warnings() -> Iterator[list[dict[str, Any]]]:
+    """Every substrate record emitted inside the block: level, message and bound extras."""
+    records: list[dict[str, Any]] = []
+
+    def sink(message: Any) -> None:
+        record = message.record
+        records.append(
+            {"level": record["level"].name, "message": record["message"], **record["extra"]}
+        )
+
+    handler = logger.add(sink, level="DEBUG")
+    try:
+        yield records
+    finally:
+        logger.remove(handler)
+
+
+def _terminal_probe_lines(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [r for r in records if r.get("event") == "host.terminal_probe.transient"]
+
+
+def _script_collect(monkeypatch: pytest.MonkeyPatch, outcomes: list[object]) -> list[int]:
+    """Scripted terminal capture: an Exception is raised, the last outcome repeats."""
+    calls = [0]
+
+    def collect(*_args: object, **_kwargs: object) -> object:
+        outcome = outcomes[min(calls[0], len(outcomes) - 1)]
+        calls[0] += 1
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(f"{_CONTROLLER}.collect_probe_terminal", collect)
+    return calls
+
+
+def _timeout_error() -> D1TrainerS3ObjectError:
+    return D1TrainerS3ObjectError(operation="read", code="provider_failure")
+
+
+def test_a_transient_terminal_probe_error_is_a_logged_tick_not_a_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C1 (a): the first tick's marker read raises, the controller keeps polling, collects."""
+    guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    error = _timeout_error()
+    _script_collect(monkeypatch, [error, _COMPLETE])
+    with _warnings() as records:
+        result = run()
+    assert result["status"] == "terminal_collected" and result["failure_stages"] == []
+    assert result["collection"] == _COMPLETE and result["error_types"] == []
+    assert result["terminal_probe_transient_count"] == 1
+    assert result["last_terminal_probe_error"] == error.safe_diagnostic()
+    assert clock[0] == 1, "one poll interval passed: no extra sleep, counter abort or timeout"
+    assert guard.control.records["stop"]["reason"] == "capture_verified" and not provider.deleted
+    lines = _terminal_probe_lines(records)
+    assert len(lines) == 1 and lines[0]["level"] == "WARNING"
+    assert lines[0]["pod_name"] == guard.launch.pod_name and lines[0]["attempt"] == 1
+    diagnostic = error.safe_diagnostic()
+    assert lines[0]["operation"] == diagnostic["operation"] == "read"
+    assert lines[0]["code"] == diagnostic["code"] == "provider_failure"
+    assert lines[0]["provider_code"] == diagnostic["provider_code"]
+    assert lines[0]["status"] == diagnostic["http_status"]
+    assert lines[0]["message"].startswith("host.terminal_probe.transient pod_name=")
+    assert "attempt=1" in lines[0]["message"]
+
+
+def test_a_run_without_a_transient_probe_error_records_zero_and_no_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _guard, _provider, _calls, _clock, run = setup(tmp_path, monkeypatch, _COMPLETE)
+    with _warnings() as records:
+        result = run()
+    assert result["terminal_probe_transient_count"] == 0
+    assert result["last_terminal_probe_error"] is None
+    assert not _terminal_probe_lines(records)
+
+
+def test_a_terminal_probe_that_fails_every_tick_ends_at_the_deadline_not_at_the_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C1 (b): the deadline is the only removal authority; the read error is never the exit."""
+    guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    error = _timeout_error()
+    _script_collect(monkeypatch, [error])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 3, "polled to the controller deadline, one interval per tick"
+    assert record["terminal_probe_transient_count"] == 3
+    assert record["last_terminal_probe_error"] == error.safe_diagnostic()
+    assert record["failure_stages"] == ["deadline"]
+    assert "terminal_capture" not in cast(list[str], record["failure_stages"])
+    assert record["error_types"] == ["TimeoutError"] and record["collection"] is None
+    assert record["status"] == "controller_failed" and record["termination_verified"] is True
+    assert guard.control.records["stop"]["reason"] == "cancelled" and guard.joined
+    assert [line["attempt"] for line in _terminal_probe_lines(records)] == [1, 2, 3]
+    assert not provider.deleted, "the watchdog (stop handoff), not the probe, removes the pod"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ValueError("conflicting terminal claims for one worker request"), RuntimeError("other")],
+)
+def test_only_a_d1_object_error_is_transient_every_other_error_still_fails_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    """C1 (d): the conflicting-claims ValueError (and a bare RuntimeError, the D1 error's
+    base class) fail the controller on the first tick."""
+    guard, _provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    _script_collect(monkeypatch, [failure, _COMPLETE])
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 0 and record["failure_stages"] == ["terminal_capture"]
+    assert record["error_types"] == [type(failure).__name__]
+    assert record["terminal_probe_transient_count"] == 0
+    assert record["last_terminal_probe_error"] is None
+    assert not _terminal_probe_lines(records) and guard.control.records["stop"]["reason"] == (
+        "cancelled"
+    )
+
+
+def test_a_d1_error_after_the_capture_began_is_not_a_marker_probe_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy that failed mid-capture retains partial files; retrying would meet the
+    fresh-destination refusal, so the original error fails the controller loudly."""
+    guard, _provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+
+    def partial(*args: object, **_kwargs: object) -> object:
+        cast(Path, args[2]).joinpath("terminal.json").write_bytes(b"{}")
+        raise _timeout_error()
+
+    monkeypatch.setattr(f"{_CONTROLLER}.collect_probe_terminal", partial)
+    with _warnings() as records, pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    record = caught.value.record
+    assert clock[0] == 0 and record["failure_stages"] == ["terminal_capture"]
+    assert record["error_types"] == ["D1TrainerS3ObjectError"]
+    assert record["terminal_probe_transient_count"] == 0
+    assert not _terminal_probe_lines(records) and guard.control.records["stop"]["reason"] == (
+        "cancelled"
+    )
+
+
+def test_an_absent_pod_with_a_transient_probe_read_defers_to_the_next_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FOR-1665 C7: a tick whose marker read raised is not a None, so provider absence is
+    deferred; the next tick re-reads the markers and the published terminal is collected."""
+    guard, provider, _calls, clock, run = setup(tmp_path, monkeypatch, None)
+    provider.present = False
+    _script_collect(monkeypatch, [_timeout_error(), _COMPLETE])
+    with _warnings() as records:
+        result = run()
+    assert result["status"] == "terminal_collected" and result["failure_stages"] == []
+    assert result["collection"] == _COMPLETE and result["error_types"] == []
+    assert result["terminal_probe_transient_count"] == 1
+    assert clock[0] == 1, "the absence was deferred one poll interval, not named on tick one"
+    assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
+    assert guard.control.records["stop"]["reason"] == "capture_verified"

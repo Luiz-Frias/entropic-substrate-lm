@@ -11,7 +11,7 @@ concurrent arms that share one JSON file can be told apart.
 import math
 import time
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -25,6 +25,9 @@ from entropic_substrate.ladder.run.h_probe_watchdog import UNCERTAIN_ABSENT_CONF
 from entropic_substrate.ladder.run.h_runpod_transport import ProbePod, ProbeProviderError
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
+)
+from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import (
+    D1TrainerS3ObjectError,
 )
 from entropic_substrate.ladder.run.worker.h_probe_allocation import (
     ProbeAllocationHandoffError,
@@ -44,6 +47,7 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_PROVIDER_TRANSIENT,
     HOST_STOP_HANDOFF,
     HOST_TERMINAL_OBSERVED,
+    HOST_TERMINAL_PROBE_TRANSIENT,
     HOST_WATCHDOG_JOIN_END,
     HOST_WATCHDOG_JOIN_START,
     SOURCE_R2_CHECKPOINT,
@@ -227,6 +231,60 @@ def _owned_pod_absent(
         return False
 
 
+@dataclass
+class _TerminalProbeTally:
+    """What the per-tick terminal probe absorbed: advisory, never an exit authority."""
+
+    count: int = 0
+    last_error: dict[str, str | int | None] | None = None
+
+
+def _probe_terminal(
+    objects: D1TrainerMailboxObjectPort,
+    guard: ProbeWatchdogProcess,
+    pod_id: str,
+    pod_name: str,
+    root: Path,
+    tally: _TerminalProbeTally,
+) -> dict[str, object] | None:
+    """One per-poll terminal observation; a failed marker READ is a logged tick (FOR-1665).
+
+    Mirrors ``_owned_pod_absent``: a ``D1TrainerS3ObjectError`` is emitted as a named
+    WARNING and the poll continues at the existing cadence (no counter abort, sleep or
+    timeout is added); the controller deadline and the watchdog remain the only removal
+    authorities. Only that type is transient: the conflicting-claims ``ValueError`` and
+    every other error propagate into the existing failure path. An error raised after the
+    capture began (the destination is no longer empty) is not a marker probe: a retry
+    would meet the fresh-destination refusal, so it propagates with its partial evidence.
+    The payload is ``safe_diagnostic()`` only (never a message, URL, key or request id).
+    """
+    try:
+        return collect_probe_terminal(
+            objects,
+            guard.launch.request,
+            root,
+            expected_pod_id=pod_id,
+            max_marker_bytes=guard.launch.request.limits.max_object_bytes,
+        )
+    except D1TrainerS3ObjectError as error:
+        if any(root.iterdir()):
+            raise
+        diagnostic = error.safe_diagnostic()
+        tally.count += 1
+        tally.last_error = diagnostic
+        emit(
+            "warning",
+            HOST_TERMINAL_PROBE_TRANSIENT,
+            pod_name=pod_name,
+            operation=diagnostic["operation"],
+            code=diagnostic["code"],
+            provider_code=diagnostic["provider_code"],
+            status=diagnostic["http_status"],
+            attempt=tally.count,
+        )
+        return None
+
+
 def _progress_tick(
     progress: _CheckpointProgress, objects: D1TrainerMailboxObjectPort, pod_name: str
 ) -> None:
@@ -317,6 +375,7 @@ def run_probe_controller(
     pod_name = guard.launch.pod_name
     account_id = guard.ready["account_id"]
     progress = _CheckpointProgress(guard.launch.request)
+    probe_tally = _TerminalProbeTally()
     stage = "allocation"
     try:
         if clock() >= deadline:
@@ -353,13 +412,8 @@ def run_probe_controller(
             stage = "provider_ownership"
             absent = _owned_pod_absent(guard, provider, pod_id, pod_name, account_id)
             stage = "terminal_capture"
-            collection = collect_probe_terminal(
-                objects,
-                guard.launch.request,
-                root,
-                expected_pod_id=pod_id,
-                max_marker_bytes=guard.launch.request.limits.max_object_bytes,
-            )
+            transient_before = probe_tally.count
+            collection = _probe_terminal(objects, guard, pod_id, pod_name, root, probe_tally)
             if collection is not None:
                 emit(
                     "info",
@@ -369,9 +423,12 @@ def run_probe_controller(
                     workload_verified=collection.get("workload_verified"),
                 )
                 break
-            if absent:
-                # The None, the account match and a terminal-capture attempt AFTER it
-                # (above) all hold: a published terminal is never shadowed (C7).
+            # A tick whose marker read raised did not return None: it is a transient, so the
+            # absence is deferred to the next tick, which re-asks the provider and re-reads
+            # the markers (FOR-1665). Otherwise the None, the account match and a
+            # terminal-capture attempt AFTER it (above) all hold: a published terminal is
+            # never shadowed (C7).
+            if absent and probe_tally.count == transient_before:
                 stage = "provider_absent"
                 emit("warning", HOST_PROVIDER_ABSENT_OBSERVED, pod_name=pod_name, pod_id=pod_id)
                 raise ProbeProviderAbsent
@@ -380,6 +437,10 @@ def run_probe_controller(
             if remaining > 0:
                 wait(min(float(poll_seconds), remaining))
         if collection is None:
+            if probe_tally.count:
+                # The deadline, not a failing read, ended the run: every tick that raised
+                # was absorbed above, so the exit is named for what removed the pod.
+                stage = "deadline"
             raise TimeoutError("controller deadline expired without terminal evidence")
     except BaseException as error:
         errors.append(error)
@@ -507,6 +568,8 @@ def run_probe_controller(
         "error_types": [type(error).__name__ for error in errors],
         "provider_error_code": provider_failure_code,
         "failure_stages": failure_stages,
+        "terminal_probe_transient_count": probe_tally.count,
+        "last_terminal_probe_error": probe_tally.last_error,
     }
     try:
         guard.control.write("result", record, max_bytes=guard.config.max_control_bytes)
