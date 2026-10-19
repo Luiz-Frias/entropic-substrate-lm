@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import overload
 
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
@@ -16,6 +17,7 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.generation import read_generation
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress
+from entropic_substrate.ladder.run.seals import SealMemo
 from entropic_substrate.ladder.run.span_diagnostics import read_span_diagnostics
 
 _SCHEMAS = frozenset(
@@ -94,6 +96,15 @@ def _collect(
     return collected, total
 
 
+# The two ``@overload`` stubs below (and on the three readers after it) exist for
+# the TYPE CHECKER only, with no runtime effect: ``composition/capture_cli.py``
+# calls these with ``**limits`` where ``limits: dict[str, int]``, and a checker
+# matches such an unpacked dict against EVERY keyword parameter it does not
+# otherwise bind, so a plain ``memo: SealMemo | None = None`` would read as
+# "an int passed as ``memo``" at call sites that are frozen (never-edit). The
+# first stub is the memo-less signature those callers see; the second is the
+# memo-bearing one the worker uses.
+@overload
 def capture_model_trace(
     root: Path,
     training: ArtifactIdentity,
@@ -108,11 +119,52 @@ def capture_model_trace(
     max_artifacts: int,
     forensic_roots: tuple[ArtifactIdentity, ...] = (),
     diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
+) -> ArtifactIdentity: ...
+
+
+@overload
+def capture_model_trace(
+    root: Path,
+    training: ArtifactIdentity,
+    generation: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    destination: Path,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+    forensic_roots: tuple[ArtifactIdentity, ...] = (),
+    diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
+    memo: SealMemo | None,
+) -> ArtifactIdentity: ...
+
+
+def capture_model_trace(
+    root: Path,
+    training: ArtifactIdentity,
+    generation: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    destination: Path,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+    forensic_roots: tuple[ArtifactIdentity, ...] = (),
+    diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
+    memo: SealMemo | None = None,
 ) -> ArtifactIdentity:
     """Copy verified bytes unchanged; publish the capture manifest last.
 
     Extra forensic roots must be supplied explicitly; no arbitrary directory
     sweep or deletion is performed. Partial destinations have no final capture.
+
+    ``memo`` is the admission memo of the ``root`` (the worker's ``/run``
+    directory) and only of it; the CAPTURE root that :func:`read_model_trace`
+    reads receives a memo of its own, never this one.
     """
     _limits(max_bytes, max_source_bytes, max_total_bytes, max_artifacts)
     target = normalize_d1_artifact_root(destination)
@@ -125,6 +177,7 @@ def capture_model_trace(
         source_root,
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
+        memo=memo,
     )
     if train["status"] != "training_complete":
         raise ValueError("model trace capture requires complete training")
@@ -136,6 +189,7 @@ def capture_model_trace(
         source_root,
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
+        memo=memo,
     )
     if generated["status"] != "generation_complete":
         raise ValueError("model trace capture requires a complete generation outcome")
@@ -150,6 +204,7 @@ def capture_model_trace(
             source_root,
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_bytes,
+            memo=memo,
         )
     collected, total = _collect(
         root,
@@ -330,6 +385,7 @@ def inspect_model_custody(
     }
 
 
+@overload
 def read_model_trace(
     root: Path,
     artifact: ArtifactIdentity,
@@ -338,8 +394,39 @@ def read_model_trace(
     max_source_bytes: int,
     max_total_bytes: int,
     max_artifacts: int,
+) -> dict[str, object]: ...
+
+
+@overload
+def read_model_trace(
+    root: Path,
+    artifact: ArtifactIdentity,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+    memo: SealMemo | None,
+) -> dict[str, object]: ...
+
+
+def read_model_trace(
+    root: Path,
+    artifact: ArtifactIdentity,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    max_total_bytes: int,
+    max_artifacts: int,
+    memo: SealMemo | None = None,
 ) -> dict[str, object]:
-    """Verify byte custody and run native model/source/RNG/numerical admission."""
+    """Verify byte custody and run native model/source/RNG/numerical admission.
+
+    ``memo`` belongs to THIS capture root alone (it holds byte-identical copies
+    of the ``/run`` seals, and the memo is keyed by digest): pass a memo created
+    for the capture root, never the ``/run`` memo, or the seal readers would
+    never run on the captured bytes and the native receipt would attest less.
+    """
     inventory = _trace_inventory(
         root,
         artifact,
@@ -356,6 +443,7 @@ def read_model_trace(
         root / "source",
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
+        memo=memo,
     )
     gen = read_generation(
         root,
@@ -365,6 +453,7 @@ def read_model_trace(
         root / "source",
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
+        memo=memo,
     )
     if train["status"] != "training_complete" or gen["status"] != "generation_complete":
         raise ValueError("capture does not contain a completed model trace")
@@ -377,6 +466,7 @@ def read_model_trace(
             root / "source",
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_bytes,
+            memo=memo,
         )
     for item in inventory.artifacts.values():
         if item.path.endswith(".json") and item != generation:
@@ -390,5 +480,6 @@ def read_model_trace(
                     root / "source",
                     max_source_bytes=max_source_bytes,
                     max_artifact_bytes=max_bytes,
+                    memo=memo,
                 )
     return inventory.manifest

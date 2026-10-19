@@ -2,6 +2,9 @@
 
 import json
 import re
+import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,6 +17,7 @@ from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.checkpoint import (
     checkpoint_binding,
@@ -29,6 +33,13 @@ from entropic_substrate.ladder.run.journal import (
     write_json,
 )
 from entropic_substrate.ladder.run.training import SentencePhase, build_sentence_optimizer
+from entropic_substrate.ladder.run.worker_log_events import (
+    ADMISSION_CALLERS,
+    ADMISSION_END,
+    ADMISSION_ROOTS,
+    ADMISSION_START,
+    render,
+)
 
 
 @dataclass(frozen=True)
@@ -45,35 +56,121 @@ class SealedStep:
 
 @dataclass
 class SealMemo:
-    """Seals THIS ``run_probe_training`` invocation has itself verified.
+    """Seals ONE PROCESS'S admission of ONE artifact root has itself verified.
 
-    Owned by exactly one invocation (never module-level state, never an
-    ``lru_cache``, never shared across processes). Keyed by the seal
-    artifact's SHA-256 content digest alone -- the same content-addressed
-    identity :func:`read_seal`'s own cycle detector already trusts (its
-    ``seen`` set is digest-keyed, not path-keyed), because one seal
+    RETRACTION (house rule 4). This docstring used to say the memo is "owned by
+    exactly one invocation" of ``run_probe_training`` and that every
+    "resume/pause/completion admission" passes ``memo=None``. That claim was
+    measured against the 1K probe (2026-10-17, wave ``h0-plumbing-1k-v2``) and
+    its consequence was wrong: the completion walk cost 880 s and the SAME walk
+    was repeated by five later stages of the same worker process. What holds
+    now: a memo is owned by one PROCESS and one ARTIFACT ROOT. The runner's
+    completion or pause admission still starts from an EMPTY memo and walks
+    every node (DG-B's admission predicate is unchanged); it returns that
+    populated memo beside the receipt, and the later stages of the same worker
+    process that read the same ``/run`` root reuse it. The capture root has its
+    OWN memo, because this memo is keyed by digest alone and the capture holds
+    byte-identical copies: a memo shared across roots would stop the seal
+    readers from ever running on the captured bytes. A FRESH process (resume,
+    host replay, ``composition/cli.py``) has no memo and still walks the full
+    chain unconditionally.
+
+    Keyed by the seal artifact's SHA-256 content digest alone -- the same
+    content-addressed identity :func:`read_seal`'s own cycle detector already
+    trusts (its ``seen`` set is digest-keyed, not path-keyed), because one seal
     artifact is legitimately referenced with different path SPELLINGS
     (absolute at the top-level caller, root-relative once round-tripped
     through a journal's ``parent`` field via
     :func:`~entropic_substrate.ladder.run.journal.artifact_reference`) while
-    remaining exactly the same verified bytes. ``remember`` is public
+    remaining exactly the same verified bytes. Never module-level state, never
+    an ``lru_cache``, never shared across processes. ``remember`` is public
     (basedpyright strict forbids a cross-function protected member), but by
     convention it is called ONLY from :func:`read_seal` itself, immediately
     after it has verified that exact node by reading it back from disk
     through its own per-node predicate; a writer's in-memory values (what
     ``seal_step`` just constructed) are never written here directly. A
     fresh, empty memo makes :func:`read_seal` walk the full chain exactly as
-    with ``memo=None`` -- this is what keeps a fresh-process resume an
-    unconditional full walk.
+    with ``memo=None``.
+
+    The counters are MEASURED, never derived: they advance only where the
+    work happens (a node verified from disk, a journal read, an evaluation
+    record admitted, wall time inside an outermost admission read), so the
+    ``admission.*`` events report deltas of real disk reads rather than the
+    chain length a memo hit would also have.
     """
 
     _verified: dict[str, SealedStep] = field(default_factory=dict)
+    seals_walked: int = 0
+    journals_read: int = 0
+    evaluations_read: int = 0
+    admission_seconds: float = 0.0
+    _depth: int = field(default=0, init=False, repr=False)
+
+    @property
+    def populated(self) -> bool:
+        return bool(self._verified)
 
     def get(self, artifact: ArtifactIdentity) -> SealedStep | None:
         return self._verified.get(artifact.content_hash.digest)
 
     def remember(self, artifact: ArtifactIdentity, seal: SealedStep) -> None:
         self._verified[artifact.content_hash.digest] = seal
+
+    @contextmanager
+    def timed_read(self) -> Generator[None]:
+        """Add the wall time of an OUTERMOST admission read to ``admission_seconds``.
+
+        Re-entrant reads (``read_seal`` inside ``read_training_progress``) add
+        nothing, so the total is the time spent admitting, never the sum of
+        nested overlaps and never the stage's own compute.
+        """
+        self._depth += 1
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self._depth -= 1
+            if self._depth == 0:
+                self.admission_seconds += time.perf_counter() - started
+
+
+@contextmanager
+def narrated_admission(caller: str, root: str, memo: SealMemo | None) -> Generator[None]:
+    """Bracket ONE top-level admission site with ``admission.start``/``admission.end``.
+
+    ``caller`` and ``root`` come from the closed sets in ``worker_log_events``
+    (a path or an unknown name is a defect and raises). ``memo`` is read at
+    entry: empty means ``fresh`` (the walk visits every node), populated means
+    ``shared`` (it trusts an ancestry this process already admitted); it is
+    never a per-site literal. ``seals_walked``, ``journals_read`` and
+    ``evaluations`` are deltas of what happened inside the bracket, and
+    ``seconds`` is the admission reads' own wall time, not the stage's compute.
+    With no memo (a memo-less composition entry point) nothing is measured, so
+    nothing is emitted. ``.end`` is logged only on a successful return; a raising
+    walk propagates unchanged and logs no ``.end``, so a refused walk is never
+    recorded as admitted.
+    """
+    if caller not in ADMISSION_CALLERS:
+        raise ValueError("admission caller is outside the closed vocabulary")
+    if root not in ADMISSION_ROOTS:
+        raise ValueError("admission root is outside the closed vocabulary")
+    if memo is None:
+        yield
+        return
+    provenance = "shared" if memo.populated else "fresh"
+    walked, journals = memo.seals_walked, memo.journals_read
+    evaluations, seconds = memo.evaluations_read, memo.admission_seconds
+    entered = {"caller": caller, "root": root, "memo": provenance}
+    logger.bind(event=ADMISSION_START, **entered).info(render(ADMISSION_START, **entered))
+    yield
+    measured = {
+        **entered,
+        "seals_walked": memo.seals_walked - walked,
+        "evaluations": memo.evaluations_read - evaluations,
+        "journals_read": memo.journals_read - journals,
+        "seconds": memo.admission_seconds - seconds,
+    }
+    logger.bind(event=ADMISSION_END, **measured).info(render(ADMISSION_END, **measured))
 
 
 def _profile_binding(profile: HProfile, phase: SentencePhase, sampler: SentenceSampler) -> str:
@@ -131,16 +228,52 @@ def read_seal(
     """Validate every ancestor; full tensor admission still occurs when resuming.
 
     ``memo``, when given, is trusted ONLY for seal identities THIS SAME
-    ``run_probe_training`` invocation has already verified (see
+    PROCESS has already verified for THIS artifact root (see
     :class:`SealMemo`). A fresh, empty (or absent) memo walks the FULL chain
-    exactly as before -- this is what keeps every fresh process, and every
-    resume/pause/completion admission that passes ``memo=None``, an
-    unconditional full walk. When the walk reaches a node already in the
-    memo it stops there, trusts that ancestor's already-verified chain
-    state instead of re-reading it, and every node it DOES read is verified
-    through the identical per-node predicate as the full walk, then
-    remembered.
+    exactly as before -- this is what keeps every fresh process (resume, host
+    replay, ``composition/cli.py``) and the runner's completion/pause walk an
+    unconditional full walk. RETRACTION (house rule 4): this docstring used to
+    say every "resume/pause/completion admission" passes ``memo=None``; the
+    completion walk now passes an EMPTY memo (the same full walk, populating the
+    memo the later stages of that process reuse). When the walk reaches a node
+    already in the memo it stops there, trusts that ancestor's already-verified
+    chain state instead of re-reading it, and every node it DOES read is
+    verified through the identical per-node predicate as the full walk, then
+    remembered. The source corpus is verified against ``profile.source_digest``
+    on EVERY call, memo or not.
     """
+    if memo is None:
+        return _walk_seal(
+            root,
+            artifact,
+            profile,
+            source_root,
+            max_bytes=max_bytes,
+            max_source_bytes=max_source_bytes,
+            memo=None,
+        )
+    with memo.timed_read():
+        return _walk_seal(
+            root,
+            artifact,
+            profile,
+            source_root,
+            max_bytes=max_bytes,
+            max_source_bytes=max_source_bytes,
+            memo=memo,
+        )
+
+
+def _walk_seal(
+    root: Path,
+    artifact: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    *,
+    max_bytes: int,
+    max_source_bytes: int,
+    memo: SealMemo | None,
+) -> SealedStep:
     corpus = read_prepared_corpus(
         source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
     )
@@ -184,6 +317,8 @@ def read_seal(
             max_bytes=max_bytes,
             max_source_bytes=max_source_bytes,
         )
+        if memo is not None:
+            memo.journals_read += 1
         if measured["schema"] != "h-journal-shard-v2":
             raise ValueError(
                 "current restart seals require journal v2; use the original reader for v1"
@@ -224,6 +359,8 @@ def read_seal(
         if type(start) is not int:
             raise ValueError("journal start step must be integer")
         nodes.append((SealedStep(phase, step, checkpoint, journal, 0), start, cursor))
+        if memo is not None:
+            memo.seals_walked += 1
         cursor = None if measured["parent"] is None else artifact_from_mapping(measured["parent"])
     total_length = len(nodes) + (0 if base is None else base.chain_length)
     if total_length > profile.schedule.warmup_steps + profile.schedule.steps:
@@ -323,8 +460,20 @@ def seal_step(
 
 
 def resume_seal(
-    root: Path, artifact: ArtifactIdentity, engine: SentenceExecution, *, max_bytes: int
+    root: Path,
+    artifact: ArtifactIdentity,
+    engine: SentenceExecution,
+    *,
+    max_bytes: int,
+    memo: SealMemo | None = None,
 ) -> None:
+    """Admit ``artifact`` and restore ``engine`` from it.
+
+    ``memo`` is forwarded to :func:`read_seal` unchanged and defaults to the
+    memo-less full walk, so a fresh-process resume stays an unconditional walk.
+    A later stage of the SAME process passes the memo its root's admission
+    walk populated; the checkpoint restore below is never skipped by a hit.
+    """
     seal = read_seal(
         root,
         artifact,
@@ -332,6 +481,7 @@ def resume_seal(
         engine.source_root,
         max_bytes=max_bytes,
         max_source_bytes=engine.max_source_bytes,
+        memo=memo,
     )
     engine.resume(
         root,

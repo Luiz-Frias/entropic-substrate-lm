@@ -18,6 +18,7 @@ from entropic_substrate.ladder.run.generation import run_probe_generation
 from entropic_substrate.ladder.run.journal import artifact_reference
 from entropic_substrate.ladder.run.native_verification import verify_native_capture
 from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
+from entropic_substrate.ladder.run.seals import SealMemo, narrated_admission
 from entropic_substrate.ladder.run.span_diagnostics import run_span_diagnostics
 from entropic_substrate.ladder.run.trace_capture import capture_model_trace
 from entropic_substrate.ladder.run.worker.d1_predecessor_loader import verified_git_bundle
@@ -104,6 +105,7 @@ def execute_probe_request(
     sink: MetricSink | None = None,
     publication_timing: MutableMapping[str, float] | None = None,
     operator_stop: Callable[[], bool] | None = None,
+    admission_memos: MutableMapping[str, SealMemo] | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
 
@@ -127,6 +129,13 @@ def execute_probe_request(
     same boundary, the existing pause label (``"paused"``) wins -- the result
     status becomes ``"stopped_by_operator"`` only when the poll alone caused
     the stop.
+
+    ``admission_memos``, when given, receives the ``/run`` root's admission
+    memo under the key ``"run"`` (FOR-1662), so a caller that admits the
+    returned result afterwards (``object_worker``'s result admission) can reuse
+    the walk this process already performed. It is a caller-owned out-parameter
+    in the idiom of ``publication_timing``: the memo never enters the returned
+    result dict or any serialized artifact, and omitting it changes nothing.
     """
     started = time.perf_counter()
     request.__post_init__()
@@ -181,7 +190,17 @@ def execute_probe_request(
         sink=sink,
         publication_timing=publication_timing,
     )
-    with narrated_stage("training_readback"):
+    # FOR-1662: ONE fresh full-chain admission walk per artifact root per process.
+    # The runner's completion/pause walk populated this memo for the /run root;
+    # the stages below that read /run reuse it. The capture root is a different
+    # root (byte-identical copies, digest-keyed memo) and gets its own memo.
+    run_memo = trained.admission_memo
+    if admission_memos is not None and run_memo is not None:
+        admission_memos["run"] = run_memo
+    with (
+        narrated_stage("training_readback"),
+        narrated_admission("training_readback", "run", run_memo),
+    ):
         training = read_training_progress(
             output,
             trained.receipt,
@@ -189,6 +208,7 @@ def execute_probe_request(
             source,
             max_source_bytes=limits.max_object_bytes,
             max_artifact_bytes=limits.max_object_bytes,
+            memo=run_memo,
         )
     result: dict[str, object] = {
         "schema": "h-probe-worker-result-v1",
@@ -207,7 +227,7 @@ def execute_probe_request(
     if trained.status == "paused":
         result["wall_seconds"] = time.perf_counter() - started
         return result
-    with narrated_stage("generation"):
+    with narrated_stage("generation"), narrated_admission("generation", "run", run_memo):
         generated = run_probe_generation(
             output,
             trained.receipt,
@@ -215,8 +235,12 @@ def execute_probe_request(
             source,
             max_source_bytes=limits.max_object_bytes,
             max_artifact_bytes=limits.max_object_bytes,
+            memo=run_memo,
         )
-    with narrated_stage("span_diagnostics"):
+    with (
+        narrated_stage("span_diagnostics"),
+        narrated_admission("span_diagnostics", "run", run_memo),
+    ):
         diagnostic = run_span_diagnostics(
             output,
             trained.receipt,
@@ -225,10 +249,11 @@ def execute_probe_request(
             request.probe,
             max_source_bytes=limits.max_object_bytes,
             max_artifact_bytes=limits.max_object_bytes,
+            memo=run_memo,
         )
     capture_root = root / "capture"
     capture_root.mkdir()
-    with narrated_stage("trace_capture"):
+    with narrated_stage("trace_capture"), narrated_admission("trace_capture", "run", run_memo):
         captured = capture_model_trace(
             output,
             trained.receipt,
@@ -241,10 +266,15 @@ def execute_probe_request(
             max_total_bytes=limits.max_total_bytes,
             max_artifacts=limits.max_objects,
             diagnostic_roots=(diagnostic,),
+            memo=run_memo,
         )
     verification_root = root / "verification"
     verification_root.mkdir()
-    with narrated_stage("native_verification"):
+    capture_memo = SealMemo()
+    with (
+        narrated_stage("native_verification"),
+        narrated_admission("native_verification", "capture", capture_memo),
+    ):
         verified = verify_native_capture(
             capture_root,
             captured,
@@ -254,6 +284,7 @@ def execute_probe_request(
             max_source_bytes=limits.max_object_bytes,
             max_total_bytes=limits.max_total_bytes,
             max_artifacts=limits.max_objects,
+            memo=capture_memo,
         )
     result.update(
         status="probe_workload_complete",

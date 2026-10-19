@@ -2,7 +2,7 @@
 
 import time
 from collections.abc import Callable, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
@@ -17,7 +17,13 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.seals import SealMemo, read_seal, resume_seal, seal_step
+from entropic_substrate.ladder.run.seals import (
+    SealMemo,
+    narrated_admission,
+    read_seal,
+    resume_seal,
+    seal_step,
+)
 from entropic_substrate.ladder.run.worker_log_events import (
     CHECKPOINT_SEAL,
     EVALUATION_END,
@@ -30,9 +36,20 @@ from entropic_substrate.ladder.run.worker_log_events import (
 
 @dataclass(frozen=True)
 class TrainingProgress:
+    """The receipt of one training invocation.
+
+    ``admission_memo`` is a PROCESS-LOCAL hand-off, not part of the result: it
+    is the memo the completion/pause admission walk populated (``None`` when
+    that walk was not run in this invocation, e.g. an already-complete resume).
+    It is excluded from ``==``, ``hash`` and ``repr``, so every consumer that
+    compares or prints a progress sees exactly what it saw before, and it never
+    enters a serialized artifact.
+    """
+
     status: Literal["paused", "training_complete"]
     last_seal: ArtifactIdentity
     receipt: ArtifactIdentity
+    admission_memo: SealMemo | None = field(default=None, compare=False, hash=False, repr=False)
 
 
 def _progress(
@@ -40,11 +57,13 @@ def _progress(
     status: Literal["paused", "training_complete"],
     seal: ArtifactIdentity,
     receipt: ArtifactIdentity,
+    admission_memo: SealMemo | None = None,
 ) -> TrainingProgress:
     return TrainingProgress(
         status,
         artifact_from_mapping(artifact_reference(root, seal)),
         artifact_from_mapping(artifact_reference(root, receipt)),
+        admission_memo,
     )
 
 
@@ -62,11 +81,48 @@ def read_training_progress(
 
     ``memo``, when given, accelerates the seal-chain (and evaluation-lineage)
     verification below exactly as :func:`~entropic_substrate.ladder.run.seals.read_seal`
-    documents; it never changes what is admitted. Resume admission, pause and
-    completion always call this with ``memo=None`` (the full walk stays the
-    admission predicate there); only the mid-training, per-checkpoint call
-    passes the invocation's memo.
+    documents; it never changes what is admitted. Resume admission (a fresh
+    process) calls this with ``memo=None`` and walks the full chain. The
+    runner's pause/completion admission calls it with an EMPTY memo, which is
+    the same full walk (DG-B's predicate is unchanged) and leaves that memo
+    populated for the later stages of the same process. RETRACTION (house rule
+    4): this docstring used to say pause and completion "always call this with
+    ``memo=None``"; the per-process reading is the one ``SealMemo`` documents,
+    and it was measured to cut five repeats of the 880 s completion walk.
+    The mid-training, per-checkpoint call passes the invocation's memo.
     """
+    if memo is None:
+        return _read_training_progress(
+            root,
+            artifact,
+            profile,
+            source_root,
+            max_source_bytes=max_source_bytes,
+            max_artifact_bytes=max_artifact_bytes,
+            memo=None,
+        )
+    with memo.timed_read():
+        return _read_training_progress(
+            root,
+            artifact,
+            profile,
+            source_root,
+            max_source_bytes=max_source_bytes,
+            max_artifact_bytes=max_artifact_bytes,
+            memo=memo,
+        )
+
+
+def _read_training_progress(
+    root: Path,
+    artifact: ArtifactIdentity,
+    profile: HProfile,
+    source_root: Path,
+    *,
+    max_source_bytes: int,
+    max_artifact_bytes: int,
+    memo: SealMemo | None,
+) -> dict[str, object]:
     if profile.run_class not in ("local_tiny", "remote_tiny"):
         raise ValueError("probe receipt has no scientific authority")
     row = recovery_record(
@@ -127,6 +183,8 @@ def read_training_progress(
             max_source_bytes=max_source_bytes,
             memo=memo,
         )
+        if memo is not None:
+            memo.evaluations_read += 1
         point = artifact_from_mapping(evaluation.get("checkpoint_seal"))
         if point.content_hash.digest not in seal.seal_hashes:
             raise ValueError("evaluation belongs to another checkpoint lineage")
@@ -206,9 +264,15 @@ def run_probe_training(
     mirror, never part of the training or admission contract. Internally,
     one :class:`~entropic_substrate.ladder.run.seals.SealMemo` is created for
     this WHOLE invocation and threaded to every ``seal_step`` call and to
-    the mid-training ``read_training_progress``/``read_evaluation`` calls
-    (never to resume admission or to a completion/pause admission, which
-    always re-walk the full chain).
+    the mid-training ``read_training_progress``/``read_evaluation`` calls.
+    It is never given to resume admission (a fresh process) or to the
+    completion/pause admission: that walk starts from its OWN empty memo, so
+    it still verifies every node, and the populated memo it leaves is returned
+    as ``TrainingProgress.admission_memo`` for the later stages of the same
+    process (FOR-1662). RETRACTION (house rule 4): the previous text said the
+    completion/pause admission "always re-walks the full chain" because it
+    received no memo; it still walks the full chain, and the repeats of that
+    walk by later stages are what was removed.
     """
     if profile.run_class not in ("local_tiny", "remote_tiny") or (
         profile.run_class == "remote_tiny" and profile.stage != "H0"
@@ -396,22 +460,31 @@ def run_probe_training(
                 max_bytes=max_artifact_bytes,
             )
             previous_receipt = receipt
+            completion: SealMemo | None = None
             if complete or stopped or on_checkpoint is not None:
-                l2_started = None if publication_timing is None else time.perf_counter()
-                read_training_progress(
-                    root,
-                    receipt,
-                    profile,
-                    source_root,
-                    max_source_bytes=max_source_bytes,
-                    max_artifact_bytes=max_artifact_bytes,
-                    # DG-B/C12: only the mid-training, per-checkpoint call
-                    # trusts the memo; a genuine completion or pause always
-                    # re-walks the full chain as its admission predicate.
-                    memo=None if (complete or stopped) else memo,
-                )
-                if publication_timing is not None and l2_started is not None:
-                    publication_timing["l2_seconds"] = time.perf_counter() - l2_started
+                # DG-B/C12 (per-PROCESS reading, FOR-1662): a genuine completion
+                # or pause is the admission predicate for this process, so it
+                # starts from an EMPTY memo, constructed here and never the
+                # invocation memo, and visits every node. Earlier text here
+                # said it "always re-walks the full chain" with memo=None; it
+                # still does, and the populated memo is handed on so the later
+                # stages do not repeat the walk. Only the mid-training,
+                # per-checkpoint call trusts the invocation memo.
+                completion = SealMemo() if (complete or stopped) else None
+                # The admission pair stays OUTSIDE the l2 window (the l1 rule).
+                with narrated_admission("completion", "run", completion):
+                    l2_started = None if publication_timing is None else time.perf_counter()
+                    read_training_progress(
+                        root,
+                        receipt,
+                        profile,
+                        source_root,
+                        max_source_bytes=max_source_bytes,
+                        max_artifact_bytes=max_artifact_bytes,
+                        memo=memo if completion is None else completion,
+                    )
+                    if publication_timing is not None and l2_started is not None:
+                        publication_timing["l2_seconds"] = time.perf_counter() - l2_started
             if on_checkpoint is not None:
                 on_checkpoint(artifact_from_mapping(artifact_reference(root, receipt)))
             if complete or stopped:
@@ -424,7 +497,11 @@ def run_probe_training(
                 }
                 logger.bind(event=PHASE_END, **ended).info(render(PHASE_END, **ended))
                 return _progress(
-                    root, "training_complete" if complete else "paused", last_seal, receipt
+                    root,
+                    "training_complete" if complete else "paused",
+                    last_seal,
+                    receipt,
+                    completion,
                 )
     except Exception as error:
         write_json(

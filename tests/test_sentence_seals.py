@@ -1,6 +1,7 @@
 """A valid journal and checkpoint must also belong to the same measured lineage."""
 
 import json
+import shutil
 from hashlib import sha256
 from pathlib import Path
 
@@ -137,7 +138,11 @@ def test_a_fresh_memo_each_call_grows_with_chain_length_control_arm(
 def test_a_tampered_ancestor_is_refused_at_a_fresh_process_resume(tmp_path: Path) -> None:
     """Guard teeth: a chain built and (correctly) memoised within ONE process
     must still be refused, in full, by a FRESH process that never saw that
-    memo -- resume/pause/completion always pass ``memo=None``."""
+    memo, which has none (``memo=None``). RETRACTION (FOR-1662, house rule 4):
+    this docstring used to say "resume/pause/completion always pass
+    ``memo=None``". A fresh-process resume still does; the runner's own
+    completion/pause walk now passes an EMPTY memo (the same full walk) and
+    hands the populated memo to the later stages of that same process."""
     run = engine(tmp_path)
     memo = SealMemo()
     parent: ArtifactIdentity | None = None
@@ -307,3 +312,89 @@ def test_seal_inspection_preserves_training_rng(tmp_path: Path) -> None:
         max_source_bytes=1_000_000,
     )
     torch.testing.assert_close(torch.get_rng_state(), before, atol=0, rtol=0)
+
+
+def _chain(tmp_path: Path, length: int) -> tuple[SentenceExecution, list[ArtifactIdentity]]:
+    run = engine(tmp_path)
+    seals: list[ArtifactIdentity] = []
+    parent: ArtifactIdentity | None = None
+    for _ in range(length):
+        parent = seal_step(tmp_path, "chain", run, (_advance(run),), parent=parent, max_bytes=LIMIT)
+        seals.append(parent)
+    return run, seals
+
+
+def test_a_memo_populated_by_a_memoless_walk_answers_get_for_every_node(tmp_path: Path) -> None:
+    """(d) A fresh memo handed to ONE walk of a chain built WITHOUT a memo ends up
+    holding every node of that walk, with the chain length each node had."""
+    run, seals = _chain(tmp_path, 3)
+    memo = SealMemo()
+    assert memo.populated is False
+    tip = read_seal(
+        tmp_path,
+        seals[-1],
+        run.profile,
+        run.source_root,
+        max_bytes=LIMIT,
+        max_source_bytes=1_000_000,
+        memo=memo,
+    )
+    assert memo.populated is True and tip.chain_length == 3
+    for length, seal in enumerate(seals, start=1):
+        remembered = memo.get(seal)
+        assert remembered is not None and remembered.chain_length == length
+    # Measured work, not the chain length: three nodes verified from disk, three journals.
+    assert (memo.seals_walked, memo.journals_read) == (3, 3)
+    assert memo.admission_seconds > 0.0
+
+
+def test_a_second_walk_with_the_populated_memo_reads_nothing_from_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, seals = _chain(tmp_path, 3)
+    memo = SealMemo()
+    kwargs = {"max_bytes": LIMIT, "max_source_bytes": 1_000_000}
+    read_seal(tmp_path, seals[-1], run.profile, run.source_root, memo=memo, **kwargs)
+    calls = _counted_ancestor_reads(monkeypatch)
+    again = read_seal(tmp_path, seals[-1], run.profile, run.source_root, memo=memo, **kwargs)
+    assert again.chain_length == 3 and calls == []
+    assert (memo.seals_walked, memo.journals_read) == (3, 3)  # unchanged: no new work
+
+
+def test_resume_seal_forwards_its_memo_and_defaults_to_the_full_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, seals = _chain(tmp_path, 2)
+    memo = SealMemo()
+    read_seal(
+        tmp_path,
+        seals[-1],
+        run.profile,
+        run.source_root,
+        max_bytes=LIMIT,
+        max_source_bytes=1_000_000,
+        memo=memo,
+    )
+    calls = _counted_ancestor_reads(monkeypatch)
+    fresh = SentenceExecution(run.profile, run.source_root, max_source_bytes=1_000_000)
+    resume_seal(tmp_path, seals[-1], fresh, max_bytes=LIMIT, memo=memo)
+    assert calls == []  # the memo reached read_seal
+    again = SentenceExecution(run.profile, run.source_root, max_source_bytes=1_000_000)
+    resume_seal(tmp_path, seals[-1], again, max_bytes=LIMIT)
+    assert len(calls) == 4  # memo-less: 2 nodes x (journal + checkpoint metadata)
+
+
+def test_a_memo_never_skips_the_source_digest_check(tmp_path: Path) -> None:
+    """Guard teeth for the unconditional corpus verification: a memo HIT must still
+    refuse a source whose digest differs from ``profile.source_digest``."""
+    run, seals = _chain(tmp_path, 2)
+    memo = SealMemo()
+    kwargs = {"max_bytes": LIMIT, "max_source_bytes": 1_000_000}
+    read_seal(tmp_path, seals[-1], run.profile, run.source_root, memo=memo, **kwargs)
+    assert memo.get(seals[-1]) is not None  # the tip itself is a memo hit
+    forged = tmp_path / "forged-source"
+    shutil.copytree(run.source_root, forged)
+    corpus = forged / "prepared-corpus.json"
+    corpus.write_bytes(corpus.read_bytes() + b" ")
+    with pytest.raises(ValueError):
+        read_seal(tmp_path, seals[-1], run.profile, forged, memo=memo, **kwargs)
