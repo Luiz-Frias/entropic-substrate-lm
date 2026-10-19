@@ -5,15 +5,26 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-dbe9709.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-9d353fc.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:96e985048fd96da14d4f80c598a72bf7ead604a50ecd8f2b952d6efb06c44606
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:8181443b6c410c45a0e39eb472fe77ace8793c1dbe84cc38ce86de4b1af801ea
 ```
 
-Runtime source matches commit `dbe97094358ca349ce20ee1a396ae44d1c7700aa` exactly.
+Runtime source matches commit `9d353fcc2d6f82e19927ad8fec77eb78a75b4df0` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED 2026-10-19 (release v0.3.1, branch `fix/h-image-repin-0.3.1`, operator go-ahead
+2026-10-19): the previous pin (`96e98504...`, source `dbe9709`) is superseded; its capture
+`results/h-image-publication-dbe9709.dvc` remains historical evidence. This image is built from
+the v0.3.1 release tip of `main`, the first tip that carries the two final-leg fixes the 2026-10-17
+paired 1K probe exposed (FOR-1662: one admission walk per artifact root, later stages reuse the
+memo; FOR-1665/FOR-1667: the host terminal probe tolerates recoverable R2 read errors and fails
+fast only on permanent codes) plus the FOR-1666 workflow overlay, so the worker's final leg and
+the host controller a probe exercises match the released tree. Same verifier and
+`h-prepare-source` manifest as the dbe9709 publication; the source replay's in-image capture
+admitted 491 documents / 1954698 bytes, corpus identity `cf938a0b...`. The nine-key RunPod
+template for this image is `wjag3o82g3` (`mythwave-h0-9d353fc-v0.3.1`; see LAUNCH SCHEMA v3 below).
 RE-PINNED 2026-10-17 (H observability parity, branch `fix/h-image-repin-parity`, operator
 go-ahead 2026-10-17): the previous pin (`762ed810...`, source `65542d4`) is superseded; its
 capture `results/h-image-publication-65542d4.dvc` remains historical evidence. This image is
@@ -57,7 +68,7 @@ scientific confirmation, or successor eligibility. Paid 6K validation is authori
 but completion requires the worker's verified artifacts. Do not substitute `latest`
 for this digest.
 
-The pin above (source `dbe9709`) carries FOR-1637: the H worker's log-event vocabulary and the
+The pin above (source `9d353fc`, as did the dbe9709 pin) carries FOR-1637: the H worker's log-event vocabulary and the
 `worker-log.jsonl` MLflow artifact. (Until 2026-10-17 this paragraph said the pin did not
 contain them, which was true of the 65542d4 pin.)
 
@@ -74,7 +85,9 @@ and `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` beyond the seven). The nine-key 
 the conductor at the image rebuild ceremony; no template is created, and no template id is recorded
 here, until that ceremony has measured one. MEASURED 2026-10-17: template `3n4y0ba76d`
 (`mythwave-h0-dbe9709-parity`, nine keys, image `96e985048fd9...`) was created at the dbe9709 rebuild
-ceremony and read back whole. `validate_template` compares the whole environment, so a
+ceremony and read back whole. MEASURED 2026-10-19: template `wjag3o82g3` (`mythwave-h0-9d353fc-v0.3.1`,
+nine keys, image `8181443b6c41...`) was created at the 9d353fc rebuild ceremony and read back whole;
+`3n4y0ba76d` stays bound to the superseded dbe9709 image. `validate_template` compares the whole environment, so a
 template missing either extension key is refused before any pod is created. Runs launched with
 `named_experiment` land in the MLflow experiment `h-series`, not the default. `capture-results` selects
 runs by experiment name and defaults to `$MLFLOW_EXPERIMENT_NAME` or `entropic-substrate-lm`
