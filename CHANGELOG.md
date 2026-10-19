@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.1...v0.3.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **deploy:** re-pin the H image to the v0.3.1 tip ([#355](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/355)) ([577f37c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/577f37cef129a82c8aa1ff215319d97ab5dad4ce))
+
 ## [0.3.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.0...v0.3.1) (2026-10-19)
 
 
