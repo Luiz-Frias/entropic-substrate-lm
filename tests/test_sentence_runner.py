@@ -244,6 +244,8 @@ def test_the_completion_walk_hands_its_populated_memo_to_the_caller(tmp_path: Pa
     assert memo is not None and memo.populated
     # The completion walk is a FULL walk: all three nodes from disk, both evaluations.
     assert (memo.seals_walked, memo.journals_read, memo.evaluations_read) == (3, 3, 2)
+    # FOR-1670: the completion memo starts EMPTY, so nothing in the walk can be a memo hit.
+    assert memo.evaluations_memo_hits == 0
     assert memo.get(result.last_seal) is not None
 
 

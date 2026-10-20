@@ -217,13 +217,28 @@ def test_one_admission_pair_per_caller_with_the_ruled_memo_provenance(tmp_path: 
         assert end["root"] in ADMISSION_ROOTS
         assert isinstance(end["seconds"], float) and end["seconds"] >= 0.0
         # The start line carries only what is known before the walk.
-        assert set(start) & {"seals_walked", "journals_read", "evaluations", "seconds"} == set()
+        assert (
+            set(start)
+            & {"seals_walked", "journals_read", "evaluations", "evaluations_memo_hits", "seconds"}
+            == set()
+        )
     # Fresh walks read the whole chain (3 seals, 3 journals) and its 2 evaluations;
     # every shared stage reads nothing from disk for the seal chain.
     for end in ends:
         walked = (end["seals_walked"], end["journals_read"])
         assert walked == ((3, 3) if end["memo"] == "fresh" else (0, 0)), end
     assert next(r for r in ends if r["caller"] == "completion")["evaluations"] == 2
+    # FOR-1670: ``evaluations`` counts disk reads only. A fresh walk reads both records and
+    # hits nothing on its own first pass; a shared stage re-reads NONE from disk and reports
+    # the records the memo served in ``evaluations_memo_hits`` instead (MEASURED: 2, 2, 4, 6,
+    # 2 for the five run-root stages; the capture root's native reader re-reads its own
+    # records after the first disk pass).
+    for end in ends:
+        if end["memo"] == "fresh":
+            assert end["evaluations"] == 2, end
+        else:
+            assert end["evaluations"] == 0 and end["evaluations_memo_hits"] >= 2, end
+    assert next(r for r in ends if r["caller"] == "completion")["evaluations_memo_hits"] == 0
     # The pair brackets the stage it belongs to, never the whole worker.
     for caller in callers[1:]:
         assert (

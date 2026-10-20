@@ -391,6 +391,31 @@ untouched: neither member is one of h-source-reader-v3's seven fixed members,
 confirmed by re-measuring both source rows unchanged with the same tool
 invocation (``aa4702a2...`` local, ``5ea5ca80...`` CI).
 
+FOR-1670 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-20, experiment-pre-reqs wave lane FOR-1670, design-gate
+ruling DG-A carried over, operator ruling "file it" + fanout 2026-10-20):
+h-checkpoint-reader-v2 changes because three of its 51 members changed bytes --
+``ladder.run.seals`` (``SealMemo`` gains a digest-keyed verified-evaluation map,
+``get_evaluation`` / ``remember_evaluation`` and the ``evaluations_memo_hits``
+counter; ``admission.end`` reports the hits beside the disk reads),
+``ladder.run.evaluation_records`` (``read_evaluation`` serves a remembered
+record on a memo hit and reads from disk otherwise; the disk-read counter and
+the remember call run together after the whole verification) and
+``ladder.run.runner`` (the roster loop's own ``evaluations_read`` increment is
+removed, so the counter advances at exactly one site). Label and member set
+unchanged. All three rows recomputed with ``tools/regime_rows.py`` AFTER
+``ruff format --check`` reported a fixed point (828 files). The OLD values they
+replace,
+``b6f2b84b30c12ad0397d6ac0c394c33d978b7a80468bbbd823353841eea9f9f1``
+(local), ``a2e29fd82341388dd005a228246dd97a1fe6a142ac57ae8ebdec6ad20c1e7a66``
+(CI 3.12.14) and
+``4f7d16f3270ec5ed331201ae23c3390efdf5da07e7f20ce67d9434ac59ebaa1b``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched: none of the three members is one of
+h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
+source rows unchanged with the same tool invocation (``9978611d...`` local,
+``d85b3144...`` and ``fc7fad81...`` CI).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -568,15 +593,15 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "b6f2b84b30c12ad0397d6ac0c394c33d978b7a80468bbbd823353841eea9f9f1",  # pragma: allowlist secret
+    ): "79f77aa2195ddc29672299926e70550333e76f07aef34c3a888f686a0728b852",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "a2e29fd82341388dd005a228246dd97a1fe6a142ac57ae8ebdec6ad20c1e7a66",  # pragma: allowlist secret
+    ): "19fcb786c23dd15e48245940790473d342921e0e606862bb6171871dbee8b6f9",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "4f7d16f3270ec5ed331201ae23c3390efdf5da07e7f20ce67d9434ac59ebaa1b",  # pragma: allowlist secret
+    ): "60163f0f8f5392fdea4e36a07f2ac7795bfec54e1bf797396db80bdf1e28439b",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

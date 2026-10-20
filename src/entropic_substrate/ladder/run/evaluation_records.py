@@ -50,12 +50,25 @@ def read_evaluation(
 ) -> dict[str, object]:
     """Recompute weights/ESS/MCSE and source positions from immutable artifacts.
 
-    ``memo``, when given, is passed straight through to :func:`read_seal`'s
-    lookup of the evaluation's own checkpoint seal (design-gate ruling DG-B):
-    the already-verified parent seal may be reused in-process, but a fresh
-    process (``memo=None``) still walks the full chain as the admission
-    predicate.
+    ``memo``, when given, serves two reuses (design-gate ruling DG-B). RETRACTION
+    (house rule 4, FOR-1670): this docstring used to say the memo is "passed
+    straight through to :func:`read_seal`" and that only the seal is reused; the
+    evaluation record itself was re-read and fully replayed on every call. Now a
+    record whose content digest the memo already remembers is returned as is
+    (the remembered object, read-only for callers) with NO filesystem access and
+    no seal, corpus or sampler work, and ``memo.evaluations_memo_hits`` advances.
+    Otherwise the full verification below runs; only after it returns does
+    ``memo.evaluations_read`` advance and the row get remembered, so a refused
+    record is neither counted nor remembered. TRUST BOUNDARY: a hit does not
+    detect a file rewritten after admission under the same identity; a fresh
+    process (``memo=None``) or a fresh memo still reads and replays everything as
+    the admission predicate.
     """
+    if memo is not None:
+        remembered = memo.get_evaluation(artifact)
+        if remembered is not None:
+            memo.evaluations_memo_hits += 1
+            return remembered
     row = recovery_record(
         read_json(root, artifact, max_bytes=max_bytes),
         "schema meaning run_identity step examples wall_seconds cuda_seconds checkpoint_seal",
@@ -149,4 +162,7 @@ def read_evaluation(
                         _real(actual_value), expected_value, rel_tol=1e-10, abs_tol=1e-10
                     ):
                         raise ValueError("evaluation summary differs from raw importance samples")
+    if memo is not None:
+        memo.evaluations_read += 1
+        memo.remember_evaluation(artifact, row)
     return row

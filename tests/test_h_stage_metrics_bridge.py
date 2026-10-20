@@ -158,6 +158,7 @@ def test_an_admission_end_lands_its_measurements_and_tags_the_memo_provenance(
     with narrated_admission("completion", "run", fresh):
         fresh.seals_walked += 4
         fresh.evaluations_read += 3
+        fresh.evaluations_memo_hits += 5  # log-only: it must NOT reach the sink projection
         fresh.journals_read += 4
         fresh.admission_seconds += 0.25
     with narrated_admission("generation", "run", _populated_memo()):

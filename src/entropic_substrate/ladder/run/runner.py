@@ -183,8 +183,6 @@ def _read_training_progress(
             max_source_bytes=max_source_bytes,
             memo=memo,
         )
-        if memo is not None:
-            memo.evaluations_read += 1
         point = artifact_from_mapping(evaluation.get("checkpoint_seal"))
         if point.content_hash.digest not in seal.seal_hashes:
             raise ValueError("evaluation belongs to another checkpoint lineage")

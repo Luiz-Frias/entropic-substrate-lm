@@ -85,24 +85,43 @@ class SealMemo:
     remaining exactly the same verified bytes. Never module-level state, never
     an ``lru_cache``, never shared across processes. ``remember`` is public
     (basedpyright strict forbids a cross-function protected member), but by
-    convention it is called ONLY from :func:`read_seal` itself, immediately
+    convention it is called ONLY from :func:`read_seal` itself (and
+    ``remember_evaluation`` ONLY from ``read_evaluation``), immediately
     after it has verified that exact node by reading it back from disk
     through its own per-node predicate; a writer's in-memory values (what
     ``seal_step`` just constructed) are never written here directly. A
     fresh, empty memo makes :func:`read_seal` walk the full chain exactly as
     with ``memo=None``.
 
+    FOR-1670 (RETRACTION, house rule 4): this memo used to hold seals only, so
+    every later admission re-read and re-replayed every evaluation record
+    (roughly 50 s each, measured by the conductor on the 2026-10-19 H0
+    plumbing wave). It now also holds the evaluation records
+    :func:`~entropic_substrate.ladder.run.evaluation_records.read_evaluation`
+    has admitted, keyed by the same content digest. The same convention
+    applies: ``remember_evaluation`` is called ONLY from ``read_evaluation``,
+    after the whole verification returned for a row it parsed from disk (never
+    the writer's in-memory report). TRUST BOUNDARY: a hit does no filesystem
+    access, so a file rewritten after admission but presented under the SAME
+    identity is still served; detecting that belongs to a fresh memo or a fresh
+    process (DG-B), not to the hit path. A hit returns the remembered object
+    itself, so callers treat it as read-only.
+
     The counters are MEASURED, never derived: they advance only where the
     work happens (a node verified from disk, a journal read, an evaluation
-    record admitted, wall time inside an outermost admission read), so the
-    ``admission.*`` events report deltas of real disk reads rather than the
-    chain length a memo hit would also have.
+    record admitted FROM DISK, wall time inside an outermost admission read),
+    so the ``admission.*`` events report deltas of real disk reads rather than
+    the chain length a memo hit would also have. ``evaluations_memo_hits``
+    counts the evaluation records a hit served instead, beside (never inside)
+    ``evaluations_read``.
     """
 
     _verified: dict[str, SealedStep] = field(default_factory=dict)
+    _verified_evaluations: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
     seals_walked: int = 0
     journals_read: int = 0
     evaluations_read: int = 0
+    evaluations_memo_hits: int = 0
     admission_seconds: float = 0.0
     _depth: int = field(default=0, init=False, repr=False)
 
@@ -115,6 +134,12 @@ class SealMemo:
 
     def remember(self, artifact: ArtifactIdentity, seal: SealedStep) -> None:
         self._verified[artifact.content_hash.digest] = seal
+
+    def get_evaluation(self, artifact: ArtifactIdentity) -> dict[str, object] | None:
+        return self._verified_evaluations.get(artifact.content_hash.digest)
+
+    def remember_evaluation(self, artifact: ArtifactIdentity, record: dict[str, object]) -> None:
+        self._verified_evaluations[artifact.content_hash.digest] = record
 
     @contextmanager
     def timed_read(self) -> Generator[None]:
@@ -145,6 +170,9 @@ def narrated_admission(caller: str, root: str, memo: SealMemo | None) -> Generat
     never a per-site literal. ``seals_walked``, ``journals_read`` and
     ``evaluations`` are deltas of what happened inside the bracket, and
     ``seconds`` is the admission reads' own wall time, not the stage's compute.
+    ``evaluations`` means evaluation records read from DISK; the records a memo
+    hit served are reported separately as ``evaluations_memo_hits`` (log-only on
+    ``.end``: the sink projection reads three counts and ignores this one).
     With no memo (a memo-less composition entry point) nothing is measured, so
     nothing is emitted. ``.end`` is logged only on a successful return; a raising
     walk propagates unchanged and logs no ``.end``, so a refused walk is never
@@ -160,6 +188,7 @@ def narrated_admission(caller: str, root: str, memo: SealMemo | None) -> Generat
     provenance = "shared" if memo.populated else "fresh"
     walked, journals = memo.seals_walked, memo.journals_read
     evaluations, seconds = memo.evaluations_read, memo.admission_seconds
+    hits = memo.evaluations_memo_hits
     entered = {"caller": caller, "root": root, "memo": provenance}
     logger.bind(event=ADMISSION_START, **entered).info(render(ADMISSION_START, **entered))
     yield
@@ -167,6 +196,7 @@ def narrated_admission(caller: str, root: str, memo: SealMemo | None) -> Generat
         **entered,
         "seals_walked": memo.seals_walked - walked,
         "evaluations": memo.evaluations_read - evaluations,
+        "evaluations_memo_hits": memo.evaluations_memo_hits - hits,
         "journals_read": memo.journals_read - journals,
         "seconds": memo.admission_seconds - seconds,
     }
