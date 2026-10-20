@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import pairwise
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +22,7 @@ from entropic_substrate.kernel.identity.d1_primitives import (
 )
 from entropic_substrate.ladder.register.d1_execution import default_d1_execution_protocol
 from entropic_substrate.ladder.register.d1_family import (
+    D1DraftSpec,
     D1ExperimentFamily,
     build_d1_experiment_family,
 )
@@ -30,6 +33,9 @@ from entropic_substrate.ladder.register.d1_stabilization import (
     EMAParameters,
     FutureLawSpec,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 pytestmark = pytest.mark.unit
 
@@ -183,3 +189,59 @@ def test_cosine_ema_schedule_must_cover_the_registered_optimizer_budget() -> Non
                 schedule_steps=3,
             ),
         )
+
+
+_STABILIZATION_AXES = ("arm", "collapse", "collapse_strategy", "ema", "target_update")
+
+_SHARED_FIELD_VARIANTS: dict[str, Callable[[D1DraftSpec], object]] = {
+    "codec": lambda d: replace(d.codec, construction_digest="b" * 64),
+    "encoder_pair": lambda d: MatchedEncoderPairSpec(
+        online=_encoder(n_layers=3), target=_encoder(n_layers=3)
+    ),
+    "future_law": lambda d: replace(d.future_law, predictor_hidden_width=32),
+    "execution_protocol": lambda d: replace(
+        d.execution_protocol,
+        optimization=replace(d.execution_protocol.optimization, learning_rate=3e-4),
+    ),
+}
+
+
+def test_family_accepts_drafts_differing_only_on_stabilization_axes() -> None:
+    drafts = _family().drafts
+
+    for left, right in pairwise(drafts):
+        differing = {
+            field
+            for field in D1DraftSpec.__dataclass_fields__
+            if getattr(left, field) != getattr(right, field)
+        }
+        assert differing
+        assert differing <= set(_STABILIZATION_AXES)
+    assert D1ExperimentFamily(drafts=drafts).drafts == drafts
+
+
+@pytest.mark.parametrize("field", sorted(_SHARED_FIELD_VARIANTS))
+def test_family_refuses_any_cell_differing_on_a_shared_field(field: str) -> None:
+    drafts = _family().drafts
+    # Vary the LAST cell so the refusal is not an artifact of the baseline cell.
+    odd = replace(drafts[-1], **{field: _SHARED_FIELD_VARIANTS[field](drafts[-1])})
+
+    with pytest.raises(
+        ValueError,
+        match="D1 family arms must be capacity-matched outside stabilization strategies",
+    ):
+        D1ExperimentFamily(drafts=(*drafts[:-1], odd))
+
+
+def test_family_construction_does_not_evaluate_the_construction_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drafts = _family().drafts
+
+    def _forbidden(self: D1DraftSpec) -> dict[str, object]:
+        msg = "construction_manifest must not be evaluated during family construction"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(D1DraftSpec, "construction_manifest", property(_forbidden))
+
+    assert D1ExperimentFamily(drafts=drafts).drafts == drafts

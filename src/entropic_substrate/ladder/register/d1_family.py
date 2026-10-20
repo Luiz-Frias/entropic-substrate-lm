@@ -244,6 +244,14 @@ class D1ExperimentFamily:
             msg = "D1 experiment family requires every registered arm"
             raise ValueError(msg)
 
+        # Measured 2026-10-20 (FOR-1598, at 7e8beff4): a second pass that diffed every
+        # draft's ``construction_manifest`` against the baseline's, allowing only
+        # arm/collapse/collapse_strategy/ema/target_update to differ, never fired. Every
+        # family this loop accepted changed exactly those five manifest keys, and each
+        # shared-field difference tried (codec, encoder_pair, future_law,
+        # execution_protocol) was refused here first. It cost two recursive manifest walks
+        # per draft and is deleted; tests/test_d1_family.py pins both arms of this guard
+        # and that the manifest is not read during construction.
         baseline = self.drafts[0]
         shared_fields = (
             "codec",
@@ -258,24 +266,6 @@ class D1ExperimentFamily:
         for draft in self.drafts[1:]:
             if any(getattr(draft, field) != getattr(baseline, field) for field in shared_fields):
                 msg = "D1 family arms must be capacity-matched outside stabilization strategies"
-                raise ValueError(msg)
-
-        allowed_to_vary = {
-            "arm",
-            "collapse",
-            "collapse_strategy",
-            "ema",
-            "target_update",
-        }
-        baseline_manifest = baseline.construction_manifest
-        for draft in self.drafts[1:]:
-            changed = {
-                key
-                for key, value in draft.construction_manifest.items()
-                if value != baseline_manifest[key]
-            }
-            if not changed <= allowed_to_vary:
-                msg = "D1 family cells may differ only on registered stabilization strategy axes"
                 raise ValueError(msg)
 
     @property
