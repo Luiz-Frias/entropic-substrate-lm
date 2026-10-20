@@ -36,9 +36,13 @@ set of emitted ``event`` names are equal in both directions.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
+
 __all__ = [
     "ADMISSION_CALLERS",
     "ADMISSION_END",
+    "ADMISSION_MEMOS",
     "ADMISSION_ROOTS",
     "ADMISSION_START",
     "CHECKPOINT_SEAL",
@@ -64,7 +68,10 @@ __all__ = [
     "STOP_MARKER_OBSERVED",
     "STOP_MARKER_RETRY",
     "WORKER_END",
+    "WORKER_STAGES",
+    "WORKER_STAGE_SCHEMA",
     "WORKER_START",
+    "project_worker_stage_record",
     "render",
 ]
 
@@ -109,6 +116,26 @@ ADMISSION_CALLERS: frozenset[str] = frozenset(
     }
 )
 ADMISSION_ROOTS: frozenset[str] = frozenset({"run", "capture"})
+ADMISSION_MEMOS: frozenset[str] = frozenset({"fresh", "shared"})
+# FOR-1669: every stage ``narrated_stage`` brackets (``worker_execution`` and
+# ``object_worker`` call sites, grep-measured 2026-10-19). Closed so that a stage name can
+# never mint an unbounded family of MLflow metric keys.
+WORKER_STAGES: frozenset[str] = frozenset(
+    {
+        "materialization",
+        "runtime_admission",
+        "training_readback",
+        "generation",
+        "span_diagnostics",
+        "trace_capture",
+        "native_verification",
+        "result_admission",
+    }
+)
+# The record schema the capture layer's log bridge hands a sink for a ``stage.end`` /
+# ``admission.end`` line (FOR-1669). It is a SINK record, not a log event: the closed log
+# vocabulary above is untouched and ``H_WORKER_LOG_EVENTS`` does not list it.
+WORKER_STAGE_SCHEMA = "h-worker-stage-v1"
 
 H_WORKER_LOG_EVENTS: frozenset[str] = frozenset(
     {
@@ -153,3 +180,65 @@ def render(event: str, **fields: object) -> str:
     for name, value in fields.items():
         parts.append(f"{name}={value:.3f}" if isinstance(value, float) else f"{name}={value}")
     return " ".join(parts)
+
+
+def _seconds(value: object) -> float | None:
+    # Exact-type test: ``bool`` is an ``int`` subclass and must not pass as a duration.
+    if type(value) is int or type(value) is float:
+        number = float(value)
+        if math.isfinite(number) and number >= 0.0:
+            return number
+    return None
+
+
+def _count(value: object) -> int | None:
+    return value if type(value) is int and value >= 0 else None
+
+
+def project_worker_stage_record(record: Mapping[str, object]) -> dict[str, object] | None:
+    """Normalise a bound ``stage.end`` / ``admission.end`` record into one sink record.
+
+    ``record`` is the loguru ``extra`` of the bound call (or the same mapping carrying the
+    ``schema`` key the log bridge adds). The result carries ONLY the closed-vocabulary
+    fields, under :data:`WORKER_STAGE_SCHEMA`; anything else returns ``None``: any other
+    event, a stage, caller, root or memo outside its closed set, a missing, non-numeric,
+    negative or non-finite ``seconds`` or count. Nothing is guessed or defaulted, and the
+    function is pure (no logging, no clock), so the extractor can call it on every record.
+    """
+    event = record.get("event")
+    seconds = _seconds(record.get("seconds"))
+    if seconds is None:
+        return None
+    if event == STAGE_END:
+        stage = record.get("stage")
+        if stage not in WORKER_STAGES:
+            return None
+        return {
+            "schema": WORKER_STAGE_SCHEMA,
+            "event": STAGE_END,
+            "stage": stage,
+            "seconds": seconds,
+        }
+    if event == ADMISSION_END:
+        caller, root, memo = record.get("caller"), record.get("root"), record.get("memo")
+        counts = {
+            name: _count(record.get(name))
+            for name in ("seals_walked", "evaluations", "journals_read")
+        }
+        if (
+            caller not in ADMISSION_CALLERS
+            or root not in ADMISSION_ROOTS
+            or memo not in ADMISSION_MEMOS
+            or any(value is None for value in counts.values())
+        ):
+            return None
+        return {
+            "schema": WORKER_STAGE_SCHEMA,
+            "event": ADMISSION_END,
+            "caller": caller,
+            "root": root,
+            "memo": memo,
+            **counts,
+            "seconds": seconds,
+        }
+    return None
