@@ -41,6 +41,53 @@ _E1 = _MOD.RUNGS["e1"]
 _E15A = _MOD.RUNGS["e1-5a"]
 
 
+# --------------------------------------------------------------------------
+# FOR-1609 — the entry script stays under the 1000-line threshold. The split
+# moves data/spec definitions into a sibling module, so these two pins keep
+# the split honest from both sides: the size pin goes RED if a sibling is
+# inlined back, and the reachability pin goes RED if a moved name stops being
+# re-exported (every test above reads these names off the file-path-loaded
+# module).
+# --------------------------------------------------------------------------
+
+_ENTRY_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "assemble_review_packet.py"
+_ENTRY_LINE_CEILING = 1000
+
+_REACHABLE_NAMES = (
+    "RUNGS",
+    "ArmSpec",
+    "RungSpec",
+    "BANNED_BASE",
+    "scrub_record",
+    "rekey_attestation",
+    "assert_attestation_present",
+    "build_reader",
+    "banned_scan",
+    "select_captures",
+    "assert_blinded_parity",
+    "main",
+)
+
+
+def test_entry_script_is_under_the_line_ceiling() -> None:
+    line_count = len(_ENTRY_SCRIPT.read_text().splitlines())
+    assert line_count < _ENTRY_LINE_CEILING, (
+        f"{_ENTRY_SCRIPT.name} is {line_count} lines; the ceiling is {_ENTRY_LINE_CEILING}"
+    )
+
+
+@pytest.mark.parametrize("name", _REACHABLE_NAMES)
+def test_split_names_are_reachable_on_the_loaded_module(name: str) -> None:
+    assert hasattr(_MOD, name), f"{name} is not reachable on the file-path-loaded entry module"
+
+
+def test_reachable_spec_classes_are_the_registry_classes() -> None:
+    # Identity, not just presence: RUNGS values must be instances of the
+    # RungSpec the entry module exposes (one definition, re-exported).
+    assert all(isinstance(spec, _MOD.RungSpec) for spec in _MOD.RUNGS.values())
+    assert all(isinstance(arm, _MOD.ArmSpec) for spec in _MOD.RUNGS.values() for arm in spec.arms)
+
+
 def _run_start(**model: Any) -> dict[str, Any]:
     base = {"embedding_init": "fisher_sqrt", "fisher_init_path": "data/f.pt"}
     base.update(model)
