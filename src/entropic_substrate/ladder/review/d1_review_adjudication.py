@@ -7,7 +7,6 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from types import MappingProxyType
 from typing import NoReturn, SupportsIndex, cast
 
@@ -18,6 +17,7 @@ from entropic_substrate.kernel.codec.strict_json import (
     strict_loads,
 )
 from entropic_substrate.kernel.identity.factory_attestation import FactoryAttestation
+from entropic_substrate.kernel.verdict.d1_types import ReviewFindingStatus as D1MajorFindingStatus
 
 __all__ = [
     "D1_NO_MAJOR_OUTCOME",
@@ -199,11 +199,6 @@ def parse_d1_major_findings(
     if not headings and outcome_count != 1:
         raise ValueError("D1 report without findings requires explicit NO_MAJOR_FINDINGS")
     return D1ParsedReviewReport(hashlib.sha256(payload).hexdigest(), headings)
-
-
-class D1MajorFindingStatus(StrEnum):
-    OPEN = "OPEN"
-    RESOLVED = "RESOLVED"
 
 
 @dataclass(frozen=True, slots=True)

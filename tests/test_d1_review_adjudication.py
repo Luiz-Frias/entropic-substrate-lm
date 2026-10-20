@@ -9,6 +9,7 @@ from dataclasses import replace
 
 import pytest
 
+from entropic_substrate.kernel.verdict.d1_types import ReviewFindingStatus
 from entropic_substrate.ladder.review.d1_review_adjudication import (
     D1_NO_MAJOR_OUTCOME,
     D1_NO_MAJOR_PROMPT_DIRECTIVE,
@@ -196,3 +197,18 @@ def test_empty_report_adjudication_is_not_required() -> None:
 
     assert surface.status == "NOT_REQUIRED"
     assert surface.open_major_finding_ids == ()
+
+
+def test_major_finding_status_is_the_kernel_review_finding_status_not_a_copy() -> None:
+    # Identity (`is`), not `==`: StrEnum members compare equal as strings across two
+    # distinct classes, which is exactly how the duplicate went unnoticed.
+    assert D1MajorFindingStatus is ReviewFindingStatus
+    assert D1MajorFindingStatus.OPEN is ReviewFindingStatus.OPEN
+    assert D1MajorFindingStatus.RESOLVED is ReviewFindingStatus.RESOLVED
+
+
+def test_major_finding_status_value_set_is_pinned_to_the_registered_vocabulary() -> None:
+    # Pinned against a literal: once aliased, comparing the two names to each other
+    # is tautological and could never see the kernel enum drift.
+    assert {member.value for member in D1MajorFindingStatus} == {"OPEN", "RESOLVED"}
+    assert len(D1MajorFindingStatus) == 2
