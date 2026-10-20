@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.2...v0.3.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **h-run:** FOR-1669 mirror final-leg stages to MLflow ([#357](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/357)) ([6ef75ec](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/6ef75ec66d39b374a39072570b8fbf1c1b0a0f92))
+
 ## [0.3.2](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.1...v0.3.2) (2026-10-19)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "entropic-substrate-lm"
-version = "0.3.2"
+version = "0.3.3"
 description = "Substrate-level symbol encoding experiments — Fisher-Rao init, nGPT hypersphere backbone, gated κ-stereographic normalization"
 requires-python = ">=3.12"
 readme = "README.md"
