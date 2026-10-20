@@ -70,7 +70,7 @@ _REACHABLE_NAMES = (
 
 
 def test_entry_script_is_under_the_line_ceiling() -> None:
-    line_count = len(_ENTRY_SCRIPT.read_text().splitlines())
+    line_count = len(_ENTRY_SCRIPT.read_text(encoding="utf-8").splitlines())
     assert line_count < _ENTRY_LINE_CEILING, (
         f"{_ENTRY_SCRIPT.name} is {line_count} lines; the ceiling is {_ENTRY_LINE_CEILING}"
     )
