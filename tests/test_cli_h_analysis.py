@@ -298,8 +298,9 @@ class TestNewSurfaceShape:
         tree = ast.parse(Path(cli_module.__file__ or "").read_text(encoding="utf-8"))
         for node in tree.body:
             if isinstance(node, ast.ImportFrom | ast.Import):
+                # ``from pkg import h_x`` binds the submodule through the alias name
                 names = (
-                    [node.module or ""]
+                    [f"{node.module or ''}.{a.name}" for a in node.names]
                     if isinstance(node, ast.ImportFrom)
                     else [a.name for a in node.names]
                 )
@@ -432,6 +433,16 @@ class TestAggregateH:
         assert main(["mlflow-aggregate", "h", *runs, *arms]) == 0
         assert _one_document(capsys)["schema"] == "h-aggregate-v1"
 
+    def test_the_arm_order_on_the_command_line_does_not_decide_the_grouping(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        runs, arms = _two_arm_args(tmp_path)  # --arm pairs are [A=magnitude, B=sphere]
+        reversed_arms = arms[2:] + arms[:2]
+        assert main(["mlflow-aggregate", "h", *runs, *reversed_arms]) == 0
+        doc = _one_document(capsys)
+        assert doc["arms"]["magnitude"]["profile_identity"] == IDENTITY_A
+        assert doc["arms"]["sphere"]["profile_identity"] == IDENTITY_B
+
     def test_works_without_any_tracking_uri_unlike_the_e_lane(self, tmp_path: Path) -> None:
         runs, arms = _two_arm_args(tmp_path)
         assert main(["mlflow-aggregate", "h", *runs, *arms]) == 0
@@ -518,6 +529,30 @@ class TestChartsH:
         out = tmp_path / "charts"
         assert main(["charts", "h", *runs, *arms, "--out-dir", str(out), "--attach"]) == 2
         assert not out.exists()
+
+    def test_attach_takes_the_tracking_uri_from_the_environment(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        stub = _StubClient()
+        seen: list[str] = []
+
+        def build(uri: str) -> _StubClient:
+            seen.append(uri)
+            return stub
+
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", "sqlite:///env.db")
+        monkeypatch.setattr(MLFLOW_BUILDER, build)
+        runs, arms = _two_arm_args(tmp_path / "in")
+        code = main(
+            ["charts", "h", *runs, *arms, "--out-dir", str(tmp_path / "charts"), "--attach"]
+        )
+        assert code == 0
+        assert seen == ["sqlite:///env.db"]
+        assert {run for run, _ in stub.calls} == {RUN_ID_A, RUN_ID_B}
+        assert sorted(_one_document(capsys)["attached"]) == [RUN_ID_A, RUN_ID_B]
 
     def test_attach_publishes_every_figure_to_every_arms_run_id(
         self,

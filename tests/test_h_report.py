@@ -88,6 +88,21 @@ class TestReportFromACapturedRun:
         assert report["status"]["completed"] is False
         assert report["status"]["status"] == "failed"
 
+    @pytest.mark.parametrize(
+        ("result_status", "completed"),
+        [
+            ("probe_workload_complete", True),
+            ("paused", False),
+            ("stopped_by_operator", False),
+        ],
+    )
+    def test_only_a_complete_terminal_result_is_presented_as_complete(
+        self, tmp_path: Path, result_status: str, completed: bool
+    ) -> None:
+        report = build_h_report(*write_h_run(tmp_path, result_status=result_status))
+        assert report["status"]["status"] == "ok"
+        assert report["status"]["completed"] is completed
+
     def test_a_receipt_verdict_is_embedded_verbatim(self, tmp_path: Path) -> None:
         verdict = {"status": "complete", "scientific_authority": "none"}
         report = build_h_report(*write_h_run(tmp_path), receipt_verdict=verdict)

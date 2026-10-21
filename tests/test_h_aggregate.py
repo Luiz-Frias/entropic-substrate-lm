@@ -26,6 +26,7 @@ from entropic_substrate.ladder.analyze.h_aggregate import (
     load_h_run,
     parse_arm_labels,
 )
+from entropic_substrate.ladder.analyze.h_report import build_h_report
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 
@@ -112,6 +113,7 @@ def build_h_run_rows(
     interval: int = 2,
     scale: float = 1.0,
     status: str = "ok",
+    result_status: str = "probe_workload_complete",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """``(metrics rows, worker-log rows)`` of a tiny admissible run (warm-up 2, 4 steps)."""
     assert warmup == 2, "the step-row scalar formulas assume a warm-up of 2"
@@ -154,7 +156,7 @@ def build_h_run_rows(
     metrics.append(
         {
             "event": "run_end",
-            "result_status": "probe_workload_complete",
+            "result_status": result_status,
             "schema": "h-run-lifecycle-v1",
             "status": status,
             "successful_optimizer_steps": warmup + steps,
@@ -228,6 +230,19 @@ class TestPairedAggregate:
             "sphere": 6.9,
         }
         assert labels != swapped
+
+    def test_arm_labels_bind_by_identity_not_by_insertion_or_input_order(
+        self, tmp_path: Path
+    ) -> None:
+        runs, _ = _two_arms(tmp_path)  # input order is [A, B]
+        reversed_labels = {IDENTITY_B: "sphere", IDENTITY_A: "magnitude"}  # inserted [B, A]
+        doc = aggregate_h_runs(runs, reversed_labels)
+        assert doc["arms"]["magnitude"]["profile_identity"] == IDENTITY_A
+        assert doc["arms"]["sphere"]["profile_identity"] == IDENTITY_B
+        doc = aggregate_h_runs(
+            list(reversed(runs)), {IDENTITY_A: "magnitude", IDENTITY_B: "sphere"}
+        )
+        assert doc["arms"]["magnitude"]["profile_identity"] == IDENTITY_A
 
     def test_global_step_axis_is_rebuilt_from_the_worker_log(self, tmp_path: Path) -> None:
         runs, labels = _two_arms(tmp_path)
@@ -328,13 +343,34 @@ class TestPairedAggregate:
         assert doc["arms"]["only"]["completed"] is False
         assert doc["arms"]["only"]["run_end"]["status"] == "failed"
 
+    @pytest.mark.parametrize(
+        ("result_status", "completed"),
+        [
+            ("probe_workload_complete", True),
+            ("paused", False),
+            ("stopped_by_operator", False),
+        ],
+    )
+    def test_only_a_complete_terminal_result_is_presented_as_complete(
+        self, tmp_path: Path, result_status: str, completed: bool
+    ) -> None:
+        # the worker writes status "ok" for every non-failure end, so status alone lies here
+        a = write_h_run(tmp_path, IDENTITY_A, REQUEST_A, result_status=result_status)
+        doc = aggregate_h_runs([load_h_run(*a)], {IDENTITY_A: "only"})
+        assert doc["arms"]["only"]["run_end"]["status"] == "ok"
+        assert doc["arms"]["only"]["completed"] is completed
+
     def test_uncommitted_rows_are_counted_not_dropped_silently(self, tmp_path: Path) -> None:
         def add_uncommitted(rows: list[dict[str, Any]]) -> None:
             rows.insert(-1, _step_row(IDENTITY_A, "prediction", 5, 1.0, committed=False))
 
-        run = load_h_run(*write_h_run(tmp_path, mutate_metrics=add_uncommitted))
+        paths = write_h_run(tmp_path, mutate_metrics=add_uncommitted)
+        run = load_h_run(*paths)
         assert run.uncommitted_step_rows == 1
         assert len(run.training) == 6
+        doc = aggregate_h_runs([run], {IDENTITY_A: "only"})
+        assert doc["arms"]["only"]["uncommitted_step_rows"] == 1
+        assert build_h_report(*paths)["steps"]["uncommitted_rows"] == 1
 
     def test_a_run_without_a_mlflow_run_event_carries_no_run_id(self, tmp_path: Path) -> None:
         run = load_h_run(*write_h_run(tmp_path, run_id=None))
@@ -422,6 +458,43 @@ def _prediction_step(n: int) -> Callable[[dict[str, Any]], bool]:
     )
 
 
+def _without(
+    predicate: Callable[[dict[str, Any]], bool], key: str
+) -> Callable[[list[dict[str, Any]]], None]:
+    def mutate(rows: list[dict[str, Any]]) -> None:
+        for row in rows:
+            if predicate(row):
+                row.pop(key, None)
+
+    return mutate
+
+
+def _duplicate_first(
+    predicate: Callable[[dict[str, Any]], bool],
+) -> Callable[[list[dict[str, Any]]], None]:
+    def mutate(rows: list[dict[str, Any]]) -> None:
+        index = next(i for i, r in enumerate(rows) if predicate(r))
+        rows.insert(index + 1, dict(rows[index]))
+
+    return mutate
+
+
+def _first_evaluation(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return next(r for r in rows if r.get("schema") == "h-predictive-evaluation-v1")
+
+
+def _empty_sample_count_entries(rows: list[dict[str, Any]]) -> None:
+    _first_evaluation(rows)["examples"][0]["by_sample_count"]["2"] = []
+
+
+def _non_object_entry(rows: list[dict[str, Any]]) -> None:
+    _first_evaluation(rows)["examples"][0]["by_sample_count"]["2"] = ["not an object"]
+
+
+def _non_object_example(rows: list[dict[str, Any]]) -> None:
+    _first_evaluation(rows)["examples"] = ["not an object"]
+
+
 @pytest.mark.unit
 class TestInadmissibleTelemetryRaises:
     """Each case is one distinct way an H file can be inadmissible; none may return a value."""
@@ -446,6 +519,23 @@ class TestInadmissibleTelemetryRaises:
             ("foreign row identity", _set(_prediction_step(2), run_identity="9" * 64)),
             ("row without identity", _set(_prediction_step(2), run_identity=None)),
             ("unknown phase", _set(_prediction_step(2), phase="mystery")),
+            ("string objective", _set(_prediction_step(1), objective="7.0")),
+            ("bool objective", _set(_prediction_step(1), objective=True)),
+            (
+                "malformed run_start profile_identity",
+                _set(_is_event("run_start"), profile_identity="not-hex"),
+            ),
+            (
+                "step row without a run_identity key",
+                _without(_prediction_step(2), "run_identity"),
+            ),
+            (
+                "evaluation row without a run_identity key",
+                _without(lambda r: r.get("schema") == "h-predictive-evaluation-v1", "run_identity"),
+            ),
+            ("empty sample-count entries", _empty_sample_count_entries),
+            ("non-object sample-count entry", _non_object_entry),
+            ("non-object example", _non_object_example),
         ],
     )
     def test_metrics_defect(
@@ -541,6 +631,16 @@ class TestInadmissibleTelemetryRaises:
                 _set(_is_event("mlflow.run"), run_id="a163161f"),
                 "32 lowercase hex",
             ),
+            (
+                "two worker.start events",
+                _duplicate_first(_is_event("worker.start")),
+                "exactly one worker.start",
+            ),
+            (
+                "two mlflow.run events",
+                _duplicate_first(_is_event("mlflow.run")),
+                "at most one mlflow.run",
+            ),
         ],
     )
     def test_worker_log_defect(
@@ -591,6 +691,20 @@ class TestInadmissibleTelemetryRaises:
         with pytest.raises(TelemetryGap, match="duplicate publication"):
             load_h_run(*write_h_run(tmp_path / "d", mutate_metrics=duplicate))
 
+    def test_repeated_evaluation_global_steps_are_refused_not_collapsed(
+        self, tmp_path: Path
+    ) -> None:
+        metrics, log = write_h_run(
+            tmp_path,
+            mutate_metrics=_duplicate_first(
+                lambda r: r.get("schema") == "h-predictive-evaluation-v1"
+            ),
+            mutate_log=_duplicate_first(_is_event("evaluation.start")),
+        )
+        with pytest.raises(TelemetryGap, match="not strictly increasing") as excinfo:
+            load_h_run(metrics, log)
+        assert str(metrics) in str(excinfo.value)
+
     def test_a_non_finite_evaluation_number_is_refused_not_dropped(self, tmp_path: Path) -> None:
         def poison(rows: list[dict[str, Any]]) -> None:
             row = next(r for r in rows if r.get("schema") == "h-predictive-evaluation-v1")
@@ -605,6 +719,44 @@ class TestInadmissibleTelemetryRaises:
 
         with pytest.raises(TelemetryGap, match="no examples"):
             load_h_run(*write_h_run(tmp_path / "e", mutate_metrics=empty))
+
+
+def _gap_entry(rows: list[dict[str, Any]], **changes: Any) -> None:
+    entry = {
+        "effective_sample_size": None,
+        "gap": "zero_importance_weight_mass",
+        "likelihood_relative_mcse": None,
+        "log_estimate": None,
+    }
+    entry.update(changes)
+    _first_evaluation(rows)["examples"][0]["by_sample_count"]["2"][1] = entry
+
+
+@pytest.mark.unit
+class TestZeroImportanceMassGapEntries:
+    def test_a_gap_entry_loads_and_is_counted_on_its_global_step(self, tmp_path: Path) -> None:
+        run = load_h_run(*write_h_run(tmp_path, mutate_metrics=_gap_entry))
+        assert [step for step, _ in run.evaluations] == [4, 6]
+        assert dict(run.evaluations)[4]["eval/gap_rows_k2"] == 1.0
+        doc = aggregate_h_runs([run], {IDENTITY_A: "only"})
+        assert doc["evaluation"]["metrics"]["eval/gap_rows_k2"][0]["values"] == {"only": 1.0}
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {"gap": None, "log_estimate": None},
+            {"gap": None, "likelihood_relative_mcse": None},
+            {"gap": "zero_importance_weight_mass", "log_estimate": -1.0},
+            {"gap": "unknown_gap_kind"},
+        ],
+    )
+    def test_any_other_gap_shape_is_refused_and_names_the_global_step(
+        self, tmp_path: Path, entry: dict[str, Any]
+    ) -> None:
+        metrics, log = write_h_run(tmp_path, mutate_metrics=lambda rows: _gap_entry(rows, **entry))
+        with pytest.raises(TelemetryGap, match="global step 4") as excinfo:
+            load_h_run(metrics, log)
+        assert str(metrics) in str(excinfo.value)
 
 
 # ------------------------------------------------------------------ unit: static contracts

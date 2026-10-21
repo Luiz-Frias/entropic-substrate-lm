@@ -32,9 +32,11 @@ module pins rather than assumes:
 
 Every scalar the aggregate reports for a training or evaluation row equals
 :class:`~entropic_substrate.ladder.run.h_metric_extractor.HTrainingStepExtractor`'s
-projection of the same row (one definition, imported). That projection silently
-omits non-finite values, so this module checks finiteness itself first and refuses
-rather than drops.
+projection of the same row (one definition, imported). The projection is not an
+admission check: it omits null estimates by design, because a zero-importance-weight
+gap entry carries none. This module therefore validates every row's shape itself,
+against the engine's admission predicate, before it projects, and refuses rather
+than drops.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -71,6 +74,7 @@ _EVALUATION_SCHEMA = "h-predictive-evaluation-v1"
 _COMMITTED = "committed"
 _WARMUP = "codec_warmup"
 _PREDICTION = "prediction"
+_COMPLETE_RESULT = "probe_workload_complete"
 # The scalar names of the step schema; pinned equal to the extractor's projection keys
 # by tests/test_h_aggregate.py (a schema fact, not a second formula).
 _STEP_SCALARS = (
@@ -237,27 +241,52 @@ def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
             _gap(f"{path}: step {row.get('step')} ({phase}) has a non-finite {key}: {value!r}")
 
 
-def _check_evaluation_numbers(row: dict[str, Any], path: Path) -> None:
+_EVALUATION_ENTRY_FIELDS = ("log_estimate", "effective_sample_size", "likelihood_relative_mcse")
+_ZERO_MASS_GAP = "zero_importance_weight_mass"
+
+
+def _check_evaluation_entry(entry: dict[str, Any], where: str, path: Path) -> None:
+    """The engine's admission predicate for one importance row.
+
+    A finite row carries three finite numbers and no gap. A zero-importance-weight row
+    carries a gap and three nulls. Every other combination is refused.
+    """
+    gap = entry.get("gap")
+    values = {key: entry.get(key) for key in _EVALUATION_ENTRY_FIELDS}
+    if gap is None:
+        for key, value in values.items():
+            if not _finite_number(value):
+                _gap(f"{path}: {where} has a non-finite {key}")
+    elif gap == _ZERO_MASS_GAP:
+        present = [key for key, value in values.items() if value is not None]
+        if present:
+            _gap(f"{path}: {where} is a {_ZERO_MASS_GAP} gap but carries {present}")
+    else:
+        _gap(f"{path}: {where} has an unknown gap {gap!r}")
+
+
+def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int) -> None:
+    step = row.get("step")
+    # the row's step is phase-local; refusals name the global step the metrics land on
+    where = (
+        f"evaluation at global step {step + warmup_steps}"
+        if type(step) is int
+        else f"evaluation at step {step!r}"
+    )
     examples = row.get("examples")
     if not isinstance(examples, list) or not examples:
-        _gap(f"{path}: evaluation at step {row.get('step')} carries no examples")
+        _gap(f"{path}: {where} carries no examples")
     for example in examples:  # pyright: ignore[reportUnknownVariableType]
         by_count = example.get("by_sample_count") if isinstance(example, dict) else None
         if not isinstance(by_count, dict) or not by_count:
-            _gap(
-                f"{path}: evaluation at step {row.get('step')} has an example without by_sample_count"
-            )
+            _gap(f"{path}: {where} has an example without by_sample_count")
         for entries in by_count.values():  # pyright: ignore[reportUnknownVariableType]
             if not isinstance(entries, list) or not entries:
-                _gap(
-                    f"{path}: evaluation at step {row.get('step')} has an empty sample-count entry"
-                )
+                _gap(f"{path}: {where} has an empty sample-count entry")
             for entry in entries:  # pyright: ignore[reportUnknownVariableType]
                 if not isinstance(entry, dict):
-                    _gap(f"{path}: evaluation at step {row.get('step')} has a non-object entry")
-                for key in ("log_estimate", "effective_sample_size"):
-                    if not _finite_number(entry.get(key)):  # pyright: ignore[reportUnknownMemberType]
-                        _gap(f"{path}: evaluation at step {row.get('step')} has a non-finite {key}")
+                    _gap(f"{path}: {where} has a non-object entry")
+                _check_evaluation_entry(entry, where, path)
 
 
 def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
@@ -331,7 +360,7 @@ def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
         elif schema == _EVALUATION_SCHEMA:
             if row.get("run_identity") != identity:
                 _gap(f"{metrics}: evaluation row carries no run_identity of this run")
-            _check_evaluation_numbers(row, metrics)
+            _check_evaluation_numbers(row, metrics, warmup_steps)
             projected = extractor.extract(row)
             if projected is None or not projected.metrics:
                 _gap(f"{metrics}: evaluation at step {row.get('step')} has no projection")
@@ -359,6 +388,12 @@ def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
         _gap(
             f"{metrics}: the worker log puts the warm-up at {warmup_steps} steps, but the "
             f"committed codec_warmup rows number {warmup_rows} and end at {warmup_max}"
+        )
+    evaluation_steps = [step for step, _ in evaluations]
+    if any(later <= earlier for earlier, later in pairwise(evaluation_steps)):
+        _gap(
+            f"{metrics}: evaluation rows at global steps {evaluation_steps} are not strictly "
+            "increasing; a repeated global step would be silently collapsed"
         )
     if [step for step, _ in evaluations] != evaluation_starts:
         _gap(
@@ -444,13 +479,19 @@ def _nll_summary(run: HRun) -> dict[str, Any]:
 
 
 def run_summary(run: HRun) -> dict[str, Any]:
-    """One run's lineage, status and axis summary; every value is captured, none inferred."""
+    """One run's lineage, status and axis summary.
+
+    Every value is read from the files. ``completed`` is derived, not copied: the worker
+    writes status ``ok`` for every non-failure terminal (complete, paused, stopped), so it
+    is ``True`` only when the result status is also ``probe_workload_complete``.
+    """
     steps = [step for step, _, _ in run.training]
     first_prediction = next((s for s, phase, _ in run.training if phase == _PREDICTION), None)
     return {
         "checkpoint_steps": sorted(run.publication_seconds),
         "committed_step_rows": len(run.training),
-        "completed": run.run_end.get("status") == "ok",
+        "completed": run.run_end.get("status") == "ok"
+        and run.run_end.get("result_status") == _COMPLETE_RESULT,
         "evaluation_steps": [step for step, _ in run.evaluations],
         "first_prediction_step": first_prediction,
         "future_nll_per_dimension": _nll_summary(run),
