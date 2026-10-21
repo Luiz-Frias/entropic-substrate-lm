@@ -521,6 +521,7 @@ class TestInadmissibleTelemetryRaises:
             ("unknown phase", _set(_prediction_step(2), phase="mystery")),
             ("string objective", _set(_prediction_step(1), objective="7.0")),
             ("bool objective", _set(_prediction_step(1), objective=True)),
+            ("integer beyond float range", _set(_prediction_step(1), objective=10**400)),
             (
                 "malformed run_start profile_identity",
                 _set(_is_event("run_start"), profile_identity="not-hex"),
@@ -654,6 +655,11 @@ class TestInadmissibleTelemetryRaises:
             (
                 "stage.end without a string stage",
                 _set(_is_event("stage.end"), stage=7),
+                r"stage\.end",
+            ),
+            (
+                "stage.end with an integer seconds beyond float range",
+                _set(_is_event("stage.end"), seconds=10**400),
                 r"stage\.end",
             ),
             (

@@ -141,7 +141,12 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def _finite_number(value: object) -> bool:
-    return type(value) in (int, float) and math.isfinite(float(value))  # pyright: ignore[reportArgumentType]
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(float(value))  # pyright: ignore[reportArgumentType]
+    except OverflowError:  # a JSON integer beyond float range is not a finite measurement
+        return False
 
 
 def _require_identity(value: object, *, where: str, path: Path) -> str:
