@@ -549,13 +549,13 @@ def aggregate_h_runs(runs: Sequence[HRun], labels: Mapping[str, str]) -> dict[st
             {"step": step, "values": {label: train[label][step].get(metric) for label in order}}
             for step in train_steps
         ]
+    # one step map per arm; the global axis is strictly increasing (load_h_run refuses
+    # otherwise), so a step maps to exactly one phase and the lookup is O(1)
+    phases: dict[str, dict[int, str]] = {
+        label: {step: phase for step, phase, _ in arm.training} for label, arm in arms.items()
+    }
     phase_index = [
-        {
-            "step": step,
-            "values": {
-                label: next(p for s, p, _ in arms[label].training if s == step) for label in order
-            },
-        }
+        {"step": step, "values": {label: phases[label][step] for label in order}}
         for step in train_steps
     ]
 
