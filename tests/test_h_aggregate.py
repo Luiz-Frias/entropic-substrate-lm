@@ -641,6 +641,46 @@ class TestInadmissibleTelemetryRaises:
                 _duplicate_first(_is_event("mlflow.run")),
                 "at most one mlflow.run",
             ),
+            (
+                "stage.end without seconds",
+                _without(_is_event("stage.end"), "seconds"),
+                r"stage\.end",
+            ),
+            (
+                "stage.end with a string seconds",
+                _set(_is_event("stage.end"), seconds="2.0"),
+                r"stage\.end",
+            ),
+            (
+                "stage.end without a string stage",
+                _set(_is_event("stage.end"), stage=7),
+                r"stage\.end",
+            ),
+            (
+                "admission.end without seconds",
+                _without(_is_event("admission.end"), "seconds"),
+                r"admission\.end",
+            ),
+            (
+                "admission.end without a string caller",
+                _set(_is_event("admission.end"), caller=None),
+                r"admission\.end",
+            ),
+            (
+                "admission.end with a string count",
+                _set(_is_event("admission.end"), evaluations="2"),
+                r"admission\.end",
+            ),
+            (
+                "admission.end with a null count",
+                _set(_is_event("admission.end"), journals_read=None),
+                r"admission\.end",
+            ),
+            (
+                "admission.end with a bool count",
+                _set(_is_event("admission.end"), seals_walked=True),
+                r"admission\.end",
+            ),
         ],
     )
     def test_worker_log_defect(

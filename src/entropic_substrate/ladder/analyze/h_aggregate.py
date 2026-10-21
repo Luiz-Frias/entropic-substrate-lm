@@ -207,27 +207,39 @@ def _worker_log_facts(
                 _gap(f"{path}: evaluation.start without an integer global_step: {event!r}")
             evaluation_steps.append(global_step)
 
-    stages = tuple(
-        {"seconds": float(r["seconds"]), "stage": str(r["stage"])}
-        for r in rows
-        if r.get("event") == "stage.end"
-        and isinstance(r.get("stage"), str)
-        and _finite_number(r.get("seconds"))
+    # the emitter writes stage and caller as strings, seconds as a float and the three
+    # admission counts as ints on every ``.end`` row; any other shape is a corrupt log,
+    # refused here so ``eval h`` never prints a final leg that silently lacks a row
+    stages: list[dict[str, Any]] = []
+    admissions: list[dict[str, Any]] = []
+    for row in rows:
+        event = row.get("event")
+        if event == "stage.end":
+            stage = row.get("stage")
+            if not isinstance(stage, str) or not _finite_number(row.get("seconds")):
+                _gap(f"{path}: stage.end without a string stage and finite seconds: {row!r}")
+            stages.append({"seconds": float(row["seconds"]), "stage": stage})
+        elif event == "admission.end":
+            caller = row.get("caller")
+            counts = {k: row.get(k) for k in ("evaluations", "journals_read", "seals_walked")}
+            if (
+                not isinstance(caller, str)
+                or not _finite_number(row.get("seconds"))
+                or any(type(v) is not int for v in counts.values())
+            ):
+                _gap(
+                    f"{path}: admission.end without a string caller, finite seconds and "
+                    f"integer evaluations/journals_read/seals_walked counts: {row!r}"
+                )
+            admissions.append({"caller": caller, "seconds": float(row["seconds"]), **counts})
+    return (
+        warmup_steps,
+        seal_steps,
+        evaluation_steps,
+        mlflow_run_id,
+        tuple(stages),
+        tuple(admissions),
     )
-    admissions = tuple(
-        {
-            "caller": str(r["caller"]),
-            "evaluations": r.get("evaluations"),
-            "journals_read": r.get("journals_read"),
-            "seals_walked": r.get("seals_walked"),
-            "seconds": float(r["seconds"]),
-        }
-        for r in rows
-        if r.get("event") == "admission.end"
-        and isinstance(r.get("caller"), str)
-        and _finite_number(r.get("seconds"))
-    )
-    return warmup_steps, seal_steps, evaluation_steps, mlflow_run_id, stages, admissions
 
 
 def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
