@@ -369,9 +369,11 @@ def test_repeated_evaluation_at_one_step_reproduces_exactly(tmp_path: Path) -> N
 def test_evaluation_seed_is_the_documented_step_keyed_mixing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The mixing is ``(profile.seed << 32) | step``: injective over (seed, step) in
-    [0, 2**32) squared, so no two seeds of a paired matrix share evaluation noise at
-    any two steps (``seed + step`` would: seed 42 at step 4 equals seed 44 at step 2)."""
+    """The mixing is ``(profile.seed * 0x9E3779B1 + step) % 2**32``: a 32-bit seed because
+    the CPU Mersenne Twister consumes only the low 32 bits of ``torch.manual_seed``, and
+    ``(seed << 32) | step`` therefore dropped ``profile.seed`` there (measured: seeds 42
+    and 43 drew identically at one step). ``seed + step`` is not injective either (seed
+    42 at step 4 equals seed 44 at step 2)."""
     import torch
 
     seeds: list[int] = []
@@ -390,4 +392,26 @@ def test_evaluation_seed_is_the_documented_step_keyed_mixing(
     with monkeypatch.context() as patch:
         patch.setattr(torch, "manual_seed", spy)
         run.evaluate()
-    assert seeds == [(run.profile.seed << 32) | 1, (run.profile.seed << 32) | 2]
+    assert seeds == [(run.profile.seed * 0x9E3779B1 + step) % 2**32 for step in (1, 2)]
+
+
+def test_step_keyed_seed_survives_the_cpu_generators_32_bit_truncation() -> None:
+    """The property the formula exists for, measured on the generator that consumes it:
+    over a paired-seed by step grid no two (seed, step) cells seed the CPU generator
+    alike, and the draws they produce differ. The mutation ``(seed << 32) | step`` keeps
+    the cells distinct as integers yet collapses them to one per step on the CPU."""
+    import torch
+
+    cells = [(seed, step) for seed in range(8) for step in range(1, 513)]
+    mixed = {cell: (cell[0] * 0x9E3779B1 + cell[1]) % 2**32 for cell in cells}
+    assert len(set(mixed.values())) == len(cells)  # injective on the grid
+    draws: dict[tuple[int, int], tuple[float, ...]] = {}
+    for cell, value in mixed.items():
+        torch.manual_seed(value)
+        draws[cell] = tuple(torch.rand(4).tolist())
+    assert len(set(draws.values())) == len(cells)  # distinct CPU draws, not only integers
+    for step in (1, 2, 17):  # control: the shifted-or form collapses seeds at one step
+        torch.manual_seed((0 << 32) | step)
+        first = torch.rand(4)
+        torch.manual_seed((1 << 32) | step)
+        assert torch.equal(first, torch.rand(4))

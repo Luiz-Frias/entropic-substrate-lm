@@ -172,8 +172,9 @@ class HProfile:
             raise ValueError("remote and scientific execution requires CUDA/bf16")
         if any(type(n) is not int or n < 0 for n in (self.seed, self.source_seed)):
             raise ValueError("profile seeds must be nonnegative integers")
-        # The step-keyed evaluation seed is (seed << 32) | step, which is injective only for
-        # seed < 2**32 (ladder/run/execution.py). source_seed is not shifted.
+        # The step-keyed evaluation seed is (seed * 0x9E3779B1 + step) % 2**32, a bijection
+        # in seed only for seed < 2**32 (ladder/run/execution.py); at or above it seed and
+        # seed + 2**32 would alias. source_seed is not mixed.
         if self.seed >= 2**32:
             raise ValueError("profile seed must be below 2**32 for the step-keyed evaluation seed")
         if type(self.source_digest) is not str:

@@ -330,10 +330,14 @@ class SentenceExecution:
             with torch.random.fork_rng(devices=devices):
                 # FOR-1664 door B: one noise draw repeated per checkpoint made every
                 # checkpoint's k-curve share its sampling error. Key the seed by step:
-                # (seed << 32) | step is injective over (seed, step) in [0, 2**32)^2 and
-                # lies in [0, 2**64); seed + step is not (42 at step 4 == 44 at step 2).
-                # Pure in (seed, step), so the same step reproduces and paired arms share.
-                torch.manual_seed((self.profile.seed << 32) | self.step)
+                # (seed * 0x9E3779B1 + step) % 2**32. The CPU Mersenne Twister consumes
+                # only the low 32 bits of torch.manual_seed (measured: seeds 42 and 43
+                # under (seed << 32) | step drew identically), so the key is a 32-bit
+                # value. The multiplier is odd: at a fixed step this is a bijection on
+                # seed in [0, 2**32) (HProfile refuses larger), so paired seeds never
+                # share noise; at a fixed seed it is a bijection on step. seed + step is
+                # not injective (42 at step 4 == 44 at step 2). Pure in (seed, step).
+                torch.manual_seed((self.profile.seed * 0x9E3779B1 + self.step) % 2**32)
                 for _ in range(self.profile.schedule.evaluation_batches):
                     batch = self.validation_sampler.next_batch()
                     attempt["current_source_batch"] = batch.identity

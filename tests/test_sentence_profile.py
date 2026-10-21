@@ -103,6 +103,15 @@ def test_invalid_profile_fields_are_rejected(changes: dict[str, object]) -> None
 def test_seed_boundary_is_the_largest_step_keyed_seed() -> None:
     assert replace(profile(), seed=2**32 - 1).seed == 2**32 - 1
 
+    def mixed(seed: int, step: int) -> int:  # the evaluation seed (execution.py)
+        return (seed * 0x9E3779B1 + step) % 2**32
+
+    # Why 2**32 is the bound: from there seed aliases seed - 2**32 at every step, while
+    # the largest admitted seed stays a distinct in-range 32-bit key.
+    assert mixed(2**32, 7) == mixed(0, 7)
+    assert 0 <= mixed(2**32 - 1, 2**32 - 1) < 2**32
+    assert mixed(2**32 - 1, 7) != mixed(0, 7)
+
 
 @pytest.mark.parametrize(
     "changes",
