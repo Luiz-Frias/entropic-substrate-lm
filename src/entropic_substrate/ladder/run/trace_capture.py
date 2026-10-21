@@ -22,7 +22,7 @@ from entropic_substrate.ladder.run.span_diagnostics import read_span_diagnostics
 
 _SCHEMAS = frozenset(
     (
-        "h-run-profile-v1",
+        "h-run-profile-v2",
         "h-probe-training-progress-v1",
         "h-checkpoint-seal-v1",
         "h-journal-shard-v1",
@@ -87,7 +87,7 @@ def _collect(
             payload = read_json(root, normalized, max_bytes=max_bytes)
             if payload.get("schema") not in _SCHEMAS:
                 raise ValueError("capture encountered an unknown producer artifact schema")
-            if payload.get("schema") == "h-run-profile-v1":
+            if payload.get("schema") == "h-run-profile-v2":
                 if HProfile.from_manifest(payload) != profile:
                     raise ValueError("captured profile differs from requested model trace")
             elif payload.get("run_identity") != profile.identity:

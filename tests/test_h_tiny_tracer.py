@@ -105,8 +105,14 @@ def test_localize_changes_only_the_execution_regime() -> None:
 
 
 def test_localize_refuses_non_tiny_authority() -> None:
+    remote = _remote(profile()).manifest
+    # FOR-1664: a non-tiny class must carry the development schedule to exist at all.
+    development: dict[str, Any] = remote["schedule"] | {
+        "importance_samples": [2, 4, 8, 16, 32, 64],
+        "diagnostic_samples": 256,
+    }
     pilot = HProfile.from_manifest(
-        _remote(profile()).manifest | {"name": "h0-fisher-pilot", "run_class": "pilot"}
+        remote | {"name": "h0-fisher-pilot", "run_class": "pilot", "schedule": development}
     )
     with pytest.raises(ValueError, match="tiny"):
         localize_profile(pilot, source_digest="a" * 64)

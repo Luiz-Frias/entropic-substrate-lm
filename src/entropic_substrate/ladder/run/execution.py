@@ -328,7 +328,12 @@ class SentenceExecution:
             ticket = None if self.timer is None else self.timer.start(ResourcePhase.EVAL)
             self.model.eval()
             with torch.random.fork_rng(devices=devices):
-                torch.manual_seed(self.profile.seed)
+                # FOR-1664 door B: one noise draw repeated per checkpoint made every
+                # checkpoint's k-curve share its sampling error. Key the seed by step:
+                # (seed << 32) | step is injective over (seed, step) in [0, 2**32)^2 and
+                # lies in [0, 2**64); seed + step is not (42 at step 4 == 44 at step 2).
+                # Pure in (seed, step), so the same step reproduces and paired arms share.
+                torch.manual_seed((self.profile.seed << 32) | self.step)
                 for _ in range(self.profile.schedule.evaluation_batches):
                     batch = self.validation_sampler.next_batch()
                     attempt["current_source_batch"] = batch.identity
@@ -342,7 +347,7 @@ class SentenceExecution:
                             self.model,
                             batch.history,
                             batch.target,
-                            sample_counts=self.profile.schedule.importance_samples,
+                            sample_counts=self.profile.schedule.evaluated_samples,
                             sample_chunk_size=self.profile.schedule.importance_chunk,
                         )
 

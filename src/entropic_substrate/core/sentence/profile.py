@@ -24,6 +24,17 @@ def _numbers(values: tuple[float, ...]) -> None:
         raise ValueError("profile numbers must be finite and not booleans")
 
 
+# FOR-1664 (operator ruling 2026-10-20). The registered development importance-sample
+# setting: a curve ending in the 64-sample headline (``eval/*_k64``) plus ONE fixed
+# 256-sample diagnostic carried apart in ``RunSchedule.diagnostic_samples``. Every run
+# class outside ``SMOKE_RUN_CLASSES`` must carry exactly this; the smoke classes may carry
+# any valid schedule, e.g. ``(2, 4)``, which is a plumbing setting whose effective sample
+# size is bounded by k and must not be read as convergence.
+DEVELOPMENT_IMPORTANCE_SAMPLES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+DEVELOPMENT_DIAGNOSTIC_SAMPLES: int = 256
+SMOKE_RUN_CLASSES: tuple[str, ...] = ("local_tiny", "remote_tiny")
+
+
 @dataclass(frozen=True, slots=True)
 class OptimizationSpec:
     learning_rate: float
@@ -63,9 +74,14 @@ class RunSchedule:
     checkpoint_interval: int
     evaluation_interval: int
     evaluation_batches: int
+    # The importance-sample curve. ``(2, 4)`` is the smoke setting (see
+    # ``SMOKE_RUN_CLASSES``): its ESS is bounded by k, never convergence evidence.
     importance_samples: tuple[int, ...]
     importance_chunk: int
     generation_sentences: int
+    # Required, no default, last (FOR-1664 door A (ii)): the fixed diagnostic population,
+    # strictly beyond the curve. It tops the single nested population that is drawn once.
+    diagnostic_samples: int
 
     def __post_init__(self) -> None:
         integers = (
@@ -90,6 +106,20 @@ class RunSchedule:
             raise ValueError("importance sample counts must be increasing integers >= 2")
         if self.importance_chunk > counts[-1]:
             raise ValueError("importance chunk exceeds the sample envelope")
+        if type(self.diagnostic_samples) is not int or self.diagnostic_samples <= counts[-1]:
+            raise ValueError(
+                "diagnostic sample count must be an integer beyond the importance-sample curve"
+            )
+
+    @property
+    def evaluated_samples(self) -> tuple[int, ...]:
+        """Every k an evaluation reports: the curve, then the diagnostic count.
+
+        The one definition read by the engine (what is scored), the record reader (the
+        weight-matrix envelope and the ``by_sample_count`` key set). Derived, never a
+        field, so the manifest does not carry it.
+        """
+        return (*self.importance_samples, self.diagnostic_samples)
 
 
 def _construct[T](factory: Callable[..., T], value: object) -> T:
@@ -155,6 +185,15 @@ class HProfile:
         ):
             if type(value) is not kind:
                 raise TypeError("profile components require exact validated specification types")
+        if self.run_class not in SMOKE_RUN_CLASSES and (
+            self.schedule.importance_samples != DEVELOPMENT_IMPORTANCE_SAMPLES
+            or self.schedule.diagnostic_samples != DEVELOPMENT_DIAGNOSTIC_SAMPLES
+        ):
+            raise ValueError(
+                "development runs require the registered importance-sample curve "
+                f"{DEVELOPMENT_IMPORTANCE_SAMPLES} and diagnostic count "
+                f"{DEVELOPMENT_DIAGNOSTIC_SAMPLES}"
+            )
         if (
             self.codec.width != self.law.width
             or self.codec.max_sentence_bytes > 4096
@@ -176,7 +215,7 @@ class HProfile:
 
     @property
     def manifest(self) -> dict[str, object]:
-        value = {"schema": "h-run-profile-v1", **asdict(self)}
+        value = {"schema": "h-run-profile-v2", **asdict(self)}
         return cast(dict[str, object], json.loads(json.dumps(value, allow_nan=False)))
 
     @property
@@ -186,7 +225,7 @@ class HProfile:
     @classmethod
     def from_manifest(cls, value: object) -> Self:
         row = recovery_record(value, "schema " + " ".join(signature(cls).parameters)).copy()
-        if row.pop("schema") != "h-run-profile-v1":
+        if row.pop("schema") != "h-run-profile-v2":
             raise ValueError("unknown H profile version")
         row["codec"] = _construct(CodecSpec, row["codec"])
         row["spine"] = _construct(SpineSpec, row["spine"])

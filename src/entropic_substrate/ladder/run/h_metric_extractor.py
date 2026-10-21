@@ -76,6 +76,14 @@ class HTrainingStepExtractor:
     finite row contributes only its gap count. The authoritative journal and the
     evaluation artifacts are untouched; this remains the additive mirror.
 
+    Keys are ALWAYS k-suffixed (FOR-1664): a bare ``eval/log_marginal`` or ``eval/ess``
+    is never emitted, because an estimate without its k reads as converged when it is
+    not. The k set is the profile's whole evaluated population: the importance-sample
+    curve AND the fixed diagnostic count (``RunSchedule.evaluated_samples``), so the
+    diagnostic rows arrive under their own k (for example ``eval/ess_k256``) exactly as
+    the curve rows do. An effective sample size is bounded by its k, so the smoke
+    setting's ``eval/ess_k2``/``eval/ess_k4`` carry no convergence evidence.
+
     Final-leg stage and admission measurements (``h-worker-stage-v1``, FOR-1669) are
     projected as ``stage/<stage>/seconds`` and ``admission/<caller>/{seconds,seals_walked,
     evaluations,journals_read}`` onto the LAST global step a committed training row

@@ -137,6 +137,12 @@ def test_probe_driver_refuses_scientific_authority_and_remote_successors(tmp_pat
             run_class="confirmatory",
             device="cuda",
             precision="bf16",
+            # FOR-1664: the development schedule a non-tiny class must carry.
+            schedule=replace(
+                template.profile.schedule,
+                importance_samples=(2, 4, 8, 16, 32, 64),
+                diagnostic_samples=256,
+            ),
         ),
         replace(
             template.profile,
@@ -320,3 +326,68 @@ def test_a_tampered_journal_is_refused_by_a_fresh_process_resume(tmp_path: Path)
             max_artifact_bytes=LIMIT,
             resume=paused.receipt,
         )
+
+
+def _prediction_run(root: Path) -> SentenceExecution:
+    run = engine(root)
+    run.advance()
+    run.advance()
+    run.begin_prediction()
+    return run
+
+
+def test_evaluations_at_different_steps_draw_different_importance_samples(tmp_path: Path) -> None:
+    """FOR-1664 door B: one noise draw repeated per checkpoint made k-curves from
+    different checkpoints share their sampling error. The held-out batch is replayed
+    from cursor 0 each time and the encoder is frozen in prediction, so the proposal
+    law is the same; ``proposal_log_prob`` moves ONLY with the draw (``log_weights``
+    also moves with training, so it cannot attribute the difference)."""
+    run = _prediction_run(tmp_path)
+    run.advance()
+    first = run.evaluate()
+    run.advance()
+    second = run.evaluate()
+    assert (first["step"], second["step"]) == (1, 2)
+    for before, after in zip(first["examples"], second["examples"], strict=True):
+        assert before["source_batch"] == after["source_batch"]  # control: same batch
+        assert before["proposal_log_prob"] != after["proposal_log_prob"]
+
+
+def test_repeated_evaluation_at_one_step_reproduces_exactly(tmp_path: Path) -> None:
+    run = _prediction_run(tmp_path)
+    run.advance()
+    first = run.evaluate()
+    again = run.evaluate()
+    assert first["examples"]
+    for key in ("log_weights", "proposal_log_prob", "decoder_log_prob", "prior_log_prob"):
+        assert [e[key] for e in first["examples"]] == [e[key] for e in again["examples"]]
+    assert [e["by_sample_count"] for e in first["examples"]] == [
+        e["by_sample_count"] for e in again["examples"]
+    ]
+
+
+def test_evaluation_seed_is_the_documented_step_keyed_mixing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mixing is ``(profile.seed << 32) | step``: injective over (seed, step) in
+    [0, 2**32) squared, so no two seeds of a paired matrix share evaluation noise at
+    any two steps (``seed + step`` would: seed 42 at step 4 equals seed 44 at step 2)."""
+    import torch
+
+    seeds: list[int] = []
+    original = torch.manual_seed
+
+    def spy(seed: int) -> torch.Generator:
+        seeds.append(seed)
+        return original(seed)
+
+    run = _prediction_run(tmp_path)
+    run.advance()
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "manual_seed", spy)
+        run.evaluate()
+    run.advance()
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "manual_seed", spy)
+        run.evaluate()
+    assert seeds == [(run.profile.seed << 32) | 1, (run.profile.seed << 32) | 2]
