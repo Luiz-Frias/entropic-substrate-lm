@@ -92,10 +92,21 @@ def test_a_record_that_omits_the_diagnostic_rows_cannot_be_admitted(
 
 @pytest.mark.parametrize(
     "mutation",
-    ["source", "weights", "summary", "quality_kind", "bytes", "missing_samples", "bool", "timing"],
+    [
+        "source",
+        "weights",
+        "summary",
+        "diagnostic_summary",
+        "quality_kind",
+        "bytes",
+        "missing_samples",
+        "bool",
+        "timing",
+    ],
 )
 def test_rehashed_invalid_evaluation_cannot_be_admitted(tmp_path: Path, mutation: str) -> None:
     run, output, artifact = evaluation(tmp_path)
+    schedule = run.profile.schedule
     payload = copy.deepcopy(read_json(output, artifact, max_bytes=10_000_000))
     batch = payload["examples"][0]
     if mutation == "source":
@@ -104,6 +115,8 @@ def test_rehashed_invalid_evaluation_cannot_be_admitted(tmp_path: Path, mutation
         batch["log_weights"][0][0] += 1
     elif mutation == "summary":
         batch["by_sample_count"]["2"][0]["log_estimate"] += 1
+    elif mutation == "diagnostic_summary":
+        batch["by_sample_count"][str(schedule.diagnostic_samples)][0]["log_estimate"] += 1
     elif mutation == "quality_kind":
         payload["meaning"] = "oracle_reconstruction_training"
     elif mutation == "bytes":
