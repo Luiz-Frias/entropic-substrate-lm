@@ -87,6 +87,8 @@ def test_scientific_profiles_cannot_impersonate_tiny_or_bundle_h1_mechanisms() -
     "changes",
     [
         {"seed": True},
+        {"seed": 2**32},
+        {"seed": 2**40},
         {"stage": "D1"},
         {"precision": "half"},
         {"name": "../bad"},
@@ -96,6 +98,10 @@ def test_scientific_profiles_cannot_impersonate_tiny_or_bundle_h1_mechanisms() -
 def test_invalid_profile_fields_are_rejected(changes: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         replace(profile(), **changes)
+
+
+def test_seed_boundary_is_the_largest_step_keyed_seed() -> None:
+    assert replace(profile(), seed=2**32 - 1).seed == 2**32 - 1
 
 
 @pytest.mark.parametrize(

@@ -442,6 +442,26 @@ h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
 source rows unchanged with the same tool invocation (``9978611d...`` local,
 ``d85b3144...`` and ``fc7fad81...`` CI).
 
+FOR-1664 L2-fix re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-21, experiment-pre-reqs serial sub-wave lane FOR-1664,
+second DG-A hand-off after the lane's L2 gate): h-checkpoint-reader-v2 changes
+because one of its 51 members changed bytes -- ``core.sentence.profile``
+(``HProfile.__post_init__`` refuses ``seed >= 2**32`` because the step-keyed
+evaluation seed ``(seed << 32) | step`` is injective and inside
+``torch.manual_seed``'s range only below that bound, measured: the largest
+in-range pair is accepted and ``2**32 << 32`` overflows; the tiny-name rule
+reads ``SMOKE_RUN_CLASSES`` so the smoke-class set has one definition). Label
+and member set unchanged. All three rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point
+(828 files). The OLD values they replace,
+``ebbb2ee8f4dcbe264345457edfc17ab34e05d152164c9a9870ca96d6c394ab51``
+(local), ``57292f2a3c0ab80b4ab6ada9cd418909eb849851632cc61728da23f7d36c75dc``
+(CI 3.12.14) and
+``57ad3ee6a8e730c47210644a15d8cdb22b5100dad96ffcef7ec5600c1c1bb8d4``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched (``core.sentence.profile`` is not one of
+h-source-reader-v3's seven fixed members; source rows re-measured unchanged).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -619,15 +639,15 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "ebbb2ee8f4dcbe264345457edfc17ab34e05d152164c9a9870ca96d6c394ab51",  # pragma: allowlist secret
+    ): "91aed75258445b5e3d412353eb90a09cfedd8a8b796f444af386e78b65860143",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "57292f2a3c0ab80b4ab6ada9cd418909eb849851632cc61728da23f7d36c75dc",  # pragma: allowlist secret
+    ): "e6a17011df9d58705fdf7d00243a526fad83f8dc646142705eec20da3ee73a0d",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "57ad3ee6a8e730c47210644a15d8cdb22b5100dad96ffcef7ec5600c1c1bb8d4",  # pragma: allowlist secret
+    ): "8893b5e40bfa86cf596ba3744c80d85905033b0f84724d2c8a0c7e2d84d4268f",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

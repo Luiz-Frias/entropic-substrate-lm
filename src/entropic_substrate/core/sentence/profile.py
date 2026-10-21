@@ -164,7 +164,7 @@ class HProfile:
             raise ValueError("profile name must be a safe stage-prefixed name")
         if self.run_class not in ("local_tiny", "remote_tiny", "pilot", "confirmatory"):
             raise ValueError("unknown run class")
-        if self.name.endswith("-tiny") != (self.run_class in ("local_tiny", "remote_tiny")):
+        if self.name.endswith("-tiny") != (self.run_class in SMOKE_RUN_CLASSES):
             raise ValueError("tiny naming and authority class must agree")
         if self.device not in ("cpu", "cuda") or self.precision not in ("fp32", "bf16"):
             raise ValueError("unknown device or precision")
@@ -172,6 +172,10 @@ class HProfile:
             raise ValueError("remote and scientific execution requires CUDA/bf16")
         if any(type(n) is not int or n < 0 for n in (self.seed, self.source_seed)):
             raise ValueError("profile seeds must be nonnegative integers")
+        # The step-keyed evaluation seed is (seed << 32) | step, which is injective only for
+        # seed < 2**32 (ladder/run/execution.py). source_seed is not shifted.
+        if self.seed >= 2**32:
+            raise ValueError("profile seed must be below 2**32 for the step-keyed evaluation seed")
         if type(self.source_digest) is not str:
             raise ValueError("source digest must be a string")
         ContentHash("sha256", self.source_digest)
