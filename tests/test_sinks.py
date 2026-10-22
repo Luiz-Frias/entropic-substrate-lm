@@ -2137,7 +2137,11 @@ def test_strict_module_imports_no_mlflow_d1_threads_or_run_layer() -> None:
         if isinstance(node, ast.Import):
             imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            imported.add(node.module or "")
+            # The module AND each name qualified by it: ``from pkg import d1_tracking``
+            # binds the submodule ``pkg.d1_tracking`` and names only ``pkg`` as module.
+            base = node.module or ""
+            imported.add(base)
+            imported.update(f"{base}.{alias.name}" if base else alias.name for alias in node.names)
     assert not any(name.split(".")[0] == "mlflow" for name in imported)
     assert not any("d1_" in name or ".ladder.run" in name for name in imported)
     assert not imported & {"threading", "queue", "time", "asyncio"}

@@ -465,7 +465,11 @@ def test_observer_module_imports_no_mlflow_adapter_at_any_scope() -> None:
         if isinstance(node, ast.Import):
             imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            imported.add(node.module or "")
+            # The module AND each name qualified by it: ``from pkg import mlflow_strict``
+            # binds the submodule ``pkg.mlflow_strict`` and names only ``pkg`` as module.
+            base = node.module or ""
+            imported.add(base)
+            imported.update(f"{base}.{alias.name}" if base else alias.name for alias in node.names)
     offenders = {
         name
         for name in imported
