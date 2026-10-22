@@ -25,10 +25,12 @@ profile (see "What a reviewer must re-derive").
 
 ## Q1. Admissibility under the H lane predicate
 
-The H lane predicate (architecture "Evidence plane"): exactly one `run_start`, exactly one
-`run_end` of schema `h-run-lifecycle-v1`, at least one committed step row, every other file
-well-formed JSON lines; `run_end.status` is read, not required (`h_telemetry.final_h_run_end`, docstring:
-"deliberately no `status == "ok"` condition"). The brief's wave completion checks, reported separately
+The capture gate has two parts. The H metrics predicate (`h_telemetry.final_h_run_end` over
+`metrics.jsonl`; architecture "Evidence plane"): well-formed JSON-object lines, exactly one
+`run_start`, exactly one `run_end` of schema `h-run-lifecycle-v1`, at least one committed step
+row; `run_end.status` is read, not required (docstring: "deliberately no `status == "ok"`
+condition"). Separately, the companion `worker-log.jsonl` is checked by `require_json_object_lines`
+in the capture pass; the predicate itself does not read it. The brief's wave completion checks, reported separately
 from admission: committed steps on one global axis through 1000, and evaluation rows at global 500/750/1000.
 
 | check | sphere (988d8388) | magnitude (a163161f) | evidence |
@@ -47,8 +49,8 @@ from admission: committed steps on one global axis through 1000, and evaluation 
 | Worker-log levels | 260 INFO, 0 WARNING, 0 ERROR | 260 INFO, 0 WARNING, 0 ERROR | MEASURED |
 
 Admissibility conclusion: both arms satisfy the H lane predicate as written in the
-architecture (one `run_start`, one `run_end`, at least one committed row, well-formed
-companion file); `status: ok` with 1000 committed rows is the observed result for these arms,
+architecture (one `run_start`, one `run_end`, at least one committed row) and the companion
+file passes its separate JSON-object-lines check; `status: ok` with 1000 committed rows is the observed result for these arms,
 not part of the predicate. The wave completion check "one global axis through 1000" is satisfied only through the
 worker log's `global_step` plus row order; the metrics rows carry a phase-local axis. That is
 a finding for the reviewer and the gate author, not a refusal: no reader in scope refuses it.
