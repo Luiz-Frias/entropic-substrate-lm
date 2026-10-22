@@ -14,6 +14,7 @@ from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract, D1RegisteredEndpoint
 from entropic_substrate.kernel.verdict.d1_statistical_gaps import D1EndpointGap
 from entropic_substrate.kernel.verdict.d1_types import D1_STABILIZATION_ARM_IDS
+from entropic_substrate.kernel.verdict.d1_types import ClauseStatus as D1ConditionStatus
 from entropic_substrate.ladder.analyze.d1_factorial import (
     D1AnalysisCell,
     D1FactorialAnalysis,
@@ -75,12 +76,6 @@ class D1ThresholdOperator(StrEnum):
     AT_MOST = "AT_MOST"
     WITHIN_ABS = "WITHIN_ABS"
     OUTSIDE_ABS = "OUTSIDE_ABS"
-
-
-class D1ConditionStatus(StrEnum):
-    PASS = "PASS"  # nosec B105 -- registered decision vocabulary, not a credential
-    FAIL = "FAIL"
-    INCONCLUSIVE = "INCONCLUSIVE"
 
 
 @dataclass(frozen=True, slots=True)

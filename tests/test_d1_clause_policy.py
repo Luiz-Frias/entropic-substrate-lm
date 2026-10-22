@@ -9,6 +9,7 @@ import pytest
 from d1_launch_admission_fixtures import SEEDS, contract
 from entropic_substrate.kernel.identity.d1_primitives import D1Arm
 from entropic_substrate.kernel.verdict.d1_contract import D1DecisionContract
+from entropic_substrate.kernel.verdict.d1_types import ClauseStatus
 from entropic_substrate.ladder.analyze.d1_clause_policy import (
     D1ClausePolicyError,
     D1ConditionStatus,
@@ -328,3 +329,19 @@ def test_unregistered_contrast_reference_is_refused_at_parse_time() -> None:
     ]
     with pytest.raises(D1ClausePolicyError, match="contrast_id"):
         parse_d1_clause_policy(_contract_with_policy(policy))
+
+
+def test_condition_status_is_the_kernel_clause_status_not_a_copy() -> None:
+    # Identity (`is`), not `==`: StrEnum members compare equal as strings across two
+    # distinct classes, which is exactly how the duplicate went unnoticed.
+    assert D1ConditionStatus is ClauseStatus
+    assert D1ConditionStatus.PASS is ClauseStatus.PASS
+    assert D1ConditionStatus.FAIL is ClauseStatus.FAIL
+    assert D1ConditionStatus.INCONCLUSIVE is ClauseStatus.INCONCLUSIVE
+
+
+def test_condition_status_value_set_is_pinned_to_the_registered_vocabulary() -> None:
+    # Pinned against a literal: once aliased, comparing the two names to each other
+    # is tautological and could never see the kernel enum drift.
+    assert {member.value for member in D1ConditionStatus} == {"PASS", "FAIL", "INCONCLUSIVE"}
+    assert len(D1ConditionStatus) == 3
