@@ -15,6 +15,7 @@ behind ``just container-test``.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from dataclasses import dataclass, field
@@ -25,6 +26,13 @@ import pytest
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import RESOURCE_ALREADY_EXISTS, RESOURCE_DOES_NOT_EXIST
 
+from entropic_substrate.ladder.capture.adapters import mlflow_strict
+from entropic_substrate.ladder.capture.adapters.mlflow_strict import (
+    SCALAR_PROJECTION_KEY,
+    StrictMlflowSink,
+    scalar_projection_record,
+)
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.reader.sinks import (
     MLFLOW_SYSTEM_METRICS_ENV,
     MLFLOW_TINY_ENV,
@@ -1960,3 +1968,176 @@ def test_build_mlflow_client_exposes_the_identical_mlflow_exception_class() -> N
     from entropic_substrate.ladder.capture.adapters.mlflow import MlflowException
 
     assert MlflowException is mlflow.exceptions.MlflowException
+
+
+# ------------------------------------------- StrictMlflowSink (FOR-1552, S1)
+class _StrictClient:
+    """Records every call and its ``synchronous`` kwarg; ``fail`` makes writes raise."""
+
+    def __init__(self, *, fail_after: int | None = None) -> None:
+        self.fail_after = fail_after
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def _record(self, name: str, *args: Any, **kwargs: Any) -> None:
+        if self.fail_after is not None and len(self.calls) >= self.fail_after:
+            raise ConnectionError(f"deliberate {name} failure")
+        self.calls.append((name, args, kwargs))
+
+    def log_metric(
+        self,
+        run_id: str,
+        key: str,
+        value: float,
+        *,
+        step: int | None = None,
+        synchronous: bool | None = None,
+    ) -> None:
+        self._record("log_metric", run_id, key, value, step=step, synchronous=synchronous)
+
+    def set_tag(
+        self, run_id: str, key: str, value: str, *, synchronous: bool | None = None
+    ) -> None:
+        self._record("set_tag", run_id, key, value, synchronous=synchronous)
+
+    def log_artifact(self, run_id: str, local_path: str, artifact_path: str | None = None) -> None:
+        self._record("log_artifact", run_id, local_path, artifact_path=artifact_path)
+
+
+def _strict(client: _StrictClient | None = None) -> tuple[StrictMlflowSink, _StrictClient]:
+    fake = client if client is not None else _StrictClient()
+    return StrictMlflowSink(client=fake, run_id="run-1"), fake
+
+
+def test_strict_sink_implements_the_metric_sink_port() -> None:
+    sink, _ = _strict()
+    assert isinstance(sink, MetricSink)
+
+
+def test_strict_sink_writes_one_synchronous_metric_per_scalar_at_the_record_step() -> None:
+    sink, client = _strict()
+    sink.log(scalar_projection_record(4, {"a": 1.5, "b": 2}))
+    assert client.calls == [
+        ("log_metric", ("run-1", "a", 1.5), {"step": 4, "synchronous": True}),
+        ("log_metric", ("run-1", "b", 2.0), {"step": 4, "synchronous": True}),
+    ]
+
+
+def test_strict_sink_raises_the_client_failure_unchanged_and_swallows_nothing() -> None:
+    sink, client = _strict(_StrictClient(fail_after=1))
+    with pytest.raises(ConnectionError, match="deliberate log_metric failure") as info:
+        sink.log(scalar_projection_record(1, {"a": 1.0, "b": 2.0}))
+    assert type(info.value) is ConnectionError
+    assert len(client.calls) == 1  # the first metric landed; the failure stopped the rest
+    with pytest.raises(ConnectionError):  # nothing was latched: the next write still raises
+        sink.log(scalar_projection_record(2, {"a": 1.0}))
+    assert not hasattr(sink, "failed_writes") and not hasattr(sink, "flush")
+
+
+def test_strict_sink_writes_nothing_for_a_well_formed_record_with_zero_metrics() -> None:
+    sink, client = _strict()
+    sink.log(scalar_projection_record(0, {}))
+    assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    ("record", "error"),
+    [
+        ({"event": "eval", "step": 1, "loss": 1.0}, ValueError),
+        ({}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {}}, "event": "eval"}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1}}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {}, "extra": 1}}, ValueError),
+        ({SCALAR_PROJECTION_KEY: [1]}, TypeError),
+        ({SCALAR_PROJECTION_KEY: {"step": True, "metrics": {}}}, TypeError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1.0, "metrics": {}}}, TypeError),
+        ({SCALAR_PROJECTION_KEY: {"step": -1, "metrics": {}}}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": [("a", 1.0)]}}, TypeError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {"": 1.0}}}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {"ok": 1.0, " ": 1.0}}}, ValueError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {"ok": 1.0, "bad": True}}}, TypeError),
+        ({SCALAR_PROJECTION_KEY: {"step": 1, "metrics": {"ok": 1.0, "bad": "1"}}}, TypeError),
+        ("not a mapping", TypeError),
+    ],
+)
+def test_strict_sink_raises_on_a_record_it_cannot_carry_before_any_write(
+    record: object, error: type[Exception]
+) -> None:
+    sink, client = _strict()
+    with pytest.raises(error):
+        sink.log(record)  # type: ignore[arg-type]
+    assert client.calls == []  # validated whole: nothing reached the client
+
+
+def test_strict_sink_annotate_validates_at_entry_then_sets_synchronous_tags() -> None:
+    sink, client = _strict()
+    for bad in ({"event": "x"}, {"schema": "x"}, {" ": "x"}, {"k": 1}, {1: "v"}):
+        with pytest.raises((TypeError, ValueError)):
+            sink.annotate(bad)  # type: ignore[arg-type]
+    assert client.calls == []
+    sink.annotate({"k": "v", "k2": "v2"})
+    assert client.calls == [
+        ("set_tag", ("run-1", "k", "v"), {"synchronous": True}),
+        ("set_tag", ("run-1", "k2", "v2"), {"synchronous": True}),
+    ]
+    failing, _ = _strict(_StrictClient(fail_after=0))
+    with pytest.raises(ConnectionError, match="set_tag"):
+        failing.annotate({"k": "v"})
+
+
+def test_strict_sink_log_artifact_forwards_and_raises() -> None:
+    sink, client = _strict()
+    sink.log_artifact(Path("/tmp/ckpt.pt"), artifact_path="checkpoints")
+    assert client.calls == [
+        ("log_artifact", ("run-1", "/tmp/ckpt.pt"), {"artifact_path": "checkpoints"})
+    ]
+    failing, _ = _strict(_StrictClient(fail_after=0))
+    with pytest.raises(ConnectionError, match="log_artifact"):
+        failing.log_artifact(Path("/tmp/ckpt.pt"))
+
+
+def test_strict_sink_finish_refuses_a_bad_status_without_closing_and_is_idempotent() -> None:
+    sink, client = _strict()
+    for bad in ("DONE", "", None, 1):
+        with pytest.raises((TypeError, ValueError)):
+            sink.finish(status=bad)  # type: ignore[arg-type]
+    sink.log(scalar_projection_record(1, {"a": 1.0}))  # a refused finish closed nothing
+    with pytest.raises(TypeError):
+        sink.finish("FAILED")  # type: ignore[misc]  # keyword-only
+    sink.finish(status="FAILED")
+    sink.finish()  # idempotent, whatever the status
+    # Not the run owner: finishing issues no write at all (no set_terminated, no tag).
+    assert [name for name, *_ in client.calls] == ["log_metric"]
+
+
+def test_strict_sink_refuses_every_write_after_finish() -> None:
+    sink, client = _strict()
+    sink.finish()
+    with pytest.raises(RuntimeError, match="finished"):
+        sink.log(scalar_projection_record(1, {"a": 1.0}))
+    with pytest.raises(RuntimeError, match="finished"):
+        sink.annotate({"k": "v"})
+    with pytest.raises(RuntimeError, match="finished"):
+        sink.log_artifact(Path("/tmp/x"))
+    assert client.calls == []
+
+
+def test_strict_sink_refuses_a_blank_or_non_str_run_id_and_a_non_client() -> None:
+    for bad_run_id in ("", "  ", 7, None):
+        with pytest.raises(ValueError, match="run_id"):
+            StrictMlflowSink(client=_StrictClient(), run_id=bad_run_id)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="client"):
+        StrictMlflowSink(client=object(), run_id="run-1")  # type: ignore[arg-type]
+
+
+def test_strict_module_imports_no_mlflow_d1_threads_or_run_layer() -> None:
+    """Structural pins for the S1 constraints, at ANY scope (function-level too)."""
+    tree = ast.parse(Path(mlflow_strict.__file__ or "").read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+    assert not any(name.split(".")[0] == "mlflow" for name in imported)
+    assert not any("d1_" in name or ".ladder.run" in name for name in imported)
+    assert not imported & {"threading", "queue", "time", "asyncio"}

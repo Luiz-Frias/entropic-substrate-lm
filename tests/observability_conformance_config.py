@@ -142,5 +142,5 @@ ALLOWED_SINK_CONSTRUCTION_MODULES: frozenset[str] = frozenset(
     }
 )
 SINK_IMPLEMENTATION_CLASS_NAMES: frozenset[str] = frozenset(
-    {"JsonlSink", "MlflowSink", "CompositeSink"}
+    {"JsonlSink", "MlflowSink", "StrictMlflowSink", "CompositeSink"}
 )
