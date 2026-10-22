@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import NoReturn
 
@@ -139,6 +140,17 @@ def _stitch(pods: Sequence[HRun], warmup_steps: int) -> HRun:
             if step in publication:
                 _gap(f"{pod.metrics_path}: checkpoint {step} is published by two pods")
             publication[step] = seconds
+    evaluation_steps = [step for pod in pods for step, _ in pod.evaluations]
+    for earlier, later in pairwise(evaluation_steps):
+        if later <= earlier:
+            owners = [
+                pod.metrics_path for pod in pods if any(s == later for s, _ in pod.evaluations)
+            ]
+            _gap(
+                f"{owners[-1]}: evaluation at global step {later} follows {earlier} across "
+                f"the lineage ({' and '.join(str(o) for o in owners)}); evaluation steps are "
+                "not strictly increasing, and a repeated step would be silently collapsed"
+            )
     return HRun(
         metrics_path=final.metrics_path,
         worker_log_path=final.worker_log_path,

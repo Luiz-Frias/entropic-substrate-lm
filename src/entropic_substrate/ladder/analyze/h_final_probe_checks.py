@@ -549,6 +549,11 @@ def evaluated_samples_from_manifest(manifest: object) -> tuple[int, ...]:
     return HProfile.from_manifest(manifest).schedule.evaluated_samples
 
 
+# The one gap the reader admits; mirrors h_aggregate._ZERO_MASS_GAP (private there), pinned
+# equal by tests/test_h_final_probe_checks.py::TestK6.
+_ZERO_MASS_GAP = "zero_importance_weight_mass"
+
+
 def _example_failures(example: object, expected: set[str], where: str) -> list[str]:
     counts = example.get("by_sample_count") if isinstance(example, dict) else None  # pyright: ignore[reportUnknownMemberType]
     if not isinstance(counts, dict):
@@ -563,11 +568,19 @@ def _example_failures(example: object, expected: set[str], where: str) -> list[s
             failures.append(f"{where}: malformed sample-count entry {key!r}")
             continue
         k = int(str(key))  # pyright: ignore[reportUnknownArgumentType]
+        if not entries:
+            # mirrors h_aggregate._check_evaluation_numbers ("empty sample-count entry")
+            failures.append(f"{where}: k={k}: has an empty sample-count entry")
+            continue
         for entry in entries:  # pyright: ignore[reportUnknownVariableType]
             if not isinstance(entry, dict):
                 failures.append(f"{where}: k={k}: a non-object entry")
                 continue
-            if entry.get("gap") is not None:  # pyright: ignore[reportUnknownMemberType]
+            gap = entry.get("gap")  # pyright: ignore[reportUnknownMemberType]
+            if gap is not None:
+                # the reader admits exactly one gap (h_aggregate._check_evaluation_entry)
+                if gap != _ZERO_MASS_GAP:
+                    failures.append(f"{where}: k={k}: has an unknown gap {gap!r}")
                 continue  # a zero-importance-weight row carries no estimate
             ess = entry.get("effective_sample_size")  # pyright: ignore[reportUnknownMemberType]
             low, high = 1.0 - _ESS_TOLERANCE, k * (1.0 + _ESS_TOLERANCE)

@@ -52,7 +52,7 @@ from entropic_substrate.ladder.analyze.h_final_probe_checks import (
     check_resume_seam,
     evaluated_samples_from_manifest,
 )
-from entropic_substrate.ladder.analyze.h_resumed_run import load_h_resumed_run
+from entropic_substrate.ladder.analyze.h_resumed_run import _stitch, load_h_resumed_run
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 from entropic_substrate.ladder.run.h_probe_collection import collect_probe_terminal
 from entropic_substrate.ladder.run.h_probe_resume import build_resume_request
@@ -503,6 +503,15 @@ class TestStitchReader:
             load_h_resumed_run(_resumed_pair(tmp_path, b_request=REQUEST_A))
 
 
+class TestStitchEvaluationAxis:
+    def test_a_repeated_evaluation_step_across_pods_is_refused(self, tmp_path: Path) -> None:
+        a, b = load_h_resumed_run(_resumed_pair(tmp_path)).segments
+        # pod B re-reports pod A's evaluation step; dict(arm.evaluations) would collapse it
+        repeated = replace(b, evaluations=(a.evaluations[0], *b.evaluations))
+        with pytest.raises(TelemetryGap, match=r"evaluation.*step 4.*not strictly increasing"):
+            _stitch((a, repeated), a.warmup_steps)
+
+
 class TestK1Seam:
     def test_contiguous_continuation_passes(self, tmp_path: Path) -> None:
         result = check_resume_seam(_resumed_pair(tmp_path))
@@ -798,6 +807,33 @@ class TestK6:
     ) -> None:
         metrics, _ = write_h_run(tmp_path, mutate_metrics=_with_counts({"9" * 5000: 1.5}))
         _fails_with(check_importance_curve([metrics], (2,)), "malformed sample-count entry")
+
+    def test_an_empty_sample_count_entry_fails(self, tmp_path: Path) -> None:
+        # the reader refuses an empty entry (h_aggregate "empty sample-count entry")
+        def empty(rows: list[dict[str, Any]]) -> None:
+            _with_counts({"2": 1.5})(rows)
+            for row in rows:
+                if row.get("schema") == "h-predictive-evaluation-v1":
+                    row["examples"][0]["by_sample_count"] = {"2": []}
+
+        metrics, _ = write_h_run(tmp_path, mutate_metrics=empty)
+        _fails_with(check_importance_curve([metrics], (2,)), "empty sample-count entry")
+
+    def test_the_admitted_gap_matches_the_readers(self) -> None:
+        from entropic_substrate.ladder.analyze import h_aggregate, h_final_probe_checks
+
+        assert h_final_probe_checks._ZERO_MASS_GAP == h_aggregate._ZERO_MASS_GAP  # pyright: ignore[reportPrivateUsage]
+
+    def test_an_unknown_gap_value_fails(self, tmp_path: Path) -> None:
+        # the reader admits only zero_importance_weight_mass (h_aggregate "unknown gap")
+        def unknown(rows: list[dict[str, Any]]) -> None:
+            _with_counts({"2": 1.5})(rows)
+            for row in rows:
+                if row.get("schema") == "h-predictive-evaluation-v1":
+                    row["examples"][0]["by_sample_count"]["2"][0]["gap"] = "made_up_gap"
+
+        metrics, _ = write_h_run(tmp_path, mutate_metrics=unknown)
+        _fails_with(check_importance_curve([metrics], (2,)), "unknown gap 'made_up_gap'")
 
     def test_the_profile_k_set_passes(self, tmp_path: Path) -> None:
         metrics, _ = write_h_run(
