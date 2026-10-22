@@ -63,6 +63,7 @@ __all__ = [
     "aggregate_h_runs",
     "load_h_run",
     "parse_arm_labels",
+    "read_h_rows",
     "run_summary",
 ]
 
@@ -140,6 +141,18 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def read_h_rows(path: str | Path) -> list[dict[str, Any]]:
+    """Every row of one captured H JSON-lines file, through the existing reader.
+
+    Well-formedness is :func:`require_json_object_lines`'s; the decode is this module's
+    strict one (duplicate keys and non-finite constants refused). Raises
+    :class:`TelemetryGap` naming the file; never returns a partial list.
+    """
+    path = Path(path)
+    require_json_object_lines(path)
+    return _read_rows(path)
+
+
 def _finite_number(value: object) -> bool:
     if type(value) not in (int, float):
         return False
@@ -156,14 +169,16 @@ def _require_identity(value: object, *, where: str, path: Path) -> str:
 
 
 def _worker_log_facts(
-    path: Path, request_sha256: str
+    path: Path, request_sha256: str, declared_warmup: int | None
 ) -> tuple[
     int, list[int], list[int], str | None, tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]
 ]:
     """Bind the worker log to the run and read the global-axis facts out of it.
 
     Returns ``(warmup_steps, seal_steps, evaluation_steps, mlflow_run_id, stages,
-    admissions)``.
+    admissions)``. ``declared_warmup`` is a resumed lineage's warm-up length: this log's
+    prediction seals, when it has any, must agree with it, and a log with none (a pod
+    stopped inside the warm-up) is admitted at the declared length.
     """
     rows = _read_rows(path)
     starts = [r for r in rows if r.get("event") == "worker.start"]
@@ -195,6 +210,13 @@ def _worker_log_facts(
         seal_steps.append(global_step)
         if seal.get("phase") == _PREDICTION:
             offsets.add(global_step - step)
+    if declared_warmup is not None:
+        if offsets - {declared_warmup}:
+            _gap(
+                f"{path}: prediction checkpoint.seal events put the warm-up at "
+                f"{sorted(offsets)} steps, but the resumed lineage declares {declared_warmup}"
+            )
+        offsets = {declared_warmup}
     if len(offsets) != 1:
         _gap(
             f"{path}: the warm-up length cannot be derived: prediction checkpoint.seal events "
@@ -306,11 +328,20 @@ def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int
                 _check_evaluation_entry(entry, where, path)
 
 
-def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
+def load_h_run(
+    metrics_path: str | Path, worker_log_path: str | Path, *, warmup_steps: int | None = None
+) -> HRun:
     """Admit one captured H run and rebuild its global step axis.
 
     Raises :class:`TelemetryGap` naming the file for every inadmissible or
     self-contradicting input; never returns a partial run.
+
+    ``warmup_steps`` is given ONLY for one pod of a resumed lineage (by
+    :func:`~entropic_substrate.ladder.analyze.h_resumed_run.load_h_resumed_run`): the
+    warm-up length is then the lineage's, and the full-warm-up coverage check moves to
+    the caller, which checks it over the union of the pods (a resumed pod that starts
+    in prediction commits no warm-up row, and that is expected, not a gap). Every other
+    admission check is unchanged. The default ``None`` is the single-pod reader.
     """
     metrics = Path(metrics_path)
     worker_log = Path(worker_log_path)
@@ -335,8 +366,9 @@ def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
                 f"run_start.profile_identity is {identity!r}"
             )
 
+    declared_warmup = warmup_steps
     warmup_steps, seal_steps, evaluation_starts, mlflow_run_id, stages, admissions = (
-        _worker_log_facts(worker_log, request_sha256)
+        _worker_log_facts(worker_log, request_sha256, declared_warmup)
     )
 
     extractor = HTrainingStepExtractor(warmup_steps=warmup_steps)
@@ -401,7 +433,13 @@ def load_h_run(metrics_path: str | Path, worker_log_path: str | Path) -> HRun:
                     )
                 publication[step] = seconds
 
-    if warmup_rows != warmup_steps or warmup_max != warmup_steps:
+    if declared_warmup is not None:
+        if warmup_max > warmup_steps:
+            _gap(
+                f"{metrics}: a committed codec_warmup row ends at {warmup_max}, beyond the "
+                f"resumed lineage's warm-up of {warmup_steps} steps"
+            )
+    elif warmup_rows != warmup_steps or warmup_max != warmup_steps:
         _gap(
             f"{metrics}: the worker log puts the warm-up at {warmup_steps} steps, but the "
             f"committed codec_warmup rows number {warmup_rows} and end at {warmup_max}"
