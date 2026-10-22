@@ -112,8 +112,9 @@ the same two files from the review packet (`artifacts/sphere-profile.json`,
 `artifacts/magnitude-profile.json`, flattened to dotted keys) and the only differing fields are
 `law.mode` (sphere / magnitude), `spine.carrier` (sphere / magnitude) and `name`
 (`h0-sphere-b64-1k-v3-fisher-tiny` / `h0-magnitude-b64-1k-v3-fisher-tiny`). MEASURED 2026-10-22
-from the packet copies; the packet copies are not hash-bound to the R2 objects (the worker log
-records published sizes, not hashes, per the reviewer).
+from the packet copies, PACKET-ONLY evidence: the copies are bound to their arms by the receipt
+`run_identity` and the worker-logged published size, not by a hash of the R2 object, so this row
+establishes the packet profiles' contents, not a proven property of the captured runs.
 
 ## Q3. Final leg: admission deltas and stage wall seconds
 
@@ -186,8 +187,11 @@ in the receipt, and there is one continuation per prompt, so stochasticity is st
 What needs R2 custody to answer Q4: the two `generation.json` files (one per arm) under
 `outputs/run/` or `outputs/capture/` at the prefixes in Q2, and the `complete.json` /
 `worker/result.json` markers (787 / 788 and 1,712 / 1,713 bytes). The captured files prove
-the generation stage ran, admitted, published and verify-read its artifacts; they do not
-show a single continuation, its length, or its termination reason. The stochastic-rollout
+the generation stage ran, admitted, published and verify-read its artifacts. RETRACTION
+2026-10-22 (PR #373 review): the packet receipts, read above, DO show one finished continuation
+per prompt and its termination outcome (`sentence_budget`); what they do not show is
+stochasticity or an explicit token length, and R2 custody is still needed only to bind the
+packet receipts to the R2 objects by hash. The stochastic-rollout
 exit is therefore NOT proven by the captured evidence.
 
 ## Q5. Recovery (checkpoint and resume)
@@ -261,13 +265,13 @@ Unproven exits, each named:
    no continuation, continuation count, boundary emission or truncation outcome is in the
    captured files. Proof requires reading `generation.json` from R2 custody (keys in Q4).
 2. **Recovery.** No resume was exercised in this wave (Q5). Open.
-3. **Review.** Not yet done; a different fresh session, per the brief.
-4. **Filing.** Not yet done.
-5. **Test-only gate.** Not yet exercised against this capture.
-6. **Shared profile `config_hash`.** RETRACTION 2026-10-22 (blind review round 1): this exit
+3. **Test-only gate.** Not yet exercised against this capture.
+4. **Shared profile `config_hash`.** RETRACTION 2026-10-22 (blind review round 1): this exit
    was ill-posed as worded. It is replaced by "profiles identical except carrier and name",
    which the two R2 profiles satisfy (Q2, restated leg). Not an open exit any more; the hash
    itself is still not projected into the captured rows.
+   (Review and filing left this list on 2026-10-22: the blind review round 1 and the filed
+   `tracer_partial` verdict are recorded in `verdict-hepp7g-2026-10-22.md`.)
 
 Findings that are not refusals but must reach the gate author:
 
