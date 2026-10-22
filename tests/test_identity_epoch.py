@@ -416,6 +416,74 @@ h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
 source rows unchanged with the same tool invocation (``9978611d...`` local,
 ``d85b3144...`` and ``fc7fad81...`` CI).
 
+FOR-1664 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-21, experiment-pre-reqs serial sub-wave lane FOR-1664,
+design-gate ruling DG-A carried over, operator door rulings A (ii) and B
+2026-10-20, conductor rulings DN-1664-GOLDEN and DN-1664-FIXTURES):
+h-checkpoint-reader-v2 changes because four of its 51 members changed bytes --
+``core.sentence.profile`` (``RunSchedule`` gains the required last field
+``diagnostic_samples``, the derived ``evaluated_samples`` tuple, the
+development constants and the smoke-only run-class predicate; manifest
+schema literal ``h-run-profile-v1`` becomes ``h-run-profile-v2``, v1 refused),
+``ladder.run.evaluation_records`` (envelope and ``by_sample_count`` read the
+derived tuple), ``ladder.run.execution`` (the evaluation seed is keyed by
+step, ``(seed << 32) | step``; ``sample_counts`` reads the derived tuple) and
+``ladder.run.trace_capture`` (the schema literal at its two sites). Label and
+member set unchanged. All three rows recomputed with ``tools/regime_rows.py``
+AFTER ``ruff format --check`` reported a fixed point (828 files). The OLD
+values they replace,
+``79f77aa2195ddc29672299926e70550333e76f07aef34c3a888f686a0728b852``
+(local), ``19fcb786c23dd15e48245940790473d342921e0e606862bb6171871dbee8b6f9``
+(CI 3.12.14) and
+``60163f0f8f5392fdea4e36a07f2ac7795bfec54e1bf797396db80bdf1e28439b``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched: none of the four members is one of
+h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
+source rows unchanged with the same tool invocation (``9978611d...`` local,
+``d85b3144...`` and ``fc7fad81...`` CI).
+
+FOR-1664 L2-fix re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-21, experiment-pre-reqs serial sub-wave lane FOR-1664,
+second DG-A hand-off after the lane's L2 gate): h-checkpoint-reader-v2 changes
+because one of its 51 members changed bytes -- ``core.sentence.profile``
+(``HProfile.__post_init__`` refuses ``seed >= 2**32`` because the step-keyed
+evaluation seed ``(seed << 32) | step`` is injective and inside
+``torch.manual_seed``'s range only below that bound, measured: the largest
+in-range pair is accepted and ``2**32 << 32`` overflows; the tiny-name rule
+reads ``SMOKE_RUN_CLASSES`` so the smoke-class set has one definition). Label
+and member set unchanged. All three rows recomputed with
+``tools/regime_rows.py`` AFTER ``ruff format --check`` reported a fixed point
+(828 files). The OLD values they replace,
+``ebbb2ee8f4dcbe264345457edfc17ab34e05d152164c9a9870ca96d6c394ab51``
+(local), ``57292f2a3c0ab80b4ab6ada9cd418909eb849851632cc61728da23f7d36c75dc``
+(CI 3.12.14) and
+``57ad3ee6a8e730c47210644a15d8cdb22b5100dad96ffcef7ec5600c1c1bb8d4``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched (``core.sentence.profile`` is not one of
+h-source-reader-v3's seven fixed members; source rows re-measured unchanged).
+
+FOR-1664 review-fix re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-21, experiment-pre-reqs serial sub-wave lane FOR-1664,
+third DG-A hand-off after review round A, conductor ruling DN-1664-SEED):
+h-checkpoint-reader-v2 changes because two of its 51 members changed bytes --
+``ladder.run.execution`` (RETRACTION: the evaluation seed ``(seed << 32) | step``
+claimed injectivity over (seed, step), but the CPU Mersenne Twister consumes
+only the low 32 bits of ``torch.manual_seed``, measured: seeds 42 and 43 drew
+identically, so the noise was a function of step alone; the seed is now
+``(seed * 0x9E3779B1 + step) % 2**32``, a bijection on seed at a fixed step and
+on step at a fixed seed, pure, pinned on a seed-by-step grid) and
+``core.sentence.profile`` (the ``seed < 2**32`` guard's comment names the new
+mixing and its aliasing bound). Label and member set unchanged. All three
+rows recomputed with ``tools/regime_rows.py`` AFTER ``ruff format --check``
+reported a fixed point (828 files). The OLD values they replace,
+``91aed75258445b5e3d412353eb90a09cfedd8a8b796f444af386e78b65860143``
+(local), ``e6a17011df9d58705fdf7d00243a526fad83f8dc646142705eec20da3ee73a0d``
+(CI 3.12.14) and
+``8893b5e40bfa86cf596ba3744c80d85905033b0f84724d2c8a0c7e2d84d4268f``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched (neither member is one of
+h-source-reader-v3's seven fixed members; source rows re-measured unchanged).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -593,15 +661,15 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "79f77aa2195ddc29672299926e70550333e76f07aef34c3a888f686a0728b852",  # pragma: allowlist secret
+    ): "6b012375ecd8220652d82ed9f1c21328990659d9a4112fb961e015af34cb06e9",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "19fcb786c23dd15e48245940790473d342921e0e606862bb6171871dbee8b6f9",  # pragma: allowlist secret
+    ): "13df3a88f97d949e83207144e451c6ac6a8fa743045f9d174300b6c044cdc167",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "60163f0f8f5392fdea4e36a07f2ac7795bfec54e1bf797396db80bdf1e28439b",  # pragma: allowlist secret
+    ): "06092e3131f952a2be7ee6158f65e4fc7701ac5673a543182cf671f2ce03acb2",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

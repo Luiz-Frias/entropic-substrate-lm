@@ -44,12 +44,69 @@ def test_read_evaluation_reconstructs_the_recorded_sample_statistics(tmp_path: P
     assert len(observed["examples"]) == run.profile.schedule.evaluation_batches
 
 
+def test_evaluation_record_spans_the_curve_and_the_diagnostic_count(tmp_path: Path) -> None:
+    """FOR-1664: the weight matrices span the diagnostic count and ``by_sample_count``
+    holds one row set per curve k plus one under the diagnostic k, exactly."""
+    run, output, artifact = evaluation(tmp_path)
+    schedule = run.profile.schedule
+    assert schedule.diagnostic_samples not in schedule.importance_samples
+    observed = read_evaluation(
+        output,
+        artifact,
+        run.profile,
+        run.source_root,
+        max_bytes=10_000_000,
+        max_source_bytes=1_000_000,
+    )
+    for example in observed["examples"]:
+        assert set(example["by_sample_count"]) == {str(k) for k in schedule.evaluated_samples}
+        assert str(schedule.diagnostic_samples) in example["by_sample_count"]
+        for name in ("log_weights", "decoder_log_prob", "prior_log_prob", "proposal_log_prob"):
+            assert len(example[name]) == schedule.diagnostic_samples
+
+
+@pytest.mark.parametrize("mutation", ["drop_diagnostic_summary", "envelope_stops_at_curve"])
+def test_a_record_that_omits_the_diagnostic_rows_cannot_be_admitted(
+    tmp_path: Path, mutation: str
+) -> None:
+    run, output, artifact = evaluation(tmp_path)
+    schedule = run.profile.schedule
+    payload = copy.deepcopy(read_json(output, artifact, max_bytes=10_000_000))
+    batch = payload["examples"][0]
+    if mutation == "drop_diagnostic_summary":
+        del batch["by_sample_count"][str(schedule.diagnostic_samples)]
+    else:
+        for name in ("log_weights", "decoder_log_prob", "prior_log_prob", "proposal_log_prob"):
+            del batch[name][schedule.importance_samples[-1] :]
+    altered = write_json(output, "altered-evaluation.json", payload, max_bytes=10_000_000)
+    with pytest.raises(ValueError):
+        read_evaluation(
+            output,
+            altered,
+            run.profile,
+            run.source_root,
+            max_bytes=10_000_000,
+            max_source_bytes=1_000_000,
+        )
+
+
 @pytest.mark.parametrize(
     "mutation",
-    ["source", "weights", "summary", "quality_kind", "bytes", "missing_samples", "bool", "timing"],
+    [
+        "source",
+        "weights",
+        "summary",
+        "diagnostic_summary",
+        "quality_kind",
+        "bytes",
+        "missing_samples",
+        "bool",
+        "timing",
+    ],
 )
 def test_rehashed_invalid_evaluation_cannot_be_admitted(tmp_path: Path, mutation: str) -> None:
     run, output, artifact = evaluation(tmp_path)
+    schedule = run.profile.schedule
     payload = copy.deepcopy(read_json(output, artifact, max_bytes=10_000_000))
     batch = payload["examples"][0]
     if mutation == "source":
@@ -58,6 +115,8 @@ def test_rehashed_invalid_evaluation_cannot_be_admitted(tmp_path: Path, mutation
         batch["log_weights"][0][0] += 1
     elif mutation == "summary":
         batch["by_sample_count"]["2"][0]["log_estimate"] += 1
+    elif mutation == "diagnostic_summary":
+        batch["by_sample_count"][str(schedule.diagnostic_samples)][0]["log_estimate"] += 1
     elif mutation == "quality_kind":
         payload["meaning"] = "oracle_reconstruction_training"
     elif mutation == "bytes":

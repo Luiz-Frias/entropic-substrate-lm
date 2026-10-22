@@ -11,6 +11,7 @@ never a substitution."
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -254,6 +255,41 @@ def test_extractor_projects_evaluation_reports_per_sample_count() -> None:
     assert "eval/cuda_seconds" not in out.metrics
     # Non-finite or non-evaluation rows are still refused.
     assert extractor.extract({"schema": "h-predictive-evaluation-v1", "step": "x"}) is None
+
+
+def test_extractor_emits_only_k_keyed_evaluation_rows_across_a_long_curve() -> None:
+    """FOR-1664 key-shape pin: ``eval/log_marginal*`` and ``eval/ess*`` rows exist only
+    as ``_k<int>``; a bare ``eval/log_marginal`` would read as a converged estimate.
+    The curve ``2, 4, 64, 256`` is projected key for key, the 256 diagnostic included."""
+    counts = ("2", "4", "64", "256")
+
+    def row(index: int, count: str) -> dict[str, object]:
+        return {
+            "log_estimate": -10.0 + index + int(count) / 100,
+            "effective_sample_size": 1.0 + index + int(count) / 10,
+            "likelihood_relative_mcse": 0.1,
+            "gap": None,
+        }
+
+    report = {
+        "schema": "h-predictive-evaluation-v1",
+        "meaning": "importance_weighted_log_marginal_estimate",
+        "run_identity": "x",
+        "step": 2000,
+        "wall_seconds": 4.5,
+        "cuda_seconds": 2.0,
+        "examples": [{"by_sample_count": {k: [row(0, k), row(1, k)] for k in counts}}],
+    }
+    out = HTrainingStepExtractor(warmup_steps=1000).extract(report)
+    assert out is not None
+    expected = {f"eval/{name}_k{k}" for k in counts for name in ("log_marginal", "ess", "gap_rows")}
+    assert set(out.metrics) == expected | {"eval/wall_seconds", "eval/cuda_seconds"}
+    keyed = re.compile(r"eval/(log_marginal|ess|gap_rows)_k[0-9]+")
+    for key in out.metrics:
+        if key.startswith(("eval/log_marginal", "eval/ess", "eval/gap_rows")):
+            assert keyed.fullmatch(key), key
+    assert not {"eval/log_marginal", "eval/ess", "eval/gap_rows"} & set(out.metrics)
+    assert out.metrics["eval/ess_k256"] == pytest.approx(1.5 + 25.6)
 
 
 def test_evaluation_reports_reach_the_sink_after_their_receipt(tmp_path: Path) -> None:

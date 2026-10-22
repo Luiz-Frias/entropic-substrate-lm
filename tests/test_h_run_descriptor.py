@@ -49,7 +49,11 @@ pytestmark = pytest.mark.unit
 
 # Golden value for profile() (tests/test_sentence_profile.py) so a silent change of the
 # serialization, which would split every seed group across image builds, is a RED test.
-GOLDEN_CONFIG_HASH = "a15d83dd37e6"  # pragma: allowlist secret
+# RE-PINNED 2026-10-20 (FOR-1664 door A (ii), DN-1664-GOLDEN): a15d83dd37e6 -> f56a5ac2049d.
+# Cause: the manifest schema literal became h-run-profile-v2 and schedule gained
+# diagnostic_samples, so seed groups split across the bump by design. New value = the
+# documented recipe's output on the staged profile().
+GOLDEN_CONFIG_HASH = "f56a5ac2049d"  # pragma: allowlist secret
 
 
 # ------------------------------------------------------------------ h_config_hash

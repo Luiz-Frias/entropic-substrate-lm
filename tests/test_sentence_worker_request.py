@@ -78,7 +78,20 @@ def test_remote_and_scientific_scopes_require_distinct_admission() -> None:
     with pytest.raises(ValueError, match="source proof"):
         replace(value, profile=remote)
     with pytest.raises(ValueError, match="scientific"):
-        replace(value, profile=replace(remote, run_class="pilot", name="h0-fisher"))
+        replace(
+            value,
+            profile=replace(
+                remote,
+                run_class="pilot",
+                name="h0-fisher",
+                # FOR-1664: the development schedule a non-tiny class must carry.
+                schedule=replace(
+                    remote.schedule,
+                    importance_samples=(2, 4, 8, 16, 32, 64),
+                    diagnostic_samples=256,
+                ),
+            ),
+        )
     with pytest.raises(ValueError, match="successor"):
         replace(
             value,

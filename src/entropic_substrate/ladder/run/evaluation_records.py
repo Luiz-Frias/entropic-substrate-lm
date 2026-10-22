@@ -130,7 +130,7 @@ def read_evaluation(
         ):
             if json.dumps(recorded[name]) != json.dumps(expected):
                 raise ValueError("evaluation byte or boundary counts differ from source")
-        count, size = profile.schedule.importance_samples[-1], profile.schedule.batch_size
+        count, size = profile.schedule.evaluated_samples[-1], profile.schedule.batch_size
         weights = _matrix(recorded["log_weights"], count, size, zero_density=True)
         decoder = _matrix(recorded["decoder_log_prob"], count, size, zero_density=False)
         prior = _matrix(recorded["prior_log_prob"], count, size, zero_density=True)
@@ -141,9 +141,9 @@ def read_evaluation(
             raise ValueError("evaluation importance terms do not reconcile")
         summaries = recovery_record(
             recorded["by_sample_count"],
-            " ".join(str(k) for k in profile.schedule.importance_samples),
+            " ".join(str(k) for k in profile.schedule.evaluated_samples),
         )
-        for count in profile.schedule.importance_samples:
+        for count in profile.schedule.evaluated_samples:
             values = summaries[str(count)]
             if type(values) is not list or len(values) != size:
                 raise ValueError("evaluation summary population differs from samples")
