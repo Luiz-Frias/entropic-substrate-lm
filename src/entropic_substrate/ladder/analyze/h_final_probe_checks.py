@@ -113,7 +113,9 @@ _ENDS_ON_BYTE = ("length_limit",)
 _SAMPLING_FIELDS = ("sampler", "temperature", "continuations")
 _SAMPLING_SEED_FIELDS = ("seed", "rng_digest")
 _ESS_TOLERANCE = 1e-9
-_ASCII_DECIMAL = re.compile(r"[0-9]+")  # str.isdigit() admits "\u00b2", which int() refuses
+# str.isdigit() admits "\u00b2", which int() refuses; the cap keeps int() under Python's
+# 4300-digit conversion limit (a sample count never needs more than 9 digits)
+_ASCII_DECIMAL = re.compile(r"[0-9]{1,9}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +204,11 @@ def check_resume_chain(
         steps.append(int(row["successful_optimizer_steps"]))  # pyright: ignore[reportArgumentType]
         statuses.append(row["status"])
         parent = row["parent_receipt"]
-        current = None if parent is None else artifact_from_mapping(parent)
+        try:
+            current = None if parent is None else artifact_from_mapping(parent)
+        except ValueError as error:
+            failures.append(f"hop {hop} ({reference['path']}): malformed parent_receipt: {error}")
+            break
     if any(later >= earlier for earlier, later in pairwise(steps)):
         failures.append(
             f"successful_optimizer_steps along the chain are not strictly decreasing: {steps}"
@@ -319,10 +325,13 @@ def check_completion(
     declared = {request.digest for request in requests}
     if len(declared) != len(requests):
         failures.append("two arms share one request digest")
-    by_digest: dict[object, list[Mapping[str, object]]] = {}
+    by_digest: dict[str, list[Mapping[str, object]]] = {}
     for record in records:
-        by_digest.setdefault(record.get("request_sha256"), []).append(record)
-    for digest in sorted(str(d) for d in set(by_digest) - declared):
+        digest = record.get("request_sha256")
+        # a JSON-loaded digest may be a list or dict: only a str can name a declared request
+        key = digest if isinstance(digest, str) else f"(non-string) {digest!r}"
+        by_digest.setdefault(key, []).append(record)
+    for digest in sorted(set(by_digest) - declared):
         failures.append(f"a controller record names an undeclared request {digest}")
     for request, carrier in zip(requests, carriers, strict=True):
         arm = f"{carrier} ({request.digest})"
@@ -397,7 +406,15 @@ def _read_floor_of(path: Path, failures: list[str]) -> dict[str, Any]:
             )
             continue
         admitted.append({**projected, "evaluations_memo_hits": row.get("evaluations_memo_hits")})
-    stages = {row.get("stage") for row in rows if row.get("event") == STAGE_END}
+    stages: set[str] = set()
+    for index, row in enumerate(rows):
+        if row.get("event") != STAGE_END:
+            continue
+        stage = row.get("stage")
+        if isinstance(stage, str):
+            stages.add(stage)
+        else:
+            failures.append(f"{path}: row {index}: malformed stage {stage!r} in a stage.end row")
     declared = {"completion"} | {stage for stage in stages if stage in ADMISSION_CALLERS}
     counts = Counter(row["caller"] for row in admitted)
     for caller in sorted(declared):

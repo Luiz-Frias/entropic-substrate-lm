@@ -228,6 +228,18 @@ class TestK1Chain:
     def test_a_final_receipt_that_is_not_training_complete_fails(self, chain: _Chain) -> None:
         _fails_with(chain.check(final=chain.stopped), "training_complete")
 
+    def test_a_malformed_parent_receipt_is_a_hop_failure_not_a_traceback(
+        self, chain: _Chain, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the real reader refuses a malformed parent itself, so the check's own conversion
+        # is only reachable through a reader that admitted the row: stub that seam
+        row = {"successful_optimizer_steps": 6, "status": "training_complete"}
+        monkeypatch.setattr(
+            "entropic_substrate.ladder.analyze.h_final_probe_checks.read_training_progress",
+            lambda *a, **k: {**row, "parent_receipt": {"path": 5}},
+        )
+        _fails_with(chain.check(), "hop 0")
+
 
 # ------------------------------------------------------------------ K1 request (D4 builder)
 def _collection(
@@ -555,6 +567,11 @@ class TestK2:
         records = [_record(a), _record(b, error_types=["RuntimeError"])]
         _fails_with(check_completion(records, [a, b]), "error_types")
 
+    def test_a_non_string_request_digest_is_an_undeclared_request_not_a_traceback(self) -> None:
+        a, b = _arms()
+        records = [_record(a), _record(b), _record(a, request_sha256=["x"])]
+        _fails_with(check_completion(records, [a, b]), "undeclared request")
+
     def test_two_arms_with_one_carrier_fail(self) -> None:
         a, _ = _arms()
         same = replace(a, nonce="5" * 64)
@@ -670,6 +687,12 @@ class TestK4:
 
         _fails_with(check_read_floor([_worker_log(tmp_path, drop_count)]), "does not project")
 
+    def test_a_non_string_stage_is_a_malformed_row_not_a_traceback(self, tmp_path: Path) -> None:
+        def bad_stage(rows: list[dict[str, Any]]) -> None:
+            rows.append(_log("stage.end", stage=["completion"], seconds=1.0))
+
+        _fails_with(check_read_floor([_worker_log(tmp_path, bad_stage)]), "malformed stage")
+
     def test_non_finite_seconds_fail_loud(self, tmp_path: Path) -> None:
         log = _worker_log(tmp_path, _replace_admission("generation", seconds=None))
         _fails_with(check_read_floor([log]), "does not project")
@@ -769,6 +792,12 @@ class TestK6:
         _fails_with(
             check_importance_curve([metrics], (2,)), "malformed sample-count entry '\u00b2'"
         )
+
+    def test_an_over_long_digit_key_is_a_malformed_entry_not_a_traceback(
+        self, tmp_path: Path
+    ) -> None:
+        metrics, _ = write_h_run(tmp_path, mutate_metrics=_with_counts({"9" * 5000: 1.5}))
+        _fails_with(check_importance_curve([metrics], (2,)), "malformed sample-count entry")
 
     def test_the_profile_k_set_passes(self, tmp_path: Path) -> None:
         metrics, _ = write_h_run(
