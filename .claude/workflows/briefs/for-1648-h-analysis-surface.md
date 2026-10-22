@@ -155,7 +155,10 @@ directory): `h_aggregate.py`, `h_charts.py`, `h_report.py`, and an `h_attach.py`
 `h_charts.py`.
 
 - Reader: reuse `final_h_run_end` and `require_json_object_lines` from `ladder/capture/reader/h_telemetry.py` for
-  admissibility; do not fork a second predicate. Series extraction reads the captured `metrics.jsonl` rows
+  admissibility; do not fork a second predicate. AMENDED 2026-10-22 (CodeRabbit thread 4343317420): the
+  non-finite and non-monotonic C1 checks have one owner, `ladder/analyze/h_aggregate.py` `load_h_run`
+  (the `_finite_number` / `_check_step_scalars` / evaluation checks there), which runs after the two reader
+  calls and is the only admission path into the aggregate; it is not a second lifecycle predicate. Series extraction reads the captured `metrics.jsonl` rows
   directly, using the key names in the table above (they are the extractor's projection, so they are the names
   in the captured sink rows; the lane confirms against the real rows).
 - Aggregate: group by the measured carrier/lineage key, pair arms, emit per-step paired series; pure function of

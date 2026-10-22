@@ -27,8 +27,9 @@ profile (see "What a reviewer must re-derive").
 
 The H lane predicate (architecture "Evidence plane"): exactly one `run_start`, exactly one
 `run_end` of schema `h-run-lifecycle-v1`, at least one committed step row, every other file
-well-formed JSON lines. The brief adds: committed steps on one global axis through 1000, and
-evaluation rows at global 500/750/1000.
+well-formed JSON lines; `run_end.status` is read, not required (`h_telemetry.final_h_run_end`, docstring:
+"deliberately no `status == "ok"` condition"). The brief's wave completion checks, reported separately
+from admission: committed steps on one global axis through 1000, and evaluation rows at global 500/750/1000.
 
 | check | sphere (988d8388) | magnitude (a163161f) | evidence |
 | --- | --- | --- | --- |
@@ -46,16 +47,21 @@ evaluation rows at global 500/750/1000.
 | Worker-log levels | 260 INFO, 0 WARNING, 0 ERROR | 260 INFO, 0 WARNING, 0 ERROR | MEASURED |
 
 Admissibility conclusion: both arms satisfy the H lane predicate as written in the
-architecture (one `run_start`, one `run_end` with `status: ok`, 1000 committed rows, well-formed
-companion file). The brief's "one global axis through 1000" is satisfied only through the
+architecture (one `run_start`, one `run_end`, at least one committed row, well-formed
+companion file); `status: ok` with 1000 committed rows is the observed result for these arms,
+not part of the predicate. The wave completion check "one global axis through 1000" is satisfied only through the
 worker log's `global_step` plus row order; the metrics rows carry a phase-local axis. That is
 a finding for the reviewer and the gate author, not a refusal: no reader in scope refuses it.
 
 Note on the reader: `telemetry.py` as read in this checkout implements the E-series
 `event == "eval"/"train"` readers and the D1 readers; it carries no `h-run-lifecycle-v1`
-predicate. The H lane rule applied above is the one stated in `docs/architecture.md`
-"Evidence plane". The capture pass that produced this directory is itself the admission
-instrument; this session re-applied the rule by hand and reports the result as such.
+predicate. The H lane predicate is implemented by `h_telemetry.py` `final_h_run_end` in the same
+package (lifecycle rows and committed-step check; no status condition), and the rule applied above
+is that one, as also stated in `docs/architecture.md` "Evidence plane". The capture pass that
+produced this directory is itself the admission instrument; this session re-applied the rule by
+hand and reports the result as such. RETRACTION 2026-10-22 (house rule 4, CodeRabbit thread
+4343303939): the first version of this paragraph said the rule "lives in prose" only; `h_telemetry.py`
+existed at every commit in scope, including the brief's bb732354.
 
 ## Q2. Lineage: same source, profile, image, code commit
 
@@ -75,13 +81,14 @@ instrument; this session re-applied the rule by hand and reports the result as s
 | Source batch digest of training row 1 | `b60570f47cdad94ead64bd5c46f6be1b10c4bbf72e298c1422109b3056658eab` | identical | yes | MEASURED, S-metrics L2, M-metrics L2 |
 | Evaluation `source_batch` and example `document` digest | `710ac05827741c7dd8f01a93dc1165f104fe84f0baf13befe73d314ac717298f`; document `d8ec7203ccaf6faac53742e664264959a60ae00c7417df5ffeea19ec923d72f1`; `source_bytes [155, 143, 185, 116]`; identical across the 3 eval rows | identical to sphere, all 3 eval rows | yes | MEASURED, L503, L755, L1007 of both metrics files |
 | Sum of `source_bytes` / `encoder_bytes` / `history_bytes` over 1000 training rows | 402,212 / 1,534,453 / 1,132,241 | 402,212 / 1,534,453 / 1,132,241 | yes | DERIVED_FROM_MEASURED (sums of per-row fields) |
+| Ordered per-row comparison of `source_batch`, `source_examples`, `source_bytes`, `encoder_bytes`, `history_bytes`, `boundary_symbols`, `phase`, `step` over all 1000 training rows, row i against row i | 1000 distinct `source_batch` digests | 1000 distinct `source_batch` digests | yes: 0 mismatches on every field | MEASURED 2026-10-22, `python3 -I` over both metrics files in row order (added after CodeRabbit thread 4343303926 noted that row 1 plus sums did not prove it) |
 | `boundary_symbols` on every training row | 4 | 4 | yes | MEASURED |
 | Published `source/prepared-corpus.json` size | 2,725,370 bytes | 2,725,370 bytes | yes (size only; content hash is in R2, not captured) | MEASURED, `publish.end` events |
 | Profile `config_hash` | not present in any captured row | not present | cannot be compared from the captured files | MEASURED absence. `config_hash` is an MLflow param and tag per the H run surface; it is not projected into `metrics.jsonl` or `worker-log.jsonl` |
 
 Lineage conclusion: both arms ran the same code commit, the same image digest, the same
-attestation, the same accelerator class and precision, over an identical source stream (same
-batch digests, identical byte sums, identical evaluation batch). They differ in profile
+attestation, the same accelerator class and precision, over an identical source stream (ordered
+per-row match on all 1000 training rows, identical evaluation batch). They differ in profile
 identity, request digest, run id, pod and R2 prefix, which is what "differing only in carrier
 and run identity" predicts. The shared `config_hash` claim is not provable from the captured
 files alone.
@@ -200,8 +207,9 @@ Proven by the captured evidence, both arms, one lineage:
   image digest, attestation, accelerator and source stream (Q1, Q2).
 - Capture through the H lane predicate succeeded and the pull is byte-identical to the
   pointer (Inputs, Q1).
-- The final leg ran all eight closed-vocabulary stages with admission accounting on both
-  arms, zero retries, zero stop markers, zero write failures, JSONL sink settled with zero
+- The final leg ran all eight closed-vocabulary stages on both arms, with admission pairs
+  recorded for six of them plus the `completion` caller (seven pairs; `materialization` and
+  `runtime_admission` have stage brackets only, Q3), zero retries, zero stop markers, zero write failures, JSONL sink settled with zero
   stranded (Q3, Q6).
 - Zero nonfinite values across 206,414 numeric leaves; monotone steps and timestamps (Q6).
 - This analysis exists (the analysis exit).
@@ -224,9 +232,11 @@ Findings that are not refusals but must reach the gate author:
   through 1000 exists only in the worker log's `checkpoint.seal` / `evaluation.start`
   `global_step` and in row order. A reader that keys on `step` alone will see the evaluation
   rows at 250 / 500 / 750, not 500 / 750 / 1000.
-- `telemetry.py` in this checkout carries no H lane predicate; the rule lives in prose in
-  `docs/architecture.md` and in the capture pass. The brief names `telemetry.py` as the only
-  read side; for the H lane that name points at the wrong module.
+- `telemetry.py` in this checkout carries no H lane predicate; the H predicate is
+  `h_telemetry.py` `final_h_run_end` (lifecycle rows plus committed-step check, no status
+  condition), restated in `docs/architecture.md`. The brief as used named `telemetry.py` as the
+  only read side; for the H lane that name pointed at the wrong module (corrected in the brief,
+  retraction dated 2026-10-22).
 - `future_nll_per_dimension` goes negative on both arms (minimum -0.740573 and -0.708967), and
   `gap` is null in every evaluation entry. Neither is refused by any reader in scope; whether
   they are in-domain is a schema question for the reviewer.
