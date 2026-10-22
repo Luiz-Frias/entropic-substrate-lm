@@ -106,7 +106,8 @@ files alone.
 
 RETRACTION 2026-10-22 (blind review round 1): the preceding sentence inherited the brief's
 "same profile config_hash" wording, which cannot hold between a sphere profile and a magnitude
-profile. Restated leg: the two profiles are identical except for carrier and name. Evidence: the
+profile. Restated leg: the two profiles are identical except for `law.mode`, `spine.carrier` and
+`name` (the carrier setting and its name). Evidence, PACKET-ONLY: the
 reviewer fetched `outputs/run/profile.json` for both arms from R2 and diffed them; I re-diffed
 the same two files from the review packet (`artifacts/sphere-profile.json`,
 `artifacts/magnitude-profile.json`, flattened to dotted keys) and the only differing fields are
@@ -263,12 +264,17 @@ Unproven exits, each named:
 
 1. **Stochastic rollout.** The generation stage ran and published two artifacts per arm, but
    no continuation, continuation count, boundary emission or truncation outcome is in the
-   captured files. Proof requires reading `generation.json` from R2 custody (keys in Q4).
+   captured files. The packet receipts (Q4 addendum) show one finished continuation per prompt
+   and its `sentence_budget` termination; they do not show stochasticity (no sampling law, one
+   continuation). R2 custody is still needed only to hash-bind the packet receipts to the R2
+   objects (keys in Q4).
 2. **Recovery.** No resume was exercised in this wave (Q5). Open.
 3. **Test-only gate.** Not yet exercised against this capture.
 4. **Shared profile `config_hash`.** RETRACTION 2026-10-22 (blind review round 1): this exit
-   was ill-posed as worded. It is replaced by "profiles identical except carrier and name",
-   which the two R2 profiles satisfy (Q2, restated leg). Not an open exit any more; the hash
+   was ill-posed as worded. It is replaced by "profiles identical except `law.mode`,
+   `spine.carrier` and `name`", which the two packet profile copies satisfy (Q2, restated leg;
+   PACKET-ONLY evidence, bound to the arms by receipt `run_identity` and logged size, not
+   hash-bound to the R2 objects). Not an open exit any more; the hash
    itself is still not projected into the captured rows.
    (Review and filing left this list on 2026-10-22: the blind review round 1 and the filed
    `tracer_partial` verdict are recorded in `verdict-hepp7g-2026-10-22.md`.)
