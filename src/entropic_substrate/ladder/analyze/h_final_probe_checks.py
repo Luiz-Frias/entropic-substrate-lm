@@ -46,6 +46,7 @@ The criteria, ruled 2026-10-22 (brief ``h0-final-probe-checks.md``):
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -112,6 +113,7 @@ _ENDS_ON_BYTE = ("length_limit",)
 _SAMPLING_FIELDS = ("sampler", "temperature", "continuations")
 _SAMPLING_SEED_FIELDS = ("seed", "rng_digest")
 _ESS_TOLERANCE = 1e-9
+_ASCII_DECIMAL = re.compile(r"[0-9]+")  # str.isdigit() admits "\u00b2", which int() refuses
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +311,8 @@ def check_completion(
 ) -> CheckResult:
     """K2: every declared arm completed and was collected, with distinct carriers."""
     failures: list[str] = []
+    if not requests:
+        failures.append("no arm requests were given")
     carriers = [request.profile.spine.carrier for request in requests]
     if len(set(carriers)) != len(carriers):
         failures.append(f"the arms do not run distinct carriers: {carriers}")
@@ -339,6 +343,10 @@ def check_completion(
 def check_capture(metrics: Sequence[Path], request_digests: Sequence[str]) -> CheckResult:
     """K3: each captured metrics file is admissible and bound to a declared request."""
     failures: list[str] = []
+    if not metrics:
+        failures.append("no metrics files were given")
+    if not request_digests:
+        failures.append("no request digests were given")
     observed: list[str] = []
     files: list[dict[str, Any]] = []
     for path in metrics:
@@ -419,6 +427,8 @@ def _read_floor_of(path: Path, failures: list[str]) -> dict[str, Any]:
 def check_read_floor(worker_logs: Sequence[Path]) -> CheckResult:
     """K4 (D5): shared-memo final-leg admissions read nothing from disk."""
     failures: list[str] = []
+    if not worker_logs:
+        failures.append("no worker logs were given")
     logs: list[dict[str, Any]] = []
     for path in worker_logs:
         try:
@@ -532,7 +542,7 @@ def _example_failures(example: object, expected: set[str], where: str) -> list[s
             f"{where}: k-set {sorted(counts)} differs from the profile's {sorted(expected)}"  # pyright: ignore[reportUnknownArgumentType]
         )
     for key, entries in counts.items():  # pyright: ignore[reportUnknownVariableType]
-        if not str(key).isdigit() or not isinstance(entries, list):  # pyright: ignore[reportUnknownArgumentType]
+        if not _ASCII_DECIMAL.fullmatch(str(key)) or not isinstance(entries, list):  # pyright: ignore[reportUnknownArgumentType]
             failures.append(f"{where}: malformed sample-count entry {key!r}")
             continue
         k = int(str(key))  # pyright: ignore[reportUnknownArgumentType]
@@ -555,6 +565,10 @@ def check_importance_curve(
     """K6 (D2): every evaluation row carries exactly the profile's k-set, ESS within k."""
     expected = {str(k) for k in evaluated_samples}
     failures: list[str] = []
+    if not metrics:
+        failures.append("no metrics files were given")
+    if not expected:
+        failures.append("no evaluated samples were given")
     rows_seen = 0
     for path in metrics:
         try:

@@ -82,6 +82,47 @@ def _fails_with(result: CheckResult, fragment: str) -> None:
     assert any(fragment in reason for reason in result.reasons), result.reasons
 
 
+# ------------------------------------------------------------------ empty evidence (PR #374)
+class TestEmptyEvidenceFails:
+    """A requested check with no evidence must not pass (K7 already says "no arm was given")."""
+
+    def test_k2_no_requests_fails(self) -> None:
+        _fails_with(check_completion([], []), "no arm requests were given")
+
+    def test_k3_no_metrics_files_fails(self) -> None:
+        _fails_with(check_capture([], [REQUEST_A]), "no metrics files were given")
+
+    def test_k3_no_request_digests_fails(self, tmp_path: Path) -> None:
+        a = write_h_run(tmp_path, IDENTITY_A, REQUEST_A, tag="a")
+        _fails_with(check_capture([a[0]], []), "no request digests were given")
+
+    def test_k4_no_worker_logs_fails(self) -> None:
+        _fails_with(check_read_floor([]), "no worker logs were given")
+
+    def test_k6_no_metrics_files_fails(self) -> None:
+        _fails_with(check_importance_curve([], (2, 4)), "no metrics files were given")
+
+    def test_k6_no_evaluated_samples_fails(self, tmp_path: Path) -> None:
+        metrics, _ = write_h_run(tmp_path)
+        _fails_with(check_importance_curve([metrics], ()), "no evaluated samples were given")
+
+    @pytest.mark.parametrize(
+        "plan",
+        [
+            {"k2": {"records": [], "requests": []}},
+            {"k3": {"metrics": [], "request_digests": []}},
+            {"k4": {"worker_logs": []}},
+            {"k6": {"metrics": [], "evaluated_samples": []}},
+        ],
+    )
+    def test_the_script_exits_non_zero_on_an_empty_evidence_plan(
+        self, tmp_path: Path, plan: dict[str, object], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = _script().main(["--plan", str(_plan(tmp_path, plan))])
+        assert json.loads(capsys.readouterr().out)["verdict"] == "FAIL"
+        assert code != 0
+
+
 # ------------------------------------------------------------------ K1 chain (real receipts)
 class _Chain:
     """A real stop-then-resume lineage with a checkpoint receipt between the declared
@@ -721,6 +762,14 @@ def _with_counts(counts: dict[str, float]) -> Callable[[list[dict[str, Any]]], N
 
 
 class TestK6:
+    def test_a_non_ascii_digit_key_is_a_malformed_entry_not_a_traceback(
+        self, tmp_path: Path
+    ) -> None:
+        metrics, _ = write_h_run(tmp_path, mutate_metrics=_with_counts({"\u00b2": 1.5}))
+        _fails_with(
+            check_importance_curve([metrics], (2,)), "malformed sample-count entry '\u00b2'"
+        )
+
     def test_the_profile_k_set_passes(self, tmp_path: Path) -> None:
         metrics, _ = write_h_run(
             tmp_path, mutate_metrics=_with_counts({"2": 1.5, "4": 2.0, "8": 3.0})
