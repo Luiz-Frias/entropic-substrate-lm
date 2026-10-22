@@ -11,8 +11,10 @@ context that has not seen the live wave (evidence design ruled 2026-08-17).
   `results/h0-plumbing-1k-v3-HEpP7g/`: per arm one `metrics.jsonl` (1009 rows, one `run_start`, one
   `run_end`) and one `worker-log.jsonl`, named `h-worker-<request_sha256>-<mlflow run id>-*.jsonl`.
   Arms: `a163161f` = magnitude (pod `211tvsc7277d22`), `988d8388` = sphere (pod `euikqmf95pnrga`).
-- Readers: `ladder/capture/reader/telemetry.py` for admissibility (the only read side), the H lane rules in
-  `docs/architecture.md` "Evidence plane", `h-inspect-training` for receipts if R2 custody is consulted.
+- Readers: `src/entropic_substrate/ladder/capture/reader/h_telemetry.py` `final_h_run_end` for H lane
+  admissibility (the only read side; `telemetry.py` beside it holds the E-series and D1 readers and no H
+  predicate), the H lane rules in `docs/architecture.md` "Evidence plane", `h-inspect-training` for receipts
+  if R2 custody is consulted.
 - Never the live MLflow server, never a pod, never the conductor's ledger narrative as evidence.
 
 Captured 2026-10-20 14:37Z by `capture-results --experiment h-series --dest results/h0-plumbing-1k-v3-HEpP7g`
@@ -20,8 +22,11 @@ from this worktree with a private DVC site cache; pass admitted, pushed, cloud-v
 
 ## Questions the analysis answers (each with the file and row that answers it)
 
-1. Admissibility: do both arms pass the H lane predicate (one `run_start`, one `run_end` with `status: ok`,
-   committed steps on one global axis through 1000, evaluation rows at 500/750/1000)?
+1. Admissibility: do both arms pass the H lane predicate (exactly one `run_start`, exactly one `run_end`,
+   at least one committed `h-training-step-v2` row; `run_end.status` is reported, not required, so a
+   failed run that committed a step is still admissible evidence)? Separately, wave completion for THIS
+   plumbing probe: committed steps on one global axis through 1000 and evaluation rows at global
+   500/750/1000, reported as a completion check, never as a reason to refuse the capture.
 2. Lineage: do the `run_end` rows and the worker logs show both carriers on the same source identity,
    profile config_hash, image and code commit (differing only in carrier and run identity)?
 3. Final leg: per stage, the `admission.start`/`admission.end` deltas (memo fresh/shared, seals walked,
@@ -38,3 +43,12 @@ table row labelled MEASURED or DERIVED_FROM_MEASURED, no estimate anywhere, no e
 verdict proposal in the plan's vocabulary: `tracer_complete` (all exits proven), `tracer_partial` (naming
 each unproven exit), or `numerical_defect` / `missing_evidence`, plus the exact list of what a reviewer
 must re-derive. The review (a different fresh session) and the filing stay separate steps.
+
+## Retraction 2026-10-22 (house rule 4; CodeRabbit on PR #363, threads 4343294650 and 4343294658)
+
+As committed at bb732354 and used by the analysis at 434b63d2, this brief (a) named `telemetry.py` as the
+only read side, which is the wrong module for the H lane (the predicate is `h_telemetry.final_h_run_end`,
+present at bb732354), and (b) folded `status: ok`, "through 1000" and the 500/750/1000 evaluations into the
+admission predicate, which would have refused a failed or partial capture that the Evidence plane admits.
+Both lines are corrected above in place; the analysis read the correct predicate from `docs/architecture.md`
+and reports the completion checks separately, so no result moves.
