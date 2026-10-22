@@ -82,6 +82,9 @@ def main() -> int:
     import anthropic  # deferred: `uv run --with anthropic` supplies it
 
     packet, out, prompt_file = (pathlib.Path(a) for a in sys.argv[1:4])
+    # Resolve configuration before any client, upload or spend exists, so a bad
+    # BLIND_REVIEW_MODEL fails here and is never masked by an upload failure.
+    model = resolve_model()
     client = anthropic.Anthropic()
 
     file_ids: list[str] = []
@@ -102,7 +105,6 @@ def main() -> int:
                 "content": build_content(prompt_file.read_text(encoding="utf-8"), file_ids),
             }
         ]
-        model = resolve_model()
         print(f"reviewer model: {model}")
         for round_index in range(12):  # pause_turn resume bound, fail loud past it
             with client.beta.messages.stream(
