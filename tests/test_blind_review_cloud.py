@@ -48,3 +48,18 @@ def test_content_leads_with_prompt_then_the_archive() -> None:
     assert "NOTE ON DELIVERY" in content[0]["text"]
     assert [c["file_id"] for c in content[1:]] == ["file_zip"]
     assert all(c["type"] == "container_upload" for c in content[1:])
+
+
+def test_reviewer_model_comes_from_the_environment_with_the_pinned_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reviewer model is an operator input: BLIND_REVIEW_MODEL wins, the
+    pinned default holds when it is unset, and a blank value is refused rather
+    than silently falling back (fail-loud, house rule 5)."""
+    monkeypatch.delenv("BLIND_REVIEW_MODEL", raising=False)
+    assert _MOD.resolve_model() == _MOD.DEFAULT_MODEL == "claude-opus-5"
+    monkeypatch.setenv("BLIND_REVIEW_MODEL", "claude-opus-5-5")
+    assert _MOD.resolve_model() == "claude-opus-5-5"
+    monkeypatch.setenv("BLIND_REVIEW_MODEL", "   ")
+    with pytest.raises(ValueError, match="BLIND_REVIEW_MODEL"):
+        _MOD.resolve_model()

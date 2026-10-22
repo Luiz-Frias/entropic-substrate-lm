@@ -14,15 +14,19 @@ with stop_reason "pause_turn" is resumed by resending user + assistant turns.
 
 Run: ANTHROPIC_API_KEY=... uv run --with anthropic python \
     scripts/blind_review_cloud.py <packet_dir> <out_md> <prompt_txt>
+The reviewer model is BLIND_REVIEW_MODEL when set (e.g. claude-opus-5-5),
+else DEFAULT_MODEL; a blank value is refused.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 from typing import Any
 
-MODEL = "claude-opus-5"
+MODEL_ENV = "BLIND_REVIEW_MODEL"
+DEFAULT_MODEL = "claude-opus-5"
 BETAS = ["files-api-2025-04-14"]
 CODE_TOOL: dict[str, str] = {"type": "code_execution_20260120", "name": "code_execution"}
 
@@ -36,6 +40,22 @@ ZIP_NOTE = (
     "into ./packet — the archive preserves the packet's relative layout, so "
     "manifest.txt paths resolve directly against the extracted tree."
 )
+
+
+def resolve_model() -> str:
+    """The reviewer model: ``$BLIND_REVIEW_MODEL`` when set, else ``DEFAULT_MODEL``.
+
+    A set-but-blank value is refused rather than silently falling back, so a
+    typo in the operator's environment never runs the review on a model they
+    did not choose (fail-loud, house rule 5).
+    """
+    raw = os.environ.get(MODEL_ENV)
+    if raw is None:
+        return DEFAULT_MODEL
+    value = raw.strip()
+    if not value:
+        raise ValueError(f"{MODEL_ENV} is set but blank; unset it or name a model")
+    return value
 
 
 def build_packet_zip(packet_dir: pathlib.Path, zip_path: pathlib.Path) -> list[str]:
@@ -82,9 +102,11 @@ def main() -> int:
                 "content": build_content(prompt_file.read_text(encoding="utf-8"), file_ids),
             }
         ]
+        model = resolve_model()
+        print(f"reviewer model: {model}")
         for round_index in range(12):  # pause_turn resume bound, fail loud past it
             with client.beta.messages.stream(
-                model=MODEL,
+                model=model,
                 max_tokens=32000,
                 betas=BETAS,
                 messages=messages,
