@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
-from entropic_substrate.ladder.capture.adapters.mlflow_strict import scalar_projection_record
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import ExtractedMetrics
 from entropic_substrate.ladder.capture.records.d1_journal import (
@@ -20,6 +19,8 @@ from entropic_substrate.ladder.capture.records.d1_journal_values import (
     FrozenJson,
     JournalCheckpointState,
 )
+
+_SCALAR_PROJECTION_KEY = "scalar_projection"
 
 __all__ = [
     "AuthoritativeJournalOnlyObserver",
@@ -55,7 +56,10 @@ class D1MlflowMetricClient(Protocol):
     :class:`~entropic_substrate.ladder.capture.adapters.mlflow_strict.StrictMlflowSink`,
     whose own client protocol carries ``synchronous`` (this one cannot). Kept public and
     unchanged for one read-old window so existing importers keep resolving; nothing in
-    ``src`` consumes it. Delete it in a later cut once the window has passed.
+    ``src`` consumes it. Retirement trigger, checkable: delete this class and its
+    ``__all__`` entry in the first cut where
+    ``grep -rn D1MlflowMetricClient src tests`` finds no hit outside this module and
+    the ``mlflow_strict.py`` docstring.
     """
 
     def log_metric(
@@ -105,8 +109,15 @@ class D1MlflowObserver:
     failure reaches the caller after the authoritative journal has already synchronized
     the source event. Whether a tracking failure is loud therefore depends on the sink
     behind it. The measurement path is fail-loud only behind
-    :class:`~entropic_substrate.ladder.capture.adapters.mlflow_strict.StrictMlflowSink`;
-    a best-effort sink counts and continues, by its own contract.
+    :class:`~entropic_substrate.ladder.capture.adapters.mlflow_strict.StrictMlflowSink`.
+    Behind ``MlflowSink`` the projection record is dropped UNCOUNTED: MEASURED 2026-10-22,
+    its default ``LegacyMetricExtractor`` and ``HTrainingStepExtractor`` both extract the
+    projection to ``None``, and ``MlflowSink.log`` returns on ``None`` without touching
+    ``_failed_writes``. ``JsonlSink`` appends the record verbatim.
+
+    RETRACTED 2026-10-22 (FOR-1552): the earlier sentence "a best-effort sink counts and
+    continues, by its own contract" is false for this record; it holds only for a write
+    the sink accepted and then failed.
 
     RETRACTED 2026-10-22 (FOR-1552): the earlier docstring claimed this adapter, unlike
     the best-effort MLflow sink, did not catch client errors. That held only for the
@@ -131,7 +142,12 @@ class D1MlflowObserver:
         extracted = self._extractor.extract(event)
         if extracted is None:
             return
-        self._sink.log(scalar_projection_record(extracted.step, extracted.metrics))
+        # The shape StrictMlflowSink validates, built here so this module imports no
+        # adapter: a plain mapping, no ``schema`` key, no ``event`` key. Drift from the
+        # sink's key is pinned by tests, not by a shared import.
+        self._sink.log(
+            {_SCALAR_PROJECTION_KEY: {"step": extracted.step, "metrics": dict(extracted.metrics)}}
+        )
 
 
 class ObservedD1Journal:

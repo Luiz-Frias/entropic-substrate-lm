@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
     execution_segment_id,
 )
 from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.adapters import d1_observability
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     D1JournalObserver,
     D1MlflowObserver,
@@ -446,3 +448,27 @@ def test_mlflow_observer_does_not_swallow_a_sink_failure() -> None:
 
     with pytest.raises(RuntimeError, match="deliberate sink defect"):
         D1MlflowObserver(sink=_FailingSink()).observe(_eval_event())
+
+
+def test_observer_module_imports_no_mlflow_adapter_at_any_scope() -> None:
+    """Dependency direction (gate-1 constraint 9): the observer reaches the sink only by port.
+
+    It builds the projection record itself, so it must not import ``adapters.mlflow`` or
+    ``adapters.mlflow_strict`` (nor ``mlflow`` itself) at module or function scope. The
+    key-literal drift this creates is caught by
+    ``test_mlflow_observer_accepts_any_metric_sink_and_hands_it_a_plain_projection`` and
+    by the observer tests that run through the real ``StrictMlflowSink``.
+    """
+    tree = ast.parse(Path(d1_observability.__file__ or "").read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+    offenders = {
+        name
+        for name in imported
+        if name.split(".")[0] == "mlflow" or name.rsplit(".", 1)[-1].startswith("mlflow")
+    }
+    assert offenders == set()

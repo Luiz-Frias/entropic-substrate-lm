@@ -2,13 +2,13 @@
 
 Landed by FOR-1552 (design gate S1, 2026-10-22) beside, never inside,
 :class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`. The two are
-sibling implementations of one port with opposite failure semantics (Strategy at the
-port's second implementation): ``MlflowSink`` is best-effort after startup (a failed
+sibling implementations of one port with opposite failure semantics (Strategy beside
+the port's other implementations): ``MlflowSink`` is best-effort after startup (a failed
 write is counted and the run continues); this class is FAIL-LOUD (a failed write
 raises on the caller's thread, unchanged, before the call returns). Strictness is a
 type, not a flag, so the best-effort contract stays byte-identical. S2, a ``strict``
 keyword on ``MlflowSink``, was ruled out: it would inherit the writer queue and thread,
-the failed-writes counter and the startup probe's backoff loop, then switch each off.
+the failed-writes counter and the startup probe's wait loop, then switch each off.
 
 There is no worker thread, no queue, no counting and no flush: every ``MetricSink``
 member either completes its write(s), legitimately has nothing to write (a well-formed
