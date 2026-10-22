@@ -384,3 +384,40 @@ class TestMainDispatchesThroughOneTable:
         )
         assert cli.main([command]) == 37
         assert seen == [namespace]
+
+
+# FOR-1608: the thermo-nuclear review's file-size finding. The H-analysis and the
+# embedding-geometry handler families live in sibling modules and are imported
+# into ``cli.py`` by NAME (the handlers-table pins above need ``ast.Name`` values).
+_CLI_MAX_LINES = 1000
+
+# Every name the suite (and ``scripts/``) reaches on ``entrypoints.cli``, measured by
+# grepping the importers: plain imports (``main``, ``build_parser``, ``UNGATED_ENV``,
+# the two embedding-geometry cache helpers ``tests/test_embedding_geometry.py`` takes)
+# and the attributes the tests monkeypatch on the module (``torch``, ``normalize_checkpoint``,
+# ``resolve_device``, ``aggregate``). A move that drops one breaks an importer far from here.
+_CLI_REEXPORTED_NAMES = (
+    "UNGATED_ENV",
+    "_cached_reconstruct_init_table",
+    "_init_table_cache_key",
+    "aggregate",
+    "build_parser",
+    "cmd_embedding_geometry",
+    "main",
+    "normalize_checkpoint",
+    "resolve_device",
+    "torch",
+)
+
+
+class TestCliModuleSizeAndReexports:
+    def test_cli_module_is_under_one_thousand_lines(self) -> None:
+        module = importlib.import_module("entropic_substrate.composition.entrypoints.cli")
+        assert module.__file__ is not None
+        line_count = len(Path(module.__file__).read_text(encoding="utf-8").splitlines())
+        assert line_count < _CLI_MAX_LINES, line_count
+
+    @pytest.mark.parametrize("name", _CLI_REEXPORTED_NAMES)
+    def test_every_name_an_importer_takes_stays_reachable_on_cli(self, name: str) -> None:
+        module = importlib.import_module("entropic_substrate.composition.entrypoints.cli")
+        assert hasattr(module, name), name
