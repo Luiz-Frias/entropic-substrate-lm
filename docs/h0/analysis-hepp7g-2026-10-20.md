@@ -53,7 +53,11 @@ architecture (one `run_start`, one `run_end`, at least one committed row) and th
 file passes its separate JSON-object-lines check; `status: ok` with 1000 committed rows is the observed result for these arms,
 not part of the predicate. The wave completion check "one global axis through 1000" is satisfied only through the
 worker log's `global_step` plus row order; the metrics rows carry a phase-local axis. That is
-a finding for the reviewer and the gate author, not a refusal: no reader in scope refuses it.
+a finding for the reviewer and the gate author, not a refusal: the predicate as restated in
+`docs/architecture.md` "Evidence plane" names no step-axis condition. RETRACTION 2026-10-22
+(blind review round 1): the first version said "no reader in scope refuses it", which read as an
+executed result; this analysis never ran a reader on these files (see the retraction in the next
+section).
 
 Note on the reader: `telemetry.py` as read in this checkout implements the E-series
 `event == "eval"/"train"` readers and the D1 readers; it carries no `h-run-lifecycle-v1`
@@ -61,7 +65,12 @@ predicate. The H lane predicate is implemented by `h_telemetry.py` `final_h_run_
 package (lifecycle rows and committed-step check; no status condition), and the rule applied above
 is that one, as also stated in `docs/architecture.md` "Evidence plane". The capture pass that
 produced this directory is itself the admission instrument; this session re-applied the rule by
-hand and reports the result as such. RETRACTION 2026-10-22 (house rule 4, CodeRabbit thread
+hand and reports the result as such. RETRACTION 2026-10-22 (blind review round 1): the
+admission rows above were labelled MEASURED although `final_h_run_end` was not executed by this
+analysis; the JSON-object counts were measured, the predicate verdict was re-applied by hand. The
+reviewer executed `final_h_run_end` and `require_json_object_lines` through a standalone copy of
+the reader on the captured files: both arms admissible, both worker logs pass (reviewer-reported,
+review of record). RETRACTION 2026-10-22 (house rule 4, CodeRabbit thread
 4343303939): the first version of this paragraph said the rule "lives in prose" only; `h_telemetry.py`
 existed at every commit in scope, including the brief's bb732354.
 
@@ -86,7 +95,7 @@ existed at every commit in scope, including the brief's bb732354.
 | Ordered per-row comparison of `source_batch`, `source_examples`, `source_bytes`, `encoder_bytes`, `history_bytes`, `boundary_symbols`, `phase`, `step` over all 1000 training rows, row i against row i | 1000 distinct `source_batch` digests | 1000 distinct `source_batch` digests | yes: 0 mismatches on every field | MEASURED 2026-10-22, `python3 -I` over both metrics files in row order (added after CodeRabbit thread 4343303926 noted that row 1 plus sums did not prove it) |
 | `boundary_symbols` on every training row | 4 | 4 | yes | MEASURED |
 | Published `source/prepared-corpus.json` size | 2,725,370 bytes | 2,725,370 bytes | yes (size only; content hash is in R2, not captured) | MEASURED, `publish.end` events |
-| Profile `config_hash` | not present in any captured row | not present | cannot be compared from the captured files | MEASURED absence. `config_hash` is an MLflow param and tag per the H run surface; it is not projected into `metrics.jsonl` or `worker-log.jsonl` |
+| Profile `config_hash` | not present in any captured row | not present | cannot be compared from the captured files | MEASURED absence. `config_hash` is an MLflow param and tag per the H run surface; it is not projected into `metrics.jsonl` or `worker-log.jsonl`. RETRACTION 2026-10-22 (blind review round 1): "same profile `config_hash`" was ill-posed as worded, because two profiles that differ in carrier by design cannot share a hash over the whole profile. The meaningful leg is "identical except carrier and name"; see the paragraph after the lineage conclusion |
 
 Lineage conclusion: both arms ran the same code commit, the same image digest, the same
 attestation, the same accelerator class and precision, over an identical source stream (ordered
@@ -95,12 +104,27 @@ identity, request digest, run id, pod and R2 prefix, which is what "differing on
 and run identity" predicts. The shared `config_hash` claim is not provable from the captured
 files alone.
 
+RETRACTION 2026-10-22 (blind review round 1): the preceding sentence inherited the brief's
+"same profile config_hash" wording, which cannot hold between a sphere profile and a magnitude
+profile. Restated leg: the two profiles are identical except for carrier and name. Evidence: the
+reviewer fetched `outputs/run/profile.json` for both arms from R2 and diffed them; I re-diffed
+the same two files from the review packet (`artifacts/sphere-profile.json`,
+`artifacts/magnitude-profile.json`, flattened to dotted keys) and the only differing fields are
+`law.mode` (sphere / magnitude), `spine.carrier` (sphere / magnitude) and `name`
+(`h0-sphere-b64-1k-v3-fisher-tiny` / `h0-magnitude-b64-1k-v3-fisher-tiny`). MEASURED 2026-10-22
+from the packet copies; the packet copies are not hash-bound to the R2 objects (the worker log
+records published sizes, not hashes, per the reviewer).
+
 ## Q3. Final leg: admission deltas and stage wall seconds
 
 All eight `WORKER_STAGES` appear once as a `stage.start`/`stage.end` pair in each log. Seven
 `admission.start`/`admission.end` pairs appear: one per final-leg stage after training, plus the
-`completion` caller, which runs between `phase.end prediction` and the first final-leg stage
-and has no stage bracket of its own. `materialization` and `runtime_admission` have stage
+`completion` caller, which has no stage bracket of its own. RETRACTION 2026-10-22 (blind review
+round 1): the first version placed `completion` between `phase.end prediction` and the first
+final-leg stage. It sits INSIDE the prediction phase window: `admission.start` at S-log L103
+(14:20:23.098Z), `admission.end` at L104 (14:25:00.481Z), `phase.end prediction` at L128
+(14:25:04.007Z), against `phase.start prediction` at L47 (14:02:42.771Z). Magnitude has the
+same line numbers. `materialization` and `runtime_admission` have stage
 brackets but no admission pair.
 
 | stage (caller) | memo | root | seals walked | evaluations | journals read | admission s, sphere | stage s, sphere | admission s, magnitude | stage s, magnitude | evidence |
@@ -123,8 +147,9 @@ Supporting clocks:
 
 | quantity | sphere | magnitude | evidence |
 | --- | --- | --- | --- |
-| Final-leg stage seconds, sum of the six bracketed stages after training | 2,182.972 | 2,145.481 | DERIVED_FROM_MEASURED (sum of `stage.end.seconds`) |
-| `phase.end` seconds, `codec_warmup` / `prediction` | 76.443 / 1,341.236 | 77.519 / 1,187.615 | MEASURED, S-log L46, L128; M-log same events |
+| Final-leg stage seconds, sum of the six bracketed stages after training | 2,182.973 | 2,145.481 | DERIVED_FROM_MEASURED (sum of `stage.end.seconds` raw floats: sphere 2182.9731697, magnitude 2145.4812543). RETRACTION 2026-10-22 (blind review round 1): sphere was written 2,182.972, a 1 ms slip from summing rounded values; corrected |
+| `phase.end` seconds, `codec_warmup` / `prediction` | 76.443 / 1,341.236 | 77.519 / 1,187.615 | MEASURED, S-log L46, L128; M-log same events. RETRACTION 2026-10-22 (blind review round 1): the prediction figure includes the `completion` admission (277.383 / 276.919 s, L103-L104), so it is not training time alone |
+| `phase.end` prediction seconds minus `completion` admission seconds | 1,063.853 | 910.696 | DERIVED_FROM_MEASURED (1341.2359 - 277.3826; 1187.6145 - 276.9187), valid because L103-L104 lies wholly inside the phase window |
 | Sum of per-row training `wall_seconds`, warmup / prediction | 5.410 / 590.423 | 5.409 / 434.894 | DERIVED_FROM_MEASURED |
 | Sum of per-row training `cuda_seconds` | 595.429 | 439.906 | DERIVED_FROM_MEASURED |
 | `checkpoint.seal` seconds at global 250 / 500 / 750 / 1000 | 22.170 / 33.561 / 33.594 / 33.570 | 22.103 / 33.513 / 33.500 / 33.534 | MEASURED |
@@ -133,7 +158,7 @@ Supporting clocks:
 | `annotate` `checkpoint/<step>/publication_seconds` (string-typed) vs `snapshot.end` seconds | 3.6227 vs 3.6199; 2.8200 vs 2.8159; 2.8164 vs 2.8106; 2.9899 vs 2.9825 | 4.6786 vs 4.6762; 7.8805 vs 7.8762; 2.6985 vs 2.6928; 2.7865 vs 2.7792 | MEASURED both sides; they are two clocks around the same publication, not one value |
 | `run_end.wall_seconds` (status ok: worker's own execution time, copied before result admission and final snapshot) | 3,518.295 | 3,328.438 | MEASURED, L1009 |
 | `worker.start` timestamp to first `sink.finish.start` timestamp | 3,687.364 | 3,496.569 | DERIVED_FROM_MEASURED (timestamp difference) |
-| Difference of the two clocks above | 169.069 | 168.131 | DERIVED_FROM_MEASURED; the architecture defines `wall_seconds` for `status: ok` as ending before result admission (143.157 / 143.378) and final-snapshot custody (19.003 / 17.270), which accounts for most of the gap; the remainder is not itemised in the captured files |
+| Difference of the two clocks above | 169.070 | 168.130 | DERIVED_FROM_MEASURED from raw floats (169.0698 / 168.1304). RETRACTION 2026-10-22 (blind review round 1): was written 169.069 / 168.131, 1 ms slips from differencing rounded values; corrected; the architecture defines `wall_seconds` for `status: ok` as ending before result admission (143.157 / 143.378) and final-snapshot custody (19.003 / 17.270), which accounts for most of the gap; the remainder is not itemised in the captured files. Residual after subtracting both named parts, DERIVED_FROM_MEASURED 2026-10-22: 169.070 - 143.157 - 19.003 = 6.910 s (sphere) and 168.130 - 143.378 - 17.270 = 7.482 s (magnitude); the residual assumes the architecture's ordering and is not itself an observed interval |
 | Wave start (`worker.start`) | 2026-10-19T14:00:19.075Z | 2026-10-19T14:00:18.503Z | MEASURED, L1 of each log |
 | Last log row (`sink.finish.start sink=mlflow`) | 2026-10-19T15:01:46.440Z | 2026-10-19T14:58:35.072Z | MEASURED, L260 of each log |
 
@@ -149,6 +174,14 @@ Supporting clocks:
 | Boundary emitted or explicit truncation outcome per continuation | not in any captured row | not in any captured row | MEASURED absence |
 | Sampling law, temperature, seed of the rollout | not in any captured row | not in any captured row | MEASURED absence |
 | `h-predictive-evaluation-v1` rows (teacher-forced importance-weighted estimate, `meaning: importance_weighted_log_marginal_estimate`) | 3 rows; `by_sample_count` keys `2` and `4`, 4 entries each; `log_weights` 4 x 4; `effective_sample_size` range 1.0000 to 1.8753 across the 24 entries; every `gap` is null | 3 rows; same shape; ESS range 1.0000 to 1.4707; every `gap` null | MEASURED. These rows are evaluation under the sealed checkpoint, not a free rollout, and are listed here only to say what the metrics file does and does not carry |
+
+Addendum 2026-10-22 (blind review round 1): the reviewer's packet carried the two
+`generation.json` receipts (R2 `outputs/run/`). Re-read by this lane from the packet copies,
+MEASURED: schema `h-generation-receipt-v2`, `status: generation_complete`, one prompt, two
+generated sentences per arm, `outcome: sentence_budget`, `pending: []`, 284 (sphere) and 136
+(magnitude) entries in `log_scores` and `observations`. No sampler, temperature or seed field is
+in the receipt, and there is one continuation per prompt, so stochasticity is still not shown
+(see the review response).
 
 What needs R2 custody to answer Q4: the two `generation.json` files (one per arm) under
 `outputs/run/` or `outputs/capture/` at the prefixes in Q2, and the `complete.json` /
@@ -174,7 +207,9 @@ count toward the H0 exit.
 
 | check | sphere | magnitude | evidence |
 | --- | --- | --- | --- |
-| Numeric leaves scanned (every int or float in every row, bool excluded) | 102,050 | 104,364 | MEASURED |
+| Numeric leaves scanned, metrics file only (every int or float in every row, bool excluded) | 102,050 | 104,364 | MEASURED. RETRACTION 2026-10-22 (blind review round 1): the first version said "every row" but counted the metrics files only |
+| Numeric leaves scanned, worker log only (same rule) | 484 | 484 | MEASURED 2026-10-22 (`python3 -I` over the review-packet copies of the captured files) |
+| Numeric leaves scanned, metrics plus worker log | 102,534 | 104,848 | DERIVED_FROM_MEASURED (sum of the two rows above); nonfinite values across all of them: 0 / 0, MEASURED |
 | Nonfinite values (NaN, +inf, -inf) | 0 | 0 | MEASURED |
 | Training `step` strictly +1 within each phase; phases in file order warmup then prediction | yes; one transition at training row 250 | yes; same | MEASURED |
 | Worker-log timestamps non-decreasing | yes, 260 rows | yes, 260 rows | MEASURED |
@@ -184,10 +219,13 @@ count toward the H0 exit.
 | `gradients.decoder.status` | `measured_nonzero` 1000 | same | MEASURED |
 | `mechanism.solver` (prediction rows) | method `conjugate_gradient` 750 of 750; `max_residual_ratio` min 0.175505, max 0.999855, rows at or above 1.0: 0; largest iteration bucket 49 | 750 of 750; min 0.172860, max 0.999992, rows at or above 1.0: 0; largest iteration bucket 50 | MEASURED. A ratio below 1 on every row means no row reports a residual above its tolerance; no `solver_nonconvergence` status appears |
 | `mechanism.*.zero_count` and `zero_views` | all 0 | all 0 | MEASURED |
+| `mechanism.sentences.range` null on prediction rows | 18 of 750 prediction rows, at prediction steps 3, 39, 178, 208, 233, 278, 299, 308, 415, 440, 487, 496, 534, 565, 593, 636, 725, 748 (metrics L255, L291, L430 first three, L1004 last); each carries `count: 0`, `zero_count: 0`, `dtype: torch.float32`; the same rows carry `states.count: 4` with a non-null `states.range` | the same 18 steps, same shape | MEASURED 2026-10-22 over both metrics files (omitted by the first version, found by the blind review). Explanation: structurally absent, not missing. `_norms` returns `"range": _range(norms) if norms.numel() else None` (`mechanism_evidence.py:30`), and `sentences` is the tensor of history sentence states; on these rows every source example has an empty history (the first sentence of its document), so there are zero sentence states. Corroboration, MEASURED: the 18 rows are exactly the prediction rows with `history_bytes` equal to 0 on both arms; the smallest nonzero prediction `history_bytes` is 100. The "first sentence of its document" cause is the code-reading explanation; no captured row names it |
+| Declared precision versus observed precision | profile `precision: bf16`, `device: cuda` (R2 `profile.json`, packet copy); runtime record `default_dtype torch.float32`, `matmul_precision highest`, `effective_tf32 false` (run_start L1); mechanism rows `dtype torch.float32` on every row | same | MEASURED for each side separately. The two are not in contradiction by construction: autocast is applied inside the objective as `torch.autocast(..., dtype=torch.bfloat16, enabled=self.profile.precision == "bf16")` (`execution.py:224-226`, and again for evaluation at L345-349), so `bf16` is the autocast dtype, while the runtime record is the enforced FP32-islands contract (`runtime_precision.py:23-49`, `require_execution_precision`, called at `execution.py:214` and `:326`) and the mechanism rows' `float32` is the FP32 carrier contract (`mechanism_evidence.py:21-23`). What is NOT recorded in any captured row is whether autocast was actually enabled on the live step, so "bf16 was applied" is code-read, not measured. Open observability item (ticketed); see the review response |
 | `decoder_ce` first / last training row | 5.951573 / 2.673644 | 5.952548 / 2.682614 | MEASURED, L2 and L1006 (reported as plumbing readback only; no claim attaches) |
-| `future_nll_per_dimension` first prediction row / last row; minimum over run | 4.643691 / -0.540911; min -0.740573 | 5.355175 / 0.552849; min -0.708967 | MEASURED. Negative per-dimension values occur; whether the field's documented domain admits them is for the reviewer to check against the schema, which this brief did not put in scope |
+| `future_nll_per_dimension` first prediction row / last row; minimum over run | 4.643691 / -0.540911; min -0.740573 | 5.355175 / 0.552849; min -0.708967 | MEASURED. Negative per-dimension values occur; whether the field's documented domain admits them is for the reviewer to check against the schema, which this brief did not put in scope. Addendum 2026-10-22: answered from code in `docs/h0/review-response-hepp7g-2026-10-22.md` row 7 |
 | `aggregate_norm` first / last | 1.010331 / 1.007102 | 1.022729 / 1.146669 | MEASURED |
-| `cuda_peak_bytes` maximum over run | 81,788,928 | 77,594,624 | MEASURED |
+| `cuda_peak_bytes` maximum over run, element 1 (max memory reserved) | 81,788,928 | 77,594,624 | MEASURED. RETRACTION 2026-10-22 (blind review round 1): the field is a two-element list `[allocated, reserved]` on every one of the 1000 training rows (`execution.py:293` writes `memory.peak_bytes()`; `resource_meter_runtime.py:136-143` returns `(max_memory_allocated, max_memory_reserved)`; `journal.py` requires length 2 and `peak[1] >= peak[0]`). The first version reported only the second element, the reserved high-water, without saying so |
+| `cuda_peak_bytes` maximum over run, element 0 (max memory allocated) | 60,756,992 | 56,941,568 | MEASURED 2026-10-22; `peak_scope` is `process_allocator_high_water` (`execution.py:294`), so both values are process-wide high-water marks, not per-step peaks |
 | Evaluation `gap` field | null in all 24 `by_sample_count` entries (8 per eval row) | same | MEASURED. A null field; its meaning is not defined by any reader in scope |
 | Evaluation `effective_sample_size` | all 24 entries finite, min 1.0000 | same | MEASURED |
 | `run_end.status` | `ok` | `ok` | MEASURED |
@@ -201,7 +239,8 @@ count toward the H0 exit.
 
 ## Verdict proposal
 
-`tracer_partial`.
+`tracer_partial`. (Filed in `docs/h0/verdict-hepp7g-2026-10-22.md` after the independent review;
+the corrections in this file are those the review found.)
 
 Proven by the captured evidence, both arms, one lineage:
 
@@ -213,7 +252,7 @@ Proven by the captured evidence, both arms, one lineage:
   recorded for six of them plus the `completion` caller (seven pairs; `materialization` and
   `runtime_admission` have stage brackets only, Q3), zero retries, zero stop markers, zero write failures, JSONL sink settled with zero
   stranded (Q3, Q6).
-- Zero nonfinite values across 206,414 numeric leaves; monotone steps and timestamps (Q6).
+- Zero nonfinite values across 206,414 numeric leaves in the metrics files, and across 207,382 including the worker logs (RETRACTION 2026-10-22, blind review round 1: the first version labelled the metrics-only total as covering every row); monotone steps and timestamps (Q6).
 - This analysis exists (the analysis exit).
 
 Unproven exits, each named:
@@ -225,8 +264,10 @@ Unproven exits, each named:
 3. **Review.** Not yet done; a different fresh session, per the brief.
 4. **Filing.** Not yet done.
 5. **Test-only gate.** Not yet exercised against this capture.
-6. **Shared profile `config_hash`.** Not present in the captured rows; the "same profile
-   config_hash" leg of Q2 cannot be closed from this evidence.
+6. **Shared profile `config_hash`.** RETRACTION 2026-10-22 (blind review round 1): this exit
+   was ill-posed as worded. It is replaced by "profiles identical except carrier and name",
+   which the two R2 profiles satisfy (Q2, restated leg). Not an open exit any more; the hash
+   itself is still not projected into the captured rows.
 
 Findings that are not refusals but must reach the gate author:
 
@@ -263,7 +304,8 @@ artifacts the capture was never designed to project.
    1500 prediction rows.
 6. Confirm the carrier-to-run-id assignment (`988d8388` sphere, `a163161f` magnitude) from the
    profile, since no captured row names the carrier. This needs the profile artifact under
-   R2 `outputs/run/profile.json` or the request, which this session did not read.
+   R2 `outputs/run/profile.json` or the request, which this session did not read. (Done by the
+   blind review on 2026-10-22: three independent links, reviewer-reported; see the verdict file.)
 7. Decide, against the schemas, whether negative `future_nll_per_dimension` and a null
    evaluation `gap` are in-domain.
 8. If the stochastic-rollout exit is to be closed in this round, read the two
