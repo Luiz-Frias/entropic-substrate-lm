@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.3...v0.4.0) (2026-10-22)
+
+
+### Features
+
+* **core:** key evaluation seed by step and add diagnostic samples ([#366](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/366)) ([7a113ac](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a113ac0d54abd743269dd8e4ae14b711e0b4c60))
+* **domain:** memoize admitted evaluation records in seal memo ([#365](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/365)) ([868120b](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/868120b7dc986acf327d3654baaa959b38c52f93))
+* **h-analysis:** FOR-1648 aggregate, charts and report over H runs ([#367](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/367)) ([d830197](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d830197e7a22ff3bfca711d7ab3879e092fbdc43))
+* **scripts:** make blind review model configurable via env ([#369](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/369)) ([50a4951](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/50a4951ea7094c5f63fb00d2e83a4f44432c9828))
+
+
+### Bug Fixes
+
+* **ladder:** alias D1 status enums to the kernel verdict vocab ([#362](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/362)) ([dd16ff5](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dd16ff5da2cdfa05628d2432de2023be8ac2a691))
+
+
+### Code Refactoring
+
+* **d1:** drop dead manifest-diff loop in D1ExperimentFamily ([#361](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/361)) ([c2ac149](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c2ac149cf27618fceea338134ccd6755e4346264))
+* **scripts:** split assemble_review_packet under 1000 lines ([#360](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/360)) ([7333634](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/73336341b0135833cf8e5089ef2e56a81da7087d))
+
+
+### Documentation
+
+* **briefs:** add lane briefs for FOR-1670, FOR-1648 and FOR-1664 ([#364](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/364)) ([75ad2f2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/75ad2f269888e5df963d796d9a04126290084e4a))
+* **briefs:** bug-squash wave briefs FOR-1598, FOR-1634, FOR-1609 ([#359](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/359)) ([2d195a0](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2d195a0b235002a1408d13508bbf8d1dbe2bd2f9))
+* **h0:** add plumbing analysis for wave HEpP7g ([#368](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/368)) ([d3c8f46](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d3c8f46745e8f9df7fd4dd5685e51af472b18db9))
+* **h0:** add the HEpP7g capture pointer and analysis brief ([#363](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/363)) ([2f0e25a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2f0e25a860920160c9bebabb2803c912c25437a4))
+
 ## [0.3.3](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.3.2...v0.3.3) (2026-10-20)
 
 
