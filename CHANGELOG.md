@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.4.1...v0.5.0) (2026-10-23)
+
+
+### Features
+
+* **h-analysis:** add H0 final-probe checks and a resume builder ([#374](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/374)) ([128a3d2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/128a3d27132513e69e3af51c237a70675979c9c6))
+
+
+### Documentation
+
+* **h0:** record blind review round 1 for wave HEpP7g ([#373](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/373)) ([0832dac](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0832dacfcccb57c8267217b095d5c566dc94b7da))
+
 ## [0.4.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.4.0...v0.4.1) (2026-10-22)
 
 
