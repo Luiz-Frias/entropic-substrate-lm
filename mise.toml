@@ -1,5 +1,5 @@
 # mise.toml — entropic-substrate-lm
-# Pins: python 3.12, uv (pkg mgr), just (task runner), prek (Rust pre-commit runner),
+# Pins: python 3.12.15 (exact: the identity regime table keys on the patch version), uv (pkg mgr), just (task runner), prek (Rust pre-commit runner),
 # shellcheck/shfmt/bats (shell linting/testing), dprint (Markdown/config formatting),
 # graphite (stacked-PR CLI).
 # Mirrors doc-lora-training convention.
@@ -11,7 +11,7 @@ _.file = ".env"                          # loads HF_TOKEN, WANDB_API_KEY, R2/Run
 uv_venv_auto = true
 
 [tools]
-python = "3.12"
+python = "3.12.15"
 uv = "latest"
 just = "latest"
 "github:j178/prek" = "latest"

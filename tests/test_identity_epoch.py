@@ -525,6 +525,26 @@ aa4702a2 / 5ea5ca80 / 904eaa93) are retracted here, not silently
 overwritten (house rule 4). Both regime-row tests were RED on the staged
 tree before this re-pin (the brief's "type a digest instead of measuring
 it" arm, measured 2 failed / 5909 passed) and are GREEN after it.
+Local regime row added (house rule 4, MEASURED 2026-10-23, operator ruling the
+same day): mise's floating ``python = "3.12"`` began resolving to CPython 3.12.15
+on the operator's machine on 2026-10-23 (a machine-wide toolchain update), so a
+venv built after that date ran ``h-checkpoint-reader-v2 has no fixture row for
+regime ('3.12.15', '2.13.0')`` and failed loud by name, exactly as this fixture
+is designed to. The operator ruled to pin ``mise.toml`` to the exact patch
+``python = "3.12.15"`` (the floating pin is the root cause the CI paragraph above
+already named) and to add the one missing row rather than hold the old patch.
+No reader member changed and no existing row moves: the 3.12.13 rows are
+RETAINED (venvs and local artifacts made under that regime stay readable), and
+``_SOURCE_REGIME_TABLE`` already carried ``('3.12.15', '0.3.4')`` from the CI
+paragraph. The added value was measured three ways under ``.venv/bin/python``
+3.12.15 with torch 2.13.0 and all agree: ``checkpoint._reader_identity()`` live,
+``tools/regime_rows.py --python 3.12.15 --torch 2.13.0 --pysbd 0.3.4``, and
+that tool's control (fed the 3.12.13 strings it reproduces the pinned 3.12.13
+row exactly; its 3.12.15 source row equals the already-pinned value). The full
+unit suite under that venv was 1 regime failure plus 2 packet-assembly
+failures that are an instrument artifact (the assembler shells out to
+``ruff``, absent from PATH when the venv's python is invoked directly; both
+pass with the venv on PATH, as every repo gate runs them).
 """
 
 from __future__ import annotations
@@ -666,6 +686,10 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
         "3.12.14",
         "2.13.0+cpu",
     ): "13df3a88f97d949e83207144e451c6ac6a8fa743045f9d174300b6c044cdc167",  # pragma: allowlist secret
+    (
+        "3.12.15",
+        "2.13.0",
+    ): "3cdea7f20c6725eb9dd459b9653fa5adf554751237be40c88499989cf02828aa",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
