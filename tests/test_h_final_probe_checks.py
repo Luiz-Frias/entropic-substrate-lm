@@ -938,3 +938,15 @@ class TestScript:
     def test_an_unknown_check_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="k9"):
             _script().main(["--plan", str(_plan(tmp_path, {"k9": {}}))])
+
+    @pytest.mark.parametrize(
+        ("bad", "named"), [(8.9, "8.9"), (True, "True"), ("4", "'4'"), (None, "None")]
+    )
+    def test_k6_a_non_integer_sample_count_is_refused_naming_it(
+        self, tmp_path: Path, bad: object, named: str
+    ) -> None:
+        a = write_h_run(tmp_path, IDENTITY_A, REQUEST_A, tag="a")
+        plan = {"k6": {"metrics": [str(a[0])], "evaluated_samples": [2, bad]}}
+        with pytest.raises(ValueError, match="evaluated_samples") as excinfo:
+            _script().main(["--plan", str(_plan(tmp_path, plan))])
+        assert named in str(excinfo.value)

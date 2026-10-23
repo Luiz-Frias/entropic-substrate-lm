@@ -96,11 +96,23 @@ def _k1_request(spec: Mapping[str, Any]) -> CheckResult:
     )
 
 
+def _sample_counts(values: object) -> tuple[int, ...]:
+    """Exact JSON integers only: ``int()`` would truncate 8.9 to 8 and read True as 1."""
+    if not isinstance(values, list):
+        raise ValueError(f"k6 evaluated_samples must be a list, got {values!r}")
+    counts: list[int] = []
+    for value in cast(list[object], values):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"k6 evaluated_samples holds a non-integer count: {value!r}")
+        counts.append(value)
+    return tuple(counts)
+
+
 def _k6(spec: Mapping[str, Any]) -> CheckResult:
     if ("evaluated_samples" in spec) == ("profile" in spec):
         raise ValueError("k6 needs exactly one of evaluated_samples or profile")
     samples = (
-        tuple(int(k) for k in spec["evaluated_samples"])
+        _sample_counts(spec["evaluated_samples"])
         if "evaluated_samples" in spec
         else evaluated_samples_from_manifest(_json(spec["profile"]))
     )
