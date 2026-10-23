@@ -16,6 +16,30 @@ Run: ANTHROPIC_API_KEY=... uv run --with anthropic python \
     scripts/blind_review_cloud.py <packet_dir> <out_md> <prompt_txt>
 The reviewer model is BLIND_REVIEW_MODEL when set (e.g. claude-opus-5-5),
 else DEFAULT_MODEL; a blank value is refused.
+
+Files the reviewer writes in its sandbox (FOR-1671). The full review often
+lands in ``/tmp/outputs/review.md`` inside the container rather than in the
+text blocks, so the files are collected too. Wire shape VERIFIED, not
+inferred, against the claude-api skill (python/claude-api/tool-use.md,
+"Retrieve Generated Files", skill bundle 2.1.308, read 2026-10-22), whose
+example sits under ``code_execution_20260120`` (the tool pinned here):
+
+- result block: ``block.type == "bash_code_execution_tool_result"``;
+- ``block.content.type == "bash_code_execution_result"`` (an error result has
+  another type and no ``.content`` list: it contributes no file);
+- ``block.content.content`` lists entries with
+  ``.type == "bash_code_execution_output"`` and ``.file_id``;
+- the filename is NOT on the block: ``client.beta.files.retrieve_metadata(id)
+  .filename``, sanitized with ``os.path.basename`` as the skill instructs;
+- download: ``client.beta.files.download(id).write_to_file(path)``.
+
+Each file lands in ``<out_md stem>-files/<name>`` beside ``<out_md>`` and its
+path is printed. The skill is silent on whether a ``pause_turn`` resume
+re-carries earlier rounds' blocks and the resume loop below resends only the
+last assistant turn, so refs are gathered from EVERY round's response, not
+the final one alone. Divergence recorded, not migrated: the skill documents
+the Files API as out of beta (``client.files``, no header); this script stays
+on ``client.beta.files`` + ``files-api-2025-04-14``, unchanged by this fix.
 """
 
 from __future__ import annotations
@@ -78,6 +102,50 @@ def build_content(prompt_text: str, file_ids: list[str]) -> list[dict[str, Any]]
     return content
 
 
+def collect_output_file_ids(content: list[Any]) -> list[str]:
+    """File ids referenced by code-execution result blocks, in order.
+
+    Shape per the module docstring. Blocks of any other type, and execution
+    results that failed (no ``bash_code_execution_result`` payload), yield none.
+    """
+    ids: list[str] = []
+    for block in content:
+        if getattr(block, "type", None) != "bash_code_execution_tool_result":
+            continue
+        result = getattr(block, "content", None)
+        if getattr(result, "type", None) != "bash_code_execution_result":
+            continue
+        for entry in getattr(result, "content", None) or []:
+            if getattr(entry, "type", None) == "bash_code_execution_output":
+                ids.append(entry.file_id)
+    return ids
+
+
+def download_output_files(
+    client: Any, file_ids: list[str], dest: pathlib.Path
+) -> list[pathlib.Path]:
+    """Download each Files API id into ``dest``; return the saved paths.
+
+    The sandbox controls the filename, so it is reduced to its basename; an
+    empty or dot-only name falls back to the file id, and a name already taken
+    in ``dest`` is prefixed with the file id so no file overwrites another.
+    """
+    if not file_ids:
+        return []
+    dest.mkdir(parents=True, exist_ok=True)
+    saved: list[pathlib.Path] = []
+    for file_id in file_ids:
+        name = os.path.basename(client.beta.files.retrieve_metadata(file_id).filename)
+        if name in {"", ".", ".."}:
+            name = file_id
+        target = dest / name
+        if target.exists():
+            target = dest / f"{file_id}-{name}"
+        client.beta.files.download(file_id).write_to_file(target)
+        saved.append(target)
+    return saved
+
+
 def main() -> int:
     import anthropic  # deferred: `uv run --with anthropic` supplies it
 
@@ -106,6 +174,7 @@ def main() -> int:
             }
         ]
         print(f"reviewer model: {model}")
+        output_file_ids: list[str] = []
         for round_index in range(12):  # pause_turn resume bound, fail loud past it
             with client.beta.messages.stream(
                 model=model,
@@ -116,6 +185,9 @@ def main() -> int:
             ) as stream:
                 response = stream.get_final_message()
             print(f"round {round_index}: stop_reason={response.stop_reason}")
+            for fid in collect_output_file_ids(response.content):
+                if fid not in output_file_ids:
+                    output_file_ids.append(fid)
             if response.stop_reason == "pause_turn":
                 messages = [
                     messages[0],
@@ -131,11 +203,17 @@ def main() -> int:
             raise RuntimeError(msg)
 
         review = "\n".join(block.text for block in response.content if block.type == "text")
-        if not review.strip():
+        if not review.strip() and not output_file_ids:
             msg = "reviewer returned no text content"
             raise RuntimeError(msg)
-        out.write_text(review, encoding="utf-8")
-        print(f"wrote {out} ({len(review)} chars)")
+        if review.strip():
+            out.write_text(review, encoding="utf-8")
+            print(f"wrote {out} ({len(review)} chars)")
+        else:
+            print("reviewer returned no text content; collecting output files only")
+        files_dir = out.with_name(f"{out.stem}-files")
+        for saved in download_output_files(client, output_file_ids, files_dir):
+            print(f"saved {saved}")
         return 0
     finally:
         for fid in file_ids:
