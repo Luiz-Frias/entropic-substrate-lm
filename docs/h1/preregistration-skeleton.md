@@ -110,8 +110,12 @@ projection, mechanism and gradient fields from the same admitted rows. Statistic
 sample sd (n-1), mean ± 3 sd, empirical 0.135th and 99.865th percentiles (linear interpolation,
 the 3-sigma-equivalent coverage, shows non-normal tails), and the last-50-step mean. The bracket is
 an iid percentile bootstrap (20,000 resamples, seed 20261023) of the last-50 mean at 99.73%
-coverage: it resamples autocorrelated training steps as if independent, so it is a **lower bound on
-within-run measurement noise**, not a confidence interval of anything H1 decides. With n = 250 or
+coverage. It is an **exploratory bracket only**: it resamples autocorrelated training steps as if
+independent, and under positive serial correlation iid resampling can understate the variance, so
+it bounds nothing in either direction and is not a confidence interval of anything H1 decides. A
+block bootstrap or a HAC estimator would be required before any bound is claimed. (Corrected
+2026-10-23, PR #380 review: the first draft called this bracket a lower bound on within-run noise,
+which autocorrelation alone does not establish.) With n = 250 or
 750, the 0.135th and 99.865th percentiles are interpolated between the two most extreme steps.
 Arms: sphere = SS (`988d8388`), magnitude = MM (`a163161f`). Warm-up has 250 steps, prediction 750.
 
@@ -223,14 +227,37 @@ Secondary (PLAN): the predeclared 3-sigma interval (`THREE_SIGMA_CONFIDENCE = 0.
 the same sealed data, report-only, no multiplicity adjustment. The operator reads bands at 3 sigma;
 that reading is this secondary report and never replaces the deciding rule.
 
-Per contrast c and deciding estimand e, with margin Δ(c, e) sealed in the amendment (BLANK):
+Per contrast c and deciding estimand e, with margin Δ(c, e) sealed in the amendment (BLANK). The
+hypothesis kind of each contrast is sealed before the pilot (Q1), and the outcome is read ONLY from
+the table of that kind. Within a kind the conditions partition the possible intervals, so every
+interval gets exactly one label. (Corrected 2026-10-23, PR #380 review: the first draft listed the
+labels in one table whose conditions overlapped; an interval (0.10, 0.20) with Δ = 0.50 matched
+both "equivalent" and "not supported".)
 
-| outcome | condition on the deciding interval | label |
+Kind = difference (two-sided superiority):
+
+| outcome | condition on the deciding interval (L, U) | label |
 | --- | --- | --- |
-| supported (difference) | interval excludes 0 and lies entirely beyond +Δ or entirely beyond -Δ | PROPOSAL |
-| equivalent within margin | interval lies entirely inside (-Δ, +Δ) | PROPOSAL; requires the equivalence kind (Q1) |
-| not supported | interval excludes 0 but lies inside (-Δ, +Δ) on that side: a detectable but practically irrelevant difference | PROPOSAL |
-| inconclusive | anything else | PROPOSAL |
+| supported difference | L > +Δ or U < -Δ | PROPOSAL |
+| no practically relevant difference | -Δ < L and U < +Δ; reported with the annotation "detectable" when the interval also excludes 0 | PROPOSAL |
+| inconclusive | every other interval | PROPOSAL |
+
+Kind = equivalence:
+
+| outcome | condition on the deciding interval (L, U) | label |
+| --- | --- | --- |
+| equivalent within margin | -Δ < L and U < +Δ | PROPOSAL |
+| not equivalent | L > +Δ or U < -Δ | PROPOSAL |
+| inconclusive | every other interval | PROPOSAL |
+
+Kind = noninferiority (the harmful direction sealed with the contrast; written here for "lower is
+worse"):
+
+| outcome | condition on the deciding interval (L, U) | label |
+| --- | --- | --- |
+| noninferior | L > -Δ | PROPOSAL |
+| inferior | U < -Δ | PROPOSAL |
+| inconclusive | every other interval | PROPOSAL |
 
 Per cell (eligibility, PLAN "retain every construction meeting registered eligibility"): BLANK
 criteria (Q5). If both normalization choices fail eligibility, H1 pauses.
@@ -267,7 +294,7 @@ achieved power (PLAN). An unaffordable powered n blocks execution (PLAN).
 | field | content | label |
 | --- | --- | --- |
 | Size | 8 complete paired blocks per contrast family | PLAN |
-| Block | one `H1PreservationBlock`: four profiles MM, SM, MS, SS, identical outside `law.mode` and `spine.carrier` (validated by the block), one seed, one paired source stream; codec artifacts bound within (MM, MS) and (SM, SS) where the contrast calls for it, otherwise warmed independently on the same stream and budget | PLAN + MEASURED (code) |
+| Block | one `H1PreservationBlock`: four profiles MM, SM, MS, SS, identical outside `law.mode` and `spine.carrier` (validated by the block), one seed, one paired source stream; codec artifacts bound within (MM, MS) and (SM, SS) in every block, unconditionally (`codec_sharing_groups` requires these pairs; section 2), each pair's codec warmed once on the block's paired source stream and budget; a block that warms a pair's members independently breaks the declared design and is excluded as a defect (corrected 2026-10-23, PR #380 review: the first draft made the sharing conditional) | PLAN + MEASURED (code) |
 | Run class | `pilot`, never `confirmatory`; profile names stage-prefixed `h1-` and not `-tiny` | MEASURED (`HProfile` rules) |
 | Regime | identical to confirmation: width, depth, steps, batch, curve `(2..64)+256`, consumer `isotropic`, `future_weight = 0` | PROPOSAL; values BLANK (Q6) |
 | Pilot seeds | disjoint from confirmatory seeds | PROPOSAL; values BLANK |
