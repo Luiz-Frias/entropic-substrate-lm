@@ -10,6 +10,8 @@ from typing import Protocol, cast
 
 import torch
 
+from entropic_substrate.core.sentence.profile import HProfile
+
 
 class _PrecisionBackend(Protocol):
     @property
@@ -47,3 +49,30 @@ def require_execution_precision() -> dict[str, object]:
     ):
         raise ExecutionPrecisionError(f"execution precision contract violated: {observed}")
     return observed
+
+
+def require_observed_execution_precision(profile: HProfile) -> dict[str, object]:
+    """The guarded record plus the declared precision and the autocast torch reports for it.
+
+    The refusal is the unchanged guard and runs first, so a refused regime never enters an
+    autocast context. The probe then opens the exact context every execution site opens
+    (``torch.autocast(device_type, dtype=torch.bfloat16, enabled=profile.precision == "bf16")``)
+    and reads torch's own state inside it. The context manager restores the ambient state on
+    exit; a torch error (unsupported device, CUDA without bf16) propagates with torch's text and
+    is never recorded as a disabled autocast.
+
+    MEASURED 2026-10-22 on torch 2.13.0 (CPU host): bf16 requested reads (True, torch.bfloat16);
+    enabled=False reads (False, torch.bfloat16). ``autocast.__enter__`` stores the requested
+    dtype unconditionally, so the dtype echoes the request even when autocast is off and
+    ``enabled`` is the only independent observation. The pair is recorded as read.
+    """
+    record = require_execution_precision()
+    device_type = "cuda" if profile.device == "cuda" else "cpu"
+    with torch.autocast(device_type, dtype=torch.bfloat16, enabled=profile.precision == "bf16"):
+        enabled = bool(torch.is_autocast_enabled(device_type))
+        dtype = str(torch.get_autocast_dtype(device_type))
+    return {
+        **record,
+        "declared_precision": profile.precision,
+        "autocast": {"enabled": enabled, "dtype": dtype, "device_type": device_type},
+    }

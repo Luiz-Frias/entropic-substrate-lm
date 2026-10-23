@@ -190,6 +190,10 @@ class TestVerifyWorkerSourceRelocated:
 
 class _FakeProfile:
     run_class = "remote_tiny"
+    # FOR-1672 (conductor ruling (12), 2026-10-23): _runtime() now probes the declared
+    # precision and device for the observed-autocast record; shape-only stand-ins.
+    device = "cpu"
+    precision = "fp32"
 
 
 class _FakeProbeRequest:
@@ -246,6 +250,8 @@ class TestRuntimeGuardRelocated:
 
         class _LocalProfile:
             run_class = "local_tiny"
+            device = "cpu"  # FOR-1672 (conductor ruling (12)): _runtime() probes both
+            precision = "fp32"
 
         class _LocalRequest:
             profile = _LocalProfile()

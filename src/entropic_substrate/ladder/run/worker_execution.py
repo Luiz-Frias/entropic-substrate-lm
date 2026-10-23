@@ -6,7 +6,9 @@ from collections.abc import Callable, Generator, MutableMapping
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
-from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
+from entropic_substrate.core.sentence.runtime_precision import (
+    require_observed_execution_precision,
+)
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
@@ -56,7 +58,7 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
     elsewhere does not by itself make a legitimately bound tree read as
     unbound.
     """
-    precision = require_execution_precision()
+    precision = require_observed_execution_precision(request.profile)
     if request.profile.run_class == "local_tiny":
         return {
             "kind": "local_tiny",

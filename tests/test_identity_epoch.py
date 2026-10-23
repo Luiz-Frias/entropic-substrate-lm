@@ -514,6 +514,54 @@ recomputed over THIS tree's reader members with ``tools/regime_rows.py``:
 main carried, ``3cdea7f20c6725eb9dd459b9653fa5adf554751237be40c88499989cf02828aa``,
 is main's reader set and is retracted here for this tree, not inherited.
 
+FOR-1672 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-23, wave C ``wf_3ce4ed9e-710`` lane FOR-1672,
+design-gate ruling DG-A, gate ruling D1: the observed autocast state is
+measured once at run start by a probe context opened with the exact
+expression the execution sites use; alternative D2, observing at the first
+execution step, recorded and not taken): h-checkpoint-reader-v2 changes
+because two of its 51 members changed bytes -- ``core.sentence.runtime_precision``
+(new sibling ``require_observed_execution_precision(profile)`` composes the
+unchanged zero-argument guard and adds ``declared_precision`` and
+``autocast = {enabled, dtype, device_type}`` to the record; the FP32-defaults
+refusal is unchanged) and ``ladder.run.worker_execution`` (``_runtime()``
+feeds the observed record into ``run_start.runtime.precision``).
+``ladder.run.execution`` is byte-identical. Label and member set unchanged.
+All three rows recomputed with ``tools/regime_rows.py`` after
+``ruff format --check`` reported a fixed point. The OLD values they replace,
+``6b012375ecd8220652d82ed9f1c21328990659d9a4112fb961e015af34cb06e9``
+(local), ``13df3a88f97d949e83207144e451c6ac6a8fa743045f9d174300b6c044cdc167``
+(CI 3.12.14) and
+``06092e3131f952a2be7ee6158f65e4fc7701ac5673a543182cf671f2ce03acb2``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched: neither member is one of
+h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
+source rows unchanged with the same tool invocation (``9978611d...`` local,
+``d85b3144...`` and ``fc7fad81...`` CI).
+Rebase onto the python 3.12.15 pin (house rule 4, MEASURED 2026-10-23, operator GO):
+this re-pin also sets the local ``('3.12.15', '2.13.0')`` row added on main by the pin,
+recomputed over THIS tree's reader members with ``tools/regime_rows.py``:
+``9c188cbdca1c6d12c635c95371de07599e9ad1e4ec10354e4d63f2a1dfc58ed1``. The value
+main carried, ``3cdea7f20c6725eb9dd459b9653fa5adf554751237be40c88499989cf02828aa``,
+is main's reader set and is retracted here for this tree, not inherited.
+
+Zip restack (house rule 4, MEASURED 2026-10-24 by the conductor, wave C zip, stack
+1671, 1673, 1672, 1674 on PR #380 59ddc948; level 3 of 4): FOR-1672's change set now
+sits on FOR-1673, so this tree's reader members carry every lane below it. The four
+checkpoint rows were recomputed with ``tools/regime_rows.py`` over THIS tree:
+(3.12.13, 2.13.0)
+``1c5ab1c684346db048e08b8e4d8c81e8eda94a7c888924ff243b191c0f63dff4``, (3.12.14,
+2.13.0+cpu) ``772843ac05e6e1d0a91f55f597276c1bcc9297417db0837dcda940feb7bfc985``,
+(3.12.15, 2.13.0)
+``32d2f51cf6d44f23a35c3cc2bfc8ce8ab4845965572d475c628efd29636bb795``, (3.12.15,
+2.13.0+cpu) ``a6f5ba48be57197b03321c17f7f8d5b99f3eebebae2c6aa3b6660198632a1161``. The
+lane-local values FOR-1672 pinned on the bare wave base ((3.12.13, 2.13.0)
+``dfa86d64``, (3.12.14, 2.13.0+cpu) ``916f62e8``, (3.12.15, 2.13.0) ``9c188cbd``,
+(3.12.15, 2.13.0+cpu) ``b7514208``) and the FOR-1673 level values this commit's parent
+carries ((3.12.13, 2.13.0) ``96f2512f``, (3.12.14, 2.13.0+cpu) ``e03d4f8d``, (3.12.15,
+2.13.0) ``c98a7c07``, (3.12.15, 2.13.0+cpu) ``1f901dd7``) are retracted for this tree,
+not inherited. Source rows re-measured unchanged.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -711,19 +759,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "96f2512f0198f9edbc282857c818e1f34369a11441ef4f45ec435a40550814d6",  # pragma: allowlist secret
+    ): "1c5ab1c684346db048e08b8e4d8c81e8eda94a7c888924ff243b191c0f63dff4",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "e03d4f8d2a15c738d48659b3c5f47ee384aeb59c94750628f1b9e56e729c0947",  # pragma: allowlist secret
+    ): "772843ac05e6e1d0a91f55f597276c1bcc9297417db0837dcda940feb7bfc985",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "c98a7c070a24509adad1004f560aaf0739b03a01a2c1d4e76192e592cf759a67",  # pragma: allowlist secret
+    ): "32d2f51cf6d44f23a35c3cc2bfc8ce8ab4845965572d475c628efd29636bb795",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "1f901dd7115bbdd252ae104b88f8c109e1e58b3c187cc395015056146deeed0e",  # pragma: allowlist secret
+    ): "a6f5ba48be57197b03321c17f7f8d5b99f3eebebae2c6aa3b6660198632a1161",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
