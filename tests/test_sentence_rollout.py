@@ -1,5 +1,6 @@
 """Bytewise generation exposes failures and uses emitted, not imagined, feedback."""
 
+import itertools
 from dataclasses import replace
 
 import pytest
@@ -13,7 +14,11 @@ pytestmark = pytest.mark.unit
 
 
 def scripted_tokens(monkeypatch: pytest.MonkeyPatch, values: list[int]) -> None:
-    sequence = iter(values)
+    # Cyclic (FOR-1674, ruling D2): a generation run now draws N >= 2 continuations of
+    # one prompt, and each replays the script from its start. A one-shot iterator ended
+    # the second continuation with StopIteration; every single-continuation caller
+    # reads exactly len(values) tokens, so the cycle never wraps for them.
+    sequence = itertools.cycle(values)
 
     def sample(probabilities: torch.Tensor, num_samples: int) -> torch.Tensor:
         assert probabilities.shape == (258,) and num_samples == 1
@@ -180,3 +185,49 @@ def test_spherical_feedback_cannot_accept_an_unnormalized_carrier() -> None:
     model = tiny_model("sphere").eval()
     with pytest.raises(ValueError, match="unit operative"):
         model.predict_latents(torch.ones(1, 2, 8))
+
+
+# ------------------------------------------------------------------------------------------
+# FOR-1674 (design gate G2): a continuation draws only inside its own torch.random.fork_rng
+# island seeded once with torch.manual_seed. rsample (Beta.rsample takes no generator) and
+# multinomial both read the island's global state, so the rollout itself is unchanged and
+# reproducibility is a property of the island, not of the caller's ambient RNG.
+
+
+def _island_draw(model: object, seed: int, ambient: int) -> tuple[torch.Tensor, tuple[int, ...]]:
+    codec = SentenceByteCodec()
+    torch.manual_seed(ambient)  # the ambient state the island must not depend on
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed)
+        state = begin_rollout(model, (b"A.",), codec)  # type: ignore[arg-type]
+        for _ in range(4):
+            state = advance_rollout(model, state, codec)  # type: ignore[arg-type]
+    assert state.sample is not None
+    return state.sample.clone(), state.observations
+
+
+def test_same_island_seed_is_byte_identical_whatever_the_ambient_rng() -> None:
+    model = tiny_model().eval()
+    first = _island_draw(model, 123, ambient=1)
+    second = _island_draw(model, 123, ambient=2)
+    torch.testing.assert_close(first[0], second[0], atol=0, rtol=0)
+    assert first[1] == second[1]
+
+
+def test_different_island_seeds_draw_different_latents() -> None:
+    model = tiny_model().eval()
+    first = _island_draw(model, 123, ambient=1)
+    second = _island_draw(model, 124, ambient=1)
+    assert not torch.equal(first[0], second[0])  # a continuous latent differs almost surely
+
+
+def test_an_island_restores_the_ambient_rng_it_found() -> None:
+    model = tiny_model().eval()
+    torch.manual_seed(7)
+    before = torch.get_rng_state()
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(99)
+        advance_rollout(
+            model, begin_rollout(model, (b"A.",), SentenceByteCodec()), SentenceByteCodec()
+        )
+    assert torch.equal(torch.get_rng_state(), before)

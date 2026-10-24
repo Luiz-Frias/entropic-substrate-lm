@@ -8,8 +8,10 @@ import pytest
 from tests.test_sentence_generation import trained
 from tests.test_sentence_rollout import scripted_tokens
 
+import entropic_substrate.ladder.run.trace_capture as trace_capture_module
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.generation import run_probe_generation
+from entropic_substrate.ladder.run.journal import read_json, write_json
 from entropic_substrate.ladder.run.trace_capture import (
     capture_model_trace,
     read_model_trace,
@@ -206,3 +208,48 @@ def test_capture_includes_the_paused_generation_history(
     )
     manifest = read_json(destination, capture, max_bytes=10_000_000)
     assert paused.receipt.path in {item["path"] for item in manifest["artifacts"]}
+
+
+def test_capture_schema_vocabulary_moves_the_profile_and_keeps_every_receipt_name() -> None:
+    """FOR-1674: the profile literal is v3 only; v1, v2 and v3 receipts stay named."""
+    schemas = trace_capture_module._SCHEMAS  # pyright: ignore[reportPrivateUsage]
+    assert "h-run-profile-v3" in schemas and "h-run-profile-v2" not in schemas
+    for name in ("h-generation-receipt-v1", "h-generation-receipt-v2", "h-generation-receipt-v3"):
+        assert name in schemas
+
+
+@pytest.mark.parametrize("old", ["h-generation-receipt-v1", "h-generation-receipt-v2"])
+def test_an_old_receipt_bound_to_the_run_is_refused_by_name_never_admitted_unread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: str
+) -> None:
+    """Ruling D3: the re-read loop used to skip every schema but the current one."""
+    template, output, training = trained(tmp_path)
+    scripted_tokens(monkeypatch, [65, 257])
+    generation = run_probe_generation(
+        output,
+        training,
+        template.profile,
+        template.source_root,
+        max_source_bytes=1_000_000,
+        max_artifact_bytes=10_000_000,
+    )
+    receipt = read_json(output, generation.receipt, max_bytes=10_000_000)
+    receipt["schema"] = old
+    del receipt["continuations"], receipt["sampling"]
+    stale = write_json(output, "stale-receipt.json", receipt, max_bytes=10_000_000)
+    destination = tmp_path / "capture"
+    destination.mkdir()
+    limits = {"max_bytes": 10_000_000, "max_source_bytes": 1_000_000, "max_artifacts": 100}
+    with pytest.raises(ValueError, match="requires its original reader"):
+        artifact = capture_model_trace(
+            output,
+            training,
+            generation.receipt,
+            template.profile,
+            template.source_root,
+            destination,
+            max_total_bytes=50_000_000,
+            forensic_roots=(stale,),
+            **limits,
+        )
+        read_model_trace(destination, artifact, max_total_bytes=50_000_000, **limits)

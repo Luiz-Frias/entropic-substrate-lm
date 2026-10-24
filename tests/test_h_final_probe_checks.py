@@ -778,6 +778,118 @@ class TestK5:
         _fails_with(check_generation([receipt]), "generation_complete")
 
 
+# FOR-1674 (receipt v3): per-continuation entries beside the aggregate summary. The boundary
+# arm runs once per continuation over its own observation stream; stochasticity is PROVEN
+# only with the top-level block, N > 1, a matching entry count and a per-entry law.
+_V3_ROWS: list[tuple[str, list[str], list[int]]] = [
+    ("sentence_budget", ["a"], [97, 256]),
+    ("empty_sentence", [], [256]),
+    ("length_limit", [], [97, 98, 99]),
+    ("invalid_utf8", [], [200, 256]),
+    ("document_end", ["b"], [98, 257]),
+]
+
+
+def _entry_v3(index: int, row: tuple[str, list[str], list[int]]) -> dict[str, object]:
+    outcome, sentences, observations = row
+    return {
+        "index": index,
+        "seed": 1000 + index,
+        "sampling_law": {
+            "sampler": "multinomial_temperature_1",
+            "latent": "rsample",
+            "seed": 1000 + index,
+            "rng_digest": f"{index}" * 64,
+        },
+        "sentences": sentences,
+        "log_scores": [-1.0] * len(observations),
+        "outcome": outcome,
+        "boundary": observations[-1] if observations[-1] in (256, 257) else None,
+    }
+
+
+def _receipt_v3(count: int = 5) -> dict[str, object]:
+    rows = _V3_ROWS[:count]
+    observations = [o for _, _, obs in rows for o in obs]
+    return {
+        "schema": "h-generation-receipt-v3",
+        "run_identity": IDENTITY_A,
+        "scientific_authority": "none",
+        "status": "generation_complete",
+        "summary": {
+            "outcome": rows[-1][0],
+            "sentences": [s for _, sentences, _ in rows for s in sentences],
+            "observations": observations,
+            "pending": [],
+            "log_scores": [-1.0] * len(observations),
+            "prompt": ["p"],
+        },
+        "continuations": [_entry_v3(i, row) for i, row in enumerate(rows)],
+        "sampling": {
+            "sampler": "multinomial_temperature_1",
+            "temperature": 1.0,
+            "continuations": count,
+            "seed": 42,
+            "rng_digest": "9" * 64,
+        },
+    }
+
+
+class TestK5V3:
+    def test_five_continuations_with_heterogeneous_outcomes_pass(self) -> None:
+        # one sentence_budget, one empty_sentence, one length_limit, one invalid_utf8 and
+        # one document_end: the boundary arm on the CONCATENATION would FAIL this receipt
+        result = check_generation([_receipt_v3(5)])
+        _passes(result)
+        assert result.facts["receipts"][0]["continuations"] == 5
+
+    def test_four_continuations_pass(self) -> None:
+        _passes(check_generation([_receipt_v3(4)]))
+
+    def test_the_aggregate_alone_would_fail_the_same_receipt(self) -> None:
+        receipt = _receipt_v3(5)
+        flat = {**receipt, "schema": "h-generation-receipt-v2"}
+        assert check_generation([flat]).verdict == "FAIL"  # control: tiling is load-bearing
+
+    def test_without_the_top_level_sampling_block_it_is_unproven(self) -> None:
+        receipt = _receipt_v3(5)
+        del receipt["sampling"]
+        result = check_generation([receipt])
+        assert result.verdict == "UNPROVEN", result.to_json()
+
+    def test_dropping_the_per_continuation_law_is_unproven(self) -> None:
+        receipt = _receipt_v3(5)
+        for entry in receipt["continuations"]:  # type: ignore[attr-defined]
+            del entry["sampling_law"]
+        assert check_generation([receipt]).verdict == "UNPROVEN"
+
+    def test_one_missing_per_continuation_law_is_unproven(self) -> None:
+        receipt = _receipt_v3(5)
+        receipt["continuations"][2]["sampling_law"] = None  # type: ignore[index]
+        assert check_generation([receipt]).verdict == "UNPROVEN"
+
+    def test_an_entry_count_that_differs_from_the_declared_count_is_never_pass(self) -> None:
+        receipt = _receipt_v3(5)
+        receipt["sampling"]["continuations"] = 4  # type: ignore[index]
+        assert check_generation([receipt]).verdict != "PASS"
+
+    def test_one_continuation_is_unproven(self) -> None:
+        assert check_generation([_receipt_v3(1)]).verdict == "UNPROVEN"
+
+    def test_log_scores_that_do_not_tile_the_observations_fail(self) -> None:
+        receipt = _receipt_v3(5)
+        receipt["summary"]["observations"].append(97)  # type: ignore[index]
+        _fails_with(check_generation([receipt]), "tile")
+
+    def test_a_continuation_ending_on_the_wrong_token_fails_by_index(self) -> None:
+        receipt = _receipt_v3(5)
+        receipt["continuations"][4]["outcome"] = "length_limit"  # type: ignore[index]
+        _fails_with(check_generation([receipt]), "continuation 4")
+
+    def test_a_v2_receipt_is_still_read(self) -> None:
+        _passes(check_generation([{**_receipt(), "sampling": _sampling(3)}]))
+
+
 # ------------------------------------------------------------------ K6 importance curve
 def _with_counts(counts: dict[str, float]) -> Callable[[list[dict[str, Any]]], None]:
     """Rewrite every evaluation example to carry exactly ``counts`` (k -> ESS)."""

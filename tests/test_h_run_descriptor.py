@@ -53,7 +53,11 @@ pytestmark = pytest.mark.unit
 # Cause: the manifest schema literal became h-run-profile-v2 and schedule gained
 # diagnostic_samples, so seed groups split across the bump by design. New value = the
 # documented recipe's output on the staged profile().
-GOLDEN_CONFIG_HASH = "f56a5ac2049d"  # pragma: allowlist secret
+# RE-PINNED 2026-10-23 (FOR-1674, operator ruling D1): f56a5ac2049d -> 596bea7c6262.
+# Cause: the manifest schema literal became h-run-profile-v3 and schedule gained
+# generation_continuations (2 on the tiny smoke profile), so seed groups split across the
+# bump by design. New value = the documented recipe's output on the staged profile().
+GOLDEN_CONFIG_HASH = "596bea7c6262"  # pragma: allowlist secret
 
 
 # ------------------------------------------------------------------ h_config_hash

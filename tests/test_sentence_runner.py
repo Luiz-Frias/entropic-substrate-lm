@@ -142,6 +142,7 @@ def test_probe_driver_refuses_scientific_authority_and_remote_successors(tmp_pat
                 template.profile.schedule,
                 importance_samples=(2, 4, 8, 16, 32, 64),
                 diagnostic_samples=256,
+                generation_continuations=5,  # FOR-1674 ruling D1
             ),
         ),
         replace(
