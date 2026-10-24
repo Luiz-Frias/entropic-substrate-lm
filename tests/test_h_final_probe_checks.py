@@ -889,6 +889,28 @@ class TestK5V3:
     def test_a_v2_receipt_is_still_read(self) -> None:
         _passes(check_generation([{**_receipt(), "sampling": _sampling(3)}]))
 
+    def test_k5_declared_five_but_only_four_entries_is_unproven(self) -> None:
+        receipt = _receipt_v3(4)
+        receipt["sampling"]["continuations"] = 5  # type: ignore[index]
+        assert check_generation([receipt]).verdict == "UNPROVEN"
+
+    def test_entry_law_with_only_sampler_and_latent_is_unproven(self) -> None:
+        receipt = _receipt_v3(5)
+        for entry in receipt["continuations"]:  # type: ignore[attr-defined]
+            entry["sampling_law"] = {"sampler": "multinomial_temperature_1", "latent": "rsample"}
+        assert check_generation([receipt]).verdict == "UNPROVEN"
+
+    def test_entry_law_without_the_latent_label_is_unproven(self) -> None:
+        receipt = _receipt_v3(5)
+        for entry in receipt["continuations"]:  # type: ignore[attr-defined]
+            del entry["sampling_law"]["latent"]
+        assert check_generation([receipt]).verdict == "UNPROVEN"
+
+    def test_k5_pending_bytes_on_an_earlier_continuation_are_not_hidden(self) -> None:
+        receipt = _receipt_v3(3)  # sentence_budget, empty_sentence, length_limit (last)
+        receipt["summary"]["pending"] = [97, 98, 99]  # type: ignore[index]
+        _passes(check_generation([receipt]))
+
 
 # ------------------------------------------------------------------ K6 importance curve
 def _with_counts(counts: dict[str, float]) -> Callable[[list[dict[str, Any]]], None]:

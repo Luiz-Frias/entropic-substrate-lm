@@ -1,5 +1,6 @@
 """Generation continues the trained lineage and preserves pending byte sampling."""
 
+import copy
 import json
 from collections.abc import Iterator
 from dataclasses import replace
@@ -12,11 +13,12 @@ from tests.test_sentence_execution import engine
 from tests.test_sentence_rollout import scripted_tokens
 
 import entropic_substrate.ladder.run.generation as generation_module
-from entropic_substrate.core.sentence.recovery_state import capture_rng
+from entropic_substrate.core.sentence.recovery_state import capture_rng, rollout_from_payload
+from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.generation import read_generation, run_probe_generation
-from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json
 from entropic_substrate.ladder.run.runner import run_probe_training
 
 pytestmark = pytest.mark.unit
@@ -765,3 +767,121 @@ def test_a_defect_in_the_second_continuation_keeps_its_island_rng_without_comple
     assert torch.equal(failure["rng"]["cpu"], seen[-1]["cpu"])
     assert not torch.equal(failure["rng"]["cpu"], ambient)
     assert failure["rollout"]["observations"] == (65,)  # continuation 1 had advanced once
+
+
+def _extra_continuation_forgery(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> dict[str, object]:
+    template, output, _, receipt = generated
+    report = read_json(output, receipt, max_bytes=LIMIT)
+    extra = copy.deepcopy(report["continuations"][1])  # type: ignore[index]
+    extra["index"] = 2
+    law = generation_module._derived_law(template, 2)
+    extra["seed"] = law["seed"]
+    extra["sampling_law"] = law
+    first_len = len(report["continuations"][0]["log_scores"])  # type: ignore[index]
+    obs = report["summary"]["observations"]  # type: ignore[index]
+    report["continuations"].append(extra)  # type: ignore[attr-defined]
+    report["snapshot"] = extra["snapshot"]  # type: ignore[index]
+    report["summary"]["sentences"] = report["summary"]["sentences"] + extra["sentences"]  # type: ignore[index]
+    report["summary"]["log_scores"] = report["summary"]["log_scores"] + extra["log_scores"]  # type: ignore[index]
+    report["summary"]["observations"] = obs + obs[first_len:]  # type: ignore[index]
+    return report
+
+
+def test_forged_extra_continuation_beyond_the_profile_count_is_refused(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> None:
+    """Teeth for the upper bound of the continuation count: a third entry is refused."""
+    _refused(
+        generated,
+        _extra_continuation_forgery(generated),
+        "extra-continuation.json",
+        match="differ from the profile count",
+    )
+
+
+def _started(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+    snapshot: object,
+    index: int,
+) -> object:
+    template, output, _, _ = generated
+    identity = artifact_from_mapping(snapshot)
+    saved = generation_module._snapshot(output, identity, LIMIT)
+    state = rollout_from_payload(saved["rollout"], template.model, template.codec)
+    return generation_module._Started(
+        index, state, saved["rng"], artifact_reference(output, identity)
+    )
+
+
+def _paused_first_forgery(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> dict[str, object]:
+    """A complete receipt whose continuation 0 is an unfinished (paused) snapshot."""
+    template, output, training, receipt = generated
+    whole = read_json(output, receipt, max_bytes=LIMIT)
+    first = len(whole["continuations"][0]["log_scores"])  # type: ignore[index]
+    paused = run_probe_generation(
+        output, training, template.profile, template.source_root, pause_after=first + 1, **ARGS
+    )
+    mid = read_json(output, paused.receipt, max_bytes=LIMIT)
+    assert mid["continuations"][1]["outcome"] == "paused"  # type: ignore[index]
+    s0 = _started(generated, mid["continuations"][1]["snapshot"], 0)  # type: ignore[index]
+    s1 = _started(generated, whole["continuations"][1]["snapshot"], 1)  # type: ignore[index]
+    expected = [
+        generation_module._entry(template, s, generation_module._derived_law(template, s.index))  # type: ignore[attr-defined]
+        for s in (s0, s1)
+    ]
+    forged = dict(whole)
+    forged["continuations"] = expected
+    forged["snapshot"] = expected[-1]["snapshot"]
+    forged["summary"] = generation_module._summary(template, [s0, s1], expected)  # type: ignore[arg-type, list-item]
+    forged["status"] = generation_module._status(expected, template)
+    assert expected[0]["outcome"] == "paused" and forged["status"] == "generation_complete"
+    return forged
+
+
+def test_forged_unfinished_earlier_continuation_is_refused(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> None:
+    """Teeth for the 'only the last started continuation can be unfinished' guard."""
+    _refused(
+        generated,
+        _paused_first_forgery(generated),
+        "paused-first.json",
+        match="only the last started continuation",
+    )
+
+
+def test_forged_status_on_a_complete_receipt_is_refused(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> None:
+    report = read_json(generated[1], generated[3], max_bytes=LIMIT)
+    assert report["status"] == "generation_complete"
+    report["status"] = "paused"
+    _refused(generated, report, "status-paused.json", match="status differs")
+
+
+def test_forged_complete_status_on_a_paused_receipt_is_refused(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> None:
+    template, output, training, receipt = generated
+    first = len(read_json(output, receipt, max_bytes=LIMIT)["continuations"][0]["log_scores"])
+    paused = run_probe_generation(
+        output, training, template.profile, template.source_root, pause_after=first + 1, **ARGS
+    )
+    report = read_json(output, paused.receipt, max_bytes=LIMIT)
+    assert report["status"] == "paused"
+    report["status"] = "generation_complete"
+    _refused(generated, report, "status-complete.json", match="status differs")
+
+
+def test_sampling_digest_known_answer_pins_the_length_framing() -> None:
+    """Teeth for the framing: hand-computed from the documented framing, not the function.
+
+    Dropping the per-digest 8-byte length prefix yields 9fe9ad8e... instead.
+    """
+    assert generation_module.sampling_digest(["a" * 64, "b" * 64]) == (
+        "6eb863582500f8e20167d5e376032278097047c31dd07ecb6966337864c3f732"  # pragma: allowlist secret
+    )
