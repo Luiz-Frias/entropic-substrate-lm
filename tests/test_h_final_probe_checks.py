@@ -911,6 +911,22 @@ class TestK5V3:
         receipt["summary"]["pending"] = [97, 98, 99]  # type: ignore[index]
         _passes(check_generation([receipt]))
 
+    @pytest.mark.parametrize("declared", [0, 5])
+    def test_an_empty_continuations_list_fails_instead_of_passing_the_boundary_arm(
+        self, declared: int
+    ) -> None:
+        # zero continuations leave the per-continuation boundary arm nothing to check; it
+        # must FAIL (as a v2 receipt with no terminated output does), not report a vacuous
+        # boundary PASS that only the stochasticity arm happens to downgrade
+        receipt = _receipt_v3(5)
+        receipt["continuations"] = []
+        receipt["summary"]["observations"] = []  # type: ignore[index]
+        receipt["summary"]["sentences"] = []  # type: ignore[index]
+        receipt["sampling"]["continuations"] = declared  # type: ignore[index]
+        result = check_generation([receipt])
+        _fails_with(result, "empty continuations list")
+        assert result.facts["receipts"][0]["boundary"] == "FAIL"
+
 
 # ------------------------------------------------------------------ K6 importance curve
 def _with_counts(counts: dict[str, float]) -> Callable[[list[dict[str, Any]]], None]:

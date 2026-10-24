@@ -521,6 +521,10 @@ def _v3_continuation_summaries(
     entries, summary = receipt.get("continuations"), receipt.get("summary")
     if not isinstance(entries, list) or not isinstance(summary, Mapping):
         return [], ["v3 receipt carries no continuations list or summary"]
+    if not entries:
+        # zero continuations leave the per-continuation arm nothing to check: a vacuous
+        # boundary PASS would claim an output that ended on a boundary when none exists
+        return [], ["v3 receipt carries an empty continuations list: no output to check"]
     observations = summary.get("observations")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     if not isinstance(observations, list):
         return [], ["summary carries no observations list"]
