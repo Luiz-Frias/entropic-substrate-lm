@@ -882,6 +882,9 @@ def test_sampling_digest_known_answer_pins_the_length_framing() -> None:
 
     Dropping the per-digest 8-byte length prefix yields 9fe9ad8e... instead.
     """
-    assert generation_module.sampling_digest(["a" * 64, "b" * 64]) == (
-        "6eb863582500f8e20167d5e376032278097047c31dd07ecb6966337864c3f732"  # pragma: allowlist secret
+    assert (
+        generation_module.sampling_digest(["a" * 64, "b" * 64])
+        == (
+            "6eb863582500f8e20167d5e376032278097047c31dd07ecb6966337864c3f732"  # pragma: allowlist secret
+        )
     )
