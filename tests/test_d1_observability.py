@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ast
+import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -13,11 +16,19 @@ from entropic_substrate.kernel.evidence_class.resource_provenance import (
     execution_segment_id,
 )
 from entropic_substrate.kernel.identity.d1_primitives import RunClass
+from entropic_substrate.ladder.capture.adapters import d1_observability
 from entropic_substrate.ladder.capture.adapters.d1_observability import (
     D1JournalObserver,
     D1MlflowObserver,
     ObservedD1Journal,
 )
+from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.adapters.mlflow_strict import (
+    SCALAR_PROJECTION_KEY,
+    StrictMlflowSink,
+)
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
+from entropic_substrate.ladder.capture.ports.run_descriptor import ExtractedMetrics
 from entropic_substrate.ladder.capture.records.d1_journal import (
     JournalTailQuarantineReceipt,
     read_journal,
@@ -148,20 +159,83 @@ class _OrderingObserver:
 
 
 class _RecordingMlflowClient:
+    """Fake tracking client with the ``StrictMlflowClient`` surface."""
+
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
-        self.calls: list[tuple[str, str, float, int]] = []
+        self.calls: list[tuple[str, str, float, int | None]] = []
+        self.synchronous_seen: list[object] = []
 
     def log_metric(
         self,
         run_id: str,
         key: str,
         value: float,
-        step: int = 0,
+        *,
+        step: int | None = None,
+        synchronous: bool | None = None,
     ) -> None:
         if self.fail:
             raise RuntimeError("deliberate MLflow write defect")
         self.calls.append((run_id, key, value, step))
+        self.synchronous_seen.append(synchronous)
+
+    def set_tag(
+        self,
+        run_id: str,
+        key: str,
+        value: str,
+        *,
+        synchronous: bool | None = None,
+    ) -> None:
+        del run_id, key, value, synchronous
+
+    def log_artifact(
+        self,
+        run_id: str,
+        local_path: str,
+        artifact_path: str | None = None,
+    ) -> None:
+        del run_id, local_path, artifact_path
+
+
+class _LogMetricOnlyClient:
+    """The retracted ``D1MlflowMetricClient`` shape: a client, not a ``MetricSink``."""
+
+    def log_metric(self, run_id: str, key: str, value: float, step: int = 0) -> None:
+        del run_id, key, value, step
+
+
+class _CapturingSink:
+    """A non-MLflow ``MetricSink``: the observer must accept any port implementation."""
+
+    def __init__(self) -> None:
+        self.records: list[Mapping[str, Any]] = []
+
+    def log(self, record: Mapping[str, Any]) -> None:
+        self.records.append(record)
+
+    def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
+        del path, artifact_path
+
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        del tags
+
+    def finish(self, *, status: str = "FINISHED") -> None:
+        del status
+
+
+class _FixedExtractor:
+    def __init__(self, result: ExtractedMetrics | None) -> None:
+        self.result = result
+
+    def extract(self, event: D1JournalEvent) -> ExtractedMetrics | None:
+        del event
+        return self.result
+
+
+def _strict_observer(client: _RecordingMlflowClient) -> D1MlflowObserver:
+    return D1MlflowObserver(sink=StrictMlflowSink(client=client, run_id="mlflow-run-123"))
 
 
 def _started_journal(
@@ -207,13 +281,18 @@ def test_mlflow_observer_projects_only_registered_scalars_at_journal_step(
     tmp_path: Path,
 ) -> None:
     client = _RecordingMlflowClient()
-    observer = D1MlflowObserver(client=client, run_id="mlflow-run-123")
+    observer = _strict_observer(client)
     journal = _started_journal(tmp_path / "run.jsonl", observer)
     event = _eval_event()
+    expected = D1MetricExtractor().extract(event)
+    assert expected is not None and expected.metrics
 
     journal.append(event)
 
     metrics = {key: value for _run_id, key, value, _step in client.calls}
+    assert set(metrics) == set(expected.metrics)
+    assert metrics == dict(expected.metrics)
+    assert len(client.calls) == len(expected.metrics)
     assert metrics["d1/quality/measured/nats_per_byte"] == 1.2345678901234567
     assert metrics["d1/quality/derived_from_measured/effective_rank"] == 7.75
     assert metrics["d1/quality/derived_from_measured/predicted_rms_l2_norm"] == 0.55
@@ -222,6 +301,8 @@ def test_mlflow_observer_projects_only_registered_scalars_at_journal_step(
     assert metrics["d1/cursor/measured/eval_index"] == 3.0
     assert all(run_id == "mlflow-run-123" for run_id, *_rest in client.calls)
     assert all(step == event.successful_step for *_rest, step in client.calls)
+    assert expected.step == event.successful_step
+    assert all(flag is True for flag in client.synchronous_seen)
     assert not any("state_variance" in key or "covariance" in key for key in metrics)
     assert not any("gpu_" in key or "flops" in key or "cost" in key for key in metrics)
     assert read_journal(tmp_path / "run.jsonl")[-1] == event
@@ -230,10 +311,7 @@ def test_mlflow_observer_projects_only_registered_scalars_at_journal_step(
 
 def test_mlflow_observer_failure_propagates_after_event_is_durable(tmp_path: Path) -> None:
     client = _RecordingMlflowClient(fail=True)
-    journal = _started_journal(
-        tmp_path / "run.jsonl",
-        D1MlflowObserver(client=client, run_id="mlflow-run-123"),
-    )
+    journal = _started_journal(tmp_path / "run.jsonl", _strict_observer(client))
     event = _eval_event()
 
     with pytest.raises(RuntimeError, match="deliberate MLflow write defect"):
@@ -294,16 +372,107 @@ def test_observed_journal_rejects_invalid_observer_and_mlflow_run_identity(
             _event(JournalEventKind.RUN_START, 0, 0),
             observer=object(),  # type: ignore[arg-type]
         )
-    with pytest.raises(ValueError, match="run_id"):
-        D1MlflowObserver(client=_RecordingMlflowClient(), run_id=" ")
+    for bad_run_id in (" ", "", 7):
+        with pytest.raises(ValueError, match="run_id"):
+            StrictMlflowSink(
+                client=_RecordingMlflowClient(),
+                run_id=bad_run_id,  # type: ignore[arg-type]
+            )
 
 
 def test_mlflow_observer_refuses_an_extractor_without_extract() -> None:
     """The runtime guard survives the static narrowing, message byte-identical."""
     with pytest.raises(TypeError) as exc_info:
         D1MlflowObserver(
-            client=_RecordingMlflowClient(),
-            run_id="run-1",
+            sink=_CapturingSink(),
             extractor=object(),  # type: ignore[arg-type]
         )
     assert str(exc_info.value) == "extractor must implement MetricExtractor"
+
+
+def test_mlflow_observer_refuses_a_non_sink_naming_the_port() -> None:
+    """A construction-time TypeError that names the port, not just any TypeError.
+
+    A bare ``pytest.raises(TypeError)`` would also pass for an unexpected keyword.
+    """
+    for not_a_sink in (_LogMetricOnlyClient(), _RecordingMlflowClient(), object(), None):
+        with pytest.raises(TypeError, match="MetricSink"):
+            D1MlflowObserver(sink=not_a_sink)  # type: ignore[arg-type]
+
+
+def test_mlflow_observer_accepts_any_metric_sink_and_hands_it_a_plain_projection() -> None:
+    sink = _CapturingSink()
+    assert isinstance(sink, MetricSink)
+    observer = D1MlflowObserver(sink=sink)
+    event = _eval_event()
+    expected = D1MetricExtractor().extract(event)
+    assert expected is not None
+
+    observer.observe(event)
+
+    (record,) = sink.records
+    assert type(record) is dict
+    assert set(record) == {SCALAR_PROJECTION_KEY}
+    body = record[SCALAR_PROJECTION_KEY]
+    assert type(body) is dict and type(body["metrics"]) is dict
+    assert body["step"] == event.successful_step == expected.step
+    assert body["metrics"] == dict(expected.metrics)
+    # Not recognizable as any existing record kind, and plain JSON.
+    assert "event" not in record and "schema" not in record
+    assert json.loads(json.dumps(record)) == record
+
+
+def test_mlflow_observer_makes_no_sink_call_when_the_extractor_returns_none() -> None:
+    sink = _CapturingSink()
+    D1MlflowObserver(sink=sink, extractor=_FixedExtractor(None)).observe(_eval_event())
+    assert sink.records == []
+
+
+def test_mlflow_observer_hands_a_zero_metric_projection_to_the_sink_which_writes_nothing() -> None:
+    """Only ``None`` means "nothing to project"; a zero-metric record is the sink's call."""
+    capturing = _CapturingSink()
+    empty = _FixedExtractor(ExtractedMetrics(step=1, metrics={}))
+    D1MlflowObserver(sink=capturing, extractor=empty).observe(_eval_event())
+    assert len(capturing.records) == 1
+
+    client = _RecordingMlflowClient()
+    strict = StrictMlflowSink(client=client, run_id="mlflow-run-123")
+    D1MlflowObserver(sink=strict, extractor=empty).observe(_eval_event())
+    assert client.calls == []
+
+
+def test_mlflow_observer_does_not_swallow_a_sink_failure() -> None:
+    class _FailingSink(_CapturingSink):
+        def log(self, record: Mapping[str, Any]) -> None:
+            raise RuntimeError("deliberate sink defect")
+
+    with pytest.raises(RuntimeError, match="deliberate sink defect"):
+        D1MlflowObserver(sink=_FailingSink()).observe(_eval_event())
+
+
+def test_observer_module_imports_no_mlflow_adapter_at_any_scope() -> None:
+    """Dependency direction (gate-1 constraint 9): the observer reaches the sink only by port.
+
+    It builds the projection record itself, so it must not import ``adapters.mlflow`` or
+    ``adapters.mlflow_strict`` (nor ``mlflow`` itself) at module or function scope. The
+    key-literal drift this creates is caught by
+    ``test_mlflow_observer_accepts_any_metric_sink_and_hands_it_a_plain_projection`` and
+    by the observer tests that run through the real ``StrictMlflowSink``.
+    """
+    tree = ast.parse(Path(d1_observability.__file__ or "").read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            # The module AND each name qualified by it: ``from pkg import mlflow_strict``
+            # binds the submodule ``pkg.mlflow_strict`` and names only ``pkg`` as module.
+            base = node.module or ""
+            imported.add(base)
+            imported.update(f"{base}.{alias.name}" if base else alias.name for alias in node.names)
+    offenders = {
+        name
+        for name in imported
+        if name.split(".")[0] == "mlflow" or name.rsplit(".", 1)[-1].startswith("mlflow")
+    }
+    assert offenders == set()

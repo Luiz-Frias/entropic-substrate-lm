@@ -358,8 +358,8 @@ d1_sink = build_sink_for_run(
 h_extract_bad = h_extractor.extract("x")  # H-MUST-FAIL
 legacy_extract_bad = legacy_extractor.extract(1)  # LEGACY-MUST-FAIL
 # D1MlflowObserver with incompatible extractor
-d1_observer_bad = D1MlflowObserver(client=object(), run_id="r", extractor=h_extractor)  # D1-OBSERVER-MUST-FAIL
-d1_observer_ok = D1MlflowObserver(client=object(), run_id="r", extractor=d1_extractor)
+d1_observer_bad = D1MlflowObserver(sink=default_sink, extractor=h_extractor)  # D1-OBSERVER-MUST-FAIL
+d1_observer_ok = D1MlflowObserver(sink=default_sink, extractor=d1_extractor)
 
 """
 

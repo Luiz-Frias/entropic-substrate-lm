@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from entropic_substrate.ladder.capture.adapters.d1_tracking import D1MetricExtractor
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import ExtractedMetrics
 from entropic_substrate.ladder.capture.records.d1_journal import (
     AuthoritativeRunJournal,
@@ -18,6 +19,8 @@ from entropic_substrate.ladder.capture.records.d1_journal_values import (
     FrozenJson,
     JournalCheckpointState,
 )
+
+_SCALAR_PROJECTION_KEY = "scalar_projection"
 
 __all__ = [
     "AuthoritativeJournalOnlyObserver",
@@ -45,7 +48,19 @@ class D1JournalObserver(Protocol):
 
 @runtime_checkable
 class D1MlflowMetricClient(Protocol):
-    """Strict slice of ``MlflowClient`` used by the D1 measurement mirror."""
+    """Strict slice of ``MlflowClient`` used by the D1 measurement mirror.
+
+    RETRACTED 2026-10-22 (FOR-1552): ``D1MlflowObserver`` no longer takes this client.
+    It takes a :class:`~entropic_substrate.ladder.capture.ports.metric_sink.MetricSink`,
+    and the fail-loud MLflow path is
+    :class:`~entropic_substrate.ladder.capture.adapters.mlflow_strict.StrictMlflowSink`,
+    whose own client protocol carries ``synchronous`` (this one cannot). Kept public and
+    unchanged for one read-old window so existing importers keep resolving; nothing in
+    ``src`` consumes it. Retirement trigger, checkable: delete this class and its
+    ``__all__`` entry in the first cut where
+    ``grep -rn D1MlflowMetricClient src tests`` finds no hit outside this module and
+    the ``mlflow_strict.py`` docstring.
+    """
 
     def log_metric(
         self,
@@ -75,6 +90,12 @@ def _require_observer(observer: object) -> D1JournalObserver:
     return observer
 
 
+def _require_sink(sink: object) -> MetricSink:
+    if not isinstance(sink, MetricSink):
+        raise TypeError("sink must implement the MetricSink port")
+    return sink
+
+
 def _require_extractor(extractor: object) -> D1EventMetricExtractor:
     if not isinstance(extractor, D1EventMetricExtractor):
         raise TypeError("extractor must implement MetricExtractor")
@@ -82,28 +103,37 @@ def _require_extractor(extractor: object) -> D1EventMetricExtractor:
 
 
 class D1MlflowObserver:
-    """Strictly write the registered scalar projection of one durable event.
+    """Project the registered scalars of one durable event onto a ``MetricSink``.
 
-    Unlike the legacy best-effort MLflow sink, this measurement-path adapter
-    does not catch extractor or client errors. The caller receives the failure
-    after the authoritative journal has already synchronized the source event.
+    The observer adds no guard and swallows nothing: an extractor failure or a sink
+    failure reaches the caller after the authoritative journal has already synchronized
+    the source event. Whether a tracking failure is loud therefore depends on the sink
+    behind it. The measurement path is fail-loud only behind
+    :class:`~entropic_substrate.ladder.capture.adapters.mlflow_strict.StrictMlflowSink`.
+    Behind ``MlflowSink`` the projection record is dropped UNCOUNTED: MEASURED 2026-10-22,
+    its default ``LegacyMetricExtractor`` and ``HTrainingStepExtractor`` both extract the
+    projection to ``None``, and ``MlflowSink.log`` returns on ``None`` without touching
+    ``_failed_writes``. ``JsonlSink`` appends the record verbatim.
+
+    RETRACTED 2026-10-22 (FOR-1552): the earlier sentence "a best-effort sink counts and
+    continues, by its own contract" is false for this record; it holds only for a write
+    the sink accepted and then failed.
+
+    RETRACTED 2026-10-22 (FOR-1552): the earlier docstring claimed this adapter, unlike
+    the best-effort MLflow sink, did not catch client errors. That held only for the
+    removed ``client=`` composition; with an arbitrary ``MetricSink`` it is false, so the
+    claim is withdrawn rather than restated.
     """
 
-    __slots__ = ("_client", "_extractor", "_run_id")
+    __slots__ = ("_extractor", "_sink")
 
     def __init__(
         self,
         *,
-        client: object,
-        run_id: str,
+        sink: MetricSink,
         extractor: D1EventMetricExtractor | None = None,
     ) -> None:
-        if not isinstance(client, D1MlflowMetricClient):
-            raise TypeError("client must implement the MLflow metric client contract")
-        if type(run_id) is not str or not run_id.strip():
-            raise ValueError("run_id must be a non-empty string")
-        self._client = client
-        self._run_id = run_id
+        self._sink = _require_sink(sink)
         self._extractor = _require_extractor(
             extractor if extractor is not None else D1MetricExtractor()
         )
@@ -112,13 +142,12 @@ class D1MlflowObserver:
         extracted = self._extractor.extract(event)
         if extracted is None:
             return
-        for key, value in extracted.metrics.items():
-            self._client.log_metric(
-                self._run_id,
-                key,
-                value,
-                step=extracted.step,
-            )
+        # The shape StrictMlflowSink validates, built here so this module imports no
+        # adapter: a plain mapping, no ``schema`` key, no ``event`` key. Drift from the
+        # sink's key is pinned by tests, not by a shared import.
+        self._sink.log(
+            {_SCALAR_PROJECTION_KEY: {"step": extracted.step, "metrics": dict(extracted.metrics)}}
+        )
 
 
 class ObservedD1Journal:
