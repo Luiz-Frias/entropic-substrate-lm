@@ -47,6 +47,7 @@ from entropic_substrate.ladder.capture.reader.sinks import (
     mlflow_enabled,
 )
 from helpers import tiny_config
+from import_scan_fixtures import imported_names
 
 pytestmark = pytest.mark.unit
 
@@ -837,7 +838,6 @@ def test_sinks_module_has_no_unconditional_psutil_or_pynvml_import() -> None:
     editor's run config, a direct ``pytest`` invocation from elsewhere), not
     just the one this suite happens to always be run from today.
     """
-    import ast
 
     import entropic_substrate.ladder.capture.adapters.mlflow as mlflow_adapter_module
 
@@ -874,7 +874,6 @@ def test_mlflow_adapter_module_never_binds_mlflow_at_module_scope() -> None:
     inside function bodies (module-level AST has zero ``import mlflow`` /
     ``from mlflow import ...`` statements) and ``__all__`` exports exactly
     ``MlflowSink`` -- never a submodule alias."""
-    import ast
 
     import entropic_substrate.ladder.capture.adapters.mlflow as mlflow_adapter_module
 
@@ -2131,17 +2130,7 @@ def test_strict_sink_refuses_a_blank_or_non_str_run_id_and_a_non_client() -> Non
 
 def test_strict_module_imports_no_mlflow_d1_threads_or_run_layer() -> None:
     """Structural pins for the S1 constraints, at ANY scope (function-level too)."""
-    tree = ast.parse(Path(mlflow_strict.__file__ or "").read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            # The module AND each name qualified by it: ``from pkg import d1_tracking``
-            # binds the submodule ``pkg.d1_tracking`` and names only ``pkg`` as module.
-            base = node.module or ""
-            imported.add(base)
-            imported.update(f"{base}.{alias.name}" if base else alias.name for alias in node.names)
+    imported = imported_names(mlflow_strict)
     assert not any(name.split(".")[0] == "mlflow" for name in imported)
     assert not any("d1_" in name or ".ladder.run" in name for name in imported)
     assert not imported & {"threading", "queue", "time", "asyncio"}

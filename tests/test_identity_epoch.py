@@ -599,6 +599,24 @@ carries ((3.12.13, 2.13.0) ``1c5ab1c6``, (3.12.14, 2.13.0+cpu) ``772843ac``, (3.
 2.13.0) ``32d2f51c``, (3.12.15, 2.13.0+cpu) ``a6f5ba48``) are retracted for this tree,
 not inherited. Source rows re-measured unchanged.
 
+Review round 1 re-pin (house rule 4, MEASURED 2026-10-25 by the conductor, follow-up
+branch ``fix/wave-c-review-r1`` on FOR-1674 ``3f563f89``): PR #385 review (CodeRabbit
+4369526052) found that ``RunSchedule`` admitted ``steps >= 2**24`` although
+``continuation_seed`` carries only 24 step bits, so the refusal came after training.
+``core.sentence.profile`` gains ``MAX_RUN_STEPS = 2**24 - 1`` checked in
+``RunSchedule.__post_init__``, and ``ladder.run.generation`` reads the same constant;
+label and member set unchanged, schema ids unchanged. The four checkpoint rows were
+recomputed with ``tools/regime_rows.py`` over THIS tree: (3.12.13, 2.13.0)
+``25140936058fe296772af5875138d1195a0b674c7786de8af315f5b13f89a2f7``, (3.12.14,
+2.13.0+cpu) ``2ef403d110c334a3dbc81ed53897df6b1fc6f1a25e48849a46e06ffcbb3c6063``,
+(3.12.15, 2.13.0)
+``fd307002c6904b101d79a65d21568688deab159306bf1246b76a5888f551b6ff``, (3.12.15,
+2.13.0+cpu) ``941f3aef0d9c2542419e6d775c9374e3636a322fda4f4704bd5bce27cb3864a3``. The
+FOR-1674 level values they replace ((3.12.13, 2.13.0) ``f518ccbf``, (3.12.14,
+2.13.0+cpu) ``a284e8fd``, (3.12.15, 2.13.0) ``5d286287``, (3.12.15, 2.13.0+cpu)
+``d45302eb``) are retracted for this tree, not silently overwritten. Source rows
+re-measured unchanged.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -796,19 +814,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "f518ccbf3c7e54fb5c8b04ed55f9eaccc740a23d377e3787b8fc31c06bbe751e",  # pragma: allowlist secret
+    ): "25140936058fe296772af5875138d1195a0b674c7786de8af315f5b13f89a2f7",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "a284e8fd544b321201e5cf37dbcf17a03f3985bed7cfd285b693649c49512e1a",  # pragma: allowlist secret
+    ): "2ef403d110c334a3dbc81ed53897df6b1fc6f1a25e48849a46e06ffcbb3c6063",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "5d28628730388bfd64dcdeb511f7dfac91d7043eeb56a4c431dd95e3cee1ebc0",  # pragma: allowlist secret
+    ): "fd307002c6904b101d79a65d21568688deab159306bf1246b76a5888f551b6ff",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "d45302eb616689b61e03404f1d8b98862c9dc58b558df6ffa78ebe4f83e0266b",  # pragma: allowlist secret
+    ): "941f3aef0d9c2542419e6d775c9374e3636a322fda4f4704bd5bce27cb3864a3",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

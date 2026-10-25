@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -42,6 +41,7 @@ from entropic_substrate.ladder.capture.resource.resource_work import ResourceWor
 from entropic_substrate.ladder.capture.resource.resource_work_codec import (
     resource_snapshot_to_mapping,
 )
+from import_scan_fixtures import imported_names
 
 pytestmark = pytest.mark.unit
 
@@ -459,17 +459,7 @@ def test_observer_module_imports_no_mlflow_adapter_at_any_scope() -> None:
     ``test_mlflow_observer_accepts_any_metric_sink_and_hands_it_a_plain_projection`` and
     by the observer tests that run through the real ``StrictMlflowSink``.
     """
-    tree = ast.parse(Path(d1_observability.__file__ or "").read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            # The module AND each name qualified by it: ``from pkg import mlflow_strict``
-            # binds the submodule ``pkg.mlflow_strict`` and names only ``pkg`` as module.
-            base = node.module or ""
-            imported.add(base)
-            imported.update(f"{base}.{alias.name}" if base else alias.name for alias in node.names)
+    imported = imported_names(d1_observability)
     offenders = {
         name
         for name in imported

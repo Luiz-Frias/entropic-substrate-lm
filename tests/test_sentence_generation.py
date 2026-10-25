@@ -685,6 +685,41 @@ def test_pause_inside_the_second_continuation_resumes_to_the_whole_run(
     assert done["continuations"][0]["snapshot"] == mid["continuations"][0]["snapshot"]
 
 
+def test_a_paused_v3_parent_resumes_again_and_still_matches_the_whole_run(
+    generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
+) -> None:
+    # PR #381 review (CodeRabbit 4370049138): resume a receipt whose own parent is a
+    # paused v3 receipt. Two resumes in a row must reproduce the uninterrupted run.
+    template, output, training, receipt = generated
+    whole = _read(generated, receipt)
+    total = sum(_continuation_lengths(whole))
+    assert total >= 3, "the pinned seeds must leave room for two interior pauses"
+    first = run_probe_generation(
+        output, training, template.profile, template.source_root, pause_after=1, **ARGS
+    )
+    assert first.status == "paused"
+    second = run_probe_generation(
+        output,
+        training,
+        template.profile,
+        template.source_root,
+        resume=first.receipt,
+        pause_after=total - 1,
+        **ARGS,
+    )
+    assert second.status == "paused"
+    mid = read_json(output, second.receipt, max_bytes=LIMIT)
+    parent = read_json(output, artifact_from_mapping(mid["parent_receipt"]), max_bytes=LIMIT)
+    assert parent["schema"] == "h-generation-receipt-v3" and parent["status"] == "paused"
+    _read(generated, second.receipt)  # a v3 receipt with a v3 parent is admitted
+    final = run_probe_generation(
+        output, training, template.profile, template.source_root, resume=second.receipt, **ARGS
+    )
+    done = _read(generated, final.receipt)
+    assert done["status"] == "generation_complete"
+    assert _law_only(done) == _law_only(whole) and done["summary"] == whole["summary"]
+
+
 def test_pause_at_the_last_observation_of_the_first_continuation_is_still_paused(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
