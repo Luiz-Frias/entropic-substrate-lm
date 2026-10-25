@@ -27,7 +27,6 @@ Subcommands
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import os
 import re
@@ -40,8 +39,20 @@ import yaml
 
 if TYPE_CHECKING:
     from entropic_substrate.composition.wiring.d1_cli import D1CliApplication
-    from entropic_substrate.ladder.analyze.embedding_geometry import CheckpointModel
 
+from entropic_substrate.composition.entrypoints.embedding_geometry_cli import (
+    cached_reconstruct_init_table,
+    compute_embedding_geometry,
+    init_table_cache_key,
+    write_embedding_geometry_report,
+)
+from entropic_substrate.composition.entrypoints.h_analysis_cli import (
+    H_LANE,
+    add_h_analysis_lanes,
+    cmd_aggregate_h,
+    cmd_charts_h,
+    cmd_eval_h,
+)
 from entropic_substrate.core.substrate.fisher import build_fisher_init, save_init
 from entropic_substrate.historical.e_series.field_pretrain import (
     add_field_pretrain_parser,
@@ -113,96 +124,6 @@ def _override_kv(item: str) -> tuple[str, str, Any]:
         # mantissa with an exponent cannot be an int or anything else).
         value = float(value)
     return section, field_name, value
-
-
-def _add_h_analysis_lanes(
-    evaluate: argparse.ArgumentParser,
-    aggregate_p: argparse.ArgumentParser,
-    charts: argparse.ArgumentParser,
-) -> None:
-    """The H analysis surface (FOR-1648, operator door ruling B, conductor DN-1648-B).
-
-    Three optional nested sub-subparsers named ``h``, one on each EXISTING host parser, so
-    the frozen top-level subcommand set (tests/test_cli_surface.py) is untouched. Every
-    option an ``h`` parser declares has a dest prefixed ``h_``, disjoint from every dest of
-    its host: argparse writes a child's defaults over the parent's parsed values, so a
-    shared dest would silently clobber a host option (MEASURED on 3.12:
-    ``charts --out-dir X h`` came back with the child's default).
-    """
-
-    def add_run_inputs(parser: argparse.ArgumentParser, *, many: bool) -> None:
-        parser.add_argument(
-            "--run",
-            dest="h_run",
-            nargs=2,
-            metavar=("METRICS_JSONL", "WORKER_LOG_JSONL"),
-            type=Path,
-            required=True,
-            **({"action": "append"} if many else {}),
-            help=(
-                "one captured H run: its metrics.jsonl and its worker-log.jsonl; the two are "
-                "bound by request_sha256, never by file name"
-                + (" (repeatable, one per arm)" if many else "")
-            ),
-        )
-
-    def add_arms(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--arm",
-            dest="h_arm",
-            action="append",
-            required=True,
-            metavar="IDENTITY=LABEL",
-            help=(
-                "label one run by its full 64-hex profile identity (repeatable); an unknown "
-                "identity or an unlabelled run is refused, labels are never inferred"
-            ),
-        )
-
-    aggregate_lane = aggregate_p.add_subparsers(
-        dest="aggregate_lane", required=False, metavar="LANE"
-    )
-    h_aggregate = aggregate_lane.add_parser(
-        "h", help="aggregate captured H runs, paired by global step (offline, no MLflow)"
-    )
-    add_run_inputs(h_aggregate, many=True)
-    add_arms(h_aggregate)
-
-    charts_lane = charts.add_subparsers(dest="charts_lane", required=False, metavar="LANE")
-    h_charts = charts_lane.add_parser(
-        "h", help="render the H chart set over captured runs; --attach publishes to MLflow"
-    )
-    add_run_inputs(h_charts, many=True)
-    add_arms(h_charts)
-    h_charts.add_argument(
-        "--out-dir", dest="h_out_dir", type=Path, default=Path("results/h-charts")
-    )
-    h_charts.add_argument(
-        "--attach",
-        dest="h_attach",
-        action="store_true",
-        help="attach the charts to each arm's MLflow run (needs a tracking URI; fails loud)",
-    )
-    h_charts.add_argument(
-        "--tracking-uri",
-        dest="h_tracking_uri",
-        default=None,
-        help=f"defaults to ${MLFLOW_TRACKING_ENV}; only read with --attach",
-    )
-
-    eval_lane = evaluate.add_subparsers(dest="eval_lane", required=False, metavar="LANE")
-    h_eval = eval_lane.add_parser(
-        "h", help="report one captured H run (offline, no MLflow); prints one JSON document"
-    )
-    add_run_inputs(h_eval, many=False)
-    h_eval.add_argument(
-        "--receipt-root",
-        dest="h_receipt_root",
-        type=Path,
-        default=None,
-        help="with --receipt-manifest: also verify the training receipt via h-inspect-training",
-    )
-    h_eval.add_argument("--receipt-manifest", dest="h_receipt_manifest", default=None)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -361,7 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"defaults to ${MLFLOW_TRACKING_ENV}; omit both to render locally only",
     )
 
-    _add_h_analysis_lanes(evaluate, aggregate_p, charts)
+    add_h_analysis_lanes(evaluate, aggregate_p, charts)
 
     geometry = sub.add_parser(
         "embedding-geometry",
@@ -600,8 +521,8 @@ def cmd_init_fisher(args: argparse.Namespace) -> int:
 
 def cmd_eval(args: argparse.Namespace) -> int:
     """Handle ``eval``."""
-    if getattr(args, "eval_lane", None) == _H_LANE:
-        return _cmd_eval_h(args)
+    if getattr(args, "eval_lane", None) == H_LANE:
+        return cmd_eval_h(args, _emit_h_document)
     if args.ckpt is None:
         # K2: the compensation for --ckpt no longer being argparse-required. Same exit
         # code (2) as argparse's own refusal; only the text and mechanism differ.
@@ -727,8 +648,8 @@ def cmd_capture_results(args: argparse.Namespace) -> int:
 
 def cmd_mlflow_aggregate(args: argparse.Namespace) -> int:
     """Handle ``mlflow-aggregate``."""
-    if getattr(args, "aggregate_lane", None) == _H_LANE:
-        return _cmd_aggregate_h(args)
+    if getattr(args, "aggregate_lane", None) == H_LANE:
+        return cmd_aggregate_h(args, _emit_h_document)
     tracking_uri = args.tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
     if not tracking_uri:
         logger.error(
@@ -799,8 +720,8 @@ def cmd_charts(args: argparse.Namespace) -> int:
     INVARIANTS: local rendering never depends on the tracking server) —
     only the attach step below is gated on a reachable tracking URI.
     """
-    if getattr(args, "charts_lane", None) == _H_LANE:
-        return _cmd_charts_h(args)
+    if getattr(args, "charts_lane", None) == H_LANE:
+        return cmd_charts_h(args, _emit_h_document)
     from entropic_substrate.ladder.analyze import charts as chart_fns
     from entropic_substrate.ladder.analyze.series import (
         load_eval_run,
@@ -934,421 +855,34 @@ def cmd_charts(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_ckpts_by_seed(paths: list[Path], *, label: str) -> dict[int, CheckpointModel]:
-    """Load each checkpoint in ``paths`` and key it by ``config.train.seed``.
-
-    Refuses (ValueError, a controlled caller mistake — see ``cmd_embedding_
-    geometry``'s own catch) two checkpoints on the SAME side sharing a seed:
-    a silent dict-comprehension clobber there would pick whichever path
-    happened to load last with no signal to the operator that the other one
-    was ever discarded.
-    """
-    from entropic_substrate.ladder.analyze.embedding_geometry import load_checkpoint_model
-
-    loaded: dict[int, CheckpointModel] = {}
-    for path in paths:
-        ckpt = load_checkpoint_model(path)
-        seed = ckpt.config.train.seed
-        if seed in loaded:
-            msg = (
-                f"embedding-geometry: {label} has two checkpoints at seed {seed} "
-                f"({loaded[seed].path} and {path}) — ambiguous pairing"
-            )
-            raise ValueError(msg)
-        loaded[seed] = ckpt
-    return loaded
-
-
-def _init_table_cache_key(cfg: Config) -> tuple[object, ...]:
-    """Hashable identity for the subset of ``cfg`` that determines
-    ``reconstruct_init_table``'s output (FOR-920).
-
-    Two configs sharing this key are guaranteed to reconstruct to the SAME
-    table: ``embedding_init``/``d_model``/``tokenizer``/``vocab_size`` (the
-    ``vocab_size_for`` inputs the ``random_sphere`` arm draws against —
-    seed-0-shared by construction, per ``reconstruct_init_table``'s own
-    docstring), ``fisher_init_path`` (``None`` selects the corpus-rebuild
-    fallback below), and the FULL ``DataConfig`` identity — the fallback
-    reads ``corpus_byte_stream(cfg.data, ...)``, so any data-config field
-    could in principle change the rebuilt corpus stream; including the
-    whole tuple (``DataConfig`` is small and all-primitive) costs nothing
-    and avoids a class of "the fallback grew a new data-dependent knob and
-    nobody widened the cache key" bugs.
-
-    ``cfg.train`` is deliberately EXCLUDED: nothing in
-    ``reconstruct_init_table`` reads it — the random-arm seed-0-sharing pin
-    (this module's own finding #2, pinned in
-    ``test_reconstruct_init_table_random_sphere_shares_seed_0_across_
-    train_seeds``) is exactly the guarantee that ``cfg.train.seed`` must
-    NOT appear here, since two seeds of the same arm are the common case
-    this cache exists to collapse.
-    """
-    model_cfg = cfg.model
-    return (
-        model_cfg.embedding_init,
-        model_cfg.d_model,
-        model_cfg.tokenizer,
-        model_cfg.vocab_size,
-        model_cfg.fisher_init_path,
-        dataclasses.astuple(cfg.data),
-    )
-
-
-def _cached_reconstruct_init_table(
-    cache: dict[tuple[object, ...], torch.Tensor], cfg: Config
-) -> torch.Tensor:
-    """Memoized ``reconstruct_init_table``, scoped to the ``cache`` dict the
-    caller owns (FOR-920).
-
-    ``cmd_embedding_geometry`` creates a FRESH ``cache`` per invocation —
-    never a module-level or disk cache — so nothing here leaks reconstructed
-    tables across separate CLI runs. A multi-seed sweep pairs N seeds of the
-    SAME arm; every one of those seeds' configs shares an identical
-    :func:`_init_table_cache_key` (``train.seed`` is excluded by
-    construction), so without this memoization every seed rebuilt the
-    IDENTICAL table redundantly — measured 2026-08-19: 9 fisher-arm rebuilds
-    x ~7.5 min each (the 20MB corpus-stream fallback in
-    ``reconstruct_init_table``) = ~68 min duplicated work in one invocation.
-
-    Returns a CLONE on every call, including the first (cache miss): two
-    callers holding "the same" cached table must never be able to corrupt
-    each other's view by mutating their own copy in place.
-    """
-    from entropic_substrate.ladder.analyze import embedding_geometry as eg
-
-    key = _init_table_cache_key(cfg)
-    if key not in cache:
-        cache[key] = eg.reconstruct_init_table(cfg).clone()
-    return cache[key].clone()
-
-
 def cmd_embedding_geometry(args: argparse.Namespace) -> int:
-    """Handle ``embedding-geometry``: E1.5-D diagnostics on captured checkpoints.
+    """Handle ``embedding-geometry``; the diagnostics live in ``embedding_geometry_cli``.
 
-    ``--ckpt-a``/``--ckpt-b`` are repeatable, seed-paired lists — the same
-    shape ``charts``'s ``--e1-fisher``/``--e1-control`` already uses. A seed
-    present on only one side is reported (never silently dropped) and
-    excluded from every pairwise diagnostic; zero paired seeds is a
-    controlled refusal (exit 2), same idiom as ``charts``'s "no chart
-    inputs" refusal.
+    This shell owns the one machine-consumed ``--json`` print, which the print ban
+    allows only in this module.
     """
-    if not args.ckpt_a or not args.ckpt_b:
-        logger.error("embedding-geometry: --ckpt-a and --ckpt-b must both be given (repeatable)")
+    run = compute_embedding_geometry(args)
+    if run is None:
         return 2
-
-    from entropic_substrate.ladder.analyze import embedding_geometry as eg
-
-    try:
-        loaded_a = _load_ckpts_by_seed(args.ckpt_a, label="--ckpt-a")
-        loaded_b = _load_ckpts_by_seed(args.ckpt_b, label="--ckpt-b")
-        seeds_a, seeds_b = set(loaded_a), set(loaded_b)
-        common = sorted(seeds_a & seeds_b)
-        unpaired = sorted(seeds_a ^ seeds_b)
-        if unpaired:
-            logger.warning(
-                "embedding-geometry: seed(s) present on only one side — excluded from "
-                f"pairing, reported not silently dropped: {unpaired}"
-            )
-        if not common:
-            logger.error(
-                "embedding-geometry: no seed-paired checkpoints between --ckpt-a and --ckpt-b"
-            )
-            return 2
-
-        per_seed_raw: list[dict[str, Any]] = []
-        # In-memory, per-invocation only (FOR-920) — a fresh dict created
-        # right here, never module-level or disk-backed, so nothing leaks
-        # across separate CLI runs. See _cached_reconstruct_init_table's
-        # own docstring for why this exists.
-        init_table_cache: dict[tuple[object, ...], torch.Tensor] = {}
-        for seed in common:
-            ckpt_a, ckpt_b = loaded_a[seed], loaded_b[seed]
-            # L2 finding, 2026-08-19: under state_source="field" (E1.5c),
-            # ckpt.model.wte.weight is only the output classifier — the
-            # real input representation is FieldEncoder.wte
-            # (field_encoder.py), never read by wte-based diagnostics
-            # below. Mirrors backbone.py's own gram_lambda (~109-131) and
-            # embedding_freeze (~223-237) guards for this exact axis:
-            # fail loud here rather than silently emit a plausible-looking
-            # but wrong diagnostic (a paired fisher-shaped field checkpoint
-            # passes shape validation, so nothing else would catch this).
-            for label, ckpt in (("--ckpt-a", ckpt_a), ("--ckpt-b", ckpt_b)):
-                state_source = ckpt.config.model.state_source
-                if state_source != "table":
-                    msg = (
-                        f"embedding-geometry: {label} seed {seed} has "
-                        f"state_source={state_source!r} — the wte.weight-based "
-                        "diagnostics (angular_drift, gram_retention, "
-                        "cross_arm_gram_agreement, procrustes_align) require "
-                        "state_source='table': under state_source='field' "
-                        "self.wte.weight is not the input representation "
-                        "(FieldEncoder.wte is), so these diagnostics would "
-                        "silently measure the wrong tensor"
-                    )
-                    raise ValueError(msg)
-            final_a = ckpt_a.model.wte.weight.detach()
-            final_b = ckpt_b.model.wte.weight.detach()
-            # Reconstruct once per arm PER DISTINCT CONFIG — not once per
-            # diagnostic (angular_drift and gram_retention both want the
-            # SAME table) and not once per SEED either (FOR-920): a
-            # multi-seed sweep pairs N seeds of the same arm, whose configs
-            # share an identical init-table identity regardless of
-            # train.seed, so the fisher_sqrt/no-saved-path fallback's 20MB
-            # corpus-stream rebuild (reconstruct_init_table's own
-            # docstring) would otherwise redo the SAME rebuild once per
-            # seed for nothing. _cached_reconstruct_init_table memoizes on
-            # _init_table_cache_key within this one invocation's
-            # init_table_cache — never across invocations.
-            init_a = _cached_reconstruct_init_table(init_table_cache, ckpt_a.config)
-            init_b = _cached_reconstruct_init_table(init_table_cache, ckpt_b.config)
-            drift_a = eg.angular_drift(init_a, final_a)
-            drift_b = eg.angular_drift(init_b, final_b)
-            retention_a = eg.gram_retention(init_a, final_a)
-            retention_b = eg.gram_retention(init_b, final_b)
-            entry: dict[str, Any] = {
-                "seed": seed,
-                "drift_a": drift_a,
-                "drift_b": drift_b,
-                "retention_a": retention_a,
-                "retention_b": retention_b,
-                "agreement": eg.cross_arm_gram_agreement(final_a, final_b),
-                "procrustes": eg.procrustes_align(final_a, final_b),
-                "functional_divergence": (
-                    None
-                    if args.no_functional
-                    else eg.functional_divergence(ckpt_a, ckpt_b, num_batches=args.num_eval_batches)
-                ),
-            }
-            per_seed_raw.append(entry)
-    except ValueError as exc:
-        # A diagnostic-function input-validation refusal (mismatched shapes,
-        # embedding_init="default" with no init table to reconstruct,
-        # DataConfig/tokenizer mismatch in functional_divergence, or the
-        # duplicate-seed guard above) — a caller mistake, not a defect in
-        # this tool. Same idiom as cmd_charts's own bare-ValueError catch.
-        logger.error(f"embedding-geometry: {exc}")
-        return 2
-
-    def _arm_summary(drift: Any, retention: Any) -> dict[str, Any]:
-        return {
-            "angular_drift_mean": float(drift.mean()),
-            "angular_drift_max": float(drift.max()),
-            "gram_retention_pearson": retention.pearson_r,
-            "gram_retention_spearman": retention.spearman_r,
-        }
-
-    results_payload: list[dict[str, Any]] = []
-    for raw in per_seed_raw:
-        payload_entry: dict[str, Any] = {
-            "seed": raw["seed"],
-            "arm_a": _arm_summary(raw["drift_a"], raw["retention_a"]),
-            "arm_b": _arm_summary(raw["drift_b"], raw["retention_b"]),
-            "cross_arm_gram_agreement": raw["agreement"],
-            "procrustes_residual": raw["procrustes"].residual,
-        }
-        fd = raw["functional_divergence"]
-        if fd is not None:
-            payload_entry["functional_divergence"] = {
-                "kl_a_to_b": fd.kl_a_to_b,
-                "kl_b_to_a": fd.kl_b_to_a,
-                "js": fd.js,
-                "n_positions": fd.n_positions,
-            }
-        results_payload.append(payload_entry)
-
-    payload = {"paired_seeds": common, "unpaired_seeds": unpaired, "results": results_payload}
     if args.json:
         # MACHINE-CONSUMED STDOUT, NOT LOGS — same idiom as cmd_eval's --json.
-        print(json.dumps(payload, sort_keys=True))
+        print(json.dumps(run.payload, sort_keys=True))
         return 0
-
-    for entry in results_payload:
-        logger.bind(report=True).info(f"seed {entry['seed']}: {entry}")
-
-    from entropic_substrate.ladder.analyze import charts as chart_fns
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    drift_series = [(f"seed{raw['seed']}-a", raw["drift_a"]) for raw in per_seed_raw] + [
-        (f"seed{raw['seed']}-b", raw["drift_b"]) for raw in per_seed_raw
-    ]
-    retention_points = [(f"seed{raw['seed']}-a", raw["retention_a"]) for raw in per_seed_raw] + [
-        (f"seed{raw['seed']}-b", raw["retention_b"]) for raw in per_seed_raw
-    ]
-    figures = {
-        "fig_e15d_angular_drift": chart_fns.fig_e15d_angular_drift(drift_series),
-        "fig_e15d_gram_retention": chart_fns.fig_e15d_gram_retention(retention_points),
-    }
-    for name, figure in figures.items():
-        out_path = args.out_dir / f"{name}.png"
-        figure.savefig(out_path, dpi=150)
-        logger.info(f"embedding-geometry: wrote {out_path}")
+    write_embedding_geometry_report(args, run)
     return 0
 
 
-# ---------------------------------------------------------------------------
-# H analysis lane handlers (FOR-1648, DN-1648-B). Routed to from the three E handlers
-# above BEFORE any E gate (a tracking-URI check, an E input check), so an offline H
-# aggregate never demands a server. Every H module is imported inside these functions:
-# this module keeps no module-level import of ladder.analyze.h_*, matplotlib or mlflow.
-# Machine-consumed stdout is exactly ONE JSON document per invocation, printed here.
-# ---------------------------------------------------------------------------
-_H_LANE = "h"
-_EXIT_H_ATTACH_FAILED = 1
+# Re-exported under their historical names: tests/test_embedding_geometry.py takes both
+# from this module (tests/test_cli_surface.py pins them).
+_init_table_cache_key = init_table_cache_key
+_cached_reconstruct_init_table = cached_reconstruct_init_table
 
 
 def _emit_h_document(document: Any) -> None:
     # MACHINE-CONSUMED STDOUT, NOT LOGS: raw print(), one JSON document, never routed
     # through this module's sinks (see entropic_substrate.logging's module docstring).
+    # The H analysis handlers (``h_analysis_cli``, which holds no print) receive this as ``emit``.
     print(json.dumps(document, sort_keys=True, allow_nan=False))
-
-
-def _h_host_conflict(args: argparse.Namespace, command: str, lane_dest: str) -> str | None:
-    """The first host-parser option, set away from its default, that the `h` lane would
-    silently ignore (``None`` when there is none)."""
-    defaults = vars(build_parser().parse_args([command]))
-    for dest, default in defaults.items():
-        if dest in ("command", lane_dest):
-            continue
-        if getattr(args, dest, default) != default:
-            return "--" + dest.replace("_", "-")
-    return None
-
-
-def _h_refuse_host_args(args: argparse.Namespace, command: str, lane_dest: str) -> int | None:
-    conflict = _h_host_conflict(args, command, lane_dest)
-    if conflict is None:
-        return None
-    logger.error(
-        f"{command} h: {conflict} belongs to the E lane, which `h` does not consume; "
-        f"give every H option after `h`"
-    )
-    return 2
-
-
-def _h_aggregate_document(args: argparse.Namespace) -> dict[str, Any]:
-    from entropic_substrate.ladder.analyze.h_aggregate import (
-        aggregate_h_runs,
-        load_h_run,
-        parse_arm_labels,
-    )
-
-    labels = parse_arm_labels(args.h_arm)
-    runs = [load_h_run(metrics, worker_log) for metrics, worker_log in args.h_run]
-    return aggregate_h_runs(runs, labels)
-
-
-def _cmd_aggregate_h(args: argparse.Namespace) -> int:
-    """Handle ``mlflow-aggregate h``: offline, no MLflow client, no tracking URI."""
-    refused = _h_refuse_host_args(args, "mlflow-aggregate", "aggregate_lane")
-    if refused is not None:
-        return refused
-    try:
-        document = _h_aggregate_document(args)
-    except TelemetryGap as gap:
-        logger.error(f"mlflow-aggregate h: telemetry gap: {gap}")
-        return EXIT_TELEMETRY_GAP
-    except ValueError as exc:
-        logger.error(f"mlflow-aggregate h: {exc}")
-        return 2
-    _emit_h_document(document)
-    return 0
-
-
-def _cmd_charts_h(args: argparse.Namespace) -> int:
-    """Handle ``charts h``: render locally first, attach only with ``--attach``."""
-    refused = _h_refuse_host_args(args, "charts", "charts_lane")
-    if refused is not None:
-        return refused
-    attach_uri: str | None = None
-    if args.h_attach:
-        attach_uri = args.h_tracking_uri or os.environ.get(MLFLOW_TRACKING_ENV)
-        if not attach_uri:
-            logger.error(f"charts h: --attach needs --tracking-uri or ${MLFLOW_TRACKING_ENV}")
-            return 2
-    from entropic_substrate.ladder.analyze.h_charts import build_h_figures
-
-    try:
-        document = _h_aggregate_document(args)
-        figures, absent = build_h_figures(document)
-    except TelemetryGap as gap:
-        logger.error(f"charts h: telemetry gap: {gap}")
-        return EXIT_TELEMETRY_GAP
-    except ValueError as exc:
-        logger.error(f"charts h: {exc}")
-        return 2
-    args.h_out_dir.mkdir(parents=True, exist_ok=True)
-    written: list[str] = []
-    for name, figure in figures.items():
-        out_path = args.h_out_dir / f"{name}.png"
-        figure.savefig(out_path, dpi=150)
-        written.append(str(out_path))
-    for name, reason in absent.items():
-        logger.warning(f"charts h: {name} not rendered: {reason}")
-    result: dict[str, Any] = {"absent": absent, "attached": {}, "written": sorted(written)}
-    if attach_uri is None:
-        _emit_h_document(result)
-        return 0
-
-    from entropic_substrate.ladder.analyze.h_attach import HAttachError, attach_h_figures
-    from entropic_substrate.ladder.capture.adapters.mlflow import build_mlflow_client
-
-    client = build_mlflow_client(attach_uri)
-    targets = {label: arm["mlflow_run_id"] for label, arm in document["arms"].items()}
-    try:
-        result["attached"] = attach_h_figures(client, targets, figures)
-    except HAttachError as exc:
-        result["attached"] = exc.attached
-        result["attach_failures"] = exc.failures
-        logger.error(f"charts h: {exc}")
-        _emit_h_document(result)
-        return _EXIT_H_ATTACH_FAILED
-    _emit_h_document(result)
-    return 0
-
-
-def _h_receipt_verdict(root: Path, manifest: str) -> tuple[dict[str, Any], int]:
-    """Delegate to the unedited ``h-inspect-training`` handler and capture its one JSON line."""
-    import contextlib
-    import io
-
-    from entropic_substrate.composition.cli import cmd_sentence
-
-    captured = io.StringIO()
-    delegate_args = argparse.Namespace(command="h-inspect-training", root=root, manifest=manifest)
-    with contextlib.redirect_stdout(captured):
-        code = cmd_sentence(delegate_args)
-    verdict = json.loads(captured.getvalue())
-    if not isinstance(verdict, dict):
-        msg = "h-inspect-training printed a non-object verdict"
-        raise ValueError(msg)
-    return verdict, code  # pyright: ignore[reportUnknownVariableType]
-
-
-def _cmd_eval_h(args: argparse.Namespace) -> int:
-    """Handle ``eval h``: one captured run, offline, one JSON document."""
-    refused = _h_refuse_host_args(args, "eval", "eval_lane")
-    if refused is not None:
-        return refused
-    if (args.h_receipt_root is None) != (args.h_receipt_manifest is None):
-        logger.error("eval h: --receipt-root and --receipt-manifest must be given together")
-        return 2
-    from entropic_substrate.ladder.analyze.h_report import build_h_report
-
-    try:
-        report = build_h_report(*args.h_run)
-        code = 0
-        if args.h_receipt_root is not None:
-            verdict, code = _h_receipt_verdict(args.h_receipt_root, args.h_receipt_manifest)
-            report["receipt_exit_code"] = code
-            report["receipt_verdict"] = verdict
-    except TelemetryGap as gap:
-        logger.error(f"eval h: telemetry gap: {gap}")
-        return EXIT_TELEMETRY_GAP
-    except ValueError as exc:
-        logger.error(f"eval h: {exc}")
-        return 2
-    _emit_h_document(report)
-    return code
 
 
 type _Handler = Callable[[argparse.Namespace], int]
