@@ -484,6 +484,36 @@ reported a fixed point (828 files). The OLD values they replace,
 ``_SOURCE_REGIME_TABLE`` is untouched (neither member is one of
 h-source-reader-v3's seven fixed members; source rows re-measured unchanged).
 
+FOR-1673 re-pin (house rule 4, MEASURED under .venv/bin/python 3.12.13,
+conductor commit, 2026-10-23, wave C ``wf_3ce4ed9e-710`` lane FOR-1673,
+design-gate ruling DG-A, gate ruling: schema bump ``h-mechanism-evidence-v1``
+to ``-v2`` with a v1 read-old window; alternative recorded, not taken:
+SCHEMA unchanged with additive keys): h-checkpoint-reader-v2 changes because
+one of its 51 members changed bytes -- ``ladder.run.mechanism_evidence`` (a
+zero-sentence prediction row's ``sentences`` entry is labelled
+``status: structurally_absent, reason: no_sentence_states`` beside
+``range: null``; the emitter writes v2 only; ``admit_mechanism`` accepts
+exactly four shapes: v2 and v1 warm-up literals, v2 labelled and v1 bare-null
+count-0 prediction entries, so the HEpP7g capture replays against its own
+epoch). Label and member set unchanged. All three rows recomputed with
+``tools/regime_rows.py`` after ``ruff format --check`` reported a fixed point.
+The OLD values they replace,
+``6b012375ecd8220652d82ed9f1c21328990659d9a4112fb961e015af34cb06e9``
+(local), ``13df3a88f97d949e83207144e451c6ac6a8fa743045f9d174300b6c044cdc167``
+(CI 3.12.14) and
+``06092e3131f952a2be7ee6158f65e4fc7701ac5673a543182cf671f2ce03acb2``
+(CI 3.12.15), are retracted here, not silently overwritten.
+``_SOURCE_REGIME_TABLE`` is untouched: the member is not one of
+h-source-reader-v3's seven fixed members, confirmed by re-measuring all three
+source rows unchanged with the same tool invocation (``9978611d...`` local,
+``d85b3144...`` and ``fc7fad81...`` CI).
+Rebase onto the python 3.12.15 pin (house rule 4, MEASURED 2026-10-23, operator GO):
+this re-pin also sets the local ``('3.12.15', '2.13.0')`` row added on main by the pin,
+recomputed over THIS tree's reader members with ``tools/regime_rows.py``:
+``c98a7c070a24509adad1004f560aaf0739b03a01a2c1d4e76192e592cf759a67``. The value
+main carried, ``3cdea7f20c6725eb9dd459b9653fa5adf554751237be40c88499989cf02828aa``,
+is main's reader set and is retracted here for this tree, not inherited.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -681,19 +711,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "6b012375ecd8220652d82ed9f1c21328990659d9a4112fb961e015af34cb06e9",  # pragma: allowlist secret
+    ): "96f2512f0198f9edbc282857c818e1f34369a11441ef4f45ec435a40550814d6",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "13df3a88f97d949e83207144e451c6ac6a8fa743045f9d174300b6c044cdc167",  # pragma: allowlist secret
+    ): "e03d4f8d2a15c738d48659b3c5f47ee384aeb59c94750628f1b9e56e729c0947",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "3cdea7f20c6725eb9dd459b9653fa5adf554751237be40c88499989cf02828aa",  # pragma: allowlist secret
+    ): "c98a7c070a24509adad1004f560aaf0739b03a01a2c1d4e76192e592cf759a67",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "06092e3131f952a2be7ee6158f65e4fc7701ac5673a543182cf671f2ce03acb2",  # pragma: allowlist secret
+    ): "1f901dd7115bbdd252ae104b88f8c109e1e58b3c187cc395015056146deeed0e",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

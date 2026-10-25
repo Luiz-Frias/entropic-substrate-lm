@@ -8,7 +8,14 @@ from entropic_substrate.core.sentence.model import SentenceReadout
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 
-SCHEMA = "h-mechanism-evidence-v1"
+# v2 (FOR-1673) labels a zero-sentence prediction entry with its absence reason. v1 rows
+# (capture h0-plumbing-1k-v3.HEpP7g, both arms, measured: 250 warm-up and 18 zero-sentence
+# prediction rows per arm, the latter carrying a bare null range) stay readable; the
+# emitter writes v2 only and no capture is rewritten.
+SCHEMA = "h-mechanism-evidence-v2"
+LEGACY_SCHEMA = "h-mechanism-evidence-v1"
+ABSENT_STATUS = "structurally_absent"
+NO_SENTENCES = "no_sentence_states"
 
 
 def _range(values: torch.Tensor) -> list[float]:
@@ -18,17 +25,20 @@ def _range(values: torch.Tensor) -> list[float]:
     return [float(values.min()), float(values.mean()), float(values.max())]
 
 
-def _norms(values: torch.Tensor) -> dict[str, object]:
+def _norms(values: torch.Tensor, *, absent_reason: str | None = None) -> dict[str, object]:
     if values.dtype != torch.float32:
         raise ValueError("mechanism state precision differs from FP32 carrier contract")
     # Accumulation is diagnostic-only FP64; it does not replace the carrier.
     norms = torch.linalg.vector_norm(values.detach().double(), dim=-1)
-    return {
+    entry: dict[str, object] = {
         "count": norms.numel(),
         "zero_count": int((norms == 0).sum()),
         "dtype": str(values.dtype),
         "range": _range(norms) if norms.numel() else None,
     }
+    if absent_reason is not None and not norms.numel():
+        entry |= {"status": ABSENT_STATUS, "reason": absent_reason}
+    return entry
 
 
 def collect_mechanism(
@@ -37,7 +47,7 @@ def collect_mechanism(
     if phase == "codec_warmup":
         if readout is not None:
             raise ValueError("codec warm-up cannot produce a spine readout")
-        return {"schema": SCHEMA, "status": "structurally_absent", "reason": "codec_warmup"}
+        return {"schema": SCHEMA, "status": ABSENT_STATUS, "reason": "codec_warmup"}
     if phase != "prediction" or readout is None:
         raise ValueError("prediction requires its active readout")
     prediction = readout.prediction
@@ -76,7 +86,7 @@ def collect_mechanism(
         "schema": SCHEMA,
         "status": "measured",
         "consumer": profile.consumer,
-        "sentences": _norms(prediction.sentences),
+        "sentences": _norms(prediction.sentences, absent_reason=NO_SENTENCES),
         "states": _norms(prediction.states),
         "sample": _norms(readout.sample),
         "solver": solver,
@@ -117,8 +127,13 @@ def _read_range(value: object) -> tuple[float, float, float]:
     return low, mean, high
 
 
-def _read_norms(value: object, count: int, *, spherical: bool) -> None:
-    row = recovery_record(value, "count zero_count dtype range")
+def _read_norms(value: object, count: int, *, spherical: bool, labelled: bool = False) -> None:
+    # Shape is chosen by schema label (labelled) plus count only; both key sets are exact.
+    absent = labelled and count == 0
+    row = recovery_record(
+        value,
+        "count zero_count dtype range status reason" if absent else "count zero_count dtype range",
+    )
     zeros = row["zero_count"]
     if (
         type(row["count"]) is not int
@@ -131,6 +146,8 @@ def _read_norms(value: object, count: int, *, spherical: bool) -> None:
     if count == 0:
         if row["range"] is not None:
             raise ValueError("empty history must not invent norm measurements")
+        if absent and (row["status"] != ABSENT_STATUS or row["reason"] != NO_SENTENCES):
+            raise ValueError("empty history requires its structural absence label")
         return
     low, mean, high = _read_range(row["range"])
     if (
@@ -148,19 +165,27 @@ def admit_mechanism(
 ) -> None:
     """Validate measured summaries against the declared construction and source grid."""
     if phase == "codec_warmup":
-        if value != {"schema": SCHEMA, "status": "structurally_absent", "reason": "codec_warmup"}:
+        if value not in (
+            {"schema": SCHEMA, "status": ABSENT_STATUS, "reason": "codec_warmup"},
+            {"schema": LEGACY_SCHEMA, "status": ABSENT_STATUS, "reason": "codec_warmup"},
+        ):
             raise ValueError("codec warm-up cannot claim active spine evidence")
         return
     if phase != "prediction":
         raise ValueError("unknown mechanism phase")
     row = recovery_record(value, "schema status consumer sentences states sample solver zero_views")
     if (
-        row["schema"] != SCHEMA
+        row["schema"] not in (SCHEMA, LEGACY_SCHEMA)
         or row["status"] != "measured"
         or row["consumer"] != profile.consumer
     ):
         raise ValueError("mechanism evidence construction mismatch")
-    _read_norms(row["sentences"], batch * history, spherical=profile.law.mode == "sphere")
+    _read_norms(
+        row["sentences"],
+        batch * history,
+        spherical=profile.law.mode == "sphere",
+        labelled=row["schema"] == SCHEMA,
+    )
     _read_norms(row["states"], batch * (history + 1), spherical=profile.spine.carrier == "sphere")
     _read_norms(row["sample"], batch, spherical=profile.law.mode == "sphere")
     zeros = row["zero_views"]

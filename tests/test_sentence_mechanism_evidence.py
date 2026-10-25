@@ -3,12 +3,14 @@
 import copy
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 import torch
 from tests.test_sentence_execution import engine
 
 from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.spine import CarrierBlock
 from entropic_substrate.ladder.run import execution as runtime
 from entropic_substrate.ladder.run import mechanism_evidence
 from entropic_substrate.ladder.run.checkpoint import save_checkpoint
@@ -212,3 +214,156 @@ def test_legacy_journal_is_readable_but_cannot_authorize_current_resume(tmp_path
             max_bytes=10_000_000,
             max_source_bytes=1_000_000,
         )
+
+
+# FOR-1673: a zero-sentence mechanism row says WHY it has no norm range.
+# Read-old literals below are verbatim from capture h0-plumbing-1k-v3.HEpP7g
+# (both arms, measured: 250 warm-up rows, 732 non-empty and 18 zero-sentence
+# prediction rows per arm, every zero-sentence entry byte-identical to
+# ABSENT_V1). Unit tests never read results/.
+SCHEMA_V1 = "h-mechanism-evidence-v1"
+SCHEMA_V2 = "h-mechanism-evidence-v2"
+WARMUP_V1 = {"schema": SCHEMA_V1, "status": "structurally_absent", "reason": "codec_warmup"}
+WARMUP_V2 = {"schema": SCHEMA_V2, "status": "structurally_absent", "reason": "codec_warmup"}
+ABSENT_V1 = {"count": 0, "dtype": "torch.float32", "range": None, "zero_count": 0}
+ABSENT_V2 = {**ABSENT_V1, "status": "structurally_absent", "reason": "no_sentence_states"}
+
+
+def zero_sentence_row(tmp_path: Path) -> tuple[SentenceExecution, dict[str, object]]:
+    """Real SentencePredictor forward over a (B, 0, W) history, never a swapped tensor."""
+    run = engine(tmp_path)
+    history = torch.zeros(1, 0, 1, dtype=torch.int64)
+    readout = run.model(history, torch.tensor([[258, 67]]))
+    assert readout.prediction.sentences.shape[:2] == (1, 0)
+    row = mechanism_evidence.collect_mechanism(
+        readout,
+        run.profile,
+        phase="prediction",
+        zero_views=[cast(CarrierBlock, b).zero_views for b in run.model.spine.blocks],
+    )
+    return run, row
+
+
+def admit(run: SentenceExecution, row: object, *, phase: str = "prediction") -> None:
+    mechanism_evidence.admit_mechanism(row, run.profile, phase=phase, batch=1, history=0)
+
+
+def test_zero_sentence_readout_states_why_its_range_is_absent(tmp_path: Path) -> None:
+    run, row = zero_sentence_row(tmp_path)
+    assert row["sentences"] == ABSENT_V2
+    assert row["schema"] == SCHEMA_V2 and row["status"] == "measured"
+    assert set(row) == {
+        "schema",
+        "status",
+        "consumer",
+        "sentences",
+        "states",
+        "sample",
+        "solver",
+        "zero_views",
+    }
+    # Only sentences can be empty; states and sample are measured even here.
+    for field in ("states", "sample"):
+        assert "status" not in row[field] and "reason" not in row[field]  # type: ignore[operator]
+        assert row[field]["range"] is not None  # type: ignore[index]
+    admit(run, row)
+
+
+def test_emitted_rows_carry_the_v2_label_in_both_phases_without_absence_on_measured_norms(
+    tmp_path: Path,
+) -> None:
+    run = engine(tmp_path)
+    assert run.advance()["mechanism"] == WARMUP_V2
+    run.advance()
+    run.begin_prediction()
+    mechanism = run.advance()["mechanism"]
+    assert mechanism["schema"] == SCHEMA_V2
+    for field in ("sentences", "states", "sample"):
+        assert set(mechanism[field]) == {"count", "zero_count", "dtype", "range"}
+        assert mechanism[field]["range"] is not None
+
+
+def test_read_old_hepp7g_rows_still_admit_through_the_journal_entry(tmp_path: Path) -> None:
+    run, row = zero_sentence_row(tmp_path)
+    legacy = copy.deepcopy(row)
+    legacy["schema"] = SCHEMA_V1
+    legacy["sentences"] = dict(ABSENT_V1)
+    admit(run, legacy)
+    mechanism_evidence.admit_mechanism(
+        WARMUP_V1, run.profile, phase="codec_warmup", batch=1, history=0
+    )
+    mechanism_evidence.admit_mechanism(
+        WARMUP_V2, run.profile, phase="codec_warmup", batch=1, history=0
+    )
+
+
+@pytest.mark.parametrize(
+    ("sentences", "message"),
+    [
+        ({**ABSENT_V2, "range": [0.0, 0.0, 0.0]}, "invent"),
+        ({**ABSENT_V1, "range": [0.0, 0.0, 0.0]}, "fields|invent"),
+        (dict(ABSENT_V1), "fields"),
+        ({**ABSENT_V2, "reason": "codec_warmup"}, "absence"),
+        ({**ABSENT_V2, "status": "measured"}, "absence"),
+        ({**ABSENT_V2, "reason": None}, "absence"),
+        ({k: v for k, v in ABSENT_V2.items() if k != "reason"}, "fields"),
+        ({k: v for k, v in ABSENT_V2.items() if k != "status"}, "fields"),
+        ({**ABSENT_V2, "count": 1}, "position count"),
+        ({**ABSENT_V2, "zero_count": 1}, "position count"),
+        ({**ABSENT_V2, "dtype": "torch.float64"}, "position count"),
+    ],
+)
+def test_v2_zero_sentence_entry_is_closed_and_exact(
+    tmp_path: Path, sentences: dict[str, object], message: str
+) -> None:
+    run, row = zero_sentence_row(tmp_path)
+    forged = copy.deepcopy(row)
+    forged["sentences"] = sentences
+    with pytest.raises(ValueError, match=message):
+        admit(run, forged)
+
+
+def test_v1_label_cannot_carry_absence_keys_and_unknown_labels_are_refused(
+    tmp_path: Path,
+) -> None:
+    run, row = zero_sentence_row(tmp_path)
+    mixed = copy.deepcopy(row)
+    mixed["schema"] = SCHEMA_V1
+    with pytest.raises(ValueError, match="fields"):
+        admit(run, mixed)
+    unknown = copy.deepcopy(row)
+    unknown["schema"] = "h-mechanism-evidence-v3"
+    with pytest.raises(ValueError, match="construction"):
+        admit(run, unknown)
+    for forged in (
+        {**WARMUP_V2, "schema": "h-mechanism-evidence-v3"},
+        {**WARMUP_V2, "reason": "no_sentence_states"},
+        {**WARMUP_V1, "extra": 1},
+    ):
+        with pytest.raises(ValueError, match="warm-up"):
+            mechanism_evidence.admit_mechanism(
+                forged, run.profile, phase="codec_warmup", batch=1, history=0
+            )
+
+
+def test_absence_keys_on_a_nonempty_or_unlabelled_entry_are_refused() -> None:
+    measured = mechanism_evidence._norms(torch.ones(2, 8))
+    with pytest.raises(ValueError, match="fields"):
+        mechanism_evidence._read_norms(
+            {**measured, "status": "structurally_absent", "reason": "no_sentence_states"},
+            2,
+            spherical=False,
+        )
+    with pytest.raises(ValueError, match="fields"):
+        mechanism_evidence._read_norms(
+            {**measured, "status": "structurally_absent", "reason": "no_sentence_states"},
+            2,
+            spherical=False,
+            labelled=True,
+        )
+    # An empty states or sample tensor stays an execution defect, never labelled.
+    with pytest.raises(ValueError, match="fields"):
+        mechanism_evidence._read_norms(dict(ABSENT_V2), 0, spherical=False)
+    labelled = mechanism_evidence._norms(torch.zeros(0, 8), absent_reason="no_sentence_states")
+    assert labelled == ABSENT_V2
+    assert mechanism_evidence._norms(torch.zeros(0, 8)) == ABSENT_V1
