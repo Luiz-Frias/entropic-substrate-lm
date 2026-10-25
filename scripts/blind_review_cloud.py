@@ -127,8 +127,10 @@ def download_output_files(
     """Download each Files API id into ``dest``; return the saved paths.
 
     The sandbox controls the filename, so it is reduced to its basename; an
-    empty or dot-only name falls back to the file id, and a name already taken
-    in ``dest`` is prefixed with the file id so no file overwrites another.
+    empty or dot-only name falls back to the file id. A name already taken in
+    ``dest`` is prefixed with the file id, and if that is taken too (the sandbox
+    may write a file literally named ``<file_id>-<name>``) a counter is added
+    until the name is free, so no download overwrites a file already in ``dest``.
     """
     if not file_ids:
         return []
@@ -141,6 +143,10 @@ def download_output_files(
         target = dest / name
         if target.exists():
             target = dest / f"{file_id}-{name}"
+        counter = 1
+        while target.exists():
+            target = dest / f"{file_id}-{counter}-{name}"
+            counter += 1
         client.beta.files.download(file_id).write_to_file(target)
         saved.append(target)
     return saved

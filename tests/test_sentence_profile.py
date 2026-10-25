@@ -278,6 +278,20 @@ def test_generation_continuations_must_be_an_int_from_two_to_256(value: object) 
         replace(profile().schedule, generation_continuations=value)
 
 
+@pytest.mark.parametrize("steps", [2**24, 2**24 + 1, 2**31])
+def test_run_schedule_refuses_steps_outside_the_generation_seed_domain(steps: int) -> None:
+    # PR #385 review (CodeRabbit 4369526052): continuation_seed admits only
+    # 1 <= steps < 2**24, so a schedule outside that domain must be refused at
+    # construction, not after a whole training run when generation first seeds.
+    with pytest.raises(ValueError, match="steps"):
+        replace(profile().schedule, steps=steps)
+
+
+def test_run_schedule_admits_the_largest_step_count_the_generation_seed_carries() -> None:
+    schedule = replace(profile().schedule, steps=2**24 - 1)
+    assert schedule.steps == profile_module.MAX_RUN_STEPS == 2**24 - 1
+
+
 @pytest.mark.parametrize("value", [2, 4, 256])
 def test_smoke_classes_admit_any_count_in_range_and_roundtrip(value: int) -> None:
     local = replace(profile(), schedule=replace(profile().schedule, generation_continuations=value))

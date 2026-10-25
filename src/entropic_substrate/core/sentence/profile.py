@@ -42,6 +42,10 @@ DEVELOPMENT_DIAGNOSTIC_SAMPLES: int = 256
 DEVELOPMENT_GENERATION_CONTINUATIONS: int = 5
 MIN_GENERATION_CONTINUATIONS: int = 2
 MAX_GENERATION_CONTINUATIONS: int = 256
+# The same seed packs the step count above those 8 index bits into a 32-bit key, so a
+# schedule may run at most 2**24 - 1 steps; RunSchedule refuses more at construction
+# (PR #385 review), rather than generation refusing it after training has been paid for.
+MAX_RUN_STEPS: int = 2**24 - 1
 SMOKE_RUN_CLASSES: tuple[str, ...] = ("local_tiny", "remote_tiny")
 
 
@@ -110,6 +114,11 @@ class RunSchedule:
         )
         if any(type(n) is not int or n < 1 for n in integers):
             raise ValueError("run schedule counts must be positive integers")
+        if self.steps > MAX_RUN_STEPS:
+            raise ValueError(
+                f"run schedule steps must be at most {MAX_RUN_STEPS}: the generation seed "
+                "packs the step count into 24 bits"
+            )
         if (
             type(self.generation_continuations) is not int
             or not MIN_GENERATION_CONTINUATIONS

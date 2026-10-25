@@ -24,7 +24,11 @@ from zipfile import ZipFile
 import torch
 
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
-from entropic_substrate.core.sentence.profile import MAX_GENERATION_CONTINUATIONS, HProfile
+from entropic_substrate.core.sentence.profile import (
+    MAX_GENERATION_CONTINUATIONS,
+    MAX_RUN_STEPS,
+    HProfile,
+)
 from entropic_substrate.core.sentence.recovery_state import (
     capture_rng,
     recovery_record,
@@ -91,7 +95,7 @@ def continuation_seed(seed: int, steps: int, index: int) -> int:
     if (
         any(type(n) is not int for n in (seed, steps, index))
         or not 0 <= seed < 2**32
-        or not 1 <= steps < 2**24
+        or not 1 <= steps <= MAX_RUN_STEPS
         or not 0 <= index < MAX_GENERATION_CONTINUATIONS
     ):
         raise ValueError(

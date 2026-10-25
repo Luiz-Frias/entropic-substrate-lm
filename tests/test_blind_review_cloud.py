@@ -342,3 +342,42 @@ def test_two_files_with_the_same_name_do_not_overwrite_each_other(
     )
     contents = sorted(p.read_bytes() for p in (tmp_path / "review-files").iterdir())
     assert contents == [b"content-of-file_a", b"content-of-file_b"]
+
+
+def test_a_fallback_name_that_is_already_taken_does_not_overwrite_a_saved_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # PR #382 review (CodeRabbit 4369914269): the second same-named file falls back to
+    # "<file_id>-<name>", and a file the sandbox already wrote under exactly that name
+    # must survive. Order f1, f3, f2: f3 is literally named "f2-same.md".
+    _run_main(
+        monkeypatch,
+        tmp_path,
+        [_response([_text("t"), _result_with_files("f1", "f3", "f2")])],
+        {"f1": "same.md", "f3": "f2-same.md", "f2": "same.md"},
+    )
+    contents = sorted(p.read_bytes() for p in (tmp_path / "review-files").iterdir())
+    assert contents == [b"content-of-f1", b"content-of-f2", b"content-of-f3"]
+
+
+def test_a_refusal_fails_loud_even_when_it_carries_an_output_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # PR #381 review (CodeRabbit 4370049106, failure paths): narrowing the content
+    # guard to "neither text nor file" must not turn a refusal into a success.
+    with pytest.raises(RuntimeError, match="refused"):
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            [_response([_text("t"), _result_with_files("file_a")], stop_reason="refusal")],
+        )
+    assert not (tmp_path / "review.md").exists()
+
+
+def test_a_server_loop_that_never_completes_fails_loud_at_the_resume_bound(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    paused = [_response([_text("t")], stop_reason="pause_turn") for _ in range(12)]
+    with pytest.raises(RuntimeError, match="resume bound"):
+        _run_main(monkeypatch, tmp_path, paused)
+    assert not (tmp_path / "review.md").exists()
