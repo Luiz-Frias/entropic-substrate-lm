@@ -100,9 +100,12 @@ _RESUMABLE_CAPTURES = ("pause_bytes_verified", "stop_bytes_verified")
 _CONTROLLER_SCHEMA = "h-probe-controller-result-v1"
 _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
 _EVALUATION_SCHEMA = "h-predictive-evaluation-v1"
-# The generation receipt schemas this check reads. The DG-A "receipt v3" ticket (ruling
-# D1) adds its schema id here together with its sampling-law fields.
-_GENERATION_SCHEMAS = ("h-generation-receipt-v2",)
+# The generation receipt schemas this check reads. v2 is the one in-tree v2 receipt reader
+# (the HEpP7g capture replays here, ruling D3); v3 (FOR-1674) adds ``continuations`` and
+# the sampling-law blocks. The check reads presence and shape only: it never re-derives a
+# seed or a digest and does not import ladder.run.generation.
+_GENERATION_SCHEMAS = ("h-generation-receipt-v2", "h-generation-receipt-v3")
+_RECEIPT_V3 = "h-generation-receipt-v3"
 _SENTENCE_END, _DOCUMENT_END = 256, 257  # core/sentence/boundary.py
 # Terminal rollout outcomes (core/sentence/rollout.py RolloutStatus minus "active", plus
 # generation.py's "sentence_budget"), grouped by what their last observation must be.
@@ -505,6 +508,76 @@ def _continuations(receipt: Mapping[str, object]) -> tuple[int, bool]:
     return int(sampling["continuations"]), True  # pyright: ignore[reportArgumentType]
 
 
+def _v3_continuation_summaries(
+    receipt: Mapping[str, object],
+) -> tuple[list[dict[str, object]], list[str]]:
+    """One boundary-arm summary per v3 continuation, tiled from the aggregate observations.
+
+    A concatenation hides the per-continuation outcomes (one ``sentence_budget`` beside one
+    ``empty_sentence`` would FAIL a valid receipt), so the arm runs per continuation. The
+    stream is found by tiling ``summary.observations`` with each entry's ``len(log_scores)``
+    (one observation per log score); a tiling mismatch is a FAIL. Sentence text is never read.
+    """
+    entries, summary = receipt.get("continuations"), receipt.get("summary")
+    if not isinstance(entries, list) or not isinstance(summary, Mapping):
+        return [], ["v3 receipt carries no continuations list or summary"]
+    if not entries:
+        # zero continuations leave the per-continuation arm nothing to check: a vacuous
+        # boundary PASS would claim an output that ended on a boundary when none exists
+        return [], ["v3 receipt carries an empty continuations list: no output to check"]
+    observations = summary.get("observations")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    if not isinstance(observations, list):
+        return [], ["summary carries no observations list"]
+    summaries: list[dict[str, object]] = []
+    failures: list[str] = []
+    offset = 0
+    for index, entry in enumerate(entries):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        scores = entry.get("log_scores") if isinstance(entry, Mapping) else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        if not isinstance(scores, list):
+            failures.append(f"continuation {index} carries no log_scores list")
+            continue
+        taken = observations[offset : offset + len(scores)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        offset += len(scores)  # pyright: ignore[reportUnknownArgumentType]
+        last = index == len(entries) - 1  # pyright: ignore[reportUnknownArgumentType]
+        summaries.append(
+            {
+                "outcome": entry.get("outcome"),  # pyright: ignore[reportUnknownMemberType]
+                "sentences": entry.get("sentences"),  # pyright: ignore[reportUnknownMemberType]
+                "observations": taken,
+                # only the last continuation can hold an unfinished sentence; an earlier
+                # one ended on its own boundary or byte, so its pending bytes are not
+                # recorded and the pending arm reads the aggregate's for the last one
+                "pending": summary.get("pending") if last else [],  # pyright: ignore[reportUnknownMemberType]
+            }
+        )
+    if offset != len(observations):  # pyright: ignore[reportUnknownArgumentType]
+        failures.append(
+            f"continuation log_scores tile {offset} observations, summary carries "
+            f"{len(observations)}"  # pyright: ignore[reportUnknownArgumentType]
+        )
+    return summaries, failures
+
+
+def _v3_stochasticity(receipt: Mapping[str, object]) -> tuple[int, bool]:
+    """``(continuations, law recorded)`` for v3: all four conditions, else UNPROVEN."""
+    continuations, recorded = _continuations(receipt)
+    entries = receipt.get("continuations")
+    complete = (
+        isinstance(entries, list)
+        and len(entries) == continuations  # pyright: ignore[reportUnknownArgumentType]
+        and all(
+            isinstance(entry, Mapping)
+            and isinstance(entry.get("sampling_law"), Mapping)  # pyright: ignore[reportUnknownMemberType]
+            and all(
+                entry["sampling_law"].get(key) is not None  # pyright: ignore[reportUnknownMemberType]
+                for key in ("sampler", "latent", *_SAMPLING_SEED_FIELDS)
+            )
+            for entry in entries  # pyright: ignore[reportUnknownVariableType]
+        )
+    )
+    return continuations, recorded and complete
+
+
 def check_generation(receipts: Sequence[Mapping[str, object]]) -> CheckResult:
     """K5 (D1): boundary-terminated outputs; stochasticity PROVEN only with N > 1."""
     failures: list[str] = []
@@ -518,11 +591,20 @@ def check_generation(receipts: Sequence[Mapping[str, object]]) -> CheckResult:
         if receipt.get("status") != "generation_complete":
             own.append(f"{where}: status {receipt.get('status')!r} is not generation_complete")
         summary = receipt.get("summary")
-        if isinstance(summary, Mapping):
+        v3 = receipt.get("schema") == _RECEIPT_V3
+        if v3:
+            parts, tiling = _v3_continuation_summaries(receipt)
+            own.extend(f"{where}: {failure}" for failure in tiling)
+            for position, part in enumerate(parts):
+                own.extend(
+                    f"{where}: continuation {position}: {failure}"
+                    for failure in _boundary_failures(part)
+                )
+        elif isinstance(summary, Mapping):
             own.extend(f"{where}: {failure}" for failure in _boundary_failures(summary))  # pyright: ignore[reportUnknownArgumentType]
         else:
             own.append(f"{where}: no summary")
-        continuations, recorded = _continuations(receipt)
+        continuations, recorded = _v3_stochasticity(receipt) if v3 else _continuations(receipt)
         if not (recorded and continuations > 1):
             unproven.append(
                 f"{where}: stochastic rollout UNPROVEN: continuations={continuations}, "

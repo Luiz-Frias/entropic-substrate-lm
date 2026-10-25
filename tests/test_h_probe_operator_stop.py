@@ -56,12 +56,12 @@ pytestmark = pytest.mark.unit
 # warmup=2, prediction steps=4, checkpoint/eval every 2 -- boundaries at
 # warmup step 2 (phase-final), prediction step 2 (mid-phase) and prediction
 # step 4 (final + complete).
-_DEFAULT = RunSchedule(2, 4, 2, 2, 2, 1, (2, 4), 1, 2, diagnostic_samples=8)
+_DEFAULT = RunSchedule(2, 4, 2, 2, 2, 1, (2, 4), 1, 2, 2, diagnostic_samples=8)
 # warmup=4 so warmup step 2 is a boundary strictly BEFORE warmup's own final
 # step (4): the mid-warmup-phase case C13(f) needs.
-_WIDE_WARMUP = RunSchedule(4, 4, 2, 2, 2, 1, (2, 4), 1, 2, diagnostic_samples=8)
+_WIDE_WARMUP = RunSchedule(4, 4, 2, 2, 2, 1, (2, 4), 1, 2, 2, diagnostic_samples=8)
 # checkpoint_interval=1: every committed step is a boundary, including step 1.
-_EVERY_STEP = RunSchedule(2, 4, 2, 1, 2, 1, (2, 4), 1, 2, diagnostic_samples=8)
+_EVERY_STEP = RunSchedule(2, 4, 2, 1, 2, 1, (2, 4), 1, 2, 2, diagnostic_samples=8)
 
 
 def _prepared(

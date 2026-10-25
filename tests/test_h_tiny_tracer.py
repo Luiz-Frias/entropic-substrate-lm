@@ -110,6 +110,7 @@ def test_localize_refuses_non_tiny_authority() -> None:
     development: dict[str, Any] = remote["schedule"] | {
         "importance_samples": [2, 4, 8, 16, 32, 64],
         "diagnostic_samples": 256,
+        "generation_continuations": 5,  # FOR-1674 ruling D1: exact for development classes
     }
     pilot = HProfile.from_manifest(
         remote | {"name": "h0-fisher-pilot", "run_class": "pilot", "schedule": development}

@@ -32,7 +32,7 @@ def profile() -> HProfile:
         consumer="fisher",
         solver=SolverConfig(),
         optimization=OptimizationSpec(0.001, 0.01, (0.9, 0.95), 1e-8, 1.0, 0.3),
-        schedule=RunSchedule(2, 4, 2, 2, 2, 1, (2, 4), 1, 2, diagnostic_samples=8),
+        schedule=RunSchedule(2, 4, 2, 2, 2, 1, (2, 4), 1, 2, 2, diagnostic_samples=8),
         permutation=tuple(range(256)),
     )
 
@@ -161,6 +161,7 @@ def development(run_class: str = "pilot") -> HProfile:
             local.schedule,
             importance_samples=(2, 4, 8, 16, 32, 64),
             diagnostic_samples=256,
+            generation_continuations=5,  # FOR-1674 ruling D1: exact for development classes
         ),
     )
 
@@ -223,15 +224,22 @@ def test_diagnostic_samples_is_required_last_and_never_defaulted() -> None:
         HProfile.from_manifest(payload)
 
 
-def test_manifest_schema_is_the_v2_successor_and_v1_is_refused() -> None:
+def test_manifest_schema_is_the_v3_successor_and_v1_is_refused() -> None:
+    # Re-addressed (FOR-1674): the FOR-1664 pin moved from the v2 successor to the v3
+    # successor; its v1-refusal arm is kept and a v2-refusal arm is added (no read-old
+    # branch for profiles: a v2 profile replays only against its own epoch's reader).
     value = profile()
-    assert value.manifest["schema"] == "h-run-profile-v2"
+    assert value.manifest["schema"] == "h-run-profile-v3"
     assert value.manifest["schedule"]["diagnostic_samples"] == value.schedule.diagnostic_samples
     assert HProfile.from_manifest(value.manifest) == value
     with pytest.raises(ValueError, match="unknown H profile version"):
         HProfile.from_manifest(value.manifest | {"schema": "h-run-profile-v1"})
+    with pytest.raises(ValueError, match="unknown H profile version"):
+        HProfile.from_manifest(value.manifest | {"schema": "h-run-profile-v2"})
     changed = replace(value, schedule=replace(value.schedule, diagnostic_samples=16))
     assert changed.identity != value.identity
+    more = replace(value, schedule=replace(value.schedule, generation_continuations=3))
+    assert more.identity != value.identity
 
 
 def test_evaluated_samples_is_one_derived_tuple_outside_the_manifest() -> None:
@@ -241,3 +249,52 @@ def test_evaluated_samples_is_one_derived_tuple_outside_the_manifest() -> None:
     assert "evaluated_samples" not in asdict(schedule)
     assert "evaluated_samples" not in profile().manifest["schedule"]
     assert "evaluated_samples" not in signature(RunSchedule).parameters
+
+
+# ------------------------------------------------------------------------------------------
+# FOR-1674 (operator ruling D1 2026-10-23, provisional, re-ruled at H1 preregistration):
+# the profile declares how many continuations of one prompt a generation run draws. The
+# field is required with no default, sits right after generation_sentences (so the
+# FOR-1664 "diagnostic_samples is last" pin above stays true), and the manifest schema
+# moves h-run-profile-v2 -> h-run-profile-v3 (v2 and v1 are refused: no read-old branch).
+
+
+def test_generation_continuations_is_required_no_default_after_generation_sentences() -> None:
+    parameters = list(signature(RunSchedule).parameters)
+    assert (
+        parameters.index("generation_continuations") == parameters.index("generation_sentences") + 1
+    )
+    assert parameters[-1] == "diagnostic_samples"  # the FOR-1664 pin is undisturbed
+    assert signature(RunSchedule).parameters["generation_continuations"].default is Parameter.empty
+    payload = profile().manifest
+    del payload["schedule"]["generation_continuations"]
+    with pytest.raises(ValueError, match="fields"):
+        HProfile.from_manifest(payload)
+
+
+@pytest.mark.parametrize("value", [0, 1, 257, -2, True, 2.0, "2", None])
+def test_generation_continuations_must_be_an_int_from_two_to_256(value: object) -> None:
+    with pytest.raises(ValueError, match="generation continuation"):
+        replace(profile().schedule, generation_continuations=value)
+
+
+@pytest.mark.parametrize("value", [2, 4, 256])
+def test_smoke_classes_admit_any_count_in_range_and_roundtrip(value: int) -> None:
+    local = replace(profile(), schedule=replace(profile().schedule, generation_continuations=value))
+    remote = replace(local, run_class="remote_tiny", device="cuda", precision="bf16")
+    for admitted in (local, remote):
+        assert admitted.schedule.generation_continuations == value
+        assert HProfile.from_manifest(admitted.manifest) == admitted
+        assert admitted.manifest["schedule"]["generation_continuations"] == value
+
+
+def test_development_continuation_count_is_ruled_d1_and_exact() -> None:
+    assert profile_module.DEVELOPMENT_GENERATION_CONTINUATIONS == 5
+    accepted = development()
+    assert accepted.schedule.generation_continuations == 5
+    assert HProfile.from_manifest(accepted.manifest) == accepted
+    for count in (2, 4, 6):  # exact equality, not a floor and not the smoke value
+        with pytest.raises(ValueError, match="development") as refusal:
+            replace(accepted, schedule=replace(accepted.schedule, generation_continuations=count))
+        for word in ("tiny", "scientific", "authority"):
+            assert word not in str(refusal.value)

@@ -161,7 +161,12 @@ def test_public_generation_pause_resume_and_inspection(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out)["summary"]["sentences"] == ["A."]
+    inspected = json.loads(capsys.readouterr().out)
+    # FOR-1674 (ruling D2): the profile fixture draws N=2 continuations and the script is
+    # cyclic, so the original predicate is re-addressed to continuations[0] and the
+    # documented N=2 aggregate (both continuations, in index order) is asserted beside it.
+    assert inspected["continuations"][0]["sentences"] == ["A."]
+    assert inspected["summary"]["sentences"] == ["A.", "A."]
 
 
 # ------------------------------------------------------------------------------------------

@@ -562,6 +562,43 @@ carries ((3.12.13, 2.13.0) ``96f2512f``, (3.12.14, 2.13.0+cpu) ``e03d4f8d``, (3.
 2.13.0) ``c98a7c07``, (3.12.15, 2.13.0+cpu) ``1f901dd7``) are retracted for this tree,
 not inherited. Source rows re-measured unchanged.
 
+FOR-1674 re-pin (house rule 4, MEASURED 2026-10-23, conductor commit, wave C
+``wf_3ce4ed9e-710`` lane FOR-1674, design-gate ruling DG-A; gate ruling G2, a
+``torch.random.fork_rng`` island per continuation seeded once with
+``(profile.seed * 0x9E3779B1 + ((schedule.steps << 8) | i)) % 2**32``; G1, an explicit
+generator threaded through ``advance_rollout``, recorded as the alternative and
+rejected because ``Beta.rsample`` takes no generator; operator ruling D1
+``DEVELOPMENT_GENERATION_CONTINUATIONS = 5``): h-checkpoint-reader-v2 changes because
+three of its 51 members changed bytes -- ``core.sentence.profile``
+(``RunSchedule.generation_continuations``, schema ``h-run-profile-v2`` -> ``-v3``),
+``ladder.run.generation`` (receipt ``h-generation-receipt-v3`` with ``continuations``
+and a top-level ``sampling`` block; v1/v2 receipts refused by name) and
+``ladder.run.trace_capture`` (schema literals). Label and member set unchanged. All
+FOUR checkpoint rows recomputed with ``tools/regime_rows.py`` over this tree after a
+``ruff format --check`` fixed point, matching the lane's independent measurement:
+``4573549b...`` (3.12.13 local), ``f598741b...`` (CI 3.12.14), ``eb6f0288...`` (CI
+3.12.15) and ``05f60906...`` (3.12.15 local). The OLD values they replace,
+``6b012375...``, ``13df3a88...``, ``06092e31...`` and ``3cdea7f2...``, are retracted
+here, not silently overwritten. ``_SOURCE_REGIME_TABLE`` is untouched (none of the
+three members is a h-source-reader-v3 member; source rows re-measured unchanged).
+
+Zip restack (house rule 4, MEASURED 2026-10-24 by the conductor, wave C zip, stack
+1671, 1673, 1672, 1674 on PR #380 59ddc948; level 4 of 4): FOR-1674's change set now
+sits on FOR-1672, so this tree's reader members carry every lane below it. The four
+checkpoint rows were recomputed with ``tools/regime_rows.py`` over THIS tree:
+(3.12.13, 2.13.0)
+``f518ccbf3c7e54fb5c8b04ed55f9eaccc740a23d377e3787b8fc31c06bbe751e``, (3.12.14,
+2.13.0+cpu) ``a284e8fd544b321201e5cf37dbcf17a03f3985bed7cfd285b693649c49512e1a``,
+(3.12.15, 2.13.0)
+``5d28628730388bfd64dcdeb511f7dfac91d7043eeb56a4c431dd95e3cee1ebc0``, (3.12.15,
+2.13.0+cpu) ``d45302eb616689b61e03404f1d8b98862c9dc58b558df6ffa78ebe4f83e0266b``. The
+lane-local values FOR-1674 pinned on the bare wave base ((3.12.13, 2.13.0)
+``4573549b``, (3.12.14, 2.13.0+cpu) ``f598741b``, (3.12.15, 2.13.0) ``05f60906``,
+(3.12.15, 2.13.0+cpu) ``eb6f0288``) and the FOR-1672 level values this commit's parent
+carries ((3.12.13, 2.13.0) ``1c5ab1c6``, (3.12.14, 2.13.0+cpu) ``772843ac``, (3.12.15,
+2.13.0) ``32d2f51c``, (3.12.15, 2.13.0+cpu) ``a6f5ba48``) are retracted for this tree,
+not inherited. Source rows re-measured unchanged.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -759,19 +796,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "1c5ab1c684346db048e08b8e4d8c81e8eda94a7c888924ff243b191c0f63dff4",  # pragma: allowlist secret
+    ): "f518ccbf3c7e54fb5c8b04ed55f9eaccc740a23d377e3787b8fc31c06bbe751e",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "772843ac05e6e1d0a91f55f597276c1bcc9297417db0837dcda940feb7bfc985",  # pragma: allowlist secret
+    ): "a284e8fd544b321201e5cf37dbcf17a03f3985bed7cfd285b693649c49512e1a",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "32d2f51cf6d44f23a35c3cc2bfc8ce8ab4845965572d475c628efd29636bb795",  # pragma: allowlist secret
+    ): "5d28628730388bfd64dcdeb511f7dfac91d7043eeb56a4c431dd95e3cee1ebc0",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "a6f5ba48be57197b03321c17f7f8d5b99f3eebebae2c6aa3b6660198632a1161",  # pragma: allowlist secret
+    ): "d45302eb616689b61e03404f1d8b98862c9dc58b558df6ffa78ebe4f83e0266b",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

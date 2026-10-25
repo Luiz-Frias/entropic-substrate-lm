@@ -89,6 +89,7 @@ def test_remote_and_scientific_scopes_require_distinct_admission() -> None:
                     remote.schedule,
                     importance_samples=(2, 4, 8, 16, 32, 64),
                     diagnostic_samples=256,
+                    generation_continuations=5,  # FOR-1674 ruling D1
                 ),
             ),
         )

@@ -22,7 +22,7 @@ from entropic_substrate.ladder.run.span_diagnostics import read_span_diagnostics
 
 _SCHEMAS = frozenset(
     (
-        "h-run-profile-v2",
+        "h-run-profile-v3",
         "h-probe-training-progress-v1",
         "h-checkpoint-seal-v1",
         "h-journal-shard-v1",
@@ -30,6 +30,7 @@ _SCHEMAS = frozenset(
         "h-predictive-evaluation-v1",
         "h-generation-receipt-v1",
         "h-generation-receipt-v2",
+        "h-generation-receipt-v3",
         "h-probe-training-failure-v1",
         "h-probe-training-failure-v2",
         "h-generation-failure-v1",
@@ -87,7 +88,7 @@ def _collect(
             payload = read_json(root, normalized, max_bytes=max_bytes)
             if payload.get("schema") not in _SCHEMAS:
                 raise ValueError("capture encountered an unknown producer artifact schema")
-            if payload.get("schema") == "h-run-profile-v2":
+            if payload.get("schema") == "h-run-profile-v3":
                 if HProfile.from_manifest(payload) != profile:
                     raise ValueError("captured profile differs from requested model trace")
             elif payload.get("run_identity") != profile.identity:
@@ -471,7 +472,13 @@ def read_model_trace(
     for item in inventory.artifacts.values():
         if item.path.endswith(".json") and item != generation:
             payload = read_json(root, item, max_bytes=max_bytes)
-            if payload.get("schema") == "h-generation-receipt-v2":
+            if payload.get("schema") in (
+                "h-generation-receipt-v1",
+                "h-generation-receipt-v2",
+                "h-generation-receipt-v3",
+            ):
+                # FOR-1674 (ruling D3): a v1 or v2 receipt is not skipped unread; the
+                # reader refuses it by name ("requires its original reader").
                 read_generation(
                     root,
                     item,

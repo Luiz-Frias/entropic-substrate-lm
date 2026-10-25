@@ -32,6 +32,16 @@ def _numbers(values: tuple[float, ...]) -> None:
 # size is bounded by k and must not be read as convergence.
 DEVELOPMENT_IMPORTANCE_SAMPLES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
 DEVELOPMENT_DIAGNOSTIC_SAMPLES: int = 256
+# FOR-1674 (operator ruling D1 2026-10-23, provisional, re-ruled at H1 preregistration):
+# how many continuations of one prompt a generation run draws. Every run class outside
+# ``SMOKE_RUN_CLASSES`` must carry exactly this; the smoke classes may carry any count in
+# ``[MIN_GENERATION_CONTINUATIONS, MAX_GENERATION_CONTINUATIONS]`` (the probe kit uses 4).
+# The cap is 256 because the per-continuation seed packs the index into the low 8 bits of
+# the step key (ladder/run/generation.py ``continuation_seed``): index 256 would alias
+# index 0 of the next step. The floor is 2 because one continuation proves no stochasticity.
+DEVELOPMENT_GENERATION_CONTINUATIONS: int = 5
+MIN_GENERATION_CONTINUATIONS: int = 2
+MAX_GENERATION_CONTINUATIONS: int = 256
 SMOKE_RUN_CLASSES: tuple[str, ...] = ("local_tiny", "remote_tiny")
 
 
@@ -79,6 +89,10 @@ class RunSchedule:
     importance_samples: tuple[int, ...]
     importance_chunk: int
     generation_sentences: int
+    # Required, no default, right after ``generation_sentences`` (FOR-1674 ruling D1): how
+    # many continuations of the one validation prompt a generation run draws, each from its
+    # own seed. Placed here, not last, so the FOR-1664 "diagnostic_samples is last" pin holds.
+    generation_continuations: int
     # Required, no default, last (FOR-1664 door A (ii)): the fixed diagnostic population,
     # strictly beyond the curve. It tops the single nested population that is drawn once.
     diagnostic_samples: int
@@ -96,6 +110,16 @@ class RunSchedule:
         )
         if any(type(n) is not int or n < 1 for n in integers):
             raise ValueError("run schedule counts must be positive integers")
+        if (
+            type(self.generation_continuations) is not int
+            or not MIN_GENERATION_CONTINUATIONS
+            <= self.generation_continuations
+            <= MAX_GENERATION_CONTINUATIONS
+        ):
+            raise ValueError(
+                "generation continuation count must be an integer from "
+                f"{MIN_GENERATION_CONTINUATIONS} to {MAX_GENERATION_CONTINUATIONS}"
+            )
         counts = self.importance_samples
         if (
             type(counts) is not tuple
@@ -172,9 +196,12 @@ class HProfile:
             raise ValueError("remote and scientific execution requires CUDA/bf16")
         if any(type(n) is not int or n < 0 for n in (self.seed, self.source_seed)):
             raise ValueError("profile seeds must be nonnegative integers")
-        # The step-keyed evaluation seed is (seed * 0x9E3779B1 + step) % 2**32, a bijection
-        # in seed only for seed < 2**32 (ladder/run/execution.py); at or above it seed and
-        # seed + 2**32 would alias. source_seed is not mixed.
+        # Two seed families mix ``seed`` with an odd multiplier: the step-keyed EVALUATION
+        # seed (seed * 0x9E3779B1 + step) % 2**32 (ladder/run/execution.py) and the
+        # GENERATION seed (seed * 0x9E3779B1 + ((steps << 8) | index)) % 2**32
+        # (ladder/run/generation.py ``continuation_seed``, FOR-1674). Each is a bijection
+        # in seed only for seed < 2**32; at or above it seed and seed + 2**32 would alias.
+        # source_seed is not mixed.
         if self.seed >= 2**32:
             raise ValueError("profile seed must be below 2**32 for the step-keyed evaluation seed")
         if type(self.source_digest) is not str:
@@ -193,11 +220,13 @@ class HProfile:
         if self.run_class not in SMOKE_RUN_CLASSES and (
             self.schedule.importance_samples != DEVELOPMENT_IMPORTANCE_SAMPLES
             or self.schedule.diagnostic_samples != DEVELOPMENT_DIAGNOSTIC_SAMPLES
+            or self.schedule.generation_continuations != DEVELOPMENT_GENERATION_CONTINUATIONS
         ):
             raise ValueError(
                 "development runs require the registered importance-sample curve "
-                f"{DEVELOPMENT_IMPORTANCE_SAMPLES} and diagnostic count "
-                f"{DEVELOPMENT_DIAGNOSTIC_SAMPLES}"
+                f"{DEVELOPMENT_IMPORTANCE_SAMPLES}, diagnostic count "
+                f"{DEVELOPMENT_DIAGNOSTIC_SAMPLES} and generation continuation count "
+                f"{DEVELOPMENT_GENERATION_CONTINUATIONS}"
             )
         if (
             self.codec.width != self.law.width
@@ -220,7 +249,7 @@ class HProfile:
 
     @property
     def manifest(self) -> dict[str, object]:
-        value = {"schema": "h-run-profile-v2", **asdict(self)}
+        value = {"schema": "h-run-profile-v3", **asdict(self)}
         return cast(dict[str, object], json.loads(json.dumps(value, allow_nan=False)))
 
     @property
@@ -230,7 +259,7 @@ class HProfile:
     @classmethod
     def from_manifest(cls, value: object) -> Self:
         row = recovery_record(value, "schema " + " ".join(signature(cls).parameters)).copy()
-        if row.pop("schema") != "h-run-profile-v2":
+        if row.pop("schema") != "h-run-profile-v3":
             raise ValueError("unknown H profile version")
         row["codec"] = _construct(CodecSpec, row["codec"])
         row["spine"] = _construct(SpineSpec, row["spine"])
