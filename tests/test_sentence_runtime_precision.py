@@ -1,6 +1,7 @@
 """Unexpected runtime precision is a defect, never an implicit policy change."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn
@@ -8,12 +9,16 @@ from typing import NoReturn
 import pytest
 import torch
 from tests.test_sentence_execution import engine
+from tests.test_sentence_profile import profile
+from tests.test_sentence_worker_execution import prepared
 
+from entropic_substrate.core.sentence import runtime_precision as precision_module
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.runtime_precision import require_execution_precision
 from entropic_substrate.ladder.run import execution as runtime
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.worker_execution import _runtime
 
 pytestmark = pytest.mark.unit
 
@@ -175,3 +180,120 @@ def test_training_driver_retains_evaluation_gap_classification(
     assert failure["error_type"] == "UndefinedDirection"
     assert failure["error_code"] == "undefined_zero_norm"
     assert failure["last_evaluation"]["affected_positions"] == 2
+
+
+# --- FOR-1672: the OBSERVED autocast state beside the declared precision ---------------------
+#
+# MEASURED 2026-10-22 on torch 2.13.0 (CPU host): inside torch.autocast("cpu",
+# dtype=torch.bfloat16, enabled=True) torch.is_autocast_enabled("cpu") is True and
+# torch.get_autocast_dtype("cpu") is torch.bfloat16. Inside enabled=False the enabled flag is
+# False and the dtype STILL reads torch.bfloat16 (autocast.__enter__ stores the requested dtype
+# unconditionally), so `enabled` is the only independent observation.
+
+_BASE_KEYS = {
+    "default_dtype",
+    "matmul_precision",
+    "generic_fp32_precision",
+    "cuda_matmul_fp32_precision",
+    "effective_tf32",
+    "torch_tf32_override",
+    "nvidia_tf32_override",
+}
+
+
+def _observe(**changes: object) -> dict[str, object]:
+    return precision_module.require_observed_execution_precision(replace(profile(), **changes))  # type: ignore[arg-type]
+
+
+def test_bf16_cpu_profile_records_what_torch_reports_for_cpu_bf16_autocast() -> None:
+    record = _observe(precision="bf16")
+    # Measured value, not assumed: torch 2.13.0 reports CPU bf16 autocast ENABLED.
+    assert record["autocast"] == {"enabled": True, "dtype": "torch.bfloat16", "device_type": "cpu"}
+    assert record["declared_precision"] == "bf16"
+
+
+def test_fp32_profile_records_autocast_disabled_beside_the_declared_value() -> None:
+    record = _observe(precision="fp32")
+    autocast = record["autocast"]
+    assert isinstance(autocast, dict) and autocast["enabled"] is False
+    # Measured: the dtype echoes the requested bf16 even though autocast is disabled.
+    assert autocast == {"enabled": False, "dtype": "torch.bfloat16", "device_type": "cpu"}
+    assert record["declared_precision"] == "fp32"
+
+
+def test_observed_record_keeps_the_seven_guard_keys_and_adds_exactly_two() -> None:
+    record = _observe(precision="bf16")
+    assert set(record) == _BASE_KEYS | {"declared_precision", "autocast"}
+    assert {k: record[k] for k in _BASE_KEYS} == require_execution_precision()
+    autocast = record["autocast"]
+    assert isinstance(autocast, dict) and set(autocast) == {"enabled", "dtype", "device_type"}
+    assert json.loads(json.dumps(record)) == record
+
+
+def test_observed_form_refuses_exactly_as_the_guard_and_before_opening_autocast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch, "get_default_dtype", lambda: torch.float64)
+    with pytest.raises(ValueError, match="precision") as bare:
+        require_execution_precision()
+
+    def forbidden(*args: object, **kwargs: object) -> NoReturn:
+        raise AssertionError("autocast opened before the precision refusal")
+
+    monkeypatch.setattr(torch, "autocast", forbidden)
+    with pytest.raises(ValueError, match="precision") as observed:
+        _observe(precision="bf16")
+    assert str(observed.value) == str(bare.value)
+    assert type(observed.value) is type(bare.value)
+
+
+def test_cuda_profile_whose_autocast_torch_disables_records_declared_beside_observed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deterministic on any host: torch's own "CUDA AMP unavailable" branch is forced.
+    monkeypatch.setattr(torch.cuda.amp.common, "amp_definitely_not_available", lambda: True)
+    with pytest.warns(UserWarning, match="Disabling autocast"):
+        record = _observe(device="cuda", precision="bf16")
+    assert record["declared_precision"] == "bf16"
+    assert record["autocast"] == {
+        "enabled": False,
+        "dtype": "torch.bfloat16",
+        "device_type": "cuda",
+    }
+
+
+def test_probe_failure_propagates_torch_text_and_is_never_recorded_as_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda.amp.common, "amp_definitely_not_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda *a, **k: False)
+    with pytest.raises(RuntimeError, match="does not support bfloat16"):
+        _observe(device="cuda", precision="bf16")
+
+
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+def test_probe_restores_ambient_autocast_state(precision: str) -> None:
+    before = (torch.is_autocast_enabled("cpu"), torch.get_autocast_dtype("cpu"))
+    nesting = torch.autocast_increment_nesting()
+    torch.autocast_decrement_nesting()
+    _observe(precision=precision)
+    assert before == (torch.is_autocast_enabled("cpu"), torch.get_autocast_dtype("cpu"))
+    again = torch.autocast_increment_nesting()
+    torch.autocast_decrement_nesting()
+    assert nesting == again
+
+
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+def test_run_start_runtime_record_carries_declared_and_observed_precision(
+    tmp_path: Path, precision: str
+) -> None:
+    request, root = prepared(tmp_path)
+    request = replace(request, profile=replace(request.profile, precision=precision))  # type: ignore[arg-type]
+    runtime_record = _runtime(request, root, None)
+    recorded = runtime_record["precision"]
+    assert isinstance(recorded, dict)
+    assert recorded["declared_precision"] == precision
+    autocast = recorded["autocast"]
+    assert isinstance(autocast, dict)
+    assert autocast["enabled"] is (precision == "bf16") and autocast["device_type"] == "cpu"
+    assert {k: recorded[k] for k in _BASE_KEYS} == require_execution_precision()

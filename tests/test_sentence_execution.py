@@ -9,7 +9,11 @@ from tests.test_sentence_profile import profile
 from tests.test_sentence_sampling import corpus
 
 from entropic_substrate.core.sentence.corpus import SplitPolicy, prepare_documents
+from entropic_substrate.core.sentence.runtime_precision import (
+    require_observed_execution_precision,
+)
 from entropic_substrate.ladder.capture.capture import write_prepared_corpus
+from entropic_substrate.ladder.run import execution as runtime
 from entropic_substrate.ladder.run.checkpoint import save_checkpoint
 from entropic_substrate.ladder.run.execution import SentenceExecution
 
@@ -222,3 +226,26 @@ def test_engine_resume_retains_checkpointed_generation_feedback(tmp_path: Path) 
         tmp_path, "feedback.pt", checkpoint.content_hash, phase="prediction", max_bytes=10_000_000
     )
     assert fresh.rollout is not None and fresh.rollout.observations == state.observations
+
+
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+def test_recorded_autocast_equals_what_torch_reports_inside_the_execution_site(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, precision: str
+) -> None:
+    """The record is OBSERVED: torch's state at the real site matches the recorded entry."""
+    template = engine(tmp_path)
+    profile_under_test = replace(template.profile, precision=precision)  # type: ignore[arg-type]
+    run = SentenceExecution(profile_under_test, template.source_root, max_source_bytes=1_000_000)
+    seen: list[tuple[bool, str]] = []
+    original = runtime.codec_warmup_loss
+
+    def tap(*args: object, **kwargs: object) -> object:
+        seen.append((torch.is_autocast_enabled("cpu"), str(torch.get_autocast_dtype("cpu"))))
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runtime, "codec_warmup_loss", tap)
+    run.advance()
+    recorded = require_observed_execution_precision(profile_under_test)["autocast"]
+    assert isinstance(recorded, dict) and len(seen) == 1
+    assert seen[0] == (recorded["enabled"], recorded["dtype"])
+    assert recorded["enabled"] is (precision == "bf16")
