@@ -80,7 +80,7 @@ def test_account_preserves_measured_zero_and_requires_version(
 ) -> None:
     runner = Runner(
         [
-            D1CommandResult("runpodctl 2.14.0-dd55bcf\n", ""),
+            D1CommandResult("runpodctl 3.0.1-551d6a4\n", ""),
             success({"id": "account-fixture", "clientBalance": 22.0, "currentSpendPerHr": 0}),
         ]
     )
@@ -264,7 +264,7 @@ def test_invalid_account_measurement_is_not_a_zero_balance(
 ) -> None:
     runner = Runner(
         [
-            D1CommandResult("runpodctl 2.14.0-dd55bcf\n", ""),
+            D1CommandResult("runpodctl 3.0.1-551d6a4\n", ""),
             success({"id": "account-fixture", "clientBalance": amount, "currentSpendPerHr": 0}),
         ]
     )

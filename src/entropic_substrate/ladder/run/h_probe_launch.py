@@ -36,9 +36,9 @@ from entropic_substrate.ladder.run.worker_request import (
     parse_probe_request,
 )
 
-RUNPODCTL_VERSION = "runpodctl 2.14.0-dd55bcf"
+RUNPODCTL_VERSION = "runpodctl 3.0.1-551d6a4"
 RUNPODCTL_SHA256 = (
-    "377ea9f6b72c68cb766be2784f137ab4cefdd8d10022f0f2910104d386e48918"  # pragma: allowlist secret
+    "da72de4c4a2deaeb3642378e7fbb71304f89463a5c7b3af7c7459d6683391696"  # pragma: allowlist secret
 )
 
 
@@ -311,6 +311,9 @@ class H0ProbeLaunch:
         CLI 2.14.0 omits false booleans, zero volumes and empty command/port lists.
         Their absence here follows that serialization contract, not a guessed
         scientific default. A provider read must still succeed independently.
+        Measured 2026-10-26: 3.0.1 (every command moved to REST v2 in 3.0.0)
+        returns byte-identical ``template get``, ``user`` and ``pod list`` JSON
+        to 2.14.0 for this template, so the contract carries over unchanged.
         """
         if type(value) is not dict:
             raise ValueError("H0 template must be a provider object")
@@ -331,7 +334,10 @@ class H0ProbeLaunch:
 
     @property
     def create_arguments(self) -> tuple[str, ...]:
-        """Arguments for verified runpodctl 2.14.0; execution belongs to the controller.
+        """Arguments for verified runpodctl 3.0.1; execution belongs to the controller.
+
+        ``pod create --help`` is byte-identical between 2.14.0 and 3.0.1 (measured
+        2026-10-26); the create response itself is only exercised by a live launch.
 
         The fixed shell composition only creates a new owned workspace and execs
         the existing image worker. No installs, source overlays or SSH readiness.
