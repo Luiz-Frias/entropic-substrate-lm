@@ -71,3 +71,40 @@ H1 eligibility beyond "the machinery exists" is not implied. The previous verdic
 for stochastic rollout, recovery and resume, and autocast observability are closed by this
 evidence; the test-only gate exit is closed by the author's measurement and stays open as an
 independently verified exit until a reviewer reads the records that close it.
+
+## Round 2 verdict (2026-10-26, supersedes the verdict above)
+
+`tracer_complete`. Blind review round 2 (operator GO 2026-10-26; `claude-opus-5-5`, one round,
+3,094,645 input and 54,393 output tokens, about $13.47 measured at list rates) read a corrected
+packet that carried the host control records of all four arms, the pre-redaction hashes, the
+codec_warmup-00000250 progress receipt and the local check plans with their outputs, with round
+1's verdict withheld. It returned `tracer_complete` and raised four major concerns, each marked
+NOT BLOCKING by the reviewer. Every check PASSes: all nine in the image regime (captured report
+sha256 equal to the recorded `report_sha256`), and every regime-independent check locally over
+all four pods, re-derived independently by the reviewer including K2 from the controller
+records. The rule "`tracer_complete` iff every check PASSes and the review raises no blocking
+finding" is met.
+
+The exit that round 1 left open, the test-only gate as independently verified, is closed. The
+verdict text above stays as filed for round 1.
+
+| exit | round 2 status | evidence class |
+| --- | --- | --- |
+| Stochastic rollout | PROVEN | MEASURED; REVIEWER-REPORTED |
+| Recovery and resume | PROVEN for a declared pause at a seal boundary; tensor payload of every checkpoint identical to the uninterrupted pod (only pickle metadata differs); an unplanned interruption is not tested and not claimed | MEASURED; K1 chain hop admission RECORD |
+| Test-only gate | PROVEN; reviewer re-derived every regime-independent criterion and K2 | MEASURED; REVIEWER-REPORTED |
+| Autocast observability | PROVEN as a recorded configuration | MEASURED |
+| Capture, lineage, final leg, numerics | PROVEN | MEASURED; REVIEWER-REPORTED |
+
+Carried to the gate author, none blocking: the 120 extra `data.pkl` bytes in checkpoints a
+resumed process writes; the unlogged 378 s restore window and 99.887 s first seal; the
+`admission.end` timestamp semantics; K1 chain runs only in the image; the in-image exit status
+lives only in `exit.txt`; blind packets must attest every redacted file. Still open and outside
+the H0 exit list: the declared measure of the future density per carrier. The scope statement
+above is unchanged: no scientific claim, no H1 eligibility beyond "the machinery exists", no
+spend authorized.
+
+Round 2 evidence chain: review md5 `fad7b033d2920cde9c25291a6be9d2a7`, archived at
+`~/.claude/projects/-Users-luizfrias-CursorAI-entropic-substrate-lm/refactor-survey-2026-09-17/h-sprint/h0-review/final-probe-round2/`
+(REVIEWER-REPORTED); author response in `docs/h0/review-response-final-probe-2026-10-26.md`,
+section "Round 2".

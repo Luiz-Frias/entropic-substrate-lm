@@ -134,7 +134,7 @@ admission accounting is readable from the metrics file as well as the log.
 | R2 prefix (`wave.json` `prefix`, equals publish keys) | `h-probes/v1/ba48fd75…` | `…/0b451dda…` | `…/10d1a612…` | `…/13b92be2…` | MEASURED |
 | `request.json` `nonce` | `ba48fd75…` | `0b451dda…` | `10d1a612…` | `13b92be2…` (fresh; differs from A) | MEASURED |
 | `request.json` `inputs` | corpus `f1c8db69…` + `code.bundle` `a46ed3ed…` | same two | same two | the same two plus 10 `run/` files: A's four `codec_warmup-00000250` artifacts, four `prediction-00000250` artifacts, the 250 evaluation and `run/profile.json` (`wave.json` `inputs 12`) | MEASURED |
-| `wave.json` globals | `code_commit 046cfb05…`, `solver_budget 64`, `budget_ladder [64, 72, 128]`, `continuations_requested 4`, `gpu NVIDIA A100-SXM4-80GB`, `data_center US-MD-1`, `template_id w1rl2rxaqw`, `scientific_authority none`, `spending_authority none`, `launch_schema h0-probe-launch-v3`, `schema h0-final-probe-wave-v1` | identical in both wave files except `resume_plan.stop_mode` (`operator` in wave 1, `declared` in wave 2) | | | MEASURED |
+| `wave.json` globals | `code_commit 046cfb05…`, `solver_budget 64`, `budget_ladder [64, 72, 128]`, `continuations_requested 4`, `gpu NVIDIA A100-SXM4-80GB`, `data_center US-MD-1`, `template_id w1rl2rxaqw`, `scientific_authority none`, `spending_authority none`, `launch_schema h0-probe-launch-v3`, `schema h0-final-probe-wave-v1` | identical in both wave files except `resume_plan.stop_mode` (`operator` in wave 1, `declared` in wave 2) | | | MEASURED. Added 2026-10-26 (round 2 asked why wave 1's operator stop did not occur): wave 1 planned an operator-mode stop of the magnitude arm at global 500, and that arm ran to 1000 with no stop marker observed (`stop_marker.observed 0`, Q6); the worker polls the stop marker only at seal boundaries, so the stop had to be published between the 250 and 500 seals (16:24:21Z to 16:28:36Z on that pod, MEASURED from its `checkpoint.seal` rows), and the conductor missed that window, then re-ran the pair as wave 2 with `--stop-mode declared`. The missed window is CONDUCTOR-REPORTED (the conductor's own record of 2026-10-26); the captures show only its consequence |
 
 Lineage conclusion: all four pods ran the same code commit, image digest, attestation,
 accelerator class and precision record, over an identical source stream (ordered per-row match
@@ -169,14 +169,17 @@ The shared-memo rows read 0 evaluations and 0 journals on all four pods (the D5 
 HEpP7g read 3 / 3 / 6 / 9 / 3 on the same stages). The `native_verification` fresh walk reads
 3 evaluations on this probe (9 on HEpP7g).
 
-Added 2026-10-26 (blind review round 1, finding re-measured here): on the four shared-memo
-callers `generation`, `span_diagnostics`, `trace_capture` and `native_verification`, the
-`admission.end` row's `seconds` field is smaller than the `admission.start` to `admission.end`
-timestamp bracket (W1 sphere: 55.035 vs 102.043, 121.040 vs 338.435, 153.787 vs 210.438,
-384.898 vs 442.079; the same shape on W1 magnitude and W2 B). The bracket equals the stage
-seconds, so the `admission.end` event is emitted at stage end while `seconds` is the admission's
-own clock. The `seconds` values in the table are the correct field reads; a reader that brackets
-admission timing by timestamps would overstate it. A finding for the gate author, MEASURED.
+Added 2026-10-26 (blind review round 1, finding re-measured here): on the callers
+`generation`, `span_diagnostics`, `trace_capture` (shared memo) and `native_verification`
+(fresh memo, capture root), the `admission.end` row's `seconds` field is smaller than the
+`admission.start` to `admission.end` timestamp bracket (W1 sphere: 55.035 vs 102.043, 121.040 vs
+338.435, 153.787 vs 210.438, 384.898 vs 442.079; the same shape on W1 magnitude and W2 B). The
+bracket is within 0.040 to 0.123 s of the stage seconds, so the `admission.end` event is emitted
+at stage end while `seconds` is the admission's own clock. The `seconds` values in the table are
+the correct field reads; a reader that brackets admission timing by timestamps would overstate
+it. A finding for the gate author, MEASURED. RETRACTION 2026-10-26 (round 2): the first version
+of this paragraph called `native_verification` a shared-memo caller, and said the bracket
+"equals" the stage seconds when it differs by 0.040 to 0.123 s.
 
 Clocks per pod:
 
@@ -230,7 +233,8 @@ rows, which ran uninterrupted on a different pod from the same profile and seed:
 | --- | --- | --- |
 | `phase`, `step`, `source_batch`, `source_bytes`, `encoder_bytes`, `history_bytes` | 0 mismatches on 1000 rows | MEASURED |
 | `decoder_ce` (1000 rows), `future_nll_per_dimension` (750 prediction rows), `aggregate_norm` (1000 rows) | maximum absolute difference 0.0 on every field (bit-identical floats) | MEASURED |
-| every flattened field of every training row (31 dotted keys per row, lists as single leaves), row i against row i | 28 fields identical on all 1000 rows, including `objective`, all `gradients.*`, the whole `mechanism.solver.*` block and `mechanism.*.range`; 3 fields differ: `wall_seconds` and `cuda_seconds` (every row) and `cuda_peak_bytes` (136 rows, stitched rows 501 to 636, the resumed pod's first 136 steps, where a fresh process reports a lower allocator high-water mark) | MEASURED 2026-10-26 (added after blind review round 1; the first version compared only the nine fields above) |
+| every flattened field of every training row (lists as single leaves: 31 dotted keys on warm-up rows, 54 or 56 on prediction rows, 57 in the union), row i against row i | every field identical on all 1000 rows except 3, including `objective`, all `gradients.*`, the whole `mechanism.solver.*` block and `mechanism.*.range`; the 3 that differ: `wall_seconds` and `cuda_seconds` (every row) and `cuda_peak_bytes` (136 rows, stitched rows 501 to 636, the resumed pod's first 136 steps, where a fresh process reports a lower allocator high-water mark) | MEASURED 2026-10-26 (added after blind review round 1; the first version compared only the nine fields above). RETRACTION 2026-10-26 (round 2): "31 dotted keys per row" held only for the 250 warm-up rows |
+| checkpoint files at the same global step, resumed lineage vs W1 magnitude (`codec_warmup-250`, `prediction-250` written by the stopped pod; `prediction-500`, `prediction-750` written by the resumed pod) | zip archives with 157 / 172 entries; every tensor data entry byte-identical (155 of 157, 170 of 172); the two entries that differ on every pair are torch's per-save `.data/serialization_id` and `data.pkl`; all 166 tensor storage entries under `data/` are byte-identical on every pair, 1,044,048 storage bytes each side; on the two checkpoints the resumed process wrote, `data.pkl` is 120 bytes larger (21,330 vs 21,210) and the file 128 bytes larger (1,097,203 vs 1,097,075); the stopped pod's two match W1's sizes exactly. What the 120 extra pickle bytes encode was not inspected | MEASURED 2026-10-26 (added after blind review round 2, which found the size difference in the snapshot manifests). The tensor payload is identical and every downstream logged quantity through step 1000 and every continuation is identical, so the difference is in the pickle's metadata, not in the parameters or optimizer state; what the extra bytes encode stays a finding for the gate author |
 | A's last three rows / B's first three rows (`decoder_ce`, `future_nll_per_dimension`, `aggregate_norm`) | prediction 248: 4.588965 / 2.466202 / 3.417502; 249: 2.705522 / -0.409267 / 0.940906; 250: 2.798786 / 0.049914 / 1.038090; then 251: 2.662143 / -0.218496 / 1.012599; 252: 2.850077 / 0.187250 / 1.359469; 253: 2.713864 / -0.328660 / 0.842984. W1 magnitude's rows 498 to 503 carry exactly these values | MEASURED |
 | Evaluation at global 500 (A, metrics `step` 250) vs W1 magnitude's | `log_estimate`, `effective_sample_size` and `decoder_log_prob` identical on all 12 entries and 8 × 4 decoder values | MEASURED |
 | Evaluation at global 750 and 1000 (B) vs W1 magnitude's | identical on all 24 entries | MEASURED |
@@ -367,7 +371,10 @@ cover. The four HEpP7g exits that evidence could close are closed; the one that 
 documentation question outside the H0 exit list. (Filed 2026-10-26 as `tracer_partial` in
 `docs/h0/verdict-final-probe-2026-10-26.md`: the blind review raised two blocking concerns
 about what its packet could verify, both resolved by evidence in the captures but not by the
-reviewer; see the review response.)
+reviewer; see the review response. Superseded the same day: blind review round 2, on a packet
+carrying the host control records, the pre-redaction hashes, the warm-up receipt and the local
+plans, returned `tracer_complete` with no blocking finding, and the verdict file's round-2
+section files `tracer_complete`. Retractions dated "round 2" in this file are its corrections.)
 
 Proven by the captured evidence:
 
