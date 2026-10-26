@@ -15,7 +15,7 @@ binding text), **BLANK** (filled later, by whom stated).
 | --- | --- | --- |
 | Status | DRAFT skeleton, not a registration | PLAN |
 | Base SHA | `17aaf1826eb07c5bcb79f6c3670afc9e88dd4db9` | MEASURED, `git log -1` |
-| Sealed so far | nothing; section 10.1 records the 2026-10-26 rulings, three values still open | PLAN |
+| Sealed so far | nothing; section 10.1 records the 2026-10-26 rulings; open values: the Q4 ESS/k threshold, Δ, δ_mat (operator-owned) and the confirmatory n (arithmetic after the pilot) | PLAN |
 | Binding sources | plan sections "Independent preservation controls", "Effective directional/magnitude law", "Sequential experimental route", "Evidence and statistical contract"; FOR-1664 brief `.claude/workflows/briefs/for-1664-ess-k-curve.md`; H0 verdict `docs/h0/verdict-hepp7g-2026-10-22.md` | PLAN |
 | Code already present for H1 | `ladder/register/h_preservation.py` (`H1PreservationBlock`: four profiles, one paired block, axes keyed `(law.mode, spine.carrier)`, `factorial_terms`, `codec_sharing_groups`); `ladder/analyze/seed_sizing.py` (`plan_seed_count`, `dual_confidence_intervals`); `HProfile` refuses `stage == "H1"` unless `consumer == "isotropic"` and `future_weight == 0` | MEASURED, read at base |
 | Format precedent | `docs/e1-preregistration.md`, `docs/e1-5c-preregistration.md` (hypothesis, design, endpoints, estimator, decision rule, pilots, exclusion, integrity, amendments) | PLAN |

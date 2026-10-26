@@ -328,8 +328,7 @@ A numerically invertible map can still be difficult for the downstream model to 
 The target is a marginal predictive likelihood:
 
 \[
-p(x_{k+1}\mid \text{history})
-=
+p(x_{k+1}\mid \text{history}) =
 \int p_\omega(x_{k+1}\mid c)\,
 q_\phi(dc\mid s_k).
 \]
