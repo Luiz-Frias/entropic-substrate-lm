@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.6.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.5.0...v0.6.0) (2026-10-25)
+
+
+### Features
+
+* **capture:** rebase D1MlflowObserver on MetricSink, add strict sink ([#376](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/376)) ([fa4f497](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/fa4f497893626d051bd1a893da3f88c00220219a))
+* **run:** record N continuations with their sampling law (FOR-1674) ([#385](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/385)) ([411d310](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/411d31076ee56566fc0471c94240bbe716cc8d9d))
+* **run:** record observed bf16 autocast in run_start (FOR-1672) ([#384](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/384)) ([5a94e7c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5a94e7c8832c54c482e1b806150caaa3f21d7a8e))
+
+
+### Bug Fixes
+
+* **run:** label zero-sentence mechanism rows absent (FOR-1673) ([#383](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/383)) ([ef09910](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/ef09910e6761ba88b62d54fb5d3908baeee672cf))
+* **run:** wave C review round 1 fixes and guard pins ([#386](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/386)) ([43dab35](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/43dab35e04ca1c152cbe075b196d178be8bac369))
+* **scripts:** collect files the blind reviewer writes in its sandbox ([#382](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/382)) ([4a1d90b](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/4a1d90b27f3b14a76c9be80e4beffa60b7f042e4))
+
+
+### Code Refactoring
+
+* **cli:** move H and embedding handler families to siblings ([#377](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/377)) ([61fa546](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/61fa546080668abda2248ea3f0d6f572af24b3b3))
+
+
+### Documentation
+
+* **briefs:** wave B briefs FOR-1552 (strict observer), FOR-1608 ([#375](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/375)) ([863b74c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/863b74c8d7b9e3573a7ed7f27eae07629bd8c1ef))
+* **briefs:** wave C briefs FOR-1671, FOR-1672, FOR-1673, FOR-1674 ([#381](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/381)) ([9ad2538](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/9ad2538e9ca3a4e22fe9261aff8563724af4c0b3))
+* **h1:** add the H1 preregistration skeleton for the preservation 2x2 ([#380](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/380)) ([40124cd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/40124cd7da0d535080d82906b5bbffcb040ef0b2))
+
 ## [0.5.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.4.1...v0.5.0) (2026-10-23)
 
 
