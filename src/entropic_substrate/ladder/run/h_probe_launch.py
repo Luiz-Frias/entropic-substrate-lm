@@ -311,9 +311,9 @@ class H0ProbeLaunch:
         CLI 2.14.0 omits false booleans, zero volumes and empty command/port lists.
         Their absence here follows that serialization contract, not a guessed
         scientific default. A provider read must still succeed independently.
-        Measured 2026-10-26: 3.0.1 (every command moved to REST v2 in 3.0.0)
-        returns byte-identical ``template get``, ``user`` and ``pod list`` JSON
-        to 2.14.0 for this template, so the contract carries over unchanged.
+        Measured 2026-10-26: 3.0.1 returns byte-identical ``template get``,
+        ``user`` and ``pod list`` JSON to 2.14.0 for this template, so the
+        contract carries over unchanged.
         """
         if type(value) is not dict:
             raise ValueError("H0 template must be a provider object")
