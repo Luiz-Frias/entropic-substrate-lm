@@ -330,6 +330,7 @@ def test_a_long_schedule_costs_logarithmic_reads_and_a_quiet_poll_costs_one() ->
         ),
         limits=SimpleNamespace(max_object_bytes=1000),
         prefix="p",
+        resume=None,
     )
     present: set[str] = set()
     reads: list[str] = []
@@ -353,6 +354,81 @@ def test_a_long_schedule_costs_logarithmic_reads_and_a_quiet_poll_costs_one() ->
             assert len(reads) <= 1 + math.ceil(math.log2(len(candidates)))
         reads.clear()
         assert cursor.advance(cast(Any, object())) == 6000 and not reads  # nothing left to probe
+
+
+def _resumed_request(resume_name: str | None, *, warmup: int = 250) -> Any:
+    return SimpleNamespace(
+        profile=SimpleNamespace(
+            schedule=SimpleNamespace(
+                warmup_steps=warmup, steps=1000, checkpoint_interval=250, evaluation_interval=250
+            )
+        ),
+        limits=SimpleNamespace(max_object_bytes=1000),
+        prefix="p",
+        resume=None if resume_name is None else SimpleNamespace(path=f"run/{resume_name}"),
+    )
+
+
+def _probe_log(present: set[str]) -> tuple[list[str], Any]:
+    reads: list[str] = []
+
+    def fake(_objects: object, _request: object, name: str, **_kw: object) -> object | None:
+        reads.append(name)
+        return object() if name in present else None
+
+    return reads, fake
+
+
+def test_a_resumed_request_reports_progress_from_its_first_seal_after_the_stop() -> None:
+    """2026-10-26 arm B: stopped at global 500 (prediction step 250 + warmup 250), the
+    resumed prefix starts at checkpoint-750, so candidate 250 is never present."""
+    request = _resumed_request("h0-prediction-00000250-progress.json")
+    reads, fake = _probe_log({"checkpoint-00000750"})
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(controller, "read_probe_event", fake)
+        assert _CheckpointProgress(request).advance(cast(Any, object())) == 750
+    assert all(int(name.rsplit("-", 1)[1]) > 500 for name in reads)
+
+
+def test_a_resumed_request_with_nothing_published_probes_only_above_the_stop() -> None:
+    request = _resumed_request("h0-prediction-00000250-progress.json")
+    reads, fake = _probe_log(set())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(controller, "read_probe_event", fake)
+        assert _CheckpointProgress(request).advance(cast(Any, object())) is None
+    assert reads == ["checkpoint-00000750"]
+
+
+def test_a_warmup_stop_maps_to_the_global_axis_without_the_warmup_offset() -> None:
+    request = _resumed_request("h0-warmup-00000250-progress.json")
+    reads, fake = _probe_log({"checkpoint-00000500"})
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(controller, "read_probe_event", fake)
+        assert _CheckpointProgress(request).advance(cast(Any, object())) == 500
+    assert reads[0] == "checkpoint-00000500"
+
+
+def test_a_request_without_resume_still_probes_from_the_first_candidate() -> None:
+    request = _resumed_request(None)
+    reads, fake = _probe_log(set())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(controller, "read_probe_event", fake)
+        assert _CheckpointProgress(request).advance(cast(Any, object())) is None
+    assert reads == ["checkpoint-00000250"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "h0-prediction-00000200-progress.json",  # global 450: not on the seal ladder
+        "h0-prediction-00000250-receipt.json",  # not a progress receipt name
+        "h0-cooldown-00000250-progress.json",  # unknown phase
+    ],
+)
+def test_a_resume_whose_stop_is_not_on_the_seal_ladder_is_refused(name: str) -> None:
+    request = _resumed_request(name)
+    with pytest.raises(ValueError, match="resume"):
+        _CheckpointProgress(request).advance(cast(Any, object()))
 
 
 # --------------------------------------------- 3. the provider-aware controller
