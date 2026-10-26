@@ -34,6 +34,7 @@ from entropic_substrate.ladder.run.object_worker import (
     classify_stop_marker,
     encode_stop_marker,
     run_object_worker,
+    stop_marker_hits,
     stop_marker_key,
 )
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
@@ -686,4 +687,135 @@ def test_verb_cli_exits_zero_and_prints_keys_once_the_stopped_event_exists(
     expected_keys = sorted(str(entry["key"]) for entry in manifest["files"])
     assert sorted(printed["keys"]) == sorted(
         (*expected_keys, f"{request.prefix}/snapshots/stopped.json")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Target seal (the marker names WHICH seal ends the run)
+# ---------------------------------------------------------------------------
+
+
+def test_untargeted_marker_bytes_are_unchanged_and_read_old_bytes_still_classify(
+    tmp_path: Path,
+) -> None:
+    request, _ = _prepared(tmp_path)
+    legacy = json.dumps(
+        {"request_sha256": request.digest, "schema": STOP_MARKER_SCHEMA},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    assert encode_stop_marker(request) == legacy
+    assert classify_stop_marker(legacy, request) is True
+    assert stop_marker_hits(legacy, request, ("warmup_phase_any", 1)) is True
+
+
+def test_targeted_marker_hits_only_at_its_seal(tmp_path: Path) -> None:
+    request, _ = _prepared(tmp_path)
+    payload = encode_stop_marker(request, target=("prediction", 4))
+    assert json.loads(payload)["target"] == {"phase": "prediction", "step": 4}
+    assert classify_stop_marker(payload, request) is True
+    assert stop_marker_hits(payload, request, ("prediction", 4)) is True
+    assert stop_marker_hits(payload, request, ("prediction", 2)) is False
+    assert stop_marker_hits(payload, request, ("codec_warmup", 4)) is False
+    other = replace(request, nonce="9" * 64)
+    assert (
+        stop_marker_hits(
+            encode_stop_marker(other, target=("prediction", 4)), request, ("prediction", 4)
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        ("", 2),
+        ("prediction", 0),
+        ("prediction", -1),
+        ("prediction", True),
+        ("prediction", "2"),
+        (7, 2),
+    ],
+    ids=["empty_phase", "zero_step", "negative_step", "bool_step", "str_step", "int_phase"],
+)
+def test_malformed_target_is_refused_at_encode_and_at_classify(
+    tmp_path: Path, target: tuple[object, object]
+) -> None:
+    request, _ = _prepared(tmp_path)
+    with pytest.raises(ValueError, match="target"):
+        encode_stop_marker(request, target=cast("tuple[str, int]", target))
+    for bad in (
+        {"phase": target[0], "step": target[1]},
+        {"phase": "prediction"},
+        {"phase": "prediction", "step": 2, "extra": 1},
+        "prediction:2",
+    ):
+        raw = json.dumps(
+            {"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest, "target": bad},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        with pytest.raises(ValueError, match="target"):
+            classify_stop_marker(raw, request)
+
+
+def test_targeted_marker_present_from_the_start_skips_earlier_seals(tmp_path: Path) -> None:
+    request, root = _prepared(tmp_path)
+    payload = encode_stop_marker(request, target=("prediction", 2))
+    objects = _MarkerStore(control_key=stop_marker_key(request), control_payloads=(payload,))
+    marker_id = publish_probe_request(objects, request, root)
+    worker = tmp_path / "worker-run"
+    worker.mkdir()
+    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    row = json.loads(objects.values[f"{request.prefix}/stopped.json"])
+    assert row["status"] == "stopped_by_operator"
+    # warmup-2 seal was polled and passed; the stop landed at prediction-2.
+    assert row["successful_optimizer_steps"] == 4
+    assert objects.control_reads == 2
+
+
+def test_verb_publishes_the_targeted_marker(tmp_path: Path) -> None:
+    request, _ = _prepared(tmp_path)
+    objects = _ObjectStore()
+    clock = [0.0]
+    result = request_stop(
+        objects,
+        request,
+        target=("prediction", 2),
+        wait_seconds=1.0,
+        poll_seconds=1.0,
+        monotonic=lambda: clock[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+    assert result is None
+    assert objects.values[stop_marker_key(request)] == encode_stop_marker(
+        request, target=("prediction", 2)
+    )
+
+
+def test_cli_requires_both_or_neither_of_at_phase_and_at_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    objects = _ObjectStore()
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_stop.build_worker_objects",
+        lambda *_a, **_kw: objects,
+    )
+    base = _stop_argv(tmp_path, wait_seconds="0.05", poll_seconds="0.01")
+    for extra in (["--at-phase", "prediction"], ["--at-step", "2"]):
+        code = run_probe_stop(
+            [*base, *extra], environ={}, stdout=io.StringIO(), stderr=io.StringIO()
+        )
+        assert code == 2  # argparse refusal, before any object is published
+    assert objects.publishes == []
+    code = run_probe_stop(
+        [*base, "--at-phase", "prediction", "--at-step", "2"],
+        environ={},
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+    assert code == 1  # unconfirmed at the bound; the marker WAS published
+    request = launch().request
+    assert objects.values[stop_marker_key(request)] == encode_stop_marker(
+        request, target=("prediction", 2)
     )

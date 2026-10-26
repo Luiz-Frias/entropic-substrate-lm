@@ -617,6 +617,21 @@ FOR-1674 level values they replace ((3.12.13, 2.13.0) ``f518ccbf``, (3.12.14,
 ``d45302eb``) are retracted for this tree, not silently overwritten. Source rows
 re-measured unchanged.
 
+Stop-at-seal re-pin (house rule 4, MEASURED 2026-10-26, branch
+``feat/h-probe-stop-at-seal`` on ``fix/runpodctl-3.0.1``): the operator stop marker
+gains an optional ``target`` ``{phase, step}`` so a stop published early lands at a named
+seal (wave h0-final-probe-1k-v4.92c9db: the verb had no way to name a seal and the
+5-minute window between two polls was missed). h-checkpoint-reader-v2 changes because
+two of its members changed bytes -- ``ladder.run.object_worker`` (marker encoder,
+classifier, ``stop_marker_hits``, the poll now receives the seal) and
+``ladder.run.worker_execution`` (``operator_stop`` is called with ``(phase, step)``).
+Label and member set unchanged. The four checkpoint rows were recomputed with
+``tools/regime_rows.py`` after a ``ruff format`` fixed point: (3.12.13, 2.13.0)
+``5b4bbf26...``, (3.12.14, 2.13.0+cpu) ``4bba1114...``, (3.12.15, 2.13.0) ``77ba4f8b...``,
+(3.12.15, 2.13.0+cpu) ``b60b61b7...``. The values they replace (``25140936``,
+``2ef403d1``, ``fd307002``, ``941f3aef``) are retracted for this tree, not silently
+overwritten. Source rows are untouched (neither member is an h-source-reader-v3 member).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -814,19 +829,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "25140936058fe296772af5875138d1195a0b674c7786de8af315f5b13f89a2f7",  # pragma: allowlist secret
+    ): "5b4bbf26d724430723cb79e091850cd9cf7353cdf4b60813fda030b6bf965fc7",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "2ef403d110c334a3dbc81ed53897df6b1fc6f1a25e48849a46e06ffcbb3c6063",  # pragma: allowlist secret
+    ): "4bba1114c44d0fe8d55f9fb6b5d14090fd12cc0ebd357d9adbefaf3a3b1b219a",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "fd307002c6904b101d79a65d21568688deab159306bf1246b76a5888f551b6ff",  # pragma: allowlist secret
+    ): "77ba4f8b63a37415065ea66bd4bc540de492cb39861a56809643f22d4e819830",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "941f3aef0d9c2542419e6d775c9374e3636a322fda4f4704bd5bce27cb3864a3",  # pragma: allowlist secret
+    ): "b60b61b72824a8f75bac32bb835ce32a6bcba128d108149acb5366a15de94a03",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

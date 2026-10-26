@@ -46,6 +46,7 @@ def request_stop(
     objects: D1TrainerMailboxObjectPort,
     request: ProbeRequest,
     *,
+    target: tuple[str, int] | None = None,
     wait_seconds: float,
     poll_seconds: float,
     monotonic: Callable[[], float],
@@ -59,7 +60,7 @@ def request_stop(
     marker content, which the object port itself treats as success -- this
     function never catches, retries or overrides an immutable collision.
     """
-    marker_payload = encode_stop_marker(request)
+    marker_payload = encode_stop_marker(request, target)
     # A defensive self-check only; the object port is the actual admission
     # predicate for what counts as this request's own marker.
     if not classify_stop_marker(marker_payload, request):
@@ -100,6 +101,23 @@ def _parser() -> argparse.ArgumentParser:
         ("poll-seconds", float),
     ):
         parser.add_argument(f"--{name}", type=kind, required=True)
+    # Optional pair: stop at this seal (phase, step) rather than the next one.
+    parser.add_argument(
+        "--at-phase",
+        type=str,
+        default=None,
+        help="seal phase the stop lands on: codec_warmup or prediction (with --at-step)",
+    )
+    parser.add_argument(
+        "--at-step",
+        type=int,
+        default=None,
+        help=(
+            "PHASE-LOCAL optimizer step of that seal, the runner's own (phase, step) "
+            "coordinates, same as request.pause: on the 1K schedule global 500 is "
+            "--at-phase prediction --at-step 250 (with --at-phase)"
+        ),
+    )
     return parser
 
 
@@ -121,6 +139,10 @@ def run_probe_stop(
             args = _parser().parse_args(list(argv))
         except SystemExit as error:
             return 0 if error.code == 0 else 2
+        if (args.at_phase is None) != (args.at_step is None):
+            stderr.write("--at-phase and --at-step must be given together\n")
+            return 2
+        target = None if args.at_phase is None else (args.at_phase, args.at_step)
         if args.wait_seconds <= 0 or args.poll_seconds <= 0:
             raise ValueError("wait and poll bounds must be positive")
         _, payload, _ = read_d1_artifact_bytes(
@@ -138,10 +160,18 @@ def run_probe_stop(
             max_objects=request.limits.max_objects,
         )
         pod_name = launch.pod_name
-        emit("info", HOST_STOP_MARKER_REQUESTED, pod_name=pod_name, wait_seconds=args.wait_seconds)
+        at = {} if target is None else {"at_phase": target[0], "at_step": target[1]}
+        emit(
+            "info",
+            HOST_STOP_MARKER_REQUESTED,
+            pod_name=pod_name,
+            wait_seconds=args.wait_seconds,
+            **at,
+        )
         keys = request_stop(
             objects,
             request,
+            target=target,
             wait_seconds=args.wait_seconds,
             poll_seconds=args.poll_seconds,
             monotonic=time.monotonic,
