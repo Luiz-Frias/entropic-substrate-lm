@@ -91,7 +91,10 @@ def encode_stop_marker(request: ProbeRequest, target: tuple[str, int] | None = N
         # here, at the verb, rather than discovered as a timeout.
         schedule = request.profile.schedule
         budget = schedule.warmup_steps if phase == "codec_warmup" else schedule.steps
-        if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget:
+        is_seal = step == budget or step % schedule.checkpoint_interval == 0
+        if phase == "prediction":
+            is_seal = is_seal or step % schedule.evaluation_interval == 0
+        if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget or not is_seal:
             raise ValueError("stop marker target is outside the request schedule")
         row["target"] = {"phase": phase, "step": step}
     return _canonical(row)

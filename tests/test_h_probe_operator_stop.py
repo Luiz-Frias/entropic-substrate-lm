@@ -852,3 +852,41 @@ def test_target_outside_the_request_schedule_is_refused_at_encode(
     # Control: the largest in-range step of each real phase still encodes.
     encode_stop_marker(request, target=("prediction", schedule.steps))
     encode_stop_marker(request, target=("codec_warmup", schedule.warmup_steps))
+
+
+def test_in_budget_step_that_is_not_a_seal_is_refused_at_encode(tmp_path: Path) -> None:
+    """Review round 2: step 1 is inside the budget but never polled; refuse it at the verb."""
+    request, _ = _prepared(tmp_path)
+    schedule = request.profile.schedule
+    assert schedule.checkpoint_interval > 1  # the fixture must have a non-seal step to test
+    with pytest.raises(ValueError, match="outside the request schedule"):
+        encode_stop_marker(request, target=("prediction", 1))
+
+
+def test_target_rule_equals_the_pause_rule_on_every_coordinate(tmp_path: Path) -> None:
+    """Parity pin: the marker target accepts exactly the coordinates ``ProbeRequest.pause``
+    accepts, over every (phase, step) up to one past each budget plus an unknown phase."""
+    request, _ = _prepared(tmp_path)
+    schedule = request.profile.schedule
+    grid = [
+        (phase, step)
+        for phase, budget in (
+            ("codec_warmup", schedule.warmup_steps),
+            ("prediction", schedule.steps),
+            ("evaluation", schedule.steps),
+        )
+        for step in range(1, budget + 2)
+    ]
+    assert len(grid) >= 6
+    for coordinate in grid:
+        try:
+            replace(request, pause=coordinate)
+            pause_ok = True
+        except ValueError:
+            pause_ok = False
+        try:
+            encode_stop_marker(request, target=coordinate)
+            target_ok = True
+        except ValueError:
+            target_ok = False
+        assert target_ok is pause_ok, coordinate
