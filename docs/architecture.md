@@ -2,7 +2,8 @@
 
 **Status (source-reviewed 2026-10-26):** the sentence-first generative core and H0 engineering
 execution path are implemented. The October 22 HEpP7g verdict remains `tracer_partial`; the
-October 26 final probe is filed `tracer_complete` (`h0/verdict-final-probe-2026-10-26.md`).
+October 26 final probe is filed `tracer_complete` in the filing PR stacked directly above
+this one (its verdict file lands under `h0/` with that PR).
 H1 has a draft design, not a completed scientific execution path. H1–H5 are not ready as a fully admitted
 sequential campaign. See the [dated systems checklist](reviews/2026-10-26-systems-checklist.md).
 This corrects the earlier “not yet implemented” status; it does not upgrade a scientific result.

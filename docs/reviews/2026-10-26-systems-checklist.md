@@ -5,7 +5,9 @@
 The implementation now contains the intended **continuous sentence-clock generator**,
 not merely Fisher initialization or a byte-clock auxiliary latent objective. Its core
 construction is aligned with the thesis. The programme is **not yet at “just run every
-flywheel”**: H0 has a filed `tracer_partial`, H1 has numerical and statistical declarations
+flywheel”**: H0 has a filed `tracer_partial` (October 22, HEpP7g; addendum, same day after this
+audit: the October 26 final probe is filed `tracer_complete` in the stacked filing PR), H1 has
+numerical and statistical declarations
 but not an admitted pilot/confirmation executor, and later H stages still need their
 own controlled experiment adapters and evidence. More infrastructure is not the immediate
 goal; close the specific evidence and experimental seams below.
@@ -175,7 +177,7 @@ same boundary protocol and declared exposure/resource accounting.
 
 | Stage | Implemented or filed now | What still prevents its scientific exit |
 |---|---|---|
-| H0 complete tracer | Real generator, worker, custody/readers, H aggregation/charts, final-probe checks, and [filed October 22 verdict](../h0/verdict-hepp7g-2026-10-22.md#L3). | Verdict is **tracer_partial**, not a hypothesis win. Close same-lineage stochastic rollout, recovery/resume, test-only gate, and remaining observation/schema exits with new admissible evidence. |
+| H0 complete tracer | Real generator, worker, custody/readers, H aggregation/charts, final-probe checks, and [filed October 22 verdict](../h0/verdict-hepp7g-2026-10-22.md#L3). | Verdict is **tracer_partial**, not a hypothesis win (addendum, same day after this audit: the October 26 final probe is filed `tracer_complete` in the stacked filing PR, closing the exits listed next). Close same-lineage stochastic rollout, recovery/resume, test-only gate, and remaining observation/schema exits with new admissible evidence. |
 | H1 preservation | [Four-cell block](../../src/entropic_substrate/ladder/register/h_preservation.py#L29), factorial coefficients, codec-sharing declaration, strict profile exclusions; [draft skeleton](../h1/preregistration-skeleton.md#L12). | Bind actual shared codec artifacts; add missing detail/intervention instruments; admit H observations and pilot captures; seal margins/endpoints/seed matrix; execute/review/file. |
 | H2 predictive value | Prior-sampled language-only and supervised objectives are connected; profile forbids Fisher. | No complete boundary-matched flat-versus-hierarchical campaign/registration/analysis adapter was found. Retained E flat training does not by itself supply that matched control. |
 | H3 geometry | Isotropic/Fisher consumers, dense action and derivative oracles, per-solve diagnostics. | Registered paired experiment in each eligible construction, attribution controls and actual geometry-to-text usefulness/off-target evidence; measured resources. |
