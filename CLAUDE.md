@@ -52,7 +52,8 @@ center; a useful hierarchy without useful Fisher consumption is a legitimate nar
   latents, survives checkpoint/resume, and traverses capture, fresh-session analysis, arm-blind
   review, filing, and an explicit gate on one lineage. Posture 2026-10-26: both carriers
   completed 1K-step runs with completion receipts, a declared pause at global 500 resumed to
-  1000, and the K1–K7 check suite passes inside the image regime; the filing is in progress.
+  1000, and the K1–K7 check suite passes inside the image regime; filed `tracer_complete`
+  after two arm-blind review rounds (`docs/h0/verdict-final-probe-2026-10-26.md`).
   A passing forward call or teacher-forced reconstruction alone is not completion.
 - **H1, preservation.** Done enough when the declared 2×2 of sentence-vector and spine
   normalization runs as a factorial with actual codec sharing, observation admission, an
@@ -171,8 +172,8 @@ architecture is the codec-separated predictor above. Status (2026-10-26): the lo
 generative path is implemented and unit-tested; H0 is filed `tracer_partial` on wave HEpP7g
 (`docs/h0/verdict-hepp7g-2026-10-22.md`); the 2026-10-26 final probe on A100 completed both
 carriers at 1K steps with completion receipts, paused one arm at global 500 by a declared
-pause and resumed it to 1000, and passes the K1-K7 check suite inside the image regime; its
-fresh-session analysis, arm-blind review and filing are in progress under `docs/h0/`. The
+pause and resumed it to 1000, and passes the K1-K7 check suite inside the image regime; it is
+filed `tracer_complete` after two arm-blind review rounds (`docs/h0/verdict-final-probe-2026-10-26.md`). The
 2026-10-26 reviews under `docs/reviews/` bind the thesis and the per-stage readiness.
 
 Three swappable components under a standard decoder-only transformer, selected per
