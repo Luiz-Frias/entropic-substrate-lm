@@ -86,6 +86,13 @@ def encode_stop_marker(request: ProbeRequest, target: tuple[str, int] | None = N
     row: dict[str, object] = {"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest}
     if target is not None:
         phase, step = _valid_target(target)
+        # Same coordinate rule as ``ProbeRequest.pause``: the marker is immutable
+        # once published, so a target the runner never reaches must be refused
+        # here, at the verb, rather than discovered as a timeout.
+        schedule = request.profile.schedule
+        budget = schedule.warmup_steps if phase == "codec_warmup" else schedule.steps
+        if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget:
+            raise ValueError("stop marker target is outside the request schedule")
         row["target"] = {"phase": phase, "step": step}
     return _canonical(row)
 

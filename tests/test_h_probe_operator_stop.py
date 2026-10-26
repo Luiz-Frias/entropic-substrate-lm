@@ -819,3 +819,36 @@ def test_cli_requires_both_or_neither_of_at_phase_and_at_step(
     assert objects.values[stop_marker_key(request)] == encode_stop_marker(
         request, target=("prediction", 2)
     )
+
+
+@pytest.mark.parametrize(
+    ("phase", "step_from"),
+    [
+        ("prediction", "steps+1"),
+        ("codec_warmup", "warmup+1"),
+        ("predicton", "one"),
+        ("evaluation", "one"),
+    ],
+)
+def test_target_outside_the_request_schedule_is_refused_at_encode(
+    tmp_path: Path, phase: str, step_from: str
+) -> None:
+    """A target the runner can never reach must fail at the verb, not time out.
+
+    The marker is immutable once published (byte-identical republish only), so a
+    bad target cannot be corrected for the same request; the rule mirrors
+    ``ProbeRequest.pause``: phase in {codec_warmup, prediction}, 1 <= step <= that
+    phase's budget. The worker-side reader stays unchanged (never raises).
+    """
+    request, _ = _prepared(tmp_path)
+    schedule = request.profile.schedule
+    step = {
+        "steps+1": schedule.steps + 1,
+        "warmup+1": schedule.warmup_steps + 1,
+        "one": 1,
+    }[step_from]
+    with pytest.raises(ValueError, match="outside the request schedule"):
+        encode_stop_marker(request, target=(phase, step))
+    # Control: the largest in-range step of each real phase still encodes.
+    encode_stop_marker(request, target=("prediction", schedule.steps))
+    encode_stop_marker(request, target=("codec_warmup", schedule.warmup_steps))

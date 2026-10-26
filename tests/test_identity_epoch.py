@@ -632,6 +632,11 @@ Label and member set unchanged. The four checkpoint rows were recomputed with
 ``2ef403d1``, ``fd307002``, ``941f3aef``) are retracted for this tree, not silently
 overwritten. Source rows are untouched (neither member is an h-source-reader-v3 member).
 
+Stop-at-seal follow-up re-pin (house rule 4, MEASURED 2026-10-26, same branch, PR #391 review):
+``ladder.run.object_worker`` now refuses a stop target outside the request schedule at encode
+time (CodeRabbit finding), so its bytes moved again and the four checkpoint rows were recomputed
+with ``tools/regime_rows.py``. Retracted for this tree, the 92af16b6 values: (3.12.13, 2.13.0) ``5b4bbf26...``, (3.12.14, 2.13.0+cpu) ``4bba1114...``, (3.12.15, 2.13.0) ``77ba4f8b...``, (3.12.15, 2.13.0+cpu) ``b60b61b7...``. Source rows unchanged.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -829,19 +834,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "5b4bbf26d724430723cb79e091850cd9cf7353cdf4b60813fda030b6bf965fc7",  # pragma: allowlist secret
+    ): "fd4d9f47dc702a5d6f64e5c9dfa576d2f69c900b10a4d0995a2489078c2eca60",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "4bba1114c44d0fe8d55f9fb6b5d14090fd12cc0ebd357d9adbefaf3a3b1b219a",  # pragma: allowlist secret
+    ): "53854d6bed2df78814eaaf6e7c45074c6bcde7b3719975216e7798f1fa85830c",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "77ba4f8b63a37415065ea66bd4bc540de492cb39861a56809643f22d4e819830",  # pragma: allowlist secret
+    ): "283bcaad08c76b6a1ec6586360e207c185bad943e472b35f7d37734130aa11f4",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "b60b61b72824a8f75bac32bb835ce32a6bcba128d108149acb5366a15de94a03",  # pragma: allowlist secret
+    ): "1bbb94b910e85c9d999b9ffc113d5b776b5441bd83010e73b47e339c56da3050",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
