@@ -5,15 +5,27 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-ba76c0a.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-046cfb0.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:e4986ac9eaca8ce90cdf8798a66ae97dfe8211775b5effacdceb7d14b5cbe2d0
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:88e21c59b17b3b3656671c4bb5aba92a3e921b1d5d93249efbd6b03f8acfc537
 ```
 
-Runtime source matches commit `ba76c0adcdeb4b301b7d786d1ab4e84f8bf973ca` exactly.
+Runtime source matches commit `046cfb05ab4b4b835e4819b9d9be71da9e698a00` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED (release v0.6.0, branch `fix/h-image-repin-0.6.0`, operator go-ahead 2026-10-23): the
+previous pin (`e4986ac9...`, source `ba76c0a`) is superseded; its capture `results/h-image-
+publication-ba76c0a.dvc` remains historical evidence. This image is built from the v0.6.0 release
+tip of `main`. It carries waves B and C (PRs #375 to #386: the strict MLflow observer and CLI
+handler families, the blind-review sandbox file collection, observed bf16 autocast in run_start,
+structurally absent zero-sentence mechanism rows, and FOR-1674's generation receipt v3 with N
+continuations per prompt and their sampling law plus the profile continuations field) and the H1
+preregistration skeleton, so the worker a probe exercises can prove stochastic rollout and record
+its autocast state. Same verifier and `h-prepare-source` manifest as the ba76c0a publication; the
+source replay's in-image capture admitted 491 documents / 1954698 bytes, corpus identity
+`cf938a0b...`. The nine-key RunPod template for this image is `w1rl2rxaqw`
+(`mythwave-h0-046cfb0-v0.6.0`; see LAUNCH SCHEMA v3 below).
 RE-PINNED 2026-10-22 (release v0.4.0, branch `fix/h-image-repin-0.4.0`, operator go-ahead
 2026-10-22): the previous pin (`8181443b...`, source `9d353fc`) is superseded; its capture
 `results/h-image-publication-9d353fc.dvc` remains historical evidence. This image is built from
@@ -80,7 +92,7 @@ scientific confirmation, or successor eligibility. Paid 6K validation is authori
 but completion requires the worker's verified artifacts. Do not substitute `latest`
 for this digest.
 
-The pin above (source `ba76c0a`, as did the 9d353fc and dbe9709 pins) carries FOR-1637: the H worker's log-event vocabulary and the
+The pin above (source `046cfb0`, as did the ba76c0a, 9d353fc and dbe9709 pins) carries FOR-1637: the H worker's log-event vocabulary and the
 `worker-log.jsonl` MLflow artifact. (Until 2026-10-17 this paragraph said the pin did not
 contain them, which was true of the 65542d4 pin.)
 
@@ -97,7 +109,7 @@ and `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` beyond the seven). The nine-key 
 the conductor at the image rebuild ceremony; no template is created, and no template id is recorded
 here, until that ceremony has measured one. MEASURED 2026-10-17: template `3n4y0ba76d`
 (`mythwave-h0-dbe9709-parity`, nine keys, image `96e985048fd9...`) was created at the dbe9709 rebuild
-ceremony and read back whole. MEASURED 2026-10-22: template `tgk12wur3v` (`mythwave-h0-ba76c0a-v0.4.0`,
+ceremony and read back whole. MEASURED: template `w1rl2rxaqw` (`mythwave-h0-046cfb0-v0.6.0`, nine keys, image `88e21c59b17b...`) was created at the 046cfb0 rebuild ceremony and read back whole; `tgk12wur3v` stays bound to the superseded ba76c0a image. MEASURED 2026-10-22: template `tgk12wur3v` (`mythwave-h0-ba76c0a-v0.4.0`,
 nine keys, image `e4986ac9eaca...`) was created at the ba76c0a rebuild ceremony and read back whole;
 `wjag3o82g3` stays bound to the superseded 9d353fc image. MEASURED 2026-10-19: template `wjag3o82g3` (`mythwave-h0-9d353fc-v0.3.1`,
 nine keys, image `8181443b6c41...`) was created at the 9d353fc rebuild ceremony and read back whole;
