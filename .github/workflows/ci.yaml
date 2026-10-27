@@ -44,12 +44,19 @@ jobs:
           version: "latest"
           enable-cache: true
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      # Exact patch, never a floating "3.12": the identity regime table in
+      # tests/test_identity_epoch.py keys on (python_version, torch.__version__),
+      # so a runner that resolves a newer CPython fails the digest test by name.
+      # MEASURED 2026-10-02 (3.12.14 -> 3.12.15, PR #323) and 2026-10-27 (3.12.15 ->
+      # 3.12.16, runs 40519114224 / 40538710441 / 40540752238): both drifts came
+      # from this float. The pin matches mise.toml; bumping it moves the regime row
+      # in the same commit (operator ruling 2026-10-27).
+      - name: Set up Python 3.12.15
+        run: uv python install 3.12.15
 
       - name: Install CPU-only torch + project deps
         run: |
-          uv venv --python 3.12
+          uv venv --python 3.12.15
           # --no-config: the pytorch index serves no upload timestamps, and uv's
           # exclude-newer pin (pyproject [tool.uv]) excludes timestamp-less files
           # entirely. The ==2.13.0 pin matches the Containerfile base image and
