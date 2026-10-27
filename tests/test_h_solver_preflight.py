@@ -29,7 +29,7 @@ from entropic_substrate.core.sentence.law import LawSpec
 from entropic_substrate.core.sentence.profile import HProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-from h_solver_preflight import REFUSE_EXIT, assess, main  # tools/ is not a package
+from h_solver_preflight import REFUSE_EXIT, assess, main, verdict_for  # tools/ is not a package
 from h_solver_trace import CapturedSolve, capture_solves
 
 pytestmark = pytest.mark.unit
@@ -108,12 +108,16 @@ def test_no_observed_solve_is_never_a_pass() -> None:
     assert report["rows"] == [] and report["max_iterations_used"] is None
 
 
-def _pod_shaped(tmp_path: Path, budget: int | None = None) -> tuple[Path, Path, HProfile]:
+def _pod_shaped(
+    tmp_path: Path, budget: int | None = None, consumer: str | None = None
+) -> tuple[Path, Path, HProfile]:
     """A remote tiny profile bound to a foreign capture by its source digest."""
     foreign, _ = _foreign_capture(tmp_path)
     value = _remote(profile())
     if budget is not None:
         value = replace(value, solver=replace(value.solver, max_iterations=budget))
+    if consumer is not None:
+        value = replace(value, consumer=consumer)
     digest = hashlib.sha256(foreign.read_bytes()).hexdigest()
     value = HProfile.from_manifest(value.manifest | {"source_digest": digest})
     path = tmp_path / "attempt" / "profile.json"
@@ -144,6 +148,8 @@ def test_command_passes_and_files_the_verdict_beside_the_profile(tmp_path: Path)
     assert verdict["phase"] == "prediction" and verdict["step"] == 1
     assert verdict["step_status"] == "committed"
     assert verdict["verdict"] == "PASS" and verdict["rows"]
+    assert verdict["consumer"] == "fisher"
+    assert verdict["warmup_steps_completed"] == value.schedule.warmup_steps
     for key in ("max_iterations_used", "max_textbook_iterations", "worst_residual_ratio"):
         assert key in verdict
 
@@ -165,3 +171,53 @@ def test_command_rejects_a_corpus_that_is_not_the_profiles_source(tmp_path: Path
     with pytest.raises(ValueError, match="source digest"):
         _command(path, foreign)
     assert not (path.parent / "preflight.json").exists()
+
+
+def test_isotropic_profile_is_not_applicable_and_exits_zero(tmp_path: Path) -> None:
+    """An isotropic consumer never solves, so zero captured solves is the expected observation."""
+    path, foreign, value = _pod_shaped(tmp_path, consumer="isotropic")
+    assert _command(path, foreign) == 0
+    verdict = json.loads((path.parent / "preflight.json").read_text())
+    assert verdict["verdict"] == "NOT_APPLICABLE"
+    assert verdict["consumer"] == "isotropic"
+    assert verdict["profile_identity"] == value.identity
+    assert verdict["solves_observed"] == 0 and verdict["rows"] == []
+    assert verdict["warmup_steps_completed"] == value.schedule.warmup_steps
+    assert verdict["phase"] == "prediction" and verdict["step"] == 1
+    assert verdict["step_status"] == "committed"
+    assert verdict["scientific_authority"] == "none"
+    assert verdict["spending_authority"] == "none"
+
+
+def test_fisher_profile_with_no_observed_solve_still_refuses() -> None:
+    """Zero solves under a Fisher consumer is a defect, not an inapplicable gate."""
+    report = assess([])
+    assert verdict_for("fisher", report, "committed") == "REFUSE"
+
+
+def test_fisher_verdict_is_the_assessed_verdict() -> None:
+    assert verdict_for("fisher", {"verdict": "PASS", "solves_observed": 1}, "committed") == "PASS"
+    assert verdict_for("fisher", {"verdict": "REFUSE", "solves_observed": 1}, "committed") == (
+        "REFUSE"
+    )
+
+
+def test_fisher_step_that_did_not_commit_refuses_even_when_its_solves_converged() -> None:
+    """A law raise after converged solves (e.g. nonfinite_log_density) is not a PASS."""
+    report = {"verdict": "PASS", "solves_observed": 1}
+    assert verdict_for("fisher", report, "nonfinite_log_density") == "REFUSE"
+
+
+@pytest.mark.parametrize(
+    ("solves", "status"),
+    [(1, "committed"), (0, "solver_nonconvergence")],
+    ids=["isotropic-solved", "isotropic-step-failed"],
+)
+def test_isotropic_profile_that_solves_or_fails_its_step_refuses(solves: int, status: str) -> None:
+    report = {"verdict": "PASS", "solves_observed": solves}
+    assert verdict_for("isotropic", report, status) == "REFUSE"
+
+
+def test_unknown_consumer_is_a_tool_error() -> None:
+    with pytest.raises(ValueError, match="consumer"):
+        verdict_for("riemannian", {"verdict": "PASS", "solves_observed": 1}, "committed")
