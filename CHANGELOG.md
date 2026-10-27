@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.7.1...v0.8.0) (2026-10-27)
+
+
+### Features
+
+* **analyze:** project H1 E-LM per canonical byte with median ESS/k ([#395](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/395)) ([7e6fbf4](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7e6fbf4fd37be09a67324394ddf764c7a182061f))
+* **run:** add the H run admission port and route the launch ([#396](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/396)) ([d59bd58](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d59bd588970bb412472b94058bdd3bdca5e28453))
+
+
+### Bug Fixes
+
+* **ladder:** reconcile sentence gradients by identity, not fp32 norm ([d5eb865](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d5eb86506441872bf730954347313a1dba9161ce))
+* **ladder:** reconcile sentence gradients by identity, not fp32 norm ([#402](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/402)) ([d5eb865](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d5eb86506441872bf730954347313a1dba9161ce))
+* **tools:** give isotropic profiles a NOT_APPLICABLE solver preflight ([d5eb865](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d5eb86506441872bf730954347313a1dba9161ce))
+
 ## [0.7.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.7.0...v0.7.1) (2026-10-27)
 
 
