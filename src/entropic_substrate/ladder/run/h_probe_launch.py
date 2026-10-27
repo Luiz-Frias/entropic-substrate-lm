@@ -31,6 +31,7 @@ from types import MappingProxyType
 from typing import cast
 
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     parse_probe_request,
@@ -177,7 +178,8 @@ class H0ProbeLaunch:
         if type(self.request) is not ProbeRequest:
             raise TypeError("H0 deployment requires a validated worker request")
         request = parse_probe_request(self.request.payload, max_bytes=len(self.request.payload))
-        if request.profile.run_class != "remote_tiny" or request.profile.stage != "H0":
+        run_class = request.profile.run_class
+        if not RUN_ADMISSION.admits(run_class, request.profile.stage, "launch"):
             raise ValueError("deployment is restricted to remote H0 tiny probes")
         object.__setattr__(self, "request", request)
         for value in (self.registry_auth_id, self.data_center_id, self.template_id):
@@ -209,7 +211,7 @@ class H0ProbeLaunch:
             raise ValueError(
                 "watchdog must leave time after the controller deadline for capture/teardown"
             )
-        if self.cost_guard != "host_watchdog_tiny_only":
+        if not RUN_ADMISSION.admits_cost_guard(run_class, self.cost_guard):
             raise ValueError("H0 deployment requires the declared tiny-only watchdog exception")
         secret_names = (
             self.r2_access_secret_name,
