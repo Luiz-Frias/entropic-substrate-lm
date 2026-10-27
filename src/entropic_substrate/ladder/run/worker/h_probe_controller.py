@@ -9,10 +9,11 @@ concurrent arms that share one JSON file can be told apart.
 """
 
 import math
+import re
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
@@ -90,6 +91,18 @@ class ProbeProviderAbsent(RuntimeError):
         super().__init__("provider reports the attributed pod absent without terminal evidence")
 
 
+_RESUME_RECEIPT = re.compile(r"-(warmup|prediction)-(\d{8})-progress\.json")
+
+
+def _stopped_global_step(path: str, warmup_steps: int) -> int:
+    """The global optimizer step a resume receipt stopped at, from its artifact name."""
+    match = _RESUME_RECEIPT.search(PurePosixPath(path).name)
+    if match is None:
+        raise ValueError(f"resume receipt name {path!r} carries no stopped step")
+    phase, step = match.group(1), int(match.group(2))
+    return step + (warmup_steps if phase == "prediction" else 0)
+
+
 class _CheckpointProgress:
     """Advisory R2 progress: the newest ``checkpoint-N`` event, found without listing.
 
@@ -100,6 +113,16 @@ class _CheckpointProgress:
     run length and of how many objects sit under the request prefix. The newest event is
     chosen by parsed step, never by lexical order. Nothing here can change the loop's
     exit, the collection, the stop reason or the result record.
+
+    A resumed request publishes only the seals after the step its receipt stopped at, so
+    the candidates are filtered to global steps above it; probing from the first
+    candidate never finds a present event and the walk cannot advance. MEASURED
+    2026-10-26, arm B of wave h0-final-probe-resume-v4.1755b0: stopped at global 500,
+    R2 held ``checkpoint-00000750`` under B's prefix and MLflow reached 1000, yet every
+    tick logged ``state=no_progress_yet``. The stopped step is parsed from the resume
+    receipt name ``...-{phase}-{step:08d}-progress.json`` (the receipt's ``step`` is
+    phase-local, so a prediction stop adds ``warmup_steps``). A stop that is not on the
+    seal ladder is refused, never rounded.
     """
 
     def __init__(self, request: ProbeRequest) -> None:
@@ -122,6 +145,14 @@ class _CheckpointProgress:
                 checkpoint_interval=schedule.checkpoint_interval,
                 evaluation_interval=schedule.evaluation_interval,
             )
+            resume = self._request.resume
+            if resume is not None:
+                stopped = _stopped_global_step(resume.path, schedule.warmup_steps)
+                if stopped not in self._steps:
+                    raise ValueError(
+                        f"resume stop at global step {stopped} is not on the seal ladder"
+                    )
+                self._steps = tuple(step for step in self._steps if step > stopped)
         steps = self._steps
         if self._known < len(steps) and self._present(objects, steps[self._known]):
             self._known += 1
