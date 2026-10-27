@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.7.0...v0.7.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ci:** pin CPython 3.12.15 and add the 3.12.16 regime rows ([#399](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/399)) ([1228d08](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/1228d088ce8d95f9e7a73d7f4da373139cd56757))
+
 ## [0.7.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.6.1...v0.7.0) (2026-10-27)
 
 
