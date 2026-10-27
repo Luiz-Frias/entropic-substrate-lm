@@ -660,7 +660,7 @@ def _example_failures(example: object, expected: set[str], where: str) -> list[s
                 continue
             gap = entry.get("gap")  # pyright: ignore[reportUnknownMemberType]
             if gap is not None:
-                # the reader admits exactly one gap (h_aggregate._check_evaluation_entry)
+                # the reader admits exactly one gap (h_elm_projection.require_importance_entry)
                 if gap != _ZERO_MASS_GAP:
                     failures.append(f"{where}: k={k}: has an unknown gap {gap!r}")
                 continue  # a zero-importance-weight row carries no estimate

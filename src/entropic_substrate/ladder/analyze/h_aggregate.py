@@ -50,6 +50,13 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from entropic_substrate.kernel.codec.strict_json import strict_loads
+from entropic_substrate.ladder.analyze.h_elm_projection import (
+    DEFAULT_DENOMINATOR,
+    HEADLINE_SAMPLES,
+    ZERO_MASS_GAP,
+    project_elm,
+    require_importance_entry,
+)
 from entropic_substrate.ladder.capture.reader.h_telemetry import (
     final_h_run_end,
     require_json_object_lines,
@@ -116,6 +123,9 @@ class HRun:
     mlflow_run_id: str | None
     stages: tuple[dict[str, Any], ...]
     admissions: tuple[dict[str, Any], ...]
+    # (global step, E-LM projection of the same evaluation row), in stream order; one
+    # entry per ``evaluations`` entry (h_elm_projection.project_elm, default denominator)
+    elm: tuple[tuple[int, dict[str, Any]], ...]
 
 
 def _gap(message: str) -> NoReturn:
@@ -280,28 +290,9 @@ def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
             _gap(f"{path}: step {row.get('step')} ({phase}) has a non-finite {key}: {value!r}")
 
 
-_EVALUATION_ENTRY_FIELDS = ("log_estimate", "effective_sample_size", "likelihood_relative_mcse")
-_ZERO_MASS_GAP = "zero_importance_weight_mass"
-
-
-def _check_evaluation_entry(entry: dict[str, Any], where: str, path: Path) -> None:
-    """The engine's admission predicate for one importance row.
-
-    A finite row carries three finite numbers and no gap. A zero-importance-weight row
-    carries a gap and three nulls. Every other combination is refused.
-    """
-    gap = entry.get("gap")
-    values = {key: entry.get(key) for key in _EVALUATION_ENTRY_FIELDS}
-    if gap is None:
-        for key, value in values.items():
-            if not _finite_number(value):
-                _gap(f"{path}: {where} has a non-finite {key}")
-    elif gap == _ZERO_MASS_GAP:
-        present = [key for key, value in values.items() if value is not None]
-        if present:
-            _gap(f"{path}: {where} is a {_ZERO_MASS_GAP} gap but carries {present}")
-    else:
-        _gap(f"{path}: {where} has an unknown gap {gap!r}")
+# the one gap the reader admits; the predicate lives in h_elm_projection, this name is
+# pinned by tests/test_h_final_probe_checks.py against that module's mirror
+_ZERO_MASS_GAP = ZERO_MASS_GAP
 
 
 def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int) -> None:
@@ -325,7 +316,7 @@ def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int
             for entry in entries:  # pyright: ignore[reportUnknownVariableType]
                 if not isinstance(entry, dict):
                     _gap(f"{path}: {where} has a non-object entry")
-                _check_evaluation_entry(entry, where, path)
+                require_importance_entry(entry, f"{path}: {where}")
 
 
 def load_h_run(
@@ -374,6 +365,7 @@ def load_h_run(
     extractor = HTrainingStepExtractor(warmup_steps=warmup_steps)
     training: list[tuple[int, str, dict[str, float]]] = []
     evaluations: list[tuple[int, dict[str, float]]] = []
+    elm: list[tuple[int, dict[str, Any]]] = []
     publication: dict[int, float] = {}
     uncommitted = 0
     warmup_rows = 0
@@ -414,6 +406,8 @@ def load_h_run(
             if projected is None or not projected.metrics:
                 _gap(f"{metrics}: evaluation at step {row.get('step')} has no projection")
             evaluations.append((projected.step, dict(projected.metrics)))
+            where = f"{metrics}: evaluation at global step {projected.step}"
+            elm.append((projected.step, project_elm(row, where=where)))
         elif row.get("event") == "annotate":
             for key, value in row.items():
                 match = _PUBLICATION_KEY.fullmatch(key)
@@ -478,6 +472,7 @@ def load_h_run(
         mlflow_run_id=mlflow_run_id,
         stages=stages,
         admissions=admissions,
+        elm=tuple(elm),
     )
 
 
@@ -542,11 +537,18 @@ def run_summary(run: HRun) -> dict[str, Any]:
     """
     steps = [step for step, _, _ in run.training]
     first_prediction = next((s for s, phase, _ in run.training if phase == _PREDICTION), None)
+    denominators = sorted({projection["denominator"] for _, projection in run.elm})
     return {
         "checkpoint_steps": sorted(run.publication_seconds),
         "committed_step_rows": len(run.training),
         "completed": run.run_end.get("status") == "ok"
         and run.run_end.get("result_status") == _COMPLETE_RESULT,
+        "elm": {
+            "denominator": denominators[0] if len(denominators) == 1 else denominators,
+            "headline_samples": HEADLINE_SAMPLES,
+            "headline_steps": [step for step, p in run.elm if p["headline"]["present"]],
+            "samples": sorted({int(k) for _, p in run.elm for k in p["samples"]}),
+        },
         "evaluation_steps": [step for step, _ in run.evaluations],
         "first_prediction_step": first_prediction,
         "future_nll_per_dimension": _nll_summary(run),
@@ -577,6 +579,19 @@ def _paired(
     common = sorted(set.intersection(*(set(s) for s in series.values())))
     unpaired = {label: sorted(set(s) - set(common)) for label, s in series.items()}
     return common, unpaired
+
+
+def _metric_order(name: str) -> tuple[str, int]:
+    """``eval/<quantity>_k<k>`` keys ordered by quantity, then numerically by k."""
+    stem, _, k = name.rpartition("_k")
+    return (stem, int(k)) if k.isdigit() else (name, 0)
+
+
+def _one_denominator(elm: Mapping[str, Mapping[int, Mapping[str, Any]]]) -> str:
+    found = {p["denominator"] for e in elm.values() for p in e.values()}
+    if len(found) > 1:
+        raise ValueError(f"arms were projected with different E-LM denominators {sorted(found)}")
+    return found.pop() if found else DEFAULT_DENOMINATOR
 
 
 def aggregate_h_runs(runs: Sequence[HRun], labels: Mapping[str, str]) -> dict[str, Any]:
@@ -627,6 +642,36 @@ def aggregate_h_runs(runs: Sequence[HRun], labels: Mapping[str, str]) -> dict[st
         for metric in eval_metrics
     }
 
+    elm: dict[str, dict[int, dict[str, Any]]] = {
+        label: dict(arm.elm) for label, arm in arms.items()
+    }
+    elm_metrics = sorted(
+        {m for e in elm.values() for p in e.values() for m in p["metrics"]},
+        key=_metric_order,
+    )
+    evaluation_elm = {
+        "denominator": _one_denominator(elm),
+        "headline": {
+            label: [
+                {"step": step, **elm[label][step]["headline"]}
+                for step in eval_steps
+                if elm[label][step]["headline"]["present"]
+            ]
+            for label in order
+        },
+        "headline_samples": HEADLINE_SAMPLES,
+        "metrics": {
+            metric: [
+                {
+                    "step": step,
+                    "values": {label: elm[label][step]["metrics"].get(metric) for label in order},
+                }
+                for step in eval_steps
+            ]
+            for metric in elm_metrics
+        },
+    }
+
     pub: dict[str, dict[int, float]] = {
         label: dict(arm.publication_seconds) for label, arm in arms.items()
     }
@@ -635,6 +680,7 @@ def aggregate_h_runs(runs: Sequence[HRun], labels: Mapping[str, str]) -> dict[st
     return {
         "arms": {label: run_summary(arms[label]) for label in order},
         "evaluation": {
+            "elm": evaluation_elm,
             "metrics": evaluation_doc,
             "paired_steps": eval_steps,
             "unpaired": eval_unpaired,

@@ -1,4 +1,4 @@
-"""Single-run H report: lineage, status, step range, evaluation steps and the final leg.
+"""Single-run H report: lineage, status, step range, evaluations, E-LM and the final leg.
 
 A pure function of one run's captured ``metrics.jsonl`` and ``worker-log.jsonl``,
 admitted through :func:`~entropic_substrate.ladder.analyze.h_aggregate.load_h_run`
@@ -32,6 +32,11 @@ def h_report_from_run(
                 str(step): s for step, s in sorted(run.publication_seconds.items())
             },
             "seal_steps": list(run.seal_steps),
+        },
+        "elm": {
+            "denominator": summary["elm"]["denominator"],
+            "headline_samples": summary["elm"]["headline_samples"],
+            "steps": {str(step): projection for step, projection in run.elm},
         },
         "evaluation": {
             "metrics": {str(step): metrics for step, metrics in run.evaluations},
