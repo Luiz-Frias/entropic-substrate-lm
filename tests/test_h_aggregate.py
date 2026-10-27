@@ -74,6 +74,7 @@ def _eval_row(identity: str, step: int, scale: float) -> dict[str, Any]:
         "examples": [
             {
                 "boundary_symbols": [1, 1],
+                "source_bytes": [100, 200],
                 "by_sample_count": {
                     "2": [entry(-100.0 * scale - step, 1.0), entry(-110.0 * scale - step, 1.5)],
                     "4": [entry(-99.0 * scale - step, 2.0), entry(-98.0 * scale - step, 2.5)],

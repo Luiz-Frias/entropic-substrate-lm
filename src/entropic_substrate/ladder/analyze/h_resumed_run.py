@@ -168,6 +168,7 @@ def _stitch(pods: Sequence[HRun], warmup_steps: int) -> HRun:
         mlflow_run_id=final.mlflow_run_id,
         stages=tuple(stage for pod in pods for stage in pod.stages),
         admissions=tuple(admission for pod in pods for admission in pod.admissions),
+        elm=tuple(row for pod in pods for row in pod.elm),
     )
 
 
