@@ -15,7 +15,7 @@ binding text), **BLANK** (filled later, by whom stated).
 | --- | --- | --- |
 | Status | DRAFT skeleton, not a registration | PLAN |
 | Base SHA | `17aaf1826eb07c5bcb79f6c3670afc9e88dd4db9` | MEASURED, `git log -1` |
-| Sealed so far | nothing | PLAN |
+| Sealed so far | nothing; section 10.1 records the 2026-10-26 rulings; open values: the Q4 ESS/k threshold, Δ, δ_mat (operator-owned) and the confirmatory n (arithmetic after the pilot) | PLAN |
 | Binding sources | plan sections "Independent preservation controls", "Effective directional/magnitude law", "Sequential experimental route", "Evidence and statistical contract"; FOR-1664 brief `.claude/workflows/briefs/for-1664-ess-k-curve.md`; H0 verdict `docs/h0/verdict-hepp7g-2026-10-22.md` | PLAN |
 | Code already present for H1 | `ladder/register/h_preservation.py` (`H1PreservationBlock`: four profiles, one paired block, axes keyed `(law.mode, spine.carrier)`, `factorial_terms`, `codec_sharing_groups`); `ladder/analyze/seed_sizing.py` (`plan_seed_count`, `dual_confidence_intervals`); `HProfile` refuses `stage == "H1"` unless `consumer == "isotropic"` and `future_weight == 0` | MEASURED, read at base |
 | Format precedent | `docs/e1-preregistration.md`, `docs/e1-5c-preregistration.md` (hypothesis, design, endpoints, estimator, decision rule, pilots, exclusion, integrity, amendments) | PLAN |
@@ -374,3 +374,27 @@ achieved power (PLAN). An unaffordable powered n blocks execution (PLAN).
    0.01 nats/byte E reference does not transfer. Recommendation: express E-LM margins in nats per
    canonical byte, justified from a declared practical scale, sealed before pilot inspection, with
    the pilot used only for variance.
+
+### 10.1 Operator rulings, 2026-10-26 (recorded, not sealed)
+
+Ruled in session on 2026-10-26 after the H0 final probe (both carriers complete at 1K with
+completion receipts, a declared pause at global 500 resumed to 1000, K1-K7 passing in the image
+regime) and the reviews under `docs/reviews/`. Each row is a RULING unless marked; sealing still
+happens at the committed registration and the pilot amendment.
+
+| # | ruling | left operator-owned |
+| --- | --- | --- |
+| Q1 | Two-sided difference at 95% familywise on each of the three contrasts; an equivalence-within-Δ reading reported beside each | none |
+| Q2 | E-LM alone deciding (m = 3); E-DCE and every instrument exploratory | none |
+| Q3 | E-DETAIL and E-PERT are built as their own stack, concurrently with or after the pilot; run on every block where available; always tagged exploratory; promotion only by a dated amendment | none |
+| Q4 | Per-row median ESS/k at k = 64 plus the full k-curve as the admissibility gate; threshold fixed a priori before the pilot | the threshold VALUE (PROPOSAL: 0.25) |
+| Q5 | Eligible for H2 iff defect-free, admissible ESS, and E-LM not worse than the best cell by more than Δ | Δ (with Q8) |
+| Q6 | Regime for pilot and confirmation: the development profile as written (sentence width 384, four encoder layers, 12-layer/768-wide spine, four 384-wide decoder layers) | the quote: inventory plus one excluded dev run for measured step time (spend GO) |
+| Q7 | Engineering, no ruling: guard-teeth test by mutation that MM and MS norms are never overwritten, before the pilot | none |
+| Q8 | Margins in nats per canonical byte; Δ (equivalence and eligibility) and δ_mat (materiality) are two separate numbers, justified from a declared practical scale and sealed before pilot inspection; the pilot supplies variance only | the two VALUES and the justification (conductor drafts) |
+| Q9 | Seed blocks: one block = one codec warm-up seed per sharing group ((MM, MS) and (SM, SS)), all four cells retrained; pilot 8 blocks; confirmation n from `plan_seed_count` against the deciding null and margin | n (arithmetic after the pilot) |
+
+Binding from the reviews without a ruling: any theory-dependent interaction is registered before
+H2; power is computed against the deciding null and margin, not against zero; fixed-state
+intervention and paired-retraining lanes stay separate within H1; the interval reading follows the
+review's four cases (entirely above δ_mat, above zero but below δ_mat, crossing δ_mat, crossing zero).

@@ -37,17 +37,47 @@ not relabelled as an implemented or scientifically validated chunk-level generat
 
 ## Horizon
 
-The next sufficient slice is one causal sentence-level encoder → predicted latent → text
-decoder path that generates multiple continuations without access to future target latents,
-survives checkpoint/resume, and traverses capture, fresh analysis, independent review, filing,
-and an explicit gate. Design bypasses and interventions before training so latent-signal use
-is testable. A passing forward call or teacher-forced reconstruction alone is not completion.
-
 The programme is complete only when a model within the declared deployment envelope has
 reproducible generation and held-out evaluation, and each retained mechanism has its own
-controlled evidence. The approved H0–H5 itinerary tests the complete tracer, preservation/codec
-fidelity, predictive value, geometry, interface/scale transfer, and approximately 500M deployment.
+controlled evidence. The approved H0–H5 itinerary is run in sequence; a stage is sufficient
+only when its exit below is filed, and no stage may borrow eligibility from an earlier one.
 Stages may narrow or retire mechanisms; the final model need not contain every proposed one.
+The 2026-10-26 review (`docs/reviews/2026-10-26-hypothesis-understanding.md` for the thesis,
+`docs/reviews/2026-10-26-systems-checklist.md` for the source audit) orders the infrastructure
+each stage needs before its confirmation; that order binds here. H2 and H3 are the scientific
+center; a useful hierarchy without useful Fisher consumption is a legitimate narrower outcome.
+
+- **H0, complete tracer.** Done enough when one causal sentence-level encoder → predicted
+  latent → text decoder path generates multiple continuations without access to future target
+  latents, survives checkpoint/resume, and traverses capture, fresh-session analysis, arm-blind
+  review, filing, and an explicit gate on one lineage. Posture 2026-10-26: both carriers
+  completed 1K-step runs with completion receipts, a declared pause at global 500 resumed to
+  1000, and the K1–K7 check suite passes inside the image regime; filed `tracer_complete`
+  after two arm-blind review rounds (`docs/h0/verdict-final-probe-2026-10-26.md`).
+  A passing forward call or teacher-forced reconstruction alone is not completion.
+- **H1, preservation.** Done enough when the declared 2×2 of sentence-vector and spine
+  normalization runs as a factorial with actual codec sharing, observation admission, an
+  excluded pilot, pilot-powered seed planning, independent review, filing, and successor
+  eligibility per cell. Gate before confirmation: the independent detail-preservation
+  instruments (entities, numbers, negation, relations, order) exist and are validated, or the
+  planned exit is revised before registration. Numerical rank is not detail preservation.
+  The open scientific choices in `docs/h1/preregistration-skeleton.md` are operator-owned.
+- **H2, predictive value.** Done enough when hierarchy and future-law supervision have
+  separate conclusions. Gate: a boundary-matched flat byte control and a hierarchical
+  language-only arm exist beside the future-law arm, effects are separated by design, and any
+  theory-dependent interaction is registered before the run.
+- **H3, geometry.** Done enough when Fisher consumption shows signed observable benefit and
+  measured off-target disturbance against the isotropic member within every eligible
+  construction, with resources measured. Gate: the signed-benefit and disturbance instruments
+  exist; sensitivity, solve correctness, and component influence are not benefit.
+- **H4, interface and scale.** Done enough when coupled permutation correctness, separate
+  paired recoded training, and a larger Transformer study show which conclusions transfer.
+  Gate: newly powered regimes, with shared-configuration and equal-budget fair-tuning lanes kept
+  separate, and explicit resource quotes before spend.
+- **H5, deployment.** Done enough when the retained model near 500M total parameters meets
+  registered prediction, fidelity, rollout, and resource criteria under an independently
+  reviewed verdict. Gate: the same transfer and resource-envelope instruments as H4, quoted,
+  not estimated.
 
 Each scientific stage requires excluded pilots, a committed preregistration, a pilot-powered
 paired seed matrix, authoritative capture, fresh-session analysis, arm-blind review where
@@ -138,13 +168,13 @@ personal (`justfile.local`, gitignored) because they need an API key.
 ## Historical E-series architecture
 
 The components below describe retained E-series implementations. The current forward
-architecture is the codec-separated predictor above. Status (2026-10-14): the local
-generative path is implemented and unit-tested; remote validation is partial (2026-09-28:
-both carriers passed prediction step 1 at solver budget 64 on H100; 2026-10-12: both
-carriers reached 1000/1000 steps of a paired 1K plumbing probe on A100 and wedged in the
-final leg with no completion receipt). No H run has completed; no H capture, analysis,
-review or verdict exists. In flight: the H observability parity stack (FOR-1640, draft
-PRs from #341 onward), then an image rebuild from its merged tip and the probe re-run.
+architecture is the codec-separated predictor above. Status (2026-10-26): the local
+generative path is implemented and unit-tested; H0 is filed `tracer_partial` on wave HEpP7g
+(`docs/h0/verdict-hepp7g-2026-10-22.md`); the 2026-10-26 final probe on A100 completed both
+carriers at 1K steps with completion receipts, paused one arm at global 500 by a declared
+pause and resumed it to 1000, and passes the K1-K7 check suite inside the image regime; it is
+filed `tracer_complete` after two arm-blind review rounds (`docs/h0/verdict-final-probe-2026-10-26.md`). The
+2026-10-26 reviews under `docs/reviews/` bind the thesis and the per-stage readiness.
 
 Three swappable components under a standard decoder-only transformer, selected per
 experiment by `configs/*.yaml` (init × block × norm) — `docs/architecture.md` is the
