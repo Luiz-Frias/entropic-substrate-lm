@@ -20,11 +20,20 @@ What it does, on this host's CPU:
    used and true residual vs tolerance (a traced replay that must reproduce the
    live outcome), and the textbook FP64 CG count as a control column.
 
-Verdict: PASS only when at least one solve was observed, every live solve
-converged, and every row's true residual is within tolerance at the budget.
-REFUSE otherwise. The FP64 control never decides. The verdict file carries no
-scientific and no spending authority; a PASS is necessary for a launch, never
-sufficient. Exit 0 on PASS, ``REFUSE_EXIT`` on REFUSE, 1 on a tool error.
+Verdict, for a Fisher consumer: PASS only when step 1 committed, at least one
+solve was observed, every live solve converged, and every row's true residual
+is within tolerance at the budget. REFUSE otherwise, including zero observed
+solves. The FP64 control never decides.
+
+An isotropic consumer has no Fisher solve to assess (ruling 2026-10-27): the
+verdict is NOT_APPLICABLE when warm-up completed, prediction step 1 committed
+and zero solves were captured, which is the expected observation; any captured
+solve or an uncommitted step is REFUSE. The verdict still records the profile
+identity so the launch preflight can bind it.
+
+The verdict file carries no scientific and no spending authority; a PASS or
+NOT_APPLICABLE is necessary for a launch, never sufficient. Exit 0 on PASS or
+NOT_APPLICABLE, ``REFUSE_EXIT`` on REFUSE, 1 on a tool error.
 
 Run: ``just h-solver-preflight --profile <attempt>/profile.json --corpus
 <pod capture>/prepared-corpus.json`` (verdict defaults to
@@ -66,6 +75,21 @@ def _decide(outcomes: Sequence[str], rows: Sequence[dict[str, Any]]) -> str:
     if not all(row["converged"] for row in rows):
         return "REFUSE"
     return "PASS"
+
+
+def verdict_for(consumer: str, report: dict[str, Any], step_status: str) -> str:
+    """The consumer decides whether the step-1 solve evidence applies at all.
+
+    An uncommitted step is REFUSE under either consumer: a law raise such as
+    ``nonfinite_log_density`` can fail the step after every solve converged.
+    """
+    if consumer not in ("fisher", "isotropic"):
+        raise ValueError(f"unknown sentence consumer {consumer!r}")
+    if step_status != "committed":
+        return "REFUSE"
+    if consumer == "fisher":
+        return cast(str, report["verdict"])
+    return "NOT_APPLICABLE" if report["solves_observed"] == 0 else "REFUSE"
 
 
 def assess(solves: Sequence[CapturedSolve]) -> dict[str, Any]:
@@ -132,12 +156,14 @@ def assess(solves: Sequence[CapturedSolve]) -> dict[str, Any]:
 
 def step_one_solves(
     profile: HProfile, source_root: Path, *, max_source_bytes: int
-) -> tuple[list[CapturedSolve], str, object]:
+) -> tuple[list[CapturedSolve], str, object, int]:
     """Warm up as declared, then capture every Fisher solve of prediction step 1."""
     engine = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
     warmup = profile.schedule.warmup_steps
+    completed = 0
     for step in range(1, warmup + 1):
         engine.advance()
+        completed = step
         if step % 250 == 0 or step == warmup:
             logger.info(f"h-solver-preflight warm-up {step}/{warmup}")
     engine.begin_prediction()
@@ -148,7 +174,7 @@ def step_one_solves(
         except FisherNumericalError as error:
             status = error.code
             batch = None if engine.last_attempt is None else engine.last_attempt["source_batch"]
-    return list(solves), status, batch
+    return list(solves), status, batch, completed
 
 
 def run_preflight(
@@ -165,10 +191,13 @@ def run_preflight(
         source.mkdir()
         artifact = reseal_foreign_corpus(corpus_path, source, max_bytes=max_source_bytes)
         local = localize_profile(remote, source_digest=artifact.content_hash.digest)
-        solves, status, batch = step_one_solves(local, source, max_source_bytes=max_source_bytes)
+        solves, status, batch, completed = step_one_solves(
+            local, source, max_source_bytes=max_source_bytes
+        )
     if any(solve.config != remote.solver for solve in solves):
         raise RuntimeError("a captured solve ran with a solver other than the profile's")
     report = assess(solves)
+    report["verdict"] = verdict_for(remote.consumer, report, status)
     solver = remote.solver
     return {
         "schema": SCHEMA,
@@ -184,8 +213,10 @@ def run_preflight(
         "seed": local.seed,
         "carrier": local.spine.carrier,
         "law_mode": local.law.mode,
+        "consumer": remote.consumer,
         "width": remote.codec.width,
         "warmup_steps": local.schedule.warmup_steps,
+        "warmup_steps_completed": completed,
         "phase": "prediction",
         "step": 1,
         "step_status": status,
@@ -219,7 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f" max_textbook={verdict['max_textbook_iterations']}"
         f" worst_ratio={verdict['worst_residual_ratio']} -> {verdict_path}"
     )
-    return 0 if verdict["verdict"] == "PASS" else REFUSE_EXIT
+    return 0 if verdict["verdict"] in ("PASS", "NOT_APPLICABLE") else REFUSE_EXIT
 
 
 if __name__ == "__main__":
