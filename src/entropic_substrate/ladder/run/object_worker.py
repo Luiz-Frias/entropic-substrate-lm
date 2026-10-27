@@ -63,29 +63,79 @@ def stop_marker_key(request: ProbeRequest) -> str:
     return f"{request.prefix}/control/stop.json"
 
 
-def encode_stop_marker(request: ProbeRequest) -> bytes:
-    """A pure function of (schema name, request digest): no `at`, no nonce."""
-    return _canonical({"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest})
+def _valid_target(target: object) -> tuple[str, int]:
+    if (
+        type(target) is not tuple
+        or len(target) != 2
+        or type(target[0]) is not str
+        or not target[0]
+        or type(target[1]) is not int
+        or target[1] < 1
+    ):
+        raise ValueError("stop marker target must be (non-empty phase, positive step)")
+    return target[0], target[1]
 
 
-def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
-    """True: stop this request. False: a marker for another request, ignored.
+def encode_stop_marker(request: ProbeRequest, target: tuple[str, int] | None = None) -> bytes:
+    """A pure function of (schema, request digest, target): no `at`, no nonce.
 
-    Everything else -- bad JSON/UTF-8, non-canonical bytes, a missing or
-    extra key, a foreign schema -- raises. The schema check runs before the
-    request digest check.
+    ``target`` names the one seal ``(phase, step)`` at which the worker stops;
+    ``None`` omits the key, so the bytes equal the pre-target marker and the
+    worker stops at the next seal it polls.
     """
-    row = recovery_record(json.loads(payload), "schema request_sha256")
+    row: dict[str, object] = {"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest}
+    if target is not None:
+        phase, step = _valid_target(target)
+        # Same coordinate rule as ``ProbeRequest.pause``: the marker is immutable
+        # once published, so a target the runner never reaches must be refused
+        # here, at the verb, rather than discovered as a timeout.
+        schedule = request.profile.schedule
+        budget = schedule.warmup_steps if phase == "codec_warmup" else schedule.steps
+        is_seal = step == budget or step % schedule.checkpoint_interval == 0
+        if phase == "prediction":
+            is_seal = is_seal or step % schedule.evaluation_interval == 0
+        if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget or not is_seal:
+            raise ValueError("stop marker target is outside the request schedule")
+        row["target"] = {"phase": phase, "step": step}
+    return _canonical(row)
+
+
+def _read_stop_marker(payload: bytes, request: ProbeRequest) -> tuple[bool, tuple[str, int] | None]:
+    value = json.loads(payload)
+    keys = "schema request_sha256 target" if "target" in value else "schema request_sha256"
+    row = recovery_record(value, keys)
     if row["schema"] != STOP_MARKER_SCHEMA:
         raise ValueError("stop marker schema is foreign")
     digest = row["request_sha256"]
     if type(digest) is not str:
         raise ValueError("stop marker request digest is invalid")
+    target = None
+    if "target" in row:
+        raw = row["target"]
+        if type(raw) is not dict or set(raw) != {"phase", "step"}:
+            raise ValueError("stop marker target must be (non-empty phase, positive step)")
+        target = _valid_target((raw["phase"], raw["step"]))
     if digest != request.digest:
-        return False
+        return False, None
     if _canonical(row) != payload:
         raise ValueError("stop marker is not canonical JSON")
-    return True
+    return True, target
+
+
+def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
+    """True: this marker is this request's own. False: another request's, ignored.
+
+    Everything else -- bad JSON/UTF-8, non-canonical bytes, a missing or
+    extra key, a foreign schema, a malformed target -- raises. The schema
+    check runs before the request digest check.
+    """
+    return _read_stop_marker(payload, request)[0]
+
+
+def stop_marker_hits(payload: bytes, request: ProbeRequest, seal: tuple[str, int]) -> bool:
+    """True when the marker is this request's own AND names no target or ``seal``."""
+    own, target = _read_stop_marker(payload, request)
+    return own and (target is None or target == seal)
 
 
 def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
@@ -383,7 +433,7 @@ def run_object_worker(
                     }
                 )
 
-        def stop_requested() -> bool:
+        def stop_requested(phase: str, step: int) -> bool:
             """One bounded read per call site; never retries an absent marker.
 
             Reuses rung 1's :class:`VerificationReadRetry` for its attempt
@@ -417,7 +467,7 @@ def run_object_worker(
                     retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
             if received is None:
                 return False
-            stop = classify_stop_marker(received.payload, request)
+            stop = stop_marker_hits(received.payload, request, (phase, step))
             if stop:
                 logger.bind(event=STOP_MARKER_OBSERVED, key=key).info(
                     render(STOP_MARKER_OBSERVED, key=key)

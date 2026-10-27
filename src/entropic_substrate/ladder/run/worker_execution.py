@@ -106,7 +106,7 @@ def execute_probe_request(
     on_start: Callable[[dict[str, object]], None] | None = None,
     sink: MetricSink | None = None,
     publication_timing: MutableMapping[str, float] | None = None,
-    operator_stop: Callable[[], bool] | None = None,
+    operator_stop: Callable[[str, int], bool] | None = None,
     admission_memos: MutableMapping[str, SealMemo] | None = None,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
@@ -125,7 +125,8 @@ def execute_probe_request(
     ``operator_stop``, when given, is composed with ``request.pause`` into
     :func:`~entropic_substrate.ladder.run.runner.run_probe_training`'s single
     ``stop_after_seal`` callback (FOR-1617): it is called at every seal
-    boundary the runner already reaches, unconditionally, so a control-key
+    boundary the runner already reaches, unconditionally (handed that seal's
+    ``(phase, step)`` so a marker can name its target), so a control-key
     read count matches the boundary count regardless of whether ``pause`` is
     also set. When both a declared pause and the operator poll agree on the
     same boundary, the existing pause label (``"paused"``) wins -- the result
@@ -174,7 +175,7 @@ def execute_probe_request(
         # Called unconditionally (never short-circuited by `matched`) so a
         # control-key read happens on every boundary this callback reaches,
         # independent of whether a declared pause is also set (C13(a)).
-        polled = operator_stop() if operator_stop is not None else False
+        polled = operator_stop(phase, step) if operator_stop is not None else False
         operator_stopped = polled and not matched
         return matched or polled
 
