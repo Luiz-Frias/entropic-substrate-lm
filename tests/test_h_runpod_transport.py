@@ -80,7 +80,7 @@ def test_account_preserves_measured_zero_and_requires_version(
 ) -> None:
     runner = Runner(
         [
-            D1CommandResult("runpodctl 2.14.0-dd55bcf\n", ""),
+            D1CommandResult("runpodctl 3.0.1-551d6a4\n", ""),
             success({"id": "account-fixture", "clientBalance": 22.0, "currentSpendPerHr": 0}),
         ]
     )
@@ -89,10 +89,11 @@ def test_account_preserves_measured_zero_and_requires_version(
     assert [call[1] for call in runner.calls] == ["version", "user"]
 
 
+@pytest.mark.parametrize("reported", ["unknown-build", "2.14.0-dd55bcf"])
 def test_changed_version_stops_before_the_account_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reported: str
 ) -> None:
-    runner = Runner([D1CommandResult("runpodctl unknown-build\n", "")])
+    runner = Runner([D1CommandResult(f"runpodctl {reported}\n", "")])
     with pytest.raises(ProbeProviderError, match="version_mismatch"):
         transport(tmp_path, monkeypatch, runner).account()
     assert [call[1] for call in runner.calls] == ["version"]
@@ -264,7 +265,7 @@ def test_invalid_account_measurement_is_not_a_zero_balance(
 ) -> None:
     runner = Runner(
         [
-            D1CommandResult("runpodctl 2.14.0-dd55bcf\n", ""),
+            D1CommandResult("runpodctl 3.0.1-551d6a4\n", ""),
             success({"id": "account-fixture", "clientBalance": amount, "currentSpendPerHr": 0}),
         ]
     )
