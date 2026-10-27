@@ -121,8 +121,16 @@ def apply_sentence_step(
         raise ValueError("gradient clip norm must be finite and positive")
     roles, absent = sentence_roles(model, phase)
     expected = [p for parameters in roles.values() for p in parameters]
+    expected_ids = {id(p) for p in expected}
     owned = [p for group in optimizer.param_groups for p in group["params"]]
-    if len(owned) != len(expected) or {id(p) for p in owned} != {id(p) for p in expected}:
+    # Equal lengths and sets still admit a parameter listed twice on both sides (tied
+    # weights across roles): AdamW would step and decay it twice, invisibly to any norm
+    # when its gradient is zero, so multiplicity is checked exactly here.
+    if (
+        len(expected_ids) != len(expected)
+        or len(owned) != len(expected)
+        or {id(p) for p in owned} != expected_ids
+    ):
         raise SentenceTrainingDefect("optimizer_ownership", phase)
     require_sentence_adamw_contract(optimizer, phase)
     model.train()
@@ -131,13 +139,11 @@ def apply_sentence_step(
     if loss.ndim != 0 or not bool(torch.isfinite(loss)) or not loss.requires_grad:
         raise SentenceTrainingDefect("invalid_objective", phase)
     loss.backward()
-    expected_ids = {id(p) for p in expected}
     if any(p.grad is not None for p in model.parameters() if id(p) not in expected_ids):
         raise SentenceTrainingDefect("unexpected_gradient", phase)
     gradients: dict[str, GradientMeasurement] = {
         name: {"status": reason, "norm": None} for name, reason in absent.items()
     }
-    norms: list[float] = []
     for name, parameters in roles.items():
         if any(p.grad is None for p in parameters):
             raise SentenceTrainingDefect("missing_gradient", name)
@@ -151,13 +157,23 @@ def apply_sentence_step(
             "status": "measured_zero" if norm == 0 else "measured_nonzero",
             "norm": norm,
         }
-        norms.append(norm)
+    # gradient_reconciliation means set identity, not a norm: the model's gradient-carrying
+    # parameters must be exactly the role parameters. Roles, `expected` and the optimizer
+    # all derive from sentence_roles and the scan above covers only model.parameters(), so
+    # a role parameter the model does not own passes every other check; a zero-gradient
+    # parameter is invisible to any norm comparison.
+    # RETRACTED 2026-10-27: this guard compared the fp32 clip_grad_norm_ total against
+    # float64 role norms at rel_tol=1e-5, which measured fp32 precision, not the partition.
+    # MEASURED gaps 5.3e-7 at 85,216 and 6.85e-6 at 15,183,744 parameters on warm-up step
+    # 1, later dev-width warm-up steps crossed 1e-5, and 3.253e-4 at 15,360,000 parameters
+    # over 100 tensors refused a correct step; the clip value stays the step's aggregate
+    # measurement only.
+    if {id(p) for p in model.parameters() if p.grad is not None} != expected_ids:
+        raise SentenceTrainingDefect("gradient_reconciliation", phase)
     try:
         aggregate = float(nn.utils.clip_grad_norm_(expected, clip_norm, error_if_nonfinite=True))
     except RuntimeError as error:
         raise SentenceTrainingDefect("gradient_clipping", phase) from error
-    if not math.isclose(aggregate, math.hypot(*norms), rel_tol=1e-5, abs_tol=1e-12):
-        raise SentenceTrainingDefect("gradient_reconciliation", phase)
     optimizer.step()
     if any(not bool(torch.isfinite(p).all()) for p in expected):
         raise SentenceTrainingDefect("nonfinite_updated_parameter", phase)

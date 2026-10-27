@@ -642,6 +642,23 @@ check now applies the full seal-boundary rule of ``ProbeRequest.pause`` (an in-b
 step is refused; parity pinned by a grid test), so ``ladder.run.object_worker`` moved again.
 Retracted for this tree, the df51f73e values: (3.12.13, 2.13.0) ``fd4d9f47...``, (3.12.14, 2.13.0+cpu) ``53854d6b...``, (3.12.15, 2.13.0) ``283bcaad...``, (3.12.15, 2.13.0+cpu) ``1bbb94b9...``. Source rows unchanged.
 
+Gradient-guard re-pin (house rule 4, MEASURED 2026-10-27, branch ``fix/grad-reconciliation-guard``
+on main 1228d088; lane grad-guard-fix handoff, conductor DG-A commit): ``ladder.run.training``
+``apply_sentence_step`` replaces the ``gradient_reconciliation`` norm comparison (an fp32
+``clip_grad_norm_`` aggregate against a float64 hypot at rel_tol 1e-5, which was tautological
+once ``expected`` derives from the roles and false-positive at development widths: rel gap
+3.253e-4 at 15.36M parameters over 100 tensors, measured; 6.85e-6 at step 1 on the dev-width
+profile) with exact set identity: no parameter in two roles (``optimizer_ownership``) and the
+set of parameters carrying gradients equal to the role set (``gradient_reconciliation``), so a
+tied or stray parameter with a zero gradient is now seen. Defect names unchanged; receipts
+unchanged. One member moved bytes; label and 52-member set unchanged. The five checkpoint rows
+were recomputed with ``tools/regime_rows.py`` over the staged tree: (3.12.13, 2.13.0)
+``65209d55...``, (3.12.14, 2.13.0+cpu) ``a0320b1f...``, (3.12.15, 2.13.0) ``283935bd...``
+(equal to the lane's independently measured digest), (3.12.15, 2.13.0+cpu) ``bbf6aa86...``,
+(3.12.16, 2.13.0+cpu) ``c692a7b6...``. The values they replace (``7a02d741``, ``b1ee8ce8``,
+``5b0daf50``, ``d6e7edc8``, ``1ba2025e``) are retracted for this tree, not silently overwritten.
+Source rows are untouched.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -839,19 +856,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "7a02d7411393d9a631385ba73575a0e80c32e59c556121aebf3c0429d9e18a24",  # pragma: allowlist secret
+    ): "65209d55b82c7ece0db2540b9ddeec9e103c3589d84b9c3169f3f3702e357936",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "b1ee8ce89a04afda3ea41e7646649b3b72ef491287ea4c949c9281105fc99094",  # pragma: allowlist secret
+    ): "a0320b1fe3d569d59f7150aaed22f7b7d7f626d76675c202ba5036d81d1a4892",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "5b0daf5060c7ddc8e47773753d60fc3cce2c21fa59db049e1f3b16254e780477",  # pragma: allowlist secret
+    ): "283935bd49bd72f65ff18317f7433dd7b2a02b5e2b7d28ecdb8289ec1896eda0",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "d6e7edc815a9f33d40555e4f4c66a6a920d46ff614e3e15f89f4b9f4fa007bca",  # pragma: allowlist secret
+    ): "bbf6aa8650d1241bc63339fd3124a360b21ae8754f693e11c9726dba92bd6352",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -861,7 +878,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "1ba2025ecac6a317bf440e6cc05a49c5ff05b9f00798383f69c8498fdbcefe78",  # pragma: allowlist secret
+    ): "c692a7b6b420506db3dcc08ddd14a5b9680062067b51940b80f7ccc88ca6fc9c",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
