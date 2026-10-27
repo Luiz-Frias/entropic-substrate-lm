@@ -134,6 +134,15 @@ runs by experiment name and defaults to `$MLFLOW_EXPERIMENT_NAME` or `entropic-s
 (`composition/entrypoints/cli.py`, `ladder/capture/reader/capture_results.py`), so capturing these runs
 needs `--experiment h-series`; without it a capture finds none of them.
 
+RUN ADMISSION (2026-10-27, rung A): which run class may hold a worker request, execute on the local
+or remote worker, or be launched, and with which cost guard, is one constant table, `RUN_ADMISSION` in
+`ladder/run/admission.py`; it admits `local_tiny` on the local worker at every stage and `remote_tiny`
+on the remote worker and at launch only at H0 with `host_watchdog_tiny_only`, and refuses `pilot` and
+`confirmatory` everywhere. `H0ProbeLaunch` asks the port, the five reader-identity members that gate a
+class still carry inline checks held to the same table by `tests/test_h_run_admission_sites.py` until
+the conductor's re-pin routes them through it, and rung B replaces the constant with a sealed
+`RunAuthority` artifact under LAUNCH SCHEMA v4.
+
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.

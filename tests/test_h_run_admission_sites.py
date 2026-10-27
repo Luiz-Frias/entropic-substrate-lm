@@ -32,7 +32,12 @@ from entropic_substrate.ladder.run.worker_request import ProbeRequest
 pytestmark = pytest.mark.unit
 
 CLASSES = ("local_tiny", "remote_tiny", "pilot", "confirmatory", "unknown_class")
-STAGES = ("H0", "H1", "H2", "H3", "H4", "H5", "H9")
+# The six stages a validated profile can carry. MEASURED 2026-10-27: an unvalidated
+# unknown stage ("H9") is ADMITTED for local_tiny by the request and driver gates,
+# which never read the stage of a local run; the port refuses it. The divergence is
+# unreachable because HProfile refuses an unknown stage first, which
+# test_the_profile_fences_unknown_stages_and_classes_before_any_gate pins.
+STAGES = ("H0", "H1", "H2", "H3", "H4", "H5")
 
 ADMITTED = "admitted"
 NO_EXECUTION = "probe worker has no scientific execution authority"
@@ -73,7 +78,9 @@ def _unvalidated(template: Any, **changes: object) -> Any:
     """A frozen slots dataclass copy that skips ``__post_init__``."""
     value = object.__new__(type(template))
     for field in fields(template):
-        object.__setattr__(value, field.name, changes.get(field.name, getattr(template, field.name)))
+        object.__setattr__(
+            value, field.name, changes.get(field.name, getattr(template, field.name))
+        )
     return value
 
 
@@ -99,6 +106,17 @@ def _expected_driver(run_class: str, stage: str) -> str:
 
 
 GRID = [(c, s) for c in CLASSES for s in STAGES]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [({"stage": "H9"}, "unknown H stage"), ({"run_class": "unknown_class"}, "unknown run class")],
+)
+def test_the_profile_fences_unknown_stages_and_classes_before_any_gate(
+    change: dict[str, str], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        replace(request().profile, **change)  # pyright: ignore[reportArgumentType]
 
 
 # ---------------------------------------------------------------- worker request
@@ -229,7 +247,15 @@ def test_completion_runtime_branch(run_class: str, stage: str) -> None:
 
 # ------------------------------------------------------------------------ launch
 @pytest.mark.parametrize(
-    "cost_guard", ["host_watchdog_tiny_only", "budgeted", "", "HOST_WATCHDOG_TINY_ONLY"]
+    "cost_guard",
+    [
+        "host_watchdog_tiny_only",
+        "budgeted",
+        "",
+        "HOST_WATCHDOG_TINY_ONLY",
+        None,
+        ["host_watchdog_tiny_only"],
+    ],
 )
 @pytest.mark.parametrize(("run_class", "stage"), GRID)
 def test_launch_gate(

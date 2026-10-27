@@ -604,6 +604,20 @@ evidence sources that are never
 interchangeable: the controller's R2 `checkpoint-N` events (seal granularity) and the wave monitor's
 MLflow `phase_index` metric (every step), and each line names its source.
 
+### H run admission (2026-10-27)
+
+One port, `ladder/run/admission.py`, answers which H run class may run where: a frozen table
+`(run_class, stage) -> {local_worker, remote_worker, launch}`, each class's single worker surface,
+the cost guards a launch of that class may declare, and the `kind` an execution receipt records per
+worker surface. It holds predicates only; every gate keeps its own refusal text. The gates it governs
+are the worker request (class, stage and the input rules that follow from the worker surface), the
+runner's receipt and driver, the worker command's local/remote scope, the execution and completion
+runtime branch, and the launch's class/stage and cost-guard checks. `tests/test_h_run_admission_sites.py`
+characterizes all eight gates over every class and stage, and `tests/test_h_run_admission.py` holds the
+port to that characterization. The constant policy admits only the two smoke classes; replacing it
+with a sealed run-authority artifact is what admits a pilot. Only the launch reads the table directly
+until the conductor's re-pin routes the five reader-identity gate members through it.
+
 ## D1–D5 ladder
 
 | Rung | Isolated question | Primary comparison | Advancement rule |
