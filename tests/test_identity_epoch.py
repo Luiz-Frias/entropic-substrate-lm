@@ -852,6 +852,16 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
         "3.12.15",
         "2.13.0+cpu",
     ): "d6e7edc815a9f33d40555e4f4c66a6a920d46ff614e3e15f89f4b9f4fa007bca",  # pragma: allowlist secret
+    # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
+    # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
+    # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
+    # match mise, and this row keeps the 3.12.16 regime real for anyone running that patch.
+    # Computed with tools/regime_rows.py --python 3.12.16 --torch 2.13.0+cpu --pysbd 0.3.4,
+    # whose control reproduced the two 3.12.15 rows above exactly.
+    (
+        "3.12.16",
+        "2.13.0+cpu",
+    ): "1ba2025ecac6a317bf440e6cc05a49c5ff05b9f00798383f69c8498fdbcefe78",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
@@ -867,6 +877,11 @@ _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
         "3.12.15",
         "0.3.4",
     ): "fc7fad81f3adb884236cb7918ea7c13966f71127e17de3b5aa8040ba633dda68",  # pragma: allowlist secret
+    # MEASURED 2026-10-27: companion of the 3.12.16 checkpoint row above, same instrument run.
+    (
+        "3.12.16",
+        "0.3.4",
+    ): "23da6f3e89b348572be0b137cb6ad75fbfbb66c0341328fc93821d116cff9fbb",  # pragma: allowlist secret
 }
 
 
