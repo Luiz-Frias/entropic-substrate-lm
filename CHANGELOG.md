@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.7.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.6.1...v0.7.0) (2026-10-27)
+
+
+### Features
+
+* **ladder:** add target seal to operator stop marker ([#391](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/391)) ([101844c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/101844c1061837d7e5869b91b47c624f6bf06adb))
+
+
+### Bug Fixes
+
+* **deploy:** re-pin the H image to the main tip e73d123 ([42e173d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/42e173dd2849b2c0de296e9d7ae70211bce652a7))
+* **ladder:** resume progress probing from stop step ([#392](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/392)) ([991fcd2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/991fcd2ee6c60bc548856317edcd9e6489abb1b1))
+
+
+### Documentation
+
+* **architecture:** map H readiness to verified contracts ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+* **h0:** add final probe analysis and verdict ([e73d123](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e73d1230182d4753cade2fba4c8dd26f2f6af11f))
+* **h0:** add final probe analysis and verdict ([#394](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/394)) ([e73d123](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e73d1230182d4753cade2fba4c8dd26f2f6af11f))
+* **h0:** record round 2 blind review of final probe ([e73d123](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e73d1230182d4753cade2fba4c8dd26f2f6af11f))
+* **h1:** record 2026-10-26 operator rulings ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+* **h1:** record the ruled ESS, margin and materiality values ([8ab3143](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8ab314392f6330ac0f8c111a03c969b664da8b69))
+* **horizon:** record H0 final probe tracer_complete ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+* **horizon:** rewrite horizon and H0-H5 stage exits ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+* **ladder:** trim unmeasured REST v2 claim in probe docstring ([0802e52](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0802e522a7a21b5b61e86e6a5e1d1ed6a88e434b))
+* **research:** preserve the latent predictor hypothesis ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+* **research:** preserve the latent predictor hypothesis ([#393](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/393)) ([7a16ad6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7a16ad614d68dff49eb5ddc50ebee81664766f25))
+
 ## [0.6.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.6.0...v0.6.1) (2026-10-26)
 
 
