@@ -5,15 +5,29 @@
 The refreshed project image was built and published using Docker Build Cloud's
 `cloud-luizffrias-small-lang-model` amd64 node. The canonical machine-readable
 record is `publication.json` inside the DVC-backed publication capture, referenced
-by [the capture pointer](../results/h-image-publication-046cfb0.dvc). Git stores this
+by [the capture pointer](../results/h-image-publication-e73d123.dvc). Git stores this
 human-readable pin and the pointer, not a second copy of the generated evidence.
 
 ```text
-ghcr.io/luiz-frias/entropic-substrate-lm@sha256:88e21c59b17b3b3656671c4bb5aba92a3e921b1d5d93249efbd6b03f8acfc537
+ghcr.io/luiz-frias/entropic-substrate-lm@sha256:5452fbf4fba680e28a714b424c82ea7b71c216a271fd6eccfcfc34914d726e13
 ```
 
-Runtime source matches commit `046cfb05ab4b4b835e4819b9d9be71da9e698a00` exactly.
+Runtime source matches commit `e73d1230182d4753cade2fba4c8dd26f2f6af11f` exactly.
 Native validation includes source replay and allowlisted S3 failure diagnostics.
+RE-PINNED (main tip `e73d123`, direct commit on `main`, operator go-ahead 2026-10-27): the previous
+pin (`88e21c59...`, source `046cfb0`) is superseded; its capture `results/h-image-
+publication-046cfb0.dvc` remains historical evidence. This image is built from the `main` tip that
+merged the H0 final-probe stack (PRs #390 to #394), not from a release tip: Release Please could not
+run (GitHub Actions billing, paused until early November 2026), so no tag names this tree and the
+re-pin landed as a direct commit on `main` under the same ruling. It carries the H0 final-probe
+stack (PRs #390 to #394: the runpodctl 3.0.1 pin across the launch path, the seal-targeted operator
+stop marker with its phase and step target, the resumed-arm checkpoint progress fix, the 2026-10-26
+hypothesis and systems reviews with the H0 to H5 horizon and the H1 skeleton rulings, and the H0
+final-probe filing with its tracer_complete verdict), so the worker a pilot exercises carries the
+stop and resume semantics the probe validated. Same verifier and `h-prepare-source` manifest as the
+046cfb0 publication; the source replay's in-image capture admitted 491 documents / 1954698 bytes,
+corpus identity `cf938a0b...`. The nine-key RunPod template for this image is `tvgoxbc7di`
+(`mythwave-h0-e73d123-main`; see LAUNCH SCHEMA v3 below).
 RE-PINNED (release v0.6.0, branch `fix/h-image-repin-0.6.0`, operator go-ahead 2026-10-23): the
 previous pin (`e4986ac9...`, source `ba76c0a`) is superseded; its capture `results/h-image-
 publication-ba76c0a.dvc` remains historical evidence. This image is built from the v0.6.0 release
@@ -92,7 +106,7 @@ scientific confirmation, or successor eligibility. Paid 6K validation is authori
 but completion requires the worker's verified artifacts. Do not substitute `latest`
 for this digest.
 
-The pin above (source `046cfb0`, as did the ba76c0a, 9d353fc and dbe9709 pins) carries FOR-1637: the H worker's log-event vocabulary and the
+The pin above (source `e73d123`, as did the 046cfb0, ba76c0a, 9d353fc and dbe9709 pins) carries FOR-1637: the H worker's log-event vocabulary and the
 `worker-log.jsonl` MLflow artifact. (Until 2026-10-17 this paragraph said the pin did not
 contain them, which was true of the 65542d4 pin.)
 
@@ -109,7 +123,7 @@ and `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` beyond the seven). The nine-key 
 the conductor at the image rebuild ceremony; no template is created, and no template id is recorded
 here, until that ceremony has measured one. MEASURED 2026-10-17: template `3n4y0ba76d`
 (`mythwave-h0-dbe9709-parity`, nine keys, image `96e985048fd9...`) was created at the dbe9709 rebuild
-ceremony and read back whole. MEASURED: template `w1rl2rxaqw` (`mythwave-h0-046cfb0-v0.6.0`, nine keys, image `88e21c59b17b...`) was created at the 046cfb0 rebuild ceremony and read back whole; `tgk12wur3v` stays bound to the superseded ba76c0a image. MEASURED 2026-10-22: template `tgk12wur3v` (`mythwave-h0-ba76c0a-v0.4.0`,
+ceremony and read back whole. MEASURED 2026-10-27: template `tvgoxbc7di` (`mythwave-h0-e73d123-main`, nine keys, image `5452fbf4fba6...`) was created at the e73d123 rebuild ceremony and read back whole; `w1rl2rxaqw` stays bound to the superseded 046cfb0 image. MEASURED: template `w1rl2rxaqw` (`mythwave-h0-046cfb0-v0.6.0`, nine keys, image `88e21c59b17b...`) was created at the 046cfb0 rebuild ceremony and read back whole; `tgk12wur3v` stays bound to the superseded ba76c0a image. MEASURED 2026-10-22: template `tgk12wur3v` (`mythwave-h0-ba76c0a-v0.4.0`,
 nine keys, image `e4986ac9eaca...`) was created at the ba76c0a rebuild ceremony and read back whole;
 `wjag3o82g3` stays bound to the superseded 9d353fc image. MEASURED 2026-10-19: template `wjag3o82g3` (`mythwave-h0-9d353fc-v0.3.1`,
 nine keys, image `8181443b6c41...`) was created at the 9d353fc rebuild ceremony and read back whole;
