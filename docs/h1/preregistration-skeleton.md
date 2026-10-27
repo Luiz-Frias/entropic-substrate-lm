@@ -15,7 +15,7 @@ binding text), **BLANK** (filled later, by whom stated).
 | --- | --- | --- |
 | Status | DRAFT skeleton, not a registration | PLAN |
 | Base SHA | `17aaf1826eb07c5bcb79f6c3670afc9e88dd4db9` | MEASURED, `git log -1` |
-| Sealed so far | nothing; section 10.1 records the 2026-10-26 rulings; open values: the Q4 ESS/k threshold, Δ, δ_mat (operator-owned) and the confirmatory n (arithmetic after the pilot) | PLAN |
+| Sealed so far | nothing; section 10.1 records the 2026-10-26 rulings and section 10.2 the 2026-10-27 values (ESS/k threshold 0.25, Δ = 0.01, δ_mat = 0.02, recorded, not sealed); open: the confirmatory n (arithmetic after the pilot), the section 9 regime values and seed lists | PLAN |
 | Binding sources | plan sections "Independent preservation controls", "Effective directional/magnitude law", "Sequential experimental route", "Evidence and statistical contract"; FOR-1664 brief `.claude/workflows/briefs/for-1664-ess-k-curve.md`; H0 verdict `docs/h0/verdict-hepp7g-2026-10-22.md` | PLAN |
 | Code already present for H1 | `ladder/register/h_preservation.py` (`H1PreservationBlock`: four profiles, one paired block, axes keyed `(law.mode, spine.carrier)`, `factorial_terms`, `codec_sharing_groups`); `ladder/analyze/seed_sizing.py` (`plan_seed_count`, `dual_confidence_intervals`); `HProfile` refuses `stage == "H1"` unless `consumer == "isotropic"` and `future_weight == 0` | MEASURED, read at base |
 | Format precedent | `docs/e1-preregistration.md`, `docs/e1-5c-preregistration.md` (hypothesis, design, endpoints, estimator, decision rule, pilots, exclusion, integrity, amendments) | PLAN |
@@ -387,12 +387,41 @@ happens at the committed registration and the pilot amendment.
 | Q1 | Two-sided difference at 95% familywise on each of the three contrasts; an equivalence-within-Δ reading reported beside each | none |
 | Q2 | E-LM alone deciding (m = 3); E-DCE and every instrument exploratory | none |
 | Q3 | E-DETAIL and E-PERT are built as their own stack, concurrently with or after the pilot; run on every block where available; always tagged exploratory; promotion only by a dated amendment | none |
-| Q4 | Per-row median ESS/k at k = 64 plus the full k-curve as the admissibility gate; threshold fixed a priori before the pilot | the threshold VALUE (PROPOSAL: 0.25) |
-| Q5 | Eligible for H2 iff defect-free, admissible ESS, and E-LM not worse than the best cell by more than Δ | Δ (with Q8) |
+| Q4 | Per-row median ESS/k at k = 64 plus the full k-curve as the admissibility gate; threshold fixed a priori before the pilot | none since 2026-10-27: 0.25 (section 10.2) |
+| Q5 | Eligible for H2 iff defect-free, admissible ESS, and E-LM not worse than the best cell by more than Δ | none since 2026-10-27: Δ = 0.01 (section 10.2) |
 | Q6 | Regime for pilot and confirmation: the development profile as written (sentence width 384, four encoder layers, 12-layer/768-wide spine, four 384-wide decoder layers) | the quote: inventory plus one excluded dev run for measured step time (spend GO) |
 | Q7 | Engineering, no ruling: guard-teeth test by mutation that MM and MS norms are never overwritten, before the pilot | none |
-| Q8 | Margins in nats per canonical byte; Δ (equivalence and eligibility) and δ_mat (materiality) are two separate numbers, justified from a declared practical scale and sealed before pilot inspection; the pilot supplies variance only | the two VALUES and the justification (conductor drafts) |
+| Q8 | Margins in nats per canonical byte; Δ (equivalence and eligibility) and δ_mat (materiality) are two separate numbers, justified from a declared practical scale and sealed before pilot inspection; the pilot supplies variance only | none since 2026-10-27: Δ = 0.01, δ_mat = 0.02, justification in section 10.2 |
 | Q9 | Seed blocks: one block = one codec warm-up seed per sharing group ((MM, MS) and (SM, SS)), all four cells retrained; pilot 8 blocks; confirmation n from `plan_seed_count` against the deciding null and margin | n (arithmetic after the pilot) |
+
+### 10.2 Operator rulings, 2026-10-27: the three values and their sensitivity map (recorded, not sealed)
+
+Ruled in session on 2026-10-27 after the H0 final probe was filed `tracer_complete`. Sealing still
+happens at the committed registration; the pilot supplies variance only and none of these values
+is read from pilot outcomes.
+
+| value | ruled | meaning | justification |
+| --- | --- | --- | --- |
+| Q4 ESS/k threshold (per-row median at k = 64) | 0.25 | at least 16 of the 64 proposal samples are effective; a cell below it is inadmissible and its whole block drops | the standard importance-sampling rule of thumb; a cell that fails is under-sampled rather than unlucky; the H0 final probe measured ESS between 1.00 and 3.77 at k ≤ 8 (ESS/k 0.13 to 0.47 at k = 8), so the threshold is not trivially met and not trivially failed; no k = 64 data existed when it was fixed |
+| Q8 Δ, equivalence and H2 eligibility | 0.01 nats per canonical byte | the largest E-LM gap that still reads "no practically relevant difference"; a cell within Δ of the best cell stays eligible | one enwik8 reporting step is 0.01 bits/byte ≈ 0.0069 nats/byte (the E1 ε basis, `docs/e1-preregistration.md` Amendment 1), rounded up as E1 did; restated here for the boundary-augmented per-byte task rather than inherited: a gap below one published-table step is invisible to any consumer of the number, whatever the task's byte convention. Power scales as (σ/Δ)², so this is the tightest margin the 90% power target can afford at 8 to 16 blocks |
+| Q8 δ_mat, materiality | 0.02 nats per canonical byte | the smallest difference worth acting on in the four-case interval reading; δ_mat = 2Δ leaves a declared gray zone between Δ and 2Δ where a difference is detectable and beyond equivalence yet not actionable | two reporting steps; the gray zone is the "detectable, immaterial" verdict the 2026-10-26 review asks to see written down |
+
+**Sensitivity map (declared here, exploratory, never deciding).** On the same sealed data and
+after the sealed analysis, the verdict file reports what each alternative would have read, in
+the shape of `docs/reviews/e1-epsilon-sensitivity.md`, with the number of admitted blocks per
+reading printed beside every interval:
+
+| value | alternatives reported | not reported |
+| --- | --- | --- |
+| ESS/k threshold | 0.10; 0.50; the growth rule ESS(64) ≥ 2·ESS(8) as a curve diagnostic | none |
+| Δ | 0.007 (one reporting step unrounded); 0.02 and 0.03 | a relative margin (its absolute value would be fixed by pilot-visible means) |
+| δ_mat | δ_mat = Δ; the reversed pair δ_mat = 0.007 with Δ = 0.003 | a cost-anchored δ_mat (needs a measured scaling slope H1 does not produce) |
+
+All three values are analysis-side thresholds. No run reads them: the ESS curve is logged per
+evaluation (`eval/ess_k{k}`), and Δ and δ_mat are compared against the sealed intervals. The
+map therefore costs no compute. A stricter ESS threshold changes the admitted block set, not only
+the reading, which is why block counts are printed per threshold. The confirmatory n is computed
+against Δ = 0.01 only; no alternative reading changes n.
 
 Binding from the reviews without a ruling: any theory-dependent interaction is registered before
 H2; power is computed against the deciding null and margin, not against zero; fixed-state
