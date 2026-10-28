@@ -1,0 +1,811 @@
+{
+  "spec_version": "1",
+  "sprint": "p14 consolidation: extract / abstract / consolidate at the p13 tip",
+  "trunk": "refactor/p14-consolidation",
+  "verified_at": "4e0ae6a59117d054cc9b63d705d5004e06b982cb",
+  "registry": ".claude/workflows/td-phase-lifecycle.registry.json",
+  "generated_by": "p14 planning lane (Opus, worktree .claude/worktrees/p14-plan) from helmsman:sprint-preflight wf_3076de6f-c56 draft + operator rulings 2026-09-28; ratified:false",
+  "ratified": true,
+  "merge_topology": "Stacked mythwave/p14-* branches on refactor/p14-consolidation. Before any phase: four pre-phase rungs (fix/for-1567, fix/for-1617, chore/for-1614, chore/for-1615), each parented on the trunk and landed into it serially in that order, the two fix/ rungs each with its own conductor reader re-pin; these are NOT manifest phases (ruling 7, 12). Then rail p14-r1-strict-json alone; waves (K<=3, commit hooks serialized per the 2026-09-23 measurement): w1 {p14-t-local, p14-t-composition, p14-j-register}, w2 {p14-t-trainer, p14-t-campaign, p14-t-historical}, serial p14-t-capture-sink (live gate), w3 {p14-t-core, p14-t-dead, p14-j-kernel-capture}, w4 {p14-j-analyze-review-file, p14-j-run}; then serial tracer p14-t-verdict-vocab and the identity rail p14-z-identity last (one conductor re-pin). R-PARALLEL: members of one group share no file (measured, zero in-group overlaps) and no contract edge to each other; rails-before edges to the landed rail are discharged. The two cross-wave shared files (kernel/verdict/d1_evaluation_values.py, tests/test_d_ladder_remote.py) resolve serial-after by wave order. Parent chain below is the serial reading order; inside a wave the zip restacks ascending by footprint and re-runs the exit gate at every restacked tip. verified_at is re-stamped at the prelaunch ceremony after the trunk is rebased onto the v0.1.0 release tip.",
+  "sequence": [
+    "p14-r1-strict-json",
+    "p14-t-local",
+    "p14-t-composition",
+    "p14-j-register",
+    "p14-t-trainer",
+    "p14-t-campaign",
+    "p14-t-historical",
+    "p14-t-capture-sink",
+    "p14-t-core",
+    "p14-t-dead",
+    "p14-j-kernel-capture",
+    "p14-j-analyze-review-file",
+    "p14-j-run",
+    "p14-t-verdict-vocab",
+    "p14-z-identity"
+  ],
+  "phases": [
+    {
+      "id": "p14-r1-strict-json",
+      "title": "Strict canonical-JSON boundary codec (kernel/codec/strict_json.py)",
+      "issues": [
+        "FOR-1613"
+      ],
+      "branch": "mythwave/p14-r1-strict-json",
+      "parent": "refactor/p14-consolidation",
+      "brief": ".claude/workflows/briefs/p14-r1-strict-json.md",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "model_tier": "cascade, serial",
+      "contracts_owned": [
+        {
+          "name": "kernel.codec.strict_json API: strict_loads(raw,*,fail), exact_keys(actual,required,optional)->(missing,unknown), require_mapping(value,*,fail), require_lowercase_sha256(value,*,fail); fail: Callable[[str], NoReturn]",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/kernel/codec/__init__.py",
+        "src/entropic_substrate/kernel/codec/strict_json.py",
+        "tests/test_strict_json.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-j-register",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API consumed",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-t-historical",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API consumed",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-j-kernel-capture",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API consumed",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-j-analyze-review-file",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API consumed",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-j-run",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API consumed",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Rail, additive only: creates the package and module, adopts no site. Must not edit kernel/artifacts.py (member of both reader tuples). The loose kernel require_sha256 is already renamed to require_sha256_hex_any_case by the pre-phase rung chore/for-1615 (ruling 12); r1 never touches kernel/identity/d1_primitives.py. kernel.codec is a subpackage of a landed layer, so tests/test_identity_epoch.py's subset rule (_is_layer_or_subpackage) covers it and tools/mapping.json stays untouched."
+    },
+    {
+      "id": "p14-t-local",
+      "title": "Local cleanups: TrainConfig owns betas coercion; D1DvcBinding validated through its property",
+      "issues": [
+        "FOR-1585",
+        "FOR-1602"
+      ],
+      "branch": "mythwave/p14-t-local",
+      "parent": "mythwave/p14-r1-strict-json",
+      "brief": ".claude/workflows/briefs/p14-t-local.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/kernel/runtime/config.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_ports.py",
+        "tests/test_config.py",
+        "tests/test_d1_capture_service.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w1",
+      "status": "queued",
+      "notes": "FOR-1585: config.py _build special case moves into TrainConfig.__post_init__. FOR-1602: d1_capture_ports.py __post_init__ validates through self.binding; no signature change, so the 10 D1DvcPointerIdentity importers are untouched."
+    },
+    {
+      "id": "p14-t-composition",
+      "title": "Composition: one dispatch table, typed runtime/RunPod ports, canonical_json reuse, typed mailbox factory",
+      "issues": [
+        "FOR-1571",
+        "FOR-1583",
+        "FOR-1582",
+        "FOR-1584",
+        "FOR-1607"
+      ],
+      "branch": "mythwave/p14-t-composition",
+      "parent": "mythwave/p14-t-local",
+      "brief": ".claude/workflows/briefs/p14-t-composition.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.identity.d1_primitives.canonical_json (trunk)",
+        "ladder.run.values.d1_operator_ports.D1RunPodPort (trunk)",
+        "ladder.run.transport.d1_trainer_object_transport.D1TrainerMailboxObjectPort (trunk)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/composition/entrypoints/cli.py",
+        "src/entropic_substrate/composition/wiring/d1_campaign_controller_factory.py",
+        "src/entropic_substrate/composition/wiring/d1_trainer_cli_services.py",
+        "src/entropic_substrate/composition/entrypoints/d1_trainer_worker_command.py",
+        "src/entropic_substrate/composition/entrypoints/d1_trainer_mailbox_command.py",
+        "tests/test_cli_surface.py",
+        "tests/test_d1_campaign_controller_factory.py",
+        "tests/test_d1_trainer_cli_services.py",
+        "tests/test_d1_trainer_process_worker.py",
+        "tests/test_d1_trainer_mailbox_command.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w1",
+      "status": "queued",
+      "notes": "composition/entrypoints/cli.py is NOT a reader-tuple member (composition.cli is composition/cli.py). composition/wiring/d1_cli.py:180 _checked_payload is excluded (strict admission gate). FOR-1582's fourth site ladder/run/transport/d1_trainer_process_contracts.py belongs to p14-j-run. FOR-1608 is closed against FOR-1571 (ruling 13)."
+    },
+    {
+      "id": "p14-j-register",
+      "title": "Register and gate codecs adopt strict_json (FOR-1575 + FOR-1599 merged)",
+      "issues": [
+        "FOR-1575",
+        "FOR-1599",
+        "FOR-1577",
+        "FOR-1613"
+      ],
+      "branch": "mythwave/p14-j-register",
+      "parent": "mythwave/p14-t-composition",
+      "brief": ".claude/workflows/briefs/p14-j-register.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.codec.strict_json API (p14-r1-strict-json)",
+        "kernel.identity.d1_primitives.require_sha256_hex_any_case (trunk, chore/for-1615)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/register/d1_registration_codec.py",
+        "src/entropic_substrate/ladder/register/d1_launch_attempt_codec.py",
+        "src/entropic_substrate/ladder/register/d1_plan.py",
+        "src/entropic_substrate/ladder/register/ladder.py",
+        "src/entropic_substrate/ladder/gate/ladder_campaign.py",
+        "src/entropic_substrate/ladder/register/d1_confirmatory_matrix.py",
+        "src/entropic_substrate/ladder/register/d1_launch_attempts.py",
+        "src/entropic_substrate/ladder/register/d1_provenance.py",
+        "src/entropic_substrate/ladder/register/d1_registered_design.py",
+        "tests/test_d1_registration_codec.py",
+        "tests/test_d1_launch_attempt_codec.py",
+        "tests/test_d1_plan.py",
+        "tests/test_ladder_campaign.py",
+        "tests/test_strict_json_adoption_register.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-r1-strict-json",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API owned by p14-r1-strict-json",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": "p14-w1",
+      "status": "queued",
+      "notes": "Each codec keeps its own _text semantics (FOR-1614 is settled by the pre-phase rung chore/for-1614, never here) and its own exception type via the fail callback. d1_plan.py adopts require_mapping/exact_keys only (it validates already-decoded objects). ladder/register/ladder.py, d1_confirmatory_matrix.py, d1_launch_attempts.py, d1_provenance.py and d1_registered_design.py are in the set only as audited callers of the renamed loose SHA function."
+    },
+    {
+      "id": "p14-t-trainer",
+      "title": "Trainer dedup: one fresh/resume failure helper, shared state_* accessors",
+      "issues": [
+        "FOR-1568",
+        "FOR-1611"
+      ],
+      "branch": "mythwave/p14-t-trainer",
+      "parent": "mythwave/p14-j-register",
+      "brief": ".claude/workflows/briefs/p14-t-trainer.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/trainer/d1_fresh_trainer.py",
+        "src/entropic_substrate/ladder/run/trainer/d1_resume_trainer.py",
+        "src/entropic_substrate/ladder/run/trainer/d1_terminal_failure.py",
+        "src/entropic_substrate/ladder/capture/records/d1_telemetry_values.py",
+        "src/entropic_substrate/ladder/run/trainer/d1_evaluation.py",
+        "src/entropic_substrate/kernel/verdict/d1_evaluation_values.py",
+        "tests/test_d1_fresh_trainer.py",
+        "tests/test_d1_resume_trainer.py",
+        "tests/test_d1_evaluation.py",
+        "tests/test_d1_telemetry_values.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-j-kernel-capture",
+          "type": "file",
+          "evidence": "src/entropic_substrate/kernel/verdict/d1_evaluation_values.py (owner p14-t-trainer; the later phase lands serially after it, different waves)",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": "p14-w2",
+      "status": "queued",
+      "notes": "FOR-1568: _trainer_failure moves verbatim from d1_resume_trainer.py:210 to d1_terminal_failure.py (already imported by the fresh trainer at :31); zero new parameters. FOR-1611: D1EvalResult (d1_evaluation.py:42) and D1QualityEvidence (d1_telemetry_values.py:257) are two types with byte-identical state_mean/state_variance/state_covariance_eigenvalues/effective_rank properties over state_moments; the shared home is kernel/verdict/d1_evaluation_values.py, which both modules already import. Owns d1_evaluation_values.py; p14-j-kernel-capture touches it later (FOR-1572 parse_d1_cosine)."
+    },
+    {
+      "id": "p14-t-campaign",
+      "title": "ladder/run campaign + resource: typed billing request, shared custody decision, typed meter restore",
+      "issues": [
+        "FOR-1576",
+        "FOR-1587",
+        "FOR-1603",
+        "FOR-1601"
+      ],
+      "branch": "mythwave/p14-t-campaign",
+      "parent": "mythwave/p14-t-trainer",
+      "brief": ".claude/workflows/briefs/p14-t-campaign.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/closure/d1_billing_finalizer.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_controller.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_excluded_operator.py",
+        "src/entropic_substrate/ladder/capture/resource/resource_meter_strategy.py",
+        "src/entropic_substrate/ladder/run/resource/d1_resource_activation.py",
+        "tests/test_d1_billing_finalizer.py",
+        "tests/test_d1_finalized_cell_custody_values.py",
+        "tests/test_d1_operator_controller.py",
+        "tests/test_d1_operator_resume.py",
+        "tests/test_d1_excluded_operator.py",
+        "tests/test_resource_meter_strategy.py",
+        "tests/test_d1_resource_activation.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w2",
+      "status": "queued",
+      "notes": "Intra-phase order: FOR-1576 before FOR-1587 (both edit d1_operator_controller.py); FOR-1603 before FOR-1601 (restore() gains max_power_gap_seconds, which d1_resource_activation.py:255 resume() passes). finalize_d1_billing has 3 src call sites (d1_operator_controller.py:375,567, d1_excluded_operator.py:258) and 3 test consumers (test_d1_billing_finalizer.py, test_d1_finalized_cell_custody_values.py:90, test_d1_operator_resume.py:198 monkeypatch)."
+    },
+    {
+      "id": "p14-t-historical",
+      "title": "historical/: shared optimizer/autocast, resource-phase helper, dead load_ladder_model, workspace cleanup on failure",
+      "issues": [
+        "FOR-1570",
+        "FOR-1586",
+        "FOR-1606",
+        "FOR-1580"
+      ],
+      "branch": "mythwave/p14-t-historical",
+      "parent": "mythwave/p14-t-campaign",
+      "brief": ".claude/workflows/briefs/p14-t-historical.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.codec.strict_json API (p14-r1-strict-json)",
+        "kernel.identity.d1_primitives.require_sha256_hex_any_case (trunk, chore/for-1615)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/historical/e_series/field_pretrain.py",
+        "src/entropic_substrate/historical/e_series/train.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_training.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_execution.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_artifacts.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_remote.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_remote_request.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_worker_command.py",
+        "tests/test_field_pretrain.py",
+        "tests/test_train_smoke.py",
+        "tests/test_d_ladder_training.py",
+        "tests/test_d_ladder_execution.py",
+        "tests/test_d_ladder_artifacts.py",
+        "tests/test_d_ladder_remote.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-r1-strict-json",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API owned by p14-r1-strict-json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-t-dead",
+          "type": "file",
+          "evidence": "tests/test_d_ladder_remote.py (owner p14-t-historical; the later phase lands serially after it, different waves)",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": "p14-w2",
+      "status": "queued",
+      "notes": "Owns the hub tests/test_d_ladder_remote.py (FOR-1580 RED-first test); p14-t-dead edits its d1_configs_dir import at :19 later (serial-after). FOR-1580 changes failure-path behaviour (root emptied on failure): RED-first with both arms. FOR-1586: local helper only, never a null-object ResourceMeter (d_ladder_execution.py:147 invariant). d_ladder_remote_request.py and d_ladder_worker_command.py are in the set only as audited callers of the renamed loose SHA function (P14-SHA-SEQ); this phase consumes the rail for that leg."
+    },
+    {
+      "id": "p14-t-capture-sink",
+      "title": "MLflow sink: no duplicate run on cold-start retry; honest MetricExtractor contracts",
+      "issues": [
+        "FOR-1578",
+        "FOR-1569"
+      ],
+      "branch": "mythwave/p14-t-capture-sink",
+      "parent": "mythwave/p14-t-historical",
+      "brief": ".claude/workflows/briefs/p14-t-capture-sink.md",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "cascade, serial",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
+        "src/entropic_substrate/ladder/capture/ports/run_descriptor.py",
+        "src/entropic_substrate/ladder/capture/adapters/d1_tracking.py",
+        "src/entropic_substrate/ladder/run/h_metric_extractor.py",
+        "src/entropic_substrate/ladder/capture/adapters/composite.py",
+        "src/entropic_substrate/ladder/capture/adapters/d1_observability.py",
+        "src/entropic_substrate/ladder/capture/reader/sinks.py",
+        "tests/test_sinks.py",
+        "tests/test_tracking_sinks.py",
+        "tests/test_d1_tracking.py",
+        "tests/test_d1_observability.py",
+        "tests/test_h_metric_routing.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Serial: the live gate (just container-test) runs containers and house rule 2 forbids concurrent ones. FOR-1578 remedy is the report's two-phase split (create_run never re-entered; startup-abort contract byte-identical). FOR-1569 keeps HTrainingStepExtractor's name and module because ladder/run/worker_command.py:19 imports it and worker_command is a reader-tuple member; the runtime isinstance at d1_observability.py:86 survives. FOR-1581 was CANCELED as a duplicate of FOR-1578."
+    },
+    {
+      "id": "p14-t-core",
+      "title": "core/: shared decode validator, one offset sampler, typed horizon heads, GatedKappaNorm beside build_norm",
+      "issues": [
+        "FOR-1593",
+        "FOR-1591",
+        "FOR-1592",
+        "FOR-1595",
+        "FOR-1597"
+      ],
+      "branch": "mythwave/p14-t-core",
+      "parent": "mythwave/p14-t-capture-sink",
+      "brief": ".claude/workflows/briefs/p14-t-core.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/core/observation/byte_codec.py",
+        "src/entropic_substrate/core/observation/permuted_byte_codec.py",
+        "src/entropic_substrate/core/observation/contracts.py",
+        "src/entropic_substrate/core/corpus/batching.py",
+        "src/entropic_substrate/core/latent/horizons.py",
+        "src/entropic_substrate/core/geometry/kappa_norm.py",
+        "src/entropic_substrate/core/substrate/backbone.py",
+        "src/entropic_substrate/core/substrate/blocks.py",
+        "tests/test_observation.py",
+        "tests/test_permuted_byte_codec.py",
+        "tests/test_ladder_batching.py",
+        "tests/test_predictive_batching.py",
+        "tests/test_predictive_horizons.py",
+        "tests/test_kappa_norm.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": "p14-w3",
+      "status": "queued",
+      "notes": "Intra-phase order FOR-1593 (delete byte_codec.py encode_bytes/decode_ids) before FOR-1591 (decode-only validator into contracts.py). Codec construction digests are recipe-derived (byte_codec.py:36-45 hashes cardinality/label/name/schema, not source bytes), pinned by tests/test_identity_epoch.py:506-516, and must stay byte-identical. FOR-1597: GatedKappaNorm, KappaNormStats and UnitNorm move into core/substrate/blocks.py (395 lines today) and core/geometry/kappa_norm.py is deleted; importers are backbone.py:14, blocks.py:38, tests/test_kappa_norm.py:11. CLAUDE.md:156 names the old path: docs sweep after SUBMITTED, never in this lane. core.geometry and core.substrate are in neither reader tuple."
+    },
+    {
+      "id": "p14-t-dead",
+      "title": "Dead-code sweep: family adapter, EncoderShape, targets facade, d1_configs_dir, ACL lease (RETIRE)",
+      "issues": [
+        "FOR-1574",
+        "FOR-1590",
+        "FOR-1594",
+        "FOR-1600",
+        "FOR-1605"
+      ],
+      "branch": "mythwave/p14-t-dead",
+      "parent": "mythwave/p14-t-core",
+      "brief": ".claude/workflows/briefs/p14-t-dead.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/ladder/gate/d1_family_adapter.py",
+        "src/entropic_substrate/kernel/identity/d1_primitives.py",
+        "src/entropic_substrate/ladder/register/d1.py",
+        "src/entropic_substrate/core/latent/targets.py",
+        "src/entropic_substrate/ladder/register/d1_config.py",
+        "src/entropic_substrate/ladder/analyze/d1_output_access.py",
+        "tests/test_d1_stabilization.py",
+        "tests/test_predictive_state_target_values.py",
+        "tests/predictive_state_helpers.py",
+        "tests/test_d1_runtime_hardening.py",
+        "tests/test_predictive_state_target_updates.py",
+        "tests/test_predictive_state_future_law.py",
+        "tests/test_d1_config_parser_hardening.py",
+        "tests/test_d_ladder_remote.py",
+        "tests/test_d_ladder_probe_cli.py",
+        "tests/test_ladder_profile.py",
+        "tests/test_d1_config_catalog.py",
+        "tests/d1_trainer_fixtures.py",
+        "tests/test_d_ladder_review_contracts.py",
+        "tests/test_d1_gpu_tiny_profiles.py",
+        "tests/test_d1_output_access.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-t-historical",
+          "type": "file",
+          "evidence": "tests/test_d_ladder_remote.py (owner p14-t-historical; the later phase lands serially after it, different waves)",
+          "resolution": "serial-after"
+        }
+      ],
+      "parallel_group": "p14-w3",
+      "status": "queued",
+      "notes": "Deletions: ladder/gate/d1_family_adapter.py, core/latent/targets.py, ladder/analyze/d1_output_access.py + tests/test_d1_output_access.py (FOR-1605 RETIRE, ruling 10). FOR-1600 has 2 internal call sites (d1_config.py:77,80), the __all__ row (:25) and 8 test importers. tests/test_d_ladder_remote.py is owned by p14-t-historical; this phase edits only its :19 import (serial-after). tools/mapping.json keeps its historical rows; deletions are tolerated by the subset rule at tests/test_identity_epoch.py:634-663."
+    },
+    {
+      "id": "p14-j-kernel-capture",
+      "title": "Kernel verdict/evidence and capture codecs adopt strict_json",
+      "issues": [
+        "FOR-1572",
+        "FOR-1577",
+        "FOR-1613"
+      ],
+      "branch": "mythwave/p14-j-kernel-capture",
+      "parent": "mythwave/p14-t-dead",
+      "brief": ".claude/workflows/briefs/p14-j-kernel-capture.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.codec.strict_json API (p14-r1-strict-json)",
+        "kernel.identity.d1_primitives.require_sha256_hex_any_case (trunk, chore/for-1615)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/kernel/verdict/d1_parsing.py",
+        "src/entropic_substrate/kernel/verdict/d1_statistical_gaps.py",
+        "src/entropic_substrate/kernel/verdict/d1_evaluation_values.py",
+        "src/entropic_substrate/kernel/evidence_class/resource_provenance_codec.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_aggregate_codec.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_declaration_codec.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_preparation_custody.py",
+        "src/entropic_substrate/ladder/capture/ledger/d1_lifecycle_values.py",
+        "src/entropic_substrate/ladder/capture/records/d1_journal_values.py",
+        "src/entropic_substrate/ladder/capture/records/d1_telemetry_payloads.py",
+        "src/entropic_substrate/ladder/capture/records/d1_calibration_records.py",
+        "src/entropic_substrate/ladder/capture/reader/d1_journal_snapshot.py",
+        "src/entropic_substrate/ladder/capture/resource/resource_ledger_codec.py",
+        "src/entropic_substrate/ladder/capture/resource/resource_work_codec.py",
+        "tests/test_resource_provenance_codec.py",
+        "tests/test_d1_capture_declaration_codec.py",
+        "tests/test_d1_capture_preparation_custody.py",
+        "tests/test_d1_lifecycle_values.py",
+        "tests/test_d1_journal_values.py",
+        "tests/test_d1_telemetry_payloads.py",
+        "tests/test_resource_ledger_codec.py",
+        "tests/test_resource_work_codec.py",
+        "tests/test_strict_json_adoption_kernel_capture.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-r1-strict-json",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API owned by p14-r1-strict-json",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "p14-t-trainer",
+          "type": "file",
+          "evidence": "src/entropic_substrate/kernel/verdict/d1_evaluation_values.py (owner p14-t-trainer; the later phase lands serially after it, different waves)",
+          "resolution": "serial-after"
+        }
+      ],
+      "parallel_group": "p14-w3",
+      "status": "queued",
+      "notes": "Identity-bearing JSON sites are EXEMPT (ruling 5): kernel/artifacts.py object_fields and ladder/capture/capture.py stay untouched. d1_parsing.object_exact stays a thin D1 wrapper over exact_keys. d1_evaluation_values.py was edited by p14-t-trainer (FOR-1611) first: serial-after edge. d1_calibration_records.py and d1_journal_snapshot.py are in the set only as audited callers of the renamed loose SHA function."
+    },
+    {
+      "id": "p14-j-analyze-review-file",
+      "title": "analyze/review/file boundary decode adopts strict_json (lowercase-strict SHA); D1RunReader fails loud",
+      "issues": [
+        "FOR-1604",
+        "FOR-1610",
+        "FOR-1572",
+        "FOR-1577",
+        "FOR-1579",
+        "FOR-1613"
+      ],
+      "branch": "mythwave/p14-j-analyze-review-file",
+      "parent": "mythwave/p14-j-kernel-capture",
+      "brief": ".claude/workflows/briefs/p14-j-analyze-review-file.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.codec.strict_json API (p14-r1-strict-json)",
+        "kernel.identity.d1_primitives.require_sha256_hex_any_case (trunk, chore/for-1615)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/review/d1_external_analysis_control.py",
+        "src/entropic_substrate/ladder/review/d1_external_analysis_codec.py",
+        "src/entropic_substrate/ladder/review/d1_external_review_adapter.py",
+        "src/entropic_substrate/ladder/review/d1_review_adjudication.py",
+        "src/entropic_substrate/ladder/review/d1_review_execution.py",
+        "src/entropic_substrate/ladder/review/d1_execution_receipt.py",
+        "src/entropic_substrate/ladder/review/d1_machine_analysis_binding.py",
+        "src/entropic_substrate/ladder/review/d1_machine_analysis_verification.py",
+        "src/entropic_substrate/ladder/analyze/d1_analysis_receipt_codec.py",
+        "src/entropic_substrate/ladder/analyze/d1_inspect_codec.py",
+        "src/entropic_substrate/ladder/analyze/d1_machine_analysis_codec.py",
+        "src/entropic_substrate/ladder/analyze/d1_diagnostics.py",
+        "src/entropic_substrate/ladder/analyze/d1_clause_policy.py",
+        "src/entropic_substrate/ladder/analyze/ladder_registration.py",
+        "src/entropic_substrate/ladder/analyze/d1_machine_analysis.py",
+        "src/entropic_substrate/ladder/analyze/d1_inspect_request.py",
+        "src/entropic_substrate/ladder/analyze/ladder_analysis.py",
+        "src/entropic_substrate/ladder/analyze/d1_inspect_values.py",
+        "src/entropic_substrate/ladder/file/d1_filing.py",
+        "src/entropic_substrate/ladder/file/d1_filing_receipts.py",
+        "tests/test_d1_inspect_codec.py",
+        "tests/test_d1_inspect_codec_parse.py",
+        "tests/test_d1_machine_analysis_output_codec.py",
+        "tests/test_d1_external_analysis_codec_v2.py",
+        "tests/test_d1_machine_analysis_expected_bindings.py",
+        "tests/test_d1_clause_policy.py",
+        "tests/test_d1_review_adjudication.py",
+        "tests/test_d1_external_review_adapter.py",
+        "tests/test_d1_filing_receipts.py",
+        "tests/test_ladder_registration.py",
+        "tests/test_ladder_analysis.py",
+        "tests/test_strict_json_adoption_analyze_review_file.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-r1-strict-json",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API owned by p14-r1-strict-json",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": "p14-w4",
+      "status": "queued",
+      "notes": "SHA leg routes to strict_json.require_lowercase_sha256, never to require_sha256_hex_any_case (FOR-1604, ruling 12). FOR-1610 keeps D1MachineAnalysisBindingError and its messages via the fail callback. FOR-1579 (ruling 11): delete the (int, float) pre-filter at ladder_analysis.py:121 so D1TelemetryGap propagates; the H-lane grep precondition was measured empty at 651af30 and is re-run by the lane first. d1_machine_analysis.py, d1_inspect_request.py and d1_inspect_values.py are in the set only as audited callers of the renamed loose SHA function."
+    },
+    {
+      "id": "p14-j-run",
+      "title": "ladder/run + d1_cli strict-JSON admission adopts strict_json",
+      "issues": [
+        "FOR-1577",
+        "FOR-1582",
+        "FOR-1613"
+      ],
+      "branch": "mythwave/p14-j-run",
+      "parent": "mythwave/p14-j-analyze-review-file",
+      "brief": ".claude/workflows/briefs/p14-j-run.md",
+      "mode": "ratchet",
+      "engine_mode": "normal",
+      "gates": {
+        "liveRequired": false,
+        "liveDeferred": "wave member: publishMode defer; the wave zip runs ONE just ship-it (live gate) and is the re-certification owner"
+      },
+      "cost_class": "build",
+      "model_tier": "cascade per repo profile; waves via mass-patch-fanout (K<=3)",
+      "contracts_owned": [],
+      "contracts_consumed": [
+        "kernel.codec.strict_json API (p14-r1-strict-json)",
+        "kernel.identity.d1_primitives.require_sha256_hex_any_case (trunk, chore/for-1615)",
+        "kernel.identity.d1_primitives.canonical_json (trunk)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/campaign/d1_campaign_checkpoint.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_campaign_request.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_intent_codec.py",
+        "src/entropic_substrate/ladder/run/ckptsync/d1_capture_finalize_request.py",
+        "src/entropic_substrate/ladder/run/ckptsync/d1_checkpoint_dvc_sync.py",
+        "src/entropic_substrate/ladder/run/ckptsync/d1_checkpoint_dvc_recovery.py",
+        "src/entropic_substrate/ladder/run/closure/d1_finalized_cell_custody.py",
+        "src/entropic_substrate/ladder/run/closure/d1_runpod_billing_parser.py",
+        "src/entropic_substrate/ladder/run/construction/d1_r2_runtime_composition.py",
+        "src/entropic_substrate/ladder/run/h_runpod_transport.py",
+        "src/entropic_substrate/ladder/run/provider/d1_build_cloud_adapter.py",
+        "src/entropic_substrate/ladder/run/provider/d1_runpod_adapter.py",
+        "src/entropic_substrate/ladder/run/trainer/d1_evaluation_codec.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_handoff_codec.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_contracts.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_worker.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_evidence_adapter.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_output_publication.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_process_contracts.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_request_codec.py",
+        "src/entropic_substrate/composition/wiring/d1_cli.py",
+        "src/entropic_substrate/composition/entrypoints/d1_r2_trainer_mailbox_worker.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_evidence.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_values.py",
+        "tests/test_d1_trainer_handoff_codec.py",
+        "tests/test_d1_trainer_request_codec.py",
+        "tests/test_d1_operator_intent_codec.py",
+        "tests/test_d1_evaluation_codec.py",
+        "tests/test_d1_trainer_mailbox_contracts.py",
+        "tests/test_d1_campaign_checkpoint.py",
+        "tests/test_d1_campaign_request.py",
+        "tests/test_d1_capture_finalize_request.py",
+        "tests/test_d1_checkpoint_dvc_sync.py",
+        "tests/test_d1_runpod_billing_parser.py",
+        "tests/test_h_runpod_transport.py",
+        "tests/test_d1_build_cloud_adapter.py",
+        "tests/test_d1_runpod_adapter.py",
+        "tests/test_d1_trainer_output_publication.py",
+        "tests/test_d1_trainer_process_contracts.py",
+        "tests/test_strict_json_adoption_run.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "p14-r1-strict-json",
+          "type": "contract",
+          "evidence": "kernel.codec.strict_json API owned by p14-r1-strict-json",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": "p14-w4",
+      "status": "queued",
+      "notes": "Identity-bearing ladder/run/journal.py is EXEMPT (ruling 5). composition/wiring/d1_cli.py: _pairs only; :180 _checked_payload untouched. d1_trainer_process_contracts.py:143 also carries FOR-1582's fourth _canonical site. d1_checkpoint_dvc_recovery.py, d1_r2_runtime_composition.py, d1_trainer_mailbox_worker.py, d1_trainer_object_transport.py, d1_trainer_evidence_adapter.py composition/entrypoints/d1_r2_trainer_mailbox_worker.py, campaign/d1_operator_evidence.py and campaign/d1_operator_values.py are in the set only as audited callers of the renamed loose SHA function. None of these files is a reader-tuple member (h_runpod_transport.py included)."
+    },
+    {
+      "id": "p14-t-verdict-vocab",
+      "title": "Verdict value objects enforce their closed vocabularies (audit, then StrEnum with a read-old window)",
+      "issues": [
+        "FOR-1573"
+      ],
+      "branch": "mythwave/p14-t-verdict-vocab",
+      "parent": "mythwave/p14-j-run",
+      "brief": ".claude/workflows/briefs/p14-t-verdict-vocab.md",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "model_tier": "cascade, serial",
+      "contracts_owned": [
+        {
+          "name": "D1 verdict closed vocabularies as StrEnum types (kernel.verdict.d1_types), read-old window for persisted verdict artifacts",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/kernel/verdict/d1_types.py",
+        "src/entropic_substrate/ladder/file/d1_validator.py",
+        "src/entropic_substrate/ladder/file/d1_decision_validation.py",
+        "src/entropic_substrate/ladder/file/d1_real_arm_verdict.py",
+        "tests/test_d1_verdict_v2.py",
+        "tests/d1_verdict_v2_fixtures.py",
+        "tests/test_d1_unavailable_verdict.py",
+        "tests/test_d1_decision_contract.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Ruling 9: audit, then enforce with a read-old window. Rung 1 is a read-back audit of every persisted D1 verdict artifact against the frozensets at d1_types.py:43-51 (count recorded, zero is a result, never assumed). Constructors: d1_validator.py:424,495,553 and d1_decision_validation.py:119,146; d1_real_arm_verdict.py reads the vocabulary constants."
+    },
+    {
+      "id": "p14-z-identity",
+      "title": "Identity rail: every reader-tuple-member edit, one conductor re-pin",
+      "issues": [
+        "FOR-1589",
+        "FOR-1588",
+        "FOR-1596"
+      ],
+      "branch": "mythwave/p14-z-identity",
+      "parent": "mythwave/p14-t-verdict-vocab",
+      "brief": ".claude/workflows/briefs/p14-z-identity.md",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "model_tier": "cascade, serial",
+      "contracts_owned": [
+        {
+          "name": "h-checkpoint-reader-v2 and h-source-reader-v3 composed regime rows (tests/test_identity_epoch.py:534-557), re-pinned once by the conductor with tools/regime_rows.py",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [],
+      "touch_set": [
+        "src/entropic_substrate/kernel/artifacts.py",
+        "src/entropic_substrate/composition/cli.py",
+        "src/entropic_substrate/composition/capture_cli.py",
+        "src/entropic_substrate/composition/span_cli.py",
+        "src/entropic_substrate/composition/source_cli.py",
+        "src/entropic_substrate/core/probe/score_gain.py",
+        "src/entropic_substrate/core/probe/predictive_score_gain.py",
+        "tests/test_d1_artifact_snapshot.py",
+        "tests/test_span_score_gain.py",
+        "tests/test_predictive_score_gain.py",
+        "tests/test_identity_epoch.py"
+      ],
+      "conflict_edges": [],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "Conductor-owned re-pin; lanes never edit tests/test_identity_epoch.py. kernel/artifacts.py is a member of BOTH tuples (checkpoint.py _READER_MODULES and capture.py _READER_MODULES), so both regime tables re-pin. Identity-bearing JSON (object_fields, capture.py, journal.py) is exempt from extraction (ruling 5), so FOR-1577 is not in this rail. checkpoint.py:304-305 refuses a checkpoint whose recorded reader digest differs: never land while an H run is in flight or pending resume."
+    }
+  ],
+  "lifecycle": "archived",
+  "ledger": ".claude/workflows/launch-queue.jsonl"
+}
