@@ -144,6 +144,9 @@ def test_ruling_refuses_by_name(changes: dict[str, object], message: str) -> Non
         (True, 6.0),
         ("40", 6.0),
         (None, 6.0),
+        # Ints beyond float range: math.isfinite raises OverflowError on them.
+        pytest.param(10**400, 6.0, id="usd-int-beyond-float"),
+        pytest.param(40.0, 10**400, id="hours-int-beyond-float"),
     ],
 )
 def test_spend_cap_must_be_finite_and_positive(usd: object, hours: object) -> None:
@@ -206,6 +209,12 @@ def test_tamper_to_an_invalid_value_fails_verification_rather_than_raising() -> 
     assert not sealed.verify()
 
 
+def test_tamper_to_an_int_beyond_float_range_fails_verification_rather_than_raising() -> None:
+    sealed = authority()
+    object.__setattr__(sealed.spend_cap, "usd", 10**400)
+    assert not sealed.verify()
+
+
 # --------------------------------------------------------------------- parse
 def test_parse_refuses_another_schema_and_extra_or_missing_keys() -> None:
     manifest = authority().manifest
@@ -225,6 +234,54 @@ def test_parse_refuses_a_tampered_payload() -> None:
     manifest = json.loads(authority().payload)
     manifest["spend_cap"]["usd"] = 4000.0
     with pytest.raises(ValueError, match="run authority digest does not match its content"):
+        parse_run_authority(manifest)
+
+
+def test_parse_refuses_a_cap_beyond_float_range_from_json() -> None:
+    # json.loads turns a long integer literal into an int that no float can hold.
+    text = authority().payload.decode().replace('"usd":40.0', '"usd":1' + "0" * 400)
+    with pytest.raises(ValueError, match="spend cap must be finite positive numbers"):
+        parse_run_authority(json.loads(text))
+
+
+_TEXT_FIELD_WRONG_TYPES = [7, 1.5, ["x"], {"x": 1}, None, True]
+_NUMBER_FIELD_WRONG_TYPES = ["40", ["x"], {"x": 1}, None, True]
+_RECORD_FIELD_WRONG_TYPES = ["x", 7, ["x"], None]
+_WRONG_TYPE_FIELDS = [
+    (("schema",), _TEXT_FIELD_WRONG_TYPES, "run authority schema is not admitted"),
+    (("stage",), _TEXT_FIELD_WRONG_TYPES, "run authority stage is not an H stage"),
+    (("run_class",), _TEXT_FIELD_WRONG_TYPES, "non-scientific run class"),
+    (("gpu_class",), _TEXT_FIELD_WRONG_TYPES, "GPU class must be a safe explicit identifier"),
+    (("registration_sha",), _TEXT_FIELD_WRONG_TYPES, "registration SHA must be a full"),
+    (("digest",), _TEXT_FIELD_WRONG_TYPES, "run authority digest must be 64 lowercase hex"),
+    (("ruling", "date"), _TEXT_FIELD_WRONG_TYPES, "ruling date must be an ISO calendar date"),
+    (("ruling", "text"), _TEXT_FIELD_WRONG_TYPES, "ruling text must be non-empty text"),
+    (("ruling", "operator"), _TEXT_FIELD_WRONG_TYPES, "ruling operator must be non-empty"),
+    (("spend_cap", "usd"), _NUMBER_FIELD_WRONG_TYPES, "spend cap must be finite positive"),
+    (("spend_cap", "hours"), _NUMBER_FIELD_WRONG_TYPES, "spend cap must be finite positive"),
+    (("ruling",), _RECORD_FIELD_WRONG_TYPES, "fields differ from the versioned schema"),
+    (("spend_cap",), _RECORD_FIELD_WRONG_TYPES, "fields differ from the versioned schema"),
+]
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        pytest.param(path, value, message, id=f"{'.'.join(path)}={value!r}")
+        for path, values, message in _WRONG_TYPE_FIELDS
+        for value in values
+    ],
+)
+def test_parse_refuses_a_wrong_json_type_in_any_field_by_name(
+    path: tuple[str, ...], value: object, message: str
+) -> None:
+    manifest = json.loads(authority().payload)
+    *parents, leaf = path
+    target = manifest
+    for name in parents:
+        target = target[name]
+    target[leaf] = value
+    with pytest.raises(ValueError, match=message):
         parse_run_authority(manifest)
 
 

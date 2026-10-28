@@ -6,7 +6,12 @@ runs, the ruling that granted it, the spend cap and GPU class it may consume, an
 SHA of the committed preregistration it executes. The fields are the door.
 
 The artifact is sealed by its own content digest: SHA-256 over the canonical JSON of
-every field except the digest. That digest is tamper evidence, NOT authentication:
+every field except the digest. Canonical means this module's ``json.dumps`` rules: sorted
+keys, ``(",", ":")`` separators, non-ASCII escaped as ``\\uXXXX``, NaN and infinity
+refused, and floats in Python's shortest round-trip ``repr`` (``40.0`` stays ``40.0``, an
+int stays an int). It is NOT RFC 8785 JSON Canonicalization Scheme; a reviewer recomputing
+a digest outside Python must reproduce these rules. That digest is tamper evidence, NOT
+authentication:
 construction refuses a digest that does not match its content, so an authority edited
 without resealing cannot be built or parsed, and ``verify`` recomputes it, so an
 instance altered after sealing (``object.__setattr__`` defeats ``frozen``) is caught by
@@ -39,6 +44,10 @@ _KEYS = frozenset(
 
 def _json(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+
+
+def _digest(content: dict[str, object]) -> str:
+    return hashlib.sha256(_json(content)).hexdigest()
 
 
 def _text(value: object) -> bool:
@@ -81,11 +90,18 @@ class SpendCap:
     hours: float
 
     def __post_init__(self) -> None:
-        if any(
-            type(v) not in (int, float) or not math.isfinite(v) or v <= 0
-            for v in (self.usd, self.hours)
-        ):
+        if not all(_finite_positive(v) for v in (self.usd, self.hours)):
             raise ValueError("spend cap must be finite positive numbers")
+
+
+def _finite_positive(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        # An int beyond float range (10**400 parses from JSON) overflows the conversion.
+        return math.isfinite(cast(float, value)) and cast(float, value) > 0
+    except OverflowError:
+        return False
 
 
 def _content(
@@ -160,7 +176,7 @@ class RunAuthority:
 
     @property
     def content_digest(self) -> str:
-        return hashlib.sha256(_json(self.content)).hexdigest()
+        return _digest(self.content)
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -205,7 +221,7 @@ def seal_run_authority(
         raise TypeError("run authority spend cap must be a SpendCap")
     try:
         content = _content(stage, run_class, ruling, spend_cap, gpu_class, registration_sha)
-        digest = hashlib.sha256(_json(content)).hexdigest()
+        digest = _digest(content)
     except (TypeError, ValueError):
         digest = ""  # unserializable fields: construction below names the bad one
     return RunAuthority(stage, run_class, ruling, spend_cap, gpu_class, registration_sha, digest)
