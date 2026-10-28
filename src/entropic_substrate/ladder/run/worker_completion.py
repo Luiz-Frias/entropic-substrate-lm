@@ -9,6 +9,7 @@ from typing import cast
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ContentHash
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION, RUNTIME_KIND
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.journal import read_json
 from entropic_substrate.ladder.run.native_verification import read_native_verification
@@ -59,17 +60,17 @@ def admit_worker_runtime(
     if type(value) is not dict:
         raise ValueError("worker completion requires runtime provenance")
     runtime = cast(dict[str, object], value)
-    if request.profile.run_class == "local_tiny":
+    if RUN_ADMISSION.worker_surface(request.profile.run_class) == "local_worker":
         if (
             expected_pod_id is not None
-            or runtime.get("kind") != "local_tiny"
+            or runtime.get("kind") != RUNTIME_KIND["local_worker"]
             or runtime.get("pod_id") is not None
         ):
             raise ValueError("local completion cannot claim a provider allocation")
     else:
         require_d1_pod_id(expected_pod_id)
         if (
-            runtime.get("kind") != "remote_tiny"
+            runtime.get("kind") != RUNTIME_KIND["remote_worker"]
             or runtime.get("pod_id") != expected_pod_id
             or runtime.get("source_attestation") != "exact_git_tree_match"
             or runtime.get("code_commit") != request.code_commit

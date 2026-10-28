@@ -14,6 +14,7 @@ from entropic_substrate.kernel.artifacts import artifact_from_mapping, normalize
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
@@ -123,7 +124,7 @@ def _read_training_progress(
     max_artifact_bytes: int,
     memo: SealMemo | None,
 ) -> dict[str, object]:
-    if profile.run_class not in ("local_tiny", "remote_tiny"):
+    if not RUN_ADMISSION.admits_class(profile.run_class):
         raise ValueError("probe receipt has no scientific authority")
     row = recovery_record(
         read_json(root, artifact, max_bytes=max_artifact_bytes),
@@ -272,9 +273,8 @@ def run_probe_training(
     received no memo; it still walks the full chain, and the repeats of that
     walk by later stages are what was removed.
     """
-    if profile.run_class not in ("local_tiny", "remote_tiny") or (
-        profile.run_class == "remote_tiny" and profile.stage != "H0"
-    ):
+    surface = RUN_ADMISSION.worker_surface(profile.run_class)
+    if not RUN_ADMISSION.admits(profile.run_class, profile.stage, surface):
         raise ValueError("probe driver lacks scientific or successor authority")
     root = normalize_d1_artifact_root(output_root)
     evaluations: list[dict[str, object]] = []

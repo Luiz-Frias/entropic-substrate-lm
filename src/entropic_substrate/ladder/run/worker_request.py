@@ -17,6 +17,7 @@ from entropic_substrate.kernel.artifacts import (
     normalize_d1_relative_artifact_path,
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 
 
 def worker_artifact(value: object, section: str) -> ArtifactIdentity:
@@ -57,9 +58,11 @@ class ProbeRequest:
     def __post_init__(self) -> None:
         if type(self.profile) is not HProfile or type(self.limits) is not TransferLimits:
             raise TypeError("worker requires validated profile and transfer limits")
-        if self.profile.run_class not in ("local_tiny", "remote_tiny"):
+        run_class = self.profile.run_class
+        if not RUN_ADMISSION.admits_class(run_class):
             raise ValueError("probe worker has no scientific execution authority")
-        if self.profile.run_class == "remote_tiny" and self.profile.stage != "H0":
+        surface = RUN_ADMISSION.worker_surface(run_class)
+        if not RUN_ADMISSION.admits(run_class, self.profile.stage, surface):
             raise ValueError("remote successor requires its scientific gate adapter")
         ContentHash("sha256", self.nonce)
         if type(self.probe) is not ProbeConfig:
@@ -109,7 +112,7 @@ class ProbeRequest:
             or PurePosixPath(self.resume.path).suffix != ".json"
         ):
             raise ValueError("worker resume must bind its training receipt in run/")
-        if self.profile.run_class == "remote_tiny":
+        if surface == "remote_worker":
             if self.code_bundle is None or self.code_commit is None or self.image is None:
                 raise ValueError("remote worker requires immutable image and source proof")
             if (
