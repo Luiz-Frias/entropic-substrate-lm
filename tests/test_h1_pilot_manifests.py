@@ -6,15 +6,20 @@ spends nothing; digests, steps and the transfer limits are parameters.
 
 from dataclasses import replace
 from itertools import chain
+from pathlib import Path
 
 import pytest
+import tests.test_span_state_collection as span_fixture
+from tests.test_h_worker_command_observability import MAX_REQUEST, _worker
 
 from entropic_substrate.core.sentence.codec import CodecSpec
 from entropic_substrate.core.sentence.profile import (
     DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    DEVELOPMENT_GENERATION_CONTINUATIONS,
     DEVELOPMENT_IMPORTANCE_SAMPLES,
     MAX_RUN_STEPS,
     HProfile,
+    RunSchedule,
 )
 from entropic_substrate.core.sentence.records import content_identity
 from entropic_substrate.ladder.register.h_preservation import (
@@ -23,15 +28,20 @@ from entropic_substrate.ladder.register.h_preservation import (
 )
 from entropic_substrate.ladder.register.rungs import h1_pilot
 from entropic_substrate.ladder.register.rungs.h1_pilot import (
+    BATCH_SIZE,
     CELL_AXES,
     CODEC_WARMUP_CHECKPOINT_BYTES,
     CONFIRMATORY_SEED_CEILING,
+    EVALUATION_BATCHES,
     PILOT_SEEDS,
     PREDICTION_CHECKPOINT_BYTES,
+    _seal_counts,
     h1_pilot_blocks,
     pilot_transfer_limits,
     required_checkpoint_floor,
 )
+from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.worker.h_probe_log_events import checkpoint_steps
 from entropic_substrate.ladder.run.worker_request import TransferLimits
 
 pytestmark = pytest.mark.unit
@@ -266,13 +276,92 @@ def test_transfer_limits_follow_the_checkpoint_count_per_cell() -> None:
     # warm-up: one seal at step 250; prediction: multiples of 50 up to 1000 are 20 seals
     assert floor.max_total_bytes == 1 * 524_752_197 + 20 * 1_149_203_227
     assert floor.max_object_bytes == 1_149_203_227
-    assert floor.max_objects == 3 * 21  # journal, checkpoint and receipt per seal
+    # 4 objects per seal (journal, checkpoint, seal and progress receipts), 1 per evaluation
+    # (20 of them), 1 per generation continuation, plus the 14 fixed worker objects
+    assert DEVELOPMENT_GENERATION_CONTINUATIONS == 5
+    assert floor.max_objects == 4 * 21 + 20 + 5 + 14
     doubled = required_checkpoint_floor(schedule, capture_copies=2)
     assert doubled.max_total_bytes == 2 * floor.max_total_bytes
+    assert doubled.max_objects == 2 * (4 * 21 + 20 + 5) + 14
     sized = pilot_transfer_limits(schedule, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
     assert sized.max_total_bytes == doubled.max_total_bytes + SOURCE_BYTES
     assert sized.max_object_bytes == 1_149_203_227
-    assert sized.max_objects == 3 * 21 + FIXED_OBJECTS
+    assert sized.max_objects == doubled.max_objects + FIXED_OBJECTS
+
+
+def test_the_floor_refuses_a_non_schedule_and_non_positive_capture_copies() -> None:
+    schedule = blocks()[0].block.profiles[0].schedule
+    with pytest.raises(TypeError):
+        required_checkpoint_floor({"steps": 1000})  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="capture copies"):
+        required_checkpoint_floor(schedule, capture_copies=0)
+
+
+def test_a_source_larger_than_every_checkpoint_sets_the_object_bound() -> None:
+    schedule = blocks()[0].block.profiles[0].schedule
+    big = 2 * PREDICTION_CHECKPOINT_BYTES
+    sized = pilot_transfer_limits(schedule, source_bytes=big, fixed_objects=FIXED_OBJECTS)
+    assert sized.max_object_bytes == big
+
+
+def _schedule(warmup: int, steps: int, interval: int, evaluation: int) -> RunSchedule:
+    return RunSchedule(
+        warmup_steps=warmup,
+        steps=steps,
+        batch_size=BATCH_SIZE,
+        checkpoint_interval=interval,
+        evaluation_interval=evaluation,
+        evaluation_batches=EVALUATION_BATCHES,
+        importance_samples=DEVELOPMENT_IMPORTANCE_SAMPLES,
+        importance_chunk=8,
+        generation_sentences=4,
+        generation_continuations=DEVELOPMENT_GENERATION_CONTINUATIONS,
+        diagnostic_samples=DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    )
+
+
+@pytest.mark.parametrize("warmup", [1, 2, 7, 250])
+@pytest.mark.parametrize("interval", [1, 2, 3, 7, 75, 100, 250])
+@pytest.mark.parametrize("evaluation", [1, 2, 3, 5, 50])
+def test_seal_counts_equal_the_runner_checkpoint_predicate(
+    warmup: int, interval: int, evaluation: int
+) -> None:
+    """The closed form matches the measured seal predicate, including the off-grid final seal."""
+    for steps in (1, 2, 3, 7, 20, 50, 101, 250, 1000):
+        seals = checkpoint_steps(
+            warmup_steps=warmup,
+            steps=steps,
+            checkpoint_interval=interval,
+            evaluation_interval=evaluation,
+        )
+        codec = sum(1 for step in seals if step <= warmup)
+        prediction = len(seals) - codec
+        assert _seal_counts(_schedule(warmup, steps, interval, evaluation)) == (codec, prediction)
+
+
+def _with_continuations(profile: HProfile, continuations: int) -> HProfile:
+    return replace(
+        profile, schedule=replace(profile.schedule, generation_continuations=continuations)
+    )
+
+
+@pytest.mark.parametrize("continuations", [2, 3])
+def test_object_floor_matches_a_real_tiny_object_worker_run(
+    continuations: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the object model against the objects the real worker publishes for its final snapshot.
+
+    The published set is run, capture, verification and worker outputs, distinct by key, plus the
+    snapshot marker. The continuation count is varied so the per-continuation term is measured
+    rather than inferred from the fixture's equal sentence and continuation counts.
+    """
+    base = span_fixture.profile
+    monkeypatch.setattr(span_fixture, "profile", lambda: _with_continuations(base(), continuations))
+    request, objects, marker, root = _worker(tmp_path)
+    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+    assert request.profile.schedule.generation_continuations == continuations
+    written = {key for key in objects.publishes if "/outputs/" in key}
+    assert required_checkpoint_floor(request.profile.schedule).max_objects == len(written) + 1
 
 
 def test_transfer_limits_are_never_the_probe_kit_constants() -> None:

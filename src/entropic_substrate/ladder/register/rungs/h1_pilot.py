@@ -53,10 +53,21 @@ EVALUATION_BATCHES = 20
 # trainable count, not a checkpoint, and is retracted.
 CODEC_WARMUP_CHECKPOINT_BYTES = 524_752_197
 PREDICTION_CHECKPOINT_BYTES = 1_149_203_227
-# seal_step writes a journal, a checkpoint and a receipt per seal.
-OBJECTS_PER_SEAL = 3
-# The completion snapshot's capture copy doubles checkpoint bytes until the capture path
-# dedupes it (FOR-1690 note); a ruled allowance, not a measurement.
+# Objects the runner writes per seal, measured on the real object worker: the journal, the
+# checkpoint, the seal receipt (seal_step) and the progress receipt (runner progress write).
+OBJECTS_PER_SEAL = 4
+# Objects per evaluation, prediction phase only: the evaluation record (runner evaluation write).
+OBJECTS_PER_EVALUATION = 1
+# Objects per generation continuation: one generation-N snapshot file each (generation.py).
+OBJECTS_PER_CONTINUATION = 1
+# Objects that do not scale with the schedule, counted with their capture copies: the
+# generation receipt, profile, span diagnostics and span probes (run and capture each, 8), the
+# capture manifest and the prepared corpus (2), the native verification (1), the worker start
+# and result (2) and the snapshot marker (1). Measured at 14 on the real object worker.
+FIXED_WORKER_OBJECTS = 14
+# The final snapshot covers run, capture, verification and worker, so every run object is
+# published a second time by the capture copy. The same factor doubles checkpoint bytes until
+# the capture path dedupes them (FOR-1690 note); a ruled allowance, not a measurement.
 CAPTURE_COPIES = 2
 
 
@@ -94,17 +105,26 @@ def required_checkpoint_floor(
 
     Every seal retains one checkpoint (no overwrite), so the byte total is the measured warm-up
     and prediction checkpoint sizes times their seal counts, times the capture copies. The
-    source, request and other inputs are not in this floor; see ``pilot_transfer_limits``.
+    object total is the per-seal, per-evaluation and per-continuation file kinds the worker
+    writes, times the capture copies, plus the fixed worker objects. The source, request and other caller inputs
+    are not in this floor; see ``pilot_transfer_limits``.
     """
     if type(schedule) is not RunSchedule:
         raise TypeError("transfer floor requires a validated run schedule")
     _positive(capture_copies, "capture copies")
     codec, prediction = _seal_counts(schedule)
+    evaluations = schedule.steps // schedule.evaluation_interval
     return TransferLimits(
         max_object_bytes=max(CODEC_WARMUP_CHECKPOINT_BYTES, PREDICTION_CHECKPOINT_BYTES),
         max_total_bytes=capture_copies
         * (codec * CODEC_WARMUP_CHECKPOINT_BYTES + prediction * PREDICTION_CHECKPOINT_BYTES),
-        max_objects=OBJECTS_PER_SEAL * (codec + prediction),
+        max_objects=capture_copies
+        * (
+            OBJECTS_PER_SEAL * (codec + prediction)
+            + OBJECTS_PER_EVALUATION * evaluations
+            + OBJECTS_PER_CONTINUATION * schedule.generation_continuations
+        )
+        + FIXED_WORKER_OBJECTS,
     )
 
 

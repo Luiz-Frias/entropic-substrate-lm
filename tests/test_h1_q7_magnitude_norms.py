@@ -18,6 +18,7 @@ import torch.nn.functional as F
 
 import entropic_substrate.core.sentence.model as model_module
 import entropic_substrate.core.sentence.numerics as numerics_module
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.codec import CodecSpec, SentenceEncoder
 from entropic_substrate.core.sentence.law import LawSpec
 from entropic_substrate.core.sentence.model import SentencePredictor
@@ -26,6 +27,9 @@ from entropic_substrate.core.sentence.spine import CarrierBlock, SentenceSpine, 
 pytestmark = pytest.mark.unit
 
 UNIT_TOL = 1e-4  # a norm is "1" iff it is within this of 1; sphere paths hold to ~1e-7
+# A magnitude sentence norm is "constant" iff its relative spread is within this: a clean
+# magnitude arm measures 0.2865, an RMS-pinned one 9.7e-08 (probed).
+SPREAD_TOL = 1e-3
 REFERENCE_TOL = 1e-3  # relative and absolute, FP32 on CPU
 CELLS = {
     "MM": ("magnitude", "magnitude"),
@@ -33,7 +37,7 @@ CELLS = {
     "MS": ("magnitude", "sphere"),
     "SS": ("sphere", "sphere"),
 }
-SENTENCE_END, PAD = 256, 259
+SENTENCE_END, PAD = SentenceByteCodec.sentence_end, SentenceByteCodec.pad
 
 
 def build(mode: str, carrier: str, seed: int = 7) -> SentencePredictor:
@@ -67,13 +71,15 @@ def reference_magnitude_states(model: SentencePredictor, sentences: torch.Tensor
     """The unnormalized magnitude carrier, written out independently of ``CarrierBlock``.
 
     Only the sublayer and attention views are normalized (as the construction allows); the
-    carrier itself is ``current + step`` with no retraction and no final overwrite.
+    carrier itself is ``current + step`` with no retraction and no final overwrite. The entry
+    is also written from the raw weights, so a normalization or overwrite of the projection
+    or position outputs is not shared with the reference.
     """
     spine: SentenceSpine = model.spine
     batch, time, _ = sentences.shape
     start = spine.bos.view(1, 1, -1).expand(batch, 1, -1)
-    states = torch.cat((start, spine.projection(sentences)), dim=1)
-    states = states + spine.positions(torch.arange(time + 1))
+    states = torch.cat((start, F.linear(sentences, spine.projection.weight)), dim=1)
+    states = states + spine.positions.weight[: time + 1]
     width, head_width = spine.spec.width, spine.spec.head_width
     heads = width // head_width
     causal = torch.ones(time + 1, time + 1, dtype=torch.bool).triu(1)
@@ -117,6 +123,9 @@ def findings(model: SentencePredictor, mode: str, carrier: str) -> list[str]:
     if mode == "magnitude":
         if not is_not_unit(flat.norm(dim=-1)):
             found.append("sentence_norm_is_one")
+        sentence_norms = flat.norm(dim=-1)
+        if float(sentence_norms.std() / sentence_norms.mean()) <= SPREAD_TOL:
+            found.append("sentence_norm_constant")
         if not torch.allclose(flat, raw, rtol=REFERENCE_TOL, atol=REFERENCE_TOL):
             found.append("sentence_differs_from_unnormalized_reference")
     else:
@@ -211,6 +220,16 @@ def _mutate_spine_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
     patch.setattr(SentenceSpine, "forward", mutant)
 
 
+def _mutate_codec_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
+    original = SentenceEncoder.forward
+
+    def mutant(self: SentenceEncoder, tokens: torch.Tensor) -> torch.Tensor:
+        result = original(self, tokens)
+        return result * result.square().mean(dim=-1, keepdim=True).rsqrt()
+
+    patch.setattr(SentenceEncoder, "forward", mutant)
+
+
 def _mutate_spine_residual_f_normalize(patch: pytest.MonkeyPatch) -> None:
     original = CarrierBlock._residual
 
@@ -223,6 +242,7 @@ def _mutate_spine_residual_f_normalize(patch: pytest.MonkeyPatch) -> None:
 
 MUTATIONS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str]] = {
     "codec_f_normalize": (_mutate_codec_f_normalize, "sentence_norm_is_one"),
+    "codec_rms_overwrite": (_mutate_codec_rms_overwrite, "sentence_norm_constant"),
     "numerics_f_normalize": (_mutate_numerics_f_normalize, "sentence_norm_is_one"),
     "spine_rms_overwrite": (
         _mutate_spine_rms_overwrite,
@@ -239,6 +259,44 @@ def test_an_injected_normalization_is_detected(name: str, monkeypatch: pytest.Mo
     apply, expected = MUTATIONS[name]
     apply(monkeypatch)
     assert expected in findings(model, "magnitude", "magnitude")
+
+
+def _entry_projection_f_normalize(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
+    original = model.spine.projection.forward
+    patch.setattr(model.spine.projection, "forward", lambda x: F.normalize(original(x), dim=-1))
+
+
+def _entry_projection_rms_overwrite(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
+    original = model.spine.projection.forward
+
+    def mutant(x: torch.Tensor) -> torch.Tensor:
+        out = original(x)
+        return out * out.square().mean(dim=-1, keepdim=True).rsqrt()
+
+    patch.setattr(model.spine.projection, "forward", mutant)
+
+
+def _entry_positions_f_normalize(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
+    original = model.spine.positions.forward
+    patch.setattr(model.spine.positions, "forward", lambda x: F.normalize(original(x), dim=-1))
+
+
+ENTRY_MUTATIONS: dict[str, Callable[[SentencePredictor, pytest.MonkeyPatch], None]] = {
+    "projection_f_normalize": _entry_projection_f_normalize,
+    "projection_rms_overwrite": _entry_projection_rms_overwrite,
+    "positions_f_normalize": _entry_positions_f_normalize,
+}
+
+
+@pytest.mark.parametrize("name", list(ENTRY_MUTATIONS))
+def test_an_injected_entry_overwrite_is_detected(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The entry (projection and position adds) is checked against raw weights, not the module."""
+    model = build("magnitude", "magnitude")
+    assert findings(model, "magnitude", "magnitude") == []  # control: clean before the mutation
+    ENTRY_MUTATIONS[name](model, monkeypatch)
+    assert "spine_differs_from_unnormalized_reference" in findings(model, "magnitude", "magnitude")
 
 
 def test_the_rms_overwrite_keeps_norms_far_from_one_yet_still_trips_the_reference() -> None:
