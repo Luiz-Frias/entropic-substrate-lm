@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import replace
+from enum import StrEnum
 
 import pytest
 from tests.test_sentence_profile import profile
@@ -229,6 +230,12 @@ def test_construction_digest_moves_with_every_construction_field(mutation: str) 
     assert h1_construction_digest(changed) != h1_construction_digest(first)
 
 
+def test_construction_digest_moves_with_codec_width() -> None:
+    first = profiles()[0]
+    changed = replace(first, codec=replace(first.codec, encoder_layers=2))
+    assert h1_construction_digest(changed) != h1_construction_digest(first)
+
+
 def test_construction_digest_is_not_the_profile_identity() -> None:
     first = profiles()[0]
     assert h1_construction_digest(first) != first.identity
@@ -249,6 +256,11 @@ def test_exclusion_reason_is_closed_to_exactly_five_members() -> None:
         "INDEPENDENT_WARMUP": "independent_warmup",
     }
     assert len(H1ExclusionReason) == 5
+
+
+def test_exclusion_reason_is_a_str_enum_equal_to_its_wire_value() -> None:
+    assert issubclass(H1ExclusionReason, StrEnum)
+    assert H1ExclusionReason.READER_REFUSAL == "reader_refusal"
 
 
 @pytest.mark.parametrize("value", ["anything_else", "", "NONFINITE_ENDPOINT", None, 3])
@@ -282,6 +294,17 @@ def test_exposure_sums_committed_prediction_rows_only() -> None:
         _row("codec_warmup", "started", 700),
     ]
     assert h1_exposure_bytes(rows) == 42
+
+
+@pytest.mark.parametrize("status", ["started", "scientific_gap", "execution_defect"])
+def test_exposure_non_committed_prediction_rows_with_bytes_contribute_nothing(status: str) -> None:
+    rows = [_row("prediction", status, 500), _row("prediction", "committed", 7)]
+    assert h1_exposure_bytes(rows) == 7
+
+
+@pytest.mark.parametrize("status", ["started", "committed", "scientific_gap", "execution_defect"])
+def test_exposure_warmup_row_without_bytes_is_admissible(status: str) -> None:
+    assert h1_exposure_bytes([_row("codec_warmup", status)]) == 0
 
 
 def test_exposure_of_empty_input_is_zero() -> None:
