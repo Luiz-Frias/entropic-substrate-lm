@@ -18,6 +18,7 @@ from entropic_substrate.core.sentence import corpus as corpus_module
 from entropic_substrate.core.sentence.corpus import PreparationSpec, SplitPolicy, prepare_documents
 from entropic_substrate.core.sentence.records import SourceDocument
 from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
+from entropic_substrate.kernel.lifecycle import ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.capture.custody import enwik8_documents as adapter
 from entropic_substrate.ladder.capture.custody.enwik8 import ENWIK8_RAW_BYTES
@@ -388,7 +389,6 @@ def test_write_then_read_round_trips_through_read_prepared_corpus(tmp_path: Path
     assert report["revision"] == ENWIK8_REVISION
     assert report["dataset_name"] == "enwik8"
     assert report["capture_json_bytes"] == (tmp_path / "prepared-corpus.json").stat().st_size
-    from entropic_substrate.kernel.lifecycle import ContentHash
 
     digest = ContentHash("sha256", str(report["capture_sha256"]))
     replay = read_prepared_corpus(tmp_path, digest, max_bytes=1_000_000)
