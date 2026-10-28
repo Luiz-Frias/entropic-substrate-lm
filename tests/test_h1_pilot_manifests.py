@@ -1,0 +1,311 @@
+"""The H1 pilot block generator: eight seed blocks of the 2x2, validated, never launched.
+
+The generator emits declared configurations only. It names no corpus, authorizes no run and
+spends nothing; digests, steps and the transfer limits are parameters.
+"""
+
+from dataclasses import replace
+from itertools import chain
+
+import pytest
+
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.profile import (
+    DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    DEVELOPMENT_IMPORTANCE_SAMPLES,
+    MAX_RUN_STEPS,
+    HProfile,
+)
+from entropic_substrate.core.sentence.records import content_identity
+from entropic_substrate.ladder.register.h_preservation import (
+    H1PreservationBlock,
+    h1_construction_digest,
+)
+from entropic_substrate.ladder.register.rungs import h1_pilot
+from entropic_substrate.ladder.register.rungs.h1_pilot import (
+    CELL_AXES,
+    CODEC_WARMUP_CHECKPOINT_BYTES,
+    CONFIRMATORY_SEED_CEILING,
+    PILOT_SEEDS,
+    PREDICTION_CHECKPOINT_BYTES,
+    h1_pilot_blocks,
+    pilot_transfer_limits,
+    required_checkpoint_floor,
+)
+from entropic_substrate.ladder.run.worker_request import TransferLimits
+
+pytestmark = pytest.mark.unit
+
+SOURCE = content_identity(("h1-pilot-fixture-source",))
+STEPS = 1000
+KNOBS = {"checkpoint_interval": 250, "importance_chunk": 8, "generation_sentences": 4}
+SOURCE_BYTES = 100_000_000
+FIXED_OBJECTS = 20
+MM, SM, MS, SS = CELL_AXES
+
+
+def limits_for(steps: int = STEPS) -> TransferLimits:
+    probe = (
+        h1_pilot_blocks(
+            source_digest=SOURCE,
+            steps=steps,
+            limits=TransferLimits(2**62, 2**62, 2**31),
+            **KNOBS,
+        )[0]
+        .block.profiles[0]
+        .schedule
+    )
+    return pilot_transfer_limits(probe, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
+
+
+def blocks(steps: int = STEPS, **changes: object):
+    arguments: dict[str, object] = {"source_digest": SOURCE, "steps": steps, **KNOBS}
+    arguments.update(changes)
+    if "limits" not in arguments:
+        arguments["limits"] = limits_for(steps)
+    return h1_pilot_blocks(**arguments)  # type: ignore[arg-type]
+
+
+def test_eight_blocks_with_the_ruled_seeds_shared_by_each_blocks_four_cells() -> None:
+    assert PILOT_SEEDS == tuple(range(1001, 1009))
+    result = blocks()
+    assert [entry.seed for entry in result] == list(PILOT_SEEDS)
+    for entry in result:
+        assert len(entry.block.profiles) == 4
+        assert {p.seed for p in entry.block.profiles} == {entry.seed}
+        assert {p.source_seed for p in entry.block.profiles} == {entry.seed}
+
+
+def test_pilot_seeds_never_overlap_the_confirmatory_range() -> None:
+    assert CONFIRMATORY_SEED_CEILING == 1000
+    assert set(PILOT_SEEDS).isdisjoint(range(1, CONFIRMATORY_SEED_CEILING + 1))
+    assert len(set(PILOT_SEEDS)) == len(PILOT_SEEDS) == 8
+
+
+@pytest.mark.parametrize(
+    "seeds",
+    [
+        (1000, *range(1002, 1009)),  # one seed inside the confirmatory range
+        tuple(range(1, 9)),  # the whole list inside it
+        (*range(1001, 1008), 1001),  # a duplicate
+        tuple(range(1001, 1008)),  # seven blocks
+        (*range(1001, 1009), 1009),  # nine blocks
+    ],
+)
+def test_overlapping_duplicate_or_miscounted_seed_lists_are_refused(
+    seeds: tuple[int, ...],
+) -> None:
+    with pytest.raises(ValueError, match="seed"):
+        blocks(seeds=seeds)
+
+
+def test_cells_are_donor_first_from_the_codec_sharing_groups() -> None:
+    assert CELL_AXES == (
+        ("magnitude", "magnitude"),
+        ("sphere", "magnitude"),
+        ("magnitude", "sphere"),
+        ("sphere", "sphere"),
+    )
+    for entry in blocks():
+        axes = tuple((p.law.mode, p.spine.carrier) for p in entry.block.profiles)
+        assert axes == CELL_AXES
+        groups = entry.block.codec_sharing_groups
+        assert tuple(p.name for p in entry.launch_order) == tuple(chain.from_iterable(groups))
+        launch_axes = tuple((p.law.mode, p.spine.carrier) for p in entry.launch_order)
+        # donor MM before its recipient MS, donor SM before its recipient SS
+        assert launch_axes == (MM, MS, SM, SS)
+        positions = {axis: i for i, axis in enumerate(launch_axes)}
+        assert positions[MM] < positions[MS] and positions[SM] < positions[SS]
+
+
+def test_names_encode_the_axes_and_the_seed() -> None:
+    entry = blocks()[0]
+    for profile in entry.block.profiles:
+        assert profile.name == f"h1-{profile.law.mode}-{profile.spine.carrier}-s{entry.seed}"
+    assert len({p.name for p in entry.block.profiles}) == 4
+
+
+@pytest.mark.parametrize("steps", [20, 1000, 6000])
+def test_evaluation_interval_is_a_twentieth_of_the_steps(steps: int) -> None:
+    for entry in blocks(steps):
+        for profile in entry.block.profiles:
+            assert profile.schedule.steps == steps
+            assert profile.schedule.evaluation_interval == steps // 20
+
+
+@pytest.mark.parametrize("steps", [1010, 1001, 19, 21, 1])
+def test_steps_that_are_not_a_multiple_of_twenty_are_refused(steps: int) -> None:
+    with pytest.raises(ValueError, match="multiple of 20"):
+        blocks(steps, limits=TransferLimits(2**62, 2**62, 2**31))
+
+
+@pytest.mark.parametrize("steps", [0, -20, True, 20.0, "1000"])
+def test_zero_negative_boolean_and_non_integer_steps_are_refused(steps: object) -> None:
+    with pytest.raises(ValueError, match="steps"):
+        blocks(steps, limits=TransferLimits(2**62, 2**62, 2**31))  # type: ignore[arg-type]
+
+
+def test_the_run_step_cap_is_honored() -> None:
+    at_cap = MAX_RUN_STEPS - MAX_RUN_STEPS % 20
+    assert at_cap % 20 == 0 and at_cap <= MAX_RUN_STEPS < at_cap + 20
+    accepted = blocks(
+        at_cap, checkpoint_interval=at_cap, limits=TransferLimits(2**62, 2**62, 2**31)
+    )
+    assert accepted[0].block.profiles[0].schedule.steps == at_cap
+    with pytest.raises(ValueError, match="at most"):
+        blocks(at_cap + 20, checkpoint_interval=at_cap, limits=TransferLimits(2**62, 2**62, 2**31))
+
+
+def test_the_ruled_regime_values_and_development_widths_are_encoded() -> None:
+    for entry in blocks():
+        for profile in entry.block.profiles:
+            assert (profile.stage, profile.run_class) == ("H1", "pilot")
+            assert (profile.device, profile.precision) == ("cuda", "bf16")
+            assert profile.consumer == "isotropic"
+            assert profile.optimization.future_weight == 0
+            assert profile.optimization.learning_rate == 1e-3
+            assert profile.optimization.weight_decay == 0.01
+            assert profile.optimization.betas == (0.9, 0.95)
+            assert profile.optimization.clip_norm == 1.0
+            schedule = profile.schedule
+            assert schedule.batch_size == 4 and schedule.warmup_steps == 250
+            assert schedule.evaluation_batches == 20
+            assert schedule.importance_samples == (2, 4, 8, 16, 32, 64)
+            assert schedule.importance_samples == DEVELOPMENT_IMPORTANCE_SAMPLES
+            assert schedule.diagnostic_samples == 256 == DEVELOPMENT_DIAGNOSTIC_SAMPLES
+            assert schedule.generation_continuations == 5
+            assert (schedule.checkpoint_interval, schedule.importance_chunk) == (250, 8)
+            assert schedule.generation_sentences == 4
+            # The widths are pinned here, not read back from the dataclass defaults.
+            assert profile.codec == CodecSpec(384, 4, 384, 4, 64, 4096)
+            assert profile.law.width == 384
+            assert (profile.spine.width, profile.spine.layers) == (768, 12)
+            assert (profile.spine.head_width, profile.spine.context_sentences) == (64, 64)
+            assert profile.permutation == tuple(range(256))
+
+
+def test_source_digest_is_the_caller_input_and_must_be_a_hash() -> None:
+    other = content_identity(("another-source",))
+    assert {p.source_digest for e in blocks(source_digest=other) for p in e.block.profiles} == {
+        other
+    }
+    with pytest.raises(ValueError):
+        blocks(source_digest="not-a-digest")
+
+
+@pytest.mark.parametrize("knob", list(KNOBS))
+def test_unruled_schedule_knobs_are_required_and_positive(knob: str) -> None:
+    for bad in (0, -1, True):
+        with pytest.raises(ValueError):
+            blocks(**{knob: bad})
+
+
+def test_every_profile_round_trips_through_its_manifest() -> None:
+    for entry in blocks():
+        for profile in entry.block.profiles:
+            assert HProfile.from_manifest(profile.manifest) == profile
+        restored = H1PreservationBlock.from_manifest(entry.block.manifest)
+        assert restored.identity == entry.block.identity
+        assert restored.manifest["scientific_authority"] == "none"
+
+
+def test_blocks_differ_only_by_seed_and_name() -> None:
+    first, second = blocks()[:2]
+    for left, right in zip(first.block.profiles, second.block.profiles, strict=True):
+        assert left.identity != right.identity
+        assert h1_construction_digest(left) == h1_construction_digest(right)
+        assert (
+            replace(left, name=right.name, seed=right.seed, source_seed=right.source_seed) == right
+        )
+
+
+# Characterization pin, not a derivation: the four construction digests of the fixture
+# regime (SOURCE, STEPS=1000, KNOBS). A change to any ruled value moves all four.
+CONSTRUCTION_DIGESTS = {
+    "MM": (
+        "29fde91b45fbcce86e350e18a6a1c188e5e79ff131b8fc10b68883cd7f64d40f"  # pragma: allowlist secret
+    ),
+    "SM": (
+        "9261cac498c8c1047eeca9e4cb0634b9c2f1fe36e0baecf6e9885e9ae437a755"  # pragma: allowlist secret
+    ),
+    "MS": (
+        "7f280be54ff8f3916a16cdd5c92dd9736a5a54cb656ad937117ee1aa13bc5587"  # pragma: allowlist secret
+    ),
+    "SS": (
+        "42f25b581b31ab8af70da429d4883d7da658fd157d401e7afb3185cfe7b90f51"  # pragma: allowlist secret
+    ),
+}
+
+
+def test_construction_digests_are_pinned_and_invariant_across_the_eight_blocks() -> None:
+    per_cell = [[h1_construction_digest(p) for p in entry.block.profiles] for entry in blocks()]
+    assert all(row == per_cell[0] for row in per_cell)
+    assert len(set(per_cell[0])) == 4
+    assert dict(zip(("MM", "SM", "MS", "SS"), per_cell[0], strict=True)) == CONSTRUCTION_DIGESTS
+
+
+def test_the_construction_digest_binds_steps_and_source() -> None:
+    base = {h1_construction_digest(p) for p in blocks()[0].block.profiles}
+    assert base.isdisjoint(h1_construction_digest(p) for p in blocks(2000)[0].block.profiles)
+    other = content_identity(("another-source",))
+    assert base.isdisjoint(
+        h1_construction_digest(p) for p in blocks(source_digest=other)[0].block.profiles
+    )
+
+
+def test_the_checkpoint_byte_counts_are_the_measured_ones() -> None:
+    # Measured on quote pods s3tkc88i0oyp96 and qkfduyfla3b6rt (FOR-1690, 2026-10-28):
+    # the codec warm-up checkpoint and each prediction-phase checkpoint, optimizer included.
+    assert CODEC_WARMUP_CHECKPOINT_BYTES == 524_752_197
+    assert PREDICTION_CHECKPOINT_BYTES == 1_149_203_227
+
+
+def test_transfer_limits_follow_the_checkpoint_count_per_cell() -> None:
+    schedule = blocks()[0].block.profiles[0].schedule  # steps 1000, interval 250, eval 50
+    floor = required_checkpoint_floor(schedule, capture_copies=1)
+    # warm-up: one seal at step 250; prediction: multiples of 50 up to 1000 are 20 seals
+    assert floor.max_total_bytes == 1 * 524_752_197 + 20 * 1_149_203_227
+    assert floor.max_object_bytes == 1_149_203_227
+    assert floor.max_objects == 3 * 21  # journal, checkpoint and receipt per seal
+    doubled = required_checkpoint_floor(schedule, capture_copies=2)
+    assert doubled.max_total_bytes == 2 * floor.max_total_bytes
+    sized = pilot_transfer_limits(schedule, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
+    assert sized.max_total_bytes == doubled.max_total_bytes + SOURCE_BYTES
+    assert sized.max_object_bytes == 1_149_203_227
+    assert sized.max_objects == 3 * 21 + FIXED_OBJECTS
+
+
+def test_transfer_limits_are_never_the_probe_kit_constants() -> None:
+    kit = TransferLimits(2 * 2**30, 16 * 2**30, 5000)
+    # 20 retained 1.07 GiB prediction checkpoints already exceed the kit's 16 GiB total
+    assert limits_for().max_total_bytes > kit.max_total_bytes
+    with pytest.raises(ValueError, match="transfer"):
+        blocks(limits=kit)
+
+
+@pytest.mark.parametrize("field", ["max_object_bytes", "max_total_bytes", "max_objects"])
+def test_limits_one_below_the_floor_are_refused_and_the_floor_is_accepted(field: str) -> None:
+    schedule = blocks()[0].block.profiles[0].schedule
+    floor = required_checkpoint_floor(schedule, capture_copies=2)
+    assert blocks(limits=floor)  # control: exactly the floor passes
+    short = replace(floor, **{field: getattr(floor, field) - 1})
+    with pytest.raises(ValueError, match=field):
+        blocks(limits=short)
+
+
+def test_limits_must_be_a_transfer_limits() -> None:
+    with pytest.raises(TypeError):
+        blocks(limits={"max_object_bytes": 2**62})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", [0, -1, True])
+def test_sizing_refuses_non_positive_source_bytes_and_negative_fixed_objects(bad: object) -> None:
+    schedule = blocks()[0].block.profiles[0].schedule
+    with pytest.raises(ValueError):
+        pilot_transfer_limits(schedule, source_bytes=bad, fixed_objects=1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=-1)
+
+
+def test_the_module_adds_no_registry_or_launch_surface() -> None:
+    assert not hasattr(h1_pilot, "launch") and not hasattr(h1_pilot, "RUNGS")

@@ -1,0 +1,207 @@
+"""H1 pilot block generator: eight seed blocks of the preservation 2x2, declared only.
+
+Emits complete ``HProfile`` blocks and nothing else. It names no corpus, registers nothing,
+authorizes no run and spends nothing: the source digest, the prediction step count and the
+worker transfer limits are caller inputs, and the limits are checked against the measured
+checkpoint sizes rather than assumed.
+
+Ruled regime values (FOR-1690) are constants here. The schedule fields the ruling leaves
+open (checkpoint interval, importance chunk, generation sentences) are required parameters
+with no default, so no unruled number enters a pilot silently. Three further profile
+fields are carried unchanged from the H0 profile fixtures and are unruled for H1: the
+optimizer epsilon 1e-8, the default ``SolverConfig`` and the identity byte permutation.
+"""
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from math import lcm
+
+from entropic_substrate.core.latent.dynamics import SolverConfig
+from entropic_substrate.core.sentence.codec import CodecSpec
+from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.profile import (
+    DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    DEVELOPMENT_GENERATION_CONTINUATIONS,
+    DEVELOPMENT_IMPORTANCE_SAMPLES,
+    HProfile,
+    OptimizationSpec,
+    RunSchedule,
+)
+from entropic_substrate.core.sentence.spine import SpineSpec
+from entropic_substrate.ladder.register.h_preservation import H1PreservationBlock
+from entropic_substrate.ladder.run.worker_request import TransferLimits
+
+# (law.mode, spine.carrier) in the order H1PreservationBlock keeps: MM, SM, MS, SS.
+CELL_AXES: tuple[tuple[str, str], ...] = (
+    ("magnitude", "magnitude"),
+    ("sphere", "magnitude"),
+    ("magnitude", "sphere"),
+    ("sphere", "sphere"),
+)
+# One seed per block, shared by its four cells. Confirmation seeds are 1..n with n at most
+# the ceiling, so the pilot range starts above it and never overlaps.
+CONFIRMATORY_SEED_CEILING = 1000
+PILOT_SEEDS: tuple[int, ...] = tuple(range(1001, 1009))
+
+STEP_DIVISOR = 20  # evaluation interval = steps / 20
+WARMUP_STEPS = 250
+BATCH_SIZE = 4
+EVALUATION_BATCHES = 20
+
+# MEASURED on quote pods s3tkc88i0oyp96 and qkfduyfla3b6rt (FOR-1690, 2026-10-28), dev
+# widths, optimizer moments included. The earlier "~182 MB" figure was the codec's
+# trainable count, not a checkpoint, and is retracted.
+CODEC_WARMUP_CHECKPOINT_BYTES = 524_752_197
+PREDICTION_CHECKPOINT_BYTES = 1_149_203_227
+# seal_step writes a journal, a checkpoint and a receipt per seal.
+OBJECTS_PER_SEAL = 3
+# The completion snapshot's capture copy doubles checkpoint bytes until the capture path
+# dedupes it (FOR-1690 note); a ruled allowance, not a measurement.
+CAPTURE_COPIES = 2
+
+
+@dataclass(frozen=True, slots=True)
+class H1PilotBlock:
+    """One seed block: the validated 2x2 plus the order its cells must be launched in."""
+
+    seed: int
+    block: H1PreservationBlock
+    launch_order: tuple[HProfile, ...]
+
+
+def _positive(value: object, label: str, *, zero_ok: bool = False) -> int:
+    if type(value) is not int or value < (0 if zero_ok else 1):
+        raise ValueError(f"{label} must be a {'nonnegative' if zero_ok else 'positive'} integer")
+    return value
+
+
+def _seal_counts(schedule: RunSchedule) -> tuple[int, int]:
+    """Seals per phase, as the runner takes them: every checkpoint or evaluation step, the last."""
+    interval, evaluation = schedule.checkpoint_interval, schedule.evaluation_interval
+    warmup = schedule.warmup_steps
+    codec = warmup // interval + (1 if warmup % interval else 0)
+    steps = schedule.steps
+    prediction = steps // interval + steps // evaluation - steps // lcm(interval, evaluation)
+    if steps % interval and steps % evaluation:
+        prediction += 1  # the final step seals even off both grids
+    return codec, prediction
+
+
+def required_checkpoint_floor(
+    schedule: RunSchedule, *, capture_copies: int = CAPTURE_COPIES
+) -> TransferLimits:
+    """Lower bound on one cell's transfer limits from its retained checkpoints alone.
+
+    Every seal retains one checkpoint (no overwrite), so the byte total is the measured warm-up
+    and prediction checkpoint sizes times their seal counts, times the capture copies. The
+    source, request and other inputs are not in this floor; see ``pilot_transfer_limits``.
+    """
+    if type(schedule) is not RunSchedule:
+        raise TypeError("transfer floor requires a validated run schedule")
+    _positive(capture_copies, "capture copies")
+    codec, prediction = _seal_counts(schedule)
+    return TransferLimits(
+        max_object_bytes=max(CODEC_WARMUP_CHECKPOINT_BYTES, PREDICTION_CHECKPOINT_BYTES),
+        max_total_bytes=capture_copies
+        * (codec * CODEC_WARMUP_CHECKPOINT_BYTES + prediction * PREDICTION_CHECKPOINT_BYTES),
+        max_objects=OBJECTS_PER_SEAL * (codec + prediction),
+    )
+
+
+def pilot_transfer_limits(
+    schedule: RunSchedule, *, source_bytes: int, fixed_objects: int
+) -> TransferLimits:
+    """Limits that fit one cell: the checkpoint floor plus the caller's source and fixed objects."""
+    _positive(source_bytes, "source bytes")
+    _positive(fixed_objects, "fixed objects", zero_ok=True)
+    floor = required_checkpoint_floor(schedule)
+    return TransferLimits(
+        max_object_bytes=max(floor.max_object_bytes, source_bytes),
+        max_total_bytes=floor.max_total_bytes + source_bytes,
+        max_objects=floor.max_objects + fixed_objects,
+    )
+
+
+def _check_seeds(seeds: Sequence[int]) -> tuple[int, ...]:
+    chosen = tuple(seeds)
+    if len(chosen) != len(PILOT_SEEDS):
+        raise ValueError(f"pilot requires exactly {len(PILOT_SEEDS)} seed blocks")
+    if any(type(seed) is not int for seed in chosen) or len(set(chosen)) != len(chosen):
+        raise ValueError("pilot seeds must be distinct integers")
+    if any(seed <= CONFIRMATORY_SEED_CEILING for seed in chosen):
+        raise ValueError(
+            f"pilot seeds must lie above the confirmatory range 1..{CONFIRMATORY_SEED_CEILING}"
+        )
+    return chosen
+
+
+def _profile(
+    sentence: str, spine: str, seed: int, source_digest: str, schedule: RunSchedule
+) -> HProfile:
+    return HProfile(
+        name=f"h1-{sentence}-{spine}-s{seed}",
+        stage="H1",
+        run_class="pilot",
+        source_digest=source_digest,
+        seed=seed,
+        source_seed=seed,
+        device="cuda",
+        precision="bf16",
+        codec=CodecSpec(384, 4, 384, 4, 64, 4096),
+        spine=SpineSpec(768, 12, 64, 64, spine, 0.05),  # pyright: ignore[reportArgumentType]
+        law=LawSpec(384, sentence),  # pyright: ignore[reportArgumentType]
+        consumer="isotropic",
+        solver=SolverConfig(),
+        optimization=OptimizationSpec(1e-3, 0.01, (0.9, 0.95), 1e-8, 1.0, 0.0),
+        schedule=schedule,
+        permutation=tuple(range(256)),
+    )
+
+
+def h1_pilot_blocks(
+    *,
+    source_digest: str,
+    steps: int,
+    limits: TransferLimits,
+    checkpoint_interval: int,
+    importance_chunk: int,
+    generation_sentences: int,
+    seeds: Sequence[int] = PILOT_SEEDS,
+) -> tuple[H1PilotBlock, ...]:
+    """Eight validated paired blocks, one per seed; raises on any inconsistent input."""
+    if type(limits) is not TransferLimits:
+        raise TypeError("pilot requires explicit worker transfer limits")
+    if type(steps) is not int or steps < 1:
+        raise ValueError("pilot steps must be a positive integer")
+    if steps % STEP_DIVISOR:
+        raise ValueError(f"pilot steps must be a multiple of {STEP_DIVISOR}")
+    chosen = _check_seeds(seeds)
+    schedule = RunSchedule(
+        warmup_steps=WARMUP_STEPS,
+        steps=steps,
+        batch_size=BATCH_SIZE,
+        checkpoint_interval=checkpoint_interval,
+        evaluation_interval=steps // STEP_DIVISOR,
+        evaluation_batches=EVALUATION_BATCHES,
+        importance_samples=DEVELOPMENT_IMPORTANCE_SAMPLES,
+        importance_chunk=importance_chunk,
+        generation_sentences=generation_sentences,
+        generation_continuations=DEVELOPMENT_GENERATION_CONTINUATIONS,
+        diagnostic_samples=DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    )
+    floor = required_checkpoint_floor(schedule)
+    for field in ("max_object_bytes", "max_total_bytes", "max_objects"):
+        if getattr(limits, field) < getattr(floor, field):
+            raise ValueError(
+                f"transfer limits {field} {getattr(limits, field)} is below the measured "
+                f"checkpoint floor {getattr(floor, field)}"
+            )
+    result: list[H1PilotBlock] = []
+    for seed in chosen:
+        block = H1PreservationBlock(
+            tuple(_profile(*axes, seed, source_digest, schedule) for axes in CELL_AXES)
+        )
+        by_name = {profile.name: profile for profile in block.profiles}
+        order = tuple(by_name[name] for group in block.codec_sharing_groups for name in group)
+        result.append(H1PilotBlock(seed, block, order))
+    return tuple(result)
