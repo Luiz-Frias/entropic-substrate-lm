@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.8.0...v0.9.0) (2026-10-28)
+
+
+### Features
+
+* **run:** add the sealed H run authority artifact ([#406](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/406)) ([467b5d7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/467b5d7aef9cb7109eee2db61e2941c75c882525))
+* **run:** admit H pilot runs only under a sealed run authority ([#407](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/407)) ([8647c8a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8647c8ad384d0e87ca0585839ea0efdba4441227))
+* **run:** route every H run-class gate through the admission port ([#400](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/400)) ([b9c570e](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/b9c570e0535c228c6bd4ea975ad87749bd6d7030))
+
+
+### Bug Fixes
+
+* **deploy:** re-pin the H image to the v0.8.0 tip ([#404](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/404)) ([8023a3f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8023a3fe0f81c70b18d24fc5df5a322569c9a39a))
+
 ## [0.8.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.7.1...v0.8.0) (2026-10-27)
 
 
