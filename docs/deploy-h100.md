@@ -155,6 +155,40 @@ class still carry inline checks held to the same table by `tests/test_h_run_admi
 the conductor's re-pin routes them through it, and rung B replaces the constant with a sealed
 `RunAuthority` artifact under LAUNCH SCHEMA v4.
 
+LAUNCH SCHEMA v4 (2026-10-27, rung B, operator ruling "option B"). A
+`pilot` or `confirmatory` run at H1-H5 is admissible only under a sealed `RunAuthority`
+(`ladder/run/run_authority.py`, schema `h-run-authority-v1`): stage, run class, the ruling
+(ISO date, text, operator), the spend cap (USD and hours, both finite and positive), the RunPod
+GPU type id (any safe identifier, recorded as given), the full 40-hex SHA of the committed
+preregistration the run executes, and the SHA-256 of all of those as canonical JSON. The port
+re-verifies that digest at every gate, so an authority edited after sealing is refused
+("run authority fails its seal"), as are a missing one, one naming another stage or class, and
+any authority on a smoke request. The worker request carries the authority as
+`h-probe-worker-request-v2`; a smoke request still renders `h-probe-worker-request-v1`
+byte-identically, so every captured `request_sha256` re-derives. The launch manifest
+`h-probe-launch-v4` names the authority digest as both `scientific_authority` and
+`spending_authority` (`"none"` for smoke). A scientific launch declares the cost guard
+`host_watchdog_budgeted` (smoke keeps `host_watchdog_tiny_only`, the only kind it may declare),
+must use the authority's GPU class, keeps `watchdog_timeout_seconds` inside the authority's hours,
+and `h_probe_command` refuses a `--max-hourly-rate` whose product with the watchdog window exceeds
+the authority's USD cap before any provider call. Its pod is named `<stage>-<class>-<digest
+prefix>` (`h1-pilot-...`); smoke keeps `h0-tiny-...`. Execution receipts record kind
+`remote_pilot`/`remote_confirmatory` and echo the authority digest in `runtime.authority`, which
+rides into `worker/start.json`, the `started` event, the `run_start` lifecycle record and the
+worker result; completion admission refuses a runtime that does not echo it.
+
+The scientific pod environment is EIGHT keys for the H wave: the seven-key base minus
+`ENTROPIC_MLFLOW_TINY`, plus `MLFLOW_EXPERIMENT_NAME=h-series` and
+`MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true`. The worker builds the MLflow sink with `tiny=False`
+for a request that carries an authority, so a tracking URI alone enables its mirror (with
+`tiny=True` and no opt-in the mirror would be dropped silently by `sinks.mlflow_enabled`). The
+eight-key template is created at the image rebuild ceremony for the first image that carries
+this schema; none exists yet and no template id is recorded here until that ceremony measures one.
+`validate_template` compares the whole environment, so a nine-key smoke template is refused for a
+pilot and the converse. READ-OLD: a `h0-probe-launch-v3` (or v2) payload reads as the same class,
+re-renders its own bytes and never compares equal to a v4 launch; a pre-v4 payload carries no
+authority, so a v3 launch of a scientific request is refused. v1 stays refused.
+
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from tests.test_h_probe_launch import launch
+from tests.test_h_probe_launch import launch, pilot_launch
 
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import WatchdogProcessConfig
@@ -134,7 +134,9 @@ def test_command_connects_one_manifest_to_guard_and_controller(
     assert calls == ["objects", "guard_enter", "controller", "guard_exit"]
 
 
-@pytest.mark.parametrize("invalid", ["occupied", "public", "bad_manifest", "missing_flag"])
+@pytest.mark.parametrize(
+    "invalid", ["occupied", "public", "bad_manifest", "missing_flag", "pilot_over_cap"]
+)
 def test_invalid_launch_never_reaches_provider_or_guard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -147,11 +149,20 @@ def test_invalid_launch_never_reaches_provider_or_guard(
         (tmp_path / "workspace").chmod(0o755)
     elif invalid == "bad_manifest":
         (tmp_path / "launch.json").write_bytes(b"{}")
+    elif invalid == "pilot_over_cap":
+        # 37 USD/h over the 3900 s watchdog is 40.08 USD: past the authority's 40 USD cap
+        (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+        argv[-1] = "37"
     else:
         argv = argv[:-2]
 
+    reached: list[str] = []
+
     def forbidden(**_kwargs: object) -> None:
-        pytest.fail("invalid input reached provider construction")
+        # Recorded, not pytest.fail: the command's own ``except BaseException`` would
+        # swallow a test failure raised here and still exit nonzero.
+        reached.append("provider")
+        raise RuntimeError("invalid input reached provider construction")
 
     monkeypatch.setattr(
         "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport", forbidden
@@ -160,6 +171,35 @@ def test_invalid_launch_never_reaches_provider_or_guard(
     assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) != 0
     assert stdout.getvalue() == ""
     assert not (tmp_path / "workspace/control").exists()
+    assert reached == []
+
+
+def test_a_pilot_launch_within_its_cap_reaches_the_controller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argv = arguments(tmp_path)
+    (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+    argv[-1] = "36.9"
+    reached: list[float] = []
+
+    @contextmanager
+    def supervise(*_: object, **__: object) -> Generator[object, None, None]:
+        yield object()
+
+    def controller(*_: object, **limits: float) -> dict[str, object]:
+        reached.append(limits["max_hourly_rate"])
+        return {"status": "terminal_collected"}
+
+    for name, value in (
+        ("HRunpodTransport", lambda **_: object()),
+        ("build_worker_objects", lambda *_, **__: object()),
+        ("supervise_probe_watchdog", supervise),
+        ("run_probe_controller", controller),
+    ):
+        monkeypatch.setattr(f"entropic_substrate.ladder.run.worker.h_probe_command.{name}", value)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) == 0
+    assert reached == [36.9]
 
 
 def test_main_configures_the_substrate_before_it_runs_the_command(

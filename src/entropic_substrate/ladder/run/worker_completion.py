@@ -60,21 +60,27 @@ def admit_worker_runtime(
     if type(value) is not dict:
         raise ValueError("worker completion requires runtime provenance")
     runtime = cast(dict[str, object], value)
+    kind = RUNTIME_KIND.get(request.profile.run_class)
+    # Rung B: the runtime echoes the request's sealed authority, and a smoke runtime
+    # echoes none (an absent key reads as ``None``).
+    authority = None if request.authority is None else request.authority.digest
     if RUN_ADMISSION.worker_surface(request.profile.run_class) == "local_worker":
         if (
             expected_pod_id is not None
-            or runtime.get("kind") != RUNTIME_KIND["local_worker"]
+            or runtime.get("kind") != kind
             or runtime.get("pod_id") is not None
+            or runtime.get("authority") != authority
         ):
             raise ValueError("local completion cannot claim a provider allocation")
     else:
         require_d1_pod_id(expected_pod_id)
         if (
-            runtime.get("kind") != RUNTIME_KIND["remote_worker"]
+            runtime.get("kind") != kind
             or runtime.get("pod_id") != expected_pod_id
             or runtime.get("source_attestation") != "exact_git_tree_match"
             or runtime.get("code_commit") != request.code_commit
             or runtime.get("requested_image") != request.image
+            or runtime.get("authority") != authority
         ):
             raise ValueError("worker runtime differs from the allocated construction")
     return runtime

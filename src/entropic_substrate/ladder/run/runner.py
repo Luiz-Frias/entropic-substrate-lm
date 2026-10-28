@@ -18,6 +18,7 @@ from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.run_authority import RunAuthority
 from entropic_substrate.ladder.run.seals import (
     SealMemo,
     narrated_admission,
@@ -242,12 +243,16 @@ def run_probe_training(
     on_checkpoint: Callable[[ArtifactIdentity], None] | None = None,
     sink: MetricSink | None = None,
     publication_timing: MutableMapping[str, float] | None = None,
+    authority: RunAuthority | None = None,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
 
     Checkpoint/evaluation failures retain partial evidence and propagate. A
     stop callback is observed only after a durable seal and evaluation receipt.
     Scientific adapters and successor remote probes require separate authority.
+    A ``pilot``/``confirmatory`` profile runs only under ``authority``, the sealed
+    ``RunAuthority`` its request carries (rung B, operator ruling 2026-10-27); a smoke
+    profile runs only without one.
 
     ``sink``, when given, observes every committed training-step row exactly
     as :mod:`entropic_substrate.ladder.run.journal` receives it -- an
@@ -273,8 +278,11 @@ def run_probe_training(
     received no memo; it still walks the full chain, and the repeats of that
     walk by later stages are what was removed.
     """
+    refusal = RUN_ADMISSION.authority_refusal(profile.run_class, profile.stage, authority)
+    if refusal is not None:
+        raise ValueError(refusal)
     surface = RUN_ADMISSION.worker_surface(profile.run_class)
-    if not RUN_ADMISSION.admits(profile.run_class, profile.stage, surface):
+    if not RUN_ADMISSION.admits(profile.run_class, profile.stage, surface, authority):
         raise ValueError("probe driver lacks scientific or successor authority")
     root = normalize_d1_artifact_root(output_root)
     evaluations: list[dict[str, object]] = []

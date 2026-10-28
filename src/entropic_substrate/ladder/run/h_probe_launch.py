@@ -1,4 +1,23 @@
-"""Explicit H0-only deployment choices for the pinned Runpod command boundary.
+"""Explicit H deployment choices for the pinned Runpod command boundary.
+
+LAUNCH SCHEMA v4 (rung B, operator ruling 2026-10-27, "option B"). A launch is either
+a smoke launch (``remote_tiny`` at H0, exactly the v3 shape and rules) or a scientific
+launch (``pilot``/``confirmatory`` at H1-H5) whose request carries a sealed
+``RunAuthority``. The manifest names that authority's digest as both its
+``scientific_authority`` and its ``spending_authority`` (``"none"`` for smoke). A
+scientific launch declares the ``host_watchdog_budgeted`` cost guard, runs on exactly
+the authority's GPU class, keeps its watchdog inside the authority's hours, and its pod
+environment drops the tiny MLflow opt-in: the seven-key base minus
+``ENTROPIC_MLFLOW_TINY`` (six keys) plus the declared extensions, eight keys for the H
+wave. Its pod is named ``<stage>-<class>-<digest prefix>``; a smoke pod keeps
+``h0-tiny-``. The class keeps its ``H0ProbeLaunch`` name (72 references); the rename
+is a follow-up, not part of this schema move.
+
+READ-OLD v3 (documentation of an in-tree parse, NOT a reader-identity bump): a
+``h0-probe-launch-v3`` payload reads as the same class with
+``manifest_schema == LAUNCH_SCHEMA_V3``, re-renders its own bytes, and never compares
+equal to a v4 launch; a pre-v4 payload carries no run authority, so a v3 (or v2)
+launch of a scientific request is refused. Every launch built in-process renders v4.
 
 LAUNCH SCHEMA v3 (FOR-1647, DN-OBS-TEMPLATE, operator 2026-10-13). The pod
 environment is a seven-key BASE (four R2/MLflow secret references, the S3
@@ -23,6 +42,7 @@ retirement today.
 
 import hashlib
 import json
+import math
 import re
 import shlex
 from collections.abc import Callable, Mapping
@@ -45,6 +65,10 @@ RUNPODCTL_SHA256 = (
 
 LAUNCH_SCHEMA_V2 = "h0-probe-launch-v2"
 LAUNCH_SCHEMA_V3 = "h0-probe-launch-v3"
+LAUNCH_SCHEMA_V4 = "h-probe-launch-v4"
+_SCHEMAS = (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3, LAUNCH_SCHEMA_V4)
+# The one environment key a scientific launch does not carry.
+_TINY_OPT_IN = "ENTROPIC_MLFLOW_TINY"
 # The H lane's experiment. Exactly one definition in the tree: the wave monitor
 # reads this constant, and a launch selects it with ``named_experiment``.
 H_SERIES_EXPERIMENT = "h-series"
@@ -89,7 +113,7 @@ _BASE_ENVIRONMENT_KEYS = frozenset(
         "MLFLOW_TRACKING_USERNAME",
         "MLFLOW_TRACKING_PASSWORD",
         "MLFLOW_S3_ENDPOINT_URL",
-        "ENTROPIC_MLFLOW_TINY",
+        _TINY_OPT_IN,
     }
 )
 _extension_keys = [spec.env_key for spec in EXTENSION_REGISTRY.values()]
@@ -172,14 +196,18 @@ class H0ProbeLaunch:
     # fixed manifest keys, because ``manifest`` and ``parse_probe_launch`` both
     # iterate ``fields()``.
     extensions: tuple[LaunchExtension, ...] = ()
-    manifest_schema: str = LAUNCH_SCHEMA_V3
+    manifest_schema: str = LAUNCH_SCHEMA_V4
 
     def __post_init__(self) -> None:
         if type(self.request) is not ProbeRequest:
             raise TypeError("H0 deployment requires a validated worker request")
         request = parse_probe_request(self.request.payload, max_bytes=len(self.request.payload))
-        run_class = request.profile.run_class
-        if not RUN_ADMISSION.admits(run_class, request.profile.stage, "launch"):
+        run_class, stage = request.profile.run_class, request.profile.stage
+        authority = request.authority
+        refusal = RUN_ADMISSION.authority_refusal(run_class, stage, authority)
+        if refusal is not None:
+            raise ValueError(refusal)
+        if not RUN_ADMISSION.admits(run_class, stage, "launch", authority):
             raise ValueError("deployment is restricted to remote H0 tiny probes")
         object.__setattr__(self, "request", request)
         for value in (self.registry_auth_id, self.data_center_id, self.template_id):
@@ -212,7 +240,14 @@ class H0ProbeLaunch:
                 "watchdog must leave time after the controller deadline for capture/teardown"
             )
         if not RUN_ADMISSION.admits_cost_guard(run_class, self.cost_guard):
+            if authority is not None:
+                raise ValueError("scientific deployment requires the budgeted host watchdog")
             raise ValueError("H0 deployment requires the declared tiny-only watchdog exception")
+        if authority is not None:
+            if gpu != authority.gpu_class:
+                raise ValueError("launch GPU differs from the run authority's GPU class")
+            if self.watchdog_timeout_seconds > authority.spend_cap.hours * 3600:
+                raise ValueError("launch watchdog outlasts the run authority's hours")
         secret_names = (
             self.r2_access_secret_name,
             self.r2_private_secret_name,
@@ -228,8 +263,10 @@ class H0ProbeLaunch:
                 )
         if len(set(secret_names)) != len(secret_names):
             raise ValueError("provider secret-reference names must be distinct")
-        if self.manifest_schema not in (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3):
+        if self.manifest_schema not in _SCHEMAS:
             raise ValueError("launch manifest schema is not admitted")
+        if self.manifest_schema != LAUNCH_SCHEMA_V4 and authority is not None:
+            raise ValueError("a pre-v4 launch carries no run authority")
         if type(self.extensions) is not tuple or any(
             type(item) is not LaunchExtension for item in self.extensions
         ):
@@ -244,19 +281,41 @@ class H0ProbeLaunch:
 
     @property
     def manifest(self) -> dict[str, object]:
+        mandate = self.request.manifest["spending_authority"]
         row: dict[str, object] = {
             "schema": self.manifest_schema,
-            "scientific_authority": "none",
-            "spending_authority": "none",
+            "scientific_authority": mandate,
+            "spending_authority": mandate,
             "provider_deadline": None,
             "runpodctl_version": RUNPODCTL_VERSION,
             "runpodctl_sha256": RUNPODCTL_SHA256,
             **{f.name: getattr(self, f.name) for f in fields(self) if f.name in _BASE_FIELDS},
             "request": self.request.manifest,
         }
-        if self.manifest_schema == LAUNCH_SCHEMA_V3:
+        if self.manifest_schema != LAUNCH_SCHEMA_V2:
             row["extensions"] = [item.manifest for item in self.extensions]
         return row
+
+    def require_hourly_rate_within_cap(self, max_hourly_rate: float) -> None:
+        """Refuse a price ceiling that could spend past the run authority's cap.
+
+        The controller admits a pod only at a measured price at or under
+        ``max_hourly_rate`` and the watchdog tears it down by
+        ``watchdog_timeout_seconds``, so their product bounds the run's spend; a
+        scientific launch requires that bound inside ``spend_cap.usd`` (its hours are
+        checked at construction). A smoke launch has no authority and no cap here: its
+        ceiling is the invoker's approval alone, as before rung B.
+        """
+        authority = self.request.authority
+        if authority is None:
+            return
+        if (
+            type(max_hourly_rate) not in (int, float)
+            or not math.isfinite(max_hourly_rate)
+            or max_hourly_rate <= 0
+            or max_hourly_rate * self.watchdog_timeout_seconds / 3600 > authority.spend_cap.usd
+        ):
+            raise ValueError("hourly price ceiling over the watchdog window exceeds the spend cap")
 
     @property
     def payload(self) -> bytes:
@@ -268,7 +327,10 @@ class H0ProbeLaunch:
 
     @property
     def pod_name(self) -> str:
-        return f"h0-tiny-{self.digest[:24]}"
+        authority = self.request.authority
+        if authority is None:
+            return f"h0-tiny-{self.digest[:24]}"
+        return f"{authority.stage.lower()}-{authority.run_class}-{self.digest[:24]}"
 
     @property
     def workspace(self) -> str:
@@ -293,6 +355,10 @@ class H0ProbeLaunch:
 
         v3: the seven base keys, then each declared extension's one key in registry
         order (nine keys for the H0 wave). ``validate_template`` compares the union.
+
+        v4: a smoke launch is the v3 environment. A scientific launch drops the tiny
+        opt-in (its worker builds the MLflow sink with ``tiny=False``), so the H wave's
+        scientific template is eight keys; it is created at the image rebuild ceremony.
         """
         environment = {
             "AWS_ACCESS_KEY_ID": f"{{{{ RUNPOD_SECRET_{self.r2_access_secret_name} }}}}",
@@ -301,8 +367,10 @@ class H0ProbeLaunch:
             "MLFLOW_TRACKING_USERNAME": f"{{{{ RUNPOD_SECRET_{self.mlflow_username_secret_name} }}}}",
             "MLFLOW_TRACKING_PASSWORD": f"{{{{ RUNPOD_SECRET_{self.mlflow_password_secret_name} }}}}",
             "MLFLOW_S3_ENDPOINT_URL": f"{{{{ RUNPOD_SECRET_{self.mlflow_s3_endpoint_secret_name} }}}}",
-            "ENTROPIC_MLFLOW_TINY": "1",
+            _TINY_OPT_IN: "1",
         }
+        if self.request.authority is not None:
+            del environment[_TINY_OPT_IN]
         for item in self.extensions:
             environment[EXTENSION_REGISTRY[item.name].env_key] = item.env_value
         return environment
@@ -425,24 +493,27 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         raise ValueError("H0 deployment exceeds its explicit byte budget")
     decoded = json.loads(payload)
     schema = decoded.get("schema") if type(decoded) is dict else None
-    if schema not in (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3):
+    if schema not in _SCHEMAS:
         raise ValueError("H0 deployment scope or authority mismatch")
     names = " ".join(sorted(_BASE_FIELDS | {"request"}))
     keys = f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names}"
     row = recovery_record(
-        decoded, keys + (" extensions" if schema == LAUNCH_SCHEMA_V3 else "")
+        decoded, keys + ("" if schema == LAUNCH_SCHEMA_V2 else " extensions")
     ).copy()
+    request = parse_probe_request(_json(row["request"]), max_bytes=max_bytes)
+    row["request"] = request
+    mandate = request.manifest["spending_authority"]
     if (
         row.pop("schema") != schema
-        or row.pop("scientific_authority") != "none"
-        or row.pop("spending_authority") != "none"
+        or row.pop("scientific_authority") != mandate
+        or row.pop("spending_authority") != mandate
         or row.pop("provider_deadline") is not None
         or row.pop("runpodctl_version") != RUNPODCTL_VERSION
         or row.pop("runpodctl_sha256") != RUNPODCTL_SHA256
     ):
         raise ValueError("H0 deployment scope or authority mismatch")
     extensions: list[LaunchExtension] = []
-    if schema == LAUNCH_SCHEMA_V3:
+    if schema != LAUNCH_SCHEMA_V2:
         declared = row.pop("extensions")
         if type(declared) is not list:
             raise ValueError("launch extensions must be a list")
@@ -456,7 +527,6 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
                     cast(str, entry["name"]), tuple(cast(dict[str, str], params).items())
                 )
             )
-    row["request"] = parse_probe_request(_json(row["request"]), max_bytes=max_bytes)
     factory = cast(Callable[..., H0ProbeLaunch], H0ProbeLaunch)
     result = factory(**row, extensions=tuple(extensions), manifest_schema=cast(str, schema))
     if result.payload != payload:

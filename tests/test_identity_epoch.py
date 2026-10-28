@@ -690,6 +690,22 @@ values (``65209d55``, ``a0320b1f``, ``283935bd``, ``bbf6aa86``, ``c692a7b6``) an
 admission-only values (``e922ca52``, ``82bf09bc``, ``a6e5353f``, ``563afc50``, ``21d022bb``).
 Source rows are untouched (no h-source-reader-v3 member changed; recomputed and equal).
 
+Rung B re-pin (house rule 4, MEASURED 2026-10-28, branch ``pilot-dga-run-authority`` stacked on
+``pilot-run-authority``; lane handoff patch sha256 b83f2011..., conductor DG-A commit under the
+operator ruling "option B" 2026-10-27 and the plan's door D6): the sealed ``RunAuthority`` joins the
+reader set, ``ladder.run.run_authority`` enters ``_READER_MODULES`` and the frozen tuple (52 to 53
+members), because the authority the admission port verifies is part of what a checkpoint reader
+proves; the handoff also moves bytes in ``admission``, ``checkpoint``, ``runner``, ``worker_command``,
+``worker_completion``, ``worker_execution``, ``worker_request`` and the launch (``h-probe-launch-v4``,
+``h-probe-worker-request-v2``, both rows below in read-old-table). Label unchanged. The five
+checkpoint rows were recomputed with ``tools/regime_rows.py`` over the patched tree: (3.12.13,
+2.13.0) ``cf5b1768...``, (3.12.14, 2.13.0+cpu) ``e6105d3f...``, (3.12.15, 2.13.0) ``cd49ed85...`` (the final
+tree's runtime identity; the pin went RED on the patched tree before this swap, reading
+``68c87f58`` before the ruling comment below moved ``checkpoint.py``), (3.12.15, 2.13.0+cpu) ``73264a5f...``,
+(3.12.16, 2.13.0+cpu) ``7c0f7759...``. Retracted for this tree: the 52-member values of main b9c570e0
+(``5f992472``, ``199b1cbb``, ``28c8cb5a``, ``9f6d6de2``, ``fcc64eda``). Source rows are untouched
+(no h-source-reader-v3 member changed; recomputed and equal).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -847,6 +863,7 @@ _FROZEN_CHECKPOINT_READER_MODULES = (
     "ladder.run.mechanism_evidence",
     "ladder.run.native_verification",
     "ladder.run.object_worker",
+    "ladder.run.run_authority",
     "ladder.run.runner",
     "ladder.run.seals",
     "ladder.run.span_diagnostics",
@@ -888,19 +905,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "5f992472f4d81757b9d0fd60f80dddb79560519b53ee7569437943bc26cfab4d",  # pragma: allowlist secret
+    ): "cf5b1768c969ff1b9983bd5db854e908d3d29b9551fd7c5419f92d85b904529c",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "199b1cbba33cf6f066119e1139d32676666aa9b9dd1a4b536af69199f58f73df",  # pragma: allowlist secret
+    ): "e6105d3f69f78944b99b090f417edf0b9edf138a46752ddb3d6eb96828f31ff8",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "28c8cb5a5377b76ac8c5d2cb8550ad37fe1b5a615a658e1445541df8c0d53944",  # pragma: allowlist secret
+    ): "cd49ed85bb65885a1c936b8ea15236a78eb0390577a9fe2fb88f61dd42cfd8bd",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "9f6d6de2fad74516d5269c47285ce874e719ffd046e2c7694c05eab92d4b2703",  # pragma: allowlist secret
+    ): "73264a5fedea97c887e7dd63eb115630dc9fa9a04287f96c3323a64ea566dddb",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -910,7 +927,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "fcc64edad6a4d711ee41645c2298855dfd446a312a95704d0ba32bfdfe8250a3",  # pragma: allowlist secret
+    ): "7c0f7759c895a803936a381b457cdc3f44df5f5b99214b808786e567d5edf741",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

@@ -13,7 +13,7 @@ from botocore.exceptions import (
     ParamValidationError,
     ReadTimeoutError,
 )
-from tests.test_h_probe_launch import launch
+from tests.test_h_probe_launch import launch, pilot_launch
 
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
@@ -171,6 +171,38 @@ def setup(
         )
 
     return guard, provider, calls, clock, run
+
+
+@pytest.mark.parametrize(("rate", "admitted"), [(37.0, False), (36.9, True)])
+def test_a_pilot_ceiling_past_its_spend_cap_never_reaches_allocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rate: float, admitted: bool
+) -> None:
+    """Rung B: 37 USD/h over the fixture's 3900 s watchdog is past the 40 USD cap."""
+    guard, provider, calls, _clock, _run = setup(tmp_path, monkeypatch, {})
+    guard.launch = pilot_launch()
+    destination = tmp_path / "pilot-capture"
+    destination.mkdir()
+
+    def run() -> object:
+        return run_probe_controller(
+            cast(ProbeWatchdogProcess, guard),
+            provider,
+            cast(D1TrainerMailboxObjectPort, object()),
+            destination,
+            poll_seconds=1,
+            max_hourly_rate=rate,
+            monotonic=lambda: 10.0,  # past the controller deadline: no allocation either way
+            wait=lambda _: None,
+        )
+
+    if admitted:
+        with pytest.raises(BaseException) as raised:
+            run()
+        assert "spend cap" not in str(raised.value)
+    else:
+        with pytest.raises(ValueError, match="exceeds the spend cap"):
+            run()
+    assert "create" not in calls
 
 
 @pytest.mark.parametrize(

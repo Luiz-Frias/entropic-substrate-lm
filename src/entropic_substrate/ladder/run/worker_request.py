@@ -1,4 +1,14 @@
-"""Hash-bound H probe inputs; neither a spending grant nor a scientific gate."""
+"""Hash-bound H probe inputs; a smoke request carries no authority at all.
+
+A smoke (``local_tiny``/``remote_tiny``) request renders ``h-probe-worker-request-v1``
+byte-identically to every request written before rung B: ``"none"`` for both
+authorities and no ``authority`` key, so every captured ``request_sha256`` still
+re-derives. A scientific (``pilot``/``confirmatory``) request renders
+``h-probe-worker-request-v2``: it carries its sealed ``RunAuthority`` and names the
+authority's digest as both its scientific and its spending authority (operator ruling
+2026-10-27, "option B"). The parse is schema-first, and each schema admits only its
+own family of classes.
+"""
 
 import hashlib
 import json
@@ -18,6 +28,10 @@ from entropic_substrate.kernel.artifacts import (
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
+from entropic_substrate.ladder.run.run_authority import RunAuthority, parse_run_authority
+
+REQUEST_SCHEMA_V1 = "h-probe-worker-request-v1"
+REQUEST_SCHEMA_V2 = "h-probe-worker-request-v2"
 
 
 def worker_artifact(value: object, section: str) -> ArtifactIdentity:
@@ -54,6 +68,7 @@ class ProbeRequest:
     image: str | None
     resume: ArtifactIdentity | None
     pause: tuple[str, int] | None
+    authority: RunAuthority | None = None
 
     def __post_init__(self) -> None:
         if type(self.profile) is not HProfile or type(self.limits) is not TransferLimits:
@@ -61,8 +76,11 @@ class ProbeRequest:
         run_class = self.profile.run_class
         if not RUN_ADMISSION.admits_class(run_class):
             raise ValueError("probe worker has no scientific execution authority")
+        refusal = RUN_ADMISSION.authority_refusal(run_class, self.profile.stage, self.authority)
+        if refusal is not None:
+            raise ValueError(refusal)
         surface = RUN_ADMISSION.worker_surface(run_class)
-        if not RUN_ADMISSION.admits(run_class, self.profile.stage, surface):
+        if not RUN_ADMISSION.admits(run_class, self.profile.stage, surface, self.authority):
             raise ValueError("remote successor requires its scientific gate adapter")
         ContentHash("sha256", self.nonce)
         if type(self.probe) is not ProbeConfig:
@@ -160,10 +178,11 @@ class ProbeRequest:
 
     @property
     def manifest(self) -> dict[str, object]:
-        return {
-            "schema": "h-probe-worker-request-v1",
-            "scientific_authority": "none",
-            "spending_authority": "none",
+        mandate = "none" if self.authority is None else self.authority.digest
+        row: dict[str, object] = {
+            "schema": REQUEST_SCHEMA_V1 if self.authority is None else REQUEST_SCHEMA_V2,
+            "scientific_authority": mandate,
+            "spending_authority": mandate,
             "profile": self.profile.manifest,
             "inputs": [artifact_mapping(a) for a in self.inputs],
             "nonce": self.nonce,
@@ -175,6 +194,9 @@ class ProbeRequest:
             "resume": None if self.resume is None else artifact_mapping(self.resume),
             "pause": self.pause,
         }
+        if self.authority is not None:
+            row["authority"] = self.authority.manifest
+        return row
 
     @property
     def payload(self) -> bytes:
@@ -208,15 +230,18 @@ def parse_probe_request(payload: bytes, *, max_bytes: int) -> ProbeRequest:
         or not 0 < len(payload) <= max_bytes
     ):
         raise ValueError("worker request violates its byte limit")
+    decoded = json.loads(payload, object_pairs_hook=_unique)
+    schema = decoded.get("schema") if type(decoded) is dict else None
+    if schema not in (REQUEST_SCHEMA_V1, REQUEST_SCHEMA_V2):
+        raise ValueError("unknown worker request scope or authority")
     row = recovery_record(
-        json.loads(payload, object_pairs_hook=_unique),
-        "schema scientific_authority spending_authority profile inputs nonce limits probe code_commit code_bundle image resume pause",
+        decoded,
+        "schema scientific_authority spending_authority profile inputs nonce limits probe code_commit code_bundle image resume pause"
+        + (" authority" if schema == REQUEST_SCHEMA_V2 else ""),
     )
-    if (
-        row["schema"] != "h-probe-worker-request-v1"
-        or row["scientific_authority"] != "none"
-        or row["spending_authority"] != "none"
-    ):
+    authority = None if schema == REQUEST_SCHEMA_V1 else parse_run_authority(row["authority"])
+    mandate = "none" if authority is None else authority.digest
+    if row["scientific_authority"] != mandate or row["spending_authority"] != mandate:
         raise ValueError("unknown worker request scope or authority")
     if type(row["inputs"]) is not list:
         raise ValueError("worker inputs must be explicit")
@@ -243,6 +268,7 @@ def parse_probe_request(payload: bytes, *, max_bytes: int) -> ProbeRequest:
             "image": row["image"],
             "resume": None if row["resume"] is None else artifact_from_mapping(row["resume"]),
             "pause": None if pause is None else tuple(pause),
+            "authority": authority,
         },
     )
     if result.payload != payload:
