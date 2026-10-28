@@ -15,6 +15,7 @@ from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.kernel.runtime.paths import source_root
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION, RUNTIME_KIND
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.generation import run_probe_generation
 from entropic_substrate.ladder.run.journal import artifact_reference
@@ -59,9 +60,9 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
     unbound.
     """
     precision = require_observed_execution_precision(request.profile)
-    if request.profile.run_class == "local_tiny":
+    if RUN_ADMISSION.worker_surface(request.profile.run_class) == "local_worker":
         return {
-            "kind": "local_tiny",
+            "kind": RUNTIME_KIND["local_worker"],
             "pod_id": None,
             "source_attestation": "not_remote",
             "accelerator": None,
@@ -82,7 +83,7 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
         raise ValueError("H probe worker requires one visible accelerator")
     pod_id = require_d1_pod_id(os.environ.get("RUNPOD_POD_ID"))
     return {
-        "kind": "remote_tiny",
+        "kind": RUNTIME_KIND["remote_worker"],
         "pod_id": pod_id,
         "source_attestation": "exact_git_tree_match",
         "code_commit": request.code_commit,

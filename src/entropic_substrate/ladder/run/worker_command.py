@@ -17,6 +17,7 @@ from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
 from entropic_substrate.ladder.capture.reader.sinks import CONFIG_HASH_TAG, EXP_TAG, h_config_hash
+from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.object_worker import run_object_worker
@@ -105,8 +106,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _scope(request: ProbeRequest, local: bool, object_limit: int, count_limit: int) -> None:
-    expected = "local_tiny" if local else "remote_tiny"
-    if request.profile.run_class != expected:
+    expected = "local_worker" if local else "remote_worker"
+    if RUN_ADMISSION.worker_surface(request.profile.run_class) != expected:
         raise ValueError("worker command scope differs from the request")
     if request.limits.max_object_bytes > object_limit or request.limits.max_objects > count_limit:
         raise ValueError("worker request exceeds the configured transport envelope")

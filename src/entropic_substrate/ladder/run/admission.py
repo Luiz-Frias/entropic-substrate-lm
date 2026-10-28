@@ -9,12 +9,11 @@ into this table, without changing a single verdict (pinned by
 Predicates only. Every gate keeps its own refusal text, so the port never raises a
 gate message; it answers questions and the site decides what to say.
 
-Only the launch gates read this table directly so far. Every other gate lives in one of
-five ``h-checkpoint-reader-v2`` members (worker_request, runner, worker_command,
-worker_execution, worker_completion) whose bytes are digest-pinned, so they keep inline
-checks mirroring it until the conductor's re-pin routes them here and adds this module to
-the reader set (door amendment ruled 2026-10-27). ``tests/test_h_run_admission.py`` holds
-the inline checks and this table to the same characterization.
+Every gate reads this table: the launch (ladder/run/h_probe_launch.py) and the five
+``h-checkpoint-reader-v2`` members worker_request, runner, worker_command,
+worker_execution and worker_completion. This module is itself a member of that reader set
+(door amendment ruled 2026-10-27), so the policy the members enforce is bound into the
+checkpoint identity and changing it re-pins.
 """
 
 from collections.abc import Mapping

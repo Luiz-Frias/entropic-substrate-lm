@@ -659,6 +659,37 @@ were recomputed with ``tools/regime_rows.py`` over the staged tree: (3.12.13, 2.
 ``5b0daf50``, ``d6e7edc8``, ``1ba2025e``) are retracted for this tree, not silently overwritten.
 Source rows are untouched.
 
+Admission-port re-pin (house rule 4, MEASURED 2026-10-27, branch ``pilot-admission-repin`` on
+``pilot-admission-port-25e262`` c689b1c6, PR #396; conductor DG-A commit under the operator
+ruling "Handoff route + amend the door"): every H run-class gate now reads ONE admission port,
+``ladder.run.admission`` (class, stage, surface, cost-guard policy as a frozen table; rung A of
+the pilot-admission stack, behaviour unchanged, 389-case site characterization green before and
+after). The port joins ``_READER_MODULES`` and the frozen tuple (51 to 52 members) because the
+admitted-class policy is part of what a checkpoint reader proves, and five members moved bytes
+(``ladder.run.worker_request``, ``runner``, ``worker_command``, ``worker_execution``,
+``worker_completion``), plus ``checkpoint.py`` itself. Label unchanged. The four checkpoint rows
+were recomputed with ``tools/regime_rows.py`` over the staged tree: (3.12.13, 2.13.0)
+``e922ca52...``, (3.12.14, 2.13.0+cpu) ``82bf09bc...``, (3.12.15, 2.13.0) ``a6e5353f...``,
+(3.12.15, 2.13.0+cpu) ``563afc50...``. The values they replace (``7a02d741``, ``b1ee8ce8``,
+``5b0daf50``, ``d6e7edc8``) are retracted for this tree, not silently overwritten. Rebased onto
+main d59bd588 after #395 and #396 squash-merged (2026-10-27): the four rows held (no reader
+member differs between c689b1c6 and that main) and the 3.12.16 row that #399 added on the
+pre-port tree was recomputed here: (3.12.16, 2.13.0+cpu) ``21d022bb...``, replacing
+``1ba2025e``. Source rows are untouched (no h-source-reader-v3 member changed).
+
+Rebase of the admission-port re-pin onto main 66d5feac (house rule 4, MEASURED 2026-10-28,
+branch ``pilot-admission-repin``, PR #400; conductor rebase under the operator ruling "rebase
+onto main, gt submit --publish, skip ship-it for this PR"): main had meanwhile taken #402's
+gradient-guard re-pin (one member moved bytes: ``ladder.run.training``) and the 0.8.0 release,
+so the two 2026-10-27 entries above now compose in one tree: the 52-member tuple with the
+admission port AND the set-identity gradient guard. The five checkpoint rows were recomputed
+with ``tools/regime_rows.py`` over the resolved tree: (3.12.13, 2.13.0) ``5f992472...``,
+(3.12.14, 2.13.0+cpu) ``199b1cbb...``, (3.12.15, 2.13.0) ``28c8cb5a...``, (3.12.15, 2.13.0+cpu)
+``9f6d6de2...``, (3.12.16, 2.13.0+cpu) ``fcc64eda...``. Retracted for this tree: main's guard-only
+values (``65209d55``, ``a0320b1f``, ``283935bd``, ``bbf6aa86``, ``c692a7b6``) and the branch's
+admission-only values (``e922ca52``, ``82bf09bc``, ``a6e5353f``, ``563afc50``, ``21d022bb``).
+Source rows are untouched (no h-source-reader-v3 member changed; recomputed and equal).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -807,6 +838,7 @@ _FROZEN_CHECKPOINT_READER_MODULES = (
     "kernel.artifacts",
     "kernel.lifecycle",
     "ladder.capture.capture",
+    "ladder.run.admission",
     "ladder.run.checkpoint",
     "ladder.run.evaluation_records",
     "ladder.run.execution",
@@ -856,19 +888,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "65209d55b82c7ece0db2540b9ddeec9e103c3589d84b9c3169f3f3702e357936",  # pragma: allowlist secret
+    ): "5f992472f4d81757b9d0fd60f80dddb79560519b53ee7569437943bc26cfab4d",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "a0320b1fe3d569d59f7150aaed22f7b7d7f626d76675c202ba5036d81d1a4892",  # pragma: allowlist secret
+    ): "199b1cbba33cf6f066119e1139d32676666aa9b9dd1a4b536af69199f58f73df",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "283935bd49bd72f65ff18317f7433dd7b2a02b5e2b7d28ecdb8289ec1896eda0",  # pragma: allowlist secret
+    ): "28c8cb5a5377b76ac8c5d2cb8550ad37fe1b5a615a658e1445541df8c0d53944",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "bbf6aa8650d1241bc63339fd3124a360b21ae8754f693e11c9726dba92bd6352",  # pragma: allowlist secret
+    ): "9f6d6de2fad74516d5269c47285ce874e719ffd046e2c7694c05eab92d4b2703",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -878,7 +910,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "c692a7b6b420506db3dcc08ddd14a5b9680062067b51940b80f7ccc88ca6fc9c",  # pragma: allowlist secret
+    ): "fcc64edad6a4d711ee41645c2298855dfd446a312a95704d0ba32bfdfe8250a3",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
