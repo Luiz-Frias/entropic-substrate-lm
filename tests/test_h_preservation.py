@@ -1,7 +1,7 @@
 """H1 profiles isolate two normalization axes without conferring run authority."""
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 from enum import StrEnum
 
 import pytest
@@ -245,6 +245,20 @@ def test_construction_digest_is_not_the_profile_identity() -> None:
 def test_construction_digest_refuses_non_profiles(value: object) -> None:
     with pytest.raises(TypeError, match="profile"):
         h1_construction_digest(value)  # type: ignore[arg-type]
+
+
+def test_construction_digest_refuses_a_forged_profile_subclass() -> None:
+    first = profiles()[0]
+
+    class Forged(HProfile):
+        @property
+        def manifest(self) -> dict[str, object]:
+            return {"name": "forged", "seed": 0, "source_seed": 0}
+
+    forged = Forged(**{field.name: getattr(first, field.name) for field in fields(HProfile)})
+    assert isinstance(forged, HProfile)
+    with pytest.raises(TypeError, match="profile"):
+        h1_construction_digest(forged)
 
 
 def test_exclusion_reason_is_closed_to_exactly_five_members() -> None:
