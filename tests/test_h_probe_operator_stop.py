@@ -516,7 +516,12 @@ def test_controller_collects_a_stopped_terminal_as_terminated(
     guard = Guard(tmp_path)
     provider = Provider(guard)
     guard.launch = SimpleNamespace(
-        request=request, digest=guard.launch.digest, pod_name=guard.launch.pod_name
+        request=request,
+        digest=guard.launch.digest,
+        pod_name=guard.launch.pod_name,
+        # Rung B: the controller asks every launch to bound its rate by the run
+        # authority; the real smoke launch's answer (no authority, no cap) is delegated.
+        require_hourly_rate_within_cap=guard.launch.require_hourly_rate_within_cap,
     )
     calls: list[str] = []
 

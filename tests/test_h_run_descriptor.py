@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_tiny_tracer import LIMIT, _Builder, _local_profile
+from tests.test_run_authority import authority as sealed_authority
 from tests.test_sentence_cli import ProbeSetup
 from tests.test_sentence_profile import profile
 from tests.test_sentence_worker_execution import prepared
@@ -42,6 +43,7 @@ from entropic_substrate.ladder.capture.reader.sinks import (
     h_config_hash,
 )
 from entropic_substrate.ladder.run import worker_command
+from entropic_substrate.ladder.run.run_authority import RunAuthority
 from entropic_substrate.ladder.run.worker_command import run_worker_command
 from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
@@ -173,15 +175,18 @@ def _worker_descriptor(
     *,
     image: str | None = None,
     commit: str | None = None,
+    authority: RunAuthority | None = None,
 ) -> tuple[Any, TrackingRunDescriptor, dict[str, Any]]:
     request, inputs = prepared(tmp_path)
     objects = _ObjectStore()
     marker = publish_probe_request(objects, request, inputs)
-    if image is not None or commit is not None:
+    if image is not None or commit is not None or authority is not None:
         # A remote request carries both; set past the dataclass validation, which
         # refuses them on a local_tiny request (the tests/test_h_worker_log_lines.py idiom).
+        # A scientific request carries its sealed authority the same way (rung B).
         object.__setattr__(request, "image", image)
         object.__setattr__(request, "code_commit", commit)
+        object.__setattr__(request, "authority", authority)
         monkeypatch.setattr(
             worker_command, "read_published_probe_request", lambda *_a, **_k: request
         )
@@ -249,6 +254,18 @@ def test_a_remote_shaped_worker_carries_the_request_commit_and_image_unswapped(
     assert descriptor.run_name == f"h-worker-{request.profile.identity}"  # the name is unchanged
     # G4: the call keeps its keyword shape (descriptor positional, three keywords).
     assert {"results_path", "log_path", "metric_extractor"} <= set(kwargs)
+
+
+def test_a_scientific_worker_is_tracked_without_the_tiny_opt_in_and_tags_its_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rung B: a pilot's eight-key template carries no ``ENTROPIC_MLFLOW_TINY``, so its
+    sink must not be ``tiny`` (``sinks.mlflow_enabled`` would drop the mirror silently),
+    and its params name the sealed authority it runs under."""
+    sealed = sealed_authority()
+    _, descriptor, _ = _worker_descriptor(tmp_path, monkeypatch, authority=sealed)
+    assert descriptor.tiny is False
+    assert descriptor.params["run_authority"] == sealed.digest
 
 
 # ------------------------------------------------------------------- the probe site

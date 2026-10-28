@@ -379,6 +379,9 @@ def run_probe_controller(
     for value in (poll_seconds, max_hourly_rate):
         if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
             raise ValueError("controller polling and price ceiling must be finite and positive")
+    # Rung B: every caller, not only the command, keeps a scientific run inside the
+    # spend cap its sealed authority grants (a no-op for a smoke launch).
+    guard.launch.require_hourly_rate_within_cap(max_hourly_rate)
     if guard.ready is None:
         raise ValueError("controller requires the admitted live watchdog readiness record")
     deadline, cleanup_deadline = (

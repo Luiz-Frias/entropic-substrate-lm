@@ -62,7 +62,7 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
     precision = require_observed_execution_precision(request.profile)
     if RUN_ADMISSION.worker_surface(request.profile.run_class) == "local_worker":
         return {
-            "kind": RUNTIME_KIND["local_worker"],
+            "kind": RUNTIME_KIND[request.profile.run_class],
             "pod_id": None,
             "source_attestation": "not_remote",
             "accelerator": None,
@@ -82,8 +82,8 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
     if count != 1:
         raise ValueError("H probe worker requires one visible accelerator")
     pod_id = require_d1_pod_id(os.environ.get("RUNPOD_POD_ID"))
-    return {
-        "kind": RUNTIME_KIND["remote_worker"],
+    runtime: dict[str, object] = {
+        "kind": RUNTIME_KIND[request.profile.run_class],
         "pod_id": pod_id,
         "source_attestation": "exact_git_tree_match",
         "code_commit": request.code_commit,
@@ -91,6 +91,12 @@ def _runtime(request: ProbeRequest, root: Path, repo_root: Path | None) -> dict[
         "accelerator": {"model": model, "count": count},
         "precision": precision,
     }
+    # Rung B: a scientific run echoes the sealed authority it runs under. The runtime
+    # rides into worker/start.json, the ``started`` event, the ``run_start`` lifecycle
+    # record and the worker result, so every one of them proves the run's mandate.
+    if request.authority is not None:
+        runtime["authority"] = request.authority.digest
+    return runtime
 
 
 def _reference(root: Path, section: str, artifact: ArtifactIdentity) -> dict[str, str]:
@@ -193,6 +199,7 @@ def execute_probe_request(
         on_checkpoint=checkpoint if on_checkpoint is not None else None,
         sink=sink,
         publication_timing=publication_timing,
+        authority=request.authority,
     )
     # FOR-1662: ONE fresh full-chain admission walk per artifact root per process.
     # The runner's completion/pause walk populated this memo for the /run root;

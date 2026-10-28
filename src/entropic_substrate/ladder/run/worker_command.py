@@ -208,10 +208,17 @@ def run_worker_command(
                 params["git_sha"] = request.code_commit
             if request.image is not None:
                 params["image"] = request.image
+            # Rung B: a smoke run stays behind the tiny MLflow opt-in
+            # (``ENTROPIC_MLFLOW_TINY=1`` in its launch template); a scientific run is
+            # tracked whenever a tracking URI is set, because its eight-key template
+            # carries no tiny opt-in and ``tiny=True`` would drop its mirror SILENTLY
+            # (``sinks.mlflow_enabled``). It tags the sealed authority it runs under.
+            if request.authority is not None:
+                params["run_authority"] = request.authority.digest
             sink = build_sink_for_run(
                 TrackingRunDescriptor(
                     run_name=f"h-worker-{request.profile.identity}",
-                    tiny=True,
+                    tiny=request.authority is None,
                     params=params,
                     tags={
                         "schema": "h-probe-worker-result-v1",

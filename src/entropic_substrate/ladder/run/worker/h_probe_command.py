@@ -1,4 +1,4 @@
-"""Run one already-published, operator-approved H0 tiny request from a recorded launch."""
+"""Run one already-published, operator-approved H request from a recorded launch."""
 
 import argparse
 import json
@@ -96,6 +96,8 @@ def run_probe_command(
             max_bytes=args.max_launch_bytes,
         )
         launch = parse_probe_launch(payload, max_bytes=args.max_launch_bytes)
+        # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap.
+        launch.require_hourly_rate_within_cap(args.max_hourly_rate)
         root = normalize_d1_artifact_root(args.workspace)
         metadata = root.stat()
         if (

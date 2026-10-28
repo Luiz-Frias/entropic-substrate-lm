@@ -65,6 +65,10 @@ _READER_IDENTITY_LABEL = "h-checkpoint-reader-v2"
 # DOOR AMENDMENT 2026-10-27 (operator ruling "Handoff route + amend the door"):
 # + ladder.run.admission, the run-class admission port every gate member reads,
 # so the policy those members enforce is bound into this identity: 52 members.
+# DOOR AMENDMENT (rung B, operator ruling 2026-10-27 "option B"; member set ruled by the
+# conductor 2026-10-28 per the plan's door D6): + ladder.run.run_authority, the sealed run
+# authority the port verifies and whose manifest is part of every scientific worker request:
+# 53 members. Regime rows re-pinned in tests/test_identity_epoch.py (DG-A commit).
 _READER_MODULES = (
     "composition.capture_cli",
     "composition.cli",
@@ -104,6 +108,7 @@ _READER_MODULES = (
     "ladder.run.mechanism_evidence",
     "ladder.run.native_verification",
     "ladder.run.object_worker",
+    "ladder.run.run_authority",
     "ladder.run.runner",
     "ladder.run.seals",
     "ladder.run.span_diagnostics",

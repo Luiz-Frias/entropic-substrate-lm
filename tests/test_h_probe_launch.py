@@ -8,8 +8,14 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
+from tests.test_run_authority import authority as sealed_authority
 from tests.test_sentence_worker_request import request
 
+from entropic_substrate.core.sentence.profile import (
+    DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+    DEVELOPMENT_GENERATION_CONTINUATIONS,
+    DEVELOPMENT_IMPORTANCE_SAMPLES,
+)
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.reader.sinks import (
     MLFLOW_EXPERIMENT_ENV,
@@ -20,6 +26,7 @@ from entropic_substrate.ladder.run.h_probe_launch import (
     H_SERIES_EXPERIMENT,
     LAUNCH_SCHEMA_V2,
     LAUNCH_SCHEMA_V3,
+    LAUNCH_SCHEMA_V4,
     H0ProbeLaunch,
     LaunchExtension,
     named_experiment,
@@ -71,13 +78,44 @@ def launch_nine() -> H0ProbeLaunch:
     return replace(launch(), extensions=(named_experiment(H_SERIES_EXPERIMENT), system_metrics()))
 
 
+def pilot_request(**authority_changes: object) -> ProbeRequest:
+    """A valid H1 pilot request (development profile) under a matching sealed authority."""
+    value = remote_request()
+    profile = replace(
+        value.profile,
+        name="h1-isotropic-pilot",
+        stage="H1",
+        run_class="pilot",
+        consumer="isotropic",
+        optimization=replace(value.profile.optimization, future_weight=0),
+        schedule=replace(
+            value.profile.schedule,
+            importance_samples=DEVELOPMENT_IMPORTANCE_SAMPLES,
+            diagnostic_samples=DEVELOPMENT_DIAGNOSTIC_SAMPLES,
+            generation_continuations=DEVELOPMENT_GENERATION_CONTINUATIONS,
+        ),
+    )
+    return replace(value, profile=profile, authority=sealed_authority(**authority_changes))
+
+
+def pilot_launch() -> H0ProbeLaunch:
+    return replace(launch(), request=pilot_request(), cost_guard="host_watchdog_budgeted")
+
+
+def pilot_launch_eight() -> H0ProbeLaunch:
+    """The scientific H wave's declaration: six base keys plus both extensions."""
+    return replace(
+        pilot_launch(), extensions=(named_experiment(H_SERIES_EXPERIMENT), system_metrics())
+    )
+
+
 def test_roundtrip_binds_every_deployment_choice_without_authority() -> None:
     value = launch()
     assert parse_probe_launch(value.payload, max_bytes=1_000_000) == value
     assert value.manifest["scientific_authority"] == "none"
     assert value.manifest["spending_authority"] == "none"
     assert value.manifest["provider_deadline"] is None
-    assert value.manifest["schema"] == "h0-probe-launch-v3"
+    assert value.manifest["schema"] == "h-probe-launch-v4"
     assert value.manifest["runpodctl_version"] == "runpodctl 3.0.1-551d6a4"
     assert len(value.manifest["runpodctl_sha256"]) == 64
     for updated in (
@@ -401,16 +439,16 @@ def test_a_parent_v2_payload_reads_as_the_same_launch_with_no_extensions() -> No
     args = read.create_arguments
     assert args[args.index("--name") + 1] == _PARENT_V2_POD_NAME
     assert args[args.index("--template-id") + 1] == "template-fixture"
-    # write-new: the same choices built in-process render v3 and a different identity
+    # write-new: the same choices built in-process render v4 and a different identity
     built = launch()
-    assert built.manifest_schema == LAUNCH_SCHEMA_V3 and built != read
+    assert built.manifest_schema == LAUNCH_SCHEMA_V4 and built != read
     assert built.digest != read.digest and built.pod_name != read.pod_name
     assert parse_probe_launch(read.payload, max_bytes=1_000_000) == read
 
 
-def test_the_v3_manifest_records_extension_names_and_parameters_and_roundtrips() -> None:
+def test_the_v4_manifest_records_extension_names_and_parameters_and_roundtrips() -> None:
     value = launch_nine()
-    assert value.manifest["schema"] == LAUNCH_SCHEMA_V3
+    assert value.manifest["schema"] == LAUNCH_SCHEMA_V4
     assert value.manifest["extensions"] == [
         {"name": "named_experiment", "params": {"name": "h-series"}},
         {"name": "system_metrics", "params": {}},
@@ -536,6 +574,8 @@ def test_a_v2_launch_cannot_declare_extensions_and_unknown_schemas_are_refused()
         replace(launch(), manifest_schema=LAUNCH_SCHEMA_V2, extensions=(system_metrics(),))
     with pytest.raises(ValueError):
         replace(launch(), manifest_schema="h0-probe-launch-v4")
+    with pytest.raises(ValueError):
+        replace(launch(), manifest_schema="h-probe-launch-v5")
 
 
 def _reencode(row: dict[str, object]) -> bytes:
@@ -563,7 +603,9 @@ def test_the_manifest_reader_refuses_unknown_or_unfilled_extensions(mutation: st
         parse_probe_launch(_reencode(row), max_bytes=1_000_000)
 
 
-@pytest.mark.parametrize("variant", ["v2_read", "v3_base", "v3_nine"])
+@pytest.mark.parametrize(
+    "variant", ["v2_read", "v3_read", "v4_base", "v4_nine", "v4_pilot", "v4_pilot_eight"]
+)
 def test_every_launch_variant_survives_the_reparse_sites_outside_this_module(
     tmp_path: Path, variant: str
 ) -> None:
@@ -575,8 +617,13 @@ def test_every_launch_variant_survives_the_reparse_sites_outside_this_module(
 
     value = {
         "v2_read": lambda: parse_probe_launch(_PARENT_V2_PAYLOAD, max_bytes=1_000_000),
-        "v3_base": launch,
-        "v3_nine": launch_nine,
+        "v3_read": lambda: parse_probe_launch(
+            replace(launch_nine(), manifest_schema=LAUNCH_SCHEMA_V3).payload, max_bytes=1_000_000
+        ),
+        "v4_base": launch,
+        "v4_nine": launch_nine,
+        "v4_pilot": pilot_launch,
+        "v4_pilot_eight": pilot_launch_eight,
     }[variant]()
     assert type(value) is H0ProbeLaunch
     assert parse_probe_launch(value.payload, max_bytes=1_000_000) == value
@@ -594,3 +641,159 @@ def test_every_launch_variant_survives_the_reparse_sites_outside_this_module(
         max_launch_bytes=1_000_000,
     )
     assert transport._launch(value) == value  # pyright: ignore[reportPrivateUsage]
+
+
+# ---------------------------------------------------------------------------
+# Rung B (operator ruling 2026-10-27, "option B"): LAUNCH SCHEMA v4. A scientific
+# launch names its sealed authority as both authorities, takes the budgeted guard,
+# binds the authority's GPU class and hours, and drops the tiny MLflow opt-in.
+# v3 and v2 payloads read old as the same class and never equal a v4 launch.
+# ---------------------------------------------------------------------------
+def test_a_v3_payload_reads_old_as_the_same_class_and_never_equals_v4() -> None:
+    v3 = replace(launch_nine(), manifest_schema=LAUNCH_SCHEMA_V3)
+    assert v3.manifest["schema"] == "h0-probe-launch-v3"
+    read = parse_probe_launch(v3.payload, max_bytes=1_000_000)
+    assert type(read) is H0ProbeLaunch and read == v3
+    assert read.payload == v3.payload and read.manifest_schema == LAUNCH_SCHEMA_V3
+    v4 = launch_nine()
+    assert read != v4 and read.digest != v4.digest and read.pod_name != v4.pod_name
+    assert read.template_environment == v4.template_environment
+    # the v3 and v4 smoke manifests differ in the schema marker alone
+    assert {k: v for k, v in read.manifest.items() if k != "schema"} == {
+        k: v for k, v in v4.manifest.items() if k != "schema"
+    }
+
+
+def test_a_v1_payload_stays_refused() -> None:
+    row = launch().manifest
+    row["schema"] = "h0-probe-launch-v1"
+    with pytest.raises(ValueError, match="scope or authority mismatch"):
+        parse_probe_launch(_reencode(row), max_bytes=1_000_000)
+
+
+def test_a_pilot_launch_names_its_authority_and_roundtrips() -> None:
+    value = pilot_launch_eight()
+    authority = value.request.authority
+    assert authority is not None
+    assert value.manifest["schema"] == LAUNCH_SCHEMA_V4
+    assert value.manifest["scientific_authority"] == authority.digest
+    assert value.manifest["spending_authority"] == authority.digest
+    assert value.manifest["cost_guard"] == "host_watchdog_budgeted"
+    assert parse_probe_launch(value.payload, max_bytes=1_000_000) == value
+    assert value.pod_name == f"h1-pilot-{value.digest[:24]}"
+    args = value.create_arguments
+    assert args[args.index("--name") + 1] == value.pod_name
+    assert args[args.index("--gpu-id") + 1] == authority.gpu_class
+    assert launch().pod_name.startswith("h0-tiny-")
+
+
+def test_the_scientific_template_is_eight_keys_without_the_tiny_opt_in() -> None:
+    value = pilot_launch_eight()
+    environment = value.template_environment
+    assert "ENTROPIC_MLFLOW_TINY" not in environment
+    assert tuple(environment) == (
+        *(k for k in _BASE_KEYS if k != "ENTROPIC_MLFLOW_TINY"),
+        *(spec.env_key for spec in EXTENSION_REGISTRY.values()),
+    )
+    assert len(environment) == 8
+    template = {
+        "id": value.template_id,
+        "imageName": value.request.image,
+        "env": environment,
+        "containerDiskInGb": value.container_disk_gb,
+        "containerRegistryAuthId": value.registry_auth_id,
+    }
+    value.validate_template(template)
+    # a smoke nine-key template cannot carry a pilot, nor the converse
+    with pytest.raises(ValueError, match="template"):
+        value.validate_template({**template, "env": launch_nine().template_environment})
+    with pytest.raises(ValueError, match="template"):
+        launch_nine().validate_template({**template, "env": environment})
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"cost_guard": "host_watchdog_tiny_only"}, "requires the budgeted host watchdog"),
+        ({"gpu_type_id": "NVIDIA H100 80GB HBM3"}, "GPU differs from the run authority"),
+        (
+            {"controller_timeout_seconds": 21_000, "watchdog_timeout_seconds": 21_601},
+            "watchdog outlasts the run authority's hours",
+        ),
+        ({"manifest_schema": LAUNCH_SCHEMA_V3}, "a pre-v4 launch carries no run authority"),
+        ({"manifest_schema": LAUNCH_SCHEMA_V2}, "a pre-v4 launch carries no run authority"),
+    ],
+)
+def test_a_pilot_launch_is_bound_by_its_authority(changes: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        replace(pilot_launch(), **changes)
+
+
+def test_the_watchdog_may_use_exactly_the_authority_hours() -> None:
+    value = replace(
+        pilot_launch(), controller_timeout_seconds=21_000, watchdog_timeout_seconds=21_600
+    )
+    assert value.watchdog_timeout_seconds == 6 * 3600
+
+
+def test_a_budgeted_guard_on_a_smoke_launch_is_refused_with_the_tiny_message() -> None:
+    with pytest.raises(ValueError, match="requires the declared tiny-only watchdog exception"):
+        replace(launch(), cost_guard="host_watchdog_budgeted")
+
+
+@pytest.mark.parametrize(
+    "mutation", ["authority_none", "authority_other", "smoke_with_authority", "stage_tamper"]
+)
+def test_the_launch_reader_refuses_a_mandate_that_differs_from_the_request(
+    mutation: str,
+) -> None:
+    row = pilot_launch().manifest if mutation != "smoke_with_authority" else launch().manifest
+    if mutation == "authority_none":
+        row["scientific_authority"] = row["spending_authority"] = "none"
+    elif mutation == "authority_other":
+        row["spending_authority"] = sealed_authority(stage="H2").digest
+    elif mutation == "smoke_with_authority":
+        row["scientific_authority"] = row["spending_authority"] = sealed_authority().digest
+    else:
+        request = row["request"]
+        assert isinstance(request, dict)
+        authority = request["authority"]
+        assert isinstance(authority, dict)
+        authority["stage"] = "H2"
+    # The canonical re-render would also refuse these bytes; the explicit check is what
+    # names the defect, so the name is what this pins.
+    message = (
+        "run authority digest does not match its content"
+        if mutation == "stage_tamper"
+        else "scope or authority mismatch"
+    )
+    with pytest.raises(ValueError, match=message):
+        parse_probe_launch(_reencode(row), max_bytes=1_000_000)
+
+
+@pytest.mark.parametrize(
+    ("rate", "admitted"),
+    [
+        # cap 40 USD over the fixture's 3900 s watchdog: the ceiling is 40 * 3600 / 3900
+        (40 * 3600 / 3900, True),
+        (36.9, True),
+        (37.0, False),
+        (0, False),
+        (-1, False),
+        (float("inf"), False),
+        (float("nan"), False),
+    ],
+)
+def test_a_pilot_hourly_ceiling_must_keep_the_run_inside_its_spend_cap(
+    rate: float, admitted: bool
+) -> None:
+    value = pilot_launch()
+    if admitted:
+        value.require_hourly_rate_within_cap(rate)
+    else:
+        with pytest.raises(ValueError, match="exceeds the spend cap"):
+            value.require_hourly_rate_within_cap(rate)
+
+
+def test_a_smoke_ceiling_is_the_invokers_approval_alone() -> None:
+    launch().require_hourly_rate_within_cap(1_000_000.0)
