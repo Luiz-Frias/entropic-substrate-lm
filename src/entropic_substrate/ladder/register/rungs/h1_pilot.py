@@ -7,9 +7,18 @@ checkpoint sizes rather than assumed.
 
 Ruled regime values (FOR-1690) are constants here. The schedule fields the ruling leaves
 open (checkpoint interval, importance chunk, generation sentences) are required parameters
-with no default, so no unruled number enters a pilot silently. Three further profile
-fields are carried unchanged from the H0 profile fixtures and are unruled for H1: the
-optimizer epsilon 1e-8, the default ``SolverConfig`` and the identity byte permutation.
+with no default, so no unruled number enters a pilot silently. Further profile values are
+carried unchanged from the H0 profile fixtures and are unruled for H1: the optimizer epsilon
+1e-8, the default ``SolverConfig``, the identity byte permutation, the spine ``alpha_init``
+0.05 (the ``SpineSpec`` default) and the device and precision (cuda, bf16).
+
+A profile name is the arm label ``h1-<sentence>-<spine>-pilot``: it recurs across the eight
+seed blocks (four arms by eight seeds), and the seed lives in ``HProfile.seed`` only.
+
+This is the first ``ladder.register`` module that imports ``ladder.run`` (``TransferLimits``
+from ``worker_request``). The edge is accepted: ``ladder.run`` imports ``ladder.register``,
+but this module is a leaf nothing in either package imports, so there is no runtime cycle
+(both import orders measured clean 2026-10-28), and the type is the one the worker consumes.
 """
 
 from collections.abc import Sequence
@@ -106,14 +115,17 @@ def required_checkpoint_floor(
     Every seal retains one checkpoint (no overwrite), so the byte total is the measured warm-up
     and prediction checkpoint sizes times their seal counts, times the capture copies. The
     object total is the per-seal, per-evaluation and per-continuation file kinds the worker
-    writes, times the capture copies, plus the fixed worker objects. The source, request and other caller inputs
-    are not in this floor; see ``pilot_transfer_limits``.
+    writes, times the capture copies, plus the fixed worker objects. The source, request and
+    other caller inputs are not in this floor; see ``pilot_transfer_limits``.
     """
     if type(schedule) is not RunSchedule:
         raise TypeError("transfer floor requires a validated run schedule")
     _positive(capture_copies, "capture copies")
     codec, prediction = _seal_counts(schedule)
-    evaluations = schedule.steps // schedule.evaluation_interval
+    # The runner also evaluates at the final step, so an off-grid last step adds one.
+    evaluations = schedule.steps // schedule.evaluation_interval + (
+        1 if schedule.steps % schedule.evaluation_interval else 0
+    )
     return TransferLimits(
         max_object_bytes=max(CODEC_WARMUP_CHECKPOINT_BYTES, PREDICTION_CHECKPOINT_BYTES),
         max_total_bytes=capture_copies
@@ -159,7 +171,7 @@ def _profile(
     sentence: str, spine: str, seed: int, source_digest: str, schedule: RunSchedule
 ) -> HProfile:
     return HProfile(
-        name=f"h1-{sentence}-{spine}-s{seed}",
+        name=f"h1-{sentence}-{spine}-pilot",  # the arm label: recurs across blocks, never the seed
         stage="H1",
         run_class="pilot",
         source_digest=source_digest,

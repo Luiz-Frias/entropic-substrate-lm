@@ -128,11 +128,38 @@ def test_cells_are_donor_first_from_the_codec_sharing_groups() -> None:
         assert positions[MM] < positions[MS] and positions[SM] < positions[SS]
 
 
-def test_names_encode_the_axes_and_the_seed() -> None:
+def test_names_encode_the_axes_and_not_the_seed() -> None:
+    """A profile name is the arm label downstream, so it must recur across the seed blocks."""
     entry = blocks()[0]
     for profile in entry.block.profiles:
-        assert profile.name == f"h1-{profile.law.mode}-{profile.spine.carrier}-s{entry.seed}"
+        assert profile.name == f"h1-{profile.law.mode}-{profile.spine.carrier}-pilot"
     assert len({p.name for p in entry.block.profiles}) == 4
+
+
+def test_the_roster_is_four_arms_by_eight_seeds_not_thirty_two_arms() -> None:
+    result = blocks()
+    names_per_block = [tuple(p.name for p in entry.block.profiles) for entry in result]
+    assert all(names == names_per_block[0] for names in names_per_block)
+    every = [p for entry in result for p in entry.block.profiles]
+    assert len(every) == 32 and len({p.name for p in every}) == 4
+    for arm in names_per_block[0]:
+        assert sorted(p.seed for p in every if p.name == arm) == list(PILOT_SEEDS)
+
+
+def test_a_valid_custom_seed_list_is_honored_in_order() -> None:
+    custom = tuple(range(2001, 2009))
+    result = blocks(seeds=custom)
+    assert [entry.seed for entry in result] == list(custom)
+    for entry in result:
+        assert {p.seed for p in entry.block.profiles} == {entry.seed}
+        assert {p.source_seed for p in entry.block.profiles} == {entry.seed}
+
+
+def test_the_emitted_codec_ties_to_the_codec_default_sentence_limit() -> None:
+    """The corpus policy check compares against CodecSpec(); a moved default must fail here."""
+    for entry in blocks():
+        for profile in entry.block.profiles:
+            assert profile.codec.max_sentence_bytes == CodecSpec().max_sentence_bytes == 4096
 
 
 @pytest.mark.parametrize("steps", [20, 1000, 6000])
@@ -339,6 +366,30 @@ def test_seal_counts_equal_the_runner_checkpoint_predicate(
         assert _seal_counts(_schedule(warmup, steps, interval, evaluation)) == (codec, prediction)
 
 
+def _runner_evaluation_count(steps: int, evaluation: int) -> int:
+    """The runner's declared evaluation grid (runner.py): every interval multiple and the last."""
+    return sum(1 for step in range(1, steps + 1) if step % evaluation == 0 or step == steps)
+
+
+@pytest.mark.parametrize("evaluation", [1, 3, 50])
+@pytest.mark.parametrize("steps", [1, 7, 101, 1000, 1001])
+def test_object_floor_counts_the_runner_evaluations_including_an_off_grid_final(
+    steps: int, evaluation: int
+) -> None:
+    schedule = _schedule(250, steps, 250, evaluation)
+    codec, prediction = _seal_counts(schedule)
+    expected = (
+        2
+        * (
+            4 * (codec + prediction)
+            + _runner_evaluation_count(steps, evaluation)
+            + DEVELOPMENT_GENERATION_CONTINUATIONS
+        )
+        + 14
+    )
+    assert required_checkpoint_floor(schedule).max_objects == expected
+
+
 def _with_continuations(profile: HProfile, continuations: int) -> HProfile:
     return replace(
         profile, schedule=replace(profile.schedule, generation_continuations=continuations)
@@ -394,6 +445,13 @@ def test_sizing_refuses_non_positive_source_bytes_and_negative_fixed_objects(bad
         pilot_transfer_limits(schedule, source_bytes=bad, fixed_objects=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=-1)
+
+
+def test_zero_fixed_objects_is_accepted_and_adds_nothing() -> None:
+    schedule = blocks()[0].block.profiles[0].schedule
+    floor = required_checkpoint_floor(schedule)
+    sized = pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=0)
+    assert sized.max_objects == floor.max_objects
 
 
 def test_the_module_adds_no_registry_or_launch_surface() -> None:
