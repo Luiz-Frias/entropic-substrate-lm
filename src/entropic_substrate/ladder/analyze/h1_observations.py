@@ -191,7 +191,8 @@ class H1BlockExposure:
 class H1BlockCapture:
     """One seed block: its validated four profiles and the captured run of each cell.
 
-    ``cells`` is keyed by the profile name (the arm label) and must equal the block's name
+    ``cells`` is keyed by the profile name (the cell label, not the run's seed-free arm) and
+    must equal the block's name
     set. A resumed lineage is passed as an :class:`HResumedRun`. ``independent_warmup`` holds
     the labels the caller's detector flagged; this module only maps them to an exclusion.
     """
@@ -547,6 +548,16 @@ def _admitted_cells(item: H1BlockObservation) -> tuple[H1CellProjection, ...]:
     return cells
 
 
+def _arm_label(profile: HProfile) -> str:
+    """The seed-free arm key of one preservation construction: ``(law.mode, spine.carrier)``.
+
+    ``profile.name`` embeds the seed under the generator's naming
+    (``h1-{sentence}-{spine}-s{seed}``), so it cannot key an arm across seed blocks. The axis
+    pair is invariant across blocks, as the construction digest is.
+    """
+    return f"{profile.law.mode}-{profile.spine.carrier}"
+
+
 def _runs(item: H1BlockObservation, family_digest: str) -> tuple[StatisticalRun, ...]:
     runs: list[StatisticalRun] = []
     for profile, cell, digest in zip(
@@ -554,7 +565,7 @@ def _runs(item: H1BlockObservation, family_digest: str) -> tuple[StatisticalRun,
     ):
         runs.append(
             StatisticalRun(
-                arm=profile.name,
+                arm=_arm_label(profile),
                 seed=profile.seed,
                 run_class=cell.run_class,
                 family_digest=family_digest,

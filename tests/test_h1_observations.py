@@ -277,6 +277,29 @@ def eight_blocks(root: Path, *, noise: bool = True) -> list[H1BlockCapture]:
     ]
 
 
+def l2_profiles(seed: int, *, encoder_layers: int | None = None) -> tuple[HProfile, ...]:
+    """The four H1 pilot profiles under the seed-embedded generator naming
+    ``h1-{sentence}-{spine}-s{seed}``, the production shape the arm and guard tests must pin."""
+    return tuple(
+        replace(member, name=f"h1-{member.law.mode}-{member.spine.carrier}-s{seed}")
+        for member in h1_profiles(seed, encoder_layers=encoder_layers)
+    )
+
+
+def eight_l2_blocks(root: Path) -> list[H1BlockCapture]:
+    """The synthetic 8-block pilot under the generator naming; every profile name carries its seed."""
+    return [
+        build_block(
+            root,
+            101 + i,
+            standard_specs(i),
+            step_bytes=100 + 10 * i,
+            profiles=l2_profiles(101 + i),
+        )
+        for i in range(8)
+    ]
+
+
 def hypotheses() -> tuple[ContrastHypothesis, ...]:
     return tuple(
         ContrastHypothesis(name, UNITS, "superiority", 0.1, 0.0, None) for name in CONTRASTS
@@ -661,6 +684,19 @@ class TestBinding:
         with pytest.raises(ValueError, match="construction digest"):
             observe_h1_blocks([first, changed])
 
+    def test_a_construction_change_under_generator_naming_raises(self, tmp_path: Path) -> None:
+        # every cell name is seen once across the two blocks, so only the sentence/spine
+        # axis key can see the change: this test is RED with the by_axis guard removed
+        first = build_block(tmp_path, 101, standard_specs(0), profiles=l2_profiles(101))
+        changed = build_block(
+            tmp_path,
+            102,
+            standard_specs(1),
+            profiles=l2_profiles(102, encoder_layers=2),
+        )
+        with pytest.raises(ValueError, match="construction digest"):
+            observe_h1_blocks([first, changed])
+
     def test_no_blocks_is_refused(self) -> None:
         with pytest.raises(ValueError, match="at least one block"):
             observe_h1_blocks([])
@@ -700,7 +736,11 @@ class TestContrasts:
         assert len(result.runs) == 32
         first = result.runs[0]
         member = blocks[0].block.profiles[0]
-        assert (first.arm, first.seed, first.run_class) == (member.name, 101, "pilot")
+        assert (first.arm, first.seed, first.run_class) == (
+            f"{member.law.mode}-{member.spine.carrier}",
+            101,
+            "pilot",
+        )
         assert first.family_digest == FAMILY and first.data_order is None
         assert first.construction_digest == h1_construction_digest(member)
         assert [(e.step, e.source_bytes) for e in first.evals] == [
@@ -715,6 +755,21 @@ class TestContrasts:
             by_arm.setdefault(run.arm, set()).add(run.construction_digest)
         assert all(len(digests) == 1 for digests in by_arm.values())  # invariant across blocks
         assert len({next(iter(d)) for d in by_arm.values()}) == 4  # distinct within a block
+
+    def test_runs_arm_is_seed_free_under_the_generator_naming(self, tmp_path: Path) -> None:
+        # the production shape: L2 names embed the seed, the arm key must not
+        result = inputs_for(observe_h1_blocks(eight_l2_blocks(tmp_path)))
+        assert len(result.runs) == 32
+        arms = {run.arm for run in result.runs}
+        assert arms == {
+            "magnitude-magnitude",
+            "sphere-magnitude",
+            "magnitude-sphere",
+            "sphere-sphere",
+        }
+        for arm in arms:
+            seeds = sorted(run.seed for run in result.runs if run.arm == arm)
+            assert seeds == list(range(101, 109))
 
     def test_the_contrast_carries_the_captured_class_and_the_declared_metadata(
         self, tmp_path: Path
