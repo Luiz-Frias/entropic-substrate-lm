@@ -277,29 +277,6 @@ def eight_blocks(root: Path, *, noise: bool = True) -> list[H1BlockCapture]:
     ]
 
 
-def l2_profiles(seed: int, *, encoder_layers: int | None = None) -> tuple[HProfile, ...]:
-    """The four H1 pilot profiles under the seed-embedded generator naming
-    ``h1-{sentence}-{spine}-s{seed}``, the production shape the arm and guard tests must pin."""
-    return tuple(
-        replace(member, name=f"h1-{member.law.mode}-{member.spine.carrier}-s{seed}")
-        for member in h1_profiles(seed, encoder_layers=encoder_layers)
-    )
-
-
-def eight_l2_blocks(root: Path) -> list[H1BlockCapture]:
-    """The synthetic 8-block pilot under the generator naming; every profile name carries its seed."""
-    return [
-        build_block(
-            root,
-            101 + i,
-            standard_specs(i),
-            step_bytes=100 + 10 * i,
-            profiles=l2_profiles(101 + i),
-        )
-        for i in range(8)
-    ]
-
-
 def hypotheses() -> tuple[ContrastHypothesis, ...]:
     return tuple(
         ContrastHypothesis(name, UNITS, "superiority", 0.1, 0.0, None) for name in CONTRASTS
@@ -684,15 +661,18 @@ class TestBinding:
         with pytest.raises(ValueError, match="construction digest"):
             observe_h1_blocks([first, changed])
 
-    def test_a_construction_change_under_generator_naming_raises(self, tmp_path: Path) -> None:
-        # every cell name is seen once across the two blocks, so only the sentence/spine
-        # axis key can see the change: this test is RED with the by_axis guard removed
-        first = build_block(tmp_path, 101, standard_specs(0), profiles=l2_profiles(101))
+    def test_a_construction_change_under_renamed_cells_raises(self, tmp_path: Path) -> None:
+        # every cell name is seen once across the two blocks, so only the (sentence, spine)
+        # axis key can see the change: RED with the by_axis guard removed
+        def renamed(seed: int, **kwargs: Any) -> tuple[HProfile, ...]:
+            return tuple(
+                replace(member, name=f"{member.name}-renamed-{seed}")
+                for member in h1_profiles(seed, **kwargs)
+            )
+
+        first = build_block(tmp_path, 101, standard_specs(0), profiles=renamed(101))
         changed = build_block(
-            tmp_path,
-            102,
-            standard_specs(1),
-            profiles=l2_profiles(102, encoder_layers=2),
+            tmp_path, 102, standard_specs(1), profiles=renamed(102, encoder_layers=2)
         )
         with pytest.raises(ValueError, match="construction digest"):
             observe_h1_blocks([first, changed])
@@ -737,7 +717,7 @@ class TestContrasts:
         first = result.runs[0]
         member = blocks[0].block.profiles[0]
         assert (first.arm, first.seed, first.run_class) == (
-            f"{member.law.mode}-{member.spine.carrier}",
+            member.name,
             101,
             "pilot",
         )
@@ -756,20 +736,18 @@ class TestContrasts:
         assert all(len(digests) == 1 for digests in by_arm.values())  # invariant across blocks
         assert len({next(iter(d)) for d in by_arm.values()}) == 4  # distinct within a block
 
-    def test_runs_arm_is_seed_free_under_the_generator_naming(self, tmp_path: Path) -> None:
-        # the production shape: L2 names embed the seed, the arm key must not
-        result = inputs_for(observe_h1_blocks(eight_l2_blocks(tmp_path)))
+    def test_runs_arm_is_the_profile_name_the_pilot_generator_gives(self, tmp_path: Path) -> None:
+        # the generator names an arm h1-{sentence}-{spine}-pilot: it recurs across the eight
+        # seed blocks and the seed lives in the profile only, so the profile name is the arm
+        blocks = eight_blocks(tmp_path)
+        result = inputs_for(observe_h1_blocks(blocks))
         assert len(result.runs) == 32
-        arms = {run.arm for run in result.runs}
-        assert arms == {
-            "magnitude-magnitude",
-            "sphere-magnitude",
-            "magnitude-sphere",
-            "sphere-sphere",
-        }
-        for arm in arms:
+        assert {run.arm for run in result.runs} == set(LABELS)
+        for arm in LABELS:
             seeds = sorted(run.seed for run in result.runs if run.arm == arm)
             assert seeds == list(range(101, 109))
+        names = {profile.name for capture in blocks for profile in capture.block.profiles}
+        assert names == set(LABELS)
 
     def test_the_contrast_carries_the_captured_class_and_the_declared_metadata(
         self, tmp_path: Path
