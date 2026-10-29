@@ -238,6 +238,14 @@ def test_the_claims_hold_on_a_trained_saved_and_reloaded_state(cell: str, tmp_pa
 # path of a reader-member module without editing it.
 
 
+def _patch_interface(
+    patch: pytest.MonkeyPatch, mutant: Callable[[torch.Tensor, str], torch.Tensor]
+) -> None:
+    """Patch both names for apply_interface: model imports it by name from numerics."""
+    patch.setattr(numerics_module, "apply_interface", mutant)
+    patch.setattr(model_module, "apply_interface", mutant)
+
+
 def _mutate_codec_f_normalize(patch: pytest.MonkeyPatch) -> None:
     original = SentenceEncoder.forward
     patch.setattr(
@@ -254,8 +262,7 @@ def _mutate_numerics_f_normalize(patch: pytest.MonkeyPatch) -> None:
         result = original(values, mode)  # pyright: ignore[reportArgumentType]
         return F.normalize(result, dim=-1) if mode == "magnitude" else result
 
-    patch.setattr(numerics_module, "apply_interface", mutant)
-    patch.setattr(model_module, "apply_interface", mutant)
+    _patch_interface(patch, mutant)
 
 
 def _mutate_spine_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
@@ -320,8 +327,7 @@ def _mutate_numerics_soft_squash(patch: pytest.MonkeyPatch) -> None:
         result = original(values, mode)  # pyright: ignore[reportArgumentType]
         return _squash(result) if mode == "magnitude" else result
 
-    patch.setattr(numerics_module, "apply_interface", mutant)
-    patch.setattr(model_module, "apply_interface", mutant)
+    _patch_interface(patch, mutant)
 
 
 MUTATIONS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str]] = {
@@ -412,8 +418,7 @@ def _sphere_interface_unnormalized(patch: pytest.MonkeyPatch) -> None:
     def mutant(values: torch.Tensor, mode: str) -> torch.Tensor:
         return values.to(torch.float32) if mode == "sphere" else original(values, mode)  # pyright: ignore[reportArgumentType]
 
-    patch.setattr(numerics_module, "apply_interface", mutant)
-    patch.setattr(model_module, "apply_interface", mutant)
+    _patch_interface(patch, mutant)
 
 
 def _sphere_interface_unit_but_rotated(patch: pytest.MonkeyPatch) -> None:
@@ -423,8 +428,7 @@ def _sphere_interface_unit_but_rotated(patch: pytest.MonkeyPatch) -> None:
         result = original(values, mode)  # pyright: ignore[reportArgumentType]
         return F.normalize(result + 0.5, dim=-1) if mode == "sphere" else result
 
-    patch.setattr(numerics_module, "apply_interface", mutant)
-    patch.setattr(model_module, "apply_interface", mutant)
+    _patch_interface(patch, mutant)
 
 
 def _sphere_spine_scaled(patch: pytest.MonkeyPatch) -> None:
