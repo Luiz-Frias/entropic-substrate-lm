@@ -35,6 +35,7 @@ from entropic_substrate.ladder.register.rungs.h1_pilot import (
     EVALUATION_BATCHES,
     PILOT_SEEDS,
     PREDICTION_CHECKPOINT_BYTES,
+    H1PilotBlock,
     _seal_counts,
     h1_pilot_blocks,
     pilot_transfer_limits,
@@ -52,6 +53,7 @@ KNOBS = {"checkpoint_interval": 250, "importance_chunk": 8, "generation_sentence
 SOURCE_BYTES = 100_000_000
 FIXED_OBJECTS = 20
 MM, SM, MS, SS = CELL_AXES
+UNBOUNDED = TransferLimits(2**62, 2**62, 2**31)
 
 
 def limits_for(steps: int = STEPS) -> TransferLimits:
@@ -59,7 +61,7 @@ def limits_for(steps: int = STEPS) -> TransferLimits:
         h1_pilot_blocks(
             source_digest=SOURCE,
             steps=steps,
-            limits=TransferLimits(2**62, 2**62, 2**31),
+            limits=UNBOUNDED,
             **KNOBS,
         )[0]
         .block.profiles[0]
@@ -68,7 +70,7 @@ def limits_for(steps: int = STEPS) -> TransferLimits:
     return pilot_transfer_limits(probe, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
 
 
-def blocks(steps: int = STEPS, **changes: object):
+def blocks(steps: int = STEPS, **changes: object) -> tuple[H1PilotBlock, ...]:
     arguments: dict[str, object] = {"source_digest": SOURCE, "steps": steps, **KNOBS}
     arguments.update(changes)
     if "limits" not in arguments:
@@ -173,24 +175,22 @@ def test_evaluation_interval_is_a_twentieth_of_the_steps(steps: int) -> None:
 @pytest.mark.parametrize("steps", [1010, 1001, 19, 21, 1])
 def test_steps_that_are_not_a_multiple_of_twenty_are_refused(steps: int) -> None:
     with pytest.raises(ValueError, match="multiple of 20"):
-        blocks(steps, limits=TransferLimits(2**62, 2**62, 2**31))
+        blocks(steps, limits=UNBOUNDED)
 
 
 @pytest.mark.parametrize("steps", [0, -20, True, 20.0, "1000"])
 def test_zero_negative_boolean_and_non_integer_steps_are_refused(steps: object) -> None:
     with pytest.raises(ValueError, match="steps"):
-        blocks(steps, limits=TransferLimits(2**62, 2**62, 2**31))  # type: ignore[arg-type]
+        blocks(steps, limits=UNBOUNDED)  # type: ignore[arg-type]
 
 
 def test_the_run_step_cap_is_honored() -> None:
     at_cap = MAX_RUN_STEPS - MAX_RUN_STEPS % 20
     assert at_cap % 20 == 0 and at_cap <= MAX_RUN_STEPS < at_cap + 20
-    accepted = blocks(
-        at_cap, checkpoint_interval=at_cap, limits=TransferLimits(2**62, 2**62, 2**31)
-    )
+    accepted = blocks(at_cap, checkpoint_interval=at_cap, limits=UNBOUNDED)
     assert accepted[0].block.profiles[0].schedule.steps == at_cap
     with pytest.raises(ValueError, match="at most"):
-        blocks(at_cap + 20, checkpoint_interval=at_cap, limits=TransferLimits(2**62, 2**62, 2**31))
+        blocks(at_cap + 20, checkpoint_interval=at_cap, limits=UNBOUNDED)
 
 
 def test_the_ruled_regime_values_and_development_widths_are_encoded() -> None:

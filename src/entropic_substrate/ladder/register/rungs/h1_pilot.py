@@ -28,6 +28,7 @@ from math import lcm
 from entropic_substrate.core.latent.dynamics import SolverConfig
 from entropic_substrate.core.sentence.codec import CodecSpec
 from entropic_substrate.core.sentence.law import LawSpec
+from entropic_substrate.core.sentence.numerics import InterfaceMode
 from entropic_substrate.core.sentence.profile import (
     DEVELOPMENT_DIAGNOSTIC_SAMPLES,
     DEVELOPMENT_GENERATION_CONTINUATIONS,
@@ -41,7 +42,7 @@ from entropic_substrate.ladder.register.h_preservation import H1PreservationBloc
 from entropic_substrate.ladder.run.worker_request import TransferLimits
 
 # (law.mode, spine.carrier) in the order H1PreservationBlock keeps: MM, SM, MS, SS.
-CELL_AXES: tuple[tuple[str, str], ...] = (
+CELL_AXES: tuple[tuple[InterfaceMode, InterfaceMode], ...] = (
     ("magnitude", "magnitude"),
     ("sphere", "magnitude"),
     ("magnitude", "sphere"),
@@ -168,7 +169,11 @@ def _check_seeds(seeds: Sequence[int]) -> tuple[int, ...]:
 
 
 def _profile(
-    sentence: str, spine: str, seed: int, source_digest: str, schedule: RunSchedule
+    sentence: InterfaceMode,
+    spine: InterfaceMode,
+    seed: int,
+    source_digest: str,
+    schedule: RunSchedule,
 ) -> HProfile:
     return HProfile(
         name=f"h1-{sentence}-{spine}-pilot",  # the arm label: recurs across blocks, never the seed
@@ -179,9 +184,23 @@ def _profile(
         source_seed=seed,
         device="cuda",
         precision="bf16",
-        codec=CodecSpec(384, 4, 384, 4, 64, 4096),
-        spine=SpineSpec(768, 12, 64, 64, spine, 0.05),  # pyright: ignore[reportArgumentType]
-        law=LawSpec(384, sentence),  # pyright: ignore[reportArgumentType]
+        codec=CodecSpec(
+            width=384,
+            encoder_layers=4,
+            decoder_width=384,
+            decoder_layers=4,
+            head_width=64,
+            max_sentence_bytes=4096,
+        ),
+        spine=SpineSpec(
+            width=768,
+            layers=12,
+            head_width=64,
+            context_sentences=64,
+            carrier=spine,
+            alpha_init=0.05,
+        ),
+        law=LawSpec(width=384, mode=sentence),
         consumer="isotropic",
         solver=SolverConfig(),
         optimization=OptimizationSpec(1e-3, 0.01, (0.9, 0.95), 1e-8, 1.0, 0.0),
