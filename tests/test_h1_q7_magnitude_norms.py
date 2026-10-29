@@ -261,7 +261,9 @@ def _mutate_numerics_f_normalize(patch: pytest.MonkeyPatch) -> None:
 def _mutate_spine_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
     original = SentenceSpine.forward
 
-    def mutant(self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None):
+    def mutant(
+        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
+    ) -> torch.Tensor:
         states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
         return states * states.square().mean(dim=-1, keepdim=True).rsqrt()
 
@@ -281,7 +283,9 @@ def _mutate_codec_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
 def _mutate_spine_residual_f_normalize(patch: pytest.MonkeyPatch) -> None:
     original = CarrierBlock._residual
 
-    def mutant(self: CarrierBlock, current: torch.Tensor, proposal: torch.Tensor, alpha):
+    def mutant(
+        self: CarrierBlock, current: torch.Tensor, proposal: torch.Tensor, alpha: torch.Tensor
+    ) -> torch.Tensor:
         result = original(self, current, proposal, alpha)
         return F.normalize(result, dim=-1) if self.spec.carrier == "magnitude" else result
 
@@ -426,7 +430,9 @@ def _sphere_interface_unit_but_rotated(patch: pytest.MonkeyPatch) -> None:
 def _sphere_spine_scaled(patch: pytest.MonkeyPatch) -> None:
     original = SentenceSpine.forward
 
-    def mutant(self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None):
+    def mutant(
+        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
+    ) -> torch.Tensor:
         states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
         return states * 1.5 if self.spec.carrier == "sphere" else states
 
@@ -472,7 +478,9 @@ def test_a_rotated_unit_sentence_trips_only_the_reference_not_the_unit_check() -
 def _mutate_spine_training_gated_f_normalize(patch: pytest.MonkeyPatch) -> None:
     original = SentenceSpine.forward
 
-    def mutant(self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None):
+    def mutant(
+        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
+    ) -> torch.Tensor:
         states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
         return F.normalize(states, dim=-1) if self.training else states
 
