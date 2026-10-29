@@ -26,6 +26,7 @@ from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.codec import CodecSpec, SentenceEncoder
 from entropic_substrate.core.sentence.law import LawSpec
 from entropic_substrate.core.sentence.model import SentencePredictor
+from entropic_substrate.core.sentence.numerics import InterfaceMode
 from entropic_substrate.core.sentence.spine import CarrierBlock, SentenceSpine, SpineSpec
 
 pytestmark = pytest.mark.unit
@@ -35,7 +36,7 @@ UNIT_TOL = 1e-4  # a norm is "1" iff it is within this of 1; sphere paths hold t
 # magnitude arm measures 0.2865, an RMS-pinned one 9.7e-08 (probed).
 SPREAD_TOL = 1e-3
 REFERENCE_TOL = 1e-3  # relative and absolute, FP32 on CPU
-CELLS = {
+CELLS: dict[str, tuple[InterfaceMode, InterfaceMode]] = {
     "MM": ("magnitude", "magnitude"),
     "SM": ("sphere", "magnitude"),
     "MS": ("magnitude", "sphere"),
@@ -45,7 +46,7 @@ SENTENCE_END, PAD = SentenceByteCodec.sentence_end, SentenceByteCodec.pad
 
 
 def build(
-    mode: str, carrier: str, seed: int = 7, *, runner_regime: bool = False
+    mode: InterfaceMode, carrier: InterfaceMode, seed: int = 7, *, runner_regime: bool = False
 ) -> SentencePredictor:
     """The development widths (384/4 codec, 768x12 spine, context 64), pinned explicitly.
 
@@ -55,8 +56,8 @@ def build(
     torch.manual_seed(seed)
     model = SentencePredictor(
         CodecSpec(384, 4, 384, 4, 64, 4096),
-        SpineSpec(768, 12, 64, 64, carrier),  # pyright: ignore[reportArgumentType]
-        LawSpec(384, mode),  # pyright: ignore[reportArgumentType]
+        SpineSpec(768, 12, 64, 64, carrier),
+        LawSpec(384, mode),
         consumer="isotropic",
     )
     if runner_regime:
@@ -125,7 +126,7 @@ def is_not_unit(norms: torch.Tensor) -> bool:
 
 
 @torch.no_grad()
-def findings(model: SentencePredictor, mode: str, carrier: str) -> list[str]:
+def findings(model: SentencePredictor, mode: InterfaceMode, carrier: InterfaceMode) -> list[str]:
     """Every violated Q7 claim for one cell; empty means the cell is as constructed.
 
     A refusal by the model's own guards is reported as ``predict_refused`` rather than raised,
@@ -239,7 +240,7 @@ def test_the_claims_hold_on_a_trained_saved_and_reloaded_state(cell: str, tmp_pa
 
 
 def _patch_interface(
-    patch: pytest.MonkeyPatch, mutant: Callable[[torch.Tensor, str], torch.Tensor]
+    patch: pytest.MonkeyPatch, mutant: Callable[[torch.Tensor, InterfaceMode], torch.Tensor]
 ) -> None:
     """Patch both names for apply_interface: model imports it by name from numerics."""
     patch.setattr(numerics_module, "apply_interface", mutant)
@@ -258,8 +259,8 @@ def _mutate_codec_f_normalize(patch: pytest.MonkeyPatch) -> None:
 def _mutate_numerics_f_normalize(patch: pytest.MonkeyPatch) -> None:
     original = numerics_module.apply_interface
 
-    def mutant(values: torch.Tensor, mode: str) -> torch.Tensor:
-        result = original(values, mode)  # pyright: ignore[reportArgumentType]
+    def mutant(values: torch.Tensor, mode: InterfaceMode) -> torch.Tensor:
+        result = original(values, mode)
         return F.normalize(result, dim=-1) if mode == "magnitude" else result
 
     _patch_interface(patch, mutant)
@@ -323,8 +324,8 @@ def _mutate_codec_power_norm(patch: pytest.MonkeyPatch) -> None:
 def _mutate_numerics_soft_squash(patch: pytest.MonkeyPatch) -> None:
     original = numerics_module.apply_interface
 
-    def mutant(values: torch.Tensor, mode: str) -> torch.Tensor:
-        result = original(values, mode)  # pyright: ignore[reportArgumentType]
+    def mutant(values: torch.Tensor, mode: InterfaceMode) -> torch.Tensor:
+        result = original(values, mode)
         return _squash(result) if mode == "magnitude" else result
 
     _patch_interface(patch, mutant)
@@ -415,8 +416,8 @@ def test_the_rms_overwrite_keeps_norms_far_from_one_yet_still_trips_the_referenc
 def _sphere_interface_unnormalized(patch: pytest.MonkeyPatch) -> None:
     original = numerics_module.apply_interface
 
-    def mutant(values: torch.Tensor, mode: str) -> torch.Tensor:
-        return values.to(torch.float32) if mode == "sphere" else original(values, mode)  # pyright: ignore[reportArgumentType]
+    def mutant(values: torch.Tensor, mode: InterfaceMode) -> torch.Tensor:
+        return values.to(torch.float32) if mode == "sphere" else original(values, mode)
 
     _patch_interface(patch, mutant)
 
@@ -424,8 +425,8 @@ def _sphere_interface_unnormalized(patch: pytest.MonkeyPatch) -> None:
 def _sphere_interface_unit_but_rotated(patch: pytest.MonkeyPatch) -> None:
     original = numerics_module.apply_interface
 
-    def mutant(values: torch.Tensor, mode: str) -> torch.Tensor:
-        result = original(values, mode)  # pyright: ignore[reportArgumentType]
+    def mutant(values: torch.Tensor, mode: InterfaceMode) -> torch.Tensor:
+        result = original(values, mode)
         return F.normalize(result + 0.5, dim=-1) if mode == "sphere" else result
 
     _patch_interface(patch, mutant)
@@ -443,7 +444,9 @@ def _sphere_spine_scaled(patch: pytest.MonkeyPatch) -> None:
     patch.setattr(SentenceSpine, "forward", mutant)
 
 
-SPHERE_MUTATIONS: dict[str, tuple[Callable[[pytest.MonkeyPatch], None], str, str, str]] = {
+SPHERE_MUTATIONS: dict[
+    str, tuple[Callable[[pytest.MonkeyPatch], None], str, InterfaceMode, InterfaceMode]
+] = {
     "interface_unnormalized": (
         _sphere_interface_unnormalized,
         "sentence_sphere_not_unit",
