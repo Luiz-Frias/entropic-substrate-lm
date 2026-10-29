@@ -15,7 +15,7 @@ from __future__ import annotations
 import ast
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
@@ -40,7 +40,7 @@ from entropic_substrate.ladder.analyze.h1_observations import (
     project_h1_cell,
 )
 from entropic_substrate.ladder.analyze.h_aggregate import HRun, load_h_run
-from entropic_substrate.ladder.analyze.h_resumed_run import load_h_resumed_run
+from entropic_substrate.ladder.analyze.h_resumed_run import HResumedRun, load_h_resumed_run
 from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
     PairedSeed,
@@ -76,11 +76,14 @@ K8_KEYS = {"endpoint_key": "eval/log_marginal_per_byte_k8", "gate_key": "eval/es
 @dataclass(frozen=True)
 class CellSpec:
     """One synthetic cell. ``endpoints[j]`` is the k = 64 per-byte value of evaluation j
-    (``None`` omits k = 64 from that evaluation); ``ratios[j]`` its per-row ESS/k at k = 64."""
+    (``None`` omits k = 64 from that evaluation); ``ratios[j]`` its per-row ESS/k at k = 64.
+    ``gaps`` holds ``(evaluation index, k)`` pairs whose FIRST importance row at that k is a
+    ``zero_importance_weight_mass`` gap row (three nulls), when that k is present."""
 
     endpoints: tuple[float | None, ...]
     ratios: tuple[tuple[float, ...], ...] | None = None
     row_bytes: int = 128
+    gaps: tuple[tuple[int, int], ...] = ()
 
 
 def _spec(
@@ -107,6 +110,14 @@ def _eval_row(identity: str, step: int, spec: CellSpec, index: int) -> dict[str,
     by_count: dict[str, Any] = {"8": _entries(8, -3.0, (0.5,) * len(ratios), spec.row_bytes)}
     if value is not None:
         by_count["64"] = _entries(64, value, ratios, spec.row_bytes)
+    for gap_index, k in spec.gaps:
+        if gap_index == index and str(k) in by_count:
+            by_count[str(k)][0] = {
+                "effective_sample_size": None,
+                "gap": "zero_importance_weight_mass",
+                "likelihood_relative_mcse": None,
+                "log_estimate": None,
+            }
     return {
         "checkpoint_seal": {"path": f"seal-{step}.json", "sha256": sha256(b"seal").hexdigest()},
         "cuda_seconds": 0.25,
@@ -192,6 +203,21 @@ def write_run(
     for path, rows in zip(paths, (metrics, log), strict=True):
         path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     return paths
+
+
+def _edit_metrics(
+    metrics: Path, edit: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+) -> None:
+    rows = [json.loads(line) for line in metrics.read_text(encoding="utf-8").splitlines()]
+    metrics.write_text("".join(json.dumps(r) + "\n" for r in edit(rows)), encoding="utf-8")
+
+
+def _before_run_end(row: dict[str, Any]) -> Callable[[list[dict[str, Any]]], list[dict[str, Any]]]:
+    def edit(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        index = next(i for i, r in enumerate(rows) if r.get("event") == "run_end")
+        return [*rows[:index], row, *rows[index:]]
+
+    return edit
 
 
 def h1_profiles(seed: int, *, encoder_layers: int | None = None) -> tuple[HProfile, ...]:
@@ -546,6 +572,249 @@ class TestEssGate:
 
 
 # ------------------------------------------------------------------ whole-block exclusion
+@pytest.mark.unit
+class TestGapRows:
+    """A ``zero_importance_weight_mass`` gap row at the selected k inside the endpoint window
+    would make the window reduction a mean over the finite rows only. D1 parity: such a gap
+    makes the endpoint unavailable, never a silent partial mean."""
+
+    def test_a_gap_row_in_the_window_is_missing_endpoint_not_a_mean_of_the_finite_rows(
+        self, tmp_path: Path
+    ) -> None:
+        spec = replace(_spec((-2.5,) * 5), gaps=((4, 64),))  # the last window evaluation
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c"))
+        )
+        assert cell.endpoint is None
+        assert cell.endpoint_reason is H1ExclusionReason.MISSING_ENDPOINT
+        assert "step 12" in cell.endpoint_detail and "k=64" in cell.endpoint_detail
+
+    def test_a_gap_row_before_the_window_is_not_gated(self, tmp_path: Path) -> None:
+        values = (-9.0, -2.5, -2.25, -2.0, -1.75, -1.0)
+        spec = replace(_spec(values), gaps=((0, 64),))  # the first, outside the window
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c"))
+        )
+        assert cell.endpoint_reason is None
+        assert cell.endpoint == pytest.approx(sum(values[1:]) / 5)
+
+    def test_a_gap_at_k64_is_not_gated_when_the_k8_keys_are_selected(self, tmp_path: Path) -> None:
+        spec = replace(_spec((-2.5,) * 5), gaps=((4, 64),))
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c")), **K8_KEYS
+        )
+        assert cell.endpoint == pytest.approx(-3.0)
+        assert cell.endpoint_reason is None
+
+    def test_a_gap_at_the_selected_k8_in_the_window_is_missing_endpoint(
+        self, tmp_path: Path
+    ) -> None:
+        spec = replace(_spec((-2.5,) * 5), gaps=((2, 8),))
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c")), **K8_KEYS
+        )
+        assert cell.endpoint is None
+        assert cell.endpoint_reason is H1ExclusionReason.MISSING_ENDPOINT
+
+    def test_a_gap_row_in_the_window_excludes_the_whole_block(self, tmp_path: Path) -> None:
+        specs = list(standard_specs(0))
+        specs[1] = replace(specs[1], gaps=((3, 64),))
+        observations = observe_h1_blocks([build_block(tmp_path, 101, specs)])
+        (exclusion,) = inputs_for(observations).exclusions
+        assert exclusion.reasons == (H1ExclusionReason.MISSING_ENDPOINT,)
+        assert exclusion.cells == (LABELS[1],)
+
+
+@pytest.mark.unit
+class TestPinnedGuards:
+    """Guard-teeth pins: each test goes RED when the named guard is removed or inverted."""
+
+    def test_committed_count_mismatch_with_equal_bytes_raises(self, tmp_path: Path) -> None:
+        specs = list(standard_specs(0))
+        capture = build_block(tmp_path, 101, specs)
+        member = capture.block.profiles[1]
+        metrics, log = write_run(
+            tmp_path / "other", member.identity, specs[1], step_bytes=100, tag=member.name
+        )
+
+        def skip_step_one(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            # step 1 is not committed; step 2 carries the bytes it would have, so the
+            # canonical totals agree at every window evaluation while the counts do not
+            for row in rows:
+                if row.get("schema") == "h-training-step-v2" and row.get("phase") == "prediction":
+                    if row["step"] == 1:
+                        row["status"] = "started"
+                    if row["step"] == 2:
+                        row["source_bytes"] = 200
+            return rows
+
+        _edit_metrics(metrics, skip_step_one)
+        cells = {**capture.cells, member.name: load_h_run(metrics, log)}
+        with pytest.raises(ValueError, match="different committed step counts"):
+            observe_h1_blocks([replace(capture, cells=cells)])
+
+    def test_one_short_cell_is_missing_endpoint_and_never_reaches_the_exposure_check(
+        self, tmp_path: Path
+    ) -> None:
+        specs = list(standard_specs(0))
+        specs[2] = _spec([BASE[2] + j / 16 for j in range(4)])
+        observations = observe_h1_blocks([build_block(tmp_path, 101, specs)])
+        (observation,) = observations
+        assert observation.exposure is None
+        (exclusion,) = inputs_for(observations).exclusions
+        assert exclusion.reasons == (H1ExclusionReason.MISSING_ENDPOINT,)
+        assert exclusion.cells == (LABELS[2],)
+
+    def test_a_resumed_lineage_cell_enters_the_block_path_as_its_global_run(
+        self, tmp_path: Path
+    ) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        victim = capture.cells[LABELS[0]]
+        assert type(victim) is HRun
+        wrapped = {**capture.cells, LABELS[0]: HResumedRun(run=victim, segments=(victim,))}
+        plain = inputs_for(observe_h1_blocks([capture]))
+        resumed = inputs_for(observe_h1_blocks([replace(capture, cells=wrapped)]))
+        assert resumed == plain
+
+    def test_every_evaluation_is_a_run_evaluation_not_the_window_only(self, tmp_path: Path) -> None:
+        specs = tuple(_spec([BASE[c] + j / 16 for j in range(6)]) for c in range(4))
+        result = inputs_for(observe_h1_blocks([build_block(tmp_path, 101, specs)]))
+        assert [e.step for e in result.runs[0].evals] == [4, 6, 8, 10, 12, 14]
+
+    def test_runs_label_every_evaluation_with_the_selected_endpoint_key(
+        self, tmp_path: Path
+    ) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        result = inputs_for(observe_h1_blocks([capture], **K8_KEYS))
+        assert result.runs
+        for run in result.runs:
+            for evaluation in run.evals:
+                assert {key for key, _ in evaluation.metrics} == {K8_KEYS["endpoint_key"]}
+
+    def test_observation_and_admission_order_is_seed_order_whatever_the_input_order(
+        self, tmp_path: Path
+    ) -> None:
+        blocks = eight_blocks(tmp_path)
+        for position in (2, 5):  # seeds 103 and 106 fail the gate
+            specs = list(standard_specs(position))
+            specs[0] = CellSpec(specs[0].endpoints, ((0.05, 0.05, 0.05),) * 5)
+            blocks[position] = build_block(
+                tmp_path / f"low-{position}",
+                101 + position,
+                specs,
+                step_bytes=100 + 10 * position,
+            )
+        result = inputs_for(observe_h1_blocks(list(reversed(blocks))))
+        admitted = (101, 102, 104, 105, 107, 108)
+        assert result.admitted_seeds == admitted
+        assert [e.seed for e in result.exclusions] == [103, 106]
+        assert [r.seed for r in result.runs] == [s for s in admitted for _ in range(4)]
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_text_is_refused_at_every_text_boundary(self, tmp_path: Path, blank: str) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        observations = observe_h1_blocks([capture])
+        with pytest.raises(ValueError, match="nonblank"):
+            pilot_inputs(observations, family_digest=blank, units=UNITS, expected_exposure=10)
+        with pytest.raises(ValueError, match="nonblank"):
+            pilot_inputs(observations, family_digest=FAMILY, units=blank, expected_exposure=10)
+        with pytest.raises(ValueError, match="nonblank"):
+            observe_h1_blocks([capture], endpoint_key=blank)
+        with pytest.raises(ValueError, match="nonblank"):
+            observe_h1_blocks([capture], gate_key=blank)
+
+    def test_a_non_capture_is_a_type_error(self) -> None:
+        with pytest.raises(TypeError, match="H1BlockCapture"):
+            observe_h1_blocks(["not a capture"])  # type: ignore[list-item]
+
+    def test_a_capture_without_an_exact_block_is_a_type_error(self) -> None:
+        with pytest.raises(TypeError, match="H1PreservationBlock"):
+            observe_h1_blocks([H1BlockCapture("not a block", {})])  # type: ignore[arg-type]
+
+    def test_a_cell_that_is_not_a_captured_run_is_a_type_error(self, tmp_path: Path) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        cells = {**capture.cells, LABELS[0]: "not a run"}
+        with pytest.raises(TypeError, match="captured HRun or HResumedRun"):
+            observe_h1_blocks([replace(capture, cells=cells)])  # type: ignore[dict-item]
+
+    def test_projection_refuses_a_non_run(self) -> None:
+        with pytest.raises(TypeError, match="captured HRun or HResumedRun"):
+            project_h1_cell("not a run")  # type: ignore[arg-type]
+
+    def test_an_arm_label_bound_to_two_constructions_across_blocks_raises(
+        self, tmp_path: Path
+    ) -> None:
+        # the digest ignores names, so swapping two arm names keeps every per-axis digest
+        # consistent: only the per-label check sees the change
+        first = build_block(tmp_path, 101, standard_specs(0))
+        profiles = h1_profiles(102)
+        swapped = (
+            replace(profiles[0], name=profiles[1].name),
+            replace(profiles[1], name=profiles[0].name),
+            *profiles[2:],
+        )
+        second = build_block(tmp_path, 102, standard_specs(1), profiles=swapped)
+        with pytest.raises(ValueError, match="construction digest"):
+            observe_h1_blocks([first, second])
+
+    def test_a_non_committed_prediction_row_contributes_nothing(self, tmp_path: Path) -> None:
+        identity = "a" * 64
+        metrics, log = write_run(tmp_path, identity, _spec((-2.5,) * 5), step_bytes=100, tag="c")
+        run = load_h_run(metrics, log)
+        baseline = project_h1_cell(run)
+        started = {**_step_row(identity, "prediction", 11, 100), "status": "started"}
+        _edit_metrics(metrics, _before_run_end(started))
+        assert project_h1_cell(run).readings == baseline.readings
+
+    def test_an_unrecognized_status_after_the_last_evaluation_fails_loud(
+        self, tmp_path: Path
+    ) -> None:
+        identity = "a" * 64
+        metrics, log = write_run(tmp_path, identity, _spec((-2.5,) * 5), step_bytes=100, tag="c")
+        run = load_h_run(metrics, log)
+        bogus = {**_step_row(identity, "prediction", 11, 100), "status": "bogus"}
+        _edit_metrics(metrics, _before_run_end(bogus))
+        with pytest.raises(ValueError, match="unrecognized phase or status"):
+            project_h1_cell(run)
+
+    @pytest.mark.parametrize("bad", [0, -1, "3", True, 2.0])
+    def test_a_step_row_needs_a_positive_integer_step(self, tmp_path: Path, bad: Any) -> None:
+        metrics, log = write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=100, tag="c")
+        run = load_h_run(metrics, log)
+
+        def corrupt(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            row = next(
+                r
+                for r in rows
+                if r.get("schema") == "h-training-step-v2" and r.get("phase") == "prediction"
+            )
+            row["step"] = bad
+            return rows
+
+        _edit_metrics(metrics, corrupt)
+        with pytest.raises(ValueError, match="positive int step"):
+            project_h1_cell(run)
+
+    def test_a_bool_metric_value_is_refused_not_read_as_a_number(self, tmp_path: Path) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+        step, elm = run.elm[0]
+        forged = {**elm, "metrics": {**elm["metrics"], ENDPOINT_METRIC_KEY: True}}
+        with pytest.raises(ValueError, match="not a number"):
+            project_h1_cell(replace(run, elm=((step, forged), *run.elm[1:])))
+
+    def test_a_nan_gate_value_is_inadmissible_not_passing(self, tmp_path: Path) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        victim = capture.cells[LABELS[0]]
+        assert type(victim) is HRun
+        step, elm = victim.elm[2]
+        forged = {**elm, "metrics": {**elm["metrics"], GATE_METRIC_KEY: math.nan}}
+        forged_run = replace(victim, elm=(*victim.elm[:2], (step, forged), *victim.elm[3:]))
+        cells = {**capture.cells, LABELS[0]: forged_run}
+        (exclusion,) = inputs_for(observe_h1_blocks([replace(capture, cells=cells)])).exclusions
+        assert exclusion.reasons == (H1ExclusionReason.INADMISSIBLE_ESS,)
+        assert exclusion.cells == (LABELS[0],)
+
+
 @pytest.mark.unit
 class TestWholeBlockExclusion:
     def test_a_bad_cell_drops_the_whole_block_from_all_three_contrasts(

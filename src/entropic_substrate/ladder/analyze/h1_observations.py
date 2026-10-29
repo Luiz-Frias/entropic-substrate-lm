@@ -41,8 +41,10 @@ reason, and any reason in any cell drops the WHOLE block from all three contrast
 and never silent:
 
 * ``READER_REFUSAL``: a ``TelemetryGap`` raised by the H reader seam (``read_h_rows``);
-* ``MISSING_ENDPOINT``: fewer than ``window`` evaluations, or ``endpoint_key`` absent at any
-  window evaluation (the window never shrinks and absent evaluations are never skipped);
+* ``MISSING_ENDPOINT``: fewer than ``window`` evaluations, ``endpoint_key`` absent at any
+  window evaluation (the window never shrinks and absent evaluations are never skipped), or a
+  ``zero_importance_weight_mass`` gap row at the selected k (the key's ``_k<n>`` suffix) at any
+  window evaluation: the reduction would average the finite rows only, so it is unavailable;
 * ``NONFINITE_ENDPOINT``: the window reduction is not finite;
 * ``INADMISSIBLE_ESS``: ``gate_key`` is absent or below the threshold at ANY evaluation of the
   endpoint window, each compared on its own (never averaged across evaluations);
@@ -274,9 +276,20 @@ def _reading_value(metrics: Mapping[str, Any], key: str) -> float | None:
     return float(value)
 
 
+def _key_k(key: str) -> int:
+    """The k named by a metric key's ``_k<n>`` suffix (the registered keys all carry one)."""
+    head, separator, digits = key.rpartition("_k")
+    if not separator or not head or not digits.isdigit() or digits[0] == "0":
+        raise ValueError(f"metric key {key!r} names no k; the gap check needs the selected k")
+    return int(digits)
+
+
 def _endpoint(
-    readings: tuple[H1EvaluationReading, ...], window: int
+    readings: tuple[H1EvaluationReading, ...],
+    window: int,
+    gaps: Sequence[tuple[int, int, int, int]] = (),
 ) -> tuple[tuple[H1EvaluationReading, ...], float | None, H1ExclusionReason | None, str]:
+    """``gaps`` holds ``(global step, k, gap rows, rows)`` for each evaluation with a gap row."""
     if len(readings) < window:
         return (
             (),
@@ -292,6 +305,19 @@ def _endpoint(
             None,
             H1ExclusionReason.MISSING_ENDPOINT,
             f"endpoint metric absent at window evaluation(s) {absent}",
+        )
+    window_steps = {r.global_step for r in tail}
+    in_window = [gap for gap in gaps if gap[0] in window_steps]
+    if in_window:
+        described = "; ".join(
+            f"step {step} k={k}: {gap_rows} of {rows} rows" for step, k, gap_rows, rows in in_window
+        )
+        return (
+            tail,
+            None,
+            H1ExclusionReason.MISSING_ENDPOINT,
+            f"gap rows at window evaluation(s) ({described}); a zero_importance_weight_mass "
+            "row is not a finite measurement, so a mean over the finite rows is not the endpoint",
         )
     values = [r.endpoint_value for r in tail if r.endpoint_value is not None]
     try:
@@ -357,7 +383,17 @@ def project_h1_cell(
             )
         )
     all_readings = tuple(readings)
-    tail, endpoint, reason, detail = _endpoint(all_readings, window)
+    # the selected k of each key: a gap row at one of them makes the endpoint or the gate a
+    # mean over finite rows only, so it is recorded per evaluation and gated inside the window
+    selected = sorted({_key_k(endpoint_key), _key_k(gate_key)})
+    gaps: list[tuple[int, int, int, int]] = []
+    for global_step, elm in run.elm:
+        samples: Mapping[str, Mapping[str, Any]] = elm["samples"]
+        for k in selected:
+            sample = samples.get(str(k))
+            if sample is not None and sample["gap_rows"] > 0:
+                gaps.append((global_step, k, sample["gap_rows"], sample["rows"]))
+    tail, endpoint, reason, detail = _endpoint(all_readings, window, gaps)
     return H1CellProjection(
         profile_identity=run.profile_identity,
         run_class=_captured_class(run),
