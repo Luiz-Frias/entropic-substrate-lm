@@ -16,7 +16,7 @@ import ast
 import json
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, fields, replace
+from dataclasses import FrozenInstanceError, dataclass, fields, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -33,9 +33,12 @@ from entropic_substrate.ladder.analyze.h1_observations import (
     GATE_METRIC_KEY,
     H1BlockCapture,
     H1BlockExclusion,
+    H1BlockExposure,
     H1BlockObservation,
+    H1CellProjection,
     H1EvaluationReading,
     H1ExclusionFinding,
+    H1PilotInputs,
     observe_h1_blocks,
     pilot_inputs,
     pilot_inputs_by_threshold,
@@ -1594,6 +1597,185 @@ class TestFollowUpPins:
             "entropic_substrate.ladder.capture.reader.telemetry",
             "entropic_substrate.ladder.register.h_preservation",
         }
+
+
+def _refuse_cells(capture: H1BlockCapture, labels: Sequence[str]) -> None:
+    """Corrupt the captured metrics file of each named cell so the H reader refuses it."""
+    for label in labels:
+        cell = capture.cells[label]
+        assert type(cell) is HRun
+        cell.metrics_path.write_text("this is not json\n", encoding="utf-8")
+
+
+def _result_instances(root: Path) -> dict[type, object]:
+    """One real instance of each of the eight result records, built through the public path."""
+    capture = build_block(root, 101, standard_specs(0))
+    (observation,) = observe_h1_blocks([capture])
+    cell = observation.cells[0]
+    assert cell is not None
+    finding = H1ExclusionFinding(H1ExclusionReason.INADMISSIBLE_ESS, LABELS[0], "x")
+    return {
+        H1EvaluationReading: cell.readings[0],
+        H1CellProjection: cell,
+        H1ExclusionFinding: finding,
+        H1BlockExposure: observation.exposure,
+        H1BlockCapture: capture,
+        H1BlockObservation: observation,
+        H1BlockExclusion: H1BlockExclusion(101, observation.pairing_id, (finding,)),
+        H1PilotInputs: inputs_for([observation]),
+    }
+
+
+@pytest.mark.unit
+class TestRoundFivePins:
+    """Round-5 adversarial review: guards whose mutants survived the suite (test-only fix)."""
+
+    def test_a_window_schedule_mismatch_in_the_first_cell_alone_raises(
+        self, tmp_path: Path
+    ) -> None:
+        specs = list(standard_specs(0))
+        specs[0] = _spec([BASE[0] + j / 16 for j in range(6)])  # only cell 0 has a 6th evaluation
+        with pytest.raises(ValueError, match="window evaluation steps"):
+            observe_h1_blocks([build_block(tmp_path, 101, specs)])
+
+    def test_a_fully_refused_block_is_excluded_not_an_index_error(self, tmp_path: Path) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        _refuse_cells(capture, LABELS)
+        (observation,) = observe_h1_blocks([capture])
+        assert [f.reason for f in observation.findings] == [H1ExclusionReason.READER_REFUSAL] * 4
+        assert observation.exposure is None
+
+    def test_a_lone_projected_cell_forms_no_block_exposure(self, tmp_path: Path) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        _refuse_cells(capture, LABELS[:3])
+        (observation,) = observe_h1_blocks([capture])
+        assert observation.exposure is None
+
+    @pytest.mark.parametrize("refused", [1, 2])
+    def test_two_or_three_equal_projected_cells_still_form_the_window_exposure(
+        self, tmp_path: Path, refused: int
+    ) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        _refuse_cells(capture, LABELS[:refused])
+        (observation,) = observe_h1_blocks([capture])
+        assert observation.exposure is not None
+        assert observation.exposure.window_committed_steps == STANDARD_STEPS
+
+    @pytest.mark.parametrize("projected", [2, 3, 4])
+    def test_unequal_exposure_bytes_raise_whatever_the_projected_count(
+        self, tmp_path: Path, projected: int
+    ) -> None:
+        specs = standard_specs(0)
+        capture = build_block(tmp_path, 101, specs)
+        _refuse_cells(capture, LABELS[: 4 - projected])
+        member = capture.block.profiles[3]
+        other = write_run(
+            tmp_path / "other", member.identity, specs[3], step_bytes=101, tag=member.name
+        )
+        cells = {**capture.cells, member.name: load_h_run(*other)}
+        with pytest.raises(ValueError, match="canonical exposure bytes"):
+            observe_h1_blocks([replace(capture, cells=cells)])
+
+    def test_a_window_of_one_is_accepted_and_projects_the_last_evaluation(
+        self, tmp_path: Path
+    ) -> None:
+        paths = write_run(
+            tmp_path, "a" * 64, _spec((-2.5, -2.0, -1.5, -1.0, -0.5)), step_bytes=1, tag="c"
+        )
+        cell = project_h1_cell(load_h_run(*paths), window=1)
+        assert cell.window == 1
+        assert [r.global_step for r in cell.window_readings] == [12]
+        assert cell.endpoint == pytest.approx(-0.5)
+        assert cell.endpoint_reason is None
+
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            H1EvaluationReading,
+            H1CellProjection,
+            H1ExclusionFinding,
+            H1BlockExposure,
+            H1BlockCapture,
+            H1BlockObservation,
+            H1BlockExclusion,
+            H1PilotInputs,
+        ],
+    )
+    def test_result_records_are_frozen_and_slotted(self, tmp_path: Path, cls: type) -> None:
+        instance = _result_instances(tmp_path)[cls]
+        assert type(instance) is cls
+        name = fields(cls)[0].name  # type: ignore[arg-type]
+        with pytest.raises(FrozenInstanceError):
+            setattr(instance, name, getattr(instance, name))
+        assert not hasattr(instance, "__dict__")
+
+    def test_a_finding_cannot_be_rebound_to_an_unregistered_reason(self) -> None:
+        # without frozen, ``finding.reason = "..."`` would bypass the __post_init__ vocabulary
+        finding = H1ExclusionFinding(H1ExclusionReason.INADMISSIBLE_ESS, LABELS[0], "x")
+        with pytest.raises(FrozenInstanceError):
+            finding.reason = "inadmissible_ess"  # type: ignore[misc,assignment]
+
+    def test_a_two_segment_lineage_is_read_from_every_segment(self, tmp_path: Path) -> None:
+        # the stitched run holds the whole lineage; the earlier segment alone carries the
+        # first four prediction rows, which set the exposure of the first two evaluations
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        victim = capture.cells[LABELS[0]]
+        assert type(victim) is HRun
+        lines = victim.metrics_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        rows = [json.loads(line) for line in lines]
+        cut = next(
+            i
+            for i, row in enumerate(rows)
+            if row.get("schema") == "h-training-step-v2"
+            and row["phase"] == "prediction"
+            and row["step"] == 5
+        )
+        earlier, later = tmp_path / "segment-a.jsonl", tmp_path / "segment-b.jsonl"
+        earlier.write_text("".join(lines[:cut]), encoding="utf-8")
+        later.write_text("".join(lines[cut:]), encoding="utf-8")
+        resumed = HResumedRun(
+            run=victim,
+            segments=(
+                replace(victim, metrics_path=earlier),
+                replace(victim, metrics_path=later),
+            ),
+        )
+        cell = project_h1_cell(resumed)
+        assert cell.segment_metrics == (earlier, later)
+        assert [(r.committed_steps, r.source_bytes) for r in cell.readings] == [
+            (2, 200),
+            (4, 400),
+            (6, 600),
+            (8, 800),
+            (10, 1000),
+        ]
+        assert cell.readings == project_h1_cell(victim).readings
+
+    def test_a_forged_observation_with_a_refused_cell_is_refused_with_its_text(
+        self, tmp_path: Path
+    ) -> None:
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))])
+        forged = replace(observation, cells=(None, *observation.cells[1:]), findings=())
+        with pytest.raises(ValueError, match="holds a refused or endpoint-less cell"):
+            inputs_for([forged])
+
+    def test_a_forged_observation_with_an_endpoint_less_cell_is_refused_with_its_text(
+        self, tmp_path: Path
+    ) -> None:
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))])
+        first = observation.cells[0]
+        assert first is not None
+        bare = replace(first, endpoint=None, endpoint_reason=H1ExclusionReason.MISSING_ENDPOINT)
+        forged = replace(observation, cells=(bare, *observation.cells[1:]), findings=())
+        with pytest.raises(ValueError, match="holds a refused or endpoint-less cell"):
+            inputs_for([forged])
+
+    def test_a_forged_observation_without_an_exposure_is_refused_with_its_text(
+        self, tmp_path: Path
+    ) -> None:
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))])
+        with pytest.raises(ValueError, match="an admitted block has no window exposure"):
+            inputs_for([replace(observation, exposure=None)])
 
 
 @pytest.mark.unit
