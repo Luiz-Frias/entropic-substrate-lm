@@ -1476,6 +1476,127 @@ class TestSizing:
 
 # ------------------------------------------------------------------------- module contract
 @pytest.mark.unit
+class TestFollowUpPins:
+    """Round-C pins: one projection regime per pilot call, absence kept absent, full-tuple
+    window schedules, and the endpoint-less cell keeping its window."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"endpoint_key": K8_KEYS["endpoint_key"]},
+            {"gate_key": K8_KEYS["gate_key"]},
+            {"window": 4},
+        ],
+        ids=["endpoint_key", "gate_key", "window"],
+    )
+    def test_observations_from_different_projection_regimes_are_refused(
+        self, tmp_path: Path, kwargs: dict[str, Any]
+    ) -> None:
+        first = observe_h1_blocks([build_block(tmp_path, 301, standard_specs(0))])
+        second = observe_h1_blocks([build_block(tmp_path, 302, standard_specs(1))], **kwargs)
+        with pytest.raises(ValueError, match="different projection regimes"):
+            inputs_for([*first, *second])
+
+    def test_the_same_observation_twice_is_a_duplicate_seed(self, tmp_path: Path) -> None:
+        observations = observe_h1_blocks([build_block(tmp_path, 301, standard_specs(0))])
+        with pytest.raises(ValueError, match="duplicate seed block"):
+            inputs_for([*observations, *observations])
+
+    def test_an_absent_pre_window_endpoint_is_an_empty_metric_set_never_zero(
+        self, tmp_path: Path
+    ) -> None:
+        values: tuple[float | None, ...] = (None, -2.5, -2.0, -1.5, -1.0, -0.5)
+        specs = tuple(_spec(values) for _ in range(4))
+        result = inputs_for(observe_h1_blocks([build_block(tmp_path, 301, specs)]))
+        for run in result.runs:
+            assert run.evals[0].metrics == ()
+            assert [dict(e.metrics) for e in run.evals[1:]] == [
+                {ENDPOINT_METRIC_KEY: v} for v in values[1:]
+            ]
+
+    def test_window_schedules_differing_inside_the_window_only_raise(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # identical last committed step count, different interior: only the full tuple sees it
+        real = h1_observations._observe_block  # pyright: ignore[reportPrivateUsage]
+
+        def interior_shift(*args: Any) -> H1BlockObservation:
+            observed = real(*args)
+            if observed.seed != 302 or observed.exposure is None:
+                return observed
+            steps = observed.exposure.window_committed_steps
+            assert steps == (2, 4, 6, 8, 10)
+            return replace(
+                observed,
+                exposure=replace(observed.exposure, window_committed_steps=(1, *steps[1:])),
+            )
+
+        monkeypatch.setattr(h1_observations, "_observe_block", interior_shift)
+        with pytest.raises(ValueError, match="committed step counts at the endpoint window"):
+            observe_h1_blocks(
+                [
+                    build_block(tmp_path, 301, standard_specs(0)),
+                    build_block(tmp_path, 302, standard_specs(1)),
+                ]
+            )
+
+    def test_an_endpoint_less_cell_keeps_its_window_and_stays_gated(self, tmp_path: Path) -> None:
+        # one k = 64 key absent INSIDE the window: MISSING_ENDPOINT, yet the window is kept, so the
+        # cell is still ESS-gated (the absent gate value fails) and still feeds the exposure check
+        specs = list(standard_specs(0))
+        specs[1] = _spec([BASE[1], BASE[1], None, BASE[1], BASE[1]])
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 301, specs)])
+        cell = observation.cells[1]
+        assert cell is not None and cell.endpoint is None
+        assert cell.endpoint_reason is H1ExclusionReason.MISSING_ENDPOINT
+        assert len(cell.window_readings) == ENDPOINT_WINDOW
+        assert observation.exposure is not None
+        (exclusion,) = inputs_for([observation]).exclusions
+        # structural findings first, then the gate's
+        assert exclusion.reasons == (
+            H1ExclusionReason.MISSING_ENDPOINT,
+            H1ExclusionReason.INADMISSIBLE_ESS,
+        )
+        assert exclusion.cells == (LABELS[1],)
+
+    def test_a_gap_row_cell_keeps_its_window(self, tmp_path: Path) -> None:
+        spec = CellSpec(tuple(-2.5 + j / 16 for j in range(5)), gaps=((2, 64),))
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c"))
+        )
+        assert cell.endpoint is None
+        assert cell.endpoint_reason is H1ExclusionReason.MISSING_ENDPOINT
+        assert len(cell.window_readings) == ENDPOINT_WINDOW
+
+    def test_the_module_imports_are_an_exact_allowlist(self) -> None:
+        tree = ast.parse(Path(h1_observations.__file__).read_text())
+        assert [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names] == [
+            "math"
+        ]
+        imported = {
+            f"{n.module}:{a.name}"
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom)
+            for a in n.names
+        }
+        assert not any("composition" in m or "ladder.run" in m for m in imported)
+        assert {m.partition(":")[0] for m in imported} == {
+            "__future__",
+            "collections.abc",
+            "dataclasses",
+            "pathlib",
+            "typing",
+            "entropic_substrate.core.sentence.profile",
+            "entropic_substrate.ladder.analyze.h_aggregate",
+            "entropic_substrate.ladder.analyze.h_resumed_run",
+            "entropic_substrate.ladder.analyze.ladder_registration",
+            "entropic_substrate.ladder.analyze.seed_sizing",
+            "entropic_substrate.ladder.capture.reader.telemetry",
+            "entropic_substrate.ladder.register.h_preservation",
+        }
+
+
+@pytest.mark.unit
 class TestModuleContract:
     SOURCE = Path(h1_observations.__file__)
 

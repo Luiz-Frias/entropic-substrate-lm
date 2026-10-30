@@ -36,8 +36,9 @@ Exposure has two units, kept apart on purpose (operator ruling Q-EXP (a), 2026-1
 
 Failure semantics. Defects (identity or class mismatch, unequal exposure inside a block,
 a window schedule that differs across blocks, a duplicate seed, a conflicting construction
-digest) RAISE: the closed :class:`H1ExclusionReason` vocabulary has no member for them and
-they are execution defects, not exclusions. Only the enumerated conditions below map to a
+digest, observations handed to one ``pilot_inputs`` call that were projected under different
+``(endpoint_key, gate_key, window)``) RAISE: the closed :class:`H1ExclusionReason` vocabulary
+has no member for them and they are execution defects, not exclusions. Only the enumerated conditions below map to a
 reason, and any reason in any cell drops the WHOLE block from all three contrasts, reported
 and never silent:
 
@@ -650,13 +651,30 @@ def pilot_inputs(
     committed step count at the last window evaluation as both exposures. Observations are
     ordered by seed here, so ``admitted_seeds``, ``exclusions``, ``runs`` and the pairs of every
     contrast are in seed order whatever order the caller passes.
+
+    Raises ``ValueError`` on a duplicate seed and on observations projected under different
+    ``(endpoint_key, gate_key, window)``: one call is one projection regime, never a mixture.
     """
     _text(family_digest, "family digest")
     _text(units, "units")
     threshold = _threshold(ess_threshold)
+    ordered = sorted(observations, key=lambda observed: observed.seed)
+    if len({item.seed for item in ordered}) != len(ordered):
+        raise ValueError("duplicate seed block")
+    regimes = {
+        (cell.endpoint_key, cell.gate_key, cell.window)
+        for item in ordered
+        for cell in item.cells
+        if cell
+    }
+    if len(regimes) > 1:
+        raise ValueError(
+            "observations carry different projection regimes (endpoint_key, gate_key, window): "
+            f"{sorted(regimes)}"
+        )
     admitted: list[H1BlockObservation] = []
     exclusions: list[H1BlockExclusion] = []
-    for item in sorted(observations, key=lambda observed: observed.seed):
+    for item in ordered:
         findings = (*item.findings, *_gate_findings(item, threshold))
         if findings:
             exclusions.append(H1BlockExclusion(item.seed, item.pairing_id, findings))
