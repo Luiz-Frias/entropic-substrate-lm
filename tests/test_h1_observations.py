@@ -228,7 +228,9 @@ def _before_run_end(row: dict[str, Any]) -> Callable[[list[dict[str, Any]]], lis
 def h1_profiles(seed: int, *, encoder_layers: int | None = None) -> tuple[HProfile, ...]:
     """Four real H1 pilot profiles: development curve, CUDA/bf16, no Fisher, no future law."""
     base = profile()
-    codec = base.codec if encoder_layers is None else replace(base.codec, encoder_layers=2)
+    codec = (
+        base.codec if encoder_layers is None else replace(base.codec, encoder_layers=encoder_layers)
+    )
     base = replace(
         base,
         stage="H1",
@@ -314,7 +316,7 @@ def hypotheses() -> tuple[ContrastHypothesis, ...]:
     )
 
 
-def inputs_for(observations: Sequence[H1BlockObservation], **kwargs: Any) -> Any:
+def inputs_for(observations: Sequence[H1BlockObservation], **kwargs: Any) -> H1PilotInputs:
     return pilot_inputs(
         observations, family_digest=FAMILY, units=UNITS, expected_exposure=10, **kwargs
     )
