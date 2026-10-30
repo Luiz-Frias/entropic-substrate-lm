@@ -179,8 +179,13 @@ def run_tiny_trace(
         results_path=trace_root / "observability" / "metrics.jsonl",
         metric_extractor=HTrainingStepExtractor(warmup_steps=profile.schedule.warmup_steps),
     )
+    # DN-1643-PORT, the worker's own shape (ladder.run.worker_command): the run terminates
+    # FINISHED iff run_probe_training RETURNED. Every raised exit, BaseException included
+    # (KeyboardInterrupt, SystemExit), leaves the FAILED default in place and finishes the
+    # sink FAILED exactly once; the exception itself propagates untouched.
+    terminal_status = "FAILED"
     try:
-        return run_probe_training(
+        progress = run_probe_training(
             profile,
             source_root,
             output,
@@ -188,8 +193,10 @@ def run_tiny_trace(
             max_artifact_bytes=max_artifact_bytes,
             sink=sink,
         )
+        terminal_status = "FINISHED"
     finally:
-        sink.finish()
+        sink.finish(status=terminal_status)
+    return progress
 
 
 def _parser() -> argparse.ArgumentParser:
