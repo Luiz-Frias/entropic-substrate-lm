@@ -34,6 +34,7 @@ from entropic_substrate.ladder.analyze.h1_observations import (
     H1BlockCapture,
     H1BlockObservation,
     H1EvaluationReading,
+    H1ExclusionFinding,
     observe_h1_blocks,
     pilot_inputs,
     pilot_inputs_by_threshold,
@@ -470,6 +471,55 @@ class TestExposure:
         with pytest.raises(ValueError, match="canonical exposure bytes"):
             observe_h1_blocks([replace(capture, cells=cells)])
 
+    def test_a_pre_window_byte_mismatch_inside_a_block_raises(self, tmp_path: Path) -> None:
+        # six evaluations: cell 2 carries 101 then 99 canonical bytes at prediction steps 2 and 3,
+        # so its exposure differs at the first evaluation (global 4, before the window opens at 6)
+        # and re-converges from global 6; the window slice alone cannot see it
+        specs = tuple(_spec([BASE[c] + j / 16 for j in range(6)]) for c in range(4))
+        capture = build_block(tmp_path, 101, specs)
+        member = capture.block.profiles[2]
+        metrics, log = write_run(
+            tmp_path / "other", member.identity, specs[2], step_bytes=100, tag=member.name
+        )
+
+        def shift_bytes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            for row in rows:
+                if row.get("schema") == "h-training-step-v2" and row.get("phase") == "prediction":
+                    if row["step"] == 2:
+                        row["source_bytes"] = 101
+                    if row["step"] == 3:
+                        row["source_bytes"] = 99
+            return rows
+
+        _edit_metrics(metrics, shift_bytes)
+        cells = {**capture.cells, member.name: load_h_run(metrics, log)}
+        with pytest.raises(ValueError, match="canonical exposure bytes"):
+            observe_h1_blocks([replace(capture, cells=cells)])
+
+    def test_a_pre_window_committed_count_mismatch_inside_a_block_raises(
+        self, tmp_path: Path
+    ) -> None:
+        # six evaluations, cell 2 never commits prediction step 1 (global 3). Committed counts are
+        # cumulative, so the mismatch persists into the window; this pins the full-readings check
+        specs = tuple(_spec([BASE[c] + j / 16 for j in range(6)]) for c in range(4))
+        capture = build_block(tmp_path, 101, specs)
+        member = capture.block.profiles[2]
+        metrics, log = write_run(
+            tmp_path / "other", member.identity, specs[2], step_bytes=100, tag=member.name
+        )
+
+        def uncommit_step_one(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            for row in rows:
+                if row.get("schema") == "h-training-step-v2" and row.get("phase") == "prediction":
+                    if row["step"] == 1:
+                        row["status"] = "started"
+            return rows
+
+        _edit_metrics(metrics, uncommit_step_one)
+        cells = {**capture.cells, member.name: load_h_run(metrics, log)}
+        with pytest.raises(ValueError, match="different committed step counts"):
+            observe_h1_blocks([replace(capture, cells=cells)])
+
     def test_window_evaluation_steps_unequal_inside_a_block_raise(self, tmp_path: Path) -> None:
         specs = list(standard_specs(0))
         specs[2] = _spec([BASE[2] + j / 16 for j in range(6)])  # one more evaluation
@@ -813,6 +863,105 @@ class TestPinnedGuards:
         (exclusion,) = inputs_for(observe_h1_blocks([replace(capture, cells=cells)])).exclusions
         assert exclusion.reasons == (H1ExclusionReason.INADMISSIBLE_ESS,)
         assert exclusion.cells == (LABELS[0],)
+
+
+@pytest.mark.unit
+class TestMutationSurvivorPins:
+    """Pins for guards that survived a mutation sweep of the adapter with no failing test."""
+
+    @pytest.mark.parametrize(
+        ("keys", "gap_k"),
+        [
+            ({"endpoint_key": ENDPOINT_METRIC_KEY, "gate_key": K8_KEYS["gate_key"]}, 8),
+            ({"endpoint_key": ENDPOINT_METRIC_KEY, "gate_key": K8_KEYS["gate_key"]}, 64),
+            ({"endpoint_key": K8_KEYS["endpoint_key"], "gate_key": GATE_METRIC_KEY}, 8),
+            ({"endpoint_key": K8_KEYS["endpoint_key"], "gate_key": GATE_METRIC_KEY}, 64),
+        ],
+    )
+    def test_a_gap_at_either_selected_k_is_missing_endpoint_under_mixed_keys(
+        self, tmp_path: Path, keys: dict[str, str], gap_k: int
+    ) -> None:
+        # the endpoint key and the gate key name different k: a gap at EITHER k in the last
+        # window evaluation must still refuse the endpoint (DH-32 mixed-key invocation)
+        spec = replace(_spec((-2.5,) * 5), gaps=((4, gap_k),))
+        cell = project_h1_cell(
+            load_h_run(*write_run(tmp_path, "a" * 64, spec, step_bytes=1, tag="c")), **keys
+        )
+        assert cell.endpoint is None
+        assert cell.endpoint_reason is H1ExclusionReason.MISSING_ENDPOINT
+
+    @pytest.mark.parametrize(
+        "key",
+        ["eval/log_marginal_per_byte", "eval/x_k0", "eval/x_k-3", "eval/x_k08", "eval/x_k", "_k8"],
+    )
+    def test_a_metric_key_without_a_selected_k_is_refused(self, tmp_path: Path, key: str) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+        with pytest.raises(ValueError, match="names no k"):
+            project_h1_cell(run, endpoint_key=key)
+
+    def test_a_confirmatory_block_keeps_its_class_and_the_planner_refuses_it(
+        self, tmp_path: Path
+    ) -> None:
+        # seed_sizing refuses non-pilot data only if the adapter carries the captured class
+        blocks = [
+            build_block(
+                tmp_path,
+                101 + i,
+                standard_specs(i),
+                step_bytes=100 + 10 * i,
+                profiles=tuple(
+                    replace(member, run_class="confirmatory") for member in h1_profiles(101 + i)
+                ),
+                run_class="confirmatory",
+            )
+            for i in range(8)
+        ]
+        result = inputs_for(observe_h1_blocks(blocks))
+        assert {run.run_class for run in result.runs} == {"confirmatory"}
+        assert {c.run_class for c in result.contrasts} == {"confirmatory"}
+        with pytest.raises(ValueError, match="pilot"):
+            plan_seed_count(result.contrasts, hypotheses(), max_seeds=500)
+
+    def test_pilot_inputs_order_by_seed_whatever_the_observation_order(
+        self, tmp_path: Path
+    ) -> None:
+        observations = observe_h1_blocks(eight_blocks(tmp_path))
+        forward = inputs_for(observations)
+        backward = inputs_for(tuple(reversed(observations)))
+        assert backward == forward
+        assert backward.admitted_seeds == tuple(range(101, 109))
+        assert [p.seed for p in backward.contrasts[0].pairs] == list(range(101, 109))
+
+    def test_exclusions_are_listed_in_seed_order_whatever_the_observation_order(
+        self, tmp_path: Path
+    ) -> None:
+        blocks = eight_blocks(tmp_path)
+        observations = observe_h1_blocks(blocks)
+        flagged = tuple(
+            replace(
+                item, findings=(H1ExclusionFinding(H1ExclusionReason.INDEPENDENT_WARMUP, "x", ""),)
+            )
+            if item.seed in (103, 106)
+            else item
+            for item in observations
+        )
+        result = inputs_for(tuple(reversed(flagged)))
+        assert [e.seed for e in result.exclusions] == [103, 106]
+        assert result.admitted_seeds == (101, 102, 104, 105, 107, 108)
+
+    def test_admitted_blocks_of_different_captured_classes_are_refused(
+        self, tmp_path: Path
+    ) -> None:
+        # unreachable through observe_h1_blocks (the per-label construction digest differs
+        # first); this guards hand-built observations
+        observations = observe_h1_blocks(eight_blocks(tmp_path))
+        first = observations[0]
+        cells = tuple(
+            replace(cell, run_class="confirmatory") if cell is not None else None
+            for cell in first.cells
+        )
+        with pytest.raises(ValueError, match="different captured run classes"):
+            inputs_for((replace(first, cells=cells), *observations[1:]))
 
 
 @pytest.mark.unit

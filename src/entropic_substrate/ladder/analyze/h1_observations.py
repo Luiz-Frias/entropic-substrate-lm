@@ -30,8 +30,9 @@ Exposure has two units, kept apart on purpose (operator ruling Q-EXP (a), 2026-1
   one or the call raises.
 * ``PairedSeed.left_exposure``/``right_exposure`` is the committed prediction optimizer step
   count at the last evaluation of the endpoint window, equal across blocks by the shared
-  schedule. Canonical bytes are checked equal inside a block and reported as a diagnostic,
-  but never enter ``PairedSeed`` or ``PilotContrast``.
+  schedule. Canonical bytes and committed step counts are checked equal across the cells of a
+  block at every evaluation the cells share (a mismatch before the window raises too); the
+  window bytes are reported as a diagnostic and never enter ``PairedSeed`` or ``PilotContrast``.
 
 Failure semantics. Defects (identity or class mismatch, unequal exposure inside a block,
 a window schedule that differs across blocks, a duplicate seed, a conflicting construction
@@ -194,8 +195,9 @@ class H1BlockCapture:
     """One seed block: its validated four profiles and the captured run of each cell.
 
     ``cells`` is keyed by the profile name (the cell label, which is also the run's arm) and
-    must equal the block's name set. A resumed lineage is passed as an :class:`HResumedRun`. ``independent_warmup`` holds
-    the labels the caller's detector flagged; this module only maps them to an exclusion.
+    must equal the block's name set. A resumed lineage is passed as an :class:`HResumedRun`.
+    ``independent_warmup`` holds the labels the caller's detector flagged; this module only maps
+    them to an exclusion.
     """
 
     block: H1PreservationBlock
@@ -434,23 +436,44 @@ def _bind(label: str, profile: HProfile, source: HRun | HResumedRun) -> None:
         )
 
 
-def _window_exposure(
+def _within_block_exposure(
     seed: int, cells: Sequence[H1CellProjection], labels: Sequence[str]
-) -> H1BlockExposure:
-    """The within-block equality checks; a mismatch is an execution defect and RAISES."""
+) -> H1BlockExposure | None:
+    """The within-block equality checks; a mismatch is an execution defect and RAISES.
+
+    Every evaluation that a cell shares with the first cell must agree on the global step,
+    the committed step count and the canonical bytes, so a pre-window divergence cannot be
+    admitted just because it re-converges before the window. A cell that stops early is a
+    prefix and is left to the window rule (MISSING_ENDPOINT). Returns the window exposure, or
+    ``None`` when a cell forms no window.
+    """
+    reference = cells[0].readings
+    for label, cell in zip(labels[1:], cells[1:], strict=True):
+        shared = min(len(reference), len(cell.readings))
+        if [r.global_step for r in cell.readings[:shared]] != [
+            r.global_step for r in reference[:shared]
+        ]:
+            raise ValueError(f"seed {seed}: cell {label!r} has different evaluation steps")
+        if [r.committed_steps for r in cell.readings[:shared]] != [
+            r.committed_steps for r in reference[:shared]
+        ]:
+            raise ValueError(f"seed {seed}: cell {label!r} has different committed step counts")
+        if [r.source_bytes for r in cell.readings[:shared]] != [
+            r.source_bytes for r in reference[:shared]
+        ]:
+            raise ValueError(f"seed {seed}: cell {label!r} has different canonical exposure bytes")
+    if not all(cell.window_readings for cell in cells):
+        return None
     first = cells[0].window_readings
     steps = tuple(r.global_step for r in first)
-    counts = tuple(r.committed_steps for r in first)
-    sizes = tuple(r.source_bytes for r in first)
     for label, cell in zip(labels[1:], cells[1:], strict=True):
-        other = cell.window_readings
-        if tuple(r.global_step for r in other) != steps:
+        if tuple(r.global_step for r in cell.window_readings) != steps:
             raise ValueError(f"seed {seed}: cell {label!r} has different window evaluation steps")
-        if tuple(r.committed_steps for r in other) != counts:
-            raise ValueError(f"seed {seed}: cell {label!r} has different committed step counts")
-        if tuple(r.source_bytes for r in other) != sizes:
-            raise ValueError(f"seed {seed}: cell {label!r} has different canonical exposure bytes")
-    return H1BlockExposure(steps, counts, sizes)
+    return H1BlockExposure(
+        steps,
+        tuple(r.committed_steps for r in first),
+        tuple(r.source_bytes for r in first),
+    )
 
 
 def _observe_block(
@@ -468,10 +491,7 @@ def _observe_block(
     flagged = tuple(capture.independent_warmup)
     if any(label not in labels for label in flagged):
         raise ValueError("an independent-warmup flag names a cell outside the block")
-    seeds = {profile.seed for profile in profiles}
-    if len(seeds) != 1:
-        raise ValueError("one block carries exactly one seed")
-    (seed,) = seeds
+    seed = profiles[0].seed  # H1PreservationBlock refuses a block whose members differ in seed
     findings: list[H1ExclusionFinding] = []
     cells: list[H1CellProjection | None] = []
     for label, profile in zip(labels, profiles, strict=True):
@@ -496,9 +516,11 @@ def _observe_block(
         if label in flagged
     )
     exposure: H1BlockExposure | None = None
-    projected = [cell for cell in cells if cell is not None]
-    if len(projected) == len(cells) and all(cell.window_readings for cell in projected):
-        exposure = _window_exposure(seed, projected, labels)
+    projected = [(label, cell) for label, cell in zip(labels, cells, strict=True) if cell]
+    if len(projected) > 1:
+        exposure = _within_block_exposure(
+            seed, [cell for _, cell in projected], [label for label, _ in projected]
+        )
     return H1BlockObservation(
         seed=seed,
         pairing_id=block.identity,
@@ -625,14 +647,16 @@ def pilot_inputs(
     by the caller and never derived from the observations they are checked against. Contrast
     weights come from ``H1PreservationBlock.factorial_terms`` unchanged; each pair is
     ``(seed, fsum(weight x endpoint), 0.0)`` in the ``paired_contrasts`` convention, with the
-    committed step count at the last window evaluation as both exposures.
+    committed step count at the last window evaluation as both exposures. Observations are
+    ordered by seed here, so ``admitted_seeds``, ``exclusions``, ``runs`` and the pairs of every
+    contrast are in seed order whatever order the caller passes.
     """
     _text(family_digest, "family digest")
     _text(units, "units")
     threshold = _threshold(ess_threshold)
     admitted: list[H1BlockObservation] = []
     exclusions: list[H1BlockExclusion] = []
-    for item in observations:
+    for item in sorted(observations, key=lambda observed: observed.seed):
         findings = (*item.findings, *_gate_findings(item, threshold))
         if findings:
             exclusions.append(H1BlockExclusion(item.seed, item.pairing_id, findings))
@@ -666,7 +690,7 @@ def pilot_inputs(
                     next(iter(run_classes)),
                     family_digest,
                     expected_exposure,
-                    tuple(sorted(pairs, key=lambda pair: pair.seed)),
+                    tuple(pairs),
                 )
             )
     return H1PilotInputs(
