@@ -32,6 +32,7 @@ from entropic_substrate.ladder.analyze.h1_observations import (
     ESS_THRESHOLD,
     GATE_METRIC_KEY,
     H1BlockCapture,
+    H1BlockExclusion,
     H1BlockObservation,
     H1EvaluationReading,
     H1ExclusionFinding,
@@ -741,9 +742,7 @@ class TestPinnedGuards:
             for evaluation in run.evals:
                 assert {key for key, _ in evaluation.metrics} == {K8_KEYS["endpoint_key"]}
 
-    def test_observation_and_admission_order_is_seed_order_whatever_the_input_order(
-        self, tmp_path: Path
-    ) -> None:
+    def test_admission_order_is_seed_order_whatever_the_input_order(self, tmp_path: Path) -> None:
         blocks = eight_blocks(tmp_path)
         for position in (2, 5):  # seeds 103 and 106 fail the gate
             specs = list(standard_specs(position))
@@ -962,6 +961,63 @@ class TestMutationSurvivorPins:
         )
         with pytest.raises(ValueError, match="different captured run classes"):
             inputs_for((replace(first, cells=cells), *observations[1:]))
+
+    @pytest.mark.parametrize("damage", ["absent", "blank", "integer"])
+    def test_a_run_start_without_a_usable_run_class_is_refused_loudly(
+        self, tmp_path: Path, damage: str
+    ) -> None:
+        # load_h_run admits a run_start with no run_class, so this guard is the only thing
+        # between the per-cell diagnostic and a silently classless projection
+        metrics, log = write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c")
+
+        def damage_class(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            start = next(row for row in rows if row.get("event") == "run_start")
+            if damage == "absent":
+                del start["run_class"]
+            else:
+                start["run_class"] = "" if damage == "blank" else 7
+            return rows
+
+        _edit_metrics(metrics, damage_class)
+        with pytest.raises(ValueError, match="run_start carries no run_class"):
+            project_h1_cell(load_h_run(metrics, log))
+
+    def test_the_window_keyword_of_observe_h1_blocks_reaches_every_cell(
+        self, tmp_path: Path
+    ) -> None:
+        # three evaluations per cell: a three-evaluation window forms, the default five cannot
+        specs = tuple(_spec([base + j / 16 for j in range(3)]) for base in BASE)
+        capture = build_block(tmp_path, 101, specs)
+        (default,) = observe_h1_blocks([capture])
+        assert {cell.endpoint_reason for cell in default.cells if cell} == {
+            H1ExclusionReason.MISSING_ENDPOINT
+        }
+        (narrow,) = observe_h1_blocks([capture], window=3)
+        assert narrow.findings == ()
+        for cell, base in zip(narrow.cells, BASE, strict=True):
+            assert cell is not None and cell.window == 3
+            assert cell.endpoint == pytest.approx(base + sum(j / 16 for j in range(3)) / 3)
+
+    def test_observe_h1_blocks_returns_the_observations_in_seed_order(self, tmp_path: Path) -> None:
+        blocks = eight_blocks(tmp_path)
+        shuffled = [blocks[i] for i in (5, 2, 7, 0, 3, 6, 1, 4)]
+        assert [o.seed for o in observe_h1_blocks(shuffled)] == list(range(101, 109))
+
+    def test_an_exclusion_names_each_cell_once_whatever_its_finding_count(self) -> None:
+        exclusion = H1BlockExclusion(
+            101,
+            "pair",
+            (
+                H1ExclusionFinding(H1ExclusionReason.MISSING_ENDPOINT, "cell-a", "one"),
+                H1ExclusionFinding(H1ExclusionReason.INADMISSIBLE_ESS, "cell-a", "two"),
+                H1ExclusionFinding(H1ExclusionReason.INADMISSIBLE_ESS, "cell-b", "three"),
+            ),
+        )
+        assert exclusion.cells == ("cell-a", "cell-b")
+        assert exclusion.reasons == (
+            H1ExclusionReason.MISSING_ENDPOINT,
+            H1ExclusionReason.INADMISSIBLE_ESS,
+        )
 
 
 @pytest.mark.unit
@@ -1218,6 +1274,17 @@ class TestThresholdSweep:
         )
         for threshold, result in zip(self.THRESHOLDS, sweep, strict=True):
             assert result == inputs_for(observations, ess_threshold=threshold)
+
+    def test_results_follow_the_callers_threshold_order_not_ascending_order(
+        self, tmp_path: Path
+    ) -> None:
+        observations = observe_h1_blocks(self._blocks(tmp_path))
+        descending = tuple(reversed(self.THRESHOLDS))
+        sweep = pilot_inputs_by_threshold(
+            observations, descending, family_digest=FAMILY, units=UNITS, expected_exposure=10
+        )
+        assert [r.ess_threshold for r in sweep] == list(descending)
+        assert [len(r.admitted_seeds) for r in sweep] == [4, 5, 6, 7, 8]
 
     @pytest.mark.parametrize("thresholds", [(), (0.25, 0.25)])
     def test_a_degenerate_threshold_list_is_refused(
