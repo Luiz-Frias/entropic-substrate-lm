@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -258,3 +259,57 @@ def test_recovery_puts_back_a_lock_that_changed_hands_after_inspection(tmp_path:
         suite_lock._set_aside(lock, judged)
     assert parse_holder((lock / "holder").read_text()).label == "fresh-run"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["suite.lock"]
+
+
+CHILD_SEES_ITS_PARENT_HOLDING = (
+    "import os, pathlib, sys; "
+    "holder = pathlib.Path(sys.argv[1], 'holder').read_text().split(); "
+    "pathlib.Path(sys.argv[2]).write_text(holder[-2]); "
+    "sys.exit(int(holder[-2] != str(os.getppid())) or int(sys.argv[3]))"
+)
+
+
+def held_command(lock: Path, marker: Path, code: int = 0) -> list[str]:
+    return [sys.executable, "-c", CHILD_SEES_ITS_PARENT_HOLDING, str(lock), str(marker), str(code)]
+
+
+def test_hold_runs_the_whole_command_under_the_lock_then_releases(tmp_path: Path) -> None:
+    lock, marker = tmp_path / "suite.lock", tmp_path / "ran"
+    assert suite_lock.hold(lock, "ship-it", held_command(lock, marker)) == 0
+    assert marker.read_text() == str(os.getpid())  # the gate's children see this holder
+    assert not lock.exists()
+
+
+def test_hold_propagates_the_command_exit_code_and_still_releases(tmp_path: Path) -> None:
+    lock, marker = tmp_path / "suite.lock", tmp_path / "ran"
+    assert suite_lock.hold(lock, "ship-it", held_command(lock, marker, 3)) == 3
+    assert not lock.exists()
+
+
+def test_hold_refuses_a_collision_without_running_the_command(
+    tmp_path: Path, live_pid: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock, marker = tmp_path / "suite.lock", tmp_path / "ran"
+    hold(lock, "restack-gates", live_pid, datetime.now(UTC) + timedelta(seconds=1))
+    assert suite_lock.hold(lock, "ship-it", held_command(lock, marker)) == EXIT_LOCK_HELD
+    assert not marker.exists()
+    assert "restack-gates" in capsys.readouterr().err
+    assert parse_holder((lock / "holder").read_text()).pid == live_pid
+
+
+@pytest.mark.parametrize("argv", [[], ["ship-it"], ["ship-it", "--"], ["ship-it", "just", "check"]])
+def test_cli_without_label_separator_and_command_is_a_usage_error(argv: list[str]) -> None:
+    assert suite_lock.main(argv) == 2
+
+
+def test_ship_it_holds_the_lock_across_check_container_test_and_submit() -> None:
+    justfile = (Path(__file__).resolve().parents[1] / "justfile").read_text(encoding="utf-8")
+    header = re.search(r"^ship-it:.*$", justfile, flags=re.MULTILINE)
+    assert header is not None and header.group(0) == "ship-it:", (
+        "prerequisites on ship-it run before its body, outside the lock"
+    )
+    body = justfile[header.end() : header.end() + 400].split("\n\n")[0]
+    held = body.split("tests/suite_lock.py ship-it --", 1)
+    assert len(held) == 2, "ship-it must run its steps under tests/suite_lock.py"
+    steps = [held[1].index(step) for step in ("just check", "just container-test", "gt submit")]
+    assert steps == sorted(steps)

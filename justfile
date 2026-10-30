@@ -319,6 +319,13 @@ container-test:
 # gt uses the first commit's subject — already generated under the rules by
 # `just stack`. Pinned by tests/test_pr_authoring.py.
 
-# Gate (check + live container-test) then submit the Graphite stack as drafts
-ship-it: check container-test
-    gt submit --stack --no-edit --no-interactive --always
+# Gate (check + live container-test) then submit the Graphite stack as drafts,
+# holding the host suite lock (tests/suite_lock.py) across all three steps:
+# their suites run as this holder's descendants and pass through, while any
+# other session's `-n` suite or ship-it refuses with exit 75 instead of racing.
+# MEASURED 2026-10-30: a bare pre-push suite flaked a 10 s watchdog deadline at
+# swap 96% / load 22 beside another worktree's suite; alone it passed 3/3.
+# Steps are inside the held command, not recipe prerequisites, because
+# prerequisites run before the body and so outside the lock.
+ship-it:
+    uv run python tests/suite_lock.py ship-it -- bash -c 'just check && just container-test && gt submit --stack --no-edit --no-interactive --always'

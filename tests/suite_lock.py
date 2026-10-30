@@ -172,12 +172,8 @@ def configure_suite_lock(config: pytest.Config) -> None:
     except SuiteLockRefused as refused:
         pytest.exit(str(refused), returncode=EXIT_LOCK_HELD)
     if acquisition.recovered is not None:
-        gone = acquisition.recovered
         # Global capture is already active here; write past it so the notice is seen.
-        sys.__stderr__.write(
-            f"[suite-lock] Recovered a stale lock from {gone.label} (pid {gone.pid}), "
-            f"started {_when(gone.started)}: holder gone, no pytest running.\n"
-        )
+        sys.__stderr__.write(_recovered(acquisition.recovered))
     if acquisition.held:
         config.stash[_HELD] = lock
 
@@ -186,6 +182,43 @@ def release_suite_lock(config: pytest.Config) -> None:
     lock = config.stash.get(_HELD, None)
     if lock is not None:
         release(lock, pid=os.getpid())
+
+
+def hold(lock: Path, label: str, command: Sequence[str]) -> int:
+    """Run ``command`` holding ``lock`` throughout, so a multi-step gate is one holder.
+
+    The suites ``command`` starts are this process's descendants and pass
+    through; a colliding gate refuses before running anything.
+    """
+    try:
+        acquisition = acquire(
+            lock, label=label, pid=os.getpid(), now=datetime.now(UTC), processes=process_table()
+        )
+    except SuiteLockRefused as refused:
+        print(refused, file=sys.stderr)
+        return EXIT_LOCK_HELD
+    if acquisition.recovered is not None:
+        sys.stderr.write(_recovered(acquisition.recovered))
+    try:
+        return subprocess.run(command, check=False).returncode
+    finally:
+        if acquisition.held:
+            release(lock, pid=os.getpid())
+
+
+def main(argv: Sequence[str]) -> int:
+    """``python tests/suite_lock.py <label> -- <command> [args...]``"""
+    if len(argv) < 3 or argv[1] != "--":
+        print("usage: python tests/suite_lock.py <label> -- <command> [args...]", file=sys.stderr)
+        return 2
+    return hold(LOCK_PATH, f"{argv[0]}@{Path.cwd().name}", argv[2:])
+
+
+def _recovered(gone: Holder) -> str:
+    return (
+        f"[suite-lock] Recovered a stale lock from {gone.label} (pid {gone.pid}), "
+        f"started {_when(gone.started)}: holder gone, no pytest running.\n"
+    )
 
 
 def _inspect(lock: Path) -> Holder:
@@ -258,3 +291,7 @@ def _invalid(lock: Path, reason: str) -> str:
         "[suite-lock] This run did not start. If no suite is running, remove it: "
         f"rm -r {lock}"
     )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
