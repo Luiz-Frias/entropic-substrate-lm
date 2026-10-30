@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
 import stat
@@ -341,6 +342,22 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+# The stdlib decoder admits the NaN/Infinity/-Infinity literals and decodes an overflowing
+# literal such as 1e999 to inf (2026-10-30 survey). The refusal is local, not a call into
+# kernel.codec.strict_json: this module is a hashed member of both H reader identities and
+# strict_json is a member of neither, so importing it would move reader policy outside the
+# bytes those identities bind.
+def _non_finite_constant(constant: str) -> NoReturn:
+    raise ValueError(f"non-finite ladder JSON constant: {constant!r}")
+
+
+def _finite_float(token: str) -> float:
+    value = float(token)
+    if not math.isfinite(value):
+        raise ValueError(f"non-finite ladder JSON number: {token!r}")
+    return value
+
+
 def object_fields(value: object, fields: str) -> dict[str, object]:
     if type(value) is not dict or set(value) != set(fields.split()):
         raise ValueError("ladder artifact fields must be exact")
@@ -348,7 +365,12 @@ def object_fields(value: object, fields: str) -> dict[str, object]:
 
 
 def read_json_artifact(root: Path, artifact: ArtifactIdentity) -> dict[str, object]:
-    value = json.loads(read_bound_artifact(root, artifact), object_pairs_hook=_unique)
+    value = json.loads(
+        read_bound_artifact(root, artifact),
+        object_pairs_hook=_unique,
+        parse_constant=_non_finite_constant,
+        parse_float=_finite_float,
+    )
     if type(value) is not dict:
         raise ValueError("ladder artifact must be a JSON object")
     return cast(dict[str, object], value)
