@@ -16,7 +16,7 @@ import ast
 import json
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -620,6 +620,111 @@ class TestEssGate:
         observations = observe_h1_blocks([build_block(tmp_path, 101, specs)])
         assert inputs_for(observations).admitted_seeds == ()
         assert inputs_for(observations, ess_threshold=0.1).admitted_seeds == (101,)
+
+
+@pytest.mark.unit
+class TestSecondSweepPins:
+    """Pins for guards and report texts a second mutation sweep found unpinned."""
+
+    def test_cells_that_diverge_in_a_pre_window_evaluation_step_are_refused(
+        self, tmp_path: Path
+    ) -> None:
+        # equal committed counts and bytes, so only the explicit step-equality guard can fire
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+        cell = project_h1_cell(run)
+        moved = replace(
+            cell, readings=(replace(cell.readings[0], global_step=5), *cell.readings[1:])
+        )
+        with pytest.raises(ValueError, match="different evaluation steps"):
+            h1_observations._within_block_exposure(  # pyright: ignore[reportPrivateUsage]
+                101, [cell, moved], ["a", "b"]
+            )
+
+    def test_a_foreign_cell_key_with_the_right_count_is_refused_as_not_the_arms(
+        self, tmp_path: Path
+    ) -> None:
+        capture = build_block(tmp_path, 101, standard_specs(0))
+        cells = dict(capture.cells)
+        cells["h1-foreign-cell-pilot"] = cells.pop(LABELS[0])
+        with pytest.raises(ValueError, match="must equal the block's arms"):
+            observe_h1_blocks([replace(capture, cells=cells)])
+
+    @pytest.mark.parametrize("bad", [5, b"eval/log_marginal_per_byte_k64"])
+    @pytest.mark.parametrize("keyword", ["endpoint_key", "gate_key"])
+    def test_a_non_string_metric_key_is_refused_before_any_use(
+        self, tmp_path: Path, keyword: str, bad: Any
+    ) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+        with pytest.raises(ValueError, match="nonblank string"):
+            project_h1_cell(run, **{keyword: bad})
+
+    @pytest.mark.parametrize("threshold", [1.0, 1])
+    def test_a_threshold_of_exactly_one_is_admitted_and_gates_on_it(
+        self, tmp_path: Path, threshold: Any
+    ) -> None:
+        # ESS/k lies in (0, 1]: 1.0 is the top of the range, and ratios of 0.5 fall below it
+        observations = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))])
+        result = inputs_for(observations, ess_threshold=threshold)
+        assert result.ess_threshold == 1.0 and type(result.ess_threshold) is float
+        assert result.admitted_seeds == ()
+
+    def test_a_subclass_of_hrun_is_not_a_captured_cell(self, tmp_path: Path) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+
+        @dataclass(frozen=True)
+        class SubRun(HRun):
+            pass
+
+        impostor = SubRun(**{f.name: getattr(run, f.name) for f in fields(run)})
+        with pytest.raises(TypeError, match="captured HRun or HResumedRun"):
+            project_h1_cell(impostor)
+
+    def test_a_subclass_of_hresumedrun_is_not_a_captured_cell(self, tmp_path: Path) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+
+        @dataclass(frozen=True)
+        class SubResumed(HResumedRun):
+            pass
+
+        with pytest.raises(TypeError, match="captured HRun or HResumedRun"):
+            project_h1_cell(SubResumed(run=run, segments=(run,)))
+
+    def test_the_ess_exclusion_names_the_gate_key_actually_gated(self, tmp_path: Path) -> None:
+        # k = 8 ratios are 0.5: a 0.6 threshold excludes under the k = 8 gate, and the
+        # relayed finding must say k8, not the default k64
+        observations = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))], **K8_KEYS)
+        (exclusion,) = inputs_for(observations, ess_threshold=0.6).exclusions
+        assert exclusion.cells == LABELS
+        for finding in exclusion.findings:
+            assert finding.detail.startswith(f"{K8_KEYS['gate_key']} below 0.6")
+            assert GATE_METRIC_KEY not in finding.detail
+
+    def test_the_ess_exclusion_lists_the_failing_steps_and_values(self, tmp_path: Path) -> None:
+        observations = observe_h1_blocks([build_block(tmp_path, 101, standard_specs(0))])
+        (exclusion,) = inputs_for(observations, ess_threshold=0.6).exclusions
+        for finding in exclusion.findings:
+            assert "[(4, 0.5), (6, 0.5), (8, 0.5), (10, 0.5), (12, 0.5)]" in finding.detail
+
+    def test_a_missing_endpoint_finding_carries_its_text(self, tmp_path: Path) -> None:
+        specs = tuple(_spec([BASE[c] + j / 16 for j in range(4)]) for c in range(4))
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 101, specs)])
+        assert {finding.reason for finding in observation.findings} == {
+            H1ExclusionReason.MISSING_ENDPOINT
+        }
+        for finding in observation.findings:
+            assert "4 evaluation(s), fewer than the 5-evaluation endpoint window" in finding.detail
+
+    def test_a_non_finite_endpoint_finding_carries_its_text(self, tmp_path: Path) -> None:
+        specs = list(standard_specs(0))
+        specs[2] = CellSpec((1.7e308,) * 5, ((0.5,),) * 5, row_bytes=1)
+        (observation,) = observe_h1_blocks([build_block(tmp_path, 101, specs)])
+        (finding,) = observation.findings
+        assert finding.reason is H1ExclusionReason.NONFINITE_ENDPOINT
+        assert "mean of the last 5 evaluations is not finite" in finding.detail
+
+    def test_a_projection_reports_the_captured_profile_identity(self, tmp_path: Path) -> None:
+        run = load_h_run(*write_run(tmp_path, "a" * 64, _spec((-2.5,) * 5), step_bytes=1, tag="c"))
+        assert project_h1_cell(run).profile_identity == "a" * 64
 
 
 # ------------------------------------------------------------------ whole-block exclusion
