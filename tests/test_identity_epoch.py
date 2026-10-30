@@ -706,6 +706,26 @@ tree's runtime identity; the pin went RED on the patched tree before this swap, 
 (``5f992472``, ``199b1cbb``, ``28c8cb5a``, ``9f6d6de2``, ``fcc64eda``). Source rows are untouched
 (no h-source-reader-v3 member changed; recomputed and equal).
 
+Non-finite JSON re-pin (house rule 4, MEASURED 2026-10-30, branch
+``claude/relaxed-thompson-k1huxv``, the 2026-10-30 architecture survey's phase-0 defect 2):
+``read_json_artifact`` gains a ``parse_constant`` refusal of NaN/Infinity/-Infinity and a
+``parse_float`` finiteness check, so ``kernel.artifacts`` moves bytes. It is a member of BOTH
+tuples (1 of h-checkpoint-reader-v2's 53, 1 of h-source-reader-v3's 7), so every row in both
+tables moves; labels and both module sets are unchanged, and no member was added (the refusal is
+local precisely so ``kernel.codec.strict_json``, a member of neither set, stays out of the
+reader's behaviour). All nine rows were recomputed with ``tools/regime_rows.py`` over the patched
+tree; its control first reproduced all nine previous values exactly at the unpatched tip, and on
+the patched tree it equals ``checkpoint._reader_identity()`` and ``capture._reader_identity()``
+measured live under ``.venv/bin/python`` 3.12.13, torch 2.13.0+cu130, pysbd 0.3.4 (a checkpoint
+regime with no row here; the live source row is the (3.12.13, 0.3.4) row below). New checkpoint
+rows: (3.12.13, 2.13.0) ``40965967...``, (3.12.14, 2.13.0+cpu) ``c3faddf5...``, (3.12.15, 2.13.0)
+``0e4f24b7...``, (3.12.15, 2.13.0+cpu) ``002e9c8c...``, (3.12.16, 2.13.0+cpu) ``c4b22899...``. New
+source rows: (3.12.13) ``26e69cb3...``, (3.12.14) ``68f002a0...``, (3.12.15) ``2e140f6e...``,
+(3.12.16) ``7b3ffeb3...``. Retracted for this tree: the Rung B checkpoint values (``cf5b1768``,
+``e6105d3f``, ``cd49ed85``, ``73264a5f``, ``7c0f7759``) and the source values (``9978611d``,
+``d85b3144``, ``fc7fad81``, ``23da6f3e``). The source regime test was GREEN at the unpatched tip
+and RED on the patched tree before this swap, in this regime.
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -905,19 +925,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "cf5b1768c969ff1b9983bd5db854e908d3d29b9551fd7c5419f92d85b904529c",  # pragma: allowlist secret
+    ): "4096596743be39e18cc0860083bb01a9db536bfdd413a7aa5f7cb2010be0bc68",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "e6105d3f69f78944b99b090f417edf0b9edf138a46752ddb3d6eb96828f31ff8",  # pragma: allowlist secret
+    ): "c3faddf5a8a60fa9a402c50e708fb83385375b53dd30a1cb0fb4d2b00c3f4812",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "cd49ed85bb65885a1c936b8ea15236a78eb0390577a9fe2fb88f61dd42cfd8bd",  # pragma: allowlist secret
+    ): "0e4f24b758a559d5b8617f0fed30e848c543a81c47d7798fe7e0ac7c60c7106a",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "73264a5fedea97c887e7dd63eb115630dc9fa9a04287f96c3323a64ea566dddb",  # pragma: allowlist secret
+    ): "002e9c8c8ba75830e66287887d89cfe8ba7e02feea14b6ed18fe44f34151144c",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -927,27 +947,27 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "7c0f7759c895a803936a381b457cdc3f44df5f5b99214b808786e567d5edf741",  # pragma: allowlist secret
+    ): "c4b22899657b2b880a871bcfea2f5657f1bcf0d8fa7f67023600fd09be6983d3",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "0.3.4",
-    ): "9978611df372f0b21e9ee7317b78a61859c4d94a8acef9d3dab3f8d93161e231",  # pragma: allowlist secret
+    ): "26e69cb31a74ec62cb2eab0c575c3c57e612511cf61b84e322f050fa96794c89",  # pragma: allowlist secret
     (
         "3.12.14",
         "0.3.4",
-    ): "d85b31442840d6e4c466f00e170d976d3621956a174089c645fcb065f1ba5fbc",  # pragma: allowlist secret
+    ): "68f002a0e044724c0c102f06cad398bdaf5d36246d56ed1dcee7d7351a76f6b5",  # pragma: allowlist secret
     (
         "3.12.15",
         "0.3.4",
-    ): "fc7fad81f3adb884236cb7918ea7c13966f71127e17de3b5aa8040ba633dda68",  # pragma: allowlist secret
+    ): "2e140f6e277307d61a1c02a1a4563e85c49dae51e6731a69ce6fd03b304a5af5",  # pragma: allowlist secret
     # MEASURED 2026-10-27: companion of the 3.12.16 checkpoint row above, same instrument run.
     (
         "3.12.16",
         "0.3.4",
-    ): "23da6f3e89b348572be0b137cb6ad75fbfbb66c0341328fc93821d116cff9fbb",  # pragma: allowlist secret
+    ): "7b3ffeb3f83dadab93f6b2f87ee308f918fe5f914da3d7924129b2e4d120902f",  # pragma: allowlist secret
 }
 
 
