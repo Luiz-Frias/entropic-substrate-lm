@@ -267,6 +267,78 @@ def test_missing_or_excessive_measured_rate_cannot_continue_training(
     assert calls == ["create"] and guard.joined
 
 
+@pytest.mark.parametrize("rate", [None, 2.0, True, -1.0, float("nan")])
+def test_a_refused_measured_rate_deletes_the_pod_before_the_stop_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rate: float | None,
+) -> None:
+    """The rate is first readable in the create response, so a refused price is already
+    billing: the controller deletes the owned pod at once, ahead of the stop handoff and
+    the watchdog join, rather than leaving it to the watchdog's next poll."""
+    guard, provider, calls, _clock, run = setup(tmp_path, monkeypatch, {})
+    provider.pod = replace(provider.pod, cost_per_hour=rate)
+    write, delete, wait = guard.control.write, provider.delete_owned, guard.wait_result
+
+    def recorded_write(name: str, payload: dict[str, object], *, max_bytes: int) -> None:
+        calls.append(f"control:{name}")
+        write(name, payload, max_bytes=max_bytes)
+
+    def recorded_delete(spec: object, pod_id: str) -> str:
+        calls.append(f"delete:{pod_id}")
+        return delete(spec, pod_id)
+
+    def recorded_wait(*, timeout_seconds: float) -> dict[str, object]:
+        calls.append("join")
+        return wait(timeout_seconds=timeout_seconds)
+
+    monkeypatch.setattr(guard.control, "write", recorded_write)
+    monkeypatch.setattr(provider, "delete_owned", recorded_delete)
+    monkeypatch.setattr(guard, "wait_result", recorded_wait)
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    assert calls == [
+        "create",
+        "control:pod",
+        "delete:owned-pod",
+        "control:stop",
+        "join",
+        "control:result",
+    ]
+    record = caught.value.record
+    assert record["failure_stages"] == ["price_admission"]
+    assert record["emergency_cleanup"] == {
+        "status": "emergency_attempt",
+        "pod_id": "owned-pod",
+        "acknowledgement": "deletion_acknowledged",
+        "owned_pod_absent": True,
+    }
+
+
+def test_a_refused_rate_with_a_failed_stop_handoff_deletes_the_pod_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The immediate price-refusal deletion is the emergency attempt; a later stop failure
+    must not issue a second delete or overwrite the first attempt's record."""
+    guard, provider, _calls, _clock, run = setup(tmp_path, monkeypatch, {})
+    provider.pod = replace(provider.pod, cost_per_hour=2.0)
+    write = guard.control.write
+
+    def failing_stop(name: str, payload: dict[str, object], *, max_bytes: int) -> None:
+        if name == "stop":
+            raise OSError("stop custody unavailable")
+        write(name, payload, max_bytes=max_bytes)
+
+    monkeypatch.setattr(guard.control, "write", failing_stop)
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    assert provider.deleted == ["owned-pod"]
+    record = caught.value.record
+    assert record["failure_stages"][:2] == ["price_admission", "stop_handoff"]
+    assert record["emergency_cleanup"]["acknowledgement"] == "deletion_acknowledged"
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

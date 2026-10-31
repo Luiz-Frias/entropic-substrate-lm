@@ -425,6 +425,24 @@ def run_probe_controller(
     account_id = guard.ready["account_id"]
     progress = _CheckpointProgress(guard.launch.request)
     probe_tally = _TerminalProbeTally()
+
+    def emergency_attempt() -> None:
+        nonlocal emergency
+        try:
+            emergency = _emergency_cleanup(guard, provider, pod_id)
+        except BaseException as error:
+            errors.append(error)
+            failure_stages.append("emergency_cleanup")
+            emergency = {"status": "emergency_failed", "owned_pod_absent": False}
+        emit(
+            "warning",
+            HOST_EMERGENCY_CLEANUP,
+            pod_name=pod_name,
+            outcome=emergency["status"],
+            acknowledgement=emergency.get("acknowledgement"),
+            owned_pod_absent=emergency["owned_pod_absent"],
+        )
+
     stage = "allocation"
     try:
         if clock() >= deadline:
@@ -450,6 +468,14 @@ def run_probe_controller(
             {"schema": "h-probe-pod-observation-v1", **asdict(pod)},
             max_bytes=guard.config.max_control_bytes,
         )
+        # The per-pod rate is first readable HERE, in the create response (costPerHr). Read
+        # 2026-10-30 against the pinned transport (ladder/run/h_runpod_transport.py): its only
+        # pre-create provider reads are `user` (account balance and the account's current
+        # spend per hour, not this pod's quote) and `template get` (validate_template's
+        # contract carries no price field). A runpodctl 3.0.1 GPU price listing was NOT
+        # measured, and a listed quote would not bind the price create bills. So a refused
+        # rate is already billing: the except handler below deletes the owned pod at once,
+        # before the stop handoff, instead of leaving it to the watchdog's next poll.
         stage = "price_admission"
         if (
             type(pod.cost_per_hour) is not int and type(pod.cost_per_hour) is not float
@@ -505,6 +531,8 @@ def run_probe_controller(
             if pod_id is None:
                 pod_id = error.possible_pod_id
             provider_failure_code = provider_error_code(error)
+        if stage == "price_admission":
+            emergency_attempt()
 
     stop_failed = False
     try:
@@ -539,24 +567,7 @@ def run_probe_controller(
         failure_stages.append("stop_handoff")
         stop_failed = True
 
-    def emergency_attempt() -> None:
-        nonlocal emergency
-        try:
-            emergency = _emergency_cleanup(guard, provider, pod_id)
-        except BaseException as error:
-            errors.append(error)
-            failure_stages.append("emergency_cleanup")
-            emergency = {"status": "emergency_failed", "owned_pod_absent": False}
-        emit(
-            "warning",
-            HOST_EMERGENCY_CLEANUP,
-            pod_name=pod_name,
-            outcome=emergency["status"],
-            acknowledgement=emergency.get("acknowledgement"),
-            owned_pod_absent=emergency["owned_pod_absent"],
-        )
-
-    if (
+    if emergency is None and (
         stop_failed
         or not guard.alive
         or any(isinstance(e, ProbeAllocationHandoffError) for e in errors)

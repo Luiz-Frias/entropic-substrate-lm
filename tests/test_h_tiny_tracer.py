@@ -65,6 +65,7 @@ class _FakeSink:
     def __init__(self) -> None:
         self.records: list[Mapping[str, Any]] = []
         self.finished = False
+        self.statuses: list[str] = []
 
     def log(self, record: Mapping[str, Any]) -> None:
         self.records.append(record)
@@ -72,8 +73,12 @@ class _FakeSink:
     def log_artifact(self, path: Path, *, artifact_path: str | None = None) -> None:
         raise AssertionError("the tracer never uploads artifacts")
 
-    def finish(self) -> None:
+    def annotate(self, tags: Mapping[str, str]) -> None:
+        raise AssertionError("the tracer never annotates its run")
+
+    def finish(self, *, status: str = "FINISHED") -> None:
         self.finished = True
+        self.statuses.append(status)
 
 
 class _Builder:
@@ -188,7 +193,8 @@ def test_trace_routes_every_row_through_the_worker_shaped_sink(tmp_path: Path) -
     # One global optimizer-step axis: prediction step n lands at warmup + n.
     steps = [call["extractor"].extract(r).step for r in training]
     assert steps == [1, 2, 3, 4, 5, 6]
-    assert builder.sink.finished
+    # DN-1643-PORT: the run terminates FINISHED iff training RETURNED, exactly once.
+    assert builder.sink.statuses == ["FINISHED"]
 
 
 def test_trace_finishes_its_sink_when_training_raises(
@@ -213,8 +219,34 @@ def test_trace_finishes_its_sink_when_training_raises(
             max_artifact_bytes=LIMIT,
             sink_builder=builder,
         )
-    assert builder.sink.finished
+    # DN-1643-PORT: every raised exit terminates the run FAILED, exactly once.
+    assert builder.sink.statuses == ["FAILED"]
     assert len(list((tmp_path / "trace" / "run").glob("*-failure.json"))) == 1
+
+
+def test_trace_finishes_failed_on_a_base_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A KeyboardInterrupt is a raised exit too; it must not finish the run FINISHED."""
+    local, source = _local_profile(tmp_path)
+
+    def interrupt(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "entropic_substrate.composition.wiring.h_tiny_tracer.run_probe_training", interrupt
+    )
+    builder = _Builder()
+    with pytest.raises(KeyboardInterrupt):
+        run_tiny_trace(
+            local,
+            source,
+            tmp_path / "trace",
+            max_source_bytes=LIMIT,
+            max_artifact_bytes=LIMIT,
+            sink_builder=builder,
+        )
+    assert builder.sink.statuses == ["FAILED"]
 
 
 def test_command_writes_source_run_observability_and_trace_manifest(
