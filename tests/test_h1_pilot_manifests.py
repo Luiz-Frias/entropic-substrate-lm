@@ -73,14 +73,20 @@ def probe_schedule(steps: int = STEPS) -> RunSchedule:
     )
 
 
-def limits_for(steps: int = STEPS) -> TransferLimits:
-    probe = probe_schedule(steps)
+def sized_limits(
+    schedule: RunSchedule, *, non_checkpoint_bytes: int = NON_CHECKPOINT_BYTES
+) -> TransferLimits:
+    """The fixture's sizing: one source and one fixed-object count, the allowance a parameter."""
     return pilot_transfer_limits(
-        probe,
+        schedule,
         source_bytes=SOURCE_BYTES,
         fixed_objects=FIXED_OBJECTS,
-        non_checkpoint_bytes=NON_CHECKPOINT_BYTES,
+        non_checkpoint_bytes=non_checkpoint_bytes,
     )
+
+
+def limits_for(steps: int = STEPS) -> TransferLimits:
+    return sized_limits(probe_schedule(steps))
 
 
 def blocks(steps: int = STEPS, **changes: object) -> tuple[H1PilotBlock, ...]:
@@ -248,6 +254,10 @@ def test_unruled_schedule_knobs_are_required_and_positive(knob: str) -> None:
     for bad in (0, -1, True):
         with pytest.raises(ValueError):
             blocks(**{knob: bad})
+    # blocks() injects every knob, so only a direct call can see a default added to one.
+    omitted = {name: value for name, value in KNOBS.items() if name != knob}
+    with pytest.raises(TypeError, match=rf"missing .*argument.*'{knob}'"):
+        h1_pilot_blocks(source_digest=SOURCE, steps=STEPS, limits=UNBOUNDED, **omitted)
 
 
 def test_every_profile_round_trips_through_its_manifest() -> None:
@@ -323,12 +333,7 @@ def test_transfer_limits_follow_the_checkpoint_count_per_cell() -> None:
     doubled = required_checkpoint_floor(schedule, capture_copies=2)
     assert doubled.max_total_bytes == 2 * floor.max_total_bytes
     assert doubled.max_objects == 2 * (4 * 21 + 20 + 5) + 14
-    sized = pilot_transfer_limits(
-        schedule,
-        source_bytes=SOURCE_BYTES,
-        fixed_objects=FIXED_OBJECTS,
-        non_checkpoint_bytes=NON_CHECKPOINT_BYTES,
-    )
+    sized = sized_limits(schedule)
     assert sized.max_total_bytes == doubled.max_total_bytes + SOURCE_BYTES + NON_CHECKPOINT_BYTES
     assert sized.max_object_bytes == 1_149_203_227
     assert sized.max_objects == doubled.max_objects + FIXED_OBJECTS
@@ -468,15 +473,6 @@ def test_a_refused_limit_names_the_floor_as_necessary_and_not_sufficient() -> No
     assert "not sufficient" in str(raised.value)
 
 
-def _sized(schedule: RunSchedule, *, non_checkpoint_bytes: int) -> TransferLimits:
-    return pilot_transfer_limits(
-        schedule,
-        source_bytes=SOURCE_BYTES,
-        fixed_objects=FIXED_OBJECTS,
-        non_checkpoint_bytes=non_checkpoint_bytes,
-    )
-
-
 def test_sizing_requires_an_explicit_non_checkpoint_allowance() -> None:
     """No default: the final snapshot also publishes journals, receipts and records, and the
     generator holds no measurement of them, so an omitted allowance cannot be filled in here.
@@ -492,14 +488,14 @@ def test_sizing_requires_an_explicit_non_checkpoint_allowance() -> None:
 def test_sizing_refuses_a_non_int_bool_or_negative_non_checkpoint_allowance(bad: object) -> None:
     schedule = probe_schedule()
     with pytest.raises(ValueError, match="non-checkpoint bytes"):
-        _sized(schedule, non_checkpoint_bytes=bad)  # type: ignore[arg-type]
+        sized_limits(schedule, non_checkpoint_bytes=bad)  # type: ignore[arg-type]
 
 
 def test_the_non_checkpoint_allowance_is_added_to_the_total_exactly_once() -> None:
     schedule = probe_schedule()
-    none = _sized(schedule, non_checkpoint_bytes=0)  # zero is a stated value, accepted
-    some = _sized(schedule, non_checkpoint_bytes=7)
-    many = _sized(schedule, non_checkpoint_bytes=10**9)
+    none = sized_limits(schedule, non_checkpoint_bytes=0)  # zero is a stated value, accepted
+    some = sized_limits(schedule, non_checkpoint_bytes=7)
+    many = sized_limits(schedule, non_checkpoint_bytes=10**9)
     assert some.max_total_bytes - none.max_total_bytes == 7
     assert many.max_total_bytes - none.max_total_bytes == 10**9
     # The allowance is a total only: it moves neither the per-object nor the object count.
