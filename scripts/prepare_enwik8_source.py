@@ -254,15 +254,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="measurement-only pass: time pysbd per page, count defects, write nothing",
     )
     args = parser.parse_args(argv)
+    # Refuse a bad flag combination before the 100 MB read and SHA-256 pass, and keep
+    # the measure-only contract (write nothing) at the CLI boundary: an --output that
+    # the measurement branch would ignore could be mistaken for a written capture.
+    output: Path | None = args.output
+    if args.measure_segmenter and output is not None:
+        parser.error("--measure-segmenter writes nothing and cannot be combined with --output")
+    if not args.measure_segmenter and output is None:
+        parser.error("--output is required unless --measure-segmenter is given")
     prefix = load_verified_prefix(args.raw, args.bound_bytes)
-    if args.measure_segmenter:
+    if output is None:  # the checks above make this exactly the --measure-segmenter pass
         result = measure_segmenter(prefix)
     else:
-        if args.output is None:
-            parser.error("--output is required unless --measure-segmenter is given")
-        result = prepare_capture(
-            prefix, output=args.output, max_artifact_bytes=args.max_artifact_bytes
-        )
+        result = prepare_capture(prefix, output=output, max_artifact_bytes=args.max_artifact_bytes)
     print(json.dumps(result, sort_keys=True, allow_nan=False))
     return 0
 

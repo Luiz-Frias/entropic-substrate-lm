@@ -8,6 +8,7 @@ time so a later segmentation fix cannot turn this file red.
 
 import importlib.util
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -26,6 +27,7 @@ from entropic_substrate.ladder.capture.custody.enwik8_documents import (
     ENWIK8_REVISION,
     ENWIK8_SHA256,
     PAGE_CONSTRUCTION_VERSION,
+    Enwik8Page,
     candidate_limit_for_bound,
     iter_enwik8_documents,
     iter_enwik8_pages,
@@ -495,6 +497,25 @@ def test_an_engine_version_mismatch_is_not_relabelled_as_a_segmenter_defect(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_an_error_before_the_first_page_is_reraised_unchanged_and_never_a_defect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = _script()
+    raised = RuntimeError("page iterator failed before yielding a page")
+
+    def broken(prefix: bytes, bound: int) -> Iterator[Enwik8Page]:
+        yield from ()
+        raise raised
+
+    monkeypatch.setattr(script, "iter_enwik8_pages", broken)
+    with pytest.raises(RuntimeError) as caught:
+        script.prepare_capture(RAW, output=tmp_path, max_artifact_bytes=1_000_000)
+    assert caught.value is raised
+    assert not isinstance(caught.value, script.SegmenterDefect)
+    assert caught.value.__cause__ is None
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_a_nonsegmenter_error_during_preparation_is_not_annotated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -513,6 +534,55 @@ def test_main_refuses_a_raw_that_is_not_the_pinned_enwik8(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="length"):
         script.main(["--raw", str(raw), "--bound-bytes", "100", "--output", str(out)])
     assert list(out.iterdir()) == []
+
+
+def _forbid_input_read(script: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    def read(raw: Path, bound: int) -> bytes:
+        raise AssertionError("the input was read before the flag combination was refused")
+
+    monkeypatch.setattr(script, "load_verified_prefix", read)
+
+
+def test_main_refuses_measure_segmenter_with_output_before_reading_the_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _script()
+    _forbid_input_read(script, monkeypatch)
+    out = tmp_path / "out"
+    argv = ["--raw", str(tmp_path / "absent-raw"), "--measure-segmenter", "--output", str(out)]
+    with pytest.raises(SystemExit) as caught:
+        script.main(argv)
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "--measure-segmenter" in captured.err
+    assert "--output" in captured.err
+    assert captured.out == ""
+    assert not out.exists()
+
+
+def test_main_refuses_a_missing_output_before_reading_the_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _script()
+    _forbid_input_read(script, monkeypatch)
+    with pytest.raises(SystemExit) as caught:
+        script.main(["--raw", str(tmp_path / "absent-raw")])
+    assert caught.value.code == 2
+    assert "--output is required" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_main_measure_segmenter_alone_reads_the_input_prints_the_report_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _script()
+    monkeypatch.setattr(script, "load_verified_prefix", lambda raw, bound: RAW)
+    argv = ["--raw", str(tmp_path / "raw"), "--bound-bytes", "10", "--measure-segmenter"]
+    assert script.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["pages_examined"] == len(PAGES)
+    assert report["defect_count"] == 0
+    assert list(tmp_path.iterdir()) == []
 
 
 # ------------------------------------------------ the measurement-only pass
