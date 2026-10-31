@@ -65,7 +65,13 @@ their own and nothing in W1 waits on W2.
    (`:95-97`), and only then are committed rows summed (the status test comes last, `:98-99`); a
    non-committed prediction row with bytes contributes nothing and one without bytes raises
    (`tests/test_h_preservation.py:313-316`, `:346-349`). An unrecognized `phase` or `status` raises too
-   (`:91-92`). This is deliberately not committed-first filtering: persisted journals hold only committed
+   (`:91-92`). The closed vocabularies are `_ROW_PHASES = {codec_warmup, prediction}` and
+   `_ROW_STATUSES = {started, committed, scientific_gap, execution_defect}` (`h_preservation.py:70-71`);
+   any other value is invalid and raises. Of the four statuses only `committed` rows are summed; `started`,
+   `scientific_gap` and `execution_defect` prediction rows contribute nothing but must still carry valid
+   `source_bytes`. The training loop emits `started` and then `committed`, `scientific_gap` or
+   `execution_defect` (`ladder/run/execution.py:207`, `:271-279`); persisted journals accept only
+   `committed` (`journal.py:133`). This is deliberately not committed-first filtering: persisted journals hold only committed
    rows (`ladder/run/journal.py:127-135`) and the training loop re-raises on failure
    (`ladder/run/execution.py:274-285`), so a failure-shaped row in the input means attempt records were
    fed in, which is the intended refusal.
