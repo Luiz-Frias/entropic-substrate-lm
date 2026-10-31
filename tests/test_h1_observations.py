@@ -449,6 +449,7 @@ class TestExposure:
         run = load_h_run(metrics, log)
         rows = [json.loads(line) for line in metrics.read_text().splitlines()]
         target = next(r for r in rows if r.get("phase") == "prediction")
+        target["status"] = "started"  # a non-committed row, as the test name states
         target["source_bytes"] = None
         metrics.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         with pytest.raises(ValueError, match="source_bytes"):
