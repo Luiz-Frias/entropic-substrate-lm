@@ -262,6 +262,20 @@ def h1_profiles(seed: int, *, encoder_layers: int | None = None) -> tuple[HProfi
     )
 
 
+def renamed_profiles(seed: int, **kwargs: Any) -> tuple[HProfile, ...]:
+    """``h1_profiles`` with every member renamed per seed, so no cell label repeats."""
+    return tuple(
+        replace(member, name=f"{member.name}-renamed-{seed}")
+        for member in h1_profiles(seed, **kwargs)
+    )
+
+
+def module_source() -> tuple[str, ast.Module]:
+    """The adapter module's source text and its parse tree, read as UTF-8."""
+    text = Path(h1_observations.__file__).read_text(encoding="utf-8")
+    return text, ast.parse(text)
+
+
 def build_block(
     root: Path,
     seed: int,
@@ -456,7 +470,7 @@ class TestExposure:
             project_h1_cell(run)  # never caught into 0 or a partial sum
 
     def test_h1_exposure_bytes_is_consumed_not_reimplemented(self) -> None:
-        tree = ast.parse(Path(h1_observations.__file__).read_text())
+        _, tree = module_source()
         names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
         assert "h1_exposure_bytes" in names
         # no second status/phase filter: the module never compares a row's source_bytes
@@ -1310,15 +1324,9 @@ class TestBinding:
     def test_a_construction_change_under_renamed_cells_raises(self, tmp_path: Path) -> None:
         # every cell name is seen once across the two blocks, so only the (sentence, spine)
         # axis key can see the change: RED with the by_axis guard removed
-        def renamed(seed: int, **kwargs: Any) -> tuple[HProfile, ...]:
-            return tuple(
-                replace(member, name=f"{member.name}-renamed-{seed}")
-                for member in h1_profiles(seed, **kwargs)
-            )
-
-        first = build_block(tmp_path, 101, standard_specs(0), profiles=renamed(101))
+        first = build_block(tmp_path, 101, standard_specs(0), profiles=renamed_profiles(101))
         changed = build_block(
-            tmp_path, 102, standard_specs(1), profiles=renamed(102, encoder_layers=2)
+            tmp_path, 102, standard_specs(1), profiles=renamed_profiles(102, encoder_layers=2)
         )
         with pytest.raises(ValueError, match="construction digest"):
             observe_h1_blocks([first, changed])
@@ -1333,13 +1341,6 @@ class TestCrossCallFamily:
     """FOR-1711 (reviewer 4427838782): the family checks bind ``pilot_inputs``, not only one
     ``observe_h1_blocks`` call. Each pin feeds the SAME blocks through two calls and
     concatenates, and compares the refusal with the single-call control's, byte for byte."""
-
-    @staticmethod
-    def _renamed(seed: int, **kwargs: Any) -> tuple[HProfile, ...]:
-        return tuple(
-            replace(member, name=f"{member.name}-renamed-{seed}")
-            for member in h1_profiles(seed, **kwargs)
-        )
 
     def test_a_construction_mixed_across_observe_calls_raises_the_single_call_text(
         self, tmp_path: Path
@@ -1362,9 +1363,9 @@ class TestCrossCallFamily:
         self, tmp_path: Path
     ) -> None:
         # every renamed cell label is seen once, so only the (sentence, spine) axis key sees it
-        first = build_block(tmp_path, 101, standard_specs(0), profiles=self._renamed(101))
+        first = build_block(tmp_path, 101, standard_specs(0), profiles=renamed_profiles(101))
         changed = build_block(
-            tmp_path, 102, standard_specs(1), profiles=self._renamed(102, encoder_layers=2)
+            tmp_path, 102, standard_specs(1), profiles=renamed_profiles(102, encoder_layers=2)
         )
         with pytest.raises(ValueError) as single:
             observe_h1_blocks([first, changed])
@@ -1715,7 +1716,7 @@ class TestFollowUpPins:
         assert len(cell.window_readings) == ENDPOINT_WINDOW
 
     def test_the_module_imports_are_an_exact_allowlist(self) -> None:
-        tree = ast.parse(Path(h1_observations.__file__).read_text())
+        _, tree = module_source()
         assert [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names] == [
             "math"
         ]
@@ -1923,10 +1924,8 @@ class TestRoundFivePins:
 
 @pytest.mark.unit
 class TestModuleContract:
-    SOURCE = Path(h1_observations.__file__)
-
     def test_the_module_is_pure(self) -> None:
-        tree = ast.parse(self.SOURCE.read_text())
+        _, tree = module_source()
         imports = [n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)] + [
             a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
         ]
@@ -1949,21 +1948,20 @@ class TestModuleContract:
         assert sentinels == []
 
     def test_no_threshold_literal_lives_in_the_source_beyond_the_default(self) -> None:
-        tree = ast.parse(self.SOURCE.read_text())
+        text, tree = module_source()
         floats = {
             n.value
             for n in ast.walk(tree)
             if isinstance(n, ast.Constant) and type(n.value) is float
         }
         assert floats <= {0.0, 0.25}
-        text = self.SOURCE.read_text()
         assert not any(token in text for token in ("0.10", "0.15", "0.35", "0.50"))
 
     def test_the_step_schema_literal_equals_the_aggregates(self) -> None:
         assert h1_observations._STEP_SCHEMA == h_aggregate._STEP_SCHEMA  # pyright: ignore[reportPrivateUsage]
 
     def test_the_prelude_is_consumed_not_redefined(self) -> None:
-        text = self.SOURCE.read_text()
+        text, _ = module_source()
         for name in (
             "class H1ExclusionReason",
             "def h1_construction_digest",
