@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.11.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.10.0...v0.11.0) (2026-10-31)
+
+
+### Features
+
+* **tooling:** hold suite lock across ship-it gate ([ac41704](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/ac417045783e161d3a47a7700a996fe510bc1273))
+* **tooling:** hold suite lock across ship-it gate ([#423](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/423)) ([d6ecc71](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d6ecc7178589edd6e1d9385435c1fc52d271726c))
+
+
+### Bug Fixes
+
+* **h-probe:** delete a price-refused pod before the stop handoff ([dd466fe](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dd466fed21b434b0a9e1813466e4d4f4406a1212))
+* **h-probe:** delete a price-refused pod before the stop handoff ([466808f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/466808f237491dcb6ce59229d03231485bff5851))
+* **h-tracer:** finish the tiny trace run FAILED on a raised exit ([dd466fe](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dd466fed21b434b0a9e1813466e4d4f4406a1212))
+* **h-tracer:** finish the tiny trace run FAILED on a raised exit ([6d2eb2a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/6d2eb2ae4a0485befafb228e4092384e314fba1d))
+* **h-tracer:** finish the tiny trace run FAILED on a raised exit ([#412](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/412)) ([dd466fe](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dd466fed21b434b0a9e1813466e4d4f4406a1212))
+* **kernel:** refuse non-finite JSON in read_json_artifact ([dd466fe](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/dd466fed21b434b0a9e1813466e4d4f4406a1212))
+* **kernel:** refuse non-finite JSON in read_json_artifact ([e1618a2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e1618a2de2d27f90f6501044c28e0644664b1ca0))
+
+
+### Documentation
+
+* **docs:** add CLAUDE.md rule R7 to series plan ([cea8fbe](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cea8fbef547f73c7f3734d6ec509e397fbb70857))
+* **docs:** add CLAUDE.md rule R7 to series plan ([#421](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/421)) ([d845af1](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d845af11f786c3524220fb890891c62d3ab2dc61))
+* **docs:** add series plugin topology plan ([20bc15c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/20bc15ceb43097b5a2b39659fd6e206581313aed))
+* **docs:** add series plugin topology plan ([#418](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/418)) ([2f60ad0](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2f60ad024403d7446520677ee734d59109b4d9af))
+* **docs:** restructure series plan around engines ([95cd165](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/95cd165bc869d64f994b0fe70e1c9a0955a21fa6))
+* **docs:** restructure series plan around engines ([#419](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/419)) ([2a80ee4](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2a80ee457efaafd890d35fac52c440a2f620f5e8))
+* **plans:** add platform library and observability rulings ([7e1f91d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7e1f91dbc903488aa22c71b6aa329ba411d99d47))
+* **plans:** add platform library and observability rulings ([#420](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/420)) ([eb981a5](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/eb981a55fd908eb1ebd4e4ad9220a46ff3190f7e))
+
 ## [0.10.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.9.1...v0.10.0) (2026-10-31)
 
 
