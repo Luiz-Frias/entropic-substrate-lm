@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.10.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.9.1...v0.10.0) (2026-10-31)
+
+
+### Features
+
+* **analyze:** add the H1 observation adapter for pilot sizing ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** add the H1 observation adapter for pilot sizing ([24d13e8](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/24d13e85db34c0067c9abea1b7fa70cb52123ece))
+* **analyze:** add the H1 observation adapter for pilot sizing ([#416](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/416)) ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **register:** add H1 construction digest and exposure rule ([255c118](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/255c1187fcdcc3d7de6e646831955b43c72c926c))
+* **register:** add H1 construction digest and exposure rule ([a0157f7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/a0157f76698ea2b8c8807666dbc68dfc098486ee))
+* **register:** add H1 construction digest and exposure rule ([#414](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/414)) ([255c118](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/255c1187fcdcc3d7de6e646831955b43c72c926c))
+* **register:** add H1 pilot block generator and Q7 norm teeth ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** add H1 pilot block generator and Q7 norm teeth ([987875a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/987875a4e05b8b984b973c2dda0988ed247fa843))
+* **register:** add H1 pilot block generator and Q7 norm teeth ([#415](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/415)) ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+
+
+### Bug Fixes
+
+* **analyze:** exclude H1 blocks with gap rows in the window ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** exclude H1 blocks with gap rows in the window ([c1f4393](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c1f43939c9813c735fb40b7342267905f4412ea8))
+* **analyze:** hold H1 family checks across pooled observations ([67d3490](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/67d34908742d37b251d76c9d549315949631b6ce))
+* **analyze:** key H1 runs by a seed-free construction arm ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** key H1 runs by a seed-free construction arm ([435041a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/435041a448db3a5a0f57b9babf96133d7541d4b1))
+* **analyze:** key H1 runs by the profile name again ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** key H1 runs by the profile name again ([5d9d293](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5d9d293b60f16d3f32ef26646ace80625195852e))
+* **analyze:** one projection regime and unique seeds per pilot call ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** one projection regime and unique seeds per pilot call ([bee698f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/bee698febce6581c1b8594121c478a7d50b5b9d0))
+* **analyze:** pin H1 adapter guards and order pilot inputs by seed ([8d5b5a7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8d5b5a7fb32c6465482f1d6b86d95290d980329c))
+* **analyze:** pin H1 adapter guards and order pilot inputs by seed ([cdd12ba](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cdd12ba292b658664671871fdf5eb31fa5eed9af))
+* **register:** name pilot arms without the seed, tighten Q7 teeth ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** name pilot arms without the seed, tighten Q7 teeth ([0a20ea6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0a20ea6376686b1ef4fd478aac289fbcbedcc86d))
+* **register:** require non-checkpoint allowance in pilot limits ([27d9eb8](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/27d9eb863da85a83b63152be97e040ea0fb4782c))
+* **register:** size H1 pilot object floor from the real worker ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** size H1 pilot object floor from the real worker ([c6fd093](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c6fd0939780320cf57f0c23781414d9d894b7508))
+
+
+### Code Refactoring
+
+* **register:** annotate the Q7 nested mutants ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** annotate the Q7 nested mutants ([19759b2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/19759b2e53e35cd25a0ac13d9739988d10c9dad2))
+* **register:** share the dual apply_interface patch in Q7 tests ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** share the dual apply_interface patch in Q7 tests ([847d47d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/847d47dfd0e875b7b6413fd56aa80e10caf65068))
+* **register:** type pilot axes and name pilot spec fields ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** type pilot axes and name pilot spec fields ([9c7d31d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/9c7d31dd2a9c97ac294155c07074c7d3a5940cb5))
+* **register:** type the Q7 test axes with InterfaceMode ([e23595d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e23595d0c3aa2aebc430effef7dbf738d715b243))
+* **register:** type the Q7 test axes with InterfaceMode ([2a13224](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2a13224c2d01328c8b87b986aeaa5d0ea59a97db))
+
+
+### Documentation
+
+* **briefs:** name the exposure phase and status vocabularies ([c960dbd](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c960dbd79bad1f8c4fb34fcaab0ee2009bd9aebb))
+* **briefs:** refresh H1 W1 briefs to the shipped contract ([f6be0d1](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/f6be0d1e6065cc83fa1f9ae0d1050d33cc184a25))
+
 ## [0.9.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.9.0...v0.9.1) (2026-10-28)
 
 
