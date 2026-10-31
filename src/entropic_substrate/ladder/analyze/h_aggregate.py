@@ -66,6 +66,7 @@ from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtrac
 
 __all__ = [
     "AGGREGATE_SCHEMA",
+    "CodecHandoffEvidence",
     "HRun",
     "aggregate_h_runs",
     "load_h_run",
@@ -101,6 +102,36 @@ _PUBLICATION_KEY = re.compile(r"checkpoint/([0-9]{8})/publication_seconds")
 
 
 @dataclass(frozen=True, slots=True)
+class CodecHandoffEvidence:
+    """What a verified codec hand-off tells the reader about one recipient (FOR-1692, D12).
+
+    The fields are the ones ``ladder.run.codec_handoff.VerifiedHandoff`` carries, by the same
+    names; tests/test_h_codec_handoff.py pins the two field sets equal. The type is declared
+    HERE and not imported from the run side because this reader never imports the hand-off
+    member (the analysis reader must not pull in the training engine). The caller converts
+    ``admit_codec_pair``'s result; this module only checks the recipient's telemetry against it.
+    """
+
+    recipient_identity: str
+    donor_identity: str
+    warmup_steps: int
+    record_digest: str
+    donor_seal_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.recipient_identity,
+            self.donor_identity,
+            self.record_digest,
+            self.donor_seal_digest,
+        ):
+            if type(value) is not str or _IDENTITY.fullmatch(value) is None:
+                raise ValueError("hand-off evidence identities are 64 lowercase hex digests")
+        if type(self.warmup_steps) is not int or self.warmup_steps < 1:
+            raise ValueError("hand-off evidence needs a positive inherited warm-up length")
+
+
+@dataclass(frozen=True, slots=True)
 class HRun:
     """One admitted H run: its lineage, its global-axis series and its worker timings."""
 
@@ -126,6 +157,8 @@ class HRun:
     # (global step, E-LM projection of the same evaluation row), in stream order; one
     # entry per ``evaluations`` entry (h_elm_projection.project_elm, default denominator)
     elm: tuple[tuple[int, dict[str, Any]], ...]
+    # set only for a codec-hand-off recipient admitted through ``load_h_run(handoff=...)``
+    handoff: CodecHandoffEvidence | None = None
 
 
 def _gap(message: str) -> NoReturn:
@@ -320,7 +353,11 @@ def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int
 
 
 def load_h_run(
-    metrics_path: str | Path, worker_log_path: str | Path, *, warmup_steps: int | None = None
+    metrics_path: str | Path,
+    worker_log_path: str | Path,
+    *,
+    warmup_steps: int | None = None,
+    handoff: CodecHandoffEvidence | None = None,
 ) -> HRun:
     """Admit one captured H run and rebuild its global step axis.
 
@@ -333,7 +370,20 @@ def load_h_run(
     the caller, which checks it over the union of the pods (a resumed pod that starts
     in prediction commits no warm-up row, and that is expected, not a gap). Every other
     admission check is unchanged. The default ``None`` is the single-pod reader.
+
+    ``handoff`` is given ONLY for a codec-hand-off recipient (FOR-1692, D12): a cell whose
+    codec was materialized from its donor's warm-up-final seal commits NO ``codec_warmup``
+    row of its own, and that is expected, not a gap. It is admitted only when it has exactly
+    zero committed warm-up rows, the warm-up length the worker log derives from the prediction
+    seals equals the evidence's, and ``run_start.profile_identity`` is the evidence's
+    recipient. It is a distinct typed argument and never combines with ``warmup_steps``: that
+    override skips the per-file coverage check by design and must not admit a truncated stream.
+    Without either, a stream with no warm-up rows still raises, exactly as before.
     """
+    if handoff is not None and type(handoff) is not CodecHandoffEvidence:
+        raise TypeError("handoff evidence must be a CodecHandoffEvidence")
+    if handoff is not None and warmup_steps is not None:
+        raise ValueError("hand-off evidence and a warmup_steps override are mutually exclusive")
     metrics = Path(metrics_path)
     worker_log = Path(worker_log_path)
     run_end = final_h_run_end(metrics)
@@ -427,7 +477,23 @@ def load_h_run(
                     )
                 publication[step] = seconds
 
-    if declared_warmup is not None:
+    if handoff is not None:
+        if identity != handoff.recipient_identity:
+            _gap(
+                f"{metrics}: run_start.profile_identity {identity!r} is not the hand-off "
+                f"recipient {handoff.recipient_identity!r}"
+            )
+        if warmup_steps != handoff.warmup_steps:
+            _gap(
+                f"{metrics}: the worker log puts the warm-up at {warmup_steps} steps, but the "
+                f"hand-off evidence inherited {handoff.warmup_steps}"
+            )
+        if warmup_rows != 0:
+            _gap(
+                f"{metrics}: a hand-off recipient commits no codec_warmup row, but "
+                f"{warmup_rows} are present"
+            )
+    elif declared_warmup is not None:
         if warmup_max > warmup_steps:
             _gap(
                 f"{metrics}: a committed codec_warmup row ends at {warmup_max}, beyond the "
@@ -473,6 +539,7 @@ def load_h_run(
         stages=stages,
         admissions=admissions,
         elm=tuple(elm),
+        handoff=handoff,
     )
 
 

@@ -224,6 +224,34 @@ def test_initial_or_phase_transition_gaps_are_refused(tmp_path: Path) -> None:
         seal_step(tmp_path, "skip", run, (run.advance(),), parent=None, max_bytes=LIMIT)
 
 
+def test_the_ordinary_first_seal_refusals_stay_exactly_as_published(tmp_path: Path) -> None:
+    """Companion pin (FOR-1692, house rule 4): the two refusals the hand-off variant must
+    NOT loosen, quoted by their exact text. A hand-off chain root is a different schema with
+    its own predicate; an ordinary seal that does not start at warm-up step one, and a seal
+    row whose schema is not an admitted one, keep failing with these words."""
+    run = engine(tmp_path)
+    run.advance()
+    with pytest.raises(ValueError, match=r"^initial seal must start codec warm-up at step one$"):
+        seal_step(tmp_path, "gap", run, (run.advance(),), parent=None, max_bytes=LIMIT)
+    assert not list(tmp_path.glob("gap*"))
+    fresh = SentenceExecution(run.profile, run.source_root, max_source_bytes=1_000_000)
+    seal = seal_step(tmp_path, "ok", fresh, (fresh.advance(),), parent=None, max_bytes=LIMIT)
+    row = read_json(tmp_path, seal, max_bytes=LIMIT)
+    row["schema"] = "h-checkpoint-seal-v2"
+    raw = json.dumps(row).encode()
+    (tmp_path / "unknown-schema.json").write_bytes(raw)
+    forged = ArtifactIdentity("unknown-schema.json", ContentHash("sha256", sha256(raw).hexdigest()))
+    with pytest.raises(ValueError, match=r"^seal construction, phase, or step is invalid$"):
+        read_seal(
+            tmp_path,
+            forged,
+            run.profile,
+            run.source_root,
+            max_bytes=LIMIT,
+            max_source_bytes=1_000_000,
+        )
+
+
 def test_swapped_individually_valid_checkpoint_fails_measurement_binding(tmp_path: Path) -> None:
     run = engine(tmp_path)
     first = seal_step(
