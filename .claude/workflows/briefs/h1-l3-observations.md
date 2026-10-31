@@ -6,7 +6,7 @@ Wave W1 (K=3, non-member). Seat Opus xhigh. Class: feature.
 
 ## Touch-set (non-member)
 
-- NEW src/entropic_substrate/ladder/analyze/h1_observations.py: Mapping[cell, HRun] per block to StatisticalRuns (arm = cell label, seed = profile.seed, run_class pilot, family and construction digests from the DH-14 fixture rule; one StatisticalEvaluation(global_step, cumulative canonical bytes, (("eval/log_marginal_per_byte_k64", v),)) per evaluation), the H PilotContrasts for the three deciding contrasts (sentence main, spine main, interaction), the per-cell ESS gate (per-row median ESS/k at k=64 >= 0.25, parameter with the ruled default) dropping the whole block with a reported reason, independent_warmup mapped to exclusion, then plan_seed_count and dual_confidence_intervals unchanged
+- NEW src/entropic_substrate/ladder/analyze/h1_observations.py: Mapping[cell, HRun] per block to StatisticalRuns (arm = cell label, seed = profile.seed, run_class pilot, family and construction digests from the DH-14 fixture rule; one StatisticalEvaluation(global_step, cumulative canonical bytes, (("eval/log_marginal_per_byte_k64", v),)) per evaluation), the H PilotContrasts for the three deciding contrasts (sentence main, spine main, interaction), the per-cell ESS gate (per-row median ESS/k at k=64 >= 0.25, parameter with the ruled default) dropping the whole block with a reported reason, independent_warmup mapped to exclusion, then plan_seed_count and dual_confidence_intervals unchanged. PilotContrast contract, as shipped (`pilot_inputs`, src/entropic_substrate/ladder/analyze/h1_observations.py:661, :699-712): `contrast_id` is the `factorial_terms` key (sentence_normalization, spine_normalization, interaction); `units` and `expected_exposure` come from the caller; `run_class` is the single class captured across the admitted blocks; `regime_id` is the caller's `family_digest`; and `pairs` are `PairedSeed(seed, weighted endpoint, 0.0, steps, steps)`, with steps the committed step count at the last window evaluation, ordered by seed. A block excluded for any reason drops whole from all three contrasts, so every contrast carries the same admitted roster (tests/test_h1_observations.py:1135-1147). The synthetic eight-block fixture feeds `plan_seed_count` and asserts `planned` with the three contrasts in order (tests/test_h1_observations.py:1336-1342, :1413-1420)
 - NEW tests/test_h1_observations.py (fixtures: results/h0-final-probe-1k-v4-92c9db captures as k<=8 diagnostics refused by plan_seed_count for the right reasons; a synthetic 8-block fixture that plans n)
 - optional NEW scripts/h1_pilot_sizing.py
 - NOT touched: ladder/analyze/ladder_registration.py (adapter sits at the RungRunReader seam, ladder_analysis.py:77), h_report.py (the H0 check suite imports it, h_final_probe_checks.py:66), h_aggregate.py (W2 owns its edits), seed_sizing.py
@@ -17,15 +17,15 @@ paired_contrasts refuses H designs by design (ladder_registration.py:275) and _d
 
 ## RED-first tests
 
-endpoint = mean over the last 5 evaluations of eval/log_marginal_per_byte_k64; whole-block exclusion ported to string arms with one pairing_id per seed; ESS gate at 0.25 on the median; independent_warmup -> exclusion; exposure = cumulative canonical bytes (step rows carry source_bytes, execution.py:262-271; the adapter sums it); exposure mismatch refused; non-finite endpoint refused; plan_seed_count from the synthetic fixture; PilotVarianceUnknown on zero variance.
+endpoint = mean over the last 5 evaluations of eval/log_marginal_per_byte_k64, and the window never shrinks: fewer than five evaluations gives MISSING_ENDPOINT, a gap or an absent value inside the window gives MISSING_ENDPOINT, a non-finite mean gives NONFINITE_ENDPOINT, and the mean divides by the window, not by a shorter slice (`_endpoint`, src/entropic_substrate/ladder/analyze/h1_observations.py:296-337; tests/test_h1_observations.py:339-348); whole-block exclusion ported to string arms with one pairing_id per seed; ESS gate at 0.25 on the median; independent_warmup -> exclusion; exposure = cumulative canonical bytes (step rows carry source_bytes, execution.py:262-271; the adapter sums it); exposure mismatch refused; non-finite endpoint refused; plan_seed_count from the synthetic fixture; PilotVarianceUnknown on zero variance.
 
 ## Guard teeth (mutation, each RED)
 
-last evaluation instead of last-5; drop one cell instead of the block; mean instead of median at the gate; sign flip of a contrast; threshold 0.0.
+last evaluation instead of last-5; drop one cell instead of the block; mean instead of median at the gate; sign flip of a contrast; threshold 0.0. The median mutation fixture uses per-row ESS/k of (0.10, 0.20, 0.80) in one cell of an otherwise passing block: the median 0.20 is excluded at the 0.25 gate and the mean 0.3667 would be admitted, so the mean-for-median mutant goes RED (tests/test_h1_observations.py:555-566; measured RED at :563 on 2026-10-30).
 
 ## Measured input (quote v4, 2026-10-28)
 
-at dev widths after 1000 steps eval/ess_k64 was 1.00, 1.11, 1.02 (ESS/k 0.016): the 0.25 gate would exclude such blocks; the adapter must report the reason, never silently drop.
+at dev widths after 1000 steps eval/ess_k64 was 1.00, 1.11, 1.02 (ESS/k 0.016; these are quote-run readings, not rows of the median-mutation fixture above): the 0.25 gate would exclude such blocks; the adapter must report the reason, never silently drop.
 
 ## Out of scope
 
