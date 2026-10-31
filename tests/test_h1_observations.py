@@ -532,6 +532,67 @@ class TestExposure:
         with pytest.raises(ValueError, match="window evaluation steps"):
             observe_h1_blocks([build_block(tmp_path, 101, specs)])
 
+    @staticmethod
+    def _short_first_cell_block(tmp_path: Path, damage: str | None) -> H1BlockCapture:
+        """Cell 0 stops after two evaluations (before any window); cells 1-3 run six. With
+        ``damage``, cell 3 alone diverges LATE (prediction step 7, after cell 0's last
+        evaluation at step 4), so cell 0 never overlaps the divergent region."""
+        specs = (
+            _spec([BASE[0] + j / 16 for j in range(2)]),
+            *(_spec([BASE[c] + j / 16 for j in range(6)]) for c in (1, 2, 3)),
+        )
+        capture = build_block(tmp_path, 101, specs)
+        if damage is None:
+            return capture
+        member = capture.block.profiles[3]
+        metrics, log = write_run(
+            tmp_path / "other", member.identity, specs[3], step_bytes=100, tag=member.name
+        )
+
+        def late_divergence(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            for row in rows:
+                if (
+                    row.get("schema") == "h-training-step-v2"
+                    and row.get("phase") == "prediction"
+                    and row["step"] == 7
+                ):
+                    if damage == "bytes":
+                        row["source_bytes"] = 101
+                    else:
+                        row["status"] = "started"
+            return rows
+
+        _edit_metrics(metrics, late_divergence)
+        return replace(capture, cells={**capture.cells, member.name: load_h_run(metrics, log)})
+
+    def test_a_short_first_cell_with_consistent_cells_is_a_missing_endpoint_not_a_defect(
+        self, tmp_path: Path
+    ) -> None:
+        # control for the two pins below: the same shape with no divergence still reports
+        # the early-stopping cell as MISSING_ENDPOINT and raises nothing
+        (observed,) = observe_h1_blocks([self._short_first_cell_block(tmp_path, None)])
+        assert [(f.reason, f.cell) for f in observed.findings] == [
+            (H1ExclusionReason.MISSING_ENDPOINT, LABELS[0])
+        ]
+        assert observed.exposure is None
+
+    @pytest.mark.parametrize(
+        ("damage", "message"),
+        [
+            ("bytes", "different canonical exposure bytes"),
+            ("committed", "different committed step counts"),
+        ],
+    )
+    def test_a_late_divergence_between_cells_past_a_short_first_cell_raises(
+        self, tmp_path: Path, damage: str, message: str
+    ) -> None:
+        # reviewer 4428407643: comparing every cell only to cells[0] over min(len) never
+        # reaches evaluations that cell 0 lacks, so a divergence there was reported as
+        # MISSING_ENDPOINT although it is an execution defect that RAISES
+        capture = self._short_first_cell_block(tmp_path, damage)
+        with pytest.raises(ValueError, match=f"cell '{LABELS[3]}' has {message}"):
+            observe_h1_blocks([capture])
+
     def test_pairing_exposure_is_committed_prediction_steps_not_bytes(self, tmp_path: Path) -> None:
         observations = observe_h1_blocks(eight_blocks(tmp_path))
         pilots = inputs_for(observations).contrasts
@@ -1264,6 +1325,85 @@ class TestBinding:
     def test_no_blocks_is_refused(self) -> None:
         with pytest.raises(ValueError, match="at least one block"):
             observe_h1_blocks([])
+
+
+@pytest.mark.unit
+class TestCrossCallFamily:
+    """FOR-1711 (reviewer 4427838782): the family checks bind ``pilot_inputs``, not only one
+    ``observe_h1_blocks`` call. Each pin feeds the SAME blocks through two calls and
+    concatenates, and compares the refusal with the single-call control's, byte for byte."""
+
+    @staticmethod
+    def _renamed(seed: int, **kwargs: Any) -> tuple[HProfile, ...]:
+        return tuple(
+            replace(member, name=f"{member.name}-renamed-{seed}")
+            for member in h1_profiles(seed, **kwargs)
+        )
+
+    def test_a_construction_mixed_across_observe_calls_raises_the_single_call_text(
+        self, tmp_path: Path
+    ) -> None:
+        first = build_block(tmp_path, 101, standard_specs(0))
+        changed = build_block(
+            tmp_path, 102, standard_specs(1), profiles=h1_profiles(102, encoder_layers=2)
+        )
+        with pytest.raises(ValueError) as single:
+            observe_h1_blocks([first, changed])
+        pooled = (*observe_h1_blocks([first]), *observe_h1_blocks([changed]))
+        with pytest.raises(ValueError) as across:
+            inputs_for(pooled)
+        assert str(single.value) == (
+            "construction digest of arm 'h1-magnitude-magnitude-pilot' differs across seed blocks"
+        )
+        assert str(across.value) == str(single.value)
+
+    def test_a_renamed_construction_change_across_observe_calls_raises_the_single_call_text(
+        self, tmp_path: Path
+    ) -> None:
+        # every renamed cell label is seen once, so only the (sentence, spine) axis key sees it
+        first = build_block(tmp_path, 101, standard_specs(0), profiles=self._renamed(101))
+        changed = build_block(
+            tmp_path, 102, standard_specs(1), profiles=self._renamed(102, encoder_layers=2)
+        )
+        with pytest.raises(ValueError) as single:
+            observe_h1_blocks([first, changed])
+        pooled = (*observe_h1_blocks([first]), *observe_h1_blocks([changed]))
+        with pytest.raises(ValueError) as across:
+            inputs_for(pooled)
+        assert "construction digest" in str(single.value)
+        assert str(across.value) == str(single.value)
+
+    def test_a_window_schedule_mixed_across_observe_calls_raises_the_single_call_text(
+        self, tmp_path: Path
+    ) -> None:
+        longer = tuple(_spec([BASE[c] + j / 16 for j in range(6)]) for c in range(4))
+        first = build_block(tmp_path, 101, standard_specs(0))
+        second = build_block(tmp_path, 102, longer)
+        with pytest.raises(
+            ValueError, match="committed step counts at the endpoint window"
+        ) as single:
+            observe_h1_blocks([first, second])
+        pooled = (*observe_h1_blocks([first]), *observe_h1_blocks([second]))
+        with pytest.raises(ValueError) as across:
+            inputs_for(pooled)
+        assert str(across.value) == str(single.value)
+
+    def test_a_duplicate_seed_across_observe_calls_raises_its_existing_text(
+        self, tmp_path: Path
+    ) -> None:
+        first = observe_h1_blocks([build_block(tmp_path / "a", 101, standard_specs(0))])
+        second = observe_h1_blocks([build_block(tmp_path / "b", 101, standard_specs(1))])
+        with pytest.raises(ValueError) as raised:
+            inputs_for((*first, *second))
+        assert str(raised.value) == "duplicate seed block"
+
+    def test_consistent_blocks_pooled_from_two_calls_are_still_admitted(
+        self, tmp_path: Path
+    ) -> None:
+        # control: the same blocks split across two calls and pooled raise nothing
+        blocks = [build_block(tmp_path, 101 + i, standard_specs(i)) for i in range(4)]
+        pooled = (*observe_h1_blocks(blocks[:2]), *observe_h1_blocks(blocks[2:]))
+        assert inputs_for(pooled).admitted_seeds == (101, 102, 103, 104)
 
 
 # ------------------------------------------------------------------------ the contrasts

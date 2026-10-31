@@ -442,15 +442,20 @@ def _within_block_exposure(
 ) -> H1BlockExposure | None:
     """The within-block equality checks; a mismatch is an execution defect and RAISES.
 
-    Every evaluation that a cell shares with the first cell must agree on the global step,
+    Every evaluation that a cell shares with the LONGEST cell must agree on the global step,
     the committed step count and the canonical bytes, so a pre-window divergence cannot be
     admitted just because it re-converges before the window. A cell that stops early is a
-    prefix and is left to the window rule (MISSING_ENDPOINT). Returns the window exposure, or
-    ``None`` when a cell forms no window.
+    prefix and is left to the window rule (MISSING_ENDPOINT). With the longest cell as the
+    reference every other cell is compared over its own whole length, so any two cells agree
+    on every evaluation they share (both are prefixes of the same sequence). A first-cell
+    reference left a divergence between two later cells unseen whenever cell 0 stopped
+    before it: CodeRabbit comment 4428407643 reported that block as MISSING_ENDPOINT
+    where this docstring says it raises. Returns the window exposure, or ``None`` when a
+    cell forms no window.
     """
-    reference = cells[0].readings
-    for label, cell in zip(labels[1:], cells[1:], strict=True):
-        shared = min(len(reference), len(cell.readings))
+    reference = max(cells, key=lambda cell: len(cell.readings)).readings
+    for label, cell in zip(labels, cells, strict=True):
+        shared = len(cell.readings)
         if [r.global_step for r in cell.readings[:shared]] != [
             r.global_step for r in reference[:shared]
         ]:
@@ -533,25 +538,19 @@ def _observe_block(
     )
 
 
-def observe_h1_blocks(
-    captures: Sequence[H1BlockCapture],
-    *,
-    endpoint_key: str = ENDPOINT_METRIC_KEY,
-    gate_key: str = GATE_METRIC_KEY,
-    window: int = ENDPOINT_WINDOW,
-) -> tuple[H1BlockObservation, ...]:
-    """Observe every block once, independent of any ESS threshold; ordered by seed.
+def _require_one_family(observed: Sequence[H1BlockObservation]) -> None:
+    """The cross-block checks of one design family; every violation RAISES.
 
-    Cross-block checks RAISE: distinct seeds, one construction digest per arm label and per
-    (sentence, spine) axis, and an identical window schedule (committed step counts) across
-    every block that forms a window.
+    Run by ``observe_h1_blocks`` over the blocks of one call and again by ``pilot_inputs`` over
+    whatever observations it is handed, so observations pooled from several calls meet the same
+    refusals as one call over all of them (FOR-1711, review comment 4427838782, PR #416: seeds
+    101-104 and 105-108 with ``encoder_layers=2`` observed in two calls and concatenated were
+    admitted by ``pilot_inputs`` with 0 exclusions and sized by ``plan_seed_count`` at
+    ``required_seeds`` 159, while the same eight blocks in one call raised). ``observed`` is in
+    seed order, which fixes the arm a digest refusal names. Distinct seeds, one construction
+    digest per arm label and per (sentence, spine) axis, and an identical window schedule
+    (committed step counts) across every block that forms a window.
     """
-    if not captures:
-        raise ValueError("at least one block is required")
-    observed = sorted(
-        (_observe_block(capture, endpoint_key, gate_key, window) for capture in captures),
-        key=lambda item: item.seed,
-    )
     if len({item.seed for item in observed}) != len(observed):
         raise ValueError("duplicate seed block")
     by_label: dict[str, str] = {}
@@ -570,6 +569,29 @@ def observe_h1_blocks(
         raise ValueError(
             f"blocks differ in the committed step counts at the endpoint window: {schedules}"
         )
+
+
+def observe_h1_blocks(
+    captures: Sequence[H1BlockCapture],
+    *,
+    endpoint_key: str = ENDPOINT_METRIC_KEY,
+    gate_key: str = GATE_METRIC_KEY,
+    window: int = ENDPOINT_WINDOW,
+) -> tuple[H1BlockObservation, ...]:
+    """Observe every block once, independent of any ESS threshold; ordered by seed.
+
+    Cross-block checks RAISE (``_require_one_family``): distinct seeds, one construction
+    digest per arm label and per (sentence, spine) axis, and an identical window schedule
+    (committed step counts) across every block that forms a window. ``pilot_inputs`` runs the
+    same checks again, so concatenating the results of several calls cannot bypass them.
+    """
+    if not captures:
+        raise ValueError("at least one block is required")
+    observed = sorted(
+        (_observe_block(capture, endpoint_key, gate_key, window) for capture in captures),
+        key=lambda item: item.seed,
+    )
+    _require_one_family(observed)
     return tuple(observed)
 
 
@@ -652,15 +674,19 @@ def pilot_inputs(
     ordered by seed here, so ``admitted_seeds``, ``exclusions``, ``runs`` and the pairs of every
     contrast are in seed order whatever order the caller passes.
 
-    Raises ``ValueError`` on a duplicate seed and on observations projected under different
-    ``(endpoint_key, gate_key, window)``: one call is one projection regime, never a mixture.
+    Raises ``ValueError``, in this order, on: observations projected under different
+    ``(endpoint_key, gate_key, window)`` (one call is one projection regime, never a mixture;
+    first, because window schedules are comparable only within one regime); then the family
+    checks of ``_require_one_family`` over the observations as handed in, however many
+    ``observe_h1_blocks`` calls produced them: a duplicate seed, a construction digest that
+    differs across blocks per arm label or per (sentence, spine) axis, and a window schedule
+    (committed step counts) that differs across blocks; then admitted blocks that carry
+    different captured run classes.
     """
     _text(family_digest, "family digest")
     _text(units, "units")
     threshold = _threshold(ess_threshold)
     ordered = sorted(observations, key=lambda observed: observed.seed)
-    if len({item.seed for item in ordered}) != len(ordered):
-        raise ValueError("duplicate seed block")
     regimes = {
         (cell.endpoint_key, cell.gate_key, cell.window)
         for item in ordered
@@ -672,6 +698,8 @@ def pilot_inputs(
             "observations carry different projection regimes (endpoint_key, gate_key, window): "
             f"{sorted(regimes)}"
         )
+    # after the regime check: a window schedule is only comparable within one regime
+    _require_one_family(ordered)
     admitted: list[H1BlockObservation] = []
     exclusions: list[H1BlockExclusion] = []
     for item in ordered:
