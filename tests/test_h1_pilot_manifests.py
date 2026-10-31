@@ -4,13 +4,17 @@ The generator emits declared configurations only. It names no corpus, authorizes
 spends nothing; digests, steps and the transfer limits are parameters.
 """
 
-from dataclasses import replace
+import json
+import re
+from dataclasses import dataclass, replace
 from itertools import chain
 from pathlib import Path
 
 import pytest
 import tests.test_span_state_collection as span_fixture
+from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_worker_command_observability import MAX_REQUEST, _worker
+from tests.test_sentence_worker_execution import prepared
 
 from entropic_substrate.core.sentence.codec import CodecSpec
 from entropic_substrate.core.sentence.profile import (
@@ -44,6 +48,7 @@ from entropic_substrate.ladder.register.rungs.h1_pilot import (
 from entropic_substrate.ladder.run.object_worker import run_object_worker
 from entropic_substrate.ladder.run.worker.h_probe_log_events import checkpoint_steps
 from entropic_substrate.ladder.run.worker_request import TransferLimits
+from entropic_substrate.ladder.run.worker_transport import publish_probe_request
 
 pytestmark = pytest.mark.unit
 
@@ -52,22 +57,30 @@ STEPS = 1000
 KNOBS = {"checkpoint_interval": 250, "importance_chunk": 8, "generation_sentences": 4}
 SOURCE_BYTES = 100_000_000
 FIXED_OBJECTS = 20
+# A TEST value for the sizing arithmetic only. It is not the dev-width non-checkpoint
+# measurement, which the caller takes before registration; see the real-worker tests below.
+NON_CHECKPOINT_BYTES = 50_000_000
 MM, SM, MS, SS = CELL_AXES
 UNBOUNDED = TransferLimits(2**62, 2**62, 2**31)
 
 
-def limits_for(steps: int = STEPS) -> TransferLimits:
-    probe = (
-        h1_pilot_blocks(
-            source_digest=SOURCE,
-            steps=steps,
-            limits=UNBOUNDED,
-            **KNOBS,
-        )[0]
+def probe_schedule(steps: int = STEPS) -> RunSchedule:
+    """A pilot schedule built without sizing limits, so a sizing test fails on sizing alone."""
+    return (
+        h1_pilot_blocks(source_digest=SOURCE, steps=steps, limits=UNBOUNDED, **KNOBS)[0]
         .block.profiles[0]
         .schedule
     )
-    return pilot_transfer_limits(probe, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
+
+
+def limits_for(steps: int = STEPS) -> TransferLimits:
+    probe = probe_schedule(steps)
+    return pilot_transfer_limits(
+        probe,
+        source_bytes=SOURCE_BYTES,
+        fixed_objects=FIXED_OBJECTS,
+        non_checkpoint_bytes=NON_CHECKPOINT_BYTES,
+    )
 
 
 def blocks(steps: int = STEPS, **changes: object) -> tuple[H1PilotBlock, ...]:
@@ -310,8 +323,13 @@ def test_transfer_limits_follow_the_checkpoint_count_per_cell() -> None:
     doubled = required_checkpoint_floor(schedule, capture_copies=2)
     assert doubled.max_total_bytes == 2 * floor.max_total_bytes
     assert doubled.max_objects == 2 * (4 * 21 + 20 + 5) + 14
-    sized = pilot_transfer_limits(schedule, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS)
-    assert sized.max_total_bytes == doubled.max_total_bytes + SOURCE_BYTES
+    sized = pilot_transfer_limits(
+        schedule,
+        source_bytes=SOURCE_BYTES,
+        fixed_objects=FIXED_OBJECTS,
+        non_checkpoint_bytes=NON_CHECKPOINT_BYTES,
+    )
+    assert sized.max_total_bytes == doubled.max_total_bytes + SOURCE_BYTES + NON_CHECKPOINT_BYTES
     assert sized.max_object_bytes == 1_149_203_227
     assert sized.max_objects == doubled.max_objects + FIXED_OBJECTS
 
@@ -327,7 +345,9 @@ def test_the_floor_refuses_a_non_schedule_and_non_positive_capture_copies() -> N
 def test_a_source_larger_than_every_checkpoint_sets_the_object_bound() -> None:
     schedule = blocks()[0].block.profiles[0].schedule
     big = 2 * PREDICTION_CHECKPOINT_BYTES
-    sized = pilot_transfer_limits(schedule, source_bytes=big, fixed_objects=FIXED_OBJECTS)
+    sized = pilot_transfer_limits(
+        schedule, source_bytes=big, fixed_objects=FIXED_OBJECTS, non_checkpoint_bytes=0
+    )
     assert sized.max_object_bytes == big
 
 
@@ -425,12 +445,199 @@ def test_transfer_limits_are_never_the_probe_kit_constants() -> None:
 
 @pytest.mark.parametrize("field", ["max_object_bytes", "max_total_bytes", "max_objects"])
 def test_limits_one_below_the_floor_are_refused_and_the_floor_is_accepted(field: str) -> None:
+    """The floor is a NECESSARY bound: the generator cannot see the corpus or the allowance.
+
+    Acceptance here is not a claim that the limits fit a cell; the real-worker tests below
+    measure how far a checkpoint-and-source grant falls short of a final snapshot.
+    """
     schedule = blocks()[0].block.profiles[0].schedule
     floor = required_checkpoint_floor(schedule, capture_copies=2)
     assert blocks(limits=floor)  # control: exactly the floor passes
     short = replace(floor, **{field: getattr(floor, field) - 1})
     with pytest.raises(ValueError, match=field):
         blocks(limits=short)
+
+
+def test_a_refused_limit_names_the_floor_as_necessary_and_not_sufficient() -> None:
+    """The refusal says what the floor is, so a pass is never read as a fit."""
+    schedule = probe_schedule()
+    floor = required_checkpoint_floor(schedule, capture_copies=2)
+    short = replace(floor, max_total_bytes=floor.max_total_bytes - 1)
+    with pytest.raises(ValueError, match="necessary") as raised:
+        blocks(limits=short)
+    assert "not sufficient" in str(raised.value)
+
+
+def _sized(schedule: RunSchedule, *, non_checkpoint_bytes: int) -> TransferLimits:
+    return pilot_transfer_limits(
+        schedule,
+        source_bytes=SOURCE_BYTES,
+        fixed_objects=FIXED_OBJECTS,
+        non_checkpoint_bytes=non_checkpoint_bytes,
+    )
+
+
+def test_sizing_requires_an_explicit_non_checkpoint_allowance() -> None:
+    """No default: the final snapshot also publishes journals, receipts and records, and the
+    generator holds no measurement of them, so an omitted allowance cannot be filled in here.
+    """
+    schedule = probe_schedule()
+    with pytest.raises(TypeError, match="non_checkpoint_bytes"):
+        pilot_transfer_limits(  # type: ignore[call-arg]
+            schedule, source_bytes=SOURCE_BYTES, fixed_objects=FIXED_OBJECTS
+        )
+
+
+@pytest.mark.parametrize("bad", [None, 1.5, "7", True, False, -1])
+def test_sizing_refuses_a_non_int_bool_or_negative_non_checkpoint_allowance(bad: object) -> None:
+    schedule = probe_schedule()
+    with pytest.raises(ValueError, match="non-checkpoint bytes"):
+        _sized(schedule, non_checkpoint_bytes=bad)  # type: ignore[arg-type]
+
+
+def test_the_non_checkpoint_allowance_is_added_to_the_total_exactly_once() -> None:
+    schedule = probe_schedule()
+    none = _sized(schedule, non_checkpoint_bytes=0)  # zero is a stated value, accepted
+    some = _sized(schedule, non_checkpoint_bytes=7)
+    many = _sized(schedule, non_checkpoint_bytes=10**9)
+    assert some.max_total_bytes - none.max_total_bytes == 7
+    assert many.max_total_bytes - none.max_total_bytes == 10**9
+    # The allowance is a total only: it moves neither the per-object nor the object count.
+    assert (some.max_object_bytes, some.max_objects) == (none.max_object_bytes, none.max_objects)
+    assert (many.max_object_bytes, many.max_objects) == (none.max_object_bytes, none.max_objects)
+
+
+_CHECKPOINT_FILE = re.compile(r"-(codec_warmup|prediction)-\d{8}\.pt$")
+
+
+@dataclass(frozen=True, slots=True)
+class MeasuredFinalSnapshot:
+    """What one real tiny object worker published, measured from its own accounting."""
+
+    schedule: RunSchedule
+    source_bytes: int
+    codec_checkpoint_bytes: int
+    prediction_checkpoint_bytes: int
+    checkpoint_bytes: int  # every retained checkpoint, run copy and capture copy together
+    need_bytes: int  # what publish_worker_snapshot compares with max_total_bytes
+
+    @property
+    def non_checkpoint_bytes(self) -> int:
+        return self.need_bytes - self.checkpoint_bytes - self.source_bytes
+
+
+@pytest.fixture(scope="module")
+def measured_final_snapshot(tmp_path_factory: pytest.TempPathFactory) -> MeasuredFinalSnapshot:
+    """Run the real tiny object worker once and read its final snapshot back.
+
+    The totals are measured at run time and never pinned: result.json and the journals carry
+    timing fields, so the need varies by a few dozen bytes between runs (measured 2026-10-30,
+    1,181,538 against 1,181,501 on two runs).
+    """
+    request, objects, marker, root = _worker(tmp_path_factory.mktemp("real-final-snapshot"))
+    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+    outputs = f"{request.prefix}/outputs/"
+    sizes = {
+        key.removeprefix(outputs): len(payload)
+        for key, payload in objects.values.items()
+        if key.startswith(outputs)
+    }
+    final = objects.values[f"{request.prefix}/snapshots/complete.json"]
+    manifest = json.loads(final)
+    assert manifest["artifact_bytes"] == sum(sizes.values())  # the worker's own byte accounting
+    assert manifest["artifact_count"] == len(sizes)
+    checkpoints = {name: size for name, size in sizes.items() if _CHECKPOINT_FILE.search(name)}
+    retained = {name: size for name, size in checkpoints.items() if name.startswith("run/")}
+    # CAPTURE_COPIES = 2 checked, not assumed: every run checkpoint has an equal capture twin.
+    assert retained and len(checkpoints) == 2 * len(retained)
+    for name, size in retained.items():
+        assert sizes["capture/" + name.removeprefix("run/")] == size
+    per_phase = {
+        phase: {size for name, size in checkpoints.items() if f"-{phase}-" in name}
+        for phase in ("codec_warmup", "prediction")
+    }
+    assert all(len(found) == 1 for found in per_phase.values())  # one size per phase
+    source = len(objects.values[f"{request.prefix}/inputs/source/prepared-corpus.json"])
+    assert sizes["capture/source/prepared-corpus.json"] == source  # the corpus is published once
+    return MeasuredFinalSnapshot(
+        schedule=request.profile.schedule,
+        source_bytes=source,
+        codec_checkpoint_bytes=next(iter(per_phase["codec_warmup"])),
+        prediction_checkpoint_bytes=next(iter(per_phase["prediction"])),
+        checkpoint_bytes=sum(checkpoints.values()),
+        need_bytes=manifest["artifact_bytes"] + len(final),
+    )
+
+
+def _grant(
+    snapshot: MeasuredFinalSnapshot, patch: pytest.MonkeyPatch, *, non_checkpoint_bytes: int
+) -> TransferLimits:
+    """The helper applied to the tiny fixture's own regime.
+
+    The helper's checkpoint sizes are the dev-width constants; against a tiny worker they
+    would grant gigabytes and prove nothing. The formula is what is under test, so the
+    constants are swapped for the sizes this fixture measured, and the corpus is the fixture's.
+    """
+    patch.setattr(h1_pilot, "CODEC_WARMUP_CHECKPOINT_BYTES", snapshot.codec_checkpoint_bytes)
+    patch.setattr(h1_pilot, "PREDICTION_CHECKPOINT_BYTES", snapshot.prediction_checkpoint_bytes)
+    return pilot_transfer_limits(
+        snapshot.schedule,
+        source_bytes=snapshot.source_bytes,
+        fixed_objects=0,
+        non_checkpoint_bytes=non_checkpoint_bytes,
+    )
+
+
+def test_a_real_workers_final_snapshot_exceeds_the_checkpoint_and_source_grant(
+    measured_final_snapshot: MeasuredFinalSnapshot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Byte-level companion to the object-floor test: the snapshot also carries journals,
+    receipts, evaluation and generation records, the profile, span diagnostics, the capture
+    manifest, the verification receipt, the worker start and result, and the marker."""
+    snapshot = measured_final_snapshot
+    grant = _grant(snapshot, monkeypatch, non_checkpoint_bytes=0)
+    # The checkpoint-and-source model is exact for what it counts ...
+    assert grant.max_total_bytes == snapshot.checkpoint_bytes + snapshot.source_bytes
+    # ... and strictly short of the snapshot, by the bytes it does not count.
+    excess = snapshot.need_bytes - grant.max_total_bytes
+    assert excess == snapshot.non_checkpoint_bytes > 0
+    # Passed as the allowance, the measured excess covers the snapshot exactly, and one byte
+    # less does not: the allowance enters the total once, at full value.
+    covered = _grant(snapshot, monkeypatch, non_checkpoint_bytes=excess)
+    assert covered.max_total_bytes == snapshot.need_bytes
+    assert _grant(snapshot, monkeypatch, non_checkpoint_bytes=excess - 1).max_total_bytes < (
+        snapshot.need_bytes
+    )
+
+
+def test_a_real_worker_refuses_a_cell_sized_without_the_allowance_at_its_final_snapshot(
+    measured_final_snapshot: MeasuredFinalSnapshot,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The defect end to end, with its control: the measuring run completed under 50 MB, and the
+    same request with only its byte total replaced by the helper's grant fails after training.
+
+    Only ``max_total_bytes`` is replaced. With the helper's exact object count the failure
+    snapshot trips the object budget first (measured 2026-10-30: 'worker snapshot object budget
+    exceeded' as the second error), which is a different bound from the one under test.
+    """
+    grant = _grant(measured_final_snapshot, monkeypatch, non_checkpoint_bytes=0)
+    request, inputs = prepared(tmp_path)
+    assert request.limits.max_total_bytes > grant.max_total_bytes  # control: the budget is lower
+    sized = replace(request, limits=replace(request.limits, max_total_bytes=grant.max_total_bytes))
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, sized, inputs)
+    root = tmp_path / "object-worker"
+    root.mkdir()
+    with pytest.raises(ExceptionGroup) as raised:
+        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+    # The worker failure and the failure snapshot's delivery fail the same byte check.
+    assert [str(error) for error in raised.value.exceptions] == [
+        "worker snapshot byte budget exceeded"
+    ] * 2
+    assert any("/snapshots/checkpoint-" in key for key in objects.values)  # training had run
+    assert f"{sized.prefix}/snapshots/complete.json" not in objects.values
 
 
 def test_limits_must_be_a_transfer_limits() -> None:
@@ -442,15 +649,20 @@ def test_limits_must_be_a_transfer_limits() -> None:
 def test_sizing_refuses_non_positive_source_bytes_and_negative_fixed_objects(bad: object) -> None:
     schedule = blocks()[0].block.profiles[0].schedule
     with pytest.raises(ValueError):
-        pilot_transfer_limits(schedule, source_bytes=bad, fixed_objects=1)  # type: ignore[arg-type]
+        pilot_transfer_limits(
+            schedule,
+            source_bytes=bad,  # type: ignore[arg-type]
+            fixed_objects=1,
+            non_checkpoint_bytes=0,
+        )
     with pytest.raises(ValueError):
-        pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=-1)
+        pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=-1, non_checkpoint_bytes=0)
 
 
 def test_zero_fixed_objects_is_accepted_and_adds_nothing() -> None:
     schedule = blocks()[0].block.profiles[0].schedule
     floor = required_checkpoint_floor(schedule)
-    sized = pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=0)
+    sized = pilot_transfer_limits(schedule, source_bytes=1, fixed_objects=0, non_checkpoint_bytes=0)
     assert sized.max_objects == floor.max_objects
 
 

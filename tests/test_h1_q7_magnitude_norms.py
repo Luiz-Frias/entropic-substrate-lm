@@ -11,6 +11,11 @@ the runner prepares it (``normalize_weights``), in training mode, and on a train
 reloaded state. The mutation tests inject an F.normalize or an RMS overwrite into each of the codec,
 numerics and spine magnitude paths by monkeypatch (never an edit of a reader member) and
 require the detector to fire, so a green run is not "the hazard never reached the guard".
+
+The comparison regime is FP32 throughout (CPU, no autocast, ``UNIT_TOL`` and ``REFERENCE_TOL``
+sized for it). ``findings`` asserts that the sentence and spine state tensors whose norms it
+compares are ``torch.float32`` as it reads them, so the regime is pinned, not implicit; the
+dtype mutation tests below show those assertions fire.
 """
 
 from collections.abc import Callable
@@ -145,6 +150,7 @@ def findings(model: SentencePredictor, mode: InterfaceMode, carrier: InterfaceMo
     raw = F.linear(torch.cat(captured), projection.weight)
     found: list[str] = []
     flat = sentences.flatten(0, 1)
+    assert flat.dtype == torch.float32, f"sentence states are {flat.dtype}, not the FP32 regime"
     if mode == "magnitude":
         if not is_not_unit(flat.norm(dim=-1)):
             found.append("sentence_norm_is_one")
@@ -162,6 +168,7 @@ def findings(model: SentencePredictor, mode: InterfaceMode, carrier: InterfaceMo
         states = model.predict(tokens).states
     except ValueError:
         return [*found, "predict_refused"]
+    assert states.dtype == torch.float32, f"spine states are {states.dtype}, not the FP32 regime"
     norms = states.norm(dim=-1)
     if carrier == "magnitude":
         if not is_not_unit(norms):
@@ -247,13 +254,45 @@ def _patch_interface(
     patch.setattr(model_module, "apply_interface", mutant)
 
 
+def _transform_forward_output[M: torch.nn.Module](
+    patch: pytest.MonkeyPatch,
+    module_class: type[M],
+    transform: Callable[[M, torch.Tensor], torch.Tensor],
+) -> None:
+    """Patch ``module_class.forward`` so its original output passes through ``transform``.
+
+    The original runs first with the caller's own arguments, so one helper serves the codec
+    (``tokens``) and the spine (``sentences``, ``consumer=``) alike. ``transform`` also receives
+    the module, for mutations gated on ``training`` or on the spec.
+    """
+    original = module_class.forward
+
+    def mutant(self: M, *args: object, **kwargs: object) -> torch.Tensor:
+        return transform(self, original(self, *args, **kwargs))
+
+    patch.setattr(module_class, "forward", mutant)
+
+
+def _transform_module_output(
+    patch: pytest.MonkeyPatch,
+    module: torch.nn.Module,
+    transform: Callable[[torch.Tensor], torch.Tensor],
+) -> None:
+    """Patch one module instance's one-argument ``forward`` (the projection, the positions)."""
+    original = module.forward
+    patch.setattr(module, "forward", lambda x: transform(original(x)))
+
+
+def _f_normalize(values: torch.Tensor) -> torch.Tensor:
+    return F.normalize(values, dim=-1)
+
+
+def _rms_overwrite(values: torch.Tensor) -> torch.Tensor:
+    return values * values.square().mean(dim=-1, keepdim=True).rsqrt()
+
+
 def _mutate_codec_f_normalize(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceEncoder.forward
-    patch.setattr(
-        SentenceEncoder,
-        "forward",
-        lambda self, tokens: F.normalize(original(self, tokens), dim=-1),
-    )
+    _transform_forward_output(patch, SentenceEncoder, lambda _self, out: _f_normalize(out))
 
 
 def _mutate_numerics_f_normalize(patch: pytest.MonkeyPatch) -> None:
@@ -267,25 +306,11 @@ def _mutate_numerics_f_normalize(patch: pytest.MonkeyPatch) -> None:
 
 
 def _mutate_spine_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceSpine.forward
-
-    def mutant(
-        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
-    ) -> torch.Tensor:
-        states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
-        return states * states.square().mean(dim=-1, keepdim=True).rsqrt()
-
-    patch.setattr(SentenceSpine, "forward", mutant)
+    _transform_forward_output(patch, SentenceSpine, lambda _self, out: _rms_overwrite(out))
 
 
 def _mutate_codec_rms_overwrite(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceEncoder.forward
-
-    def mutant(self: SentenceEncoder, tokens: torch.Tensor) -> torch.Tensor:
-        result = original(self, tokens)
-        return result * result.square().mean(dim=-1, keepdim=True).rsqrt()
-
-    patch.setattr(SentenceEncoder, "forward", mutant)
+    _transform_forward_output(patch, SentenceEncoder, lambda _self, out: _rms_overwrite(out))
 
 
 def _mutate_spine_residual_f_normalize(patch: pytest.MonkeyPatch) -> None:
@@ -310,15 +335,11 @@ def _power_norm(values: torch.Tensor) -> torch.Tensor:
 
 
 def _mutate_codec_soft_squash(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceEncoder.forward
-    patch.setattr(SentenceEncoder, "forward", lambda self, tokens: _squash(original(self, tokens)))
+    _transform_forward_output(patch, SentenceEncoder, lambda _self, out: _squash(out))
 
 
 def _mutate_codec_power_norm(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceEncoder.forward
-    patch.setattr(
-        SentenceEncoder, "forward", lambda self, tokens: _power_norm(original(self, tokens))
-    )
+    _transform_forward_output(patch, SentenceEncoder, lambda _self, out: _power_norm(out))
 
 
 def _mutate_numerics_soft_squash(patch: pytest.MonkeyPatch) -> None:
@@ -362,23 +383,15 @@ def test_an_injected_normalization_is_detected(name: str, monkeypatch: pytest.Mo
 
 
 def _entry_projection_f_normalize(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
-    original = model.spine.projection.forward
-    patch.setattr(model.spine.projection, "forward", lambda x: F.normalize(original(x), dim=-1))
+    _transform_module_output(patch, model.spine.projection, _f_normalize)
 
 
 def _entry_projection_rms_overwrite(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
-    original = model.spine.projection.forward
-
-    def mutant(x: torch.Tensor) -> torch.Tensor:
-        out = original(x)
-        return out * out.square().mean(dim=-1, keepdim=True).rsqrt()
-
-    patch.setattr(model.spine.projection, "forward", mutant)
+    _transform_module_output(patch, model.spine.projection, _rms_overwrite)
 
 
 def _entry_positions_f_normalize(model: SentencePredictor, patch: pytest.MonkeyPatch) -> None:
-    original = model.spine.positions.forward
-    patch.setattr(model.spine.positions, "forward", lambda x: F.normalize(original(x), dim=-1))
+    _transform_module_output(patch, model.spine.positions, _f_normalize)
 
 
 ENTRY_MUTATIONS: dict[str, Callable[[SentencePredictor, pytest.MonkeyPatch], None]] = {
@@ -433,15 +446,11 @@ def _sphere_interface_unit_but_rotated(patch: pytest.MonkeyPatch) -> None:
 
 
 def _sphere_spine_scaled(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceSpine.forward
-
-    def mutant(
-        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
-    ) -> torch.Tensor:
-        states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
-        return states * 1.5 if self.spec.carrier == "sphere" else states
-
-    patch.setattr(SentenceSpine, "forward", mutant)
+    _transform_forward_output(
+        patch,
+        SentenceSpine,
+        lambda spine, out: out * 1.5 if spine.spec.carrier == "sphere" else out,
+    )
 
 
 SPHERE_MUTATIONS: dict[
@@ -483,25 +492,14 @@ def test_a_rotated_unit_sentence_trips_only_the_reference_not_the_unit_check() -
 
 
 def _mutate_spine_training_gated_f_normalize(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceSpine.forward
-
-    def mutant(
-        self: SentenceSpine, sentences: torch.Tensor, *, consumer: object = None
-    ) -> torch.Tensor:
-        states = original(self, sentences, consumer=consumer)  # pyright: ignore[reportArgumentType]
-        return F.normalize(states, dim=-1) if self.training else states
-
-    patch.setattr(SentenceSpine, "forward", mutant)
+    _transform_forward_output(
+        patch, SentenceSpine, lambda spine, out: _f_normalize(out) if spine.training else out
+    )
 
 
 def _mutate_codec_training_gated_f_normalize(patch: pytest.MonkeyPatch) -> None:
-    original = SentenceEncoder.forward
-    patch.setattr(
-        SentenceEncoder,
-        "forward",
-        lambda self, tokens: (
-            F.normalize(original(self, tokens), dim=-1) if self.training else original(self, tokens)
-        ),
+    _transform_forward_output(
+        patch, SentenceEncoder, lambda codec, out: _f_normalize(out) if codec.training else out
     )
 
 
@@ -519,3 +517,40 @@ def test_a_training_gated_normalization_is_seen_only_in_training_mode(
     apply(monkeypatch)
     assert findings(model.eval(), "magnitude", "magnitude") == []  # invisible in eval mode
     assert expected in findings(model.train(), "magnitude", "magnitude")
+
+
+def _mutate_codec_float64(patch: pytest.MonkeyPatch) -> None:
+    _transform_forward_output(patch, SentenceEncoder, lambda _self, out: out.double())
+
+
+def _mutate_spine_bfloat16(patch: pytest.MonkeyPatch) -> None:
+    _transform_forward_output(patch, SentenceSpine, lambda _self, out: out.to(torch.bfloat16))
+
+
+@pytest.mark.parametrize("cell", list(CELLS))
+def test_the_compared_state_tensors_are_float32(cell: str) -> None:
+    """One assertion per compared tensor: the sentence states and the spine states."""
+    mode, carrier = CELLS[cell]
+    model = build(mode, carrier)
+    with torch.no_grad():
+        sentences = model.encode_history(history())
+        states = model.predict(history()).states
+    assert sentences.dtype is torch.float32
+    assert states.dtype is torch.float32
+
+
+@pytest.mark.parametrize(
+    ("apply", "message"),
+    [
+        (_mutate_codec_float64, "sentence states are torch.float64"),
+        (_mutate_spine_bfloat16, "spine states are torch.bfloat16"),
+    ],
+)
+def test_a_state_tensor_outside_the_fp32_regime_is_refused(
+    apply: Callable[[pytest.MonkeyPatch], None], message: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = build("magnitude", "magnitude")
+    assert findings(model, "magnitude", "magnitude") == []  # control: clean before the mutation
+    apply(monkeypatch)
+    with pytest.raises(AssertionError, match=message):
+        findings(model, "magnitude", "magnitude")

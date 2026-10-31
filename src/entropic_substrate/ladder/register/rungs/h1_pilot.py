@@ -2,8 +2,9 @@
 
 Emits complete ``HProfile`` blocks and nothing else. It names no corpus, registers nothing,
 authorizes no run and spends nothing: the source digest, the prediction step count and the
-worker transfer limits are caller inputs, and the limits are checked against the measured
-checkpoint sizes rather than assumed.
+worker transfer limits are caller inputs. The limits are checked against the measured
+checkpoint floor, which is necessary and not sufficient: ``pilot_transfer_limits`` sizes
+limits that fit a cell, from the caller's own measurements of everything the floor omits.
 
 Ruled regime values (FOR-1690) are constants here. The schedule fields the ruling leaves
 open (checkpoint interval, importance chunk, generation sentences) are required parameters
@@ -117,7 +118,9 @@ def required_checkpoint_floor(
     and prediction checkpoint sizes times their seal counts, times the capture copies. The
     object total is the per-seal, per-evaluation and per-continuation file kinds the worker
     writes, times the capture copies, plus the fixed worker objects. The source, request and
-    other caller inputs are not in this floor; see ``pilot_transfer_limits``.
+    other caller inputs are not in this floor, and neither are the non-checkpoint files the
+    final snapshot publishes. The floor is therefore necessary and not sufficient; see
+    ``pilot_transfer_limits``.
     """
     if type(schedule) is not RunSchedule:
         raise TypeError("transfer floor requires a validated run schedule")
@@ -142,15 +145,34 @@ def required_checkpoint_floor(
 
 
 def pilot_transfer_limits(
-    schedule: RunSchedule, *, source_bytes: int, fixed_objects: int
+    schedule: RunSchedule, *, source_bytes: int, fixed_objects: int, non_checkpoint_bytes: int
 ) -> TransferLimits:
-    """Limits that fit one cell: the checkpoint floor plus the caller's source and fixed objects."""
+    """Limits for one cell, from the checkpoint floor and three stated caller inputs.
+
+    ``max_total_bytes`` is exactly the sum of three terms and nothing else: every retained
+    checkpoint once per capture copy (``required_checkpoint_floor``), the prepared corpus once
+    (``source_bytes``) and ``non_checkpoint_bytes``. The worker's final snapshot also publishes
+    the journals, seal and progress receipts, evaluation records, generation states and
+    receipt, profile, span diagnostics, capture manifest, verification receipt, worker start
+    and result and the snapshot marker, and publishes each run file a second time as its
+    capture copy; none of that is a checkpoint, so ``non_checkpoint_bytes`` is the caller's
+    measured total of those files, capture copies included. It has no default and no value is
+    supplied here: a dev-width figure is measured by the caller before registration, never
+    estimated in this module. Zero is accepted as a stated value. On the tiny test worker the
+    checkpoint-and-source grant of 983,219 bytes fell short of the final snapshot by 198,313 and
+    198,319 bytes on two runs (20.2 percent of the grant, measured 2026-10-30); that ratio does
+    not transfer to dev widths.
+
+    ``fixed_objects`` raises only the object count, and the allowance moves neither the
+    per-object nor the object bound.
+    """
     _positive(source_bytes, "source bytes")
     _positive(fixed_objects, "fixed objects", zero_ok=True)
+    _positive(non_checkpoint_bytes, "non-checkpoint bytes", zero_ok=True)
     floor = required_checkpoint_floor(schedule)
     return TransferLimits(
         max_object_bytes=max(floor.max_object_bytes, source_bytes),
-        max_total_bytes=floor.max_total_bytes + source_bytes,
+        max_total_bytes=floor.max_total_bytes + source_bytes + non_checkpoint_bytes,
         max_objects=floor.max_objects + fixed_objects,
     )
 
@@ -219,7 +241,12 @@ def h1_pilot_blocks(
     generation_sentences: int,
     seeds: Sequence[int] = PILOT_SEEDS,
 ) -> tuple[H1PilotBlock, ...]:
-    """Eight validated paired blocks, one per seed; raises on any inconsistent input."""
+    """Eight validated paired blocks, one per seed; raises on any inconsistent input.
+
+    ``limits`` is checked against ``required_checkpoint_floor``, which is necessary and not
+    sufficient: this function sees neither the corpus nor the non-checkpoint allowance, so a
+    pass is not a claim that the limits fit a cell. Size them with ``pilot_transfer_limits``.
+    """
     if type(limits) is not TransferLimits:
         raise TypeError("pilot requires explicit worker transfer limits")
     if type(steps) is not int or steps < 1:
@@ -244,8 +271,10 @@ def h1_pilot_blocks(
     for field in ("max_object_bytes", "max_total_bytes", "max_objects"):
         if getattr(limits, field) < getattr(floor, field):
             raise ValueError(
-                f"transfer limits {field} {getattr(limits, field)} is below the measured "
-                f"checkpoint floor {getattr(floor, field)}"
+                f"transfer limits {field} {getattr(limits, field)} is below the checkpoint "
+                f"floor {getattr(floor, field)}; the floor is necessary, not sufficient (it "
+                "omits the source, the non-checkpoint bytes and the fixed objects), so size "
+                "limits with pilot_transfer_limits"
             )
     result: list[H1PilotBlock] = []
     for seed in chosen:
