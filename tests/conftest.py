@@ -28,9 +28,23 @@ if str(Path(__file__).parent) not in sys.path:  # sibling `helpers` under import
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Register markers so the suite also runs standalone (strict-markers safe)."""
+    """Register markers so the suite also runs standalone (strict-markers safe).
+
+    Then take the host suite lock on an xdist controller (``tests/suite_lock.py``
+    carries the measurements): a second ``-n`` suite on this host refuses with
+    the holder's start time instead of racing the first one into swap.
+    """
+    from suite_lock import configure_suite_lock
+
     config.addinivalue_line("markers", "unit: fast CPU-only tests")
     config.addinivalue_line("markers", "integration: slow / network / GPU tests")
+    configure_suite_lock(config)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    from suite_lock import release_suite_lock
+
+    release_suite_lock(config)
 
 
 @pytest.fixture(scope="session", autouse=True)
