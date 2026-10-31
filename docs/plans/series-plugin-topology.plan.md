@@ -93,6 +93,7 @@ selection and which are code identity.
 | R4 | **Engines are platform; series are adapters.** The training pipeline, the pod machinery and capture are owned once, by the platform, and call out through ports. A series supplies the scientific adapters (model construction, objective, telemetry schema, analysis, filing roles, admission rows) and nothing else: no step loop, no checkpoint I/O, no pod code. | The three trainers and two pod machineries above collapse to one each (phases P3b and P3c). The series packages shrink to what differs between E, D and H. |
 | R5 | **Extraction-ready modularity.** The target is a uv workspace whose members mirror a Rust multi-crate repository: each member has its own `pyproject.toml`, declared dependencies, tests and gate, so a member can be copied into another repository with a light refactor. The platform generalizes the infrastructure; a series extends it by swapping adapters. | The directory tree below is the member list. The acceptance test for every member is its own gate run from a bare directory (the validate-from-the-target's-context rule). |
 | R6 | **The platform is a library for training machinery, not for this repo's series.** Its motive is to be lifted into scratch repositories to try other schedules, curricula, backbones and skeletons, mixture-of-experts machinery, RL environments, fine-tuning and LoRA adapters. It owns what sits around the optimizer step (admission, launch, custody, telemetry, capture, evidence), not what PyTorch does (autograd, modules) or what Ray does (distributed scheduling). | The scientific ports are named by what a training harness needs (`ModelFactory`, `Objective`, `Schedule`, `Curriculum`, `Environment`, `TelemetrySchema`, `AnalysisStrategy`, `FilingRoles`, `Admission`), never by E, D or H. The member gets its own north star and horizon before P1 (house rule), because this ruling widens its bearing beyond the repo's. |
+| R7 | **Each member carries its own `CLAUDE.md`.** Three parts: bearing (the platform member states its own north star and horizon under D7; series members inherit the repo's and name the horizon stage they serve), boundaries (the ports it exposes or implements, the members it may import, the spec files it reads, its gate command), and local rulings (numerics islands, custody rules, series-specific doors). Precedence is the existing scope-first rule: a member file is the most local scope for files under it and wins over the root on conflict, with the conflict named aloud. The root `CLAUDE.md` shrinks to the repo bearing, the member map, and the cross-member rules no single member can own (publish sequence, live gate, secrets). | A lifted member keeps its rules without the old root (R5). Nested loading is documented, not measured in this repo; P1 repeats the 2026-08-14 sentinel measurement before any member relies on it, with the documented `paths:` frontmatter rule under `.claude/rules/` as the fallback (path-scoped, but it does not travel with a copied member). |
 | C2 | **Observability is a platform port family, and the evidence plane stays authoritative.** JSONL plus DVC capture is the only verdict input; every tracker (MLflow today, Trackio and a W&B-compatible adapter next) is a best-effort mirror behind a `Tracker` port, with the fail-loud strict adapter as the one D1 exception. | `MetricSink`, `Tracker`, `ArtifactStore` and `RunRegistry` are ports in `platform/observability`; adapters are `jsonl` (authoritative), `mlflow`, `trackio`, `wandb-compatible`. Line of sight into the platform is a port, not a dependency on one vendor. |
 
 ### Recommended picks awaiting the operator (DECISION-NEEDED register, end of file)
@@ -184,6 +185,7 @@ packages/
   entropic-series-h/           sentence carrier, law, probes, K-checks, h_preservation; depends on: platform
   entropic-cli/                composition: registry, entry points, wiring; depends on: everything
 tests are per member (packages/<m>/tests), not one tree
+every member carries CLAUDE.md (bearing, boundaries, local rulings; ruling R7)
 ```
 
 Dependencies bind twice: each member's `pyproject.toml` declares what it may import, and the
@@ -279,7 +281,7 @@ reader-identity members ends in one deliberate re-pin commit the conductor owns.
 | phase | content | size | rail |
 | --- | --- | --- | --- |
 | P0 | `CLAUDE.md` north star and horizon section; Linear project; sprint manifest ratified; the debt plan's phases 0 to 2 landed (three correctness fixes, digest seam, codec seam) | docs plus about 30 modules `[E]` | gate before any lane |
-| P1 | workspace skeleton: root `pyproject.toml` with the members, each member an empty distribution with its own `pyproject.toml` and `tests/`, one lockfile proven by `uv sync`; `kernel/spec` loader and digest; `platform.toml` with the three tool pins, the image digest, registry and topology names; reconcile the two runpodctl pins | about 10 modules plus 8 manifests `[E]` | proves digest-in-identity and the member gate end to end before anything moves |
+| P1 | workspace skeleton: root `pyproject.toml` with the members, each member an empty distribution with its own `pyproject.toml`, `tests/` and `CLAUDE.md` (R7), one lockfile proven by `uv sync`; the nested `CLAUDE.md` sentinel measurement; `kernel/spec` loader and digest; `platform.toml` with the three tool pins, the image digest, registry and topology names; reconcile the two runpodctl pins | about 10 modules plus 8 manifests plus 7 member rule files `[E]` | proves digest-in-identity, the member gate and nested rule loading end to end before anything moves |
 | P2 | `platform/pod` carved from the D1-named shared kernel: operator values, command runner, mailbox contracts, object transport, S3 adapter, DVC remote reader; forwarders at old paths | 6 modules, 40+ importers `[M, lane ladder-run-campaign inbound]` | pure rename plus import rewrite |
 | P3a | `platform/ports.py` and the registry; `series.toml` for e, d, h in place; bind the three existing trainers and analyses behind the scientific ports without moving them; `platform/observability` ports with the jsonl and mlflow adapters moved behind `MetricSink` and `Tracker`, and the Trackio adapter added (D6) with the same conformance test the MLflow adapter passes | 3 trainers, 3 analyses, construction; 4 sink adapters `[M, lane ladder-capture]` | arch-gated; typestate must survive review; the tracker conformance test is the proof that line of sight is a port |
 | P3b | ONE training engine: unify the three pipelines under D5 (sealed chain with a per-series payload slot); series keep only `ModelFactory` and `Objective` | 3 trainers, 3 checkpoint custodies, the journal and seal modules `[M, lanes ladder-run-core, ladder-run-training]` | the phase with scientific risk: identity-bearing custody; its own design gate; bitwise-equal tiny-fixture proof per series before P4 |
@@ -287,7 +289,7 @@ reader-identity members ends in one deliberate re-pin commit the conductor owns.
 | P4 | `entropic-series-e` | 45 files | no reader-identity members; may run beside P2 |
 | P5 | `entropic-series-d` and the protocol split under R1: register, review, file, gate go to platform; D1 roles, family, rungs, factorial stay with D | about 190 files | two D1 capture manifests embed hashed module strings `[M, lane ladder-capture debt]`: one re-pin commit |
 | P6 | `entropic-series-h` | 65 files, 22 in the checkpoint reader tuple `[M, lane core-hseries-engine]` | one reader re-pin commit; last for that reason |
-| P7 | import-linter contracts, delete forwarders, retire `historical/` and `entrypoints.env`, per-member bare-directory gate, docs sweep of the stale measured-claim paths | contracts and comments | starts red unless P2 to P6 are clean |
+| P7 | import-linter contracts, delete forwarders, retire `historical/` and `entrypoints.env`, per-member bare-directory gate, shrink the root `CLAUDE.md` to the repo bearing, member map and cross-member rules (R7), docs sweep of the stale measured-claim paths | contracts, two rule files, comments | starts red unless P2 to P6 are clean |
 
 Waves: P1 then P2 serial (P2 needs the member layout and the spec loader); P3a, P3b, P3c serial
 and arch-gated, in that order; P4 may run beside P2 or P3a (file-disjoint); P5 and P6 serial,
@@ -299,7 +301,10 @@ move rewrites test imports and relocates the test, which is why the forwarders e
 - P1: a changed pin in `platform.toml` turns the identity test red; a malformed spec blocks a
   commit through the prek hook; the runpodctl version used by the H launch and the D1 adapter is
   one value; `uv sync` resolves the workspace and each empty member's gate runs from a bare
-  directory.
+  directory; a sentinel token placed only in `packages/entropic-platform/CLAUDE.md` is answered
+  PRESENT by a fresh `claude --print` asked from the repo root while a platform file is being
+  read, with a control question answered from the root file (the 2026-08-14 method); an ABSENT
+  result routes R7's local rulings through `.claude/rules/` with `paths:` frontmatter instead.
 - P2: the H worker and the D1 operator both import the platform modules; the old paths forward;
   `just check` green at the tip.
 - P3a: each of the three trainers runs its existing tiny smoke through the scientific ports with
@@ -316,8 +321,9 @@ move rewrites test imports and relocates the test, which is why the forwarders e
   records as before; the re-pin commit carries the measured before and after digests; the
   member's own gate is green from a bare directory.
 - P7: both new import-linter contracts go red under a one-line mutation and green on revert,
-  recorded in the PR body; every member passes the copy test (clone the member directory alone,
-  `uv sync`, run its gate).
+  recorded in the PR body; every member passes the copy test (clone the member directory alone
+  with its `pyproject.toml`, `CLAUDE.md`, spec and tests, `uv sync`, run its gate, and ask the
+  sentinel question from inside it with no root file present).
 
 ---
 
@@ -345,6 +351,6 @@ move rewrites test imports and relocates the test, which is why the forwarders e
 | D4 | start trigger | H1 filed complete (its exit in `CLAUDE.md` Horizon) | ruled T1 |
 | D5 | unified checkpoint custody | the H sealed chain with a per-series payload slot | open |
 | D6 | second tracker adapter | Trackio behind the `Tracker` port; W&B-compatible surface comes with it | open |
-| D7 | platform member north star and horizon | written before P1, in the member's own `CLAUDE.md`, stating the library bearing of R6 and the reach (which harness shapes it must host before it is sufficient) | open |
+| D7 | platform member north star and horizon | written before P1, in the member's own `CLAUDE.md`, stating the library bearing of R6 and the reach (which harness shapes it must host before it is sufficient); separate from the repo's north star and horizon, which stay in the root file | ruled 2026-10-30: separate documents |
 
 Rulings are recorded here, in this file, on the commit that records them; chat is transport.
