@@ -245,9 +245,41 @@
           "engine_mode": {
             "enum": [
               "arch",
-              "normal"
+              "normal",
+              "direct"
             ],
-            "description": "Launcher-read cascade mode copied verbatim into args.phase.mode; distinct from `mode` (tracer|ratchet = parallel eligibility). Local amendment 2026-09-18 (operator ruling; upstream feature FOR-1502): a phase without it launches in normal mode, so the launch composer refuses to launch a phase of this sprint that lacks it."
+            "description": "Launcher-read lifecycle engine mode, copied VERBATIM into args.phase.mode by the composer (wave-args --manifest <file> --phase <id>). Distinct from mode (tracer|ratchet = sequencing). arch = Opus design gate + direct Sonnet TDD; normal = Sonnet director -> haiku packets; direct = the plain serial spine: direct Sonnet TDD, no recon, no design gate — the former td-phase-lifecycle.js topology. REQUIRED and arch whenever the phase owns any kind:door contract (see if/then). Absent = the composer refuses to launch (never a default)."
+          }
+        },
+        "if": {
+          "required": [
+            "contracts_owned"
+          ],
+          "properties": {
+            "contracts_owned": {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "door"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "engine_mode"
+          ],
+          "properties": {
+            "engine_mode": {
+              "const": "arch"
+            }
           }
         }
       }
