@@ -26,6 +26,7 @@ from entropic_substrate.ladder.run.seals import (
     resume_seal,
     seal_step,
 )
+from entropic_substrate.ladder.run.training import SentencePhase
 from entropic_substrate.ladder.run.worker_log_events import (
     CHECKPOINT_SEAL,
     EVALUATION_END,
@@ -66,6 +67,52 @@ def _progress(
         artifact_from_mapping(artifact_reference(root, seal)),
         artifact_from_mapping(artifact_reference(root, receipt)),
         admission_memo,
+    )
+
+
+def write_progress_receipt(
+    root: Path,
+    name: str,
+    profile: HProfile,
+    profile_artifact: ArtifactIdentity,
+    *,
+    status: Literal["checkpoint", "paused", "training_complete"],
+    phase: SentencePhase,
+    step: int,
+    last_seal: ArtifactIdentity,
+    evaluations: list[dict[str, object]],
+    parent_receipt: ArtifactIdentity | None,
+    inventory: dict[str, object],
+    max_bytes: int,
+) -> ArtifactIdentity:
+    """The ONE definition of an ``h-probe-training-progress-v1`` receipt.
+
+    ``run_probe_training`` writes every checkpoint receipt through it, and so does the codec
+    hand-off materializer (FOR-1692) for the receipt a recipient resumes from: a second copy of
+    this mapping would let the two drift, and ``read_training_progress`` admits exactly this shape.
+    """
+    return write_json(
+        root,
+        name,
+        {
+            "schema": "h-probe-training-progress-v1",
+            "run_identity": profile.identity,
+            "run_class": profile.run_class,
+            "scientific_authority": "none",
+            "profile": artifact_reference(root, profile_artifact),
+            "status": status,
+            "phase": phase,
+            "step": step,
+            "successful_optimizer_steps": step
+            + (profile.schedule.warmup_steps if phase == "prediction" else 0),
+            "last_seal": artifact_reference(root, last_seal),
+            "evaluations": evaluations,
+            "parent_receipt": None
+            if parent_receipt is None
+            else artifact_reference(root, parent_receipt),
+            "inventory": inventory,
+        },
+        max_bytes=max_bytes,
     )
 
 
@@ -442,27 +489,18 @@ def run_probe_training(
                 raise ValueError("stop callback must return a boolean")
             complete = execution.phase == "prediction" and final
             status = "training_complete" if complete else "paused" if stopped else "checkpoint"
-            receipt = write_json(
+            receipt = write_progress_receipt(
                 root,
                 f"{prefix}-{execution.phase}-{execution.step:08d}-progress.json",
-                {
-                    "schema": "h-probe-training-progress-v1",
-                    "run_identity": profile.identity,
-                    "run_class": profile.run_class,
-                    "scientific_authority": "none",
-                    "profile": artifact_reference(root, profile_artifact),
-                    "status": status,
-                    "phase": execution.phase,
-                    "step": execution.step,
-                    "successful_optimizer_steps": execution.step
-                    + (profile.schedule.warmup_steps if execution.phase == "prediction" else 0),
-                    "last_seal": artifact_reference(root, last_seal),
-                    "evaluations": evaluations,
-                    "parent_receipt": None
-                    if previous_receipt is None
-                    else artifact_reference(root, previous_receipt),
-                    "inventory": execution.inventory(),
-                },
+                profile,
+                profile_artifact,
+                status=status,
+                phase=execution.phase,
+                step=execution.step,
+                last_seal=last_seal,
+                evaluations=evaluations,
+                parent_receipt=previous_receipt,
+                inventory=execution.inventory(),
                 max_bytes=max_artifact_bytes,
             )
             previous_receipt = receipt

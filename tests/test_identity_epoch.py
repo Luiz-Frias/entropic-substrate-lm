@@ -726,6 +726,20 @@ source rows: (3.12.13) ``26e69cb3...``, (3.12.14) ``68f002a0...``, (3.12.15) ``2
 ``d85b3144``, ``fc7fad81``, ``23da6f3e``). The source regime test was GREEN at the unpatched tip
 and RED on the patched tree before this swap, in this regime.
 
+L4a codec hand-off re-pin (house rule 4, MEASURED 2026-11-01, branch
+``h1-l4a-codec-handoff`` restacked onto main ``b0dcdcc9``, FOR-1692, conductor DG-A commit):
+``ladder.run.codec_handoff`` joins ``_READER_MODULES`` and the frozen tuple (53 to 54; it writes
+the hand-off seal the walk admits as a chain root), and ``seals``, ``runner``, ``checkpoint`` and
+``trace_capture`` move bytes; no source member moved. Control first: ``tools/regime_rows.py`` over
+the restacked tree WITHOUT the patch reproduced all nine c207094d rows and equals both live
+identities under ``.venv/bin/python`` 3.12.15, torch 2.13.0, pysbd 0.3.4; over the patched tree
+it equals ``checkpoint._reader_identity()`` (the (3.12.15, 2.13.0) row below). New checkpoint
+rows: (3.12.13, 2.13.0) ``0e9055d5...``, (3.12.14, 2.13.0+cpu) ``0da34156...``,
+(3.12.15, 2.13.0) ``33bc5306...``, (3.12.15, 2.13.0+cpu) ``5c036120...``,
+(3.12.16, 2.13.0+cpu) ``d335044b...``. Retracted for this tree: the c207094d
+checkpoint values (``40965967``, ``c3faddf5``, ``0e4f24b7``, ``002e9c8c``, ``c4b22899``). Source
+rows untouched (recomputed and equal).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -876,6 +890,7 @@ _FROZEN_CHECKPOINT_READER_MODULES = (
     "ladder.capture.capture",
     "ladder.run.admission",
     "ladder.run.checkpoint",
+    "ladder.run.codec_handoff",
     "ladder.run.evaluation_records",
     "ladder.run.execution",
     "ladder.run.generation",
@@ -925,19 +940,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "4096596743be39e18cc0860083bb01a9db536bfdd413a7aa5f7cb2010be0bc68",  # pragma: allowlist secret
+    ): "0e9055d5645dfb82fa9582e09f0eff8d8487e2e792aed0aa7c542b62427a418c",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "c3faddf5a8a60fa9a402c50e708fb83385375b53dd30a1cb0fb4d2b00c3f4812",  # pragma: allowlist secret
+    ): "0da3415668650582ea1037c2d4ff26928e1330fad89d14e59dc39aea5fc0c15e",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "0e4f24b758a559d5b8617f0fed30e848c543a81c47d7798fe7e0ac7c60c7106a",  # pragma: allowlist secret
+    ): "33bc5306f9b4f751d2712a972866bee735760fe4b7d22792e08e69d618ab93e5",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "002e9c8c8ba75830e66287887d89cfe8ba7e02feea14b6ed18fe44f34151144c",  # pragma: allowlist secret
+    ): "5c036120c8a891b74b0466ab2e24efa4a508b978e7e2fe8aeef2112d291f8869",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -947,7 +962,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "c4b22899657b2b880a871bcfea2f5657f1bcf0d8fa7f67023600fd09be6983d3",  # pragma: allowlist secret
+    ): "d335044b32a6f0f4517e62777d927586af601496315f0e74c8237cce8b66d626",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
