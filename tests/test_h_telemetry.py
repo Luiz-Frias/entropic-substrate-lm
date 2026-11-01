@@ -115,6 +115,46 @@ def test_no_committed_step_raises(tmp_path: Path, rows: list[dict[str, Any]]) ->
         final_h_run_end(path)
 
 
+def _scientific_stop() -> dict[str, Any]:
+    return _end("failed") | {"result_status": "scientific_gap"}
+
+
+def test_a_scientific_stop_is_admissible_with_zero_committed_rows(tmp_path: Path) -> None:
+    """DH-46 (FOR-1693): a codec warm-up that diverged at its first step is a recorded
+    scientific outcome. The exception is keyed on the run_end record, not on the row count."""
+    for rows in ([], [_step("started")]):
+        path = _write(tmp_path / "metrics.jsonl", [_start(), *rows, _scientific_stop()])
+        assert final_h_run_end(path) == _scientific_stop()
+
+
+@pytest.mark.parametrize(
+    "end",
+    [
+        _end("failed"),  # execution_defect: an execution-truncated stream
+        _end("failed") | {"result_status": "diagnostic_gap"},
+        _end("failed") | {"result_status": "scientific_gapp"},
+        _end("ok") | {"result_status": "scientific_gap"},  # the pair is both halves or nothing
+        _end("ok"),
+    ],
+)
+def test_only_the_recorded_scientific_pair_waives_the_committed_row(
+    tmp_path: Path, end: dict[str, Any]
+) -> None:
+    path = _write(tmp_path / "metrics.jsonl", [_start(), end])
+    with pytest.raises(TelemetryGap, match=r"at least one committed h-training-step-v2"):
+        final_h_run_end(path)
+
+
+def test_a_scientific_stop_still_needs_exactly_one_start_and_one_end(tmp_path: Path) -> None:
+    stop = _scientific_stop()
+    with pytest.raises(TelemetryGap, match=r"exactly one run_end.*found 2"):
+        final_h_run_end(_write(tmp_path / "a.jsonl", [_start(), stop, stop]))
+    with pytest.raises(TelemetryGap, match=r"exactly one run_start.*found 0"):
+        final_h_run_end(_write(tmp_path / "b.jsonl", [stop]))
+    with pytest.raises(TelemetryGap, match=r"exactly one run_end.*found 0"):
+        final_h_run_end(_write(tmp_path / "c.jsonl", [_start()]))
+
+
 def test_a_foreign_committed_row_is_not_a_training_step(tmp_path: Path) -> None:
     """The step filter checks the schema as well as the status: a committed row
     of another schema does not stand in for an h-training-step-v2 row."""

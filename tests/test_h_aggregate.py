@@ -14,6 +14,7 @@ import ast
 import json
 import math
 from collections.abc import Callable
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -1054,3 +1055,235 @@ class TestCapturedHepP7gRuns:
         runs = [load_h_run(*pairs[0])]
         with pytest.raises(ValueError, match=r"no --arm label|names an identity"):
             aggregate_h_runs(runs, labels)
+
+
+# ------------------------------------------------ DH-46 (FOR-1693): the scientifically stopped stream
+def stopped_rows(
+    identity: str = IDENTITY_A,
+    request: str = REQUEST_A,
+    *,
+    committed: int = 0,
+    warmup: int = 2,
+    result_status: str = "scientific_gap",
+    status: str = "failed",
+    phase_starts: int = 1,
+    extra_log: tuple[dict[str, Any], ...] = (),
+    extra_metrics: tuple[dict[str, Any], ...] = (),
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """A donor stream that stopped INSIDE its warm-up: ``committed`` rows, then the run_end."""
+    metrics, log = build_h_run_rows(identity, request)
+    start, end = metrics[0], metrics[-1]
+    rows = [_step_row(identity, "codec_warmup", s, 1.0) for s in range(1, committed + 1)]
+    end = end | {"status": status, "result_status": result_status}
+    end["successful_optimizer_steps"] = None
+    worker_start = log[0]
+    run = log[1]
+    phase = [
+        _log("phase.start", phase="codec_warmup", step_from=0, step_to=warmup)
+        for _ in range(phase_starts)
+    ]
+    return [start, *rows, *extra_metrics, end], [worker_start, run, *phase, *extra_log]
+
+
+def write_stopped_run(directory: Path, **kwargs: Any) -> tuple[Path, Path]:
+    metrics, log = stopped_rows(**kwargs)
+    directory.mkdir(parents=True, exist_ok=True)
+    return _dump(directory / "s-metrics.jsonl", metrics), _dump(
+        directory / "s-worker-log.jsonl", log
+    )
+
+
+@pytest.mark.unit
+class TestScientificallyStoppedStream:
+    @pytest.mark.parametrize("committed", [0, 1])
+    def test_a_donor_stopped_in_its_warmup_loads_on_the_default_path(
+        self, tmp_path: Path, committed: int
+    ) -> None:
+        """Warm-up step 1 (zero rows) and step 2 of 2 (one row) both load with no override."""
+        run = load_h_run(*write_stopped_run(tmp_path, committed=committed))
+        assert run.warmup_steps == 2
+        assert [step for step, _, _ in run.training] == list(range(1, committed + 1))
+        assert {phase for _, phase, _ in run.training} <= {"codec_warmup"}
+        assert run.evaluations == () and run.elm == ()
+        assert run.run_end["result_status"] == "scientific_gap"
+
+    def test_the_parity_pin_the_adapter_derives_missing_endpoint_with_no_override(
+        self, tmp_path: Path
+    ) -> None:
+        from entropic_substrate.ladder.analyze.h1_observations import project_h1_cell
+        from entropic_substrate.ladder.register.h_preservation import H1ExclusionReason
+
+        for committed in (0, 1):
+            run = load_h_run(*write_stopped_run(tmp_path / str(committed), committed=committed))
+            cell = project_h1_cell(run)
+            assert type(cell.endpoint_reason) is H1ExclusionReason
+            assert cell.endpoint_reason == H1ExclusionReason.MISSING_ENDPOINT
+
+    def test_every_downstream_consumer_takes_the_stopped_run_without_an_untyped_crash(
+        self, tmp_path: Path
+    ) -> None:
+        """P5-12: run_summary, aggregate_h_runs, h_report, K3 and K7 each run once on both
+        admitted donor streams; their outcomes are asserted, not assumed."""
+        from entropic_substrate.ladder.analyze.h_aggregate import run_summary
+        from entropic_substrate.ladder.analyze.h_final_probe_checks import (
+            check_analysis_surface,
+            check_capture,
+        )
+        from entropic_substrate.ladder.analyze.h_report import h_report_from_run
+
+        files = {
+            "magnitude": write_stopped_run(tmp_path / "a", committed=0),
+            "sphere": write_stopped_run(
+                tmp_path / "b", identity=IDENTITY_B, request=REQUEST_B, committed=1
+            ),
+        }
+        stopped = [load_h_run(*pair) for pair in files.values()]
+        summary = run_summary(stopped[0])
+        assert summary["committed_step_rows"] == 0 and summary["completed"] is False
+        assert summary["step_range"] is None and summary["evaluation_steps"] == []
+        document = aggregate_h_runs(stopped, {IDENTITY_A: "magnitude", IDENTITY_B: "sphere"})
+        assert document["training"]["paired_steps"] == []
+        assert document["evaluation"]["paired_steps"] == []
+        report = h_report_from_run(stopped[1])
+        assert report["status"]["completed"] is False and report["steps"]["committed_rows"] == 1
+        assert report["evaluation"]["steps"] == []
+        capture = check_capture([m for m, _ in files.values()], [REQUEST_A, REQUEST_B])
+        assert capture.verdict == "PASS", capture.reasons
+        surface = check_analysis_surface({label: [pair] for label, pair in files.items()})
+        assert surface.verdict == "PASS", surface.reasons
+
+    @pytest.mark.parametrize(
+        ("name", "kwargs"),
+        [
+            ("execution_defect", {"result_status": "execution_defect"}),
+            ("diagnostic_gap", {"result_status": "diagnostic_gap"}),
+            ("ok status", {"status": "ok"}),
+            ("no phase.start", {"phase_starts": 0}),
+            ("two phase.start", {"phase_starts": 2}),
+            (
+                "warm-up-final seal present",
+                {
+                    "committed": 2,
+                    "extra_log": (
+                        _log("checkpoint.seal", phase="codec_warmup", step=2, global_step=2),
+                    ),
+                },
+            ),
+            (
+                "evaluation.start present",
+                {"extra_log": (_log("evaluation.start", global_step=3),)},
+            ),
+            (
+                "prediction step row present",
+                {"extra_metrics": (_step_row(IDENTITY_A, "prediction", 1, 1.0),)},
+            ),
+            (
+                "complete warm-up rows",
+                {"committed": 2},
+            ),
+        ],
+    )
+    def test_everything_else_keeps_the_existing_refusals(
+        self, tmp_path: Path, name: str, kwargs: dict[str, Any]
+    ) -> None:
+        """An execution-truncated stream, a stop that HAS its warm-up-final seal and every
+        other shape the record does not describe raise with the messages they always had."""
+        with pytest.raises(TelemetryGap) as raised:
+            load_h_run(*write_stopped_run(tmp_path, **kwargs))
+        message = str(raised.value)
+        assert (
+            "warm-up length cannot be derived" in message
+            or "committed codec_warmup" in message
+            or "at least one committed" in message
+        ), (name, message)
+
+    def test_the_unchanged_message_for_a_truncated_stream_is_byte_identical(
+        self, tmp_path: Path
+    ) -> None:
+        metrics, log = stopped_rows(committed=1, result_status="execution_defect")
+        directory = tmp_path
+        m = _dump(directory / "m.jsonl", metrics)
+        w = _dump(directory / "w.jsonl", log)
+        with pytest.raises(TelemetryGap) as raised:
+            load_h_run(m, w)
+        assert str(raised.value) == (
+            f"{w}: the warm-up length cannot be derived: prediction checkpoint.seal events "
+            "must exist and agree on global_step - step, found offsets []"
+        )
+
+    def test_the_override_and_handoff_paths_are_byte_unchanged(self, tmp_path: Path) -> None:
+        """The widened branch never combines with ``warmup_steps=`` or ``handoff=``: with an
+        override the existing check still decides."""
+        run = load_h_run(*write_stopped_run(tmp_path, committed=1), warmup_steps=2)
+        assert run.warmup_steps == 2
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("failing_call", [1, 2])
+def test_the_real_worker_emits_the_scientific_stop_the_loader_keys_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_call: int
+) -> None:
+    """Emitter-to-reader pin (P5-10): the ``failed``/``scientific_gap`` run_end and the one
+    ``codec_warmup`` ``phase.start`` come from the REAL ``run_object_worker`` on a donor whose
+    warm-up diverged at step 1 (zero rows) or step 2 of 2 (one row); the default-path loader
+    admits both and the L3 adapter derives MISSING_ENDPOINT, with no override anywhere. The
+    fault is injected at the numerical primitive below the runner."""
+    from tests.test_d1_trainer_object_transport import _ObjectStore
+    from tests.test_sentence_worker_execution import prepared
+
+    from entropic_substrate.core.sentence.codec import NeuralSentenceCodec
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.analyze.h1_observations import project_h1_cell
+    from entropic_substrate.ladder.capture.reader.h_telemetry import is_scientific_stop
+    from entropic_substrate.ladder.register.h_preservation import H1ExclusionReason
+    from entropic_substrate.ladder.run.worker_command import run_worker_command
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    real = NeuralSentenceCodec.reconstruct
+    calls = {"n": 0}
+
+    def diverge(self: NeuralSentenceCodec, *args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == failing_call:
+            raise UndefinedDirection(2)
+        return real(self, *args, **kwargs)
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    monkeypatch.setattr(NeuralSentenceCodec, "reconstruct", diverge)
+    workspace = tmp_path / "command-worker"
+    workspace.mkdir()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "100",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=objects,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    assert status == 2
+    observability = tmp_path / "command-worker.observability"
+    run = load_h_run(observability / "metrics.jsonl", observability / "worker-log.jsonl")
+    assert is_scientific_stop(run.run_end)
+    assert (run.run_end["status"], run.run_end["result_status"]) == ("failed", "scientific_gap")
+    assert run.warmup_steps == 2 and len(run.training) == failing_call - 1
+    cell = project_h1_cell(run)
+    assert type(cell.endpoint_reason) is H1ExclusionReason
+    assert cell.endpoint_reason == H1ExclusionReason.MISSING_ENDPOINT

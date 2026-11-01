@@ -59,6 +59,7 @@ from entropic_substrate.ladder.analyze.h_elm_projection import (
 )
 from entropic_substrate.ladder.capture.reader.h_telemetry import (
     final_h_run_end,
+    is_scientific_stop,
     require_json_object_lines,
 )
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
@@ -211,17 +212,66 @@ def _require_identity(value: object, *, where: str, path: Path) -> str:
     return value
 
 
+def _scientifically_stopped_warmup(rows: Sequence[dict[str, Any]]) -> int | None:
+    """The warm-up length ``W`` of a log that stopped before its warm-up-final seal, else ``None``.
+
+    DH-46 (FOR-1693). ``W`` is ``step_to`` of EXACTLY ONE ``phase.start`` event whose phase is
+    ``codec_warmup`` (the runner logs it BEFORE the first advance, so even a donor that
+    committed no row carries it): an ``int`` >= 1. The log must also hold no prediction
+    ``checkpoint.seal`` (the caller guarantees it), no ``codec_warmup`` ``checkpoint.seal`` at
+    step ``W`` and no ``evaluation.start``. Anything else returns ``None`` and the caller
+    raises its existing message.
+    """
+    starts = [r for r in rows if r.get("event") == "phase.start" and r.get("phase") == _WARMUP]
+    if len(starts) != 1:
+        return None
+    declared = starts[0].get("step_to")
+    if type(declared) is not int or declared < 1:
+        return None
+    for row in rows:
+        if row.get("event") == "evaluation.start":
+            return None
+        if (
+            row.get("event") == "checkpoint.seal"
+            and row.get("phase") == _WARMUP
+            and row.get("step") == declared
+        ):
+            return None
+    return declared
+
+
+def _holds_prediction_work(row: Mapping[str, Any]) -> bool:
+    """A prediction-phase step row of any status, or an evaluation row (DH-46)."""
+    schema = row.get("schema")
+    return schema == _EVALUATION_SCHEMA or (
+        schema == _STEP_SCHEMA and row.get("phase") == _PREDICTION
+    )
+
+
 def _worker_log_facts(
-    path: Path, request_sha256: str, declared_warmup: int | None
+    path: Path, request_sha256: str, declared_warmup: int | None, *, scientific_stop: bool = False
 ) -> tuple[
-    int, list[int], list[int], str | None, tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]
+    int,
+    list[int],
+    list[int],
+    str | None,
+    tuple[dict[str, Any], ...],
+    tuple[dict[str, Any], ...],
+    bool,
 ]:
     """Bind the worker log to the run and read the global-axis facts out of it.
 
     Returns ``(warmup_steps, seal_steps, evaluation_steps, mlflow_run_id, stages,
-    admissions)``. ``declared_warmup`` is a resumed lineage's warm-up length: this log's
-    prediction seals, when it has any, must agree with it, and a log with none (a pod
-    stopped inside the warm-up) is admitted at the declared length.
+    admissions, stopped_in_warmup)``. ``declared_warmup`` is a resumed lineage's warm-up
+    length: this log's prediction seals, when it has any, must agree with it, and a log with
+    none (a pod stopped inside the warm-up) is admitted at the declared length.
+
+    AMENDMENT (house rule 4, FOR-1693, DH-46, 2026-11-01): ``scientific_stop`` says the run's
+    ``run_end`` records a scientific stop. With it, no ``declared_warmup`` and no prediction
+    seal, the warm-up length is the one ``phase.start`` event's ``step_to``
+    (:func:`_scientifically_stopped_warmup`) and the last element is ``True``. Without those
+    conditions the length is derived from prediction seals alone, exactly as the text above
+    says, and a log with none raises the unchanged message.
     """
     rows = _read_rows(path)
     starts = [r for r in rows if r.get("event") == "worker.start"]
@@ -260,6 +310,12 @@ def _worker_log_facts(
                 f"{sorted(offsets)} steps, but the resumed lineage declares {declared_warmup}"
             )
         offsets = {declared_warmup}
+    stopped_in_warmup = False
+    if scientific_stop and declared_warmup is None and not offsets:
+        stopped_length = _scientifically_stopped_warmup(rows)
+        if stopped_length is not None:
+            offsets = {stopped_length}
+            stopped_in_warmup = True
     if len(offsets) != 1:
         _gap(
             f"{path}: the warm-up length cannot be derived: prediction checkpoint.seal events "
@@ -309,6 +365,7 @@ def _worker_log_facts(
         mlflow_run_id,
         tuple(stages),
         tuple(admissions),
+        stopped_in_warmup,
     )
 
 
@@ -379,6 +436,19 @@ def load_h_run(
     recipient. It is a distinct typed argument and never combines with ``warmup_steps``: that
     override skips the per-file coverage check by design and must not admit a truncated stream.
     Without either, a stream with no warm-up rows still raises, exactly as before.
+
+    AMENDMENT (house rule 4, FOR-1693, DH-46, 2026-11-01): the default path (neither
+    argument) also admits a scientifically stopped warm-up-only stream. The admission is keyed
+    on the recorded stop, never on a row count: the ``run_end`` carries ``status == failed``
+    and ``result_status == scientific_gap``; the worker log holds no prediction
+    ``checkpoint.seal``, no ``codec_warmup`` seal at the warm-up's last step and no
+    ``evaluation.start``; the warm-up length ``W`` is ``step_to`` of the one ``codec_warmup``
+    ``phase.start`` event; and the metrics hold no prediction step row, no evaluation row and
+    committed warm-up rows exactly ``1..k`` with ``k < W`` (zero rows allowed). Such a run
+    loads with its warm-up rows only and no evaluations. Every other stream with no prediction
+    seal raises the unchanged messages, and the ``warmup_steps=`` and ``handoff=`` paths are
+    byte-unchanged and never combine with this branch. A stopped stream that HAS its warm-up
+    final seal stays refused.
     """
     if handoff is not None and type(handoff) is not CodecHandoffEvidence:
         raise TypeError("handoff evidence must be a CodecHandoffEvidence")
@@ -408,8 +478,21 @@ def load_h_run(
             )
 
     declared_warmup = warmup_steps
-    warmup_steps, seal_steps, evaluation_starts, mlflow_run_id, stages, admissions = (
-        _worker_log_facts(worker_log, request_sha256, declared_warmup)
+    (
+        warmup_steps,
+        seal_steps,
+        evaluation_starts,
+        mlflow_run_id,
+        stages,
+        admissions,
+        stopped_in_warmup,
+    ) = _worker_log_facts(
+        worker_log,
+        request_sha256,
+        declared_warmup,
+        scientific_stop=handoff is None
+        and is_scientific_stop(run_end)
+        and not any(_holds_prediction_work(row) for row in rows),
     )
 
     extractor = HTrainingStepExtractor(warmup_steps=warmup_steps)
@@ -492,6 +575,15 @@ def load_h_run(
             _gap(
                 f"{metrics}: a hand-off recipient commits no codec_warmup row, but "
                 f"{warmup_rows} are present"
+            )
+    elif stopped_in_warmup:
+        # DH-46: the committed warm-up rows are exactly steps 1..k with k < W (consecutive
+        # because the axis is strictly increasing from zero), never a complete warm-up.
+        if not warmup_rows == warmup_max < warmup_steps:
+            _gap(
+                f"{metrics}: the worker log puts the warm-up at {warmup_steps} steps and the stop "
+                f"inside it, but the committed codec_warmup rows number {warmup_rows} and end at "
+                f"{warmup_max}"
             )
     elif declared_warmup is not None:
         if warmup_max > warmup_steps:

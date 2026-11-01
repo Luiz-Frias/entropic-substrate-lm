@@ -1357,6 +1357,38 @@ def test_a_failed_h_run_that_never_trained_still_refuses_the_whole_pass(
     assert list((tmp_path / "cap").glob("*")) == []
 
 
+def test_a_failed_h_run_with_a_recorded_scientific_stop_and_no_rows_is_captured(
+    tmp_path: Path, e_predicate_tripwire: None
+) -> None:
+    """DH-46 (FOR-1693): a donor whose warm-up diverged at step 1 committed no row and wrote
+    a ``failed``/``scientific_gap`` run_end. The pass admits it instead of exiting 2."""
+    client = _h_client()
+    run_id = f"{_FAILED_H_PREFIX}-0006"
+    rows = [json.loads(line) for line in _h_lines(with_step=False).splitlines()]
+    rows[-1] = rows[-1] | {"status": "failed", "result_status": "scientific_gap"}
+    stopped = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    _add_h_run(client, run_id, status="FAILED", metrics=stopped)
+    captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert f"{H_RUN}-{_FAILED_H_PREFIX}-metrics.jsonl" in {p.name for p in captured}
+
+
+@pytest.mark.parametrize("result_status", ["execution_defect", "diagnostic_gap"])
+def test_a_failed_h_run_with_zero_rows_and_another_record_is_still_refused(
+    tmp_path: Path, e_predicate_tripwire: None, result_status: str
+) -> None:
+    """The exception is the record, never the row count: every other zero-row FAILED run is
+    refused with the unchanged message."""
+    client = _h_client()
+    run_id = f"{_FAILED_H_PREFIX}-0006"
+    rows = [json.loads(line) for line in _h_lines(with_step=False).splitlines()]
+    rows[-1] = rows[-1] | {"status": "failed", "result_status": result_status}
+    truncated = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    _add_h_run(client, run_id, status="FAILED", metrics=truncated)
+    with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*at least one committed"):
+        capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
+    assert list((tmp_path / "cap").glob("*")) == []
+
+
 def test_a_failed_e_run_is_still_skipped_with_no_download(tmp_path: Path) -> None:
     """The E lane stays FINISHED-only: a FAILED E run is skipped, never downloaded."""
     client = _client()
