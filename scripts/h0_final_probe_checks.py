@@ -51,7 +51,11 @@ from entropic_substrate.ladder.analyze.h_final_probe_checks import (
     check_resume_seam,
     evaluated_samples_from_manifest,
 )
-from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
+from entropic_substrate.ladder.run.worker_request import (
+    ProbeRequest,
+    parse_probe_request,
+    refuse_pair,
+)
 
 _MAX_REQUEST_BYTES = 1_000_000
 
@@ -69,7 +73,11 @@ def _json(path: object) -> dict[str, Any]:
 
 
 def _request(path: object) -> ProbeRequest:
-    return parse_probe_request(Path(str(path)).read_bytes(), max_bytes=_MAX_REQUEST_BYTES)
+    request = parse_probe_request(Path(str(path)).read_bytes(), max_bytes=_MAX_REQUEST_BYTES)
+    if type(request) is not ProbeRequest:
+        # FOR-1693: the H0 checks read single-profile arms; a pair's checks belong to FOR-1694
+        refuse_pair("h0_final_probe_checks")
+    return request
 
 
 def _pairs(value: Sequence[Sequence[str]]) -> list[tuple[Path, Path]]:

@@ -18,7 +18,7 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import batch_coordinates
 from entropic_substrate.ladder.run.journal import read_json
-from entropic_substrate.ladder.run.seals import SealMemo, read_seal
+from entropic_substrate.ladder.run.seals import CorpusMemo, SealMemo, read_seal
 
 
 def _real(value: object) -> float:
@@ -47,8 +47,13 @@ def read_evaluation(
     max_bytes: int,
     max_source_bytes: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     """Recompute weights/ESS/MCSE and source positions from immutable artifacts.
+
+    ``corpora`` (FOR-1693, DH-41) is the process's :class:`CorpusMemo` of ``source_root``: the
+    memo ARGUMENT only. With it the prepared corpus is replayed once instead of once per call, and
+    the sampler below receives the proof instead of replaying a second time.
 
     ``memo``, when given, serves two reuses (design-gate ruling DG-B). RETRACTION
     (house rule 4, FOR-1670): this docstring used to say the memo is "passed
@@ -87,6 +92,7 @@ def read_evaluation(
         max_bytes=max_bytes,
         max_source_bytes=max_source_bytes,
         memo=memo,
+        corpora=corpora,
     )
     if seal.phase != "prediction" or type(row["step"]) is not int or row["step"] != seal.step:
         raise ValueError("evaluation is not bound to its exact prediction checkpoint")
@@ -100,8 +106,11 @@ def read_evaluation(
     examples = row["examples"]
     if type(examples) is not list or len(examples) != profile.schedule.evaluation_batches:
         raise ValueError("evaluation does not cover its declared batch population")
-    corpus = read_prepared_corpus(
-        source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+    expected = ContentHash("sha256", profile.source_digest)
+    corpus = (
+        read_prepared_corpus(source_root, expected, max_bytes=max_source_bytes)
+        if corpora is None
+        else corpora.read(source_root, expected, max_bytes=max_source_bytes)
     )
     sampler = SentenceSampler(
         corpus,

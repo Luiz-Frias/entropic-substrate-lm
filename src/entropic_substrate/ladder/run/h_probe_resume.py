@@ -12,7 +12,8 @@ Inputs of the resumed request: the previous request's non-``run/`` inputs (the p
 source and, remotely, the code bundle) plus every flat ``run/*.json`` / ``run/*.pt``
 file of the collected run root, each identified by the digest of its bytes as read
 here. The resume receipt is the collection's ``resume_artifact``; it must match those
-bytes and be a paused ``h-probe-training-progress-v1`` receipt of the same profile.
+bytes and be a paused ``h-probe-training-progress-v2`` receipt of the same profile
+(FOR-1693 moved it from v1: a v1 receipt is refused by name).
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ from entropic_substrate.kernel.artifacts import (
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.runner import (
+    PROGRESS_SCHEMA_V1,
+    PROGRESS_SCHEMA_V2,
+    refuse_progress_version,
+)
 from entropic_substrate.ladder.run.worker_request import ProbeRequest
 
 __all__ = ["build_resume_request"]
@@ -91,8 +97,10 @@ def build_resume_request(
         ArtifactIdentity(PurePosixPath(resume.path).name, resume.content_hash),
         max_bytes=previous.limits.max_object_bytes,
     )
+    if receipt.get("schema") == PROGRESS_SCHEMA_V1:
+        refuse_progress_version(PROGRESS_SCHEMA_V1)
     if (
-        receipt.get("schema") != "h-probe-training-progress-v1"
+        receipt.get("schema") != PROGRESS_SCHEMA_V2
         or receipt.get("status") != "paused"
         or receipt.get("run_identity") != previous.profile.identity
     ):

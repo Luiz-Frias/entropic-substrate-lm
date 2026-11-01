@@ -3,7 +3,7 @@
 import json
 import math
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import TYPE_CHECKING, NoReturn, cast
 
 import torch
 
@@ -11,7 +11,7 @@ from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import PreparedCorpus
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
-from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler, VerifiedCorpus
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     normalize_d1_relative_artifact_path,
@@ -23,6 +23,9 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
 from entropic_substrate.ladder.run.execution import SentenceExecution, batch_coordinates
 from entropic_substrate.ladder.run.mechanism_evidence import admit_mechanism
+
+if TYPE_CHECKING:  # seals imports this module, so the memo type is named for the checker only
+    from entropic_substrate.ladder.run.seals import CorpusMemo
 
 
 def artifact_reference(root: Path, artifact: ArtifactIdentity) -> dict[str, str]:
@@ -80,7 +83,9 @@ def _number(value: object, *, nonnegative: bool = False) -> float:
     return result
 
 
-def _validate(payload: object, profile: HProfile, corpus: PreparedCorpus) -> dict[str, object]:
+def _validate(
+    payload: object, profile: HProfile, corpus: PreparedCorpus | VerifiedCorpus
+) -> dict[str, object]:
     journal = recovery_record(
         payload,
         "schema run_identity run_class scientific_authority phase start_step end_step parent rows",
@@ -245,10 +250,11 @@ def write_journal(
         "parent": None if parent is None else artifact_reference(root, parent),
         "rows": rows,
     }
-    corpus = read_prepared_corpus(
-        engine.source_root,
-        ContentHash("sha256", engine.profile.source_digest),
-        max_bytes=engine.max_source_bytes,
+    expected = ContentHash("sha256", engine.profile.source_digest)
+    corpus = (
+        read_prepared_corpus(engine.source_root, expected, max_bytes=engine.max_source_bytes)
+        if engine.corpora is None
+        else engine.corpora.read(engine.source_root, expected, max_bytes=engine.max_source_bytes)
     )
     _validate(payload, engine.profile, corpus)
     return write_json(root, name, payload, max_bytes=max_bytes)
@@ -262,9 +268,13 @@ def read_journal(
     *,
     max_bytes: int,
     max_source_bytes: int,
+    corpora: "CorpusMemo | None" = None,
 ) -> dict[str, object]:
     payload = read_json(root, artifact, max_bytes=max_bytes)
-    corpus = read_prepared_corpus(
-        source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+    expected = ContentHash("sha256", profile.source_digest)
+    corpus = (
+        read_prepared_corpus(source_root, expected, max_bytes=max_source_bytes)
+        if corpora is None
+        else corpora.read(source_root, expected, max_bytes=max_source_bytes)
     )
     return _validate(payload, profile, corpus)

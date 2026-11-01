@@ -38,15 +38,20 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_STOP_MARKER_UNCONFIRMED,
 )
 from entropic_substrate.ladder.run.worker_command import build_worker_objects
-from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_request import (
+    AnyProbeRequest,
+    PairProbeRequest,
+    refuse_pair,
+)
 from entropic_substrate.ladder.run.worker_transport import publish_verified_object
 
 
 def request_stop(
     objects: D1TrainerMailboxObjectPort,
-    request: ProbeRequest,
+    request: AnyProbeRequest,
     *,
     target: tuple[str, int] | None = None,
+    cell: str | None = None,
     wait_seconds: float,
     poll_seconds: float,
     monotonic: Callable[[], float],
@@ -59,7 +64,18 @@ def request_stop(
     wait. Publishing is idempotent: a second call publishes byte-identical
     marker content, which the object port itself treats as success -- this
     function never catches, retries or overrides an immutable collision.
+
+    FOR-1693 (DH-44, D10): ``cell`` names the pair cell a stop lands on, and every refusal
+    happens BEFORE ``publish_verified_object`` (the marker is write-once, so one that cannot
+    then be confirmed would leave the run with no further stop): a cell given for a
+    single-profile request, and any pair request (``read_probe_event`` refuses a pair, and a pair's
+    launch, stop and collection are FOR-1694's). The worker's own poll honours a v2 marker; it is
+    proven through ``encode_stop_marker`` and an in-memory port, not through this verb.
     """
+    if isinstance(request, PairProbeRequest):
+        refuse_pair("h_probe_stop")
+    if cell is not None:
+        raise ValueError("a cell is given for a single-profile request; only a pair names a cell")
     marker_payload = encode_stop_marker(request, target)
     # A defensive self-check only; the object port is the actual admission
     # predicate for what counts as this request's own marker.
@@ -118,6 +134,15 @@ def _parser() -> argparse.ArgumentParser:
             "--at-phase prediction --at-step 250 (with --at-phase)"
         ),
     )
+    # FOR-1693: the pair cell a stop lands on (h-probe-stop-marker-v2). Only a pair request
+    # has cells, and a pair has no launch before FOR-1694, so every launch this verb can read
+    # refuses it before anything is published.
+    parser.add_argument(
+        "--at-cell",
+        type=str,
+        default=None,
+        help="pair cell the stop lands on (refused for a single-profile request)",
+    )
     return parser
 
 
@@ -172,6 +197,7 @@ def run_probe_stop(
             objects,
             request,
             target=target,
+            cell=args.at_cell,
             wait_seconds=args.wait_seconds,
             poll_seconds=args.poll_seconds,
             monotonic=time.monotonic,

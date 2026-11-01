@@ -51,7 +51,7 @@ from entropic_substrate.ladder.capture.resource.resource_meter_models import Res
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress
-from entropic_substrate.ladder.run.seals import SealMemo, resume_seal
+from entropic_substrate.ladder.run.seals import CorpusMemo, SealMemo, resume_seal
 
 RECEIPT_SCHEMA = "h-generation-receipt-v3"
 _OLD_RECEIPT_SCHEMAS = ("h-generation-receipt-v1", "h-generation-receipt-v2")
@@ -201,6 +201,7 @@ def _trained(
     source_limit: int,
     artifact_limit: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> tuple[SentenceExecution, dict[str, object]]:
     row = read_training_progress(
         root,
@@ -210,11 +211,14 @@ def _trained(
         max_source_bytes=source_limit,
         max_artifact_bytes=artifact_limit,
         memo=memo,
+        corpora=corpora,
     )
     if row["status"] != "training_complete":
         raise ValueError("generation requires complete training")
     with torch.random.fork_rng(devices=[0] if profile.device == "cuda" else []):
-        execution = SentenceExecution(profile, source, max_source_bytes=source_limit)
+        execution = SentenceExecution(
+            profile, source, max_source_bytes=source_limit, corpora=corpora
+        )
         resume_seal(
             root,
             artifact_from_mapping(row["last_seal"]),
@@ -420,9 +424,10 @@ def read_generation(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     execution, _ = _trained(
-        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo, corpora
     )
     return _load(root, artifact, training, execution, max_artifact_bytes)[0]
 
@@ -465,6 +470,7 @@ def run_probe_generation(
     resume: ArtifactIdentity | None = None,
     pause_after: int | None = None,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> GenerationProgress:
     """Draw ``generation_continuations`` continuations of the prompt; pauses persist partial work.
 
@@ -476,12 +482,14 @@ def run_probe_generation(
 
     ``memo``, when given, is the memo the SAME process's completion walk of this
     ``root`` populated (see :class:`~entropic_substrate.ladder.run.seals.SealMemo`);
-    ``None`` keeps the memo-less full walk.
+    ``None`` keeps the memo-less full walk. ``corpora`` (FOR-1693, DH-41) is the process's
+    :class:`~entropic_substrate.ladder.run.seals.CorpusMemo` of ``source_root``, the memo
+    ARGUMENT only.
     """
     if pause_after is not None and (type(pause_after) is not int or pause_after < 1):
         raise ValueError("generation pause must be a positive observation count")
     execution, _ = _trained(
-        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo, corpora
     )
     count = profile.schedule.generation_continuations
     carried: list[_Started] = []

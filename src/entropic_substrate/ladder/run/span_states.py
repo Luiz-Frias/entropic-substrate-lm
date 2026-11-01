@@ -97,10 +97,15 @@ def collect_span_states(
         p.requires_grad for p in execution.model.codec.encoder.parameters()
     ):
         raise ValueError("span collection requires the frozen prediction construction")
-    corpus = read_prepared_corpus(
-        execution.source_root,
-        ContentHash("sha256", execution.profile.source_digest),
-        max_bytes=execution.max_source_bytes,
+    # FOR-1693 (DH-41): the engine's own corpus memo, when its caller owns one (the memo ARGUMENT
+    # only); without it the corpus is read and replayed here exactly as before.
+    expected = ContentHash("sha256", execution.profile.source_digest)
+    corpus = (
+        read_prepared_corpus(execution.source_root, expected, max_bytes=execution.max_source_bytes)
+        if execution.corpora is None
+        else execution.corpora.read(
+            execution.source_root, expected, max_bytes=execution.max_source_bytes
+        ).corpus
     )
     quotas = [count // len(lags) + int(index < count % len(lags)) for index in range(len(lags))]
     reservoirs: list[list[_Candidate]] = [[] for _ in lags]

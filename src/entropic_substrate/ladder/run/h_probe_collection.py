@@ -13,6 +13,12 @@ from entropic_substrate.kernel.artifacts import (
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.h_probe_events import ObservedProbeEvent, read_probe_event
 from entropic_substrate.ladder.run.journal import read_json, write_json
+from entropic_substrate.ladder.run.runner import (
+    PROGRESS_FIELDS,
+    PROGRESS_SCHEMA_V1,
+    PROGRESS_SCHEMA_V2,
+    refuse_progress_version,
+)
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
@@ -21,12 +27,24 @@ from entropic_substrate.ladder.run.worker_completion import (
     receive_worker_completion,
 )
 from entropic_substrate.ladder.run.worker_request import (
+    RESULT_SCHEMA_V1,
+    RESULT_SCHEMA_V2,
     ProbeRequest,
+    refuse_pair_result_for_single,
     worker_artifact,
 )
 from entropic_substrate.ladder.run.worker_snapshot import (
     materialize_worker_snapshot,
 )
+
+_RESULT_FIELDS = "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds"
+
+
+def _single_result(value: dict[str, object]) -> dict[str, object]:
+    """A single-profile request's result record: v1 only; a pair's v2 is refused BY NAME."""
+    if value.get("schema") == RESULT_SCHEMA_V2:
+        refuse_pair_result_for_single()
+    return recovery_record(value, _RESULT_FIELDS)
 
 
 def collect_probe_terminal(
@@ -123,13 +141,12 @@ def _capture(
         )
         row: dict[str, object] = json.loads(event.payload)
         if name == "paused":
-            paused = recovery_record(
+            paused = _single_result(
                 read_json(
                     root / "worker",
                     worker_artifact(row["result"], "worker"),
                     max_bytes=request.limits.max_object_bytes,
-                ),
-                "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds",
+                )
             )
             pause = request.pause
             if pause is None:
@@ -138,7 +155,7 @@ def _capture(
                 request.profile.schedule.warmup_steps if pause[0] == "prediction" else 0
             )
             if (
-                paused["schema"] != "h-probe-worker-result-v1"
+                paused["schema"] != RESULT_SCHEMA_V1
                 or paused["request_sha256"] != request.digest
                 or paused["run_identity"] != request.profile.identity
                 or paused["scientific_authority"] != "none"
@@ -163,17 +180,16 @@ def _capture(
                 resume_artifact=paused["training"],
             )
         elif name == "stopped":
-            stopped = recovery_record(
+            stopped = _single_result(
                 read_json(
                     root / "worker",
                     worker_artifact(row["result"], "worker"),
                     max_bytes=request.limits.max_object_bytes,
-                ),
-                "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds",
+                )
             )
             reported_step = event.reported_optimizer_steps
             if (
-                stopped["schema"] != "h-probe-worker-result-v1"
+                stopped["schema"] != RESULT_SCHEMA_V1
                 or stopped["request_sha256"] != request.digest
                 or stopped["run_identity"] != request.profile.identity
                 or stopped["scientific_authority"] != "none"
@@ -187,16 +203,16 @@ def _capture(
             ):
                 raise ValueError("stopped result differs from its terminal event")
             admit_worker_runtime(stopped["runtime"], request, expected_pod_id)
-            receipt = recovery_record(
-                read_json(
-                    root / "run",
-                    worker_artifact(stopped["training"], "run"),
-                    max_bytes=request.limits.max_object_bytes,
-                ),
-                "schema run_identity run_class scientific_authority profile status phase step successful_optimizer_steps last_seal evaluations parent_receipt inventory",
+            raw_receipt = read_json(
+                root / "run",
+                worker_artifact(stopped["training"], "run"),
+                max_bytes=request.limits.max_object_bytes,
             )
+            if raw_receipt.get("schema") == PROGRESS_SCHEMA_V1:
+                refuse_progress_version(PROGRESS_SCHEMA_V1)
+            receipt = recovery_record(raw_receipt, PROGRESS_FIELDS)
             if (
-                receipt["schema"] != "h-probe-training-progress-v1"
+                receipt["schema"] != PROGRESS_SCHEMA_V2
                 or receipt["status"] != "paused"
                 or receipt["successful_optimizer_steps"] != reported_step
             ):

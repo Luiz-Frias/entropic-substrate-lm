@@ -1,10 +1,11 @@
 """Recoverable engineering-probe training driver over the shared numerical engine."""
 
+import re
 import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Literal, cast
+from pathlib import Path, PurePosixPath
+from typing import Literal, NoReturn, cast
 from uuid import uuid4
 
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
@@ -18,8 +19,9 @@ from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.run_authority import RunAuthority
+from entropic_substrate.ladder.run.run_authority import SCIENTIFIC_RUN_CLASSES, RunAuthority
 from entropic_substrate.ladder.run.seals import (
+    CorpusMemo,
     SealMemo,
     narrated_admission,
     read_seal,
@@ -35,6 +37,81 @@ from entropic_substrate.ladder.run.worker_log_events import (
     PHASE_START,
     render,
 )
+
+PROGRESS_SCHEMA_V1 = "h-probe-training-progress-v1"
+PROGRESS_SCHEMA_V2 = "h-probe-training-progress-v2"
+PROGRESS_FIELDS = (
+    "schema run_identity run_class scientific_authority profile status phase step "
+    "successful_optimizer_steps own_optimizer_steps inherited_warmup_steps block pair cell "
+    "authority_digest handoff last_seal evaluations parent_receipt inventory"
+)
+_ID64 = re.compile(r"[0-9a-f]{64}")
+_CELL_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*")
+
+
+def refuse_progress_version(presented: object) -> NoReturn:
+    """The one named refusal of a training receipt outside the v2 ladder.
+
+    ``h-probe-training-progress-v1`` is retired: its receipts name no block, pair, cell or
+    authority and cannot tell inherited warm-up steps from the cell's own. Every reader site
+    (this module, ``trace_capture``, ``h_probe_collection``, ``h_probe_resume``) raises this text.
+    """
+    raise ValueError(
+        f"training receipt schema {presented!r} is not admitted; the minimum supported "
+        f"version is {PROGRESS_SCHEMA_V2}"
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CellScope:
+    """Which cell of which pair a training run is (all three, always together)."""
+
+    block: str
+    pair: str
+    cell: str
+
+    def __post_init__(self) -> None:
+        if (
+            any(type(v) is not str for v in (self.block, self.pair, self.cell))
+            or _ID64.fullmatch(self.block) is None
+            or _ID64.fullmatch(self.pair) is None
+            or _CELL_TOKEN.fullmatch(self.cell) is None
+        ):
+            raise ValueError("a cell scope names a 64-hex block, a 64-hex pair and a safe cell")
+
+
+@dataclass(frozen=True, slots=True)
+class ReceiptBinding:
+    """The binding fields a progress-v2 receipt carries; all ``None`` for a single smoke cell.
+
+    ``block``, ``pair`` and ``cell`` are all set or all ``None`` (a pair cell or not), and
+    ``authority_digest`` is ``None`` exactly for a smoke run class.
+    """
+
+    block: str | None = None
+    pair: str | None = None
+    cell: str | None = None
+    authority_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        scope = (self.block, self.pair, self.cell)
+        if any(v is None for v in scope) and any(v is not None for v in scope):
+            raise ValueError("a receipt binding names its block, pair and cell together or none")
+        if self.block is not None:
+            CellScope(self.block, cast(str, self.pair), cast(str, self.cell))
+        if self.authority_digest is not None and (
+            type(self.authority_digest) is not str or _ID64.fullmatch(self.authority_digest) is None
+        ):
+            raise ValueError("a receipt authority digest is 64 lowercase hex")
+
+    @classmethod
+    def of(cls, scope: CellScope | None, authority: RunAuthority | None) -> "ReceiptBinding":
+        return cls(
+            None if scope is None else scope.block,
+            None if scope is None else scope.pair,
+            None if scope is None else scope.cell,
+            None if authority is None else authority.digest,
+        )
 
 
 @dataclass(frozen=True)
@@ -84,18 +161,32 @@ def write_progress_receipt(
     parent_receipt: ArtifactIdentity | None,
     inventory: dict[str, object],
     max_bytes: int,
+    binding: ReceiptBinding | None = None,
+    handoff: ArtifactIdentity | None = None,
 ) -> ArtifactIdentity:
-    """The ONE definition of an ``h-probe-training-progress-v1`` receipt.
+    """The ONE definition of an ``h-probe-training-progress-v2`` receipt.
 
     ``run_probe_training`` writes every checkpoint receipt through it, and so does the codec
     hand-off materializer (FOR-1692) for the receipt a recipient resumes from: a second copy of
     this mapping would let the two drift, and ``read_training_progress`` admits exactly this shape.
+
+    FOR-1693 (h1-l4b): v2 adds ``block``, ``pair``, ``cell`` and ``authority_digest`` (from
+    ``binding``; all ``None`` for a single smoke cell) and ``handoff`` (the recipient's OWN
+    hand-off record, root-relative and flat; ``None`` for a donor or a single cell), and splits
+    ``inherited_warmup_steps`` (the warm-up the recipient received: ``warmup_steps`` when
+    ``handoff`` is given, else 0) from ``own_optimizer_steps``. ``successful_optimizer_steps``
+    keeps the v1 arithmetic (the global axis: ``step`` plus the warm-up length in the prediction
+    phase), and ``own + inherited == successful`` always. The hand-off receipt is own 0,
+    inherited W, successful W.
     """
+    bound = ReceiptBinding() if binding is None else binding
+    successful = step + (profile.schedule.warmup_steps if phase == "prediction" else 0)
+    inherited = profile.schedule.warmup_steps if handoff is not None else 0
     return write_json(
         root,
         name,
         {
-            "schema": "h-probe-training-progress-v1",
+            "schema": PROGRESS_SCHEMA_V2,
             "run_identity": profile.identity,
             "run_class": profile.run_class,
             "scientific_authority": "none",
@@ -103,8 +194,14 @@ def write_progress_receipt(
             "status": status,
             "phase": phase,
             "step": step,
-            "successful_optimizer_steps": step
-            + (profile.schedule.warmup_steps if phase == "prediction" else 0),
+            "successful_optimizer_steps": successful,
+            "own_optimizer_steps": successful - inherited,
+            "inherited_warmup_steps": inherited,
+            "block": bound.block,
+            "pair": bound.pair,
+            "cell": bound.cell,
+            "authority_digest": bound.authority_digest,
+            "handoff": None if handoff is None else artifact_reference(root, handoff),
             "last_seal": artifact_reference(root, last_seal),
             "evaluations": evaluations,
             "parent_receipt": None
@@ -125,8 +222,21 @@ def read_training_progress(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None = None,
+    expected: ReceiptBinding | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     """Admit resume/completion only against the exact source and sealed ancestry.
+
+    ``corpora`` (FOR-1693, DH-41) is the process's corpus memo of ``source_root``: the memo
+    ARGUMENT only (the corpus is replayed once per process instead of once per seal and
+    evaluation).
+
+    ``expected``, when given, is the binding the caller's request declares for this cell (block,
+    pair, cell, authority digest); a receipt that names another is refused. Without it the
+    in-chain binding is still verified: the receipt's own fields must be well formed, agree with
+    its run class and its verified chain root, and every parent hop must carry the identical
+    binding. FOR-1693 (progress v2): a ``h-probe-training-progress-v1`` receipt is refused by
+    name (:func:`refuse_progress_version`).
 
     ``memo``, when given, accelerates the seal-chain (and evaluation-lineage)
     verification below exactly as :func:`~entropic_substrate.ladder.run.seals.read_seal`
@@ -149,6 +259,8 @@ def read_training_progress(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
             memo=None,
+            expected=expected,
+            corpora=corpora,
         )
     with memo.timed_read():
         return _read_training_progress(
@@ -159,6 +271,8 @@ def read_training_progress(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
             memo=memo,
+            expected=expected,
+            corpora=corpora,
         )
 
 
@@ -171,15 +285,17 @@ def _read_training_progress(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None,
+    expected: ReceiptBinding | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     if not RUN_ADMISSION.admits_class(profile.run_class):
         raise ValueError("probe receipt has no scientific authority")
-    row = recovery_record(
-        read_json(root, artifact, max_bytes=max_artifact_bytes),
-        "schema run_identity run_class scientific_authority profile status phase step successful_optimizer_steps last_seal evaluations parent_receipt inventory",
-    )
+    payload = read_json(root, artifact, max_bytes=max_artifact_bytes)
+    if payload.get("schema") == PROGRESS_SCHEMA_V1:
+        refuse_progress_version(PROGRESS_SCHEMA_V1)
+    row = recovery_record(payload, PROGRESS_FIELDS)
     if (
-        row["schema"] != "h-probe-training-progress-v1"
+        row["schema"] != PROGRESS_SCHEMA_V2
         or row["run_identity"] != profile.identity
         or row["run_class"] != profile.run_class
         or row["scientific_authority"] != "none"
@@ -198,6 +314,7 @@ def _read_training_progress(
         max_bytes=max_artifact_bytes,
         max_source_bytes=max_source_bytes,
         memo=memo,
+        corpora=corpora,
     )
     total = seal.step + (profile.schedule.warmup_steps if seal.phase == "prediction" else 0)
     if (
@@ -208,6 +325,35 @@ def _read_training_progress(
         or row["successful_optimizer_steps"] != total
     ):
         raise ValueError("training receipt counters differ from sealed work")
+    binding = ReceiptBinding(
+        cast(str | None, row["block"]),
+        cast(str | None, row["pair"]),
+        cast(str | None, row["cell"]),
+        cast(str | None, row["authority_digest"]),
+    )
+    if (binding.authority_digest is None) != (profile.run_class not in SCIENTIFIC_RUN_CLASSES):
+        raise ValueError("training receipt authority digest disagrees with its run class")
+    if expected is not None and binding != expected:
+        raise ValueError("training receipt binding differs from the expected binding")
+    inherited = profile.schedule.warmup_steps if seal.root_kind == "handoff" else 0
+    if (
+        type(row["inherited_warmup_steps"]) is not int
+        or row["inherited_warmup_steps"] != inherited
+        or type(row["own_optimizer_steps"]) is not int
+        or row["own_optimizer_steps"] != total - inherited
+    ):
+        raise ValueError("training receipt inherited and own steps differ from its sealed chain")
+    cited = row["handoff"]
+    if inherited == 0:
+        if cited is not None:
+            raise ValueError("a receipt without a hand-off root cites no hand-off record")
+    else:
+        record = artifact_from_mapping(cited)
+        if (
+            PurePosixPath(record.path).name != record.path
+            or record.content_hash.digest != seal.root_journal
+        ):
+            raise ValueError("training receipt hand-off record is not its chain root's record")
     if row["status"] not in ("checkpoint", "paused", "training_complete"):
         raise ValueError("unknown training receipt status")
     if row["status"] == "training_complete" and (
@@ -231,6 +377,7 @@ def _read_training_progress(
             max_bytes=max_artifact_bytes,
             max_source_bytes=max_source_bytes,
             memo=memo,
+            corpora=corpora,
         )
         point = artifact_from_mapping(evaluation.get("checkpoint_seal"))
         if point.content_hash.digest not in seal.seal_hashes:
@@ -243,6 +390,7 @@ def _read_training_progress(
             max_bytes=max_artifact_bytes,
             max_source_bytes=max_source_bytes,
             memo=memo,
+            corpora=corpora,
         )
         if (
             point_state.phase != "prediction"
@@ -254,7 +402,7 @@ def _read_training_progress(
         ):
             raise ValueError("evaluation identity differs from its sealed checkpoint")
         observed.append(step)
-    expected = (
+    grid = (
         []
         if seal.phase == "codec_warmup"
         else [
@@ -263,18 +411,25 @@ def _read_training_progress(
             if s % profile.schedule.evaluation_interval == 0 or s == profile.schedule.steps
         ]
     )
-    if observed != expected:
+    if observed != grid:
         raise ValueError("training receipt lacks the complete declared evaluation grid")
     if row["parent_receipt"] is not None:
         parent = read_json(
             root, artifact_from_mapping(row["parent_receipt"]), max_bytes=max_artifact_bytes
         )
+        if parent.get("schema") == PROGRESS_SCHEMA_V1:
+            refuse_progress_version(PROGRESS_SCHEMA_V1)
         if (
             parent.get("run_identity") != profile.identity
             or artifact_from_mapping(parent.get("last_seal")).content_hash.digest
             not in seal.seal_hashes
         ):
             raise ValueError("resume receipt belongs to another lineage")
+        if any(
+            parent.get(key) != row[key]
+            for key in ("block", "pair", "cell", "authority_digest", "handoff")
+        ):
+            raise ValueError("resume receipt carries another pair, cell or authority binding")
     return row
 
 
@@ -291,8 +446,19 @@ def run_probe_training(
     sink: MetricSink | None = None,
     publication_timing: MutableMapping[str, float] | None = None,
     authority: RunAuthority | None = None,
+    scope: CellScope | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
+
+    ``scope`` (FOR-1693) names the pair cell this run is; every receipt it writes binds it
+    beside the authority's digest (progress v2). A resume must present a receipt carrying the
+    identical binding, and a recipient resumed from its hand-off receipt keeps citing the same
+    hand-off record.
+
+    ``corpora`` (FOR-1693, DH-41) is the process's corpus memo of ``source_root``: the memo
+    ARGUMENT only. Every engine, seal walk, journal and evaluation read this run performs shares
+    it, so the prepared corpus is replayed once per process instead of on every call.
 
     Checkpoint/evaluation failures retain partial evidence and propagate. A
     stop callback is observed only after a durable seal and evaluation receipt.
@@ -332,6 +498,8 @@ def run_probe_training(
     if not RUN_ADMISSION.admits(profile.run_class, profile.stage, surface, authority):
         raise ValueError("probe driver lacks scientific or successor authority")
     root = normalize_d1_artifact_root(output_root)
+    binding = ReceiptBinding.of(scope, authority)
+    handoff: ArtifactIdentity | None = None
     evaluations: list[dict[str, object]] = []
     previous_receipt = resume
     last_seal = None
@@ -349,8 +517,12 @@ def run_probe_training(
             source_root,
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
+            expected=binding,
+            corpora=corpora,
         )
         last_seal = artifact_from_mapping(previous["last_seal"])
+        if previous["handoff"] is not None:
+            handoff = artifact_from_mapping(previous["handoff"])
         if previous["status"] == "training_complete":
             return _progress(root, "training_complete", last_seal, resume)
         profile_artifact = artifact_from_mapping(previous["profile"])
@@ -365,7 +537,9 @@ def run_probe_training(
     phase_from = 0
     phase_clock = 0.0
     try:
-        execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
+        execution = SentenceExecution(
+            profile, source_root, max_source_bytes=max_source_bytes, corpora=corpora
+        )
         if last_seal is not None:
             resume_seal(root, last_seal, execution, max_bytes=max_artifact_bytes)
         while True:
@@ -458,6 +632,7 @@ def run_probe_training(
                     max_bytes=max_artifact_bytes,
                     max_source_bytes=max_source_bytes,
                     memo=memo,
+                    corpora=corpora,
                 )
                 evaluation_seconds = time.perf_counter() - evaluation_clock
                 logger.bind(
@@ -502,6 +677,8 @@ def run_probe_training(
                 parent_receipt=previous_receipt,
                 inventory=execution.inventory(),
                 max_bytes=max_artifact_bytes,
+                binding=binding,
+                handoff=handoff,
             )
             previous_receipt = receipt
             completion: SealMemo | None = None
@@ -526,6 +703,8 @@ def run_probe_training(
                         max_source_bytes=max_source_bytes,
                         max_artifact_bytes=max_artifact_bytes,
                         memo=memo if completion is None else completion,
+                        expected=binding,
+                        corpora=corpora,
                     )
                     if publication_timing is not None and l2_started is not None:
                         publication_timing["l2_seconds"] = time.perf_counter() - l2_started

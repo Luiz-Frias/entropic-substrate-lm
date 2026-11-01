@@ -125,7 +125,14 @@ def _remote_probe_request(
 
 
 def _synthetic_stopped_terminal(
-    objects: _ObjectStore, request: ProbeRequest, root: Path, *, steps: int, pod_id: str
+    objects: _ObjectStore,
+    request: ProbeRequest,
+    root: Path,
+    *,
+    steps: int,
+    pod_id: str,
+    receipt_schema: str = "h-probe-training-progress-v2",
+    result_schema: str = "h-probe-worker-result-v1",
 ) -> None:
     """Publish a `stopped` event + snapshot shaped exactly as the worker would.
 
@@ -138,24 +145,47 @@ def _synthetic_stopped_terminal(
     maximum = request.limits.max_object_bytes
     (root / "run").mkdir()
     (root / "worker").mkdir()
+    body = {
+        # FOR-1693 (house rule 4): this hand-written receipt was progress v1; the reader
+        # now refuses v1 by name, so the fixture carries the v2 key set (null binding: a
+        # single smoke cell, no hand-off).
+        "schema": "h-probe-training-progress-v2",
+        "run_identity": request.profile.identity,
+        "run_class": request.profile.run_class,
+        "scientific_authority": "none",
+        "profile": None,
+        "status": "paused",
+        "phase": "prediction",
+        "step": steps,
+        "successful_optimizer_steps": steps,
+        "own_optimizer_steps": steps,
+        "inherited_warmup_steps": 0,
+        "block": None,
+        "pair": None,
+        "cell": None,
+        "authority_digest": None,
+        "handoff": None,
+        "last_seal": None,
+        "evaluations": [],
+        "parent_receipt": None,
+        "inventory": None,
+    }
+    if receipt_schema == "h-probe-training-progress-v1":
+        for key in (
+            "own_optimizer_steps",
+            "inherited_warmup_steps",
+            "block",
+            "pair",
+            "cell",
+            "authority_digest",
+            "handoff",
+        ):
+            del body[key]
+        body["schema"] = receipt_schema
     receipt = write_json(
         root,
         "run/progress.json",
-        {
-            "schema": "h-probe-training-progress-v1",
-            "run_identity": request.profile.identity,
-            "run_class": request.profile.run_class,
-            "scientific_authority": "none",
-            "profile": None,
-            "status": "paused",
-            "phase": "prediction",
-            "step": steps,
-            "successful_optimizer_steps": steps,
-            "last_seal": None,
-            "evaluations": [],
-            "parent_receipt": None,
-            "inventory": None,
-        },
+        body,
         max_bytes=maximum,
     )
     runtime = {
@@ -171,7 +201,7 @@ def _synthetic_stopped_terminal(
         root,
         "worker/result.json",
         {
-            "schema": "h-probe-worker-result-v1",
+            "schema": result_schema,
             "request_sha256": request.digest,
             "run_identity": request.profile.identity,
             "scientific_authority": "none",
@@ -496,6 +526,53 @@ def test_collection_of_a_stopped_terminal_has_workload_verified_false(tmp_path: 
     assert report["reported_optimizer_steps"] == 4
     assert report["native_validation"] == "not_replayed_by_host"
     assert report["capture_status"] == "stop_bytes_verified"
+
+
+def test_collection_refuses_a_v1_progress_receipt_by_name_and_a_result_v2_for_a_single_profile(
+    tmp_path: Path,
+) -> None:
+    """FOR-1693: the collection of a stopped terminal reads progress v2; a v1 receipt is refused
+    BY NAME (the minimum supported version is named), and a pair's result v2 is refused for a
+    single-profile request."""
+    request = _remote_probe_request()
+    for tag, options, message in (
+        (
+            "v1-receipt",
+            {"receipt_schema": "h-probe-training-progress-v1"},
+            "minimum supported version is h-probe-training-progress-v2",
+        ),
+        (
+            "pair-result-v2",
+            {"result_schema": "h-probe-worker-result-v2"},
+            r"names a pair's cells.*admits h-probe-worker-result-v1",
+        ),
+    ):
+        objects = _ObjectStore()
+        fixture_root = tmp_path / tag
+        fixture_root.mkdir()
+        _synthetic_stopped_terminal(
+            objects, request, fixture_root, steps=4, pod_id="owned-pod", **options
+        )
+        destination = tmp_path / f"collected-{tag}"
+        destination.mkdir()
+        with pytest.raises(ValueError, match=message):
+            collect_probe_terminal(
+                objects,
+                request,
+                destination,
+                expected_pod_id="owned-pod",
+                max_marker_bytes=1_000_000,
+            )
+    ok = _ObjectStore()
+    good_root = tmp_path / "good"
+    good_root.mkdir()
+    _synthetic_stopped_terminal(ok, request, good_root, steps=4, pod_id="owned-pod")
+    good_destination = tmp_path / "collected-good"
+    good_destination.mkdir()
+    report = collect_probe_terminal(
+        ok, request, good_destination, expected_pod_id="owned-pod", max_marker_bytes=1_000_000
+    )
+    assert report is not None and report["capture_status"] == "stop_bytes_verified"
 
 
 # ---------------------------------------------------------------------------

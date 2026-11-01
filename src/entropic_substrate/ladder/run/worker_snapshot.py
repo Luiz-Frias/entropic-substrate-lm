@@ -23,7 +23,7 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
     D1TrainerMailboxObjectPort,
 )
 from entropic_substrate.ladder.run.worker_log_events import SNAPSHOT_END, SNAPSHOT_START, render
-from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, PairProbeRequest
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
     publish_verified_object,
@@ -34,9 +34,37 @@ from entropic_substrate.ladder.run.worker_transport import (
 PublicationLedger = MutableMapping[str, tuple[str, int]]
 
 
-def _path(value: object) -> str:
+def _path(value: object, request: AnyProbeRequest | None = None) -> str:
+    """The ONE request-aware path predicate for publishing and materializing worker outputs.
+
+    A v1/v2 request (or none) keeps the flat two-part namespace byte for byte. A pair (v3, FOR-1693)
+    additionally admits, and only with a declared cell token: ``run|capture|verification/<cell>/<file>``
+    and the one four-part ``capture/<cell>/source/prepared-corpus.json``; its pair-level
+    ``worker/<file>`` stays flat, and a flat ``run/<file>`` is outside its namespace.
+    """
     name = normalize_d1_relative_artifact_path(value, label="worker output")
     path = PurePosixPath(name)
+    if isinstance(request, PairProbeRequest):
+        suffix = path.suffix in (".json", ".pt")
+        parts = path.parts
+        owned = (
+            (len(parts) == 2 and parts[0] == "worker" and suffix)
+            or (
+                len(parts) == 3
+                and parts[0] in ("run", "capture", "verification")
+                and parts[1] in request.tokens
+                and suffix
+            )
+            or (
+                len(parts) == 4
+                and parts[0] == "capture"
+                and parts[1] in request.tokens
+                and parts[2:] == ("source", "prepared-corpus.json")
+            )
+        )
+        if not owned:
+            raise ValueError("worker output is outside its owned namespace")
+        return name
     regular = (
         len(path.parts) == 2
         and path.parts[0] in ("run", "capture", "verification", "worker")
@@ -49,7 +77,7 @@ def _path(value: object) -> str:
 
 def publish_worker_snapshot(
     objects: D1TrainerMailboxObjectPort,
-    request: ProbeRequest,
+    request: AnyProbeRequest,
     root: Path,
     paths: tuple[str, ...],
     *,
@@ -84,7 +112,7 @@ def publish_worker_snapshot(
     records: list[dict[str, object]] = []
     total = 0
     for path in sorted(paths):
-        path = _path(path)
+        path = _path(path, request)
         _, payload, digest = read_d1_artifact_bytes(
             root, path, label="worker output", max_bytes=limits.max_object_bytes
         )
@@ -122,7 +150,7 @@ def publish_worker_snapshot(
         render(SNAPSHOT_START, name=name, files=len(records))
     )
     for record in records:
-        path = _path(record["path"])
+        path = _path(record["path"], request)
         key = f"{request.prefix}/outputs/{path}"
         if ledger is not None and key in ledger:
             # Already published AND verified by this same worker process:
@@ -151,7 +179,7 @@ def publish_worker_snapshot(
 
 def materialize_worker_snapshot(
     objects: D1TrainerMailboxObjectPort,
-    request: ProbeRequest,
+    request: AnyProbeRequest,
     marker: D1TrainerMailboxObjectIdentity,
     root: Path,
     *,
@@ -194,7 +222,7 @@ def materialize_worker_snapshot(
     identities: list[D1TrainerMailboxObjectIdentity] = []
     for item in files:
         entry = recovery_record(item, "path key sha256 size_bytes")
-        path = _path(entry["path"])
+        path = _path(entry["path"], request)
         size, digest = entry["size_bytes"], entry["sha256"]
         if (
             type(size) is not int

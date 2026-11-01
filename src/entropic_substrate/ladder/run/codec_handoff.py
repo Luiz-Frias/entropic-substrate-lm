@@ -53,7 +53,7 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.run.checkpoint import checkpoint_binding, save_checkpoint
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.runner import write_progress_receipt
+from entropic_substrate.ladder.run.runner import ReceiptBinding, write_progress_receipt
 from entropic_substrate.ladder.run.seals import (
     HANDOFF_RECORD_SCHEMA,
     HANDOFF_SEAL_SCHEMA,
@@ -462,6 +462,7 @@ def materialize_codec_handoff(
     *,
     max_source_bytes: int,
     max_artifact_bytes: int,
+    binding: ReceiptBinding | None = None,
 ) -> CodecHandoff:
     """Materialize a pair recipient from the donor's warm-up-final seal, then prove it.
 
@@ -470,8 +471,9 @@ def materialize_codec_handoff(
     refuse after writes: it leaves the record, checkpoint and seal but NO receipt, and the root
     must be discarded, never resumed. Write order: profile, record, checkpoint (measurement =
     the record's digest), hand-off seal, then the seal is proved from disk, then the progress
-    receipt LAST. The receipt is the same ``h-probe-training-progress-v1`` the runner writes
-    (``write_progress_receipt``), so ``run_probe_training(resume=receipt)`` continues the
+    receipt LAST. The receipt is the same ``h-probe-training-progress-v2`` the runner writes
+    (``write_progress_receipt``; FOR-1693 moved it from v1: it cites the record above as its
+    ``handoff`` and carries ``binding``'s block, pair, cell and authority digest), so ``run_probe_training(resume=receipt)`` continues the
     recipient through prediction, with no recipient-specific branch in the resume path.
     """
     require_pair(donor_profile, recipient_profile)
@@ -583,6 +585,8 @@ def materialize_codec_handoff(
         parent_receipt=None,
         inventory=recipient.inventory(),
         max_bytes=max_artifact_bytes,
+        binding=binding,
+        handoff=record,
     )
     published = {
         key: artifact_from_mapping(artifact_reference(root, value))

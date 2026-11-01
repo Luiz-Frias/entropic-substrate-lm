@@ -16,7 +16,7 @@ from entropic_substrate.kernel.artifacts import (
 )
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.seals import SealMemo
+from entropic_substrate.ladder.run.seals import CorpusMemo, SealMemo
 from entropic_substrate.ladder.run.trace_capture import (
     inspect_model_custody,
     read_model_trace,
@@ -140,12 +140,14 @@ def verify_native_capture(
     max_total_bytes: int,
     max_artifacts: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> ArtifactIdentity:
     """Publish success only after native admission; same-request recovery is idempotent.
 
     ``memo`` is the admission memo of the CAPTURE root (``capture_root``), created
     empty for it by the worker; it is forwarded to :func:`read_model_trace` only.
-    It must never be the ``/run`` root's memo (see ``read_model_trace``).
+    It must never be the ``/run`` root's memo (see ``read_model_trace``). ``corpora`` (FOR-1693,
+    DH-41) is the CAPTURE root's own corpus memo, forwarded the same way.
     """
     _request(request_id)
     output, captured = (
@@ -172,7 +174,7 @@ def verify_native_capture(
         return receipt
     started = time.perf_counter()
     try:
-        manifest = read_model_trace(captured, capture, **limits, memo=memo)
+        manifest = read_model_trace(captured, capture, **limits, memo=memo, corpora=corpora)
         custody = inspect_model_custody(captured, capture, **limits)
         device = custody["declared_training_device"]
         accelerator = None
