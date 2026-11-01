@@ -10,9 +10,11 @@ import torch
 from tests.test_sentence_execution import engine
 
 import entropic_substrate.ladder.run.seals as seals_module
+from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
+from entropic_substrate.ladder.run.checkpoint import save_checkpoint
 from entropic_substrate.ladder.run.execution import SentenceExecution
-from entropic_substrate.ladder.run.journal import read_json
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.seals import SealMemo, read_seal, resume_seal, seal_step
 
 pytestmark = pytest.mark.unit
@@ -426,3 +428,49 @@ def test_a_memo_never_skips_the_source_digest_check(tmp_path: Path) -> None:
     corpus.write_bytes(corpus.read_bytes() + b" ")
     with pytest.raises(ValueError):
         read_seal(tmp_path, seals[-1], run.profile, forged, memo=memo, **kwargs)
+
+
+def test_an_ordinary_chain_that_does_not_open_at_warmup_step_one_is_refused_on_read(
+    tmp_path: Path,
+) -> None:
+    """Guard teeth for the READ walk's first-seal rule (FOR-1692): ``seal_step`` refuses to write
+    such a chain, so forge a self-consistent one (journal, checkpoint and seal all re-written, every
+    hash valid) whose only seal is warm-up step two with no parent. ``read_seal`` alone must say no;
+    exempting the hand-off seal from this rule must not have loosened it for ordinary seals."""
+    run, seals = _chain(tmp_path, 2)
+    row = dict(read_json(tmp_path, seals[-1], max_bytes=LIMIT))
+    journal = dict(read_json(tmp_path, artifact_from_mapping(row["journal"]), max_bytes=LIMIT))
+    assert journal["parent"] is not None and journal["start_step"] == 2
+    journal["parent"] = None
+    forged_journal = write_json(tmp_path, "forged-journal.json", journal, max_bytes=LIMIT)
+    checkpoint = save_checkpoint(
+        tmp_path,
+        "forged-warmup-2.pt",
+        run.model,
+        run.optimizer,
+        run.sampler,
+        phase="codec_warmup",
+        step=2,
+        run_identity=run.profile.identity,
+        measurement=forged_journal.content_hash,
+        max_bytes=LIMIT,
+    )
+    forged_seal = write_json(
+        tmp_path,
+        "forged-seal.json",
+        {
+            **row,
+            "checkpoint": artifact_reference(tmp_path, checkpoint),
+            "journal": artifact_reference(tmp_path, forged_journal),
+        },
+        max_bytes=LIMIT,
+    )
+    with pytest.raises(ValueError, match="initial seal must start codec warm-up at step one"):
+        read_seal(
+            tmp_path,
+            forged_seal,
+            run.profile,
+            run.source_root,
+            max_bytes=LIMIT,
+            max_source_bytes=1_000_000,
+        )
