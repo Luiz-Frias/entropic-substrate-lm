@@ -1190,6 +1190,15 @@ class TestScientificallyStoppedStream:
                 "complete warm-up rows",
                 {"committed": 2},
             ),
+            (
+                "a prediction seal already gives the warm-up length",
+                {
+                    "committed": 1,
+                    "extra_log": (
+                        _log("checkpoint.seal", phase="prediction", step=1, global_step=4),
+                    ),
+                },
+            ),
         ],
     )
     def test_everything_else_keeps_the_existing_refusals(
@@ -1205,6 +1214,16 @@ class TestScientificallyStoppedStream:
             or "committed codec_warmup" in message
             or "at least one committed" in message
         ), (name, message)
+
+    @pytest.mark.parametrize("declared", [0, -1])
+    def test_a_non_positive_warmup_declaration_is_never_a_derived_length(
+        self, tmp_path: Path, declared: int
+    ) -> None:
+        """``_scientifically_stopped_warmup`` accepts only a ``step_to`` >= 1. The refusal must be
+        the existing derivation message (a mutated bound lets W=0 through to a later, different
+        message), so the text is matched here rather than in the shared any-of check above."""
+        with pytest.raises(TelemetryGap, match="warm-up length cannot be derived"):
+            load_h_run(*write_stopped_run(tmp_path, warmup=declared))
 
     def test_the_unchanged_message_for_a_truncated_stream_is_byte_identical(
         self, tmp_path: Path

@@ -774,3 +774,173 @@ def test_the_h0_checks_script_refuses_a_pair_request_file_by_name(
         "h0_final_probe_checks does not carry a pair request",
         lambda: module._request(path),  # pyright: ignore[reportPrivateUsage]
     )
+
+
+# ============================================ round C: predicates a mutation flip left GREEN
+def test_a_remote_tiny_pair_outside_its_admitted_stage_is_refused_by_the_ports_gate_message(
+    pair: Pair,
+) -> None:
+    """The per-cell ``RUN_ADMISSION.admits(run_class, stage, surface, authority)`` arm of the pair
+    request (the STAGE arm: ``(remote_tiny, H0)`` is the only admitted row, H1 is not). The surface
+    arm and the authority arm have their own pins above; with this call removed the pair is built
+    and the refusal only arrives later, at training start. The message is the single-profile one,
+    byte for byte (``ProbeRequest`` raises the same text)."""
+    from entropic_substrate.ladder.run.worker_request import (
+        BlockBinding,
+        PairCell,
+        PairProbeRequest,
+        pair_identity,
+    )
+
+    shape = {"run_class": "remote_tiny", "device": "cuda", "precision": "bf16"}
+    donor, recipient = (replace(cell, **shape, stage="H1") for cell in (pair.donor, pair.recipient))
+    source = ArtifactIdentity(
+        "source/prepared-corpus.json", ContentHash("sha256", donor.source_digest)
+    )
+    bundle = ArtifactIdentity("code.bundle", ContentHash("sha256", "c" * 64))
+    image = "ghcr.io/luiz-frias/entropic-substrate-lm@sha256:" + "a" * 64
+    from tests.test_h_pair_request import LIMITS, PROBE
+
+    def build(stage: str) -> PairProbeRequest:
+        cells = tuple(
+            replace(cell, stage=stage, name=stage.lower() + cell.name[2:])  # pyright: ignore[reportArgumentType]
+            for cell in (donor, recipient)
+        )
+        return PairProbeRequest(
+            cells=(PairCell(cells[0], None, None), PairCell(cells[1], None, None)),
+            inputs=(source, bundle),
+            nonce="1" * 64,
+            limits=LIMITS,
+            probe=PROBE,
+            code_commit="d" * 40,
+            code_bundle=bundle,
+            image=image,
+            binding=BlockBinding(
+                BLOCK, pair_identity(cells[0], cells[1]), donor.source_digest, donor.seed
+            ),
+        )
+
+    assert build("H0").cells[0].profile.stage == "H0"  # control: the admitted row builds
+    refused(
+        "remote-tiny-pair-at-h1",
+        "remote successor requires its scientific gate adapter",
+        lambda: build("H1"),
+    )
+
+
+def test_a_failed_cells_run_is_finished_failed_through_the_pair_observer_end(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``_PairObserver.end`` maps the cell's ``run_end`` status to the MLflow run status. A donor
+    whose warm-up diverged ends ``failed``; its run must be finished FAILED at that call (the
+    idempotent finish means a later ``finish_open`` could not repair a false FINISHED)."""
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
+    from entropic_substrate.ladder.run.object_worker import run_object_worker
+
+    _, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))
+
+    class Sinks:
+        def __init__(self) -> None:
+            self.finished: list[tuple[str, str]] = []
+
+        def begin(self, cell: str, profile: object) -> object:
+            return JsonlSink(tmp_path / "obs" / cell / "metrics.jsonl")
+
+        def finish(self, cell: str, status: str) -> None:
+            self.finished.append((cell, status))
+
+    sinks = Sinks()
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000, cell_sinks=sinks)
+    assert sinks.finished == [("donor", "FAILED")]
+
+
+def test_a_pair_level_failure_event_names_the_pair_not_a_cell(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no cell in scope (the final snapshot publication fails after both cells completed),
+    the failure terminal's ``run_identity`` is the pair id, not the donor's profile identity."""
+    from entropic_substrate.ladder.run import object_worker
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    real = object_worker.publish_worker_snapshot
+
+    def flaky(objs: Any, req: Any, root: Any, paths: Any, *, name: str, **kwargs: Any) -> Any:
+        if name == "complete":
+            raise RuntimeError("final snapshot injected")
+        return real(objs, req, root, paths, name=name, **kwargs)
+
+    monkeypatch.setattr(object_worker, "publish_worker_snapshot", flaky)
+    status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2
+    failure = failure_terminal(objects, request)
+    assert failure["stage"] == "final_snapshot"
+    assert failure["run_identity"] == request.run_identity
+    assert failure["run_identity"] not in (request.donor.identity, request.recipient.identity)
+
+
+def test_a_declared_pause_wins_over_a_coinciding_operator_marker(
+    tmp_path: Path, pair: Pair
+) -> None:
+    """The single-profile path pins that a declared pause which coincides with an operator marker
+    stays labelled paused (``operator_stopped = polled and not matched``); the pair path carries
+    its own copy of that predicate, so it has its own pin."""
+    from tests.test_h_pair_request import marker_store
+
+    from entropic_substrate.ladder.run.object_worker import encode_stop_marker
+    from entropic_substrate.ladder.run.worker_request import PairCell
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request = pair_request(
+        pair,
+        cells=(PairCell(pair.donor, None, None), PairCell(pair.recipient, None, ("prediction", 2))),
+    )
+    objects = marker_store(request, encode_stop_marker(request, ("prediction", 2, "recipient")))
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, workspace, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    result = json.loads((workspace / "worker/result.json").read_text())
+    assert [c["outcome"] for c in result["cells"]] == ["complete", "paused"]
+    assert result["status"] == "paused"
+
+
+# ----------------------------------- single-profile request texts the slice refactored (SM1-5)
+def test_the_single_profile_request_shape_refusals_keep_their_exact_texts() -> None:
+    """``_check_probe``/``_check_remote_proof``/``_check_pause`` and the namespace, resume and
+    source checks were refactored into shared helpers by this slice. Measured at authoring: all
+    88 parent exception-message literals of ``worker_request`` are present byte-identical at the
+    tip; these four had no exact-text pin in ``tests/``, so each is pinned here."""
+    from tests.test_sentence_worker_request import request as smoke_request
+
+    smoke = smoke_request()
+    digest = ContentHash("sha256", "e" * 64)
+    refused(
+        "namespace",
+        "^worker input is outside the declared input namespace$",
+        lambda: replace(smoke, inputs=(*smoke.inputs, ArtifactIdentity("other/data", digest))),
+    )
+    refused(
+        "source",
+        "^worker source differs from its profile$",
+        lambda: replace(smoke, inputs=(ArtifactIdentity("source/prepared-corpus.json", digest),)),
+    )
+    absent = ArtifactIdentity("run/progress.json", digest)
+    refused(
+        "resume-not-an-input",
+        "^worker resume must bind its training receipt in run/$",
+        lambda: replace(smoke, resume=absent),
+    )
+    weights = ArtifactIdentity("run/weights.pt", digest)
+    refused(
+        "resume-not-json",
+        "^worker resume must bind its training receipt in run/$",
+        lambda: replace(smoke, inputs=(*smoke.inputs, weights), resume=weights),
+    )
+    refused(
+        "pause-not-a-pair",
+        "^worker pause requires an explicit phase/step pair$",
+        lambda: replace(smoke, pause=("prediction",)),  # pyright: ignore[reportArgumentType]
+    )
