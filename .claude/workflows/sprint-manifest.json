@@ -407,7 +407,21 @@
         "src/entropic_substrate/ladder/capture/reader/h_telemetry.py",
         "tests/test_h_aggregate.py",
         "tests/test_h_telemetry.py",
-        "tests/test_h1_observations.py"
+        "tests/test_h1_observations.py",
+        "src/entropic_substrate/core/sentence/sampling.py",
+        "src/entropic_substrate/ladder/run/codec_handoff.py",
+        "src/entropic_substrate/ladder/run/evaluation_records.py",
+        "src/entropic_substrate/ladder/run/execution.py",
+        "src/entropic_substrate/ladder/run/generation.py",
+        "src/entropic_substrate/ladder/run/native_verification.py",
+        "src/entropic_substrate/ladder/run/span_diagnostics.py",
+        "src/entropic_substrate/ladder/run/span_states.py",
+        "src/entropic_substrate/ladder/run/worker_transport.py",
+        "src/entropic_substrate/ladder/run/h_probe_launch.py",
+        "scripts/h0_final_probe_checks.py",
+        "tests/test_h_pair_request.py",
+        "tests/test_h_pair_request_pins.py",
+        "tests/test_h_codec_handoff.py"
       ],
       "conflict_edges": [
         {
@@ -435,7 +449,7 @@
     },
     {
       "id": "h1-l4c-remote-pair",
-      "title": "L4c carry a pair through the remote path: launch bump with sealed ceiling, capture-by-reference, pair collection and resume (DG-A re-pin row 3)",
+      "title": "L4c carry a pair through the remote path: launch v5 with the sealed ceiling, capture by reference, pair collection v2 and per-cell resume, wave-monitor cell arms, host pair verifier (DG-A re-pin row 3)",
       "issues": [
         "FOR-1694"
       ],
@@ -469,6 +483,15 @@
         {
           "name": "deploy-launch-schema-doc",
           "kind": "contract"
+        },
+        {
+          "name": "terminal-collection-v2",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "pair-resume-on-v3",
+          "kind": "contract"
         }
       ],
       "contracts_consumed": [
@@ -501,7 +524,7 @@
         "src/entropic_substrate/ladder/run/h_probe_resume.py",
         "src/entropic_substrate/ladder/run/h_probe_events.py",
         "src/entropic_substrate/ladder/run/worker_log_events.py",
-        "src/entropic_substrate/ladder/capture/capture_results.py",
+        "src/entropic_substrate/ladder/capture/reader/capture_results.py",
         "src/entropic_substrate/composition/entrypoints/h_wave_monitor.py",
         "tests/test_h_wave_monitor.py",
         "tests/test_h_probe_launch.py",
@@ -512,7 +535,17 @@
         "tests/test_h_runpod_transport.py",
         "tests/test_identity_epoch.py",
         "docs/identity/read-old-table.md",
-        "docs/deploy-h100.md"
+        "docs/deploy-h100.md",
+        "src/entropic_substrate/ladder/run/h_probe_control.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_controller.py",
+        "src/entropic_substrate/ladder/analyze/h_resumed_run.py",
+        "scripts/h0_final_probe_checks.py",
+        "tests/test_h_pair_remote.py",
+        "tests/test_h_probe_command.py",
+        "tests/test_d1_trainer_s3_object_adapter.py",
+        "tests/test_h_final_probe_checks.py",
+        "tests/test_capture_results.py",
+        "tests/test_h_codec_handoff.py"
       ],
       "conflict_edges": [
         {
