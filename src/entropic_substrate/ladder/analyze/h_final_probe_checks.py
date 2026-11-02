@@ -67,6 +67,7 @@ from entropic_substrate.ladder.analyze.h_report import h_report_from_run
 from entropic_substrate.ladder.analyze.h_resumed_run import load_h_resumed_run
 from entropic_substrate.ladder.capture.reader.h_telemetry import final_h_run_end
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
+from entropic_substrate.ladder.run.h_probe_collection import COLLECTION_SCHEMA_V1
 from entropic_substrate.ladder.run.journal import artifact_reference
 from entropic_substrate.ladder.run.runner import read_training_progress
 from entropic_substrate.ladder.run.seals import SealMemo
@@ -95,7 +96,6 @@ __all__ = [
 
 type Verdict = Literal["PASS", "FAIL", "UNPROVEN"]
 
-_COLLECTION_SCHEMA = "h-probe-terminal-collection-v1"
 _RESUMABLE_CAPTURES = ("pause_bytes_verified", "stop_bytes_verified")
 _CONTROLLER_SCHEMA = "h-probe-controller-result-v1"
 _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
@@ -244,7 +244,7 @@ def check_resume_request(
     """K1 request: the resumed request continues the collected stop through ``resume``."""
     failures: list[str] = []
     if (
-        collection.get("schema") != _COLLECTION_SCHEMA
+        collection.get("schema") != COLLECTION_SCHEMA_V1
         or collection.get("request_sha256") != previous.digest
     ):
         failures.append(

@@ -91,7 +91,12 @@ class ProbeProviderAbsent(RuntimeError):
         super().__init__("provider reports the attributed pod absent without terminal evidence")
 
 
-_RESUME_RECEIPT = re.compile(r"-(warmup|prediction)-(\d{8})-progress\.json")
+# RETRACTED 2026-11-02: this regex used to read ``(warmup|prediction)``. ``runner.py`` names a
+# receipt with ``execution.phase`` and ``SentencePhase`` is ``codec_warmup | prediction``
+# (training.py), so a real warm-up receipt never matched and the advisory progress tick turned
+# the refusal into ``read_failed``. The pair path carried the right alternation in a second
+# regex; there is now one rule for both.
+_RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 
 
 def _stopped_global_step(path: str, warmup_steps: int) -> int:
@@ -101,9 +106,6 @@ def _stopped_global_step(path: str, warmup_steps: int) -> int:
         raise ValueError(f"resume receipt name {path!r} carries no stopped step")
     phase, step = match.group(1), int(match.group(2))
     return step + (warmup_steps if phase == "prediction" else 0)
-
-
-_PAIR_RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 
 
 @dataclass
@@ -176,13 +178,7 @@ class _CheckpointProgress:
                 if index == 1:  # the recipient arrives warmed: no checkpoint of its own before
                     floor = schedule.warmup_steps
                 if cell.resume is not None:
-                    match = _PAIR_RESUME_RECEIPT.search(PurePosixPath(cell.resume.path).name)
-                    if match is None:
-                        raise ValueError(
-                            f"resume receipt name {cell.resume.path!r} carries no step"
-                        )
-                    phase, step = match.group(1), int(match.group(2))
-                    stopped = step + (schedule.warmup_steps if phase == "prediction" else 0)
+                    stopped = _stopped_global_step(cell.resume.path, schedule.warmup_steps)
                     if stopped not in steps:
                         raise ValueError(
                             f"resume stop at global step {stopped} is not on the seal ladder"

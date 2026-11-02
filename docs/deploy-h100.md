@@ -240,6 +240,16 @@ publishes the write-once `h-probe-stop-marker-v2` and stops that cell only, and 
 (`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional completion and part
 checksums is UNMEASURED, so the first live pair run is the measurement.
 
+Capture by reference (FOR-1694; lands with the staged reader-member DG-A patch, not on this
+branch tip). A pair's completion snapshot is `h-worker-snapshot-v2`: a `capture/<cell>/<file>`
+whose bytes equal the snapshot's own `run/<cell>/<file>` is a reference entry (`reference`, and
+`key` naming the referenced object) with no second upload, so a pair pays for each large object
+once. The host resolves a reference to the run twin's bytes and refuses a digest disagreement; a
+reference that is not an equal run twin of its own cell is refused. Every consumer that lists a
+snapshot's keys (for example `h_probe_stop.request_stop`) therefore reads a reference's twin key
+once. A single-profile request keeps `h-worker-snapshot-v1` byte for byte, and a pre-L4c pair's
+v1 markers still read.
+
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted
 or modified. Use a private cache for subsequent capture work too.
