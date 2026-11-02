@@ -974,3 +974,36 @@ def test_target_rule_equals_the_pause_rule_on_every_coordinate(tmp_path: Path) -
         except ValueError:
             target_ok = False
         assert target_ok is pause_ok, coordinate
+
+
+def test_verb_returns_each_stopped_key_once_when_a_reference_repeats_its_run_twin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # h-worker-snapshot-v2 lists a capture reference beside its run twin under the SAME key;
+    # the verb's key set is the distinct keys, never one entry per manifest row.
+    request, _ = _prepared(tmp_path)
+    objects = _ObjectStore()
+    snapshot_key = f"{request.prefix}/snapshots/stopped.json"
+    manifest = {
+        "files": [
+            {"key": "run/donor/a.json"},
+            {"key": "run/donor/a.json"},
+            {"key": "run/recipient/b.json"},
+        ]
+    }
+    objects.seed(snapshot_key, json.dumps(manifest).encode())
+    stored = objects.read(snapshot_key)
+    assert stored is not None
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_stop.read_probe_event",
+        lambda *args, **kwargs: SimpleNamespace(snapshot=stored.identity),
+    )
+    keys = request_stop(
+        objects,
+        request,
+        wait_seconds=1.0,
+        poll_seconds=1.0,
+        monotonic=lambda: 0.0,
+        sleep=lambda seconds: None,
+    )
+    assert keys == ("run/donor/a.json", "run/recipient/b.json", snapshot_key)

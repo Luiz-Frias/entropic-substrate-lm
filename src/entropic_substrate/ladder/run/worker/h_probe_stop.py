@@ -110,7 +110,9 @@ def request_stop(
                 raise ValueError("stopped snapshot marker identity mismatch")
             manifest = json.loads(marker.payload)
             files = manifest["files"]
-            keys = tuple(sorted(str(item["key"]) for item in files))
+            # h-worker-snapshot-v2 lists a capture reference beside its run twin under the same
+            # key, so the distinct keys are the set; one entry per manifest row would count twice.
+            keys = tuple(sorted({str(item["key"]) for item in files}))
             return (*keys, event.snapshot.key)
         if monotonic() >= deadline:
             return None
