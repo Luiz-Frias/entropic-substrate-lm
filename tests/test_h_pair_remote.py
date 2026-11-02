@@ -733,3 +733,129 @@ def test_the_stop_command_takes_a_cell_for_a_pair_launch_and_refuses_it_for_a_si
     assert code == 1  # the verb returned None: the stop is unconfirmed, as it should be here
     assert seen["pair"] is True and seen["cell"] == "recipient"
     assert seen["target"] == ("prediction", 2)
+
+
+# ------------------------------------------------------------------------------- K3, per cell
+K3_GOLDEN_PASS = (
+    '{"check": "k3", "facts": {"files": [{"path": "{dir}/a-metrics.jsonl", "request_sha256": '
+    '"111111111111111111111111111111111111111111111111111111111111111a", "result_status": '
+    '"probe_workload_complete", "status": "ok"}, {"path": "{dir}/b-metrics.jsonl", '
+    '"request_sha256": "111111111111111111111111111111111111111111111111111111111111111b", '
+    '"result_status": "probe_workload_complete", "status": "ok"}]}, "reasons": [], '
+    '"verdict": "PASS"}'
+)
+K3_GOLDEN_FAIL = (
+    '{"check": "k3", "facts": {"files": [{"path": "{dir}/a-metrics.jsonl", "request_sha256": '
+    '"111111111111111111111111111111111111111111111111111111111111111a", "result_status": '
+    '"probe_workload_complete", "status": "ok"}, {"path": "{dir}/a-metrics.jsonl", '
+    '"request_sha256": "111111111111111111111111111111111111111111111111111111111111111a", '
+    '"result_status": "probe_workload_complete", "status": "ok"}]}, "reasons": ["request '
+    "111111111111111111111111111111111111111111111111111111111111111a has 2 captured metrics "
+    'files", "declared request 111111111111111111111111111111111111111111111111111111111111111c '
+    'has no admissible capture"], "verdict": "FAIL"}'
+)
+
+
+def test_the_single_profile_k3_document_is_byte_identical_to_the_parent_tips(
+    tmp_path: Path,
+) -> None:
+    """The goldens below were taken from the UNMODIFIED parent-tip ``check_capture`` (2026-11-02)
+    over the same fixture, before the per-cell key existed."""
+    from tests.test_h_aggregate import (
+        IDENTITY_A,
+        IDENTITY_B,
+        REQUEST_A,
+        REQUEST_B,
+        write_h_run,
+    )
+
+    from entropic_substrate.ladder.analyze.h_final_probe_checks import check_capture
+
+    a = write_h_run(tmp_path, IDENTITY_A, REQUEST_A, tag="a")
+    b = write_h_run(tmp_path, IDENTITY_B, REQUEST_B, tag="b")
+    passed = check_capture([a[0], b[0]], [REQUEST_A, REQUEST_B])
+    assert json.dumps(passed.to_json()).replace(str(tmp_path), "{dir}") == K3_GOLDEN_PASS
+    failed = check_capture([a[0], a[0]], [REQUEST_A, "1" * 63 + "c"])
+    assert json.dumps(failed.to_json()).replace(str(tmp_path), "{dir}") == K3_GOLDEN_FAIL
+
+
+def pair_metrics(tmp_path: Path, pair: Pair) -> tuple[PairProbeRequest, dict[str, Path]]:
+    request, objects, marker = pair_world(tmp_path, pair)
+    status, error, _, observability = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    return request, {
+        "donor": observability / "donor" / "metrics.jsonl",
+        "recipient": observability / "recipient" / "metrics.jsonl",
+    }
+
+
+def test_a_pairs_two_metrics_files_are_each_requests_cell_exactly_once(
+    tmp_path: Path, pair: Pair
+) -> None:
+    from entropic_substrate.ladder.analyze.h_final_probe_checks import check_capture
+
+    request, files = pair_metrics(tmp_path, pair)
+    cells = {request.digest: (request.donor.identity, request.recipient.identity)}
+    result = check_capture([files["donor"], files["recipient"]], [request.digest], cells)
+    assert result.verdict == "PASS", result.reasons
+    assert [f["profile_identity"] for f in result.facts["files"]] == list(cells[request.digest])
+    # the order of the files is not the order of the cells: the key is the identity
+    swapped = check_capture([files["recipient"], files["donor"]], [request.digest], cells)
+    assert swapped.verdict == "PASS", swapped.reasons
+    # collapsed to the request alone (the parent tip's key), a pair's two files are a duplicate
+    collapsed = check_capture([files["donor"], files["recipient"]], [request.digest])
+    assert collapsed.verdict == "FAIL"
+    assert any("has 2 captured metrics files" in reason for reason in collapsed.reasons)
+
+
+def test_a_missing_a_repeated_or_a_foreign_cell_fails_k3_naming_the_cell(
+    tmp_path: Path, pair: Pair
+) -> None:
+    from entropic_substrate.ladder.analyze.h_final_probe_checks import check_capture
+
+    request, files = pair_metrics(tmp_path, pair)
+    cells = {request.digest: (request.donor.identity, request.recipient.identity)}
+    missing = check_capture([files["donor"]], [request.digest], cells)
+    assert missing.verdict == "FAIL"
+    assert f"cell {request.recipient.identity} has no admissible capture" in missing.reasons[0]
+    repeated = check_capture(
+        [files["donor"], files["recipient"], files["donor"]], [request.digest], cells
+    )
+    assert repeated.verdict == "FAIL"
+    assert f"cell {request.donor.identity} has 2 captured metrics files" in repeated.reasons[0]
+    other = {request.digest: (request.donor.identity, "9" * 64)}
+    foreign = check_capture([files["donor"], files["recipient"]], [request.digest], other)
+    assert foreign.verdict == "FAIL"
+    assert any("is not a declared cell of pair request" in r for r in foreign.reasons)
+
+
+def test_the_k3_script_reads_a_pairs_cells_from_its_parsed_request_file(
+    tmp_path: Path, pair: Pair
+) -> None:
+    import importlib.util
+
+    from tests.test_h_pair_request import pair_request
+
+    request, files = pair_metrics(tmp_path, pair)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "h0_final_probe_checks.py"
+    spec = importlib.util.spec_from_file_location("h0_final_probe_checks_pair_k3", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    path = tmp_path / "pair-request.json"
+    path.write_bytes(pair_request(pair).payload)
+    verdict = module.CHECKS["k3"](
+        {
+            "metrics": [str(files["donor"]), str(files["recipient"])],
+            "request_digests": [],
+            "pair_requests": [str(path)],
+        }
+    )
+    assert verdict.verdict == "PASS", verdict.reasons
+    assert request.digest in json.dumps(verdict.to_json())
+    single = tmp_path / "single.json"
+    from tests.test_sentence_worker_request import request as single_request
+
+    single.write_bytes(single_request().payload)
+    with pytest.raises(ValueError, match="names a single-profile request"):
+        module.CHECKS["k3"]({"metrics": [], "request_digests": [], "pair_requests": [str(single)]})

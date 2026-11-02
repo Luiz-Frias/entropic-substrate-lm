@@ -26,6 +26,19 @@ on the global axis, so the aggregate, the report and the charts consume it uncha
 ``mlflow_run_id`` are the final pod's; each pod's own lineage stays in ``segments``.
 Every refusal raises :class:`~entropic_substrate.ladder.capture.reader.telemetry.TelemetryGap`
 naming a file (measurement path, fail LOUD); nothing partial is returned.
+
+FOR-1694 (R2, L4a note): a resumed codec-hand-off RECIPIENT starts at ``warmup_steps + 1`` with
+zero ``codec_warmup`` rows on every pod, because its codec arrived from the donor's warm-up-final
+seal instead of being trained. That is admitted ONLY with typed hand-off evidence
+(:class:`~entropic_substrate.ladder.analyze.h_aggregate.CodecHandoffEvidence`, converted by the
+caller from a verified hand-off): the lineage's first pod is then admitted by ``load_h_run`` with
+``handoff=`` (and never ``warmup_steps=`` in the same call: the two arguments are mutually
+exclusive there, because the override skips the per-file coverage check and must not admit a
+truncated stream), the later pods with the lineage's ``warmup_steps=``, the lineage as a whole
+holds ZERO warm-up rows and starts at ``warmup_steps + 1``. Zero warm-up rows on their own are
+exactly the forgery the hand-off tooth targets, so without the evidence a lineage that starts past
+step 1 is refused with the unchanged gap text. The evidence's recipient identity must be the
+lineage's profile identity.
 """
 
 from __future__ import annotations
@@ -36,7 +49,12 @@ from itertools import pairwise
 from pathlib import Path
 from typing import NoReturn
 
-from entropic_substrate.ladder.analyze.h_aggregate import HRun, load_h_run, read_h_rows
+from entropic_substrate.ladder.analyze.h_aggregate import (
+    CodecHandoffEvidence,
+    HRun,
+    load_h_run,
+    read_h_rows,
+)
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 
 __all__ = ["HResumedRun", "load_h_resumed_run"]
@@ -111,8 +129,12 @@ def _require_one_lineage(pods: Sequence[HRun]) -> None:
             )
 
 
-def _require_continuous(pods: Sequence[HRun], warmup_steps: int) -> None:
-    expected = 1
+def _require_continuous(
+    pods: Sequence[HRun], warmup_steps: int, handoff: CodecHandoffEvidence | None = None
+) -> None:
+    # a hand-off recipient's lineage begins after its inherited warm-up (R2); every other lineage
+    # begins at step one
+    expected = 1 if handoff is None else warmup_steps + 1
     for pod in pods:
         steps = [step for step, _, _ in pod.training]
         if not steps:
@@ -125,14 +147,22 @@ def _require_continuous(pods: Sequence[HRun], warmup_steps: int) -> None:
             )
         expected = steps[-1] + 1
     warmup = [step for pod in pods for step, phase, _ in pod.training if phase == _WARMUP]
-    if warmup != list(range(1, warmup_steps + 1)):
+    if handoff is not None:
+        if warmup:
+            _gap(
+                f"{pods[-1].metrics_path}: a hand-off recipient's lineage commits no codec_warmup "
+                f"row, but {len(warmup)} are present"
+            )
+    elif warmup != list(range(1, warmup_steps + 1)):
         _gap(
             f"{pods[-1].metrics_path}: the lineage's committed codec_warmup rows "
             f"{warmup[:3]}..{warmup[-3:]} are not exactly 1..{warmup_steps}"
         )
 
 
-def _stitch(pods: Sequence[HRun], warmup_steps: int) -> HRun:
+def _stitch(
+    pods: Sequence[HRun], warmup_steps: int, handoff: CodecHandoffEvidence | None = None
+) -> HRun:
     first, final = pods[0], pods[-1]
     publication: dict[int, float] = {}
     for pod in pods:
@@ -169,20 +199,42 @@ def _stitch(pods: Sequence[HRun], warmup_steps: int) -> HRun:
         stages=tuple(stage for pod in pods for stage in pod.stages),
         admissions=tuple(admission for pod in pods for admission in pod.admissions),
         elm=tuple(row for pod in pods for row in pod.elm),
+        handoff=handoff,
     )
 
 
-def load_h_resumed_run(segments: Sequence[tuple[str | Path, str | Path]]) -> HResumedRun:
+def load_h_resumed_run(
+    segments: Sequence[tuple[str | Path, str | Path]],
+    *,
+    handoff: CodecHandoffEvidence | None = None,
+) -> HResumedRun:
     """Admit pods ``[(metrics, worker_log), ...]`` (in lineage order) as one resumed run.
+
+    ``handoff`` is given ONLY for a codec-hand-off recipient's lineage (see the module docstring);
+    the default reads every other lineage exactly as before.
 
     Raises :class:`TelemetryGap` naming a file for every inadmissible pod, a broken
     lineage, a discontinuous global axis or fewer than two pods.
     """
+    if handoff is not None and type(handoff) is not CodecHandoffEvidence:
+        raise TypeError("handoff evidence must be a CodecHandoffEvidence")
     pairs = [(Path(metrics), Path(worker_log)) for metrics, worker_log in segments]
     if len(pairs) < 2:
         _gap(f"a resumed run needs at least two pods, got {len(pairs)}: {pairs}")
     warmup_steps = _lineage_warmup(pairs)
-    pods = tuple(load_h_run(m, w, warmup_steps=warmup_steps) for m, w in pairs)
+    if handoff is not None and handoff.warmup_steps != warmup_steps:
+        _gap(
+            f"{pairs[0][1]}: the lineage's worker logs put the warm-up at {warmup_steps} steps, "
+            f"but the hand-off evidence inherited {handoff.warmup_steps}"
+        )
+    # handoff= and warmup_steps= are never given to ONE load_h_run call (they are mutually
+    # exclusive there): the first pod is the recipient's own admission, the rest are resumed pods
+    pods = tuple(
+        load_h_run(m, w, handoff=handoff)
+        if handoff is not None and index == 0
+        else load_h_run(m, w, warmup_steps=warmup_steps)
+        for index, (m, w) in enumerate(pairs)
+    )
     _require_one_lineage(pods)
-    _require_continuous(pods, warmup_steps)
-    return HResumedRun(run=_stitch(pods, warmup_steps), segments=pods)
+    _require_continuous(pods, warmup_steps, handoff)
+    return HResumedRun(run=_stitch(pods, warmup_steps, handoff), segments=pods)

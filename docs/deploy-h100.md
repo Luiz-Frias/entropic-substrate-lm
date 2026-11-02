@@ -180,7 +180,8 @@ any authority on a smoke request. The worker request carries the authority as
 byte-identically, so every captured `request_sha256` re-derives. A codec-sharing PAIR is its own
 request, `h-probe-worker-request-v3` (FOR-1693): two cells donor first (the magnitude-spine arm, then
 the sphere-spine arm), a block binding and one authority for both; v1 and v2 keep their bytes and
-meaning, and no launch carries a pair before FOR-1694. The launch manifest
+meaning (RETRACTED 2026-11-02: "no launch carries a pair before FOR-1694"; launch v5 below carries
+one). The launch manifest
 `h-probe-launch-v4` names the authority digest as both `scientific_authority` and
 `spending_authority` (`"none"` for smoke). A scientific launch declares the cost guard
 `host_watchdog_budgeted` (smoke keeps `host_watchdog_tiny_only`, the only kind it may declare),
@@ -203,6 +204,41 @@ this schema; none exists yet and no template id is recorded here until that cere
 pilot and the converse. READ-OLD: a `h0-probe-launch-v3` (or v2) payload reads as the same class,
 re-renders its own bytes and never compares equal to a v4 launch; a pre-v4 payload carries no
 authority, so a v3 launch of a scientific request is refused. v1 stays refused.
+
+LAUNCH SCHEMA v5 (2026-11-02, FOR-1694, h1-l4c). One bump, three moves. (1) The launch SEALS its
+hourly price: a scientific launch declares `hourly_price_ceiling` (USD per hour) at construction, an
+explicit field with no default that is never derived from the authority (`RunAuthority` carries a
+USD cap and an hours cap and no hourly price, so `usd / hours` would replace the ceiling the invoker
+approved with a looser number nobody typed). The product rule of rung B is unchanged and now runs at
+construction and at parse: `ceiling * watchdog_timeout_seconds / 3600 <= spend_cap.usd`. The
+manifest also records `hours_cap`, copied from `spend_cap.hours` and re-derived at parse; a smoke
+launch carries explicit `null` for both. `h_probe_command` and the controller read the ceiling from
+the launch: `--max-hourly-rate` is optional for a sealed launch and, when present, must equal the
+sealed value exactly (no tolerance), else it is refused by name before any workspace or provider
+call; the controller's `cost_per_hour` check compares against the sealed value. A smoke, v4 or v3
+launch has no sealed ceiling and keeps the flag with its v3 semantics, required. (2) The launch
+carries a codec-sharing pair (`h-probe-worker-request-v3`): the manifest records `pair` and both
+cell identities (`cells`, donor first), re-derived from the embedded request at parse; a pair under
+a v3 or v4 manifest is refused by name. (3) The v2 read retires, as the v3 section promised: a
+`h0-probe-launch-v2` payload is refused naming `h0-probe-launch-v3` as the minimum supported
+version. READ-OLD: v4 and v3 payloads (every H0 launch file sealed on R2 is v3) read as the same
+class, re-render their own bytes and never compare equal to a v5 launch. Every launch built in
+process renders v5, so its digest, pod name and workspace moved; the pod name rule
+`<stage>-<class>-<digest prefix>` (smoke `h0-tiny-...`) is unchanged, and the pod listing filter
+matches that exact name. The scientific pod environment is the same eight keys as v4.
+
+Host side of a pair (FOR-1694). A pair is collected as `h-probe-terminal-collection-v2`: one entry
+per cell (receipt, result entry, capture and verification roots), the pair verdict and the terminal
+it was collected under (`complete`, `paused`, `stopped`, `excluded`, `failure`); result v2 is read
+under every terminal that can carry it, the failure terminal included, and `workload_verified` is
+keyed on the verdict, never on a status. A pair whose pod never began a cell collects as a typed
+`pair_not_started` failure. A single-profile request keeps `h-probe-terminal-collection-v1` byte for
+byte. The wave monitor lists one arm per (request, cell), each searched by the `request_sha256` and
+`cell` run tags; `h_probe_stop --at-cell donor|recipient` (with `--at-phase` and `--at-step`)
+publishes the write-once `h-probe-stop-marker-v2` and stops that cell only, and a pair without
+`--at-cell` is refused by name. Objects above 64 MiB are published as verified multipart uploads
+(`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional completion and part
+checksums is UNMEASURED, so the first live pair run is the measurement.
 
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted

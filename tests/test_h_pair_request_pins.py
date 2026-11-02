@@ -771,7 +771,7 @@ def test_the_h0_checks_script_refuses_a_pair_request_file_by_name(
     path.write_bytes(pair_request(pair).payload)
     refused(
         "pair-request-file",
-        "h0_final_probe_checks does not carry a pair request",
+        "h0_final_probe_checks K1 and K2 read single-profile arms and do not carry a pair request",
         lambda: module._request(path),  # pyright: ignore[reportPrivateUsage]
     )
 
