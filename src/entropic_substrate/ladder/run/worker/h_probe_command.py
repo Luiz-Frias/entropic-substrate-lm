@@ -72,8 +72,9 @@ def run_probe_command(
     """
     evidence: dict[str, object] | None = None
     try:
+        parser = _parser()
         try:
-            args = _parser().parse_args(list(argv))
+            args = parser.parse_args(list(argv))
         except SystemExit as error:
             return 0 if error.code == 0 else 2
         settings = WatchdogProcessConfig(
@@ -102,6 +103,15 @@ def run_probe_command(
             max_bytes=args.max_launch_bytes,
         )
         launch = parse_probe_launch(payload, max_bytes=args.max_launch_bytes)
+        # A launch that seals no ceiling (smoke, v4, v3) keeps the flag REQUIRED, refused by the
+        # argparse text of the parent tip (exit 2, usage on stderr) before any workspace or
+        # provider call. FOR-1694 moved the test after the launch read, so the bytes are restored
+        # here through the same parser object (same prog and usage line).
+        if launch.hourly_price_ceiling is None and args.max_hourly_rate is None:
+            try:
+                parser.error("the following arguments are required: --max-hourly-rate")
+            except SystemExit:
+                return 2
         # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap.
         # FOR-1694: and a launch that seals its ceiling supplies it; a flag that disagrees is
         # refused here, before any workspace creation or provider call.

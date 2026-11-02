@@ -168,7 +168,10 @@ def test_invalid_launch_never_reaches_provider_or_guard(
         "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport", forbidden
     )
     stdout, stderr = io.StringIO(), io.StringIO()
-    assert run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr) != 0
+    code = run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr)
+    assert code != 0
+    if invalid == "missing_flag":
+        assert code == 2  # the parent tip's argparse refusal (exit 2), pinned byte-for-byte below
     assert stdout.getvalue() == ""
     assert not (tmp_path / "workspace/control").exists()
     assert reached == []
@@ -281,8 +284,10 @@ def test_a_flag_that_disagrees_with_the_sealed_ceiling_is_refused_before_any_pro
 
 
 def test_an_unsealed_launch_without_the_flag_is_refused_by_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Smoke-class refusal, byte-identical to the parent tip (b429635e): argparse usage error,
+    exit 2, on the process stderr, before any workspace or provider call."""
     argv = arguments(tmp_path)[:-2]  # the smoke launch seals nothing
     reached: list[str] = []
     monkeypatch.setattr(
@@ -290,4 +295,7 @@ def test_an_unsealed_launch_without_the_flag_is_refused_by_name(
         lambda **_: reached.append("provider"),
     )
     code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=io.StringIO())
-    assert code == 1 and reached == [] and not (tmp_path / "workspace/control").exists()
+    err = capsys.readouterr().err
+    assert code == 2 and reached == [] and not (tmp_path / "workspace/control").exists()
+    assert err.startswith("usage: ")
+    assert err.endswith("error: the following arguments are required: --max-hourly-rate\n")
