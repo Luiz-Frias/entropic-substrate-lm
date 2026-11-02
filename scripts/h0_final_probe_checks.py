@@ -19,7 +19,9 @@ Plan sections (paths as given, absolute or relative to the working directory)::
                    "resumed_request": request.json}
     "k1_seam":    {"segments": [[metrics.jsonl, worker-log.jsonl], ...]}
     "k2":         {"records": [controller-result.json, ...], "requests": [request.json, ...]}
-    "k3":         {"metrics": [metrics.jsonl, ...], "request_digests": [hex, ...]}
+    "k3":         {"metrics": [metrics.jsonl, ...], "request_digests": [hex, ...],
+                   optional "pair_requests": [request.json, ...] (a pair request is keyed
+                   by its digest and its donor and recipient identities)}
     "k4":         {"worker_logs": [worker-log.jsonl, ...]}
     "k5":         {"receipts": [generation.json, ...]}
     "k6":         {"metrics": [metrics.jsonl, ...], and one of
