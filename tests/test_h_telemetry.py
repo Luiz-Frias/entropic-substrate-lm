@@ -293,3 +293,19 @@ def test_annotate_records_do_not_disturb_the_admissibility_predicate(tmp_path: P
     bare = _write(tmp_path / "bare.jsonl", [_start(), checkpoint, _end()])
     with pytest.raises(TelemetryGap, match=r"at least one committed h-training-step-v2"):
         final_h_run_end(bare)
+
+
+def test_the_never_trained_refusal_keeps_its_exact_bytes_for_an_execution_stop(
+    tmp_path: Path,
+) -> None:
+    """DH-46 widened the committed-row condition for a recorded scientific stop only. An
+    execution-class end with no committed row still raises with the message this predicate had
+    before the widening, tail included: that text is the parent tip's (2994331f~1), pinned whole
+    so a one-character edit to ``... found none — the run never trained`` goes RED."""
+    path = _write(tmp_path / "metrics.jsonl", [_start(), _end(status="failed")])
+    with pytest.raises(TelemetryGap) as raised:
+        final_h_run_end(path)
+    assert str(raised.value) == (
+        f"{path}: an admissible H run holds at least one committed h-training-step-v2 "
+        "row, found none — the run never trained"
+    )

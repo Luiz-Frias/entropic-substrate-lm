@@ -1933,6 +1933,10 @@ def _pause_the_recipient(row: dict[str, Any]) -> None:
     row["cells"][1]["outcome"] = "paused"
 
 
+def _relabel_the_status(row: dict[str, Any]) -> None:
+    row["status"] = "paused"
+
+
 @pytest.mark.parametrize(
     ("forge", "message"),
     [
@@ -1950,6 +1954,11 @@ def _pause_the_recipient(row: dict[str, Any]) -> None:
             _pause_the_recipient,
             "a complete pair completes both cells",
             id="C3-complete-pair-completes-both",
+        ),
+        pytest.param(
+            _relabel_the_status,
+            "worker result status differs from its terminal event",
+            id="C4-status-matches-the-terminal-event",
         ),
     ],
 )
@@ -2079,3 +2088,235 @@ def test_one_pair_run_replays_each_source_root_once_outside_the_handoff_and_no_s
     # the residual ceiling (measured 10 and 14): a regression grows it, a fix lowers it
     assert sum(n for (_, via), n in reads.items() if via) <= 10, reads
     assert preps.get(True, 0) <= 14, preps
+
+
+# ============================== L3 fixes: corners the mutation round showed unpinned (FOR-1693)
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        pytest.param(
+            lambda p: replace(p.recipient, schedule=replace(p.recipient.schedule, batch_size=3)),
+            "donor and recipient manifests differ beyond their name and spine carrier",
+            id="recipient-manifest-differs",
+        ),
+        pytest.param(
+            lambda p: replace(p.donor, name="h1-pair-twin-tiny"),
+            "a pair needs two different spine carriers",
+            id="same-carrier-twin",
+        ),
+    ],
+)
+def test_the_request_refuses_a_pair_that_is_not_codec_sharing_before_any_spend(
+    pair: Pair, change: Any, message: str
+) -> None:
+    """The request-time pair predicate is the ONLY check before hardware: without it a
+    mismatched pair is admitted, the donor trains to completion and only the hand-off refuses.
+    MEASURED at 19e58ad6 with the ``require_pair`` call replaced by ``pass``: the pair whose
+    cells differ in ``schedule.batch_size`` is admitted."""
+    from entropic_substrate.ladder.run.codec_handoff import CodecHandoffDefect
+
+    assert (
+        pair_request(pair).cells[1].profile == pair.recipient
+    )  # control: the honest pair is admitted
+    other = change(pair)
+    cells = (PairCell(pair.donor, None, None), PairCell(other, None, None))
+    with pytest.raises(CodecHandoffDefect, match=message):
+        pair_request(pair, cells=cells)
+
+
+def test_a_retired_v1_parent_receipt_is_refused_by_name_at_the_parent_hop(
+    tmp_path: Path, pair: Pair
+) -> None:
+    """The second line of the paused-v1-lineage cutover defence: for a single smoke cell every
+    binding field is ``None`` on both sides of the hop comparison, so only the by-name refusal
+    stops a v1 parent that carries the same lineage fields."""
+    from entropic_substrate.ladder.run.journal import read_json, write_json
+
+    root = tmp_path / "donor"
+    root.mkdir()
+    paused = trained_cell(
+        pair,
+        pair.donor,
+        root,
+        stop_after_seal=lambda phase, step: (phase, step) == ("prediction", 2),
+    )
+    assert paused.status == "paused"
+    done = trained_cell(pair, pair.donor, root, resume=paused.receipt)
+    assert done.status == "training_complete"
+    parent = read_json(root, paused.receipt, max_bytes=LIMIT)
+    v1_parent = write_json(
+        root,
+        "v1-parent-progress.json",
+        {k: v for k, v in parent.items() if k not in _V2_ONLY}
+        | {"schema": "h-probe-training-progress-v1"},
+        max_bytes=LIMIT,
+    )
+    # control: the chain as written reads
+    read_receipt(pair, pair.donor, root, done.receipt)
+    child = forged(
+        root,
+        done.receipt,
+        "v1-parent-child.json",
+        parent_receipt={
+            "path": v1_parent.path,
+            "sha256": v1_parent.content_hash.digest,
+        },
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"h-probe-training-progress-v1.*minimum supported version is h-probe-training-progress-v2",
+    ):
+        read_receipt(pair, pair.donor, root, child)
+
+
+def test_only_the_runner_assigns_the_progress_v2_schema_name() -> None:
+    """``runner.write_progress_receipt`` is the ONE writer of an ``h-probe-training-progress-v2``
+    receipt. Structural pin: across ``src`` no dict literal and no keyword argument other than
+    the one inside that function sets ``schema`` to the progress-v2 name (by constant or by
+    literal), so a second inline writer goes RED instead of drifting from the reader's shape."""
+    import ast
+
+    import entropic_substrate
+    from entropic_substrate.ladder.run.runner import PROGRESS_SCHEMA_V2
+
+    def is_name(node: ast.AST | None) -> bool:
+        return (isinstance(node, ast.Name) and node.id == "PROGRESS_SCHEMA_V2") or (
+            isinstance(node, ast.Constant) and node.value == PROGRESS_SCHEMA_V2
+        )
+
+    sites: list[str] = []
+    root = Path(entropic_substrate.__file__).parent
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        owners: dict[int, str] = {}
+        for function in ast.walk(tree):
+            if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+                for child in ast.walk(function):
+                    owners[id(child)] = function.name
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Dict):
+                hit = any(
+                    isinstance(k, ast.Constant) and k.value == "schema" and is_name(v)
+                    for k, v in zip(node.keys, node.values, strict=True)
+                )
+            elif isinstance(node, ast.Call):
+                hit = any(k.arg == "schema" and is_name(k.value) for k in node.keywords)
+            else:
+                continue
+            if hit:
+                sites.append(f"{path.relative_to(root)}:{owners.get(id(node), '<module>')}")
+    assert sites == ["ladder/run/runner.py:write_progress_receipt"], sites
+
+
+# ---- DH-15: the two failure classes meet in one result, and the execution class wins
+def _fail_donor_scientifically_then_recipient_by_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+
+    # the second Fault wraps the first: the donor's first prediction step (call 1) reaches the
+    # inner one and diverges; the recipient's first prediction step (call 2) is the outer one's
+    Fault(monkeypatch, "prediction", 1, UndefinedDirection(2))
+    Fault(monkeypatch, "prediction", 2, RuntimeError("injected recipient defect"))
+
+
+def test_a_donor_scientific_gap_then_a_recipient_execution_defect_is_the_execution_class(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The only pair where DH-15's two classes share one result: the donor stops scientifically
+    (NONFINITE_ENDPOINT, the hand-off proceeds) and the recipient then stops as an execution
+    defect. The execution defect decides the verdict (READER_REFUSAL naming the recipient), and
+    the failure arm reads the result back through the derivation, which fails closed if the
+    precedence is swapped (the swapped derivation names the donor's NONFINITE_ENDPOINT)."""
+    request, objects, marker = pair_world(tmp_path, pair)
+    _fail_donor_scientifically_then_recipient_by_execution(monkeypatch)
+    status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2  # the recipient's ORIGINAL exception propagated
+    failure = failure_terminal(objects, request)
+    assert failure["status"] == "execution_defect" and failure["error_type"] == "RuntimeError"
+    assert failure["evidence_delivery"] == "captured"  # the read-back held, the snapshot went out
+    result = json.loads(failure_snapshot_files(objects, request)["worker/result.json"])
+    assert result["status"] == "execution_defect"
+    assert result["verdict"] == {
+        "verdict": "excluded",
+        "reason": "reader_refusal",
+        "cell": "recipient",
+    }
+    assert [c["outcome"] for c in result["cells"]] == ["scientific_gap", "execution_defect"]
+
+
+# ---- result v2: the host-side reader couples status, reason and the named cell's outcome
+def _scientific_and_execution_results(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> tuple[PairProbeRequest, dict[str, Any], dict[str, Any]]:
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    with monkeypatch.context() as scientific:
+        Fault(scientific, "prediction", 1, UndefinedDirection(2))
+        code, error, workspace, _ = run_command(tmp_path, objects, marker, "sci-worker")
+        assert code == 0, error
+        excluded = json.loads((workspace / "worker/result.json").read_text())
+    _, objects, marker = pair_world(tmp_path, pair)
+    with monkeypatch.context() as execution:
+        Fault(execution, "warmup", 1, RuntimeError("injected reader refusal"))
+        code, _, _, _ = run_command(tmp_path, objects, marker, "exe-worker")
+        assert code == 2
+        defect = json.loads(failure_snapshot_files(objects, request)["worker/result.json"])
+    return request, excluded, defect
+
+
+def test_the_pair_reader_refuses_every_status_reason_and_named_cell_class_mix(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each forgery changes exactly ONE coupling of an otherwise honest result, so each row is
+    caught by exactly one clause of the structure check (not by the worker's disk derivation,
+    which the host-side ``receive_worker_completion`` path never runs):
+    status pair_excluded needs a SCIENTIFIC reason naming a scientific_gap cell; status
+    execution_defect needs reader_refusal naming an execution_defect cell."""
+    from entropic_substrate.ladder.run.worker_request import parse_pair_result
+
+    request, excluded, defect = _scientific_and_execution_results(tmp_path, pair, monkeypatch)
+    assert excluded["status"] == "pair_excluded" and defect["status"] == "execution_defect"
+    assert parse_pair_result(excluded, request) == excluded  # controls: both honest rows read
+    assert parse_pair_result(defect, request) == defect
+    forgeries = {
+        "A18-excluded-with-reader-refusal": excluded
+        | {"verdict": excluded["verdict"] | {"reason": "reader_refusal"}},
+        "A18b-defect-with-missing-endpoint": defect
+        | {"verdict": defect["verdict"] | {"reason": "missing_endpoint"}},
+        "A18c-excluded-names-a-complete-cell": excluded
+        | {"verdict": excluded["verdict"] | {"cell": "recipient"}},
+        "A18d-defect-names-a-not-run-cell": defect
+        | {"verdict": defect["verdict"] | {"cell": "recipient"}},
+    }
+    for name, forged_row in forgeries.items():
+        with pytest.raises(ValueError, match="status, verdict and cell outcomes disagree"):
+            parse_pair_result(forged_row, request)
+        assert name  # the id of the clause this row pins
+
+
+# ---- the failure arm reads an execution stop's result v2 back before publishing its snapshot
+def test_the_failure_arm_refuses_a_bad_result_v2_before_it_publishes_the_snapshot(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.ladder.run import worker_execution
+
+    real = worker_execution.pair_result
+
+    def misnamed(*args: Any, **kwargs: Any) -> dict[str, object]:
+        row = real(*args, **kwargs)
+        # the verdict names the recipient, whose cell never ran: not a result the evidence derives
+        return row | {"verdict": dict(row["verdict"]) | {"cell": "recipient"}}  # type: ignore[arg-type]
+
+    monkeypatch.setattr(worker_execution, "pair_result", misnamed)
+    request, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "warmup", 1, RuntimeError("injected reader refusal"))
+    status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2  # the ORIGINAL exception still propagates
+    failure = failure_terminal(objects, request)
+    assert failure["status"] == "execution_defect" and failure["error_type"] == "RuntimeError"
+    assert failure["evidence_delivery"] == "failed"
+    assert failure["delivery_error_type"] == "ValueError"
+    assert failure["snapshot"] is None
+    assert f"{request.prefix}/snapshots/failure.json" not in objects.values  # nothing published
