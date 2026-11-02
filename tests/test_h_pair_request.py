@@ -1111,10 +1111,11 @@ def test_the_stop_verb_refuses_a_pair_and_a_cell_for_a_single_request_before_pub
     from entropic_substrate.ladder.run.worker.h_probe_stop import request_stop
 
     objects = _ObjectStore()
+    ticks = iter(range(1_000_000))  # the clock advances: a guard that is dropped must time out
     kwargs: dict[str, Any] = {
         "wait_seconds": 1.0,
         "poll_seconds": 0.1,
-        "monotonic": lambda: 0.0,
+        "monotonic": lambda: float(next(ticks)),
         "sleep": lambda _: None,
     }
     with pytest.raises(ValueError, match="does not carry a pair request"):
@@ -1822,3 +1823,178 @@ def test_the_new_terminal_and_the_closed_status_sets_are_pinned() -> None:
         "execution_defect",
         "not_run",
     )
+
+
+# ============================================ the result v2 integrity layers, pinned by forgery
+@pytest.mark.parametrize(
+    ("status", "verdict"),
+    [
+        pytest.param(
+            "paused",
+            {"verdict": "complete", "reason": None, "cell": None},
+            id="paused-claims-complete",
+        ),
+        pytest.param(
+            "probe_workload_complete",
+            {"verdict": "none", "reason": None, "cell": None},
+            id="complete-claims-none",
+        ),
+        pytest.param(
+            "pair_excluded",
+            {"verdict": "complete", "reason": None, "cell": None},
+            id="excluded-claims-complete",
+        ),
+    ],
+)
+def test_a_result_v2_whose_status_and_verdict_disagree_is_refused_by_the_structure_check(
+    tmp_path: Path, pair: Pair, status: str, verdict: dict[str, object]
+) -> None:
+    from entropic_substrate.ladder.run.worker_request import parse_pair_result
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    code, error, workspace, _ = run_command(tmp_path, objects, marker)
+    assert code == 0, error
+    result = json.loads((workspace / "worker/result.json").read_text())
+    assert parse_pair_result(result, request)["status"] == "probe_workload_complete"
+    forged = result | {"status": status, "verdict": verdict}
+    with pytest.raises(ValueError, match="status, verdict and cell outcomes disagree"):
+        parse_pair_result(forged, request)
+
+
+def test_a_forged_excluded_reason_passes_the_structure_check_and_the_derivation_refuses_it(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run.object_worker import _admit_pair_result
+    from entropic_substrate.ladder.run.worker_request import parse_pair_result
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    # no warm-up-final seal exists (the donor diverged at warm-up step 1): the donor's own
+    # evidence derives MISSING_ENDPOINT, so the honest result is admitted by the derivation
+    Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))
+    code, error, workspace, _ = run_command(tmp_path, objects, marker)
+    assert code == 0, error
+    result = json.loads((workspace / "worker/result.json").read_text())
+    assert result["verdict"]["reason"] == "missing_endpoint"
+    assert _admit_pair_result(workspace, request, result, {}, None)["verdict"] == result["verdict"]
+    # the reason is swapped for a member the structure admits (same cell, same outcome) and the
+    # evidence does not derive: only the derivation layer can refuse it
+    forged = result | {"verdict": result["verdict"] | {"reason": "nonfinite_endpoint"}}
+    assert parse_pair_result(forged, request)["status"] == "pair_excluded"
+    with pytest.raises(ValueError, match="verdict differs from the verdict its cells derive"):
+        _admit_pair_result(workspace, request, forged, {}, None)
+
+
+# ============================================ execution-defect stop evidence, pinned per source
+def test_an_execution_defect_is_confirmed_only_by_its_own_on_disk_evidence(
+    tmp_path: Path, pair: Pair
+) -> None:
+    from entropic_substrate.ladder.run.object_worker import _execution_stop_confirmed
+    from entropic_substrate.ladder.run.runner import PROGRESS_SCHEMA_V2
+
+    request = pair_request(pair)
+    donor, recipient = request.cells[0].profile, request.cells[1].profile
+    donor_root, recipient_root = tmp_path / "donor", tmp_path / "recipient"
+    donor_root.mkdir()
+    recipient_root.mkdir()
+    # source 1, donor: no warm-up-final seal on disk is the donor's execution evidence
+    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is True
+    seal = {
+        "schema": "h-checkpoint-seal-v1",
+        "phase": "codec_warmup",
+        "step": donor.schedule.warmup_steps,
+    }
+    (donor_root / "seal.json").write_text(json.dumps(seal))
+    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is False  # refused
+    # source 2, recipient: a recipient root holding no progress receipt is the evidence
+    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is True
+    (recipient_root / "progress.json").write_text(json.dumps({"schema": PROGRESS_SCHEMA_V2}))
+    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is False
+    # source 3, the cell's own training failure record: its status decides
+    assert (
+        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "scientific_gap"}) is False
+    )
+    assert (
+        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "execution_defect"})
+        is True
+    )
+
+
+# ============================================ host completion v2: each re-verification refusal
+def _bump_donor_steps(row: dict[str, Any]) -> None:
+    row["cells"][0]["successful_optimizer_steps"] += 1
+
+
+def _rebind_donor_training(row: dict[str, Any]) -> None:
+    row["cells"][0]["training"] = row["cells"][0]["training"] | {"sha256": "0" * 64}
+
+
+def _pause_the_recipient(row: dict[str, Any]) -> None:
+    row["cells"][1]["outcome"] = "paused"
+
+
+@pytest.mark.parametrize(
+    ("forge", "message"),
+    [
+        pytest.param(
+            _bump_donor_steps,
+            "does not establish the complete requested workload",
+            id="C1-complete-cell-steps",
+        ),
+        pytest.param(
+            _rebind_donor_training,
+            "substituted a different captured lineage",
+            id="C2-capture-manifest-training-bind",
+        ),
+        pytest.param(
+            _pause_the_recipient,
+            "a complete pair completes both cells",
+            id="C3-complete-pair-completes-both",
+        ),
+    ],
+)
+def test_the_host_completion_refuses_a_forged_cell_that_it_re_verifies_itself(
+    tmp_path: Path,
+    pair: Pair,
+    monkeypatch: pytest.MonkeyPatch,
+    forge: Any,
+    message: str,
+) -> None:
+    from entropic_substrate.ladder.run import worker_completion
+    from entropic_substrate.ladder.run.worker_completion import receive_worker_completion
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    code, error, _, _ = run_command(tmp_path, objects, marker)
+    assert code == 0, error
+    real_parse = worker_completion.parse_pair_result
+    # control: the honest result is admitted by the host completion
+    (tmp_path / "host-honest").mkdir()
+    honest = receive_worker_completion(
+        objects,
+        request,
+        terminal_identity(objects, request, "complete"),
+        tmp_path / "host-honest",
+        expected_pod_id=None,
+        max_marker_bytes=1_000_000,
+    )
+    assert honest["verdict"] == {"verdict": "complete", "reason": None, "cell": None}
+
+    # the structure check admits the forged row (it is a consistent-looking v2 result), so only
+    # the host's own re-verification of the cell can refuse it
+    def parsed(value: object, req: PairProbeRequest) -> dict[str, object]:
+        row = real_parse(value, req)
+        forge(row)
+        return row
+
+    monkeypatch.setattr(worker_completion, "parse_pair_result", parsed)
+    host = tmp_path / "host-forged"
+    host.mkdir()
+    with pytest.raises(ValueError, match=message):
+        receive_worker_completion(
+            objects,
+            request,
+            terminal_identity(objects, request, "complete"),
+            host,
+            expected_pod_id=None,
+            max_marker_bytes=1_000_000,
+        )

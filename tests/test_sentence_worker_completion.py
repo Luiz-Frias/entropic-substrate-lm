@@ -191,3 +191,42 @@ def test_remote_runtime_binding_is_a_metadata_contract_not_a_remote_run() -> Non
             admit_worker_runtime(runtime | {key: value}, request, "fixture-pod")
     with pytest.raises(ValueError):
         admit_worker_runtime(runtime, request, None)
+
+
+def test_a_pair_result_v2_is_refused_by_name_at_the_single_profile_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.ladder.run import worker_completion
+    from entropic_substrate.ladder.run.worker_request import RESULT_SCHEMA_V2
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "object-worker"
+    worker.mkdir()
+    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    host = tmp_path / "host-honest"
+    host.mkdir()
+    # control: the single-profile result is admitted when it is what the worker wrote
+    assert (
+        receive_worker_completion(
+            objects, request, terminal, host, expected_pod_id=None, max_marker_bytes=1_000_000
+        )["status"]
+        == "probe_completion_verified"
+    )
+    real_read_json = worker_completion.read_json
+
+    def relabelled(root: Path, artifact: ArtifactIdentity, *, max_bytes: int) -> dict[str, object]:
+        row = real_read_json(root, artifact, max_bytes=max_bytes)
+        if artifact.path == "result.json":
+            return row | {"schema": RESULT_SCHEMA_V2}  # a pair's result, presented to one request
+        return row
+
+    monkeypatch.setattr(worker_completion, "read_json", relabelled)
+    rejected = tmp_path / "host-relabelled"
+    rejected.mkdir()
+    # refused BY NAME with the one shared text, never relabelled into a single-profile result
+    with pytest.raises(ValueError, match="names a pair's cells; a single-profile request admits"):
+        receive_worker_completion(
+            objects, request, terminal, rejected, expected_pod_id=None, max_marker_bytes=1_000_000
+        )
