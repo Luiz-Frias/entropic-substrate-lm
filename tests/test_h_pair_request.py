@@ -1998,3 +1998,84 @@ def test_the_host_completion_refuses_a_forged_cell_that_it_re_verifies_itself(
             expected_pod_id=None,
             max_marker_bytes=1_000_000,
         )
+
+
+def _count_pair_replays(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> tuple[dict[tuple[str, bool], int], dict[bool, int]]:
+    """Run one pair request through the command and count both replay sites, split by whether a
+    ``codec_handoff`` frame is on the stack: ``({(root, via_handoff): n}, {via_handoff: n})``."""
+    import importlib
+    import sys
+
+    import entropic_substrate.core.sentence.sampling as sampling
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    def via_handoff() -> bool:
+        frame = sys._getframe(2)
+        while frame is not None:
+            if frame.f_globals.get("__name__", "").endswith("codec_handoff"):
+                return True
+            frame = frame.f_back  # type: ignore[assignment]
+        return False
+
+    reads: dict[tuple[str, bool], int] = {}
+    sites = (
+        "journal",
+        "seals",
+        "execution",
+        "evaluation_records",
+        "span_states",
+        "span_diagnostics",
+        "worker_execution",
+    )
+    for site in sites:
+        module = importlib.import_module(f"entropic_substrate.ladder.run.{site}")
+        inner = module.read_prepared_corpus
+
+        def counted(root: Path, expected: Any, _inner: Any = inner, **kw: Any) -> Any:
+            key = ("/".join(Path(root).resolve().parts[-2:]), via_handoff())
+            reads[key] = reads.get(key, 0) + 1
+            return _inner(root, expected, **kw)
+
+        monkeypatch.setattr(module, "read_prepared_corpus", counted)
+    preps: dict[bool, int] = {}
+    real_prepare = sampling.prepare_documents
+
+    def counted_prepare(*args: Any, **kwargs: Any) -> Any:
+        if sys._getframe(1).f_code.co_name == "__init__":  # a SentenceSampler construction
+            key = via_handoff()
+            preps[key] = preps.get(key, 0) + 1
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(sampling, "prepare_documents", counted_prepare)
+    request = pair_request(pair)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    return reads, preps
+
+
+def test_one_pair_run_replays_each_source_root_once_outside_the_handoff_and_no_sampler_does(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DH-41 on the PAIR path (the single-cell tracer above does not cover ``_execute_pair``).
+    MEASURED at 53e1fc1f: outside ``codec_handoff`` frames ``read_prepared_corpus`` ran ONCE for
+    each of the three roots (workspace source, donor capture, recipient capture) and no
+    ``SentenceSampler`` re-prepared a corpus. Inside ``codec_handoff`` frames it ran 10 times on the
+    workspace source root and 14 samplers re-prepared: that is the filed 'codec_handoff replay
+    residual' (a reader-member file the lane may not commit), pinned here only as a CEILING so it
+    cannot grow, never as a target. Dropping the pair's corpus memo (``source_corpora = None``) is
+    measured to move the totals to 139 reads and 81 re-preparations."""
+    reads, preps = _count_pair_replays(tmp_path, pair, monkeypatch)
+    outside = {root: n for (root, via), n in reads.items() if not via}
+    assert outside == {
+        "command-worker/source": 1,
+        "donor/source": 1,
+        "recipient/source": 1,
+    }, reads
+    assert preps.get(False, 0) == 0, preps
+    # the residual ceiling (measured 10 and 14): a regression grows it, a fix lowers it
+    assert sum(n for (_, via), n in reads.items() if via) <= 10, reads
+    assert preps.get(True, 0) <= 14, preps
