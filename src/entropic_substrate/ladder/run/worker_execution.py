@@ -846,16 +846,31 @@ def _execute_pair(
         workload(cell, trained, operator_stopped, began)
 
     # ---------------------------------------------------------------------- the donor
+    # a cell's resume names ``run/<cell>/<receipt>`` in the REQUEST (its inputs' own paths); the
+    # runner reads it relative to that cell's run root, exactly as a hand-off receipt is named
+    donor_resume, recipient_resume = (
+        None
+        if cell.resume is None
+        else ArtifactIdentity(PurePosixPath(cell.resume.path).name, cell.resume.content_hash)
+        for cell in request.cells
+    )
     if cells is not None:
         cells.focus(donor.token)
-    (root / "run" / donor.token).mkdir(parents=True)
-    run_cell(donor, 0, None)
+    # a resuming donor's root exists already (materialized from its inputs); a fresh one must not
+    (root / "run" / donor.token).mkdir(parents=True, exist_ok=donor_resume is not None)
+    run_cell(donor, 0, donor_resume)
 
     # ----------------------------------------------- the hand-off, then the recipient
     handed_off = donor.outcome == "complete" or (
         donor.outcome == "scientific_gap" and donor.reason is H1ExclusionReason.NONFINITE_ENDPOINT
     )
-    if handed_off:
+    if handed_off and recipient_resume is not None:
+        # C-L4c-2 case 3: the recipient resumes from its OWN receipt (never the hand-off receipt:
+        # R3); its root came with the inputs, the donor's root too, and no hand-off is made again
+        if cells is not None:
+            cells.focus(recipient.token)
+        run_cell(recipient, 1, recipient_resume)
+    elif handed_off:
         if cells is not None:
             cells.focus(recipient.token)
         donor_root = root / "run" / donor.token

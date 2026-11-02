@@ -1,4 +1,22 @@
-"""Immutable output snapshots for checkpoint recovery and external byte custody."""
+"""Immutable output snapshots for checkpoint recovery and external byte custody.
+
+FOR-1694 (h1-l4c): CAPTURE BY REFERENCE. A pair's ``capture/<cell>/<file>`` is, for most files, a
+byte-identical copy of a ``run/<cell>/<file>`` the pod already published (and verified) under the
+same request, and publishing that copy as a second object is what made a 1000-step workload end
+``execution_defect`` at ``final_snapshot`` (measured 2026-10-28, quote v4: three copies of
+1,149,203,227 bytes, one ``ReadTimeoutError`` three retries did not recover, then a failure
+snapshot that re-published 62 files for 1,382.7 s). A PAIR's snapshot is therefore
+``h-worker-snapshot-v2``: an entry whose path is ``capture/<cell>/<file>`` and whose bytes equal
+the snapshot's own ``run/<cell>/<file>`` entry (same ``sha256`` and ``size_bytes``) is a REFERENCE
+record, ``{path, key, sha256, size_bytes, reference}``, where ``reference`` is the run path and
+``key`` is the REFERENCED object's key; no second body is ever PUT. A reference names a
+non-reference entry of the same marker, for the same cell and file: no chains, no cross-cell and
+no cross-prefix references. ``artifact_bytes`` and ``max_total_bytes`` count a reference exactly as
+v1 counted the copy, so no budget loosens. The host (:func:`materialize_worker_snapshot`) reads the
+referenced object ONCE and writes the same verified bytes to both paths. Single-profile requests
+keep writing v1 byte for byte; the host admits v1 for both request kinds and v2 only for a pair,
+and refuses a v2 marker on a single-profile request by name.
+"""
 
 import json
 import re
@@ -23,11 +41,17 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
     D1TrainerMailboxObjectPort,
 )
 from entropic_substrate.ladder.run.worker_log_events import SNAPSHOT_END, SNAPSHOT_START, render
-from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, PairProbeRequest
+from entropic_substrate.ladder.run.worker_request import (
+    AnyProbeRequest,
+    PairProbeRequest,
+)
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
     publish_verified_object,
 )
+
+SNAPSHOT_SCHEMA_V1 = "h-worker-snapshot-v1"
+SNAPSHOT_SCHEMA_V2 = "h-worker-snapshot-v2"
 
 # A path's ledger entry: (sha256, size_bytes) as confirmed by that key's own
 # verification read the first time this worker process published it.
@@ -75,6 +99,18 @@ def _path(value: object, request: AnyProbeRequest | None = None) -> str:
     return name
 
 
+def reference_path(path: str) -> str | None:
+    """The ``run/<cell>/<file>`` path a pair's ``capture/<cell>/<file>`` may reference, or ``None``.
+
+    Only a FLAT capture file (three parts) can reference: ``capture/<cell>/source/...`` has no
+    run twin by construction, and a run, verification or worker path never references anything.
+    """
+    parts = PurePosixPath(path).parts
+    if len(parts) == 3 and parts[0] == "capture":
+        return f"run/{parts[1]}/{parts[2]}"
+    return None
+
+
 def publish_worker_snapshot(
     objects: D1TrainerMailboxObjectPort,
     request: AnyProbeRequest,
@@ -111,6 +147,7 @@ def publish_worker_snapshot(
         raise ValueError("worker snapshot object budget exceeded")
     records: list[dict[str, object]] = []
     total = 0
+    pair = isinstance(request, PairProbeRequest)
     for path in sorted(paths):
         path = _path(path, request)
         _, payload, digest = read_d1_artifact_bytes(
@@ -131,8 +168,21 @@ def publish_worker_snapshot(
                 "key": f"{request.prefix}/outputs/{path}",
             }
         )
+    if pair:
+        # capture by reference: a capture copy equal to the snapshot's own run twin is a reference
+        by_path = {str(record["path"]): record for record in records}
+        for record in records:
+            twin = reference_path(str(record["path"]))
+            target = None if twin is None else by_path.get(twin)
+            if (
+                target is not None
+                and target["sha256"] == record["sha256"]
+                and target["size_bytes"] == record["size_bytes"]
+            ):
+                record["key"] = target["key"]
+                record["reference"] = twin
     manifest = {
-        "schema": "h-worker-snapshot-v1",
+        "schema": SNAPSHOT_SCHEMA_V2 if pair else SNAPSHOT_SCHEMA_V1,
         "authority": "byte_custody_only",
         "request_sha256": request.digest,
         "name": name,
@@ -150,6 +200,9 @@ def publish_worker_snapshot(
         render(SNAPSHOT_START, name=name, files=len(records))
     )
     for record in records:
+        if "reference" in record:
+            # a reference is never a second upload: its bytes are the run twin's, published once
+            continue
         path = _path(record["path"], request)
         key = f"{request.prefix}/outputs/{path}"
         if ledger is not None and key in ledger:
@@ -204,8 +257,14 @@ def materialize_worker_snapshot(
         "schema authority request_sha256 name files artifact_bytes artifact_count",
     )
     name, files = row["name"], row["files"]
+    pair = isinstance(request, PairProbeRequest)
+    if row["schema"] == SNAPSHOT_SCHEMA_V2 and not pair:
+        raise ValueError(
+            f"worker snapshot schema {SNAPSHOT_SCHEMA_V2!r} carries a pair's references; "
+            f"a single-profile request admits {SNAPSHOT_SCHEMA_V1}"
+        )
     if (
-        row["schema"] != "h-worker-snapshot-v1"
+        row["schema"] not in (SNAPSHOT_SCHEMA_V1, SNAPSHOT_SCHEMA_V2)
         or row["authority"] != "byte_custody_only"
         or row["request_sha256"] != request.digest
         or type(name) is not str
@@ -220,22 +279,46 @@ def materialize_worker_snapshot(
     limits = request.limits
     names: list[str] = []
     identities: list[D1TrainerMailboxObjectIdentity] = []
+    references: dict[str, str] = {}  # reference path -> the run path whose bytes it shares
     for item in files:
-        entry = recovery_record(item, "path key sha256 size_bytes")
+        is_reference = (
+            row["schema"] == SNAPSHOT_SCHEMA_V2 and type(item) is dict and "reference" in item
+        )
+        entry = recovery_record(
+            item,
+            "path key sha256 size_bytes reference"
+            if is_reference
+            else "path key sha256 size_bytes",
+        )
         path = _path(entry["path"], request)
         size, digest = entry["size_bytes"], entry["sha256"]
+        expected_key = f"{request.prefix}/outputs/{path}"
+        if is_reference:
+            twin = reference_path(path)
+            if entry["reference"] != twin or twin is None:
+                raise ValueError("worker snapshot reference names another cell or file")
+            expected_key = f"{request.prefix}/outputs/{twin}"
+            references[path] = twin
         if (
             type(size) is not int
             or not 1 <= size <= limits.max_object_bytes
             or type(digest) is not str
-            or entry["key"] != f"{request.prefix}/outputs/{path}"
+            or entry["key"] != expected_key
         ):
             raise ValueError("worker snapshot entry budget or identity mismatch")
         ContentHash("sha256", digest)
         names.append(path)
-        identities.append(
-            D1TrainerMailboxObjectIdentity(f"{request.prefix}/outputs/{path}", size, digest)
-        )
+        identities.append(D1TrainerMailboxObjectIdentity(expected_key, size, digest))
+    by_name = dict(zip(names, identities, strict=True))
+    for path, twin in references.items():
+        # a reference names an entry of THIS marker with the same bytes; ``reference_path`` only
+        # ever yields a run path, so the entry it names is never itself a reference (no chains)
+        target = by_name.get(twin)
+        if target is None or (target.sha256, target.size_bytes) != (
+            by_name[path].sha256,
+            by_name[path].size_bytes,
+        ):
+            raise ValueError("worker snapshot reference does not name an equal run entry")
     total = sum(item.size_bytes for item in identities)
     if (
         names != sorted(set(names))
@@ -255,10 +338,17 @@ def materialize_worker_snapshot(
         {PurePosixPath(path).parent for path in names}, key=lambda p: len(p.parts)
     ):
         (target / directory).mkdir(parents=True, exist_ok=True)
+    by_twin: dict[str, list[str]] = {}
+    for path, twin in references.items():
+        by_twin.setdefault(twin, []).append(path)
     for path, expected in zip(names, identities, strict=True):
+        if path in references:
+            continue  # written below, from the ONE verified read of the object it references
         current = objects.read(expected.key)
         if type(current) is not D1TrainerMailboxObjectRead or current.identity != expected:
             raise ValueError("worker snapshot object identity mismatch")
         publish_d1_atomic_bytes(target, path, current.payload, label="worker recovered output")
+        for copy in by_twin.get(path, ()):
+            publish_d1_atomic_bytes(target, copy, current.payload, label="worker recovered output")
     publish_d1_atomic_bytes(target, "snapshot.json", found.payload, label="worker snapshot marker")
     return row

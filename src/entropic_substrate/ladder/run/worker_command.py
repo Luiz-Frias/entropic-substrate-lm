@@ -42,9 +42,7 @@ from entropic_substrate.ladder.run.worker_request import (
     RESULT_SCHEMA_V2,
     AnyProbeRequest,
     PairProbeRequest,
-    ProbeRequest,
     parse_probe_request,
-    refuse_pair,
 )
 from entropic_substrate.ladder.run.worker_transport import (
     publish_probe_request,
@@ -397,10 +395,9 @@ def run_worker_command(
             request = parse_probe_request(payload, max_bytes=args.max_object_bytes)
             if args.command == "publish":
                 stage = "request_publish"
-                if type(request) is not ProbeRequest:
-                    # a pair's launch and publication belong to FOR-1694; refused by name
-                    # BEFORE any field access or side effect
-                    refuse_pair("worker_command publish")
+                # FOR-1694: a pair is published like any request (``publish_probe_request`` takes
+                # both kinds and is the only publisher: without it no pair passes the allocation's
+                # published-request byte check)
                 if (
                     request.limits.max_object_bytes > args.max_object_bytes
                     or request.limits.max_objects > args.max_objects

@@ -324,7 +324,11 @@ def test_one_sealed_authority_covers_the_pair_and_binds_the_digest() -> None:
         ("pair_id", "pair identifier is not the identity of its two cells"),
         ("block_id_format", "block and pair identifiers are 64 lowercase hex digests"),
         ("binding_seed", "pair block binding differs from its cells' source or seed"),
-        ("resume", "pair resume is not admitted before per-cell resume lands"),
+        # RETRACTED 2026-11-02 (FOR-1694, C-L4c-2): this pinned the L4b refusal "pair resume is
+        # not admitted before per-cell resume lands". A resume is admitted now, but only as a
+        # progress receipt among the inputs under its own cell's run/<cell>/; this payload names
+        # one that is no input at all, so it is refused by the new rule
+        ("resume", "a pair cell's resume must bind its own training receipt in run/<cell>/"),
     ],
 )
 def test_the_pair_reader_refuses_every_mandate_and_binding_out_of_family(
@@ -1425,7 +1429,7 @@ def test_pair_outputs_are_admitted_only_under_a_declared_cell_token(pair: Pair) 
         worker_artifact(ref, "run")  # the v1/v2 two-part rule and its message are unchanged
 
 
-def test_a_pair_is_refused_by_name_at_the_publish_verb_and_by_the_launch_class_gate(
+def test_a_pair_is_published_by_the_verb_and_a_local_pair_is_still_no_launch(
     tmp_path: Path, pair: Pair
 ) -> None:
     from tests.test_h_probe_launch import launch
@@ -1436,6 +1440,7 @@ def test_a_pair_is_refused_by_name_at_the_publish_verb_and_by_the_launch_class_g
     request = pair_request(pair)
     (tmp_path / "pair-request.json").write_bytes(request.payload)
     output, error = StringIO(), StringIO()
+    store = _ObjectStore()
     status = run_worker_command(
         [
             "publish",
@@ -1451,12 +1456,18 @@ def test_a_pair_is_refused_by_name_at_the_publish_verb_and_by_the_launch_class_g
             "pair-request.json",
         ],
         environ={},
-        objects=_ObjectStore(),
+        objects=store,
         stdout=output,
         stderr=error,
     )
-    assert status == 2 and output.getvalue() == ""
-    assert json.loads(error.getvalue())["stage"] == "request_publish"
+    # RETRACTED 2026-11-02 (FOR-1694): this pinned "refused by name at the publish verb" (stage
+    # request_publish, exit 2). The verb publishes a pair now: the request marker and its inputs
+    # reach the port, and the response names the marker the allocation's byte check compares
+    assert status == 0, error.getvalue()
+    response = json.loads(output.getvalue())
+    assert response["status"] == "request_published"
+    assert response["object"]["key"] == f"{request.prefix}/request.json"
+    assert store.values[f"{request.prefix}/request.json"] == request.payload
     # the launch (RETRACTED 2026-11-02, FOR-1694: a pair launch is carried now, so the old
     # "does not carry a pair request" refusal is gone): this local_tiny pair is still no launch,
     # because the class gate admits only remote tiny and scientific classes at the launch, and a

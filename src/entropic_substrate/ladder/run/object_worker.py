@@ -912,7 +912,14 @@ def run_object_worker(
                 max_bytes=maximum,
             )
             snapshot = publish_worker_snapshot(
-                objects, request, root, ("worker/start.json",), name="started"
+                objects,
+                request,
+                root,
+                ("worker/start.json",),
+                name="started",
+                # FOR-1694: a pair's later snapshots re-list worker/start.json; ledgering it here
+                # keeps the failure snapshot from re-PUTting what the run already published
+                ledger=ledger if pair is not None else None,
             )
             _event(
                 objects,
@@ -1089,6 +1096,9 @@ def run_object_worker(
                     root,
                     _paths(root, ("run", "capture", "verification", "worker")),
                     name="failure",
+                    # FOR-1694: a pair's failure snapshot must not re-PUT what this run already
+                    # published and verified (measured: 62 files re-published for 1,382.7 s)
+                    ledger=ledger if pair is not None else None,
                 )
             except Exception as delivery_error:
                 try:

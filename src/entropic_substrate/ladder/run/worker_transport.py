@@ -31,7 +31,11 @@ from entropic_substrate.ladder.run.worker_log_events import (
     PUBLISH_VERIFY_READ,
     render,
 )
-from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, parse_probe_request
+from entropic_substrate.ladder.run.worker_request import (
+    AnyProbeRequest,
+    PairProbeRequest,
+    parse_probe_request,
+)
 
 
 @dataclass
@@ -282,6 +286,11 @@ def materialize_probe_request(
         raise ValueError("worker materialization requires an empty workspace")
     (target / "source").mkdir()
     (target / "run").mkdir()
+    if isinstance(request, PairProbeRequest):
+        # FOR-1694: a resuming cell's inputs live under run/<cell>/ (its own root)
+        for cell in request.cells:
+            if cell.resume is not None:
+                (target / "run" / cell.token).mkdir()
     total = marker.size_bytes
     for artifact in request.inputs:
         key = f"{request.prefix}/inputs/{artifact.path}"
