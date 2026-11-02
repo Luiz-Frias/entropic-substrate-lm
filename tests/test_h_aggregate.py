@@ -1170,6 +1170,15 @@ class TestScientificallyStoppedStream:
                 },
             ),
             (
+                "warm-up-final seal present beside fewer committed rows",
+                {
+                    "committed": 1,
+                    "extra_log": (
+                        _log("checkpoint.seal", phase="codec_warmup", step=2, global_step=2),
+                    ),
+                },
+            ),
+            (
                 "evaluation.start present",
                 {"extra_log": (_log("evaluation.start", global_step=3),)},
             ),

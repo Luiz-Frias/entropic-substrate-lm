@@ -6,6 +6,13 @@ scientific binding (one sealed authority for both cells) cannot execute on a CPU
 profile requires CUDA, and no test patches admission to pretend otherwise. It is proven where
 the real predicates live: the request parse and digest, the admission tables, and the receipt
 binding.
+
+Scoped 2026-11-02 (house rule 4): this module pins the smoke arm of the receipt binding only (an
+authority digest on a smoke receipt is refused). The scientific arm, the digest the binding
+carries, and the threading of the request's one authority into the pair path are pinned in
+``tests/test_h_pair_request_pins.py`` (a pure-function pin, a pilot-profile reader pin with only
+the seal walk stood in, and a structural pin on the call shapes); the executed run under an
+authority belongs to the live pod wave, since a CPU cannot construct a scientific profile.
 """
 
 import json
