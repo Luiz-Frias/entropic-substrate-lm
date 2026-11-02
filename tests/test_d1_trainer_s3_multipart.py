@@ -53,6 +53,7 @@ class _MultipartClient(_S3Client):
         self.upload_keys[upload_id] = str(kwargs["Key"])
         metadata = kwargs["Metadata"]
         assert isinstance(metadata, dict)
+        assert kwargs["ChecksumAlgorithm"] == "SHA256"  # matches the per-part ChecksumSHA256
         self.upload_metadata[upload_id] = str(metadata["sha256"])
         return {"UploadId": upload_id}
 

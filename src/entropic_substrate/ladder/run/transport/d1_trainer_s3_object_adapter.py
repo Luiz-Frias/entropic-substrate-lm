@@ -395,7 +395,12 @@ class Boto3D1TrainerMailboxObjectAdapter:
             return expected
         try:
             started = client.create_multipart_upload(
-                Bucket=self._bucket, Key=key, Metadata={"sha256": expected.sha256}
+                Bucket=self._bucket,
+                Key=key,
+                Metadata={"sha256": expected.sha256},
+                # declared here because every part carries a ChecksumSHA256 (S3 requires the
+                # upload's algorithm to match its parts)
+                ChecksumAlgorithm="SHA256",
             )
         except Exception as cause:
             raise _error("publish", "provider_failure") from cause

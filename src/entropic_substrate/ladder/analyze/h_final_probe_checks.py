@@ -389,7 +389,7 @@ def check_capture(
             continue
         digest = start.get("request_sha256")
         identity = start.get("profile_identity")
-        is_pair = digest in cells
+        is_pair = type(digest) is str and digest in cells  # a non-text digest is no pair's
         if digest not in request_digests:
             failures.append(
                 f"{path}: run_start.request_sha256 {digest!r} is not a declared request"

@@ -859,3 +859,22 @@ def test_the_k3_script_reads_a_pairs_cells_from_its_parsed_request_file(
     single.write_bytes(single_request().payload)
     with pytest.raises(ValueError, match="names a single-profile request"):
         module.CHECKS["k3"]({"metrics": [], "request_digests": [], "pair_requests": [str(single)]})
+
+
+def test_a_non_text_request_digest_in_a_metrics_file_fails_k3_instead_of_raising(
+    tmp_path: Path,
+) -> None:
+    """``run_start.request_sha256`` is captured JSON, so it may be any value; a list or an object
+    is unhashable and must reach the check's own refusal, never a ``TypeError`` from the pair
+    lookup (found by the local CodeRabbit round, verified here)."""
+    from tests.test_h_aggregate import IDENTITY_A, REQUEST_A, write_h_run
+
+    from entropic_substrate.ladder.analyze.h_final_probe_checks import check_capture
+
+    def poison(rows: list[dict[str, Any]]) -> None:
+        rows[0]["request_sha256"] = ["not", "text"]
+
+    bad = write_h_run(tmp_path, IDENTITY_A, REQUEST_A, tag="a", mutate_metrics=poison)
+    cells = {REQUEST_A: (IDENTITY_A, "9" * 64)}
+    result = check_capture([bad[0]], [REQUEST_A], cells)
+    assert result.verdict == "FAIL" or any("request_sha256" in r for r in result.reasons)
