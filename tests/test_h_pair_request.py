@@ -2333,3 +2333,25 @@ def test_the_failure_arm_refuses_a_bad_result_v2_before_it_publishes_the_snapsho
     assert failure["delivery_error_type"] == "ValueError"
     assert failure["snapshot"] is None
     assert f"{request.prefix}/snapshots/failure.json" not in objects.values  # nothing published
+
+
+@pytest.mark.parametrize("free_reason", ["not a member of the closed set", ""])
+def test_an_excluded_verdict_whose_reason_is_a_free_string_is_refused_by_the_enum_member_guard(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, free_reason: str
+) -> None:
+    """Sacred invariant (DH-45/DH-46/DH-47): the recorded exclusion reason is an H1ExclusionReason
+    member, never a free string. The membership guard in parse_pair_result must name the enum, so
+    removing it changes the refusal (a status/verdict message alone would also refuse, but not
+    by naming the closed set)."""
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run.worker_request import parse_pair_result
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))
+    code, error, workspace, _ = run_command(tmp_path, objects, marker)
+    assert code == 0, error
+    result = json.loads((workspace / "worker/result.json").read_text())
+    assert result["verdict"]["reason"] == "missing_endpoint"
+    forged = result | {"verdict": result["verdict"] | {"reason": free_reason}}
+    with pytest.raises(ValueError, match="H1ExclusionReason"):
+        parse_pair_result(forged, request)

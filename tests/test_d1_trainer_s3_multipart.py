@@ -153,13 +153,16 @@ def test_the_published_object_reads_back_through_the_ordinary_read_and_head() ->
     assert [i.key for i in adapter(client).list("h-probes/v1/n/")] == [KEY]
 
 
-def test_a_part_whose_digest_disagrees_is_refused_and_the_upload_is_aborted() -> None:
-    client = _MultipartClient(corrupt_part=3)
+@pytest.mark.parametrize("bad_part", range(1, 8))  # every position: first, middle and last part
+def test_a_part_whose_digest_disagrees_is_refused_and_the_upload_is_aborted(bad_part: int) -> None:
+    client = _MultipartClient(corrupt_part=bad_part)
     with pytest.raises(D1TrainerS3ObjectError) as raised:
         publish(client)
     assert raised.value.code == "part_digest" and raised.value.operation == "publish"
     assert client.calls[-1] == "abort" and "complete" not in client.calls
-    assert "part-4" not in client.calls  # the first disagreeing part stops the upload
+    if bad_part < 7:
+        # the first disagreeing part stops the upload: no later part is ever sent
+        assert f"part-{bad_part + 1}" not in client.calls
     assert KEY not in client.values
 
 

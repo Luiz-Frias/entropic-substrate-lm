@@ -351,17 +351,21 @@ def test_a_paused_or_stopped_pair_hands_back_each_cells_resume_receipt(
     assert (tmp_path / "collected" / recipient["receipt"]["path"]).is_file()
 
 
+@pytest.mark.parametrize("missing_cell", ["donor", "recipient"])
 def test_a_collection_of_one_cell_missing_is_refused_not_collected(
-    tmp_path: Path, pair: Pair
+    tmp_path: Path, pair: Pair, missing_cell: str
 ) -> None:
     """A completion that omits one cell's capture is not a complete pair: the host re-verifies each
-    cell against its own capture and verification roots."""
+    cell against its own capture and verification roots. Both cells are forged: the recipient
+    is the one a production-side flip must not be allowed to leave unverified."""
     request, objects, marker = pair_world(tmp_path, pair)
     status, error, _, _ = run_command(tmp_path, objects, marker)
     assert status == 0, error
     snapshot_key = f"{request.prefix}/snapshots/complete.json"
     manifest = json.loads(objects.values[snapshot_key])
-    manifest["files"] = [f for f in manifest["files"] if not f["path"].startswith("capture/donor/")]
+    manifest["files"] = [
+        f for f in manifest["files"] if not f["path"].startswith(f"capture/{missing_cell}/")
+    ]
     manifest["artifact_count"] = len(manifest["files"])
     manifest["artifact_bytes"] = sum(f["size_bytes"] for f in manifest["files"])
     forged = json.dumps(manifest, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
@@ -818,6 +822,10 @@ def test_a_missing_a_repeated_or_a_foreign_cell_fails_k3_naming_the_cell(
     missing = check_capture([files["donor"]], [request.digest], cells)
     assert missing.verdict == "FAIL"
     assert f"cell {request.recipient.identity} has no admissible capture" in missing.reasons[0]
+    # the donor missing is refused too: K3 requires BOTH cells, not only the recipient
+    donor_missing = check_capture([files["recipient"]], [request.digest], cells)
+    assert donor_missing.verdict == "FAIL"
+    assert f"cell {request.donor.identity} has no admissible capture" in donor_missing.reasons[0]
     repeated = check_capture(
         [files["donor"], files["recipient"], files["donor"]], [request.digest], cells
     )
