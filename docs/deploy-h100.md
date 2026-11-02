@@ -201,9 +201,10 @@ for a request that carries an authority, so a tracking URI alone enables its mir
 eight-key template is created at the image rebuild ceremony for the first image that carries
 this schema; none exists yet and no template id is recorded here until that ceremony measures one.
 `validate_template` compares the whole environment, so a nine-key smoke template is refused for a
-pilot and the converse. READ-OLD: a `h0-probe-launch-v3` (or v2) payload reads as the same class,
-re-renders its own bytes and never compares equal to a v4 launch; a pre-v4 payload carries no
-authority, so a v3 launch of a scientific request is refused. v1 stays refused.
+pilot and the converse. READ-OLD: a `h0-probe-launch-v3` payload reads as the same class, re-renders its own bytes and
+never compares equal to a v4 launch; a pre-v4 payload carries no authority, so a v3 launch of a
+scientific request is refused. v1 stays refused. (The v2 read this paragraph described was RETIRED
+by v5 below: a v2 payload is refused by name.)
 
 LAUNCH SCHEMA v5 (2026-11-02, FOR-1694, h1-l4c). One bump, three moves. (1) The launch SEALS its
 hourly price: a scientific launch declares `hourly_price_ceiling` (USD per hour) at construction, an

@@ -623,6 +623,9 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         authority = request.authority
         pair = isinstance(request, PairProbeRequest)
         declared_ceiling = row.pop("hourly_price_ceiling")
+        # Named re-derivation of the copied fields. Measured 2026-11-02 (probes P19a/P19b): the
+        # payload re-render below (``result.payload != payload``) refuses every tamper here too, so
+        # these three checks are redundant guards that keep the refusal's field named.
         if (
             row.pop("hours_cap") != (None if authority is None else authority.spend_cap.hours)
             or row.pop("pair") is not pair

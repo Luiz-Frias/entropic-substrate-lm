@@ -301,8 +301,9 @@ def admit_pair_collection(value: object, request: PairProbeRequest) -> dict[str,
     """Admit a pair's terminal collection: v2 only, bound to its request and its two cells.
 
     A collection presented as ``h-probe-terminal-collection-v1`` is refused BY NAME with the
-    minimum supported version (v1 names no cell, so it cannot describe a pair). Used by every
-    reader of a pair collection (the resume builder first).
+    minimum supported version (v1 names no cell, so it cannot describe a pair). At the committed
+    tip no src module imports it yet: the resume builder (``h_probe_resume``) adopts it when the
+    staged DG-A reader-member patch lands, and until then that builder still reads v1 only.
     """
     if type(value) is not dict:
         raise ValueError("a pair terminal collection must be an object")

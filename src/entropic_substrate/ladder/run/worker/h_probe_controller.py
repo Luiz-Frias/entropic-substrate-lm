@@ -96,6 +96,12 @@ class ProbeProviderAbsent(RuntimeError):
 # (training.py), so a real warm-up receipt never matched and the advisory progress tick turned
 # the refusal into ``read_failed``. The pair path carried the right alternation in a second
 # regex; there is now one rule for both.
+# Measured 2026-11-02 at 1e9e6fd3: the hand-off receipt ``handoff-codec_warmup-00000002-progress.json``
+# DOES match this pattern (old ``(warmup|prediction)`` form: False; this form: True), so the regex
+# alone never refuses a hand-off. The hand-off is kept from being a resume target by the resume
+# request gate in ``worker_request._check_resumes`` (refuses a ``handoff-`` name; that gate and its
+# pin ship in the staged DG-A patch, not on this tip) and by ``h_probe_resume``'s paused-status
+# check (R3). This regex is not the R3 guard.
 _RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 
 
