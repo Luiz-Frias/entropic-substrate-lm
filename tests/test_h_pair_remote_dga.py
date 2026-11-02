@@ -42,7 +42,9 @@ pytestmark = pytest.mark.unit
 MAX = 10_000_000
 # The digest of ``pair_request(make_pair(...))`` taken at the UNMODIFIED parent tip b429635e
 # (2026-11-02), before per-cell resume was admitted: admitting it changed no byte of a v3 payload.
-PARENT_TIP_PAIR_DIGEST = "59cb1ab7fc8d2fee4494a4a87c2d4a8d83343af8b20f8b889597310657e4fd3d"  # pragma: allowlist secret
+PARENT_TIP_PAIR_DIGEST = (
+    "59cb1ab7fc8d2fee4494a4a87c2d4a8d83343af8b20f8b889597310657e4fd3d"  # pragma: allowlist secret
+)
 
 
 @pytest.fixture
