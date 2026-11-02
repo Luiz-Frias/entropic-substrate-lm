@@ -1,5 +1,28 @@
 """Explicit H deployment choices for the pinned Runpod command boundary.
 
+LAUNCH SCHEMA v5 (FOR-1694, h1-l4c, C-L4c-1, 2026-11-02). Three moves, one bump. (1) The
+launch SEALS its price: a scientific launch declares ``hourly_price_ceiling`` at construction
+(an explicit field, no default, never derived from the authority: ``RunAuthority`` carries a
+USD cap and an hours cap and no hourly price, so ``usd / hours`` would quietly replace the
+ceiling the invoker approved with a looser number nobody typed) and the existing product rule
+``ceiling * watchdog_timeout_seconds / 3600 <= spend_cap.usd`` is re-checked at construction
+and at parse. The manifest also records ``hours_cap``, copied from ``spend_cap.hours`` and
+re-derived at parse. A smoke launch carries explicit ``null`` for both. ``h_probe_command``
+and the controller read the ceiling from here: a ``--max-hourly-rate`` flag (or controller
+argument) that is present and not EXACTLY equal to the sealed value is refused by name, before
+any workspace or provider call; a smoke, v4 or v3 launch keeps the flag with its v3 semantics.
+(2) The launch carries a codec-sharing PAIR (``PairProbeRequest``): the manifest records the
+pair flag and both cell identities (donor first), re-derived from the embedded request at
+parse; a pair under a v3 or v4 manifest is refused by name, because pairs exist only in v5.
+(3) The v2 read retires, as the v3 section below promised at the next bump: a
+``h0-probe-launch-v2`` payload is refused by name and the refusal names
+``h0-probe-launch-v3`` as the minimum supported version. v4 and v3 still read as the same
+class (every H0 launch file sealed on R2 is v3), re-render their own bytes and never compare
+equal to a v5 launch. Every launch built in-process renders v5, so the digest, the pod name
+(``<stage>-<class>-<digest prefix>``, the rule is unchanged) and the workspace of a freshly
+built launch moved; the frozen launch fixtures in ``tests/test_h_probe_launch.py`` were
+re-frozen once with the old digests retracted in the test docstring (house rule 4).
+
 LAUNCH SCHEMA v4 (rung B, operator ruling 2026-10-27, "option B"). A launch is either
 a smoke launch (``remote_tiny`` at H0, exactly the v3 shape and rules) or a scientific
 launch (``pilot``/``confirmatory`` at H1-H5) whose request carries a sealed
@@ -16,8 +39,8 @@ is a follow-up, not part of this schema move.
 READ-OLD v3 (documentation of an in-tree parse, NOT a reader-identity bump): a
 ``h0-probe-launch-v3`` payload reads as the same class with
 ``manifest_schema == LAUNCH_SCHEMA_V3``, re-renders its own bytes, and never compares
-equal to a v4 launch; a pre-v4 payload carries no run authority, so a v3 (or v2)
-launch of a scientific request is refused. Every launch built in-process renders v4.
+equal to a v4 or v5 launch; a pre-v4 payload carries no run authority, so a v3 launch of a
+scientific request is refused. (v4 was the in-process rendering until v5.)
 
 LAUNCH SCHEMA v3 (FOR-1647, DN-OBS-TEMPLATE, operator 2026-10-13). The pod
 environment is a seven-key BASE (four R2/MLflow secret references, the S3
@@ -30,14 +53,10 @@ its parameters, so ``parse_probe_launch`` rebuilds an identical environment.
 The H0 wave launches with ``named_experiment("h-series")`` and
 ``system_metrics()``: nine keys.
 
-READ-OLD (documentation of an in-tree parse, NOT a reader-identity bump):
-``parse_probe_launch`` reads a ``h0-probe-launch-v2`` payload as the same
-class with ``manifest_schema == "h0-probe-launch-v2"`` and no extensions. A
-v2-read launch re-renders v2: its payload, digest, pod name and workspace are
-the bytes it was read from, and it never compares equal to a v3 launch. Every
-launch built in-process renders v3 (write-new). v1 stays refused. The v2 read
-window retires at the next launch-schema bump; this module implements no
-retirement today.
+READ-OLD (RETIRED by v5, FOR-1694): ``parse_probe_launch`` used to read a
+``h0-probe-launch-v2`` payload as the same class with no extensions. That window closed at the
+v5 bump it was promised for: a v2 payload is now refused by name, naming
+``h0-probe-launch-v3`` as the minimum supported version. v1 stays refused.
 """
 
 import hashlib
@@ -53,10 +72,11 @@ from typing import cast
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.worker_request import (
+    AnyProbeRequest,
     PairProbeRequest,
     ProbeRequest,
     parse_probe_request,
-    refuse_pair,
+    refuse_version,
 )
 
 RUNPODCTL_VERSION = "runpodctl 3.0.1-551d6a4"
@@ -68,7 +88,12 @@ RUNPODCTL_SHA256 = (
 LAUNCH_SCHEMA_V2 = "h0-probe-launch-v2"
 LAUNCH_SCHEMA_V3 = "h0-probe-launch-v3"
 LAUNCH_SCHEMA_V4 = "h-probe-launch-v4"
-_SCHEMAS = (LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3, LAUNCH_SCHEMA_V4)
+LAUNCH_SCHEMA_V5 = "h-probe-launch-v5"
+# v2 is NOT admitted: its read retired at the v5 bump (``parse_probe_launch`` refuses it by name).
+_SCHEMAS = (LAUNCH_SCHEMA_V3, LAUNCH_SCHEMA_V4, LAUNCH_SCHEMA_V5)
+# The manifest keys only a v5 launch carries; ``manifest`` and ``parse_probe_launch`` add and
+# require them by schema, so a v3 or v4 payload re-renders its own bytes.
+_V5_KEYS = "hourly_price_ceiling hours_cap pair cells"
 # The one environment key a scientific launch does not carry.
 _TINY_OPT_IN = "ENTROPIC_MLFLOW_TINY"
 # The H lane's experiment. Exactly one definition in the tree: the wave monitor
@@ -177,7 +202,7 @@ class H0ProbeLaunch:
     remains authoritative custody; this tiny lane does not attach shared volumes.
     """
 
-    request: ProbeRequest
+    request: AnyProbeRequest
     template_id: str
     registry_auth_id: str
     gpu_type_id: str
@@ -193,22 +218,31 @@ class H0ProbeLaunch:
     controller_timeout_seconds: int
     watchdog_timeout_seconds: int
     cost_guard: str
-    # Schema state, not a subclass: a launch read from v2 is the same class with
-    # ``manifest_schema == LAUNCH_SCHEMA_V2``. Neither name may equal one of the six
+    # FOR-1694: the SEALED hourly price ceiling (USD per hour). ``None`` for a smoke launch
+    # and for every pre-v5 schema; a v5 scientific launch declares it explicitly, with no
+    # default and no derivation. Excluded from ``_BASE_FIELDS`` (a v5-only manifest key).
+    hourly_price_ceiling: float | None = None
+    # Schema state, not a subclass: a launch read from v3 is the same class with
+    # ``manifest_schema == LAUNCH_SCHEMA_V3``. Neither name may equal one of the six
     # fixed manifest keys, because ``manifest`` and ``parse_probe_launch`` both
     # iterate ``fields()``.
     extensions: tuple[LaunchExtension, ...] = ()
-    manifest_schema: str = LAUNCH_SCHEMA_V4
+    manifest_schema: str = LAUNCH_SCHEMA_V5
 
     def __post_init__(self) -> None:
-        if isinstance(self.request, PairProbeRequest):
-            refuse_pair("h-probe-launch")
-        if type(self.request) is not ProbeRequest:
+        if type(self.request) is not ProbeRequest and type(self.request) is not PairProbeRequest:
             raise TypeError("H0 deployment requires a validated worker request")
         request = parse_probe_request(self.request.payload, max_bytes=len(self.request.payload))
-        if type(request) is not ProbeRequest:
-            refuse_pair("h-probe-launch")
-        run_class, stage = request.profile.run_class, request.profile.stage
+        if type(request) is not type(self.request):
+            raise ValueError("H0 deployment request changed kind on re-parse")
+        if self.manifest_schema not in _SCHEMAS:
+            raise ValueError("launch manifest schema is not admitted")
+        if isinstance(request, PairProbeRequest) and self.manifest_schema != LAUNCH_SCHEMA_V5:
+            raise ValueError(
+                f"a pair launch requires {LAUNCH_SCHEMA_V5}; {self.manifest_schema} carries no pair"
+            )
+        profile = request.donor if isinstance(request, PairProbeRequest) else request.profile
+        run_class, stage = profile.run_class, profile.stage
         authority = request.authority
         refusal = RUN_ADMISSION.authority_refusal(run_class, stage, authority)
         if refusal is not None:
@@ -269,10 +303,9 @@ class H0ProbeLaunch:
                 )
         if len(set(secret_names)) != len(secret_names):
             raise ValueError("provider secret-reference names must be distinct")
-        if self.manifest_schema not in _SCHEMAS:
-            raise ValueError("launch manifest schema is not admitted")
-        if self.manifest_schema != LAUNCH_SCHEMA_V4 and authority is not None:
+        if self.manifest_schema == LAUNCH_SCHEMA_V3 and authority is not None:
             raise ValueError("a pre-v4 launch carries no run authority")
+        self._check_sealed_ceiling()
         if type(self.extensions) is not tuple or any(
             type(item) is not LaunchExtension for item in self.extensions
         ):
@@ -282,8 +315,35 @@ class H0ProbeLaunch:
             set(declared)
         ) != len(declared):
             raise ValueError("launch extensions must be unique and in registry order")
-        if self.manifest_schema == LAUNCH_SCHEMA_V2 and self.extensions:
-            raise ValueError("a v2 launch declares no extensions")
+
+    def _check_sealed_ceiling(self) -> None:
+        """The sealed ceiling is explicit exactly for a v5 scientific launch, and is bounded by the
+        authority's USD cap through the SAME product rule the flag was always held to."""
+        authority = self.request.authority
+        ceiling = self.hourly_price_ceiling
+        if self.manifest_schema != LAUNCH_SCHEMA_V5 or authority is None:
+            if ceiling is not None:
+                raise ValueError(
+                    "only a v5 scientific launch seals an hourly price ceiling"
+                    if self.manifest_schema == LAUNCH_SCHEMA_V5
+                    else "a pre-v5 launch seals no hourly price ceiling"
+                )
+            return
+        if ceiling is None:
+            raise ValueError("a v5 scientific launch must declare its hourly price ceiling")
+        self._require_within_cap(ceiling)
+
+    def _require_within_cap(self, ceiling: float) -> None:
+        authority = self.request.authority
+        if authority is None:
+            return
+        if (
+            type(ceiling) not in (int, float)
+            or not math.isfinite(ceiling)
+            or ceiling <= 0
+            or ceiling * self.watchdog_timeout_seconds / 3600 > authority.spend_cap.usd
+        ):
+            raise ValueError("hourly price ceiling over the watchdog window exceeds the spend cap")
 
     @property
     def manifest(self) -> dict[str, object]:
@@ -298,8 +358,18 @@ class H0ProbeLaunch:
             **{f.name: getattr(self, f.name) for f in fields(self) if f.name in _BASE_FIELDS},
             "request": self.request.manifest,
         }
-        if self.manifest_schema != LAUNCH_SCHEMA_V2:
-            row["extensions"] = [item.manifest for item in self.extensions]
+        row["extensions"] = [item.manifest for item in self.extensions]
+        if self.manifest_schema == LAUNCH_SCHEMA_V5:
+            authority = self.request.authority
+            pair = isinstance(self.request, PairProbeRequest)
+            row["hourly_price_ceiling"] = self.hourly_price_ceiling
+            row["hours_cap"] = None if authority is None else authority.spend_cap.hours
+            row["pair"] = pair
+            row["cells"] = (
+                [self.request.donor.identity, self.request.recipient.identity]
+                if isinstance(self.request, PairProbeRequest)
+                else None
+            )
         return row
 
     def require_hourly_rate_within_cap(self, max_hourly_rate: float) -> None:
@@ -311,17 +381,41 @@ class H0ProbeLaunch:
         scientific launch requires that bound inside ``spend_cap.usd`` (its hours are
         checked at construction). A smoke launch has no authority and no cap here: its
         ceiling is the invoker's approval alone, as before rung B.
+
+        FOR-1694: a launch that SEALS its ceiling (v5, scientific) admits no other value at
+        all: a ``max_hourly_rate`` that is not exactly the sealed one is refused by name, with
+        no tolerance, so the flag can never widen what the invoker sealed.
         """
-        authority = self.request.authority
-        if authority is None:
+        sealed = self.hourly_price_ceiling
+        if sealed is not None:
+            if (
+                type(max_hourly_rate) not in (int, float)
+                or isinstance(max_hourly_rate, bool)
+                or max_hourly_rate != sealed
+            ):
+                raise ValueError(
+                    "the hourly price ceiling differs from the launch's sealed hourly price ceiling"
+                )
             return
-        if (
-            type(max_hourly_rate) not in (int, float)
-            or not math.isfinite(max_hourly_rate)
-            or max_hourly_rate <= 0
-            or max_hourly_rate * self.watchdog_timeout_seconds / 3600 > authority.spend_cap.usd
-        ):
-            raise ValueError("hourly price ceiling over the watchdog window exceeds the spend cap")
+        self._require_within_cap(max_hourly_rate)
+
+    def hourly_ceiling(self, flag: float | None) -> float:
+        """The ONE ceiling the host enforces: the sealed one, or (unsealed launch) the flag.
+
+        A sealed launch accepts an absent flag and refuses a disagreeing one; an unsealed launch
+        (smoke, v4, v3) keeps the flag's v3 semantics and refuses its absence by name.
+        """
+        sealed = self.hourly_price_ceiling
+        if sealed is None:
+            if flag is None:
+                raise ValueError(
+                    "this launch seals no hourly price ceiling: --max-hourly-rate is required"
+                )
+            self.require_hourly_rate_within_cap(flag)
+            return flag
+        if flag is not None:
+            self.require_hourly_rate_within_cap(flag)
+        return sealed
 
     @property
     def payload(self) -> bytes:
@@ -479,16 +573,20 @@ class H0ProbeLaunch:
 _BASE_FIELDS = frozenset(
     f.name
     for f in fields(H0ProbeLaunch)
-    if f.name not in ("request", "extensions", "manifest_schema")
+    if f.name not in ("request", "extensions", "manifest_schema", "hourly_price_ceiling")
 )
 
 
 def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
     """Require every deployment choice and canonical bytes; never fill defaults.
 
-    Schema-first: the key list is chosen by the declared schema before any key is
-    checked. Only the v2 branch supplies an empty extension set (the documented
-    read-old); a v3 payload without ``extensions`` is refused.
+    Schema-first: the key list is chosen by the declared schema before any key is checked.
+    A ``h0-probe-launch-v2`` payload is refused by name (its read retired at v5) and a
+    schema outside the ladder keeps the generic scope refusal. v3 and v4 read as the same
+    class and re-render their own bytes; a v5 payload must carry its four v5 keys, and
+    every one that duplicates a value derivable from the embedded request or authority (the
+    hours cap, the pair flag, both cell identities) is re-derived and compared, so a copied
+    field is never a second, unsealed source of truth.
     """
     if (
         type(max_bytes) is not int
@@ -499,16 +597,16 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         raise ValueError("H0 deployment exceeds its explicit byte budget")
     decoded = json.loads(payload)
     schema = decoded.get("schema") if type(decoded) is dict else None
+    if schema == LAUNCH_SCHEMA_V2:
+        refuse_version(LAUNCH_SCHEMA_V2, LAUNCH_SCHEMA_V3, "launch")
     if schema not in _SCHEMAS:
         raise ValueError("H0 deployment scope or authority mismatch")
     names = " ".join(sorted(_BASE_FIELDS | {"request"}))
-    keys = f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names}"
-    row = recovery_record(
-        decoded, keys + ("" if schema == LAUNCH_SCHEMA_V2 else " extensions")
-    ).copy()
+    keys = f"schema scientific_authority spending_authority provider_deadline runpodctl_version runpodctl_sha256 {names} extensions"
+    if schema == LAUNCH_SCHEMA_V5:
+        keys += f" {_V5_KEYS}"
+    row = recovery_record(decoded, keys).copy()
     request = parse_probe_request(_json(row["request"]), max_bytes=max_bytes)
-    if type(request) is not ProbeRequest:
-        refuse_pair("h-probe-launch")
     row["request"] = request
     mandate = request.manifest["spending_authority"]
     if (
@@ -520,23 +618,42 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         or row.pop("runpodctl_sha256") != RUNPODCTL_SHA256
     ):
         raise ValueError("H0 deployment scope or authority mismatch")
+    ceiling: float | None = None
+    if schema == LAUNCH_SCHEMA_V5:
+        authority = request.authority
+        pair = isinstance(request, PairProbeRequest)
+        declared_ceiling = row.pop("hourly_price_ceiling")
+        if (
+            row.pop("hours_cap") != (None if authority is None else authority.spend_cap.hours)
+            or row.pop("pair") is not pair
+            or row.pop("cells")
+            != ([request.donor.identity, request.recipient.identity] if pair else None)
+        ):
+            raise ValueError("H0 deployment scope or authority mismatch")
+        if declared_ceiling is not None and (
+            type(declared_ceiling) not in (int, float) or isinstance(declared_ceiling, bool)
+        ):
+            raise ValueError("launch hourly price ceiling must be a number or null")
+        ceiling = cast(float | None, declared_ceiling)
     extensions: list[LaunchExtension] = []
-    if schema != LAUNCH_SCHEMA_V2:
-        declared = row.pop("extensions")
-        if type(declared) is not list:
-            raise ValueError("launch extensions must be a list")
-        for item in declared:
-            entry = recovery_record(item, "name params")
-            params = entry["params"]
-            if type(params) is not dict or any(type(v) is not str for v in params.values()):
-                raise ValueError("launch extension parameters must be text")
-            extensions.append(
-                LaunchExtension(
-                    cast(str, entry["name"]), tuple(cast(dict[str, str], params).items())
-                )
-            )
+    declared = row.pop("extensions")
+    if type(declared) is not list:
+        raise ValueError("launch extensions must be a list")
+    for item in declared:
+        entry = recovery_record(item, "name params")
+        params = entry["params"]
+        if type(params) is not dict or any(type(v) is not str for v in params.values()):
+            raise ValueError("launch extension parameters must be text")
+        extensions.append(
+            LaunchExtension(cast(str, entry["name"]), tuple(cast(dict[str, str], params).items()))
+        )
     factory = cast(Callable[..., H0ProbeLaunch], H0ProbeLaunch)
-    result = factory(**row, extensions=tuple(extensions), manifest_schema=cast(str, schema))
+    result = factory(
+        **row,
+        hourly_price_ceiling=ceiling,
+        extensions=tuple(extensions),
+        manifest_schema=cast(str, schema),
+    )
     if result.payload != payload:
         raise ValueError("H0 deployment must use canonical JSON")
     return result

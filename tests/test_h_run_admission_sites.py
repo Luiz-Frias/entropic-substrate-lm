@@ -422,6 +422,9 @@ def test_launch_gate(
     monkeypatch.setattr(h_probe_launch, "parse_probe_request", lambda *_, **__: probe)
     kwargs = {f.name: getattr(template, f.name) for f in fields(template)}
     kwargs["cost_guard"] = cost_guard
+    # FOR-1694 (launch v5): a scientific launch seals its hourly ceiling (a smoke one seals none);
+    # the gate verdicts under test are decided before that field is checked.
+    kwargs["hourly_price_ceiling"] = 0.01 if run_class in SCIENTIFIC else None
     observed = _outcome(lambda: h_probe_launch.H0ProbeLaunch(**kwargs))
     assert observed == _expected_launch(run_class, stage, kind, cost_guard)
 

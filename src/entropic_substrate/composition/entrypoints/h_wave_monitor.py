@@ -50,6 +50,14 @@ name filter and so can mix attempts from different launches. Compatibility bound
 launch-file arm finds only runs from a worker image built at or after this slice; a run
 from an older image carries no tag and is visible only through ``--run-name``.
 
+Pair cells (FOR-1694, h1-l4c): a launch that carries a codec-sharing PAIR yields one arm per
+(request, cell), not one per launch. Each cell is its own MLflow run named
+``h-worker-<cell profile identity>`` (``worker_command._PairCellSinks.begin``) and tagged
+``request_sha256``, ``block``, ``pair``, ``cell`` and ``run_authority``, so a pair arm's search
+adds ``tags.cell`` beside the shared ``request_sha256`` filter. A single-profile arm keeps its
+run name, total and filter string byte for byte (its run carries no cell tag, so a cell clause
+there would match nothing and read as "no progress" without saying why).
+
 Exit codes (three honest exits plus usage and interrupt): 0 every arm's run reached
 a terminal MLflow status; 3 the tick budget was exhausted with arms still running; 1
 failure (unusable launch, tracking URI or source); 2 usage; 130 interrupt. Nothing
@@ -89,6 +97,7 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     STATE_STEP,
     progress_fields,
 )
+from entropic_substrate.ladder.run.worker_request import PairProbeRequest
 
 __all__ = [
     "EXIT_EXHAUSTED",
@@ -119,6 +128,9 @@ _TERMINAL_RUN_STATUSES = frozenset({"FINISHED", "FAILED", "KILLED"})
 _RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}")
 # The worker's ``request_sha256`` tag: a sha256 hex digest (full-string match only).
 _REQUEST_SHA256 = re.compile(r"[0-9a-f]{64}")
+# A pair cell token (``ladder.run.worker_request.cell_token``: ``donor`` or ``recipient``); the
+# tag value is interpolated into the search filter, so it is matched as a safe token first.
+_CELL_TAG = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _SEARCH_RESULTS = 5
 # A response bound, not a retry or timeout: a hostile or broken server cannot make this
 # process buffer without limit.
@@ -143,7 +155,12 @@ class RunReading:
 
 class RunSource(Protocol):
     def latest(
-        self, experiment_name: str, run_name: str, *, request_sha256: str | None = None
+        self,
+        experiment_name: str,
+        run_name: str,
+        *,
+        request_sha256: str | None = None,
+        cell: str | None = None,
     ) -> RunReading: ...
 
 
@@ -217,15 +234,24 @@ class MlflowRestSource:
         return cast(dict[str, object], value)
 
     def latest(
-        self, experiment_name: str, run_name: str, *, request_sha256: str | None = None
+        self,
+        experiment_name: str,
+        run_name: str,
+        *,
+        request_sha256: str | None = None,
+        cell: str | None = None,
     ) -> RunReading:
         if _RUN_NAME.fullmatch(run_name) is None:
             raise ValueError("run name must be a safe identifier")
         if request_sha256 is not None and _REQUEST_SHA256.fullmatch(request_sha256) is None:
             raise ValueError("request digest must be 64 lowercase hex characters")
+        if cell is not None and (_CELL_TAG.fullmatch(cell) is None or request_sha256 is None):
+            raise ValueError("a pair cell is searched with a safe token and its request digest")
         run_filter = f"attributes.run_name = '{run_name}'"
         if request_sha256 is not None:
             run_filter += f" AND tags.request_sha256 = '{request_sha256}'"
+        if cell is not None:
+            run_filter += f" AND tags.cell = '{cell}'"
         try:
             experiment = self._call(
                 "GET",
@@ -313,6 +339,7 @@ class _Arm:
     run_name: str
     total: int | None
     request_sha256: str | None = None
+    cell: str | None = None  # a pair arm only (FOR-1694)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -340,6 +367,19 @@ def _arms(args: argparse.Namespace) -> list[_Arm]:
             path.parent, path.name, label="H0 launch", max_bytes=args.max_launch_bytes
         )
         request = parse_probe_launch(payload, max_bytes=args.max_launch_bytes).request
+        if isinstance(request, PairProbeRequest):
+            # one arm per (request, cell): each cell is its own run, named by its own identity
+            for cell in request.cells:
+                schedule = cell.profile.schedule
+                arms.append(
+                    _Arm(
+                        run_name_for(cell.profile.identity),
+                        schedule.warmup_steps + schedule.steps,
+                        request.digest,
+                        cell.token,
+                    )
+                )
+            continue
         schedule = request.profile.schedule
         arms.append(
             _Arm(
@@ -404,13 +444,19 @@ def run_wave_monitor(
             terminal = 0
             for arm in arms:
                 try:
-                    reading = (
-                        source.latest(H_SERIES_EXPERIMENT, arm.run_name)
-                        if arm.request_sha256 is None
-                        else source.latest(
+                    if arm.request_sha256 is None:
+                        reading = source.latest(H_SERIES_EXPERIMENT, arm.run_name)
+                    elif arm.cell is None:
+                        reading = source.latest(
                             H_SERIES_EXPERIMENT, arm.run_name, request_sha256=arm.request_sha256
                         )
-                    )
+                    else:
+                        reading = source.latest(
+                            H_SERIES_EXPERIMENT,
+                            arm.run_name,
+                            request_sha256=arm.request_sha256,
+                            cell=arm.cell,
+                        )
                 except Exception:
                     reading = RunReading(STATE_READ_FAILED)
                 fields = progress_fields(

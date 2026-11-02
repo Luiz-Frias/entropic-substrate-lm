@@ -1110,7 +1110,7 @@ def test_a_pair_marker_names_its_cell_and_is_validated_against_that_cells_schedu
         encode_stop_marker(pair_request(pair), target)
 
 
-def test_the_stop_verb_refuses_a_pair_and_a_cell_for_a_single_request_before_publishing(
+def test_the_stop_verb_refuses_a_pair_without_a_cell_and_a_cell_for_a_single_request_before_publishing(
     tmp_path: Path, pair: Pair
 ) -> None:
     from tests.test_sentence_worker_request import request as single_request
@@ -1125,7 +1125,10 @@ def test_the_stop_verb_refuses_a_pair_and_a_cell_for_a_single_request_before_pub
         "monotonic": lambda: float(next(ticks)),
         "sleep": lambda _: None,
     }
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    # RETRACTED 2026-11-02 (FOR-1694): this refused EVERY pair ("does not carry a pair request").
+    # A pair is stopped now, but only at a named cell and seal; without one it stays refused,
+    # by name, before anything is published.
+    with pytest.raises(ValueError, match="a pair stop names its cell: pass --at-cell"):
         request_stop(objects, pair_request(pair), target=("prediction", 2), **kwargs)
     with pytest.raises(ValueError, match="a cell is given for a single-profile request"):
         request_stop(objects, single_request(), target=("prediction", 2), cell="donor", **kwargs)
@@ -1422,7 +1425,7 @@ def test_pair_outputs_are_admitted_only_under_a_declared_cell_token(pair: Pair) 
         worker_artifact(ref, "run")  # the v1/v2 two-part rule and its message are unchanged
 
 
-def test_a_pair_is_refused_by_name_at_the_publish_verb_the_launch_and_the_collector(
+def test_a_pair_is_refused_by_name_at_the_publish_verb_and_by_the_launch_class_gate(
     tmp_path: Path, pair: Pair
 ) -> None:
     from tests.test_h_probe_launch import launch
@@ -1454,12 +1457,15 @@ def test_a_pair_is_refused_by_name_at_the_publish_verb_the_launch_and_the_collec
     )
     assert status == 2 and output.getvalue() == ""
     assert json.loads(error.getvalue())["stage"] == "request_publish"
-    # the launch: constructing one and parsing one that embeds a pair are both named refusals
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    # the launch (RETRACTED 2026-11-02, FOR-1694: a pair launch is carried now, so the old
+    # "does not carry a pair request" refusal is gone): this local_tiny pair is still no launch,
+    # because the class gate admits only remote tiny and scientific classes at the launch, and a
+    # v5 payload that embeds a pair under a manifest that says it carries none is a mismatch
+    with pytest.raises(ValueError, match="restricted to remote H0 tiny probes"):
         replace(launch(), request=request)
     row = json.loads(launch().payload)
     row["request"] = request.manifest
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    with pytest.raises(ValueError, match="scope or authority mismatch"):
         parse_probe_launch(reencode(row), max_bytes=1_000_000)
 
 

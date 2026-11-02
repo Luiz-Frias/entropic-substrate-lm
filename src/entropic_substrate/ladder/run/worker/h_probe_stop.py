@@ -38,11 +38,7 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_STOP_MARKER_UNCONFIRMED,
 )
 from entropic_substrate.ladder.run.worker_command import build_worker_objects
-from entropic_substrate.ladder.run.worker_request import (
-    AnyProbeRequest,
-    PairProbeRequest,
-    refuse_pair,
-)
+from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, PairProbeRequest
 from entropic_substrate.ladder.run.worker_transport import publish_verified_object
 
 
@@ -68,15 +64,30 @@ def request_stop(
     FOR-1693 (DH-44, D10): ``cell`` names the pair cell a stop lands on, and every refusal
     happens BEFORE ``publish_verified_object`` (the marker is write-once, so one that cannot
     then be confirmed would leave the run with no further stop): a cell given for a
-    single-profile request, and any pair request (``read_probe_event`` refuses a pair, and a pair's
-    launch, stop and collection are FOR-1694's). The worker's own poll honours a v2 marker; it is
-    proven through ``encode_stop_marker`` and an in-memory port, not through this verb.
+    single-profile request, and a pair given no cell.
+
+    FOR-1694 (h1-l4c): a pair is admitted when ``cell`` names one of its cells AND ``target``
+    names the seal ``(phase, step)`` on THAT cell's schedule; the marker published is the
+    write-once ``h-probe-stop-marker-v2`` ``{phase, step, cell}``, which stops exactly that cell
+    at exactly that seal (the other cell runs on), and the wait reads the pair's ``stopped``
+    event. A pair without ``--at-cell`` stays refused, by name.
     """
     if isinstance(request, PairProbeRequest):
-        refuse_pair("h_probe_stop")
-    if cell is not None:
+        if cell is None:
+            raise ValueError(
+                "a pair stop names its cell: pass --at-cell donor or --at-cell recipient "
+                "with --at-phase and --at-step"
+            )
+        if target is None:
+            raise ValueError(
+                "a pair stop names its seal: --at-cell needs --at-phase and --at-step "
+                "(a marker without a target would stop no cell)"
+            )
+        marker_payload = encode_stop_marker(request, (target[0], target[1], cell))
+    elif cell is not None:
         raise ValueError("a cell is given for a single-profile request; only a pair names a cell")
-    marker_payload = encode_stop_marker(request, target)
+    else:
+        marker_payload = encode_stop_marker(request, target)
     # A defensive self-check only; the object port is the actual admission
     # predicate for what counts as this request's own marker.
     if not classify_stop_marker(marker_payload, request):
@@ -135,13 +146,13 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     # FOR-1693: the pair cell a stop lands on (h-probe-stop-marker-v2). Only a pair request
-    # has cells, and a pair has no launch before FOR-1694, so every launch this verb can read
-    # refuses it before anything is published.
+    # has cells; FOR-1694 launches one, and a pair is stopped only when this names its cell
+    # (with --at-phase and --at-step). Refused for a single-profile request.
     parser.add_argument(
         "--at-cell",
         type=str,
         default=None,
-        help="pair cell the stop lands on (refused for a single-profile request)",
+        help="pair cell the stop lands on (required for a pair, refused for a single profile)",
     )
     return parser
 
@@ -186,6 +197,8 @@ def run_probe_stop(
         )
         pod_name = launch.pod_name
         at = {} if target is None else {"at_phase": target[0], "at_step": target[1]}
+        if args.at_cell is not None:
+            at["at_cell"] = args.at_cell
         emit(
             "info",
             HOST_STOP_MARKER_REQUESTED,

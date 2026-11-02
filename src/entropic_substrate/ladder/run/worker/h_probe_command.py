@@ -47,9 +47,13 @@ def _parser() -> argparse.ArgumentParser:
         ("poll-seconds", float),
         ("startup-timeout", float),
         ("shutdown-timeout", float),
-        ("max-hourly-rate", float),
     ):
         parser.add_argument(f"--{name}", type=kind, required=True)
+    # FOR-1694: a launch that SEALS its hourly price ceiling (v5, scientific) derives it; the
+    # flag is then optional and, when present, must equal the sealed value exactly. A launch
+    # that seals none (smoke, v4, v3) still requires it: ``launch.hourly_ceiling`` refuses its
+    # absence by name before any workspace or provider call.
+    parser.add_argument("--max-hourly-rate", type=float, default=None)
     return parser
 
 
@@ -82,7 +86,9 @@ def run_probe_command(
             startup_timeout_seconds=args.startup_timeout,
             shutdown_timeout_seconds=args.shutdown_timeout,
         )
-        if not math.isfinite(args.max_hourly_rate) or args.max_hourly_rate <= 0:
+        if args.max_hourly_rate is not None and (
+            not math.isfinite(args.max_hourly_rate) or args.max_hourly_rate <= 0
+        ):
             raise ValueError("hourly price ceiling must be finite and positive")
         if (
             not args.expected_account_id
@@ -97,7 +103,9 @@ def run_probe_command(
         )
         launch = parse_probe_launch(payload, max_bytes=args.max_launch_bytes)
         # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap.
-        launch.require_hourly_rate_within_cap(args.max_hourly_rate)
+        # FOR-1694: and a launch that seals its ceiling supplies it; a flag that disagrees is
+        # refused here, before any workspace creation or provider call.
+        max_hourly_rate = launch.hourly_ceiling(args.max_hourly_rate)
         root = normalize_d1_artifact_root(args.workspace)
         metadata = root.stat()
         if (
@@ -134,7 +142,7 @@ def run_probe_command(
                     objects,
                     capture,
                     poll_seconds=settings.poll_seconds,
-                    max_hourly_rate=args.max_hourly_rate,
+                    max_hourly_rate=max_hourly_rate,
                 )
             except ProbeControllerFailure as error:
                 evidence = error.record

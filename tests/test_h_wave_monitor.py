@@ -846,3 +846,106 @@ def test_the_monitor_has_a_main_that_configures_logging_first() -> None:
     first = main.body[0]
     assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Call)
     assert getattr(first.value.func, "id", None) == "configure_logging"
+
+
+# ---------------------------------------------------------------------------
+# FOR-1694: one arm per (request, cell) for a pair launch; a single-profile launch keeps one.
+# ---------------------------------------------------------------------------
+def test_a_pair_launch_yields_one_arm_per_cell_each_bound_by_the_cell_tag(tmp_path: Path) -> None:
+    from tests.test_h_pair_remote import pilot_pair_launch
+
+    value = pilot_pair_launch(tmp_path)
+    (tmp_path / "launch.json").write_bytes(value.payload)
+    source = Source(RunReading("step", 4, "RUNNING"))
+    code, records = go(
+        source,
+        "--launch-file",
+        str(tmp_path / "launch.json"),
+        "--max-launch-bytes",
+        "1000000",
+        ticks="1",
+    )
+    request = value.request
+    donor, recipient = request.cells  # type: ignore[union-attr]
+    assert code == EXIT_EXHAUSTED
+    assert source.calls == [
+        (H_SERIES_EXPERIMENT, run_name_for(donor.profile.identity)),
+        (H_SERIES_EXPERIMENT, run_name_for(recipient.profile.identity)),
+    ]
+    assert source.keywords == [
+        {"request_sha256": request.digest, "cell": "donor"},
+        {"request_sha256": request.digest, "cell": "recipient"},
+    ]
+    ticks = [r for r in records if r["event"] == "host.monitor.tick"]
+    schedule = donor.profile.schedule
+    assert [t["run_name"] for t in ticks] == [name for _, name in source.calls]
+    assert {t["total"] for t in ticks} == {schedule.warmup_steps + schedule.steps}
+
+
+def test_a_pair_arm_set_ends_only_when_both_cells_are_terminal(tmp_path: Path) -> None:
+    from tests.test_h_pair_remote import pilot_pair_launch
+
+    (tmp_path / "launch.json").write_bytes(pilot_pair_launch(tmp_path).payload)
+    # one cell terminal, one live: the pair is not done
+    source = Source(RunReading("step", 4, "FINISHED"), RunReading("step", 2, "RUNNING"))
+    code, _ = go(
+        source,
+        "--launch-file",
+        str(tmp_path / "launch.json"),
+        "--max-launch-bytes",
+        "1000000",
+        ticks="1",
+    )
+    assert code == EXIT_EXHAUSTED
+    done = Source(RunReading("step", 6, "FINISHED"))
+    code, records = go(
+        done,
+        "--launch-file",
+        str(tmp_path / "launch.json"),
+        "--max-launch-bytes",
+        "1000000",
+        ticks="3",
+    )
+    assert code == EXIT_OK and records[-1]["outcome"] == "all_runs_terminal"
+
+
+def test_a_single_profile_launch_keeps_one_arm_and_no_cell_keyword(tmp_path: Path) -> None:
+    value = launch()
+    (tmp_path / "launch.json").write_bytes(value.payload)
+    source = Source(RunReading("step", 4, "RUNNING"))
+    go(
+        source,
+        "--launch-file",
+        str(tmp_path / "launch.json"),
+        "--max-launch-bytes",
+        "1000000",
+        ticks="2",
+    )
+    assert len(source.calls) == 2 and len({name for _, name in source.calls}) == 1
+    assert source.keywords == [{"request_sha256": value.request.digest}] * 2  # no cell key at all
+
+
+def test_a_cell_search_ands_the_cell_tag_after_the_request_tag_and_only_for_a_pair_arm() -> None:
+    digest = "ab" * 32
+    opener = Opener(EXPERIMENT, {"runs": [run_row("RUNNING", ("phase_index", 12))]})
+    reading = rest(opener).latest("h-series", "h-worker-abc", request_sha256=digest, cell="donor")
+    assert reading == RunReading("step", 12, "RUNNING", attempts=1)
+    body = json.loads(opener.requests[1][0].data)
+    assert body["filter"] == (
+        f"attributes.run_name = 'h-worker-abc' AND tags.request_sha256 = '{digest}'"
+        " AND tags.cell = 'donor'"
+    )
+    # without a cell the filter is the unchanged FOR-1657 string
+    opener = Opener(EXPERIMENT, {"runs": [run_row("RUNNING", ("phase_index", 12))]})
+    rest(opener).latest("h-series", "h-worker-abc", request_sha256=digest)
+    assert "tags.cell" not in json.loads(opener.requests[1][0].data)["filter"]
+
+
+@pytest.mark.parametrize("cell", ["", "Donor", "donor' OR '1'='1", "donor\n", "-x", "a" * 65])
+def test_a_cell_that_could_break_the_filter_is_refused_before_any_request(cell: str) -> None:
+    opener = Opener(EXPERIMENT)
+    with pytest.raises(ValueError):
+        rest(opener).latest("h-series", "h-worker-abc", request_sha256="ab" * 32, cell=cell)
+    with pytest.raises(ValueError, match="safe token and its request digest"):
+        rest(opener).latest("h-series", "h-worker-abc", cell="donor")  # a cell needs its digest
+    assert not opener.requests

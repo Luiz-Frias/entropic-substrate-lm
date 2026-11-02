@@ -599,6 +599,8 @@ def test_controller_collects_a_stopped_terminal_as_terminated(
         # Rung B: the controller asks every launch to bound its rate by the run
         # authority; the real smoke launch's answer (no authority, no cap) is delegated.
         require_hourly_rate_within_cap=guard.launch.require_hourly_rate_within_cap,
+        # FOR-1694: and the one ceiling its price check reads (the flag, for a smoke launch).
+        hourly_ceiling=guard.launch.hourly_ceiling,
     )
     calls: list[str] = []
 

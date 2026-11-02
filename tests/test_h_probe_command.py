@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from tests.test_h_probe_launch import launch, pilot_launch
+from tests.test_h_probe_launch import PILOT_CEILING, launch, pilot_launch, pilot_launch_v4
 
 from entropic_substrate.ladder.run.h_probe_launch import H0ProbeLaunch
 from entropic_substrate.ladder.run.h_probe_process import WatchdogProcessConfig
@@ -151,7 +151,7 @@ def test_invalid_launch_never_reaches_provider_or_guard(
         (tmp_path / "launch.json").write_bytes(b"{}")
     elif invalid == "pilot_over_cap":
         # 37 USD/h over the 3900 s watchdog is 40.08 USD: past the authority's 40 USD cap
-        (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+        (tmp_path / "launch.json").write_bytes(pilot_launch_v4().payload)
         argv[-1] = "37"
     else:
         argv = argv[:-2]
@@ -178,7 +178,7 @@ def test_a_pilot_launch_within_its_cap_reaches_the_controller(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argv = arguments(tmp_path)
-    (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+    (tmp_path / "launch.json").write_bytes(pilot_launch_v4().payload)
     argv[-1] = "36.9"
     reached: list[float] = []
 
@@ -217,3 +217,77 @@ def test_main_configures_the_substrate_before_it_runs_the_command(
     monkeypatch.setattr(h_probe_command, "run_probe_command", run)
     assert h_probe_command.main(["--flag", "x"]) == 7
     assert order == ["logging", ("run", ["--flag", "x"])]
+
+
+# ---------------------------------------------------------------------------
+# FOR-1694 (launch v5): the command DERIVES the ceiling from a sealed launch.
+# ---------------------------------------------------------------------------
+def run_sealed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str | None
+) -> tuple[int, list[float | None], list[str]]:
+    argv = arguments(tmp_path)
+    (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+    argv = argv[:-2] if flag is None else [*argv[:-1], flag]
+    reached: list[float | None] = []
+    provider: list[str] = []
+
+    @contextmanager
+    def supervise(*_: object, **__: object) -> Generator[object, None, None]:
+        yield object()
+
+    def controller(*_: object, **limits: float) -> dict[str, object]:
+        reached.append(limits["max_hourly_rate"])
+        return {"status": "terminal_collected"}
+
+    def transport(**_: object) -> object:
+        provider.append("provider")
+        return object()
+
+    for name, value in (
+        ("HRunpodTransport", transport),
+        ("build_worker_objects", lambda *_, **__: object()),
+        ("supervise_probe_watchdog", supervise),
+        ("run_probe_controller", controller),
+    ):
+        monkeypatch.setattr(f"entropic_substrate.ladder.run.worker.h_probe_command.{name}", value)
+    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=io.StringIO())
+    return code, reached, provider
+
+
+@pytest.mark.parametrize("flag", [None, str(PILOT_CEILING)])
+def test_a_sealed_launch_supplies_the_ceiling_with_or_without_the_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str | None
+) -> None:
+    code, reached, _ = run_sealed(tmp_path, monkeypatch, flag)
+    assert code == 0 and reached == [PILOT_CEILING]
+
+
+@pytest.mark.parametrize("flag", ["37", "36.8", "0.6", "36.900000001"])
+def test_a_flag_that_disagrees_with_the_sealed_ceiling_is_refused_before_any_provider_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    argv = arguments(tmp_path)
+    (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+    stderr = io.StringIO()
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport",
+        lambda **_: reached.append("provider"),
+    )
+    code = run_probe_command([*argv[:-1], flag], environ={}, stdout=io.StringIO(), stderr=stderr)
+    assert code == 1 and reached == []
+    assert not (tmp_path / "workspace/control").exists()  # no workspace was touched
+    assert json.loads(stderr.getvalue())["error_type"] == "ValueError"
+
+
+def test_an_unsealed_launch_without_the_flag_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argv = arguments(tmp_path)[:-2]  # the smoke launch seals nothing
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport",
+        lambda **_: reached.append("provider"),
+    )
+    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=io.StringIO())
+    assert code == 1 and reached == [] and not (tmp_path / "workspace/control").exists()
