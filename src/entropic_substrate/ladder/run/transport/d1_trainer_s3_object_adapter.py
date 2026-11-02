@@ -138,7 +138,6 @@ class D1TrainerS3ObjectError(RuntimeError):
             "continuation_invalid",
             "part_digest",
             "multipart_unsupported",
-            "multipart_incomplete",
         }
         cause_name = type(cause).__name__ if cause is not None else None
         cause_names = {
@@ -376,11 +375,10 @@ class Boto3D1TrainerMailboxObjectAdapter:
         )
         if not all(callable(getattr(client, name, None)) for name in methods):
             raise _error("publish", "multipart_unsupported")
-        parts = [
-            payload[start : start + self._multipart_part]
-            for start in range(0, len(payload), self._multipart_part)
-        ]
-        if len(parts) > _MAX_PARTS:
+        # Parts are sliced one at a time inside the upload loop; materializing them all up front
+        # held a full copy of the payload in part-sized pieces beside the payload itself.
+        part_count = -(-len(payload) // self._multipart_part)
+        if part_count > _MAX_PARTS:
             raise _error("publish", "multipart_unsupported")
         # (1) never overwrite: the key is probed BEFORE any upload starts
         try:
@@ -409,7 +407,9 @@ class Boto3D1TrainerMailboxObjectAdapter:
             raise _error("publish", "response_invalid")
         completed: list[dict[str, object]] = []
         try:
-            for number, part in enumerate(parts, start=1):
+            for number in range(1, part_count + 1):
+                start = (number - 1) * self._multipart_part
+                part = payload[start : start + self._multipart_part]
                 digest = base64.b64encode(hashlib.sha256(part).digest()).decode()
                 try:
                     sent = client.upload_part(
