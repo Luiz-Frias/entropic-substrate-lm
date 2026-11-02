@@ -944,3 +944,77 @@ def test_the_single_profile_request_shape_refusals_keep_their_exact_texts() -> N
         "^worker pause requires an explicit phase/step pair$",
         lambda: replace(smoke, pause=("prediction",)),  # pyright: ignore[reportArgumentType]
     )
+
+
+# --------------------------------------------------------------------- review round C sweep
+# Three guards the adversarial lens found GREEN under deletion (X09, X11, X56); each pin below
+# goes RED when its guard is removed or its text drifts, measured one at a time before landing.
+
+
+def test_a_failed_handoff_that_left_a_progress_receipt_is_refused_by_name(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X09: a hand-off that raises AFTER writing a ``*-progress.json`` is a defect by name.
+
+    The arm is reachable only when ``materialize_codec_handoff`` leaves a receipt behind and then
+    fails, so the materializer is stood in with one that does exactly that.
+    """
+    from entropic_substrate.ladder.run import worker_execution
+    from entropic_substrate.ladder.run.object_worker import run_object_worker
+
+    def leaking(
+        donor_root: Path,
+        warmed: object,
+        donor: object,
+        recipient_root: Path,
+        *a: object,
+        **k: object,
+    ) -> None:
+        (recipient_root / "leak-progress.json").write_text("{}")
+        raise RuntimeError("injected hand-off failure")
+
+    monkeypatch.setattr(worker_execution, "materialize_codec_handoff", leaking)
+    request, objects, marker = pair_world(tmp_path, pair)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    with pytest.raises(ValueError, match="a failed hand-off left a progress receipt behind"):
+        run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    assert failure_terminal(objects, request)["status"] == "execution_defect"
+
+
+def test_two_training_failure_records_in_one_cell_root_are_a_defect(tmp_path: Path) -> None:
+    """X11: ``_training_failure_record`` promises that two records raise; one is returned."""
+    from entropic_substrate.ladder.run.worker_execution import (
+        _training_failure_record,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for name in ("a.json", "b.json"):
+        (tmp_path / name).write_text(
+            json.dumps({"schema": "h-probe-training-failure-v2", "status": "execution_defect"})
+        )
+    with pytest.raises(
+        ValueError, match=r"^a cell root holds more than one training failure record$"
+    ):
+        _training_failure_record(tmp_path)
+    (tmp_path / "b.json").unlink()
+    found = _training_failure_record(tmp_path)
+    assert found is not None and found[0].name == "a.json"
+
+
+def test_the_probe_envelope_and_remote_proof_refusal_texts_are_exact() -> None:
+    """X56: the three refactored-helper texts no other test anchors, pinned byte for byte."""
+    from tests.test_h_probe_launch import remote_request
+    from tests.test_sentence_worker_request import request as smoke_request
+
+    from entropic_substrate.core.probe.predictive_probe import ProbeConfig
+
+    smoke = smoke_request()
+    with pytest.raises(TypeError, match=r"^worker requires an explicit probe fitting envelope$"):
+        replace(smoke, probe=object())  # type: ignore[arg-type]
+    narrow = ProbeConfig(lags=(2, 4), train_positions=1, eval_positions=1, updates=2, batch_size=1)
+    with pytest.raises(ValueError, match=r"^worker probe envelope is invalid$"):
+        replace(smoke, probe=narrow)
+    with pytest.raises(
+        ValueError, match=r"^remote worker source proof or project image is invalid$"
+    ):
+        replace(remote_request(), image="ghcr.io/other/x@sha256:" + "d" * 64)
