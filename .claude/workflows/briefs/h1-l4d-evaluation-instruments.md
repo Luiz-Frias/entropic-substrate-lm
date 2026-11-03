@@ -1,12 +1,12 @@
 # FOR-1704 [h1-l4d] Evaluation instruments: prior and mixture proposals with a ratio-of-sums headline, prior/q radius and cosine, latent usage per evaluation, through the extractor to MLflow and telemetry (DG-A re-pin row 4)
 
-Fourth serial W2 slice, after L4c (h1-l4c-remote-pair); arch mode (owns the evaluation-record door); Opus xhigh at the design gate and the implementation; the lane cannot commit member edits, so it stages the patch, the proposed message and the evidence as a DG-A handoff and the conductor lands patch plus `tools/regime_rows.py` re-pin plus the read-old-table row as one commit. Rulings: DH-32 (operator 2026-10-28, aligned with the recs plus the 0.15 and 0.35 ESS/k readings) and DH-33 (add the instrument and metrics capture to the MLflow sink and telemetry; verify what exists first). Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read every new key from the captured records alone. Every anchor below was re-measured at main e3d1524b (v0.10.0) on 2026-10-31; none of the anchored files changed between v0.9.1 and v0.10.0.
+Fourth serial W2 slice, after L4c (h1-l4c-remote-pair); arch mode (owns the evaluation-record door); Opus xhigh at the design gate and the implementation; the lane cannot commit member edits, so it stages the patch, the proposed message and the evidence as a DG-A handoff and the conductor lands patch plus `tools/regime_rows.py` re-pin plus the read-old-table row as one commit. Rulings: DH-32 (operator 2026-10-28, aligned with the recs plus the 0.15 and 0.35 ESS/k readings), DH-33 and DH-48 (operator 2026-11-02, FOR-1716 as this lane's sub-issue; section below) (add the instrument and metrics capture to the MLflow sink and telemetry; verify what exists first). Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read every new key from the captured records alone. Every anchor below was re-measured at main e3d1524b (v0.10.0) on 2026-10-31; none of the anchored files changed between v0.9.1 and v0.10.0.
 
 ## Touch-set
 
 - members (DG-A, move the five checkpoint digest rows at tests/test_identity_epoch.py:904-931): src/entropic_substrate/core/sentence/scoring.py (`importance_statistics` :22, `log_estimate` and ESS at :49-50 with the `[:k]` slice applied by the caller at :142; `ImportanceEvaluation` :58-75 with `meaning` at :67 and the eight listed fields at :68-75; `importance_evaluate` :79, proposal drawn from `model.codec.posterior(complete)` at :110, `log_weights = decoder_log + prior_log - proposal_log` at :132); src/entropic_substrate/ladder/run/execution.py (`evaluate` :305, fork_rng :330, step-keyed seed :340, `evaluation_batches` :341, the `examples[]` block :364-378 with `source_bytes` :368, `boundary_symbols` :369, `by_sample_count` :370-373 and four log-prob arrays :374-377); src/entropic_substrate/ladder/run/trace_capture.py (`_SCHEMAS` :23-40, 14 entries, `h-predictive-evaluation-v1` at :30; the refusal at :89-90) if the evaluation schema name bumps.
-- non-members: src/entropic_substrate/ladder/run/h_metric_extractor.py (not a reader member; keys at :195-202: `eval/log_marginal_k{k}`, `eval/ess_k{k}`, `eval/gap_rows_k{k}`, `eval/wall_seconds`, `eval/cuda_seconds`; wired by `worker_command.py:22` and used at :232); src/entropic_substrate/ladder/analyze/h_elm_projection.py (`project_elm`: ESS guard :174-175 admits ESS = 1 within `_ESS_SLACK` 1e-9 at :59; mean of per-row `log_estimate / source_bytes` at :176; `eval/ess_ratio_median_k{k}` at :200 for every k, headline k = 64 at :52); src/entropic_substrate/ladder/capture/adapters/mlflow.py (`MlflowSink` :279, `log` :542) only if the record shape needs it; the strict adapter mlflow_strict.py (`_RECORD_FIELDS` :64, `_has_exact_keys` :116) must still hold.
-- tests: tests/test_sentence_scoring.py; tests/test_h_metric_routing.py (the extractor's eval keys are tested here, :249-253; there is no tests/test_h_metric_extractor.py, create it test-first or extend routing); tests/test_h_elm_projection.py; tests/test_mlflow_async_sink.py; tests/test_identity_epoch.py and docs/identity/read-old-table.md (conductor re-pin).
+- non-members: src/entropic_substrate/ladder/run/h_metric_extractor.py (not a reader member; keys at :195-202: `eval/log_marginal_k{k}`, `eval/ess_k{k}`, `eval/gap_rows_k{k}`, `eval/wall_seconds`, `eval/cuda_seconds`; wired by `worker_command.py:22` and used at :232); src/entropic_substrate/ladder/analyze/h_elm_projection.py (`project_elm`: ESS guard :174-175 admits ESS = 1 within `_ESS_SLACK` 1e-9 at :59; mean of per-row `log_estimate / source_bytes` at :176; `eval/ess_ratio_median_k{k}` at :200 for every k, headline k = 64 at :52); src/entropic_substrate/ladder/capture/adapters/mlflow.py (`MlflowSink` :279, `log` :542) only if the record shape needs it; src/entropic_substrate/ladder/analyze/h_aggregate.py (`_check_step_scalars`, the null `future_nll_per_dimension` admission; DH-48, FOR-1716, non-member); the strict adapter mlflow_strict.py (`_RECORD_FIELDS` :64, `_has_exact_keys` :116) must still hold.
+- tests: tests/test_sentence_scoring.py; tests/test_h_pair_request.py (the P5-15 measurement pin flips to load-through, DH-48); tests/test_h_metric_routing.py (the extractor's eval keys are tested here, :249-253; there is no tests/test_h_metric_extractor.py, create it test-first or extend routing); tests/test_h_elm_projection.py; tests/test_mlflow_async_sink.py; tests/test_identity_epoch.py and docs/identity/read-old-table.md (conductor re-pin).
 - NOT touched: the ruled 0.25 gate; the pilot's future_weight (core/sentence/profile.py:251-254 requires 0 at H1); tests/test_observability_conformance.py frozen counts (PRINT_ALLOWLIST 10 at :95, 11 mapping rows at :176) unless a new entrypoint or print is added.
 
 ## Why (FOR-1703 recon, verdict B)
@@ -28,6 +28,33 @@ tests/test_sentence_scoring.py: prior and mixture rows present with the exact mi
 ## Guard teeth (mutation, each RED)
 
 drop the mixture normalization; compute the cosine on raw states instead of means; count boundary symbols in the ratio of sums; emit a bare (non-k-suffixed) `eval/ess_prior`; read the null latent with the q radius.
+
+## DH-48: loader admission of the null future term (FOR-1716, sub-issue; ruled 2026-11-02)
+
+Pre-existing defect exposed by L4b's pair tracer, measured at 5449e2b5: an `H1` profile requires
+`optimization.future_weight == 0` (core/sentence/profile.py:251-254), the objective then writes a
+null `future_nll_per_dimension` on every prediction row (core/sentence/objective.py:96-101), and
+`ladder/analyze/h_aggregate.load_h_run` admits that null only under `phase == codec_warmup`
+(`_check_step_scalars`), so it refuses BOTH completed H1 cells at their first prediction row.
+`tests/test_h_pair_request.py::test_a_completed_h1_cells_files_are_measured_against_the_analysis_reader`
+(P5-15) pins the refusal as a measurement today.
+
+Ruling DH-48, option (a): `load_h_run` admits a null `future_nll_per_dimension` on a prediction row
+only when the run's RECORDED `optimization.future_weight == 0`, read from the `run_start` profile
+manifest in the log beside the metrics; never keyed on the null itself and never on the stage string
+alone. Every other run loads byte-identically; a null under a non-zero weight keeps the existing
+refusal message byte-identical; a warm-up row stays admitted as today. Options (b) worker writes
+`0.0` (changes H1 metric bytes, member edit) and (c) a `future_term=` loader argument (pushes the
+decision to every caller) are REJECTED. `h_aggregate.py` is a non-member: no re-pin row.
+
+- RED first: a completed H1 cell's (metrics, log) pair from the L4b pair tracer loads through
+  `load_h_run` with `future_nll_per_dimension` summarized as absent (ImportError or `TelemetryGap`
+  at the parent tip); the P5-15 pin FLIPS in the same commit from "refused at the first prediction
+  row" to "loads through", with the old expectation retracted in its docstring (house rule 4).
+- Teeth, each RED one at a time and restored byte-identical: key the admission on the null instead
+  of the recorded weight (RED on the non-zero-weight fixture); drop the recorded-weight read (RED);
+  admit the null on a run whose log carries no `run_start` profile manifest (RED).
+- Linear: FOR-1716 moves with this lane; its comment thread carries the measurement and the ruling.
 
 ## Handoff
 
