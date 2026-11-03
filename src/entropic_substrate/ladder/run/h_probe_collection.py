@@ -274,8 +274,11 @@ def _verify_failure_record(
     request: AnyProbeRequest,
     files: list[dict[str, object]],
     row: dict[str, object],
-) -> None:
-    """The failure snapshot's unique ``worker/failure.json`` agrees with its terminal event."""
+) -> dict[str, object]:
+    """The failure snapshot's unique ``worker/failure.json`` agrees with its terminal event.
+
+    Returns the verified record, so a pair reader can key on the stage it names.
+    """
     entries = [item for item in files if item["path"] == "worker/failure.json"]
     if len(entries) != 1:
         raise ValueError("failure snapshot lacks its unique failure record")
@@ -294,6 +297,7 @@ def _verify_failure_record(
         or type(failure["detail"]) is not str
     ):
         raise ValueError("failure record differs from its terminal event")
+    return failure
 
 
 # ----------------------------------------------------------------------- the pair (v2)
@@ -516,11 +520,16 @@ def _capture_pair(
                 "pause_bytes_verified" if name == "paused" else "stop_bytes_verified"
             )
         else:
-            _verify_failure_record(root, request, files, row)
+            failure = _verify_failure_record(root, request, files, row)
             paths = {cast(str, item["path"]) for item in files}
             if "worker/result.json" in paths:
-                # DH-47: a training-phase execution stop leaves result v2 beside the v1 failure
-                # record; it is read here, keyed on its verdict (reader_refusal naming a cell)
+                # A failure snapshot may carry result v2 in two producer shapes, both read here
+                # keyed on the verdict: DH-47 (a training-phase execution stop: execution_defect,
+                # reader_refusal naming a cell, written BEFORE the stage fails) and a failure AT
+                # final_snapshot (object_worker writes worker/result.json, THEN sets that stage,
+                # so its failure snapshot ships an admitted complete, excluded, paused or stopped
+                # result). The second is evidence the host records, as the single-profile path
+                # records any failure terminal with a valid failure record.
                 reference = {
                     "path": "worker/result.json",
                     "sha256": next(
@@ -529,11 +538,11 @@ def _capture_pair(
                 }
                 result = _pair_result(root, request, reference, expected_pod_id=expected_pod_id)
                 verdict = cast(dict[str, object], result["verdict"])
-                if (
-                    result["status"] != "execution_defect"
-                    or verdict["verdict"] != "excluded"
-                    or verdict["reason"] != "reader_refusal"
-                ):
+                if result["status"] == "execution_defect":
+                    if verdict["verdict"] != "excluded" or verdict["reason"] != "reader_refusal":
+                        raise ValueError("failure result differs from an execution stop")
+                elif failure["stage"] != "final_snapshot":
+                    # any other status was written only by a worker that reached final_snapshot
                     raise ValueError("failure result differs from an execution stop")
                 report["capture_status"] = "failure_bytes_verified"
             elif not any(

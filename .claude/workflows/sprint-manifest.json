@@ -295,7 +295,7 @@
         {
           "with": "h1-l4c-remote-pair",
           "type": "file",
-          "evidence": "runner.py, trace_capture.py, tests/test_identity_epoch.py, docs/identity/read-old-table.md",
+          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
           "resolution": "hub-owner"
         }
       ],
@@ -439,7 +439,7 @@
         {
           "with": "h1-l4c-remote-pair",
           "type": "file",
-          "evidence": "worker_command.py, worker_execution.py, runner.py, trace_capture.py, worker_snapshot.py, h_probe_collection.py (:132,:172,:196-200), h_probe_resume.py (:95,:109), tests/test_identity_epoch.py; DH-44 (2026-11-01): worker-result-v2, host-completion-v2 and stop-marker-cell moved to L4b, so object_worker.py, worker_completion.py, worker/h_probe_stop.py and capture_results.py are L4b's here",
+          "evidence": "worker_command.py, worker_execution.py, worker_snapshot.py, h_probe_collection.py (:132,:172,:196-200), h_probe_resume.py (:95,:109), tests/test_identity_epoch.py; DH-44 (2026-11-01): worker-result-v2, host-completion-v2 and stop-marker-cell moved to L4b, so object_worker.py, worker_completion.py, worker/h_probe_stop.py and capture_results.py are L4b's here",
           "resolution": "hub-owner"
         }
       ],
@@ -631,7 +631,7 @@
         {
           "with": "h1-l4c-remote-pair",
           "type": "file",
-          "evidence": "execution.py, trace_capture.py, tests/test_identity_epoch.py, docs/identity/read-old-table.md",
+          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
           "resolution": "serial-after"
         },
         {

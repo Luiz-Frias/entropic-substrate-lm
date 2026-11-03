@@ -155,11 +155,15 @@ def _pair_resume_source(collection: Mapping[str, object]) -> str:
     status = collection.get("capture_status")
     if status in ("pause_bytes_verified", "stop_bytes_verified"):
         return cast(str, status)
+    verdict = collection.get("verdict")
     if (
         collection.get("terminal_name") == "failure"
         and status == "failure_bytes_verified"
         and collection.get("reported_outcome") == "execution_defect"
-        and collection.get("verdict") is None
+        # a post-training failure names no verdict (DH-45), or it is a failure AT final_snapshot
+        # after result v2 was written, where the collector admits a non-exclusion verdict only
+        # (complete or none) and an exclusion stays a recorded outcome
+        and (verdict is None or cast(Mapping[str, object], verdict).get("verdict") != "excluded")
     ):
         return "dh45_post_training_failure"
     raise ValueError(

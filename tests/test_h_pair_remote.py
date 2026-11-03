@@ -265,6 +265,101 @@ def test_a_post_training_failure_keeps_the_v1_path_and_names_no_verdict(
     assert report["cells"][0]["capture_root"] == "capture/donor"  # the donor's evidence is there
 
 
+def final_snapshot_world(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, *, excluded: bool
+) -> tuple[PairProbeRequest, Any]:
+    """A pair whose worker wrote ``worker/result.json`` and then failed at ``final_snapshot``.
+
+    ``object_worker`` writes the result v2 BEFORE it sets ``stage = "final_snapshot"`` and ships
+    ``worker/`` in its failure snapshot, so this is the producer's own shape (measured by running
+    it, 2026-11-02: the failure snapshot names ``worker/result.json``).
+    """
+    from tests.test_h_pair_request import Fault
+
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run import object_worker
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    real = object_worker.publish_worker_snapshot
+    terminal = "excluded" if excluded else "complete"
+
+    def publish(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("name") == terminal:
+            raise OSError("injected final snapshot delivery failure")
+        return real(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        if excluded:
+            Fault(patch, "prediction", 1, UndefinedDirection(2))
+        patch.setattr(object_worker, "publish_worker_snapshot", publish)
+        status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2
+    return request, objects
+
+
+@pytest.mark.parametrize("excluded", [False, True], ids=["complete_verdict", "excluded_verdict"])
+def test_a_failure_at_final_snapshot_is_collected_as_evidence_with_its_result_v2(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, excluded: bool
+) -> None:
+    """The producer writes result v2 and THEN fails delivering its final snapshot: the failure
+    snapshot carries a non-DH-47 result, which the host records (keyed on its verdict) instead of
+    raising, exactly as the single-profile path accepts any failure terminal with a valid record."""
+    request, objects = final_snapshot_world(tmp_path, pair, monkeypatch, excluded=excluded)
+    report = collect(tmp_path, objects, request)
+    assert report is not None and report["terminal_name"] == "failure"
+    assert report["reported_outcome"] == "execution_defect" and report["workload_verified"] is False
+    assert report["capture_status"] == "failure_bytes_verified"
+    verdict = report["verdict"]
+    assert verdict["verdict"] == ("excluded" if excluded else "complete")
+    assert [c["outcome"] for c in report["cells"]] == (
+        ["scientific_gap", "complete"] if excluded else ["complete", "complete"]
+    )
+
+
+def test_a_final_snapshot_failure_with_a_complete_verdict_is_a_resumable_source_an_exclusion_is_not(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.ladder.run.h_probe_resume import build_pair_resume_request
+
+    request, objects = final_snapshot_world(tmp_path, pair, monkeypatch, excluded=False)
+    report = collect(tmp_path, objects, request, "c-complete")
+    assert report is not None
+    resumed = build_pair_resume_request(
+        request, tmp_path / "c-complete", nonce="2" * 64, collection=report
+    )
+    assert resumed.nonce == "2" * 64 and resumed.run_identity == request.run_identity
+
+    excluded_world = tmp_path / "excluded"
+    excluded_world.mkdir()
+    ex_request, ex_objects = final_snapshot_world(
+        excluded_world, make_pair(excluded_world), monkeypatch, excluded=True
+    )
+    ex_report = collect(excluded_world, ex_objects, ex_request, "c-excluded")
+    assert ex_report is not None
+    with pytest.raises(ValueError, match="A recorded exclusion is never overwritten"):
+        build_pair_resume_request(
+            ex_request, excluded_world / "c-excluded", nonce="2" * 64, collection=ex_report
+        )
+
+
+def test_a_non_execution_stop_result_in_a_failure_snapshot_needs_the_final_snapshot_stage(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a worker that reached ``final_snapshot`` wrote a complete, paused, stopped or
+    exclusion result, so the same bytes under any other failure stage are refused by name."""
+    from entropic_substrate.ladder.run import h_probe_collection
+
+    request, objects = final_snapshot_world(tmp_path, pair, monkeypatch, excluded=False)
+    real = h_probe_collection._verify_failure_record
+
+    def other_stage(*args: Any, **kwargs: Any) -> dict[str, object]:
+        return {**real(*args, **kwargs), "stage": "execution"}
+
+    monkeypatch.setattr(h_probe_collection, "_verify_failure_record", other_stage)
+    with pytest.raises(ValueError, match="failure result differs from an execution stop"):
+        collect(tmp_path, objects, request)
+
+
 def test_a_pair_that_died_before_its_first_cell_collects_as_pair_not_started(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:

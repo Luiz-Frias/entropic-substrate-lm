@@ -232,14 +232,17 @@ Host side of a pair (FOR-1694). A pair is collected as `h-probe-terminal-collect
 per cell (receipt, result entry, capture and verification roots), the pair verdict and the terminal
 it was collected under (`complete`, `paused`, `stopped`, `excluded`, `failure`); result v2 is read
 under every terminal that can carry it, the failure terminal included, and `workload_verified` is
-keyed on the verdict, never on a status. A pair whose pod never began a cell collects as a typed
-`pair_not_started` failure. A single-profile request keeps `h-probe-terminal-collection-v1` byte for
-byte. The wave monitor lists one arm per (request, cell), each searched by the `request_sha256` and
-`cell` run tags; `h_probe_stop --at-cell donor|recipient` (with `--at-phase` and `--at-step`)
-publishes the write-once `h-probe-stop-marker-v2` and stops that cell only, and a pair without
-`--at-cell` is refused by name. Objects above 64 MiB are published as verified multipart uploads
-(`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional completion and part
-checksums is UNMEASURED, so the first live pair run is the measurement.
+keyed on the verdict, never on a status. A failure at `final_snapshot` happens after the worker
+wrote result v2, so its failure snapshot carries an admitted complete, excluded, paused or stopped
+result: the host records it as `failure_bytes_verified` with that verdict, and a pair so collected
+is a resumable source unless the verdict is an exclusion. A pair whose pod never began a cell
+collects as a typed `pair_not_started` failure. A single-profile request keeps
+`h-probe-terminal-collection-v1` byte for byte. The wave monitor lists one arm per (request, cell),
+each searched by the `request_sha256` and `cell` run tags; `h_probe_stop --at-cell donor|recipient`
+(with `--at-phase` and `--at-step`) publishes the write-once `h-probe-stop-marker-v2` and stops that
+cell only, and a pair without `--at-cell` is refused by name. Objects above 64 MiB are published as
+verified multipart uploads (`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional
+completion and part checksums is UNMEASURED, so the first live pair run is the measurement.
 
 Capture by reference (FOR-1694). RETRACTED 2026-11-02: the phrase "lands with the staged
 reader-member DG-A patch, not on this branch tip" was false at the tip; the DG-A patch is landed
