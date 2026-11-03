@@ -68,9 +68,10 @@ def request_stop(
 
     FOR-1694 (h1-l4c): a pair is admitted when ``cell`` names one of its cells AND ``target``
     names the seal ``(phase, step)`` on THAT cell's schedule; the marker published is the
-    write-once ``h-probe-stop-marker-v2`` ``{phase, step, cell}``, which stops exactly that cell
-    at exactly that seal (the other cell runs on), and the wait reads the pair's ``stopped``
-    event. A pair without ``--at-cell`` stays refused, by name.
+    write-once ``h-probe-stop-marker-v2`` ``{phase, step, cell}``. A recipient target stops the
+    recipient only; a donor target stops the pair at any seal, with no hand-off to the recipient
+    (L4b D10). The wait reads the pair's ``stopped`` event. A pair without ``--at-cell`` stays
+    refused, by name.
     """
     if isinstance(request, PairProbeRequest):
         if cell is None:
@@ -154,7 +155,10 @@ def _parser() -> argparse.ArgumentParser:
         "--at-cell",
         type=str,
         default=None,
-        help="pair cell the stop lands on (required for a pair, refused for a single profile)",
+        help=(
+            "pair cell the stop lands on: a recipient stops the recipient only, a donor stops "
+            "the pair with no hand-off (required for a pair, refused for a single profile)"
+        ),
     )
     return parser
 

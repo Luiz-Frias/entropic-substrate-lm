@@ -508,6 +508,7 @@
         "trunk:h-probe-controller-result-v1 (worker/h_probe_controller.py:604-623)"
       ],
       "touch_set": [
+        "src/entropic_substrate/ladder/run/worker_log_events.py",
         "src/entropic_substrate/ladder/run/worker_snapshot.py",
         "src/entropic_substrate/ladder/run/worker_transport.py",
         "src/entropic_substrate/ladder/run/object_worker.py",
