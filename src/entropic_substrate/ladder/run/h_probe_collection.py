@@ -310,7 +310,8 @@ def admit_pair_collection(value: object, request: PairProbeRequest) -> dict[str,
     staged DG-A reader-member patch lands, and until then that builder still reads v1 only.
 
     RETRACTED 2026-11-02: the sentence above is false at the tip. ``h_probe_resume`` imports
-    ``admit_pair_collection`` (line 59) and calls it from ``build_pair_resume_request`` (line 250).
+    ``admit_pair_collection`` and calls it from ``build_pair_resume_request`` (symbols only: line
+    numbers drift with every edit).
     """
     if type(value) is not dict:
         raise ValueError("a pair terminal collection must be an object")
