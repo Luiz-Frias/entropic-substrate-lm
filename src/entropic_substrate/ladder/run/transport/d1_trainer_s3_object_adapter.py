@@ -357,7 +357,11 @@ class Boto3D1TrainerMailboxObjectAdapter:
             client.abort_multipart_upload(Bucket=self._bucket, Key=key, UploadId=upload_id)
         except Exception as cleanup:
             # an unfinished upload is an orphan the provider may bill: say so, by TYPE only (never
-            # a message, key or upload id), and let the cause that led here propagate
+            # a message, key or upload id), and let the cause that led here propagate. The line
+            # binds no ``event``: the worker log vocabulary is a closed, frozen door
+            # (``worker_log_events``), and this is a transport adapter's exceptional-path warning,
+            # the same precedent as the missing-declared-log warning that module records. The text
+            # is pinned by test_a_failing_abort_is_logged_by_type_and_never_masks_the_cause.
             logger.warning(
                 "multipart abort failed: {error_type}", error_type=type(cleanup).__name__
             )
