@@ -665,11 +665,14 @@ def test_a_resumed_pair_keeps_one_progress_ladder_per_cell_above_each_cells_own_
 
 
 # --------------------------------------------- the reference producer and a referenced object
+@pytest.mark.parametrize("edit", ["appended", "same_size_one_byte"])
 def test_a_capture_copy_whose_bytes_differ_from_its_run_twin_is_published_not_referenced(
-    tmp_path: Path, pair: Pair
+    tmp_path: Path, pair: Pair, edit: str
 ) -> None:
-    """The producer's equality condition (sha256 and size) has a tooth: a same-named capture and
-    run file with DIFFERENT bytes is a real object, never a reference to the run twin."""
+    """The producer's sha256 equality has a tooth: a same-named capture and run file whose bytes
+    DIFFER is a real object, never a reference to the run twin. ``appended`` changes the size and
+    the digest together; ``same_size_one_byte`` keeps the size, so only the digest separates them.
+    Size equality is not a separate tooth: equal SHA-256 digests imply equal bytes, hence size."""
     from entropic_substrate.ladder.run.worker_snapshot import publish_worker_snapshot
 
     request, objects, marker = counted_world(tmp_path, pair)
@@ -678,7 +681,12 @@ def test_a_capture_copy_whose_bytes_differ_from_its_run_twin_is_published_not_re
     manifest = json.loads(objects.values[f"{request.prefix}/snapshots/complete.json"])
     reference = next(f for f in manifest["files"] if "reference" in f)
     capture_path, run_path = reference["path"], reference["reference"]
-    changed = (workspace / capture_path).read_bytes() + b" "
+    original = (workspace / capture_path).read_bytes()
+    if edit == "appended":
+        changed = original + b" "
+    else:
+        changed = original[:-1] + bytes([original[-1] ^ 1])
+        assert len(changed) == len(original)
     (workspace / capture_path).write_bytes(changed)
     # control: the completed pair above holds this very file as a reference; the bytes now differ
     publish_worker_snapshot(
@@ -692,6 +700,18 @@ def test_a_capture_copy_whose_bytes_differ_from_its_run_twin_is_published_not_re
     assert forged[capture_path]["key"] == f"{request.prefix}/outputs/{capture_path}"
     assert objects.values[f"{request.prefix}/outputs/{capture_path}"] == changed
     assert forged[capture_path]["sha256"] != forged[run_path]["sha256"]
+
+
+def test_only_a_flat_capture_file_has_a_run_twin_to_reference() -> None:
+    """``reference_path`` maps exactly ``capture/<cell>/<file>`` to ``run/<cell>/<file>``. Deeper
+    capture paths, verification paths and run paths have no twin and never reference."""
+    from entropic_substrate.ladder.run.worker_snapshot import reference_path
+
+    assert reference_path("capture/recipient/progress.json") == "run/recipient/progress.json"
+    assert reference_path("capture/recipient/source/prepared-corpus.json") is None
+    assert reference_path("capture/recipient/a/b.json") is None
+    assert reference_path("verification/recipient/progress.json") is None
+    assert reference_path("run/recipient/progress.json") is None
 
 
 def test_the_host_refuses_a_referenced_object_whose_stored_bytes_were_corrupted(

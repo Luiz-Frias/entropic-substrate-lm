@@ -254,6 +254,22 @@ def test_the_object_byte_limit_still_refuses_before_any_upload() -> None:
     assert raised.value.code == "byte_limit" and client.calls == []
 
 
+def test_a_payload_needing_more_parts_than_the_s3_cap_is_refused_before_any_upload() -> None:
+    """One-byte parts make 10,001 parts, one over the S3 cap: refused by name, nothing uploaded."""
+    client = _MultipartClient()
+    payload = bytes(10_001)
+    refused = Boto3D1TrainerMailboxObjectAdapter(
+        client=client,
+        bucket=_BUCKET,
+        max_objects=10,
+        multipart_threshold_bytes=1,
+        multipart_part_bytes=1,
+    )
+    with pytest.raises(D1TrainerS3ObjectError) as raised:
+        refused.publish(KEY, payload, expected_sha256=hashlib.sha256(payload).hexdigest())
+    assert raised.value.code == "multipart_unsupported" and client.calls == []
+
+
 def test_a_failing_abort_is_logged_by_type_and_never_masks_the_cause() -> None:
     from entropic_substrate.kernel.runtime.logging import logger
 

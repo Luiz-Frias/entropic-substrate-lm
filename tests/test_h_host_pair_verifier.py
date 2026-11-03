@@ -8,6 +8,7 @@ independent warm-up) raises the same ``CodecHandoffDefect`` code from both reade
 that skipped a digest would stay GREEN on the good arm only; the hazard rows are its teeth.
 """
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,11 @@ from tests.test_h_codec_handoff import (
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.ladder.run import host_pair_verifier
 from entropic_substrate.ladder.run.codec_handoff import CodecHandoffDefect, VerifiedHandoff
-from entropic_substrate.ladder.run.host_pair_verifier import admit_codec_pair_on_host
+from entropic_substrate.ladder.run.host_pair_verifier import (
+    _guard_construction,  # pyright: ignore[reportPrivateUsage]
+    _Stored,  # pyright: ignore[reportPrivateUsage]
+    admit_codec_pair_on_host,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -174,3 +179,90 @@ def test_a_pods_cuda_rng_states_are_part_of_the_digest_the_verifier_compares(
     monkeypatch.setattr(host_pair_verifier.torch, "load", with_cuda_state)
     failed = refusal(lambda: on_host(world, world.donor, root, handoff.seal))
     assert failed.code == "payload_mismatch" and "donor" in failed.detail
+
+
+def test_a_donor_chain_rooted_at_a_hand_off_is_chained_on_the_host(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A donor whose own codec arrived by hand-off is ``chained_handoff``: a donor warms up for
+    itself. Reaching that root through the pair's real profiles needs a donor-profile hand-off,
+    which no fixture builds (the pod-side chain is pinned by the materialize test that refuses a
+    donor which was itself handed off), so the donor walk's root kind is the one thing overridden."""
+    pair = world.pair
+    root = pair.root("host-chained")
+    handoff = materialize(pair, world.donor, root)
+    real = host_pair_verifier.read_seal
+
+    def handed_off(
+        donor_root: Path, seal: ArtifactIdentity, profile: Any, *a: Any, **k: Any
+    ) -> Any:
+        sealed = real(donor_root, seal, profile, *a, **k)
+        return replace(sealed, root_kind="handoff") if donor_root == world.donor else sealed
+
+    monkeypatch.setattr(host_pair_verifier, "read_seal", handed_off)
+    assert (
+        refusal(lambda: on_host(world, world.donor, root, handoff.seal)).code == "chained_handoff"
+    )
+
+
+def test_a_donor_chain_without_a_warm_up_final_is_a_foreign_donor_on_the_host(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The host reads the donor's chain through ``read_seal``; a chain that holds no warm-up-final
+    seal is ``foreign_donor``. Control: the unmodified walk admits the same pair."""
+    pair = world.pair
+    root = pair.root("host-no-final")
+    handoff = materialize(pair, world.donor, root)
+    assert on_host(world, world.donor, root, handoff.seal) == handoff.verified  # control
+    real = host_pair_verifier.read_seal
+
+    def without_final(
+        donor_root: Path, seal: ArtifactIdentity, profile: Any, *a: Any, **k: Any
+    ) -> Any:
+        sealed = real(donor_root, seal, profile, *a, **k)
+        return replace(sealed, warmup_final=None) if donor_root == world.donor else sealed
+
+    monkeypatch.setattr(host_pair_verifier, "read_seal", without_final)
+    assert refusal(lambda: on_host(world, world.donor, root, handoff.seal)).code == "foreign_donor"
+
+
+def stored(
+    *, binding: dict[str, Any] | None = None, model: dict[str, object] | None = None
+) -> _Stored:
+    base: dict[str, Any] = {
+        "run_identity": "donor-cell",
+        "spine": {"carrier": "fp32", "width": 4},
+        "groups": [["w"]],
+    }
+    return _Stored(
+        binding or base,
+        model if model is not None else {"w": torch.zeros(2), "codec.s": torch.ones(2)},
+        {},
+        None,
+    )
+
+
+def test_the_construction_guard_refuses_a_binding_inventory_or_dtype_mismatch() -> None:
+    donor = stored()
+    recipient = stored(
+        binding={
+            "run_identity": "recipient-cell",
+            "spine": {"carrier": "bf16", "width": 4},
+            "groups": [["w"]],
+        }
+    )
+    _guard_construction(donor, recipient)  # control: only the run identity and carrier differ
+    width = stored(
+        binding={"run_identity": "r", "spine": {"carrier": "fp32", "width": 8}, "groups": [["w"]]}
+    )
+    with pytest.raises(CodecHandoffDefect) as binding:
+        _guard_construction(donor, width)
+    assert binding.value.code == "construction_divergence"
+    extra = stored(model={"w": torch.zeros(2), "codec.s": torch.ones(2), "extra": torch.zeros(1)})
+    with pytest.raises(CodecHandoffDefect, match="inventories differ"):
+        _guard_construction(donor, extra)
+    dtype = stored(model={"w": torch.zeros(2, dtype=torch.float64), "codec.s": torch.ones(2)})
+    with pytest.raises(CodecHandoffDefect, match="non-codec state w"):
+        _guard_construction(donor, dtype)
+    codec_only = stored(model={"w": torch.zeros(2), "codec.s": torch.zeros(2)})
+    _guard_construction(donor, codec_only)  # codec state is copied, never guarded

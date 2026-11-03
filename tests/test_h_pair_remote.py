@@ -446,6 +446,141 @@ def test_a_paused_or_stopped_pair_hands_back_each_cells_resume_receipt(
     assert (tmp_path / "collected" / recipient["receipt"]["path"]).is_file()
 
 
+def paused_recipient_world(tmp_path: Path, pair: Pair) -> tuple[PairProbeRequest, Path, Any]:
+    """A pair whose recipient pauses at prediction step 2 (reported step 4), collected."""
+    from tests.test_h_pair_request import pair_request
+
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request = pair_request(
+        pair,
+        cells=(PairCell(pair.donor, None, None), PairCell(pair.recipient, None, ("prediction", 2))),
+    )
+    objects: Any = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    report = collect(tmp_path, objects, request)
+    assert report is not None and report["terminal_name"] == "paused"
+    return request, tmp_path / "collected", report
+
+
+def forged_recipient_result(
+    root: Path,
+    report: dict[str, Any],
+    mutate: Any,
+    *,
+    receipt_steps: int | None = None,
+    entry_steps: int | None = None,
+) -> tuple[Path, dict[str, object]]:
+    """A copy of ``root`` whose recipient receipt is ``mutate(row)`` (re-hashed), and the paused
+    result that cites it. ``receipt_steps`` and ``entry_steps`` override the receipt's and the
+    result entry's own step count; unset, both keep the honest value."""
+    import hashlib
+    import shutil
+    from uuid import uuid4
+
+    donor, recipient = report["cells"]
+    forged = root.parent / f"forged-{uuid4().hex}"
+    shutil.copytree(root, forged)
+    receipt_path = recipient["receipt"]["path"]
+    row = mutate(json.loads((forged / receipt_path).read_text()))
+    if receipt_steps is not None:
+        row["successful_optimizer_steps"] = receipt_steps
+    payload = json.dumps(row, sort_keys=True, separators=(",", ":")).encode()
+    (forged / receipt_path).write_bytes(payload)
+    training = {"path": receipt_path, "sha256": hashlib.sha256(payload).hexdigest()}
+    steps = recipient["successful_optimizer_steps"] if entry_steps is None else entry_steps
+    result = {
+        "cells": [
+            {
+                "outcome": donor["outcome"],
+                "successful_optimizer_steps": donor["successful_optimizer_steps"],
+                "training": donor["receipt"],
+            },
+            {"outcome": "paused", "successful_optimizer_steps": steps, "training": training},
+        ]
+    }
+    return forged, result
+
+
+def test_a_paused_cells_receipt_is_checked_against_its_own_cell_pair_block_and_endpoint(
+    tmp_path: Path, pair: Pair
+) -> None:
+    from entropic_substrate.ladder.run import h_probe_collection
+
+    request, root, report = paused_recipient_world(tmp_path, pair)
+    donor_token = request.cells[0].token
+    _, control = forged_recipient_result(root, report, lambda row: row)
+    h_probe_collection._verify_cell_receipts(root, request, control, "paused")  # control
+
+    def refused(mutate: Any, **steps: int) -> None:
+        forged_root, result = forged_recipient_result(root, report, mutate, **steps)
+        with pytest.raises(ValueError):
+            h_probe_collection._verify_cell_receipts(forged_root, request, result, "paused")
+
+    refused(lambda row: {**row, "run_identity": request.cells[0].profile.identity})
+    refused(lambda row: {**row, "cell": donor_token})
+    refused(lambda row: {**row, "pair": "f" * 64})
+    refused(lambda row: {**row, "block": "f" * 64})
+    refused(lambda row: {**row, "status": "complete"})
+    refused(lambda row: row, receipt_steps=5, entry_steps=4)  # receipt step differs from entry
+    refused(lambda row: {**row, "schema": "h-probe-training-progress-v9"})  # schema v2 gate
+    refused(lambda row: row, receipt_steps=5, entry_steps=5)  # endpoint: pause at 2 + warm-up 2
+
+
+def test_two_terminal_claims_for_one_pair_are_refused_not_collected_under_the_first_name(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store that presents the same terminal under two names is a conflict, never a collection
+    under whichever name comes first in the terminal order. Control: the unmodified store collects."""
+    from tests.test_h_pair_request import pair_request
+
+    from entropic_substrate.ladder.run import h_probe_collection
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request = pair_request(
+        pair,
+        cells=(PairCell(pair.donor, None, None), PairCell(pair.recipient, None, ("prediction", 2))),
+    )
+    objects: Any = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert collect(tmp_path, objects, request, "control") is not None  # control
+    real = h_probe_collection.read_probe_event
+    duplicated = {"paused", "stopped"}
+
+    def two_names(store: Any, req: Any, name: str, **options: Any) -> Any:
+        return (
+            real(store, req, "paused", **options)
+            if name in duplicated
+            else real(store, req, name, **options)
+        )
+
+    monkeypatch.setattr(h_probe_collection, "read_probe_event", two_names)
+    with pytest.raises(ValueError, match="conflicting terminal claims"):
+        collect(tmp_path, objects, request, "conflict")
+
+
+def test_a_pause_collection_consults_each_cells_receipt_at_the_paused_outcome(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.ladder.run import h_probe_collection
+
+    calls: list[str] = []
+    real = h_probe_collection._verify_cell_receipts
+
+    def spy(root: Path, request: Any, result: Any, outcome: str) -> None:
+        calls.append(outcome)
+        real(root, request, result, outcome)
+
+    monkeypatch.setattr(h_probe_collection, "_verify_cell_receipts", spy)
+    _, _, report = paused_recipient_world(tmp_path, pair)
+    assert calls == ["paused"]
+    assert report["capture_status"] == "pause_bytes_verified"
+
+
 @pytest.mark.parametrize("missing_cell", ["donor", "recipient"])
 def test_a_collection_of_one_cell_missing_is_refused_not_collected(
     tmp_path: Path, pair: Pair, missing_cell: str
