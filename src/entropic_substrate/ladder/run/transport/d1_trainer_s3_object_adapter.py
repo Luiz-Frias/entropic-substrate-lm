@@ -410,6 +410,7 @@ class Boto3D1TrainerMailboxObjectAdapter:
         if type(upload_id) is not str or not upload_id:
             raise _error("publish", "response_invalid")
         completed: list[dict[str, object]] = []
+        aborted = False  # the upload is aborted exactly once, on whichever path ends it
         try:
             for number in range(1, part_count + 1):
                 start = (number - 1) * self._multipart_part
@@ -447,13 +448,15 @@ class Boto3D1TrainerMailboxObjectAdapter:
                     raise _error("publish", "provider_failure") from cause
                 # lost a race: another writer's object holds the key. Clean up OUR upload, then
                 # read and compare; never overwrite.
+                aborted = True
                 self._abort(client, key, upload_id)
                 current = self._read(key)
                 if current is None or current.identity != expected or current.payload != payload:
                     raise _error("publish", "immutable_collision") from cause
                 return expected
         except BaseException:
-            self._abort(client, key, upload_id)
+            if not aborted:
+                self._abort(client, key, upload_id)
             raise
         # (3) success only once the stored bytes are proven equal to the payload
         observed = self._read(key)

@@ -227,10 +227,12 @@ def test_a_lost_race_at_completion_is_read_and_compared_never_overwritten() -> N
     identity = publish(same)
     assert identity.sha256 == hashlib.sha256(PAYLOAD).hexdigest()  # type: ignore[attr-defined]
     assert same.calls[-1] == "abort"  # the loser's upload is cleaned up
+    assert same.aborted == ["upload-1"]  # exactly once: never a second abort of the same upload
     foreign = race_client(bytes(reversed(PAYLOAD)))
     with pytest.raises(D1TrainerS3ObjectError) as raised:
         publish(foreign)
     assert raised.value.code == "immutable_collision"
+    assert foreign.aborted == ["upload-1"]  # exactly once on the foreign-bytes branch too
     assert foreign.values[KEY] == bytes(reversed(PAYLOAD))  # the winner's bytes are untouched
 
 
