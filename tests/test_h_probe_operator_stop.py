@@ -1007,3 +1007,67 @@ def test_verb_returns_each_stopped_key_once_when_a_reference_repeats_its_run_twi
         sleep=lambda seconds: None,
     )
     assert keys == ("run/donor/a.json", "run/recipient/b.json", snapshot_key)
+
+
+def test_the_stop_command_refuses_a_cell_for_a_single_profile_launch_before_publishing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A single-profile launch has no cells: ``--at-cell`` is refused by the verb, and since the
+    marker is write-once nothing may be published (an unconfirmed marker would leave the run with
+    no further stop)."""
+    objects = _ObjectStore()
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_stop.build_worker_objects",
+        lambda *_a, **_kw: objects,
+    )
+    base = _stop_argv(tmp_path, wait_seconds="0.05", poll_seconds="0.01")
+    stderr = io.StringIO()
+    code = run_probe_stop(
+        [*base, "--at-phase", "prediction", "--at-step", "2", "--at-cell", "donor"],
+        environ={},
+        stdout=io.StringIO(),
+        stderr=stderr,
+    )
+    assert code == 1
+    assert json.loads(stderr.getvalue())["status"] == "stop_command_failed"
+    assert objects.publishes == [] and stop_marker_key(launch().request) not in objects.values
+    with pytest.raises(ValueError, match="a cell is given for a single-profile request"):
+        request_stop(
+            objects,
+            launch().request,
+            target=("prediction", 2),
+            cell="donor",
+            wait_seconds=1.0,
+            poll_seconds=1.0,
+            monotonic=lambda: 0.0,
+            sleep=lambda seconds: None,
+        )
+    assert objects.publishes == []
+
+
+def test_the_requested_host_event_names_the_cell_only_when_one_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``host.stop_marker.requested`` event narrates the seal and, for a pair, the cell the
+    stop lands on; a stop with no cell carries no ``at_cell`` key at all."""
+    from entropic_substrate.ladder.run.worker import h_probe_stop
+
+    objects = _ObjectStore()
+    monkeypatch.setattr(h_probe_stop, "build_worker_objects", lambda *_a, **_kw: objects)
+    seen: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        h_probe_stop, "emit", lambda _level, event, **fields: seen.append((event, fields))
+    )
+    base = _stop_argv(tmp_path, wait_seconds="0.05", poll_seconds="0.01")
+    run_probe_stop(
+        [*base, "--at-phase", "prediction", "--at-step", "2"],
+        environ={},
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+    requested = [
+        fields for event, fields in seen if event == h_probe_stop.HOST_STOP_MARKER_REQUESTED
+    ]
+    assert len(requested) == 1
+    assert requested[0]["at_phase"] == "prediction" and requested[0]["at_step"] == 2
+    assert "at_cell" not in requested[0]

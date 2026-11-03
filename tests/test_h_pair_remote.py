@@ -841,6 +841,43 @@ def test_the_pair_progress_tick_names_the_event_it_read_per_cell_and_claims_noth
     assert 0 < len(empty.reads) <= 2 and len(full.reads) <= 2 * 6
 
 
+def test_the_pair_progress_tick_emits_the_cell_named_event_not_a_single_profile_name(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The advisory line a pair's poll emits carries ``last_event``: the cell-named event the
+    ladder read (``checkpoint-<cell>-<total:08d>``), never the single-profile
+    ``checkpoint-<total:08d>`` that no pair event has."""
+    from entropic_substrate.ladder.run.worker import h_probe_controller as controller
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    emitted: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        controller, "emit", lambda _level, event, **fields: emitted.append((event, fields))
+    )
+    donor_only = CountingStore()
+    donor_only.values.update(
+        {k: v for k, v in objects.values.items() if "checkpoint-recipient" not in k}
+    )
+    controller._progress_tick(  # pyright: ignore[reportPrivateUsage]
+        controller._CheckpointProgress(request),  # pyright: ignore[reportPrivateUsage]
+        donor_only,
+        "pod-x",
+    )
+    controller._progress_tick(  # pyright: ignore[reportPrivateUsage]
+        controller._CheckpointProgress(request),  # pyright: ignore[reportPrivateUsage]
+        CountingStore(),
+        "pod-x",
+    )
+    ticks = [fields for event, fields in emitted if event == controller.HOST_POLL_TICK]
+    assert [(t["state"], t.get("step"), t.get("last_event")) for t in ticks] == [
+        ("step", 6, "checkpoint-donor-00000006"),
+        ("no_progress_yet", None, None),
+    ]
+    assert "last_event" not in ticks[1]
+
+
 def test_the_pair_progress_tick_never_relies_on_an_attribute_error_being_swallowed(
     tmp_path: Path, pair: Pair
 ) -> None:
@@ -920,7 +957,7 @@ def test_a_pair_stop_that_cannot_name_one_cell_at_one_seal_publishes_nothing(
     assert stop_marker_key(request) not in objects.values and objects.publishes == before
 
 
-def test_the_stop_command_takes_a_cell_for_a_pair_launch_and_refuses_it_for_a_single_one(
+def test_the_stop_command_takes_a_cell_for_a_pair_launch_and_narrates_it_in_its_host_event(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The command parses ``--at-cell`` into the verb for a launch that carries a pair, and the
@@ -938,6 +975,10 @@ def test_the_stop_command_takes_a_cell_for_a_pair_launch_and_refuses_it_for_a_si
         seen["pair"] = isinstance(request, PairProbeRequest)
 
     monkeypatch.setattr(h_probe_stop, "request_stop", verb)
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        h_probe_stop, "emit", lambda _level, event, **fields: events.append((event, fields))
+    )
     monkeypatch.setattr(h_probe_stop, "build_worker_objects", lambda *_a, **_k: object())
     code = h_probe_stop.run_probe_stop(
         [
@@ -967,6 +1008,10 @@ def test_the_stop_command_takes_a_cell_for_a_pair_launch_and_refuses_it_for_a_si
     assert code == 1  # the verb returned None: the stop is unconfirmed, as it should be here
     assert seen["pair"] is True and seen["cell"] == "recipient"
     assert seen["target"] == ("prediction", 2)
+    requested = [f for e, f in events if e == h_probe_stop.HOST_STOP_MARKER_REQUESTED]
+    assert len(requested) == 1
+    assert (requested[0]["at_phase"], requested[0]["at_step"]) == ("prediction", 2)
+    assert requested[0]["at_cell"] == "recipient"
 
 
 # ------------------------------------------------------------------------------- K3, per cell
@@ -1097,6 +1142,11 @@ def test_the_k3_script_reads_a_pairs_cells_from_its_parsed_request_file(
     single.write_bytes(single_request().payload)
     with pytest.raises(ValueError, match="names a single-profile request"):
         module.CHECKS["k3"]({"metrics": [], "request_digests": [], "pair_requests": [str(single)]})
+    # K1 and K2 read single-profile arms: a pair request is refused by name, with the way to K3
+    with pytest.raises(ValueError, match="K1 and K2 read single-profile arms"):
+        module.CHECKS["k2"]({"records": [], "requests": [str(path)]})
+    with pytest.raises(ValueError, match=r"K3 check is keyed per \(request, cell\) through"):
+        module.CHECKS["k2"]({"records": [], "requests": [str(path)]})
 
 
 def test_a_non_text_request_digest_in_a_metrics_file_fails_k3_instead_of_raising(

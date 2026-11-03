@@ -738,3 +738,121 @@ def test_the_host_refuses_a_referenced_object_whose_stored_bytes_were_corrupted(
         materialize_worker_snapshot(
             objects, request, found.snapshot, corrupted, max_marker_bytes=MAX
         )
+
+
+# ------------------------------------------------- the builder reads the evidence it is given
+def forge_newest_receipt(evidence: Path, token: str, name: str, mutate: Any) -> Path:
+    """A copy of ``evidence`` whose newest ``token`` receipt is ``mutate(row)``."""
+    forged = evidence.parent / name
+    shutil.copytree(evidence, forged)
+    root = forged / "run" / token
+    rows = {path: json.loads(path.read_text()) for path in sorted(root.glob("*-progress.json"))}
+    newest = max(rows, key=lambda path: rows[path]["successful_optimizer_steps"])
+    newest.write_text(json.dumps(mutate(rows[newest]), sort_keys=True, separators=(",", ":")))
+    return forged
+
+
+def test_a_resumed_pair_can_itself_be_resumed_and_ships_no_stale_run_inputs(
+    tmp_path: Path, pair: Pair
+) -> None:
+    """Second-generation resume: the next request keeps the non-``run/`` inputs of the previous one
+    and REPLACES its ``run/`` roots with the new evidence's, so no path is named twice and no root
+    of the earlier generation rides along."""
+    request, objects = completed_world(tmp_path, pair)
+    first_evidence = evidence_root(
+        tmp_path, objects, request, "checkpoint-recipient-00000004", "ev-gen1"
+    )
+    first = build_pair_resume_request(request, first_evidence, nonce="2" * 64)
+    assert any(a.path.startswith("run/recipient/") for a in first.inputs)
+    second_evidence = evidence_root(
+        tmp_path, objects, request, "checkpoint-donor-00000002", "ev-gen2"
+    )
+    second = build_pair_resume_request(first, second_evidence, nonce="3" * 64)
+    paths = [a.path for a in second.inputs]
+    assert len(paths) == len(set(paths))
+    # the recipient root of generation one is gone; the donor root is generation two's own
+    assert not any(path.startswith("run/recipient/") for path in paths)
+    assert {a for a in second.inputs if a.path.startswith("run/donor/")} == {
+        a for a in second.inputs if a.path.startswith("run/")
+    }
+    assert [a for a in second.inputs if not a.path.startswith("run/")] == [
+        a for a in first.inputs if not a.path.startswith("run/")
+    ]
+    assert second.nonce == "3" * 64 and second.cells[1].resume is None
+    assert parse_probe_request(second.payload, max_bytes=1_000_000) == second
+
+
+def test_a_donor_resume_names_only_a_warmup_or_prediction_receipt(
+    tmp_path: Path, pair: Pair
+) -> None:
+    request, objects = completed_world(tmp_path, pair)
+    evidence = evidence_root(tmp_path, objects, request, "checkpoint-donor-00000006", "ev-phase")
+    build_pair_resume_request(request, evidence, nonce="2" * 64)  # control: the honest evidence
+    forged = forge_newest_receipt(evidence, "donor", "ev-phase-bad", lambda r: {**r, "phase": "x"})
+    with pytest.raises(ValueError, match="names a warm-up or prediction receipt"):
+        build_pair_resume_request(request, forged, nonce="2" * 64)
+
+
+def test_a_recipient_receipt_beside_an_unfinished_donor_is_refused_by_name(
+    tmp_path: Path, pair: Pair
+) -> None:
+    """A recipient cannot have trained past its hand-off while the donor's training was still
+    running: such evidence is contradictory, so the builder names it instead of picking a side."""
+    request, objects = completed_world(tmp_path, pair)
+    evidence = evidence_root(tmp_path, objects, request, "checkpoint-recipient-00000004", "ev-un")
+    build_pair_resume_request(request, evidence, nonce="2" * 64)  # control: donor complete
+    forged = forge_newest_receipt(
+        evidence, "donor", "ev-un-bad", lambda r: {**r, "status": "paused"}
+    )
+    assert any((forged / "run" / "recipient").glob("*-progress.json"))
+    with pytest.raises(ValueError, match="donor's training is not complete"):
+        build_pair_resume_request(request, forged, nonce="2" * 64)
+
+
+@pytest.mark.parametrize("cell", ["donor", "recipient"])
+@pytest.mark.parametrize(
+    ("mutate", "match"),
+    [
+        (lambda row: {**row, "pair": "f" * 64}, "is not this pair's own"),
+        (lambda row: {**row, "block": "f" * 64}, "is not this pair's own"),
+        (lambda row: {**row, "cell": "foreign"}, "is not this pair's own"),
+        (lambda row: {**row, "run_identity": "f" * 64}, "is not this pair's own"),
+        (lambda row: {**row, "schema": "h-probe-training-progress-v9"}, "is not this pair's own"),
+        # a retired v1 receipt is refused by NAME, with the minimum version
+        (
+            lambda row: {**row, "schema": "h-probe-training-progress-v1"},
+            "minimum supported version is h-probe-training-progress-v2",
+        ),
+    ],
+    ids=["pair", "block", "cell", "run_identity", "schema_v9", "schema_v1"],
+)
+def test_the_builder_refuses_a_receipt_that_is_not_this_pairs_own_cell(
+    tmp_path: Path, pair: Pair, cell: str, mutate: Any, match: str
+) -> None:
+    request, objects = completed_world(tmp_path, pair)
+    evidence = evidence_root(tmp_path, objects, request, "checkpoint-recipient-00000004", "ev-own")
+    forged = forge_newest_receipt(evidence, cell, "ev-own-bad", mutate)
+    with pytest.raises(ValueError, match=match):
+        build_pair_resume_request(request, forged, nonce="2" * 64)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        # each conjunct of "this is the recipient's hand-off receipt" is separate evidence: a
+        # receipt missing any ONE of them is the recipient's own training and is resumed from
+        lambda row: {**row, "own_optimizer_steps": 0},
+        lambda row: {**row, "phase": "codec_warmup"},
+        lambda row: {**row, "handoff": None, "own_optimizer_steps": 0, "phase": "codec_warmup"},
+    ],
+    ids=["has_own_steps_zero_only", "is_warmup_only", "has_no_handoff_evidence"],
+)
+def test_a_recipient_receipt_is_a_handoff_only_when_all_three_marks_agree(
+    tmp_path: Path, pair: Pair, mutate: Any
+) -> None:
+    request, objects = completed_world(tmp_path, pair)
+    evidence = evidence_root(tmp_path, objects, request, "checkpoint-recipient-00000004", "ev-mark")
+    forged = forge_newest_receipt(evidence, "recipient", "ev-mark-bad", mutate)
+    resumed = build_pair_resume_request(request, forged, nonce="2" * 64)
+    assert resumed.cells[1].resume is not None
+    assert resumed.cells[1].resume.path.endswith("-prediction-00000002-progress.json")
