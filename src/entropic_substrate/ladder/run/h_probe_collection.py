@@ -304,6 +304,9 @@ def admit_pair_collection(value: object, request: PairProbeRequest) -> dict[str,
     minimum supported version (v1 names no cell, so it cannot describe a pair). At the committed
     tip no src module imports it yet: the resume builder (``h_probe_resume``) adopts it when the
     staged DG-A reader-member patch lands, and until then that builder still reads v1 only.
+
+    RETRACTED 2026-11-02: the sentence above is false at the tip. ``h_probe_resume`` imports
+    ``admit_pair_collection`` (line 59) and calls it from ``build_pair_resume_request`` (line 250).
     """
     if type(value) is not dict:
         raise ValueError("a pair terminal collection must be an object")

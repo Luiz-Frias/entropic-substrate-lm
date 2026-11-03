@@ -241,8 +241,9 @@ publishes the write-once `h-probe-stop-marker-v2` and stops that cell only, and 
 (`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional completion and part
 checksums is UNMEASURED, so the first live pair run is the measurement.
 
-Capture by reference (FOR-1694; lands with the staged reader-member DG-A patch, not on this
-branch tip). A pair's completion snapshot is `h-worker-snapshot-v2`: a `capture/<cell>/<file>`
+Capture by reference (FOR-1694). RETRACTED 2026-11-02: the phrase "lands with the staged
+reader-member DG-A patch, not on this branch tip" was false at the tip; the DG-A patch is landed
+at this tip and `worker_snapshot` writes `h-worker-snapshot-v2` reference entries. A pair's completion snapshot is `h-worker-snapshot-v2`: a `capture/<cell>/<file>`
 whose bytes equal the snapshot's own `run/<cell>/<file>` is a reference entry (`reference`, and
 `key` naming the referenced object) with no second upload, so a pair pays for each large object
 once. The host resolves a reference to the run twin's bytes and refuses a digest disagreement; a

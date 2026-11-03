@@ -99,9 +99,12 @@ class ProbeProviderAbsent(RuntimeError):
 # Measured 2026-11-02 at 1e9e6fd3: the hand-off receipt ``handoff-codec_warmup-00000002-progress.json``
 # DOES match this pattern (old ``(warmup|prediction)`` form: False; this form: True), so the regex
 # alone never refuses a hand-off. The hand-off is kept from being a resume target by the resume
-# request gate in ``worker_request._check_resumes`` (refuses a ``handoff-`` name; that gate and its
-# pin ship in the staged DG-A patch, not on this tip) and by ``h_probe_resume``'s paused-status
-# check (R3). This regex is not the R3 guard.
+# request gate in ``worker_request._check_resumes`` (refuses a ``handoff-`` name) and by
+# ``h_probe_resume``'s paused-status check (R3). This regex is not the R3 guard.
+# RETRACTED 2026-11-02: the parenthetical "that gate and its pin ship in the staged DG-A patch,
+# not on this tip" was false. The gate is on this tip (``worker_request.py``, the ``handoff-``
+# check at line 472), and ``tests/test_h_pair_remote_dga.py`` pins that the hand-off receipt is
+# never a resume target.
 _RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 
 
