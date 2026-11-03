@@ -26,9 +26,9 @@ dependencies = [
 [dependency-groups]
 deploy = [
   # The R2 worker imports the S3 client directly; do not rely on DVC transitives.
-  "boto3>=1.34.0",
+  "boto3>=1.35.2",
   # The worker directly uses Config to bound SDK timeouts and retries.
-  "botocore>=1.34.0",
+  "botocore>=1.35.2",
   # Portable successor verification recomputes sealed paired statistical results.
   "scipy>=1.15.0",
   # scripts/run_ladder.sh performs dvc add/push on the pod after every rung.
