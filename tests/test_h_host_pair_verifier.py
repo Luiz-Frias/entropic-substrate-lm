@@ -30,7 +30,7 @@ from tests.test_h_codec_handoff import (
     warmup_final,
 )
 
-from entropic_substrate.kernel.lifecycle import ArtifactIdentity
+from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run import host_pair_verifier
 from entropic_substrate.ladder.run.codec_handoff import CodecHandoffDefect, VerifiedHandoff
 from entropic_substrate.ladder.run.host_pair_verifier import (
@@ -105,6 +105,29 @@ def test_every_hazard_row_is_refused_by_the_host_verifier_with_the_pod_verifiers
     host_side = refusal(lambda: on_host(world, world.donor, root, seal))
     assert host_side.code == pod_side.code == code, kind
     assert host_side.detail == pod_side.detail, kind
+
+
+def test_a_pair_of_one_carrier_is_refused_by_the_pair_predicate_before_any_file_is_read(
+    world: World, tmp_path: Path
+) -> None:
+    """The host verifier's first act is ``require_pair``, as ``admit_codec_pair``'s is: a donor
+    and a recipient of the same spine carrier name ``pair_predicate`` with the pod verifier's own
+    detail. The roots do not exist, so a verifier that skipped the predicate would fail with an
+    artifact read error instead of the pair refusal."""
+    from entropic_substrate.ladder.run.codec_handoff import admit_codec_pair
+
+    pair = world.pair
+    missing = tmp_path / "no-such-root"
+    seal = ArtifactIdentity("no-seal.json", ContentHash("sha256", "0" * 64))
+    arguments: dict[str, Any] = {
+        "max_source_bytes": SOURCE_LIMIT,
+        "max_artifact_bytes": LIMIT,
+    }
+    same = (missing, seal, pair.donor, missing, seal, pair.donor, pair.source)
+    host_side = refusal(lambda: admit_codec_pair_on_host(*same, **arguments))
+    pod_side = refusal(lambda: admit_codec_pair(*same, **arguments))
+    assert host_side.code == pod_side.code == "pair_predicate"
+    assert host_side.detail == pod_side.detail == "a pair needs two different spine carriers"
 
 
 def test_the_central_forgery_is_named_by_the_donor_side_on_the_host_too(world: World) -> None:

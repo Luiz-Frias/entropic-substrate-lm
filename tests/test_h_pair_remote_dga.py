@@ -308,6 +308,45 @@ def test_a_resume_is_built_only_from_a_pause_a_stop_or_the_dh45_failure(
         )
 
 
+@pytest.mark.parametrize("outcome", ["scientific_gap", "diagnostic_gap"])
+def test_a_post_training_gap_failure_is_registered_negative_evidence_never_a_resume_source(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """Only an ``execution_defect`` failure is a DH-45 source: a scientific or diagnostic gap is a
+    recorded outcome that a resumed lineage would overwrite. The collection is the REAL one of a
+    pair whose second generation call raised (reported_outcome scientific_gap, no verdict); the
+    diagnostic arm names the same collection with the other gap, as the producer would."""
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run import worker_execution
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    real = worker_execution.run_probe_generation
+    calls: list[str] = []
+
+    def generation(*args: Any, **kwargs: Any) -> Any:
+        calls.append("generation")
+        if len(calls) == 2:
+            raise UndefinedDirection(3)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(worker_execution, "run_probe_generation", generation)
+    status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2
+    report = collect(tmp_path, objects, request, "c-gap")
+    assert report is not None and report["terminal_name"] == "failure"
+    assert report["capture_status"] == "failure_bytes_verified" and report["verdict"] is None
+    assert report["reported_outcome"] == "scientific_gap"
+    named = {**report, "reported_outcome": outcome}
+    with pytest.raises(ValueError, match="not a resumable source"):
+        build_pair_resume_request(request, tmp_path / "c-gap", nonce="2" * 64, collection=named)
+    # the control: the same collection as an execution defect is the DH-45 source and builds
+    control = {**report, "reported_outcome": "execution_defect"}
+    resumed = build_pair_resume_request(
+        request, tmp_path / "c-gap", nonce="2" * 64, collection=control
+    )
+    assert resumed.nonce == "2" * 64 and resumed.run_identity == request.run_identity
+
+
 def test_the_builder_refuses_a_v1_collection_a_reused_nonce_and_evidence_of_nothing(
     tmp_path: Path, pair: Pair
 ) -> None:

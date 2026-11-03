@@ -7,7 +7,9 @@ verb, K3, the host verifier) runs over the real ``local_tiny`` pair the L4b work
 CPU, read through a fake object store whose every publish and read is counted at the port.
 """
 
+import hashlib
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -446,6 +448,50 @@ def test_a_paused_or_stopped_pair_hands_back_each_cells_resume_receipt(
     assert (tmp_path / "collected" / recipient["receipt"]["path"]).is_file()
 
 
+@pytest.mark.parametrize("terminal", ["paused", "stopped", "failure_with_result"])
+def test_a_pair_result_is_bound_to_the_pod_it_names_on_every_terminal_that_cites_one(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, terminal: str
+) -> None:
+    """``_pair_result`` holds the ONLY pod and runtime binding of a paused, a stopped and a
+    failure-snapshot result v2 (complete and excluded get a second one in the completion reader):
+    a local run's runtime claims no provider allocation, so collecting it for a named pod is
+    refused, and with no pod named (the control) the same bytes collect."""
+    from tests.test_h_pair_request import marker_store, pair_request
+
+    from entropic_substrate.ladder.run.object_worker import encode_stop_marker
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    expected = {"paused": "paused", "stopped": "stopped", "failure_with_result": "failure"}
+    if terminal == "failure_with_result":
+        request, objects = final_snapshot_world(tmp_path, pair, monkeypatch, excluded=False)
+    else:
+        if terminal == "paused":
+            request = pair_request(
+                pair,
+                cells=(
+                    PairCell(pair.donor, None, None),
+                    PairCell(pair.recipient, None, ("prediction", 2)),
+                ),
+            )
+            objects = _ObjectStore()
+        else:
+            request = pair_request(pair)
+            objects = marker_store(
+                request, encode_stop_marker(request, ("prediction", 2, "recipient"))
+            )
+        marker = publish_probe_request(objects, request, tmp_path)
+        status, error, _, _ = run_command(tmp_path, objects, marker)
+        assert status == 0, error
+    control = collect(tmp_path, objects, request, "c-control")
+    assert control is not None and control["terminal_name"] == expected[terminal]
+    named = tmp_path / "c-named"
+    named.mkdir()
+    with pytest.raises(ValueError, match="local completion cannot claim a provider allocation"):
+        collect_probe_terminal(
+            objects, request, named, expected_pod_id="pod-roundc", max_marker_bytes=MAX_BYTES
+        )
+
+
 def paused_recipient_world(tmp_path: Path, pair: Pair) -> tuple[PairProbeRequest, Path, Any]:
     """A pair whose recipient pauses at prediction step 2 (reported step 4), collected."""
     from tests.test_h_pair_request import pair_request
@@ -718,6 +764,11 @@ def test_a_collection_of_one_cell_missing_is_refused_not_collected(
     ).encode()
     with pytest.raises(ValueError, match="could not be opened beneath its root"):
         collect(tmp_path, objects, request)
+    # a refused collection still preserves the terminal event it refused, byte for byte, and
+    # writes no collection.json (the evidence of the refusal, not a verified record)
+    kept = tmp_path / "collected"
+    assert (kept / "terminal.json").read_bytes() == objects.values[event_key]
+    assert not (kept / "collection.json").exists()
 
 
 def test_a_pair_collection_presented_as_v1_is_refused_by_name_with_the_minimum_version(
@@ -746,6 +797,60 @@ def test_a_pair_collection_presented_as_v1_is_refused_by_name_with_the_minimum_v
             admit_pair_collection({**report, **tamper}, request)
     with pytest.raises(ValueError, match="must be an object"):
         admit_pair_collection([report], request)
+
+
+PAIR_REPORT_KEYS = {
+    "schema",
+    "scientific_authority",
+    "request_sha256",
+    "pair_id",
+    "terminal",
+    "terminal_name",
+    "reported_outcome",
+    "workload_verified",
+    "reported_optimizer_steps",
+    "native_validation",
+    "verdict",
+    "cells",
+    "capture_status",
+    "terminal_artifact",
+}
+PAIR_CELL_KEYS = {
+    "cell",
+    "run_identity",
+    "outcome",
+    "successful_optimizer_steps",
+    "receipt",
+    "result",
+    "capture_root",
+    "verification_root",
+}
+
+
+def test_a_pair_collection_v2_has_exactly_its_key_set_and_each_cell_entry_its_own(
+    tmp_path: Path, pair: Pair
+) -> None:
+    """v1's exact key set is pinned beside this one: an extra key, or a missing
+    ``terminal_artifact`` (the preserved terminal event's digest), is a change of the record."""
+    request, objects, marker = pair_world(tmp_path, pair)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    report = collect(tmp_path, objects, request)
+    assert report is not None and report["terminal_name"] == "complete"
+    assert set(report) == PAIR_REPORT_KEYS | {"completion"}  # a complete pair carries its receipt
+    assert all(set(entry) == PAIR_CELL_KEYS for entry in report["cells"])
+    artifact = report["terminal_artifact"]
+    assert artifact["path"] == "terminal.json"
+    assert (
+        hashlib.sha256((tmp_path / "collected" / "terminal.json").read_bytes()).hexdigest()
+        == (artifact["sha256"])
+    )
+    # a snapshot-bearing terminal carries its snapshot identity instead of a completion
+    paused_world = tmp_path / "paused"
+    paused_world.mkdir()
+    _, _root, paused = paused_recipient_world(paused_world, make_pair(paused_world))
+    assert set(paused) == PAIR_REPORT_KEYS | {"snapshot"}
+    assert all(set(entry) == PAIR_CELL_KEYS for entry in paused["cells"])
 
 
 def test_a_single_profile_collection_stays_v1_with_exactly_its_key_set(tmp_path: Path) -> None:
@@ -781,6 +886,88 @@ def test_a_single_profile_collection_stays_v1_with_exactly_its_key_set(tmp_path:
         "terminal_artifact",
     }
     assert "cells" not in report and "verdict" not in report and "pair_id" not in report
+
+
+def test_a_single_profile_collection_refuses_a_destination_that_is_not_fresh_and_empty(
+    tmp_path: Path,
+) -> None:
+    """The single-profile path keeps its fresh-destination refusal byte for byte: the evidence of
+    one terminal never lands among files that were already there."""
+    from tests.test_sentence_worker_execution import prepared
+
+    from entropic_substrate.ladder.run import object_worker
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request, inputs = prepared(tmp_path)
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, inputs)
+    worker = tmp_path / "executed"
+    worker.mkdir()
+    object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "earlier.txt").write_text("already here")
+    with pytest.raises(
+        ValueError, match=f"^{re.escape('terminal collection requires a fresh empty destination')}$"
+    ):
+        collect_probe_terminal(
+            objects, request, occupied, expected_pod_id=None, max_marker_bytes=1_000_000
+        )
+    assert [path.name for path in occupied.iterdir()] == ["earlier.txt"]  # nothing was written
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        {"request_sha256": "0" * 64},
+        {"schema": "h-worker-failure-v2"},
+        {"scientific_authority": "granted"},
+        {"status": "scientific_gap"},
+        {"stage": "generation"},
+        {"error_type": "OtherError"},
+        {"error_code": "other"},
+        {"detail": 7},
+    ],
+    ids=lambda tamper: next(iter(tamper)),
+)
+def test_a_failure_record_is_bound_to_its_request_and_agrees_with_its_terminal_event(
+    tmp_path: Path, pair: Pair, tamper: dict[str, object]
+) -> None:
+    """Every conjunct of ``_verify_failure_record``, flipped one at a time from an honest record
+    (the control passes): the record names this request, no authority, and the terminal event's
+    own status, stage and error."""
+    from tests.test_h_pair_request import pair_request
+
+    from entropic_substrate.ladder.run import h_probe_collection
+
+    request = pair_request(pair)
+    event = {
+        "status": "execution_defect",
+        "stage": "execution",
+        "error_type": "RuntimeError",
+        "error_code": "fixture",
+    }
+    honest = {
+        "schema": "h-worker-failure-v1",
+        "request_sha256": request.digest,
+        "scientific_authority": "none",
+        **event,
+        "detail": "fixture",
+    }
+
+    def verify(record: dict[str, object], name: str) -> dict[str, object]:
+        root = tmp_path / name
+        (root / "worker").mkdir(parents=True)
+        payload = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        (root / "worker" / "failure.json").write_bytes(payload)
+        files = [{"path": "worker/failure.json", "sha256": hashlib.sha256(payload).hexdigest()}]
+        return h_probe_collection._verify_failure_record(  # pyright: ignore[reportPrivateUsage]
+            root, request, files, event
+        )
+
+    assert verify(honest, "control") == honest
+    with pytest.raises(ValueError, match="failure record differs from its terminal event"):
+        verify({**honest, **tamper}, "tampered")
 
 
 # ----------------------------------------------------------- the controller, on a pair launch
@@ -945,6 +1132,36 @@ def test_the_pair_progress_tick_names_the_event_it_read_per_cell_and_claims_noth
     assert nothing.advance(empty) is None and nothing.last_event is None
     # reads are bounded by the ladders, not by what sits under the prefix
     assert 0 < len(empty.reads) <= 2 and len(full.reads) <= 2 * 6
+
+
+@pytest.mark.parametrize(
+    ("kept", "newest", "event"),
+    [
+        # the donor is further along than the recipient, and the other way about: the tick
+        # reports the NEWEST step any cell has published, in either order of the cells
+        ({"donor": 6, "recipient": 4}, 6, "checkpoint-donor-00000006"),
+        ({"donor": 4, "recipient": 6}, 6, "checkpoint-recipient-00000006"),
+    ],
+    ids=["donor_ahead", "recipient_ahead"],
+)
+def test_the_pair_progress_tick_reports_the_newest_step_of_cells_at_different_steps(
+    tmp_path: Path, pair: Pair, kept: dict[str, int], newest: int, event: str
+) -> None:
+    from entropic_substrate.ladder.run.worker.h_probe_controller import _CheckpointProgress
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    store = CountingStore()
+    for key, value in objects.values.items():
+        name = key.removeprefix(request.prefix + "/")
+        if not name.startswith("checkpoint-"):
+            continue
+        _, cell, step = name.removesuffix(".json").split("-")
+        if int(step) <= kept[cell]:
+            store.values[key] = value
+    progress = _CheckpointProgress(request)
+    assert progress.advance(store) == newest and progress.last_event == event
 
 
 def test_the_pair_progress_tick_emits_the_cell_named_event_not_a_single_profile_name(

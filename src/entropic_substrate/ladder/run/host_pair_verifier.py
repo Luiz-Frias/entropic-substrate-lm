@@ -24,14 +24,15 @@ frame replays); this module is not a member and is not in ``_READER_MODULES``. T
 helpers it mirrors (``_walk`` and ``_same_value``) are copied, not imported, and are named below.
 
 Scope of the claim: equal to ``admit_codec_pair`` on every refusal the pair check names
-(``independent_warmup``, ``chained_handoff``, ``foreign_donor``, ``construction_divergence``,
-``payload_mismatch``), proven by ``tests/test_h_host_pair_verifier.py`` over L4a's
-``ADMIT_HAZARDS`` table. NOT claimed: the full tensor/optimizer-moment admission
-(``checkpoint.load_checkpoint``'s finiteness and shape checks), which only a restore performs; the
-digest equalities are the guard on those values here. ``read_seal`` reads each checkpoint through
-``checkpoint_metadata``, which refuses a checkpoint whose ``reader`` identity differs from the
-host's (Python, torch and member bytes): on a real host this verifier admits pod bytes only under
-the pinned image regime.
+(``pair_predicate``, ``independent_warmup``, ``chained_handoff``, ``foreign_donor``,
+``construction_divergence``, ``payload_mismatch``), proven by ``tests/test_h_host_pair_verifier.py``
+over L4a's ``ADMIT_HAZARDS`` table (``pair_predicate`` has no row there: a same-carrier pair is
+pinned in its own test, which compares both verifiers' code and detail). NOT claimed: the full
+tensor/optimizer-moment admission (``checkpoint.load_checkpoint``'s finiteness and shape checks),
+which only a restore performs; the digest equalities are the guard on those values here.
+``read_seal`` reads each checkpoint through ``checkpoint_metadata``, which refuses a checkpoint
+whose ``reader`` identity differs from the host's (Python, torch and member bytes): on a real host
+this verifier admits pod bytes only under the pinned image regime.
 """
 
 from __future__ import annotations

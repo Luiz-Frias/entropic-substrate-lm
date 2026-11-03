@@ -329,7 +329,17 @@ def test_named_reconciliation_includes_stopped_pods_and_does_not_create(
     spec = launch()
     stopped = pod(spec) | {"desiredStatus": "EXITED", "runtimeStatus": "stopped"}
     foreign = pod(spec) | {"id": "foreign-pod", "name": "other-job"}
-    runner = Runner([success([stopped, foreign])])
+    # NEAR-MISSES of the exact name: the last character changed, a character dropped and one
+    # appended. The name carries the launch digest, so a prefix or a nearly-equal match would list
+    # another launch's pod as this launch's (D8: the rule is verify-and-close, an exact match)
+    last = spec.pod_name[-1]
+    near = [
+        pod(spec)
+        | {"id": "near-changed", "name": spec.pod_name[:-1] + ("0" if last != "0" else "1")},
+        pod(spec) | {"id": "near-short", "name": spec.pod_name[:-1]},
+        pod(spec) | {"id": "near-long", "name": spec.pod_name + "0"},
+    ]
+    runner = Runner([success([stopped, foreign, *near])])
     observed = transport(tmp_path, monkeypatch, runner).list_owned(spec)
     assert [p.pod_id for p in observed] == ["owned-pod"]
     assert observed[0].runtime_status == "stopped"

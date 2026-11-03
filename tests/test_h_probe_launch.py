@@ -13,6 +13,7 @@ pins and is now REFUSED BY NAME (its read retired at this bump).
 
 import hashlib
 import json
+import re
 import shlex
 import sys
 from dataclasses import fields, replace
@@ -604,7 +605,10 @@ def test_unknown_launch_schemas_are_refused() -> None:
     for name in ("h-probe-launch-v6", "h0-probe-launch-v4"):
         row = launch().manifest
         row["schema"] = name
-        with pytest.raises(ValueError, match="scope or authority mismatch"):
+        # the parse site's own text, whole: the later refusals of this function share its tail
+        with pytest.raises(
+            ValueError, match=f"^{re.escape('H0 deployment scope or authority mismatch')}$"
+        ):
             parse_probe_launch(_reencode(row), max_bytes=1_000_000)
 
 
