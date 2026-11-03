@@ -538,11 +538,10 @@ def _capture_pair(
                     ),
                 }
                 result = _pair_result(root, request, reference, expected_pod_id=expected_pod_id)
-                verdict = cast(dict[str, object], result["verdict"])
-                if result["status"] == "execution_defect":
-                    if verdict["verdict"] != "excluded" or verdict["reason"] != "reader_refusal":
-                        raise ValueError("failure result differs from an execution stop")
-                elif failure["stage"] != "final_snapshot":
+                # ``parse_pair_result`` admits ``execution_defect`` only with an excluded
+                # ``reader_refusal`` verdict naming a cell, so no second check of that pair is
+                # kept here (review probe T29d, 2026-11-03: flipping the copy stayed green)
+                if result["status"] != "execution_defect" and failure["stage"] != "final_snapshot":
                     # any other status was written only by a worker that reached final_snapshot
                     raise ValueError("failure result differs from an execution stop")
                 report["capture_status"] = "failure_bytes_verified"

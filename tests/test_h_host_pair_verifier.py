@@ -148,16 +148,46 @@ def test_the_host_verifier_never_builds_an_engine_and_never_touches_a_cuda_devic
 
     monkeypatch.setattr(execution.SentenceExecution, "__init__", forbidden)
     loads: list[object] = []
+    safety: list[object] = []
     real_load = torch.load
 
     def spy(*args: Any, **kwargs: Any) -> Any:
         loads.append(kwargs.get("map_location"))
+        safety.append(kwargs.get("weights_only"))
         return real_load(*args, **kwargs)
 
     monkeypatch.setattr(host_pair_verifier.torch, "load", spy)
     assert on_host(world, world.donor, root, handoff.seal) == handoff.verified
     # every load (the seal walks' and the verifier's own two payload reads) is CPU-mapped
     assert loads and set(loads) == {"cpu"}
+    # ... and every load refuses arbitrary pickled globals: the bytes are pod-written, so a
+    # full-pickle load here would be host-side code execution (the verifier's own two reads are
+    # in this set; flipping either to ``weights_only=False`` makes it ``{True, False}``)
+    assert set(safety) == {True}
+
+
+def test_the_verifier_refuses_a_checkpoint_whose_bytes_changed_between_the_seal_walk_and_its_read(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``read_seal`` admits each checkpoint's hash through its own read; the verifier then reads
+    the same bytes a second time for the three payload keys. A second read that returns other
+    bytes (with their own honest hash) is refused against the SEALED hash, never loaded."""
+    import hashlib
+
+    pair = world.pair
+    root = pair.root("host-swap")
+    handoff = materialize(pair, world.donor, root)
+    assert on_host(world, world.donor, root, handoff.seal) == handoff.verified  # control
+    real_read = host_pair_verifier.read_d1_artifact_bytes
+
+    def swapped(*args: Any, **kwargs: Any) -> Any:
+        head, payload, _ = real_read(*args, **kwargs)
+        other = payload + b"\0"
+        return head, other, hashlib.sha256(other).hexdigest()
+
+    monkeypatch.setattr(host_pair_verifier, "read_d1_artifact_bytes", swapped)
+    with pytest.raises(ValueError, match="checkpoint content hash mismatch"):
+        on_host(world, world.donor, root, handoff.seal)
 
 
 def test_a_pods_cuda_rng_states_are_part_of_the_digest_the_verifier_compares(
@@ -200,6 +230,31 @@ def test_a_donor_chain_rooted_at_a_hand_off_is_chained_on_the_host(
         return replace(sealed, root_kind="handoff") if donor_root == world.donor else sealed
 
     monkeypatch.setattr(host_pair_verifier, "read_seal", handed_off)
+    assert (
+        refusal(lambda: on_host(world, world.donor, root, handoff.seal)).code == "chained_handoff"
+    )
+
+
+def test_a_hand_off_rooted_donor_with_no_warm_up_final_is_chained_before_it_is_foreign(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pod verifier refuses a hand-off-rooted donor chain on the CITED seal, before it asks for
+    a warm-up-final, so a chain that is both says ``chained_handoff``. The host mirrors that order
+    (its second hand-off check, after the warm-up-final is resolved, would say ``foreign_donor``)."""
+    pair = world.pair
+    root = pair.root("host-chained-first")
+    handoff = materialize(pair, world.donor, root)
+    real = host_pair_verifier.read_seal
+
+    def handed_off_without_final(
+        donor_root: Path, seal: ArtifactIdentity, profile: Any, *a: Any, **k: Any
+    ) -> Any:
+        sealed = real(donor_root, seal, profile, *a, **k)
+        if donor_root != world.donor:
+            return sealed
+        return replace(sealed, root_kind="handoff", warmup_final=None)
+
+    monkeypatch.setattr(host_pair_verifier, "read_seal", handed_off_without_final)
     assert (
         refusal(lambda: on_host(world, world.donor, root, handoff.seal)).code == "chained_handoff"
     )

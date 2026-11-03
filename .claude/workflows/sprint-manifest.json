@@ -532,6 +532,7 @@
         "docs/deploy-h100.md",
         "tests/test_h_pair_remote.py",
         "tests/test_h_pair_remote_dga.py",
+        "tests/test_h_pair_events.py",
         "tests/test_h_host_pair_verifier.py",
         "tests/test_d1_trainer_s3_multipart.py",
         "tests/test_h_resumed_run_handoff.py",

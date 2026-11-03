@@ -581,6 +581,112 @@ def test_a_pause_collection_consults_each_cells_receipt_at_the_paused_outcome(
     assert report["capture_status"] == "pause_bytes_verified"
 
 
+@pytest.mark.parametrize("terminal", ["paused", "stopped"])
+def test_a_paused_or_stopped_terminal_whose_cited_result_names_the_other_status_is_refused(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, terminal: str
+) -> None:
+    """The terminal event and the result it cites must agree on the pair's status. This check is
+    the ONLY layer for the lie: a paused terminal citing a ``stopped_by_operator`` result would
+    otherwise reach ``_verify_cell_receipts(.., "paused")``, find no paused cell and verify
+    nothing, collecting as ``pause_bytes_verified``. Control: the honest world collects."""
+    from tests.test_h_pair_request import marker_store, pair_request
+
+    from entropic_substrate.ladder.run import h_probe_collection
+    from entropic_substrate.ladder.run.object_worker import encode_stop_marker
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    if terminal == "paused":
+        request = pair_request(
+            pair,
+            cells=(
+                PairCell(pair.donor, None, None),
+                PairCell(pair.recipient, None, ("prediction", 2)),
+            ),
+        )
+        objects: Any = _ObjectStore()
+        lie = "stopped_by_operator"
+    else:
+        request = pair_request(pair)
+        objects = marker_store(request, encode_stop_marker(request, ("prediction", 2, "recipient")))
+        lie = "paused"
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    control = collect(tmp_path, objects, request, "control")
+    assert control is not None and control["terminal_name"] == terminal
+    real = h_probe_collection._pair_result
+
+    def other_status(*args: Any, **kwargs: Any) -> dict[str, object]:
+        return {**real(*args, **kwargs), "status": lie}
+
+    monkeypatch.setattr(h_probe_collection, "_pair_result", other_status)
+    with pytest.raises(ValueError, match=f"{terminal} result differs from its terminal event"):
+        collect(tmp_path, objects, request, "lie")
+
+
+def test_a_fresh_donor_run_root_must_not_pre_exist_in_the_workspace(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A request with no donor resume starts the donor in a NEW ``run/donor``. The worker
+    command refuses a non-empty workspace at the door, so this guard is the second layer: a
+    directory that appears between that check and the donor's start (injected here after runtime
+    admission) is refused, never adopted. Only a resuming donor, whose root is materialized from
+    its inputs, may find its root there. Control: the same request in its own store runs."""
+    from io import StringIO
+
+    from tests.test_h_pair_request import pair_request
+
+    from entropic_substrate.ladder.run import worker_execution
+    from entropic_substrate.ladder.run.worker_command import run_worker_command
+    from entropic_substrate.ladder.run.worker_transport import publish_probe_request
+
+    request = pair_request(pair)
+    control_objects: Any = _ObjectStore()
+    control_marker = publish_probe_request(control_objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, control_objects, control_marker, "control-worker")
+    assert status == 0, error  # control, in its own store
+    objects: Any = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    workspace = tmp_path / "raced-worker"
+    workspace.mkdir()
+    real = worker_execution._runtime  # pyright: ignore[reportPrivateUsage]
+
+    def runtime_then_a_stray_donor_root(req: Any, root: Path, repo_root: Path | None) -> Any:
+        admitted = real(req, root, repo_root)
+        (root / "run" / "donor").mkdir(parents=True)
+        return admitted
+
+    monkeypatch.setattr(worker_execution, "_runtime", runtime_then_a_stray_donor_root)
+    output, errors = StringIO(), StringIO()
+    status = run_worker_command(
+        [
+            "run",
+            "--repo-root",
+            str(tmp_path),
+            "--max-object-bytes",
+            "10000000",
+            "--max-objects",
+            "500",
+            "--workspace-root",
+            str(workspace),
+            "--request-key",
+            marker.key,
+            "--request-sha256",
+            marker.sha256,
+            "--request-size",
+            str(marker.size_bytes),
+            "--local-tiny",
+        ],
+        environ={},
+        objects=objects,
+        stdout=output,
+        stderr=errors,
+    )
+    assert status != 0, "a pre-existing run/donor was adopted"
+    report = collect(tmp_path, objects, request, "raced")
+    assert report is not None and report["terminal_name"] == "failure"
+
+
 @pytest.mark.parametrize("missing_cell", ["donor", "recipient"])
 def test_a_collection_of_one_cell_missing_is_refused_not_collected(
     tmp_path: Path, pair: Pair, missing_cell: str

@@ -97,7 +97,8 @@ def test_handoff_evidence_never_rides_with_a_warmup_override_in_one_load_call(
     ("proof", "message"),
     [
         (evidence(recipient=IDENTITY_B), "is not the hand-off recipient"),
-        (evidence(warmup=3), "hand-off evidence inherited 3"),
+        # the lineage-level text (the first pod's own check says "the worker log puts")
+        (evidence(warmup=3), "lineage's worker logs put the warm-up at 2 steps, but the hand-off"),
     ],
 )
 def test_evidence_for_another_recipient_or_warmup_is_refused(
@@ -114,6 +115,16 @@ def test_evidence_is_typed_and_a_lineage_with_warmup_rows_cannot_claim_a_handoff
         load_h_resumed_run(
             recipient_lineage(tmp_path / "typed"),
             handoff={"recipient_identity": IDENTITY_A},  # type: ignore[arg-type]
+        )
+    # the type is refused BEFORE any segment file is read (the paths below do not exist), so a
+    # bad evidence argument never surfaces as a telemetry gap about somebody else's file
+    with pytest.raises(TypeError, match="CodecHandoffEvidence"):
+        load_h_resumed_run(
+            [
+                (tmp_path / "no-a.jsonl", tmp_path / "no-a.log"),
+                (tmp_path / "no-b.jsonl", tmp_path / "no-b.log"),
+            ],
+            handoff="evidence",  # type: ignore[arg-type]
         )
     # a pod that DID commit warm-up rows trained its own codec: it is not a hand-off recipient
     with pytest.raises(TelemetryGap, match="commits no codec_warmup row"):

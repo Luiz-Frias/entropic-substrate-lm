@@ -147,13 +147,12 @@ def _require_continuous(
             )
         expected = steps[-1] + 1
     warmup = [step for pod in pods for step, phase, _ in pod.training if phase == _WARMUP]
-    if handoff is not None:
-        if warmup:
-            _gap(
-                f"{pods[-1].metrics_path}: a hand-off recipient's lineage commits no codec_warmup "
-                f"row, but {len(warmup)} are present"
-            )
-    elif warmup != list(range(1, warmup_steps + 1)):
+    # a hand-off lineage holds no warm-up row on any pod: ``load_h_run`` refuses one on the first
+    # pod (``handoff=``) and past the lineage's warm-up on the later pods, and the step axis above
+    # refuses one inside it, so this function keeps no third copy of that check (review probe T10e,
+    # 2026-11-03: flipping the copy stayed green; a warm-up row at steps 5..6 on the second pod
+    # is refused by ``load_h_run`` with "beyond the resumed lineage's warm-up")
+    if handoff is None and warmup != list(range(1, warmup_steps + 1)):
         _gap(
             f"{pods[-1].metrics_path}: the lineage's committed codec_warmup rows "
             f"{warmup[:3]}..{warmup[-3:]} are not exactly 1..{warmup_steps}"
