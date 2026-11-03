@@ -214,10 +214,11 @@ approved with a looser number nobody typed). The product rule of rung B is uncha
 construction and at parse: `ceiling * watchdog_timeout_seconds / 3600 <= spend_cap.usd`. The
 manifest also records `hours_cap`, copied from `spend_cap.hours` and re-derived at parse; a smoke
 launch carries explicit `null` for both. `h_probe_command` and the controller read the ceiling from
-the launch: `--max-hourly-rate` is optional for a sealed launch and, when present, must equal the
-sealed value exactly (no tolerance), else it is refused by name before any workspace or provider
-call; the controller's `cost_per_hour` check compares against the sealed value. A smoke, v4 or v3
-launch has no sealed ceiling and keeps the flag with its v3 semantics, required. (2) The launch
+the launch. `--max-hourly-rate` is REQUIRED for every launch class (C-L4c-4, the parent's required
+flag): the argparse refusal (exit 2) comes before the launch is read. For a sealed launch the flag
+must equal the sealed value exactly (no tolerance), else it is refused by name before any workspace
+or provider call; the controller's `cost_per_hour` check compares against the sealed value. A smoke,
+v4 or v3 launch has no sealed ceiling and keeps the flag with its v3 semantics. (2) The launch
 carries a codec-sharing pair (`h-probe-worker-request-v3`): the manifest records `pair` and both
 cell identities (`cells`, donor first), re-derived from the embedded request at parse; a pair under
 a v3 or v4 manifest is refused by name. (3) The v2 read retires, as the v3 section promised: a
@@ -239,8 +240,9 @@ is a resumable source unless the verdict is an exclusion. A pair whose pod never
 collects as a typed `pair_not_started` failure. A single-profile request keeps
 `h-probe-terminal-collection-v1` byte for byte. The wave monitor lists one arm per (request, cell),
 each searched by the `request_sha256` and `cell` run tags; `h_probe_stop --at-cell donor|recipient`
-(with `--at-phase` and `--at-step`) publishes the write-once `h-probe-stop-marker-v2` and stops that
-cell only, and a pair without `--at-cell` is refused by name. Objects above 64 MiB are published as
+(with `--at-phase` and `--at-step`) publishes the write-once `h-probe-stop-marker-v2`: a recipient
+target stops the recipient only, a donor target stops the pair with no hand-off, and a pair without
+`--at-cell` is refused by name. Objects above 64 MiB are published as
 verified multipart uploads (`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional
 completion and part checksums is UNMEASURED, so the first live pair run is the measurement.
 

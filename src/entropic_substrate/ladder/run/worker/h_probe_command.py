@@ -47,13 +47,9 @@ def _parser() -> argparse.ArgumentParser:
         ("poll-seconds", float),
         ("startup-timeout", float),
         ("shutdown-timeout", float),
+        ("max-hourly-rate", float),
     ):
         parser.add_argument(f"--{name}", type=kind, required=True)
-    # FOR-1694: a launch that SEALS its hourly price ceiling (v5, scientific) derives it; the
-    # flag is then optional and, when present, must equal the sealed value exactly. A launch
-    # that seals none (smoke, v4, v3) still requires it: ``launch.hourly_ceiling`` refuses its
-    # absence by name before any workspace or provider call.
-    parser.add_argument("--max-hourly-rate", type=float, default=None)
     return parser
 
 
@@ -72,9 +68,8 @@ def run_probe_command(
     """
     evidence: dict[str, object] | None = None
     try:
-        parser = _parser()
         try:
-            args = parser.parse_args(list(argv))
+            args = _parser().parse_args(list(argv))
         except SystemExit as error:
             return 0 if error.code == 0 else 2
         settings = WatchdogProcessConfig(
@@ -87,9 +82,7 @@ def run_probe_command(
             startup_timeout_seconds=args.startup_timeout,
             shutdown_timeout_seconds=args.shutdown_timeout,
         )
-        if args.max_hourly_rate is not None and (
-            not math.isfinite(args.max_hourly_rate) or args.max_hourly_rate <= 0
-        ):
+        if not math.isfinite(args.max_hourly_rate) or args.max_hourly_rate <= 0:
             raise ValueError("hourly price ceiling must be finite and positive")
         if (
             not args.expected_account_id
@@ -103,18 +96,9 @@ def run_probe_command(
             max_bytes=args.max_launch_bytes,
         )
         launch = parse_probe_launch(payload, max_bytes=args.max_launch_bytes)
-        # A launch that seals no ceiling (smoke, v4, v3) keeps the flag REQUIRED, refused by the
-        # argparse text of the parent tip (exit 2, usage on stderr) before any workspace or
-        # provider call. FOR-1694 moved the test after the launch read, so the bytes are restored
-        # here through the same parser object (same prog and usage line).
-        if launch.hourly_price_ceiling is None and args.max_hourly_rate is None:
-            try:
-                parser.error("the following arguments are required: --max-hourly-rate")
-            except SystemExit:
-                return 2
-        # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap.
-        # FOR-1694: and a launch that seals its ceiling supplies it; a flag that disagrees is
-        # refused here, before any workspace creation or provider call.
+        # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap; a flag
+        # that disagrees with a sealed ceiling is refused here, before any workspace creation or
+        # provider call.
         max_hourly_rate = launch.hourly_ceiling(args.max_hourly_rate)
         root = normalize_d1_artifact_root(args.workspace)
         metadata = root.stat()

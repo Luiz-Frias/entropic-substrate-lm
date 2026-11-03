@@ -171,7 +171,7 @@ def test_invalid_launch_never_reaches_provider_or_guard(
     code = run_probe_command(argv, environ={}, stdout=stdout, stderr=stderr)
     assert code != 0
     if invalid == "missing_flag":
-        assert code == 2  # the parent tip's argparse refusal (exit 2), pinned byte-for-byte below
+        assert code == 2  # the argparse refusal (exit 2), pinned by its usage and error lines below
     assert stdout.getvalue() == ""
     assert not (tmp_path / "workspace/control").exists()
     assert reached == []
@@ -223,7 +223,8 @@ def test_main_configures_the_substrate_before_it_runs_the_command(
 
 
 # ---------------------------------------------------------------------------
-# FOR-1694 (launch v5): the command DERIVES the ceiling from a sealed launch.
+# C-L4c-4: the flag is REQUIRED for every launch class. A sealed launch's flag must equal the
+# sealed ceiling exactly; an absent flag is refused by the argparse text before any read.
 # ---------------------------------------------------------------------------
 def run_sealed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str | None
@@ -257,12 +258,47 @@ def run_sealed(
     return code, reached, provider
 
 
-@pytest.mark.parametrize("flag", [None, str(PILOT_CEILING)])
-def test_a_sealed_launch_supplies_the_ceiling_with_or_without_the_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str | None
+def test_a_sealed_launch_with_the_matching_flag_reaches_the_controller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    code, reached, _ = run_sealed(tmp_path, monkeypatch, flag)
+    code, reached, _ = run_sealed(tmp_path, monkeypatch, str(PILOT_CEILING))
     assert code == 0 and reached == [PILOT_CEILING]
+
+
+def normalized(text: str) -> str:
+    """Argparse wraps usage across lines; compare the words, not the line breaks."""
+    return " ".join(text.split())
+
+
+def test_a_sealed_launch_without_the_flag_is_refused_before_any_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A sealed launch still requires the flag: exit 2 with the argparse text, and no launch
+    read, workspace or provider call happens before that refusal."""
+    argv = arguments(tmp_path)[:-2]
+    (tmp_path / "launch.json").write_bytes(pilot_launch().payload)
+    reads: list[str] = []
+
+    def read(*_: object, **__: object) -> None:
+        reads.append("launch read")
+        raise RuntimeError("the launch was read before the flag was parsed")
+
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.read_d1_artifact_bytes", read
+    )
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport",
+        lambda **_: reached.append("provider"),
+    )
+    stderr = io.StringIO()
+    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=stderr)
+    err = normalized(capsys.readouterr().err)
+    assert code == 2 and reads == [] and reached == []
+    assert stderr.getvalue() == "" and not (tmp_path / "workspace/control").exists()
+    assert err.endswith("error: the following arguments are required: --max-hourly-rate")
+    assert "--max-hourly-rate MAX_HOURLY_RATE" in err
+    assert "[--max-hourly-rate" not in err
 
 
 @pytest.mark.parametrize("flag", ["37", "36.8", "0.6", "36.900000001"])
@@ -283,19 +319,42 @@ def test_a_flag_that_disagrees_with_the_sealed_ceiling_is_refused_before_any_pro
     assert json.loads(stderr.getvalue())["error_type"] == "ValueError"
 
 
-def test_an_unsealed_launch_without_the_flag_is_refused_by_name(
+def test_an_unsealed_launch_without_the_flag_is_refused_by_the_parser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Smoke-class refusal, byte-identical to the parent tip (b429635e): argparse usage error,
-    exit 2, on the process stderr, before any workspace or provider call."""
+    """Smoke-class refusal through the parser: exit 2, argparse usage on the process stderr with
+    the flag REQUIRED (no brackets), before any launch read, workspace or provider call.
+
+    RETRACTED: the earlier claim that this text is byte-identical to the parent tip. That was
+    measured false at 1697db41 and is not pinned here; the usage and error text are pinned.
+    """
     argv = arguments(tmp_path)[:-2]  # the smoke launch seals nothing
     reached: list[str] = []
     monkeypatch.setattr(
         "entropic_substrate.ladder.run.worker.h_probe_command.HRunpodTransport",
         lambda **_: reached.append("provider"),
     )
-    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=io.StringIO())
+    stderr = io.StringIO()
+    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=stderr)
     err = capsys.readouterr().err
     assert code == 2 and reached == [] and not (tmp_path / "workspace/control").exists()
+    assert stderr.getvalue() == ""
     assert err.startswith("usage: ")
     assert err.endswith("error: the following arguments are required: --max-hourly-rate\n")
+    assert "--max-hourly-rate MAX_HOURLY_RATE" in normalized(err)
+    assert "[--max-hourly-rate" not in normalized(err)
+
+
+def test_the_flag_refusal_precedes_a_missing_launch_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ordering pin: parse before read. A missing launch root with the flag absent must be the
+    argparse refusal (exit 2, no JSON on the command's stderr), not a launch-read failure."""
+    argv = arguments(tmp_path)[:-2]
+    argv[argv.index("--launch-root") + 1] = str(tmp_path / "absent")
+    stderr = io.StringIO()
+    code = run_probe_command(argv, environ={}, stdout=io.StringIO(), stderr=stderr)
+    assert code == 2 and stderr.getvalue() == ""
+    assert (
+        "error: the following arguments are required: --max-hourly-rate" in capsys.readouterr().err
+    )
