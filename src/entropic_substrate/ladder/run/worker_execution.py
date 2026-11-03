@@ -1,7 +1,6 @@
 """One admitted H probe lineage; no allocation and no scientific successor authority."""
 
 import hashlib
-import json
 import os
 import time
 from collections.abc import Callable, Generator, MutableMapping, Sequence
@@ -26,7 +25,7 @@ from entropic_substrate.ladder.run.admission import RUN_ADMISSION, RUNTIME_KIND
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.codec_handoff import materialize_codec_handoff
 from entropic_substrate.ladder.run.generation import run_probe_generation
-from entropic_substrate.ladder.run.journal import artifact_reference, write_json
+from entropic_substrate.ladder.run.journal import artifact_reference, schema_records, write_json
 from entropic_substrate.ladder.run.native_verification import verify_native_capture
 from entropic_substrate.ladder.run.runner import (
     CellScope,
@@ -495,18 +494,17 @@ def pair_result(
     }
 
 
-def _training_failure_record(output: Path) -> tuple[Path, dict[str, object]] | None:
+def _training_failure_record(
+    output: Path, *, max_bytes: int
+) -> tuple[Path, dict[str, object]] | None:
     """The one ``h-probe-training-failure-v2`` record in a cell's run root, or ``None``.
 
-    Located by reading every ``*.json`` of the root and keeping those whose ``schema`` IS that
-    name (never a file-name glob alone); two is a defect and raises, none is ``None`` (the
-    runner raised before its own record could be written).
+    Located by :func:`~entropic_substrate.ladder.run.journal.schema_records` (every ``*.json``
+    of the root, read bounded and no-follow, kept when its ``schema`` IS that name); two is a
+    defect and raises, none is ``None`` (the runner raised before its own record could be
+    written).
     """
-    found: list[tuple[Path, dict[str, object]]] = []
-    for path in sorted(output.glob("*.json")):
-        row = json.loads(path.read_bytes())
-        if type(row) is dict and row.get("schema") == "h-probe-training-failure-v2":
-            found.append((path, cast(dict[str, object], row)))
+    found = schema_records(output, "h-probe-training-failure-v2", max_bytes=max_bytes)
     if len(found) > 1:
         raise ValueError("a cell root holds more than one training failure record")
     return found[0] if found else None
@@ -669,7 +667,7 @@ def _execute_pair(
         on to its verdict); ``False``: an execution-class stop (result v2 written; the caller
         re-raises the original exception)."""
         output = root / "run" / cell.token
-        found = _training_failure_record(output)
+        found = _training_failure_record(output, max_bytes=limits.max_object_bytes)
         scientific = isinstance(error, UndefinedDirection)
         if found is not None:
             record_path, record = found

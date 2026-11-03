@@ -1922,24 +1922,37 @@ def test_an_execution_defect_is_confirmed_only_by_its_own_on_disk_evidence(
     donor_root.mkdir()
     recipient_root.mkdir()
     # source 1, donor: no warm-up-final seal on disk is the donor's execution evidence
-    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is True
+    assert _execution_stop_confirmed(donor_root, "donor", donor, None, max_bytes=LIMIT) is True
     seal = {
         "schema": "h-checkpoint-seal-v1",
         "phase": "codec_warmup",
         "step": donor.schedule.warmup_steps,
     }
     (donor_root / "seal.json").write_text(json.dumps(seal))
-    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is False  # refused
+    assert (
+        _execution_stop_confirmed(donor_root, "donor", donor, None, max_bytes=LIMIT) is False
+    )  # refused
     # source 2, recipient: a recipient root holding no progress receipt is the evidence
-    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is True
+    assert (
+        _execution_stop_confirmed(recipient_root, "recipient", recipient, None, max_bytes=LIMIT)
+        is True
+    )
     (recipient_root / "progress.json").write_text(json.dumps({"schema": PROGRESS_SCHEMA_V2}))
-    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is False
+    assert (
+        _execution_stop_confirmed(recipient_root, "recipient", recipient, None, max_bytes=LIMIT)
+        is False
+    )
     # source 3, the cell's own training failure record: its status decides
     assert (
-        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "scientific_gap"}) is False
+        _execution_stop_confirmed(
+            donor_root, "donor", donor, {"status": "scientific_gap"}, max_bytes=LIMIT
+        )
+        is False
     )
     assert (
-        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "execution_defect"})
+        _execution_stop_confirmed(
+            donor_root, "donor", donor, {"status": "execution_defect"}, max_bytes=LIMIT
+        )
         is True
     )
 

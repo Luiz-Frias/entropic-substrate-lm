@@ -166,6 +166,24 @@ def _check_pause(pause: tuple[str, int] | None, profile: HProfile) -> None:
         raise ValueError("worker pause must select a declared seal boundary")
 
 
+def refuse_recipient_warmup_target(phase: str) -> None:
+    """A pair recipient's pause or stop target is a prediction seal, never a warm-up one.
+
+    The recipient's codec arrives at the donor's warm-up-final seal (D12), and the runner calls
+    ``begin_prediction`` on that seal before its first advance, so a recipient ``codec_warmup``
+    seal is never reached and a target on one would be silent: the run would spend its whole
+    remaining budget against the declared stop. Honouring it at the hand-off boundary would make
+    the hand-off receipt a pause/resume target, which R3 forbids, so it is refused by name here,
+    the one rule the request gate and the stop verb share. Called after the schedule check, so a
+    target outside the schedule keeps that refusal.
+    """
+    if phase == "codec_warmup":
+        raise ValueError(
+            "the pair recipient runs no codec_warmup of its own (its codec arrives at the donor's "
+            "warm-up-final seal): its pause or stop target must be a prediction seal"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProbeRequest:
     profile: HProfile
@@ -439,6 +457,9 @@ class PairProbeRequest:
         self._check_resumes()
         for cell in self.cells:
             _check_pause(cell.pause, cell.profile)
+        recipient_pause = self.cells[1].pause
+        if recipient_pause is not None:
+            refuse_recipient_warmup_target(recipient_pause[0])
 
     def _check_resumes(self) -> None:
         """Per-cell resume (C-L4c-2). The rules, by NAME (the content of a receipt is read by the

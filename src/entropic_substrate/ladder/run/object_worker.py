@@ -17,7 +17,12 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.register.h_preservation import H1ExclusionReason
-from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.journal import (
+    artifact_reference,
+    read_json,
+    schema_records,
+    write_json,
+)
 from entropic_substrate.ladder.run.native_verification import read_native_verification
 from entropic_substrate.ladder.run.runner import (
     PROGRESS_SCHEMA_V2,
@@ -54,6 +59,7 @@ from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     parse_pair_result,
     refuse_pair_result_for_single,
+    refuse_recipient_warmup_target,
     refuse_version,
     worker_artifact,
     worker_cell_artifact,
@@ -128,8 +134,12 @@ def _cell_target(target: object, request: PairProbeRequest) -> tuple[str, int, s
     return phase, step, cast(str, target[2])
 
 
-def _cell_schedule(request: PairProbeRequest, cell: str) -> RunSchedule:
-    return request.cells[request.tokens.index(cell)].profile.schedule
+def _require_cell_seal(request: PairProbeRequest, phase: str, step: int, cell: str) -> None:
+    """The named cell's schedule rule, then the recipient's prediction-only rule (the request
+    gate's own, so a target the recipient never reaches is refused here, at the verb)."""
+    _require_seal(request.cells[request.tokens.index(cell)].profile.schedule, phase, step)
+    if cell == request.tokens[1]:
+        refuse_recipient_warmup_target(phase)
 
 
 def encode_stop_marker(request: AnyProbeRequest, target: StopTarget | None = None) -> bytes:
@@ -145,7 +155,7 @@ def encode_stop_marker(request: AnyProbeRequest, target: StopTarget | None = Non
         if target is None:
             raise ValueError("a pair stop marker names its cell: (phase, step, cell)")
         phase, step, cell = _cell_target(target, request)
-        _require_seal(_cell_schedule(request, cell), phase, step)
+        _require_cell_seal(request, phase, step, cell)
         return _canonical(
             {
                 "schema": STOP_MARKER_SCHEMA_V2,
@@ -185,7 +195,7 @@ def _read_stop_marker(payload: bytes, request: AnyProbeRequest) -> tuple[bool, S
             return False, None
         if _canonical(pair_row) != payload:
             raise ValueError("stop marker is not canonical JSON")
-        _require_seal(_cell_schedule(request, cell_target[2]), cell_target[0], cell_target[1])
+        _require_cell_seal(request, cell_target[0], cell_target[1], cell_target[2])
         return True, cell_target
     if schema == STOP_MARKER_SCHEMA_V2:
         raise ValueError(
@@ -542,33 +552,32 @@ def _admit_result(
     return row
 
 
-def _schema_files(output: Path, schema: str) -> list[dict[str, object]]:
-    """Every JSON file of a cell's run root whose ``schema`` IS ``schema`` (never a name glob)."""
-    rows: list[dict[str, object]] = []
-    for path in sorted(output.glob("*.json")):
-        row = json.loads(path.read_bytes())
-        if type(row) is dict and row.get("schema") == schema:
-            rows.append(cast(dict[str, object], row))
-    return rows
-
-
 def _execution_stop_confirmed(
-    output: Path, cell: str, profile: HProfile, failure: dict[str, object] | None
+    output: Path,
+    cell: str,
+    profile: HProfile,
+    failure: dict[str, object] | None,
+    *,
+    max_bytes: int,
 ) -> bool:
     """P5-13's closed derivation sources for an execution-class cell, in order: the cell's own
     on-disk ``h-probe-training-failure-v2`` record (status ``execution_defect``); else the
-    donor's missing warm-up-final seal; else the recipient root holding no progress receipt."""
+    donor's missing warm-up-final seal; else the recipient root holding no progress receipt.
+
+    A refused resume admission (a donor resuming from its own receipt, a recipient from the
+    hand-off receipt or from its own) writes the first source since PR #430 round 1, so its
+    present receipt never reads as "did not stop"."""
     if failure is not None:
         return failure.get("status") == "execution_defect"
     if cell == "donor":
         warmup_final = [
             seal
-            for seal in _schema_files(output, "h-checkpoint-seal-v1")
+            for _, seal in schema_records(output, "h-checkpoint-seal-v1", max_bytes=max_bytes)
             if seal.get("phase") == "codec_warmup"
             and seal.get("step") == profile.schedule.warmup_steps
         ]
         return not warmup_final
-    return not _schema_files(output, PROGRESS_SCHEMA_V2)
+    return not schema_records(output, PROGRESS_SCHEMA_V2, max_bytes=max_bytes)
 
 
 def _admit_pair_result(
@@ -683,7 +692,7 @@ def _admit_pair_result(
                     token,
                 )
         elif outcome == "execution_defect":
-            if not _execution_stop_confirmed(output, token, profile, failure):
+            if not _execution_stop_confirmed(output, token, profile, failure, max_bytes=maximum):
                 raise ValueError("an execution cell outcome needs its failure evidence on disk")
             if derived_defect is None:
                 derived_defect = token
@@ -789,10 +798,13 @@ class _PairObserver:
         sink = self._logged.pop(cell, None)
         if self.open == cell:
             self.open = None
-        if self.focused == cell and status == "ok":
-            # a cell that ended well leaves its scope: a later pair-level failure (the final
-            # snapshot) names the pair. A cell that ended FAILED keeps it: the execution stop
-            # that follows is that cell's own.
+        if self.focused == cell and result_status != "execution_defect":
+            # a cell that ended well, or stopped SCIENTIFICALLY, leaves its scope: the pair goes
+            # on to its verdict, and a later pair-level failure (result admission, the final
+            # snapshot) names the pair. Only an EXECUTION stop keeps it: the raise that follows
+            # is that cell's own. RETRACTION (house rule 4, PR #430 round 1): this was keyed on
+            # ``status == "ok"``, which kept a scientifically stopped cell in scope, so a later
+            # pair-level failure named that cell's identity instead of the pair's.
             self.focused = None
         if sink is None:
             return

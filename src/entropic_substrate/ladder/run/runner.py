@@ -18,7 +18,12 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
-from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.journal import (
+    artifact_reference,
+    json_identity,
+    read_json,
+    write_json,
+)
 from entropic_substrate.ladder.run.run_authority import SCIENTIFIC_RUN_CLASSES, RunAuthority
 from entropic_substrate.ladder.run.seals import (
     CorpusMemo,
@@ -510,23 +515,15 @@ def run_probe_training(
             root, "profile.json", profile.manifest, max_bytes=max_artifact_bytes
         )
     else:
-        previous = read_training_progress(
-            root,
-            resume,
-            profile,
-            source_root,
-            max_source_bytes=max_source_bytes,
-            max_artifact_bytes=max_artifact_bytes,
-            expected=binding,
-            corpora=corpora,
+        # PR #430 round 1 (DH-47): a refused resume admission is a training-phase execution
+        # stop and writes the failure record below like any other, so the pair's derivation
+        # confirms it from disk. The record cites the profile by the identity every writer of a
+        # run root's ``profile.json`` produces (write_json of ``profile.manifest``), bound before
+        # the admission so the handler never reads an unbound name or the disk that may be what
+        # broke; the admitted receipt's own reference replaces it once admission holds.
+        profile_artifact = json_identity(
+            root, "profile.json", profile.manifest, max_bytes=max_artifact_bytes
         )
-        last_seal = artifact_from_mapping(previous["last_seal"])
-        if previous["handoff"] is not None:
-            handoff = artifact_from_mapping(previous["handoff"])
-        if previous["status"] == "training_complete":
-            return _progress(root, "training_complete", last_seal, resume)
-        profile_artifact = artifact_from_mapping(previous["profile"])
-        evaluations = cast(list[dict[str, object]], previous["evaluations"]).copy()
     execution: SentenceExecution | None = None
     prefix = uuid4().hex
     pending: list[dict[str, object]] = []
@@ -537,6 +534,24 @@ def run_probe_training(
     phase_from = 0
     phase_clock = 0.0
     try:
+        if resume is not None:
+            previous = read_training_progress(
+                root,
+                resume,
+                profile,
+                source_root,
+                max_source_bytes=max_source_bytes,
+                max_artifact_bytes=max_artifact_bytes,
+                expected=binding,
+                corpora=corpora,
+            )
+            last_seal = artifact_from_mapping(previous["last_seal"])
+            if previous["handoff"] is not None:
+                handoff = artifact_from_mapping(previous["handoff"])
+            if previous["status"] == "training_complete":
+                return _progress(root, "training_complete", last_seal, resume)
+            profile_artifact = artifact_from_mapping(previous["profile"])
+            evaluations = cast(list[dict[str, object]], previous["evaluations"]).copy()
         execution = SentenceExecution(
             profile, source_root, max_source_bytes=max_source_bytes, corpora=corpora
         )
