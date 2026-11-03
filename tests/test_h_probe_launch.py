@@ -979,4 +979,15 @@ def test_the_pod_name_rule_is_unchanged_for_v5_and_every_read_old_launch() -> No
     names = {pilot.pod_name, smoke.pod_name, v4.pod_name, v3.pod_name}
     assert len(names) == 4
     # two ceilings, two authorities, two nonces: three more launches, three more names
-    assert len({pilot.pod_name, replace(pilot, hourly_price_ceiling=30.0).pod_name}) == 2
+    other_authority = sealed_authority(spend_cap=replace_cap(hours=7.0))
+    assert other_authority != pilot.request.authority
+    other_nonce = "2" * 64
+    assert other_nonce != pilot.request.nonce
+    launches = (
+        pilot,
+        replace(pilot, hourly_price_ceiling=30.0),
+        replace(pilot, request=replace(pilot.request, authority=other_authority)),
+        replace(pilot, request=replace(pilot.request, nonce=other_nonce)),
+    )
+    assert all(value.pod_name.startswith("h1-pilot-") for value in launches)
+    assert len({value.pod_name for value in launches}) == 4
