@@ -49,6 +49,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any, NoReturn
 
+from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.kernel.codec.strict_json import strict_loads
 from entropic_substrate.ladder.analyze.h_elm_projection import (
     DEFAULT_DENOMINATOR,
@@ -80,7 +81,12 @@ AGGREGATE_SCHEMA = "h-aggregate-v1"
 
 _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
 _STEP_SCHEMA = "h-training-step-v2"
-_EVALUATION_SCHEMA = "h-predictive-evaluation-v1"
+# Every evaluation schema this reader admits (FOR-1704): v1 is the H0 captures, read-old; v2 adds
+# the prior and mixture proposals. A literal tuple of its own, never imported from a reader member;
+# tests/test_h_metric_extractor_l4d.py pins it equal to the extractor's and the writer's set.
+_EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
+_EVALUATION_V2 = "h-predictive-evaluation-v2"
+_PROPOSAL_BLOCKS = ("prior", "mixture")
 _COMMITTED = "committed"
 _WARMUP = "codec_warmup"
 _PREDICTION = "prediction"
@@ -243,7 +249,7 @@ def _scientifically_stopped_warmup(rows: Sequence[dict[str, Any]]) -> int | None
 def _holds_prediction_work(row: Mapping[str, Any]) -> bool:
     """A prediction-phase step row of any status, or an evaluation row (DH-46)."""
     schema = row.get("schema")
-    return schema == _EVALUATION_SCHEMA or (
+    return schema in _EVALUATION_SCHEMAS or (
         schema == _STEP_SCHEMA and row.get("phase") == _PREDICTION
     )
 
@@ -369,12 +375,51 @@ def _worker_log_facts(
     )
 
 
-def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
+def _admits_null_future_term(start: Mapping[str, Any], identity: str, path: Path) -> bool:
+    """DH-48 under DH-51 (R1): is a null ``future_nll_per_dimension`` admissible on a prediction row?
+
+    Decided ONCE per run, before any row is read, from ``run_start.profile``: the authenticated
+    ``HProfile`` manifest the worker writes beside ``profile_identity``. Three cases:
+
+    * no ``profile`` key (every pre-L4d capture, the H0 fixtures included): ``False``, and the
+      reader's refusal path and message are byte-identical to before;
+    * ``profile`` present but not authentic (it does not rebuild into an ``HProfile``, or the
+      rebuilt profile's ``identity`` is not ``run_start.profile_identity``): refused BY NAME even
+      when the stream holds no null, and never treated as absent;
+    * authentic: ``True`` iff the RECORDED ``optimization.future_weight`` is exactly numeric zero
+      (a bool is refused), read from the very object the identity was computed over.
+
+    The admission is never keyed on the null itself, on the stage string or on the run class.
+    """
+    if "profile" not in start:
+        return False
+    manifest = start["profile"]
+    try:
+        profile = HProfile.from_manifest(manifest)
+    except (ValueError, TypeError, KeyError, OverflowError) as error:
+        _gap(
+            f"{path}: run_start.profile is not an authentic HProfile manifest "
+            f"(run_start.profile_identity {identity!r}): {error}"
+        )
+    if profile.identity != identity:
+        _gap(
+            f"{path}: run_start.profile has content identity {profile.identity!r}, but "
+            f"run_start.profile_identity is {identity!r}"
+        )
+    weight = profile.optimization.future_weight
+    return type(weight) in (int, float) and weight == 0
+
+
+def _check_step_scalars(
+    row: dict[str, Any], phase: str, path: Path, *, null_future_admitted: bool = False
+) -> None:
     for key in _STEP_SCALARS:
         value = row.get(key)
         if value is None:
             if key == _FUTURE_NLL and phase == _WARMUP:
                 continue  # structurally absent in the codec warm-up: admissible only here
+            if key == _FUTURE_NLL and phase == _PREDICTION and null_future_admitted:
+                continue  # the recorded weight is zero: the objective writes no future term
             _gap(f"{path}: step {row.get('step')} ({phase}) has a null {key}")
         if not _finite_number(value):
             _gap(f"{path}: step {row.get('step')} ({phase}) has a non-finite {key}: {value!r}")
@@ -383,6 +428,48 @@ def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
 # the one gap the reader admits; the predicate lives in h_elm_projection, this name is
 # pinned by tests/test_h_final_probe_checks.py against that module's mirror
 _ZERO_MASS_GAP = ZERO_MASS_GAP
+
+
+def _check_importance_rows(by_count: Mapping[str, Any], path: Path, where: str) -> None:
+    for entries in by_count.values():
+        if not isinstance(entries, list) or not entries:
+            _gap(f"{path}: {where} has an empty sample-count entry")
+        for entry in entries:  # pyright: ignore[reportUnknownVariableType]
+            if not isinstance(entry, dict):
+                _gap(f"{path}: {where} has a non-object entry")
+            require_importance_entry(entry, f"{path}: {where}")  # pyright: ignore[reportUnknownArgumentType]
+
+
+def _check_proposal_blocks(
+    example: Mapping[str, Any],
+    schema: object,
+    q_by_count: Mapping[str, Any],
+    path: Path,
+    where: str,
+) -> None:
+    """Every proposal's importance rows pass the one row predicate (FOR-1704, A8(b)).
+
+    The v2 loader REFUSES rather than drops: a block that is present but malformed, a v2 example
+    with no ``proposals``, or a proposal whose sample counts differ from q's voids the run.
+    A v1 example carries no ``proposals`` and nothing is checked or invented.
+    """
+    blocks = example.get("proposals")
+    if blocks is None:
+        if schema == _EVALUATION_V2:
+            _gap(f"{path}: {where} is {_EVALUATION_V2} but an example carries no proposals")
+        return
+    if schema != _EVALUATION_V2 or not isinstance(blocks, dict):
+        _gap(f"{path}: {where} has proposals on schema {schema!r} or as a non-object")
+    if set(blocks) != set(_PROPOSAL_BLOCKS):  # pyright: ignore[reportUnknownArgumentType]
+        _gap(f"{path}: {where} proposals are {sorted(blocks)}, expected {list(_PROPOSAL_BLOCKS)}")  # pyright: ignore[reportUnknownArgumentType]
+    for name in _PROPOSAL_BLOCKS:
+        block = blocks[name]  # pyright: ignore[reportUnknownVariableType]
+        if not isinstance(block, dict) or block.get("proposal") != name:  # pyright: ignore[reportUnknownMemberType]
+            _gap(f"{path}: {where} has a malformed {name} proposal block")
+        by_count = block.get("by_sample_count")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        if not isinstance(by_count, dict) or set(by_count) != set(q_by_count):  # pyright: ignore[reportUnknownArgumentType]
+            _gap(f"{path}: {where} {name} proposal sample counts differ from the q proposal's")
+        _check_importance_rows(by_count, path, f"{where} {name} proposal")  # pyright: ignore[reportUnknownArgumentType]
 
 
 def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int) -> None:
@@ -400,13 +487,8 @@ def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int
         by_count = example.get("by_sample_count") if isinstance(example, dict) else None
         if not isinstance(by_count, dict) or not by_count:
             _gap(f"{path}: {where} has an example without by_sample_count")
-        for entries in by_count.values():  # pyright: ignore[reportUnknownVariableType]
-            if not isinstance(entries, list) or not entries:
-                _gap(f"{path}: {where} has an empty sample-count entry")
-            for entry in entries:  # pyright: ignore[reportUnknownVariableType]
-                if not isinstance(entry, dict):
-                    _gap(f"{path}: {where} has a non-object entry")
-                require_importance_entry(entry, f"{path}: {where}")
+        _check_importance_rows(by_count, path, where)  # pyright: ignore[reportUnknownArgumentType]
+        _check_proposal_blocks(example, row.get("schema"), by_count, path, where)  # pyright: ignore[reportUnknownArgumentType]
 
 
 def load_h_run(
@@ -504,6 +586,7 @@ def load_h_run(
         and not any(_holds_prediction_work(row) for row in rows),
     )
 
+    null_future_admitted = _admits_null_future_term(start, identity, metrics)
     extractor = HTrainingStepExtractor(warmup_steps=warmup_steps)
     training: list[tuple[int, str, dict[str, float]]] = []
     evaluations: list[tuple[int, dict[str, float]]] = []
@@ -524,7 +607,7 @@ def load_h_run(
             phase = row.get("phase")
             if phase not in (_WARMUP, _PREDICTION):
                 _gap(f"{metrics}: committed row {row.get('step')} has no usable phase: {phase!r}")
-            _check_step_scalars(row, phase, metrics)
+            _check_step_scalars(row, phase, metrics, null_future_admitted=null_future_admitted)
             projected = extractor.extract(row)
             if projected is None:
                 _gap(f"{metrics}: committed row {row.get('step')} ({phase}) has no projection")
@@ -540,7 +623,7 @@ def load_h_run(
                 warmup_max = max(warmup_max, step)
             scalars = {k: v for k, v in projected.metrics.items() if k != "phase_index"}
             training.append((step, phase, scalars))
-        elif schema == _EVALUATION_SCHEMA:
+        elif schema in _EVALUATION_SCHEMAS:
             if row.get("run_identity") != identity:
                 _gap(f"{metrics}: evaluation row carries no run_identity of this run")
             _check_evaluation_numbers(row, metrics, warmup_steps)
