@@ -370,7 +370,10 @@ modes are first class, pinned dependency by default and a lift (a clone or fork 
 history, refactored to the new repository's goals) as the operator's alternate, so the
 recommendation above is superseded on the lift half and stands on the pinned half; D9, yes, with
 the RL family implemented now as a typed refusing placeholder with an expiry test; D10, yes.
-D11, which external environment API the RL adapter speaks, is opened in the plan's register.
+D11, which external environment API the RL adapter speaks, was opened in the plan's register and
+ruled the same day as R11 on the recommendation as written: Gymnasium's `reset` and `step`
+contract as the port shape, TorchRL `EnvBase` as the first adapter, TRL deferred to the first
+LLM-RL objective.
 
 ---
 
