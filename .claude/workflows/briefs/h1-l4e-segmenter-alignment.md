@@ -18,11 +18,11 @@ Keep the affected pages: in `segment_document`, align pysbd's sentence TEXTS seq
 
 ## RED-first tests
 
-A fixture document with `. .`, `...` and `???` sentences segments without raising and its spans are monotone and non-overlapping (RED at the parent: RuntimeError at segmentation.py:121); the four real pages' failing paragraphs segment; every existing fixture document produces the same spans as before (golden); a pysbd result whose text does not occur at or after the cursor still raises.
+A fixture document with `. .`, `...` and `???` sentences segments without raising and its spans are monotone and non-overlapping (RED at the parent: RuntimeError at segmentation.py:121); the four real pages' failing paragraphs segment; every existing fixture document produces the same spans as before (golden); a pysbd result whose text does not occur at or after the cursor still raises; a sentence found later than the cursor with non-whitespace between the cursor and its start raises (the coverage guard), with a stubbed segmenter.
 
 ## Guard teeth (mutation, each RED)
 
-search from offset 0 instead of the cursor; accept a span that starts before the cursor; drop the text-identity check; skip the identity bump.
+search from offset 0 instead of the cursor; remove the coverage guard (`document.text[cursor:start].strip()`, segmentation.py:122-123 at 3e6f6ecb) so non-whitespace between the cursor and a sentence found later is silently skipped; skip the identity bump. RETRACTED 2026-11-03 (review of #428, verified at 3e6f6ecb): "accept a span that starts before the cursor" and "drop the text-identity check" were listed as two teeth, but under this design `start` comes from a forward search of the sentence text from the cursor, so both clauses hold by construction and each mutant stays GREEN alone; they are not teeth.
 
 ## Handoff
 
