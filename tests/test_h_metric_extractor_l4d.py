@@ -224,3 +224,17 @@ def test_the_extractor_vocabularies_are_the_closed_sets() -> None:
 def test_the_global_step_axis_is_unchanged_for_a_v2_report() -> None:
     out = HTrainingStepExtractor(warmup_steps=250).extract(fx.event([_full_example()], step=500))
     assert out is not None and out.step == 750
+
+
+def test_the_in_memory_report_with_tuple_byte_counts_projects_like_its_json_form() -> None:
+    """The runner mirrors the report BEFORE any JSON round trip, where counts are tuples."""
+    event = fx.event([_full_example()])
+    tupled = {
+        **event,
+        "examples": [
+            {**e, "source_bytes": tuple(e["source_bytes"]), "boundary_symbols": (1, 1)}
+            for e in event["examples"]
+        ],
+    }
+    assert project_evaluation(tupled) == project_evaluation(event)
+    assert project_evaluation(tupled) is not None

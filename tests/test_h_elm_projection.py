@@ -530,6 +530,28 @@ class TestFinalProbeCapture:
             sum(r["log_estimate"] for r in example["by_sample_count"]["8"]) / 4
         )
 
+    def test_the_ratio_of_sums_is_the_raw_sum_over_the_raw_bytes_on_the_v1_capture(self) -> None:
+        """L4d read-old: the H0 capture is v1, so only the q-derivable ratio key appears (additive)
+        and it is the plain sum of the captured log estimates over the captured source bytes."""
+        metrics, worker_log = _final_probe_pairs()["sphere"]
+        run = load_h_run(metrics, worker_log)
+        rows = [
+            json.loads(line)
+            for line in metrics.read_text().splitlines()
+            if '"h-predictive-evaluation-v1"' in line
+        ]
+        example = rows[0]["examples"][0]
+        expected = sum(r["log_estimate"] for r in example["by_sample_count"]["8"]) / sum(
+            example["source_bytes"]
+        )
+        assert run.elm[0][1]["samples"]["8"]["log_marginal_per_byte_ratio_of_sums"] == (
+            pytest.approx(expected)
+        )
+        assert run.evaluations[0][1]["eval/log_marginal_per_byte_ratio_of_sums_k8"] == (
+            pytest.approx(expected)
+        )
+        assert not any("prior" in key or "mixture" in key for key in run.evaluations[0][1])
+
     def test_the_aggregate_over_both_arms_reports_no_headline(self) -> None:
         pairs = _final_probe_pairs()
         runs = [load_h_run(*pairs["magnitude"]), load_h_run(*pairs["sphere"])]

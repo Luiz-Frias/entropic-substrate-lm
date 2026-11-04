@@ -220,10 +220,11 @@ def _rows(by_count: object) -> dict[str, list[dict[str, object]]] | None:
 
 def _bytes(value: object, rows: int) -> list[int] | None:
     """Canonical source-byte counts aligned with ``rows``; ``None`` when unusable."""
-    if not isinstance(value, list) or len(cast(list[object], value)) != rows:
+    # the in-memory report the runner mirrors carries tuples; a JSON round trip carries lists
+    if not isinstance(value, (list, tuple)) or len(cast(tuple[object, ...], value)) != rows:
         return None
     counts: list[int] = []
-    for n in cast(list[object], value):
+    for n in cast(tuple[object, ...], value):
         if type(n) is not int or n < 1:
             return None
         counts.append(n)
