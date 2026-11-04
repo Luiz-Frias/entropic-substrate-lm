@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.0...v0.12.1) (2026-11-04)
+
+
+### Documentation
+
+* **plans:** amend series topology plan with corpus review ([eef2a2d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/eef2a2d9ee9dca3bf0928df0e184b0637daa7c35))
+* **plans:** amend series topology plan with corpus review ([#426](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/426)) ([818d80c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/818d80c9317977f21a9131b41e9d657d8dda695a))
+* **plans:** record D11 ruling as R11 in topology plan ([d2b8a76](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d2b8a7652f4aa7424728f5b0f962355aec4b181e))
+* **plans:** record D11 ruling as R11 in topology plan ([#427](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/427)) ([07f355c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/07f355c2344dfa817a047726a4537d8869e56b39))
+
 ## [0.12.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.11.0...v0.12.0) (2026-11-04)
 
 
