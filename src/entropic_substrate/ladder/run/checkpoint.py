@@ -69,6 +69,11 @@ _READER_IDENTITY_LABEL = "h-checkpoint-reader-v2"
 # conductor 2026-10-28 per the plan's door D6): + ladder.run.run_authority, the sealed run
 # authority the port verifies and whose manifest is part of every scientific worker request:
 # 53 members. Regime rows re-pinned in tests/test_identity_epoch.py (DG-A commit).
+# DOOR AMENDMENT 2026-10-31 (FOR-1692, h1-l4a, door D6): + ladder.run.codec_handoff, the member
+# that materializes a pair recipient from its donor's warm-up-final seal and verifies the pair;
+# the seal walk this identity binds now admits its hand-off seal as a chain root: 54 members.
+# The label and the checkpoint payload are unchanged; the bytes of members seals, runner,
+# trace_capture and checkpoint move too. Regime rows re-pinned by the DG-A commit.
 _READER_MODULES = (
     "composition.capture_cli",
     "composition.cli",
@@ -101,6 +106,7 @@ _READER_MODULES = (
     "ladder.capture.capture",
     "ladder.run.admission",
     "ladder.run.checkpoint",
+    "ladder.run.codec_handoff",
     "ladder.run.evaluation_records",
     "ladder.run.execution",
     "ladder.run.generation",

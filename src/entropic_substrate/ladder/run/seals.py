@@ -7,6 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import torch
 
@@ -41,10 +42,42 @@ from entropic_substrate.ladder.run.worker_log_events import (
     render,
 )
 
+SEAL_SCHEMA = "h-checkpoint-seal-v1"
+# FOR-1692: a recipient cell whose codec was materialized from its donor's warm-up-final seal
+# starts its chain at a hand-off seal instead of an ordinary warm-up step-one seal. The seal
+# has the ordinary seal's key set; its ``journal`` slot names the hand-off RECORD, which is not
+# a journal shard and is never read through ``read_journal``. Both names and the record's key
+# set live here, with the walk that admits them, because ``codec_handoff`` imports this module
+# and not the other way round.
+HANDOFF_SEAL_SCHEMA = "h-codec-handoff-seal-v1"
+HANDOFF_RECORD_SCHEMA = "h-codec-handoff-v1"
+HANDOFF_RECORD_FIELDS = (
+    "schema run_identity parent warmup_steps donor_identity donor_manifest donor_seal_sha256 "
+    "donor_checkpoint_sha256 codec_sha256 optimizer_sha256 rng_sha256"
+)
+_HANDOFF_DIGESTS = (
+    "donor_identity",
+    "donor_seal_sha256",
+    "donor_checkpoint_sha256",
+    "codec_sha256",
+    "optimizer_sha256",
+    "rng_sha256",
+)
+
+type SealRoot = Literal["initial", "handoff"]
+
 
 @dataclass(frozen=True)
 class SealedStep:
-    """A verified identity chain, not a scientific verdict or unchecked resume token."""
+    """A verified identity chain, not a scientific verdict or unchecked resume token.
+
+    ``root_kind`` says how the chain began: ``initial`` (an ordinary warm-up step-one seal) or
+    ``handoff`` (a structurally valid hand-off seal, bound to the recipient's own checkpoint
+    and record). It is a structural claim only: donor provenance is proven by
+    ``codec_handoff.admit_codec_pair`` (through ``VerifiedHandoff``), never by this field.
+    It is derived by the walk, never stored in a seal, and trailing with a default so every
+    older constructor is unchanged.
+    """
 
     phase: SentencePhase
     step: int
@@ -52,6 +85,7 @@ class SealedStep:
     journal: ArtifactIdentity
     chain_length: int
     seal_hashes: tuple[str, ...] = ()
+    root_kind: SealRoot = "initial"
 
 
 @dataclass
@@ -245,6 +279,29 @@ def _continuation(previous: SealedStep | None, phase: str, start: int, profile: 
         raise ValueError("seal phase transition skipped the complete warm-up")
 
 
+def check_handoff_record(value: object, profile: HProfile) -> dict[str, object]:
+    """The hand-off record's own predicate: exact keys, the recipient's identity, a null parent
+    and the inherited length equal to the profile's warm-up. The donor-side claims (which seal,
+    which checkpoint, which payload digests) are verified by ``codec_handoff``, not here."""
+    row = recovery_record(value, HANDOFF_RECORD_FIELDS)
+    if (
+        row["schema"] != HANDOFF_RECORD_SCHEMA
+        or row["run_identity"] != profile.identity
+        or row["parent"] is not None
+        or type(row["warmup_steps"]) is not int
+        or row["warmup_steps"] != profile.schedule.warmup_steps
+    ):
+        raise ValueError("hand-off record construction, ancestry, or length is invalid")
+    for key in _HANDOFF_DIGESTS:
+        digest = row[key]
+        if type(digest) is not str:
+            raise ValueError("hand-off record digests must be strings")
+        ContentHash("sha256", digest)
+    if row["donor_manifest"] is None or type(row["donor_manifest"]) is not dict:
+        raise ValueError("hand-off record must carry the donor manifest")
+    return row
+
+
 def read_seal(
     root: Path,
     artifact: ArtifactIdentity,
@@ -307,7 +364,7 @@ def _walk_seal(
     corpus = read_prepared_corpus(
         source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
     )
-    nodes: list[tuple[SealedStep, int, ArtifactIdentity]] = []
+    nodes: list[tuple[SealedStep, int, ArtifactIdentity, bool]] = []
     seen: set[str] = set()
     cursor: ArtifactIdentity | None = artifact
     base: SealedStep | None = None
@@ -327,8 +384,9 @@ def _walk_seal(
             "schema run_identity phase step checkpoint journal",
         )
         phase, step = row["phase"], row["step"]
+        handoff = row["schema"] == HANDOFF_SEAL_SCHEMA
         if (
-            row["schema"] != "h-checkpoint-seal-v1"
+            row["schema"] not in (SEAL_SCHEMA, HANDOFF_SEAL_SCHEMA)
             or row["run_identity"] != profile.identity
             or phase not in ("codec_warmup", "prediction")
             or type(step) is not int
@@ -339,22 +397,31 @@ def _walk_seal(
             artifact_from_mapping(row["checkpoint"]),
             artifact_from_mapping(row["journal"]),
         )
-        measured = read_journal(
-            root,
-            journal,
-            profile,
-            source_root,
-            max_bytes=max_bytes,
-            max_source_bytes=max_source_bytes,
-        )
-        if memo is not None:
-            memo.journals_read += 1
-        if measured["schema"] != "h-journal-shard-v2":
-            raise ValueError(
-                "current restart seals require journal v2; use the original reader for v1"
+        if handoff:
+            if phase != "codec_warmup" or step != profile.schedule.warmup_steps:
+                raise ValueError("a hand-off seal must be the complete codec warm-up")
+            check_handoff_record(read_json(root, journal, max_bytes=max_bytes), profile)
+            if memo is not None:
+                memo.journals_read += 1
+            start, parent = step, None
+        else:
+            measured = read_journal(
+                root,
+                journal,
+                profile,
+                source_root,
+                max_bytes=max_bytes,
+                max_source_bytes=max_source_bytes,
             )
-        if measured["phase"] != phase or measured["end_step"] != step:
-            raise ValueError("seal and journal endpoints disagree")
+            if memo is not None:
+                memo.journals_read += 1
+            if measured["schema"] != "h-journal-shard-v2":
+                raise ValueError(
+                    "current restart seals require journal v2; use the original reader for v1"
+                )
+            if measured["phase"] != phase or measured["end_step"] != step:
+                raise ValueError("seal and journal endpoints disagree")
+            start, parent = measured["start_step"], measured["parent"]
         meta = checkpoint_metadata(
             root,
             artifact_reference(root, checkpoint)["path"],
@@ -385,26 +452,38 @@ def _walk_seal(
             expected_source, sort_keys=True
         ):
             raise ValueError("checkpoint source cursor differs from journal")
-        start = measured["start_step"]
         if type(start) is not int:
             raise ValueError("journal start step must be integer")
-        nodes.append((SealedStep(phase, step, checkpoint, journal, 0), start, cursor))
+        nodes.append((SealedStep(phase, step, checkpoint, journal, 0), start, cursor, handoff))
         if memo is not None:
             memo.seals_walked += 1
-        cursor = None if measured["parent"] is None else artifact_from_mapping(measured["parent"])
+        cursor = None if parent is None else artifact_from_mapping(parent)
     total_length = len(nodes) + (0 if base is None else base.chain_length)
     if total_length > profile.schedule.warmup_steps + profile.schedule.steps:
         raise ValueError("seal chain is cyclic or exceeds its step budget")
     previous = base
     final = base
-    for node, start, node_artifact in reversed(nodes):
-        _continuation(previous, node.phase, start, profile)
+    for node, start, node_artifact, handoff in reversed(nodes):
+        if not handoff:
+            # a hand-off seal is the chain ROOT (its record has no parent, so the walk ends at
+            # it): the ordinary continuation rule, which refuses any first seal that is not
+            # warm-up step one, is not loosened for it
+            _continuation(previous, node.phase, start, profile)
         chain_length = 1 + (0 if previous is None else previous.chain_length)
         seal_hashes = (node_artifact.content_hash.digest,) + (
             () if previous is None else previous.seal_hashes
         )
+        root_kind: SealRoot = (
+            "handoff" if handoff else "initial" if previous is None else previous.root_kind
+        )
         sealed = SealedStep(
-            node.phase, node.step, node.checkpoint, node.journal, chain_length, seal_hashes
+            node.phase,
+            node.step,
+            node.checkpoint,
+            node.journal,
+            chain_length,
+            seal_hashes,
+            root_kind,
         )
         if memo is not None:
             memo.remember(node_artifact, sealed)
@@ -478,7 +557,7 @@ def seal_step(
         root,
         name + "-seal.json",
         {
-            "schema": "h-checkpoint-seal-v1",
+            "schema": SEAL_SCHEMA,
             "run_identity": engine.profile.identity,
             "phase": engine.phase,
             "step": engine.step,

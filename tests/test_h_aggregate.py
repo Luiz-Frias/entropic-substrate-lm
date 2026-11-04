@@ -21,6 +21,7 @@ import pytest
 
 from entropic_substrate.ladder.analyze import h_aggregate
 from entropic_substrate.ladder.analyze.h_aggregate import (
+    CodecHandoffEvidence,
     HRun,
     aggregate_h_runs,
     load_h_run,
@@ -855,6 +856,109 @@ class TestModuleContracts:
         assert "final_h_run_end(" in text
         assert "require_json_object_lines(" in text
         assert "_json_object_lines" not in text.replace("require_json_object_lines", "")
+
+
+# ------------------------------------------------------------------ unit: hand-off recipient
+def _evidence(identity: str = IDENTITY_B, warmup: int = 2) -> CodecHandoffEvidence:
+    return CodecHandoffEvidence(identity, IDENTITY_A, warmup, "5" * 64, "6" * 64)
+
+
+def _recipient_run(directory: Path, **kwargs: Any) -> tuple[Path, Path]:
+    """A recipient commits no codec_warmup row: its codec arrived through the hand-off."""
+    return write_h_run(
+        directory,
+        IDENTITY_B,
+        REQUEST_B,
+        tag="r",
+        mutate_metrics=_drop(lambda r: r.get("phase") == "codec_warmup"),
+        **kwargs,
+    )
+
+
+@pytest.mark.unit
+class TestCodecHandoffRecipient:
+    """D12 (FOR-1692): a recipient is admitted only with hand-off evidence."""
+
+    def test_a_recipient_is_admitted_with_evidence_and_keeps_the_global_axis(
+        self, tmp_path: Path
+    ) -> None:
+        run = load_h_run(*_recipient_run(tmp_path), handoff=_evidence())
+        control = load_h_run(*write_h_run(tmp_path / "control", IDENTITY_B, REQUEST_B))
+        assert run.handoff == _evidence() and run.warmup_steps == 2
+        assert [step for step, phase, _ in run.training] == [3, 4, 5, 6]
+        assert {phase for _, phase, _ in run.training} == {"prediction"}
+        assert run.training == tuple(row for row in control.training if row[1] == "prediction")
+        assert run.evaluations == control.evaluations and control.handoff is None
+
+    def test_the_same_files_without_evidence_are_still_a_gap(self, tmp_path: Path) -> None:
+        paths = _recipient_run(tmp_path)
+        with pytest.raises(TelemetryGap, match="committed codec_warmup rows number 0"):
+            load_h_run(*paths)
+
+    def test_evidence_never_combines_with_the_warmup_override(self, tmp_path: Path) -> None:
+        paths = _recipient_run(tmp_path)
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            load_h_run(*paths, warmup_steps=2, handoff=_evidence())
+
+    def test_evidence_must_be_the_typed_value(self, tmp_path: Path) -> None:
+        paths = _recipient_run(tmp_path)
+        with pytest.raises(TypeError, match="CodecHandoffEvidence"):
+            load_h_run(*paths, handoff=True)  # pyright: ignore[reportArgumentType]
+
+    def test_a_recipient_with_a_warmup_row_is_refused(self, tmp_path: Path) -> None:
+        paths = write_h_run(tmp_path, IDENTITY_B, REQUEST_B)
+        with pytest.raises(TelemetryGap, match="commits no codec_warmup row, but 2 are present"):
+            load_h_run(*paths, handoff=_evidence())
+
+    def test_a_truncated_warmup_is_not_a_recipient(self, tmp_path: Path) -> None:
+        paths = write_h_run(
+            tmp_path,
+            IDENTITY_B,
+            REQUEST_B,
+            mutate_metrics=_drop(lambda r: r.get("phase") == "codec_warmup" and r.get("step") == 1),
+        )
+        with pytest.raises(TelemetryGap, match="commits no codec_warmup row, but 1 are present"):
+            load_h_run(*paths, handoff=_evidence())
+
+    def test_the_inherited_length_must_equal_the_worker_logs(self, tmp_path: Path) -> None:
+        paths = _recipient_run(tmp_path)
+        with pytest.raises(TelemetryGap, match="inherited 3"):
+            load_h_run(*paths, handoff=_evidence(warmup=3))
+
+    def test_the_evidence_must_name_this_runs_profile(self, tmp_path: Path) -> None:
+        paths = _recipient_run(tmp_path)
+        with pytest.raises(TelemetryGap, match="is not the hand-off recipient"):
+            load_h_run(*paths, handoff=_evidence(identity=IDENTITY_A))
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"recipient_identity": "xyz"},
+            {"donor_identity": "A" * 64},
+            {"record_digest": "7" * 63},
+            {"donor_seal_digest": ""},
+            {"warmup_steps": 0},
+            {"warmup_steps": True},
+        ],
+    )
+    def test_evidence_is_validated_at_construction(self, changes: dict[str, Any]) -> None:
+        fields = {
+            "recipient_identity": IDENTITY_B,
+            "donor_identity": IDENTITY_A,
+            "warmup_steps": 2,
+            "record_digest": "5" * 64,
+            "donor_seal_digest": "6" * 64,
+            **changes,
+        }
+        with pytest.raises(ValueError, match="hand-off evidence"):
+            CodecHandoffEvidence(**fields)
+
+    def test_non_recipient_aggregates_gain_no_key(self, tmp_path: Path) -> None:
+        runs, labels = _two_arms(tmp_path)
+        recipient = load_h_run(*_recipient_run(tmp_path / "r"), handoff=_evidence())
+        for run in (*runs, recipient):
+            assert "handoff" not in json.dumps(aggregate_h_runs([run], {run.profile_identity: "x"}))
+        assert [run.handoff for run in runs] == [None, None] and labels
 
 
 # ------------------------------------------------------------------ integration: real capture

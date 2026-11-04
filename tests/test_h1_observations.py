@@ -44,7 +44,7 @@ from entropic_substrate.ladder.analyze.h1_observations import (
     pilot_inputs_by_threshold,
     project_h1_cell,
 )
-from entropic_substrate.ladder.analyze.h_aggregate import HRun, load_h_run
+from entropic_substrate.ladder.analyze.h_aggregate import CodecHandoffEvidence, HRun, load_h_run
 from entropic_substrate.ladder.analyze.h_resumed_run import HResumedRun, load_h_resumed_run
 from entropic_substrate.ladder.analyze.seed_sizing import (
     ContrastHypothesis,
@@ -1334,6 +1334,68 @@ class TestBinding:
     def test_no_blocks_is_refused(self) -> None:
         with pytest.raises(ValueError, match="at least one block"):
             observe_h1_blocks([])
+
+
+# (recipient cell index, its donor's index): the pairs share a sentence mode and differ in the
+# spine carrier, so cell 2 (magnitude, sphere) takes cell 0's codec and cell 3 takes cell 1's
+RECIPIENTS = ((2, 0), (3, 1))
+
+
+def build_recipient_block(root: Path, seed: int, specs: Sequence[CellSpec]) -> H1BlockCapture:
+    """``build_block``, except each recipient cell commits no warm-up row and is loaded with the
+    hand-off evidence of its donor (FOR-1692, D12)."""
+    block = H1PreservationBlock(h1_profiles(seed))
+    cells: dict[str, HRun] = {}
+    for index, (member, spec) in enumerate(zip(block.profiles, specs, strict=True)):
+        paths = write_run(
+            root / f"seed-{seed}", member.identity, spec, step_bytes=100, tag=member.name
+        )
+        donor = dict(RECIPIENTS).get(index)
+        if donor is None:
+            cells[member.name] = load_h_run(*paths)
+            continue
+        _edit_metrics(paths[0], lambda rows: [r for r in rows if r.get("phase") != "codec_warmup"])
+        evidence = CodecHandoffEvidence(
+            member.identity, block.profiles[donor].identity, 2, "5" * 64, "6" * 64
+        )
+        cells[member.name] = load_h_run(*paths, handoff=evidence)
+    return H1BlockCapture(block, cells)
+
+
+@pytest.mark.unit
+class TestHandoffRecipients:
+    def test_a_recipient_block_observes_exactly_as_the_independent_block(
+        self, tmp_path: Path
+    ) -> None:
+        specs = standard_specs(0)
+        control = observe_h1_blocks([build_block(tmp_path / "control", 101, specs)])[0]
+        recipient = observe_h1_blocks([build_recipient_block(tmp_path / "recipient", 101, specs)])[
+            0
+        ]
+        assert recipient.findings == () and control.findings == ()
+        # the captured files live in different directories; every measured field must agree
+        assert [replace(c, segment_metrics=()) for c in recipient.cells if c] == [
+            replace(c, segment_metrics=()) for c in control.cells if c
+        ]
+        assert len([c for c in recipient.cells if c]) == 4
+        assert recipient.exposure == control.exposure and recipient.exposure is not None
+        captured = build_recipient_block(tmp_path / "again", 101, specs)
+        assert [c.handoff is not None for c in captured.cells.values() if isinstance(c, HRun)] == [
+            False,
+            False,
+            True,
+            True,
+        ]
+
+    def test_the_callers_independent_warmup_flag_still_maps_to_the_exclusion_vocabulary(
+        self, tmp_path: Path
+    ) -> None:
+        capture = build_recipient_block(tmp_path, 101, standard_specs(0))
+        flagged = replace(capture, independent_warmup=(LABELS[2],))
+        (observation,) = observe_h1_blocks([flagged])
+        assert [(f.reason, f.cell) for f in observation.findings] == [
+            (H1ExclusionReason.INDEPENDENT_WARMUP, LABELS[2])
+        ]
 
 
 @pytest.mark.unit
