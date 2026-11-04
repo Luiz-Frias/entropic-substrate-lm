@@ -177,7 +177,10 @@ re-verifies that digest at every gate, so an authority edited after sealing is r
 ("run authority fails its seal"), as are a missing one, one naming another stage or class, and
 any authority on a smoke request. The worker request carries the authority as
 `h-probe-worker-request-v2`; a smoke request still renders `h-probe-worker-request-v1`
-byte-identically, so every captured `request_sha256` re-derives. The launch manifest
+byte-identically, so every captured `request_sha256` re-derives. A codec-sharing PAIR is its own
+request, `h-probe-worker-request-v3` (FOR-1693): two cells donor first (the magnitude-spine arm, then
+the sphere-spine arm), a block binding and one authority for both; v1 and v2 keep their bytes and
+meaning, and no launch carries a pair before FOR-1694. The launch manifest
 `h-probe-launch-v4` names the authority digest as both `scientific_authority` and
 `spending_authority` (`"none"` for smoke). A scientific launch declares the cost guard
 `host_watchdog_budgeted` (smoke keeps `host_watchdog_tiny_only`, the only kind it may declare),

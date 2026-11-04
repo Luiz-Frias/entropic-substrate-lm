@@ -740,6 +740,28 @@ rows: (3.12.13, 2.13.0) ``0e9055d5...``, (3.12.14, 2.13.0+cpu) ``0da34156...``,
 checkpoint values (``40965967``, ``c3faddf5``, ``0e4f24b7``, ``002e9c8c``, ``c4b22899``). Source
 rows untouched (recomputed and equal).
 
+L4b pair admission re-pin (house rule 4, MEASURED 2026-11-01, branch
+``h1-l4b-pair-admission`` on ``h1-l4a-codec-handoff`` on main ``b0dcdcc9``, FOR-1693, conductor
+DG-A commit, re-pin row 2 of W2): no member is added (54 stays 54) and 19 members move bytes
+(``core.sentence.sampling``, ``ladder.run.codec_handoff``, ``evaluation_records``, ``execution``,
+``generation``, ``journal``, ``native_verification``, ``object_worker``, ``runner``, ``seals``,
+``span_diagnostics``, ``span_states``, ``trace_capture``, ``worker_command``,
+``worker_completion``, ``worker_execution``, ``worker_request``, ``worker_snapshot``,
+``worker_transport``); no source member moved. Control first: ``tools/regime_rows.py`` over the
+tree at ``2994331f`` WITHOUT the patch (trunk unmoved since the L4a restack, so no restack)
+reproduced all nine L4a rows and equals both live identities under ``.venv/bin/python`` 3.12.15,
+torch 2.13.0, pysbd 0.3.4; over the lane's staged tree it gave ``48df808c`` for (3.12.15, 2.13.0),
+the value the lane's own final-tree unit runs reported RED against ``33bc5306``. The landed tree
+differs from that tree by two conductor edits (bandit refused the landing on two B101 asserts,
+``object_worker`` result admission and ``worker_execution``'s excluded verdict, each now an
+explicit refusal), so the rows below are recomputed over the landed tree, where the
+(3.12.15, 2.13.0) row equals ``checkpoint._reader_identity()``. New checkpoint rows:
+(3.12.13, 2.13.0) ``f60682f4...``, (3.12.14, 2.13.0+cpu) ``7110caf2...``,
+(3.12.15, 2.13.0) ``f90ae059...``, (3.12.15, 2.13.0+cpu) ``8b54f83c...``,
+(3.12.16, 2.13.0+cpu) ``b6a8015e...``. Retracted for
+this tree: the L4a values (``0e9055d5``, ``0da34156``, ``33bc5306``, ``5c036120``,
+``d335044b``). Source rows untouched (recomputed and equal).
+
 p2 retraction (house rule 4, MEASURED 2026-09-20): the D1 closure manifest
 row (``_FROZEN_D1_CLOSURE_COUNT``, ``_FROZEN_D1_CLOSURE_MANIFEST_DIGEST``,
 ``_closure_manifest_digest()`` and their pinning test) is DROPPED here, not
@@ -940,19 +962,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "0e9055d5645dfb82fa9582e09f0eff8d8487e2e792aed0aa7c542b62427a418c",  # pragma: allowlist secret
+    ): "f60682f4842b97fbe5bc023e47c060b1b6ce88b42428deff2f1bb77a98c90134",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "0da3415668650582ea1037c2d4ff26928e1330fad89d14e59dc39aea5fc0c15e",  # pragma: allowlist secret
+    ): "7110caf2b542d61127a8accd3f9a83739498efe8921d7aa432a854d0a3088e3e",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "33bc5306f9b4f751d2712a972866bee735760fe4b7d22792e08e69d618ab93e5",  # pragma: allowlist secret
+    ): "f90ae0593d225703743d1631023974c2cd298cdf6148cd91d82fca4387fc92ae",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "5c036120c8a891b74b0466ab2e24efa4a508b978e7e2fe8aeef2112d291f8869",  # pragma: allowlist secret
+    ): "8b54f83c0a1a0f7a451f34f4de546d541772e1fb37e32770b022dd7d93e54eeb",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -962,7 +984,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "d335044b32a6f0f4517e62777d927586af601496315f0e74c8237cce8b66d626",  # pragma: allowlist secret
+    ): "b6a8015e4a9ed083f0077fcc4e51a540425a3a97076abc0ea1d3c649f409d73f",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

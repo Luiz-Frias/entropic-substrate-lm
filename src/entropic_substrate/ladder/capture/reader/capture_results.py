@@ -47,8 +47,17 @@ lanes before any tag is read or any run name validated. A ``FAILED`` run that is
 FINISHED-only gate. The same admissibility predicate applies, so a ``FAILED`` H run that
 died before its first committed step, before ``run_start``, or without ``metrics.jsonl``
 is refused and fails the whole pass with exit 2, exactly as the same run would under
-``FINISHED``. ``capture_checkpoints`` keeps its FINISHED-only gate (H runs upload no
-checkpoints).
+``FINISHED``.
+
+AMENDMENT (house rule 4, FOR-1693, DH-46, 2026-11-01): the sentence above stands for every
+run EXCEPT one whose ``run_end`` records a scientific stop (``status == failed`` and
+``result_status == scientific_gap``): a codec warm-up that diverged before its first
+committed step is a recorded scientific outcome, and ``final_h_run_end`` now admits that
+stream with zero committed rows, so the capture pass no longer exits 2 on it. The exception is
+keyed on the recorded stop, never on the row count; a ``FAILED`` run that died before its
+first committed step WITHOUT that record is refused exactly as before.
+
+``capture_checkpoints`` keeps its FINISHED-only gate (H runs upload no checkpoints).
 
 An H-tagged run with no ``h-run-lifecycle-v1`` records is refused whatever produced it: a
 worker from before FOR-1639 is. The local tracer (schema ``h-tiny-trace-v1``) and the local

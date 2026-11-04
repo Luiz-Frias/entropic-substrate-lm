@@ -1,5 +1,13 @@
 """The worker request carries its run authority: v1 for smoke (unchanged bytes), v2 for science.
 
+RETRACTION (house rule 4, FOR-1693, 2026-11-01): the ``schema_v3`` row below used to expect
+"unknown worker request scope or authority", because ``h-probe-worker-request-v3`` was an
+unknown schema. v3 is now the pair request and parses through its own reader, so the SAME
+remote single-profile manifest relabelled ``v3`` is refused for its key set ("recovery payload
+fields differ from the versioned schema"). The old message is retracted, not kept as an
+alternative; no v1 or v2 digest or refusal moved (a moved v1/v2 digest would be a FAIL, pinned in
+tests/test_h_pair_request.py). The v3 digests are frozen at the end of this file.
+
 Rung B (operator ruling 2026-10-27, "option B"). A smoke request renders exactly the
 pre-rung-B ``h-probe-worker-request-v1`` bytes, so every captured ``request_sha256``
 still re-derives; a scientific request renders ``h-probe-worker-request-v2`` with its
@@ -8,6 +16,7 @@ sealed ``RunAuthority`` and names the authority's digest as both of its authorit
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from tests.test_h_probe_launch import pilot_request, remote_request
@@ -65,7 +74,7 @@ def test_the_authority_binds_the_request_digest() -> None:
         ("mandate_other", "unknown worker request scope or authority"),
         ("authority_tamper", "run authority digest does not match its content"),
         ("authority_other_stage", "run authority names another stage"),
-        ("schema_v3", "unknown worker request scope or authority"),
+        ("schema_v3", "recovery payload fields differ from the versioned schema"),
     ],
 )
 def test_the_request_reader_refuses_a_mandate_out_of_family(mutation: str, message: str) -> None:
@@ -119,3 +128,27 @@ def test_a_pilot_request_without_authority_is_refused_at_construction() -> None:
 def test_a_smoke_request_with_an_authority_is_refused_at_construction() -> None:
     with pytest.raises(ValueError, match="smoke run classes carry no run authority"):
         replace(remote_request(), authority=sealed_authority())
+
+
+# FOR-1693: the v3 pair fixtures' digests, frozen inline (there is no separate fixture file). A
+# change to either is a change to the pair wire bytes: re-freeze it only as a ruled event.
+V3_SMOKE_PAIR_DIGEST = (
+    "59cb1ab7fc8d2fee4494a4a87c2d4a8d83343af8b20f8b889597310657e4fd3d"  # pragma: allowlist secret
+)
+V3_PILOT_PAIR_DIGEST = (
+    "3831af41aa04287952b4d406d7c43116d8299d6fe5ee37edb15e549c0d48e723"  # pragma: allowlist secret
+)
+
+
+def test_the_v3_pair_digests_are_frozen(tmp_path: Path) -> None:
+    from tests.test_h_codec_handoff import make_pair
+    from tests.test_h_pair_request import pair_request, pilot_pair
+
+    smoke = pair_request(make_pair(tmp_path))
+    assert smoke.digest == V3_SMOKE_PAIR_DIGEST
+    assert smoke.manifest["schema"] == "h-probe-worker-request-v3"
+    pilot = pilot_pair()
+    assert pilot.digest == V3_PILOT_PAIR_DIGEST
+    assert pilot.manifest["scientific_authority"] == pilot.authority.digest  # type: ignore[union-attr]
+    for value in (smoke, pilot):
+        assert parse_probe_request(value.payload, max_bytes=1_000_000) == value

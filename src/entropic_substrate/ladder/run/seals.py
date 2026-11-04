@@ -15,8 +15,8 @@ from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.model import SentencePredictor
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
-from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
-from entropic_substrate.kernel.artifacts import artifact_from_mapping
+from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler, VerifiedCorpus
+from entropic_substrate.kernel.artifacts import D1ArtifactSnapshotError, artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
@@ -86,6 +86,13 @@ class SealedStep:
     chain_length: int
     seal_hashes: tuple[str, ...] = ()
     root_kind: SealRoot = "initial"
+    # FOR-1693 (progress v2): derived by the walk, never stored in a seal, trailing with
+    # defaults so every older constructor is unchanged. ``warmup_final`` is the chain's seal at
+    # ``codec_warmup`` step ``warmup_steps`` (root-relative), ``None`` while the chain has not
+    # reached it; ``root_journal`` is the SHA-256 of the chain ROOT's journal artifact, which for a
+    # hand-off chain is the hand-off RECORD the recipient's receipts cite.
+    warmup_final: ArtifactIdentity | None = None
+    root_journal: str | None = None
 
 
 @dataclass
@@ -191,6 +198,61 @@ class SealMemo:
             self._depth -= 1
             if self._depth == 0:
                 self.admission_seconds += time.perf_counter() - started
+
+
+class CorpusMemo:
+    """Prepared corpora ONE PROCESS has replayed for ONE source root (FOR-1693, DH-41).
+
+    Every journal read, seal walk, evaluation read and sampler construction of a worker run used
+    to call ``read_prepared_corpus`` (a full ``prepare_documents`` replay including pysbd) and
+    then replay it AGAIN inside ``SentenceSampler``. MEASURED at 043bee0c on the single-cell
+    tracer through ``run_object_worker``: 84 ``read_prepared_corpus`` calls (64 on the workspace
+    source root, 20 on the capture root) and 42 sampler re-preparations. This is the same shape
+    as :class:`SealMemo` one level down: an explicit object, never module-level state and never
+    an ``lru_cache``; keyed by the verified content digest and bound to ONE resolved root, so a
+    second root is refused (the capture root and each pair cell's capture root get their own);
+    populated only after a full verified replay; a fresh process has none.
+
+    :meth:`read` returns a :class:`~entropic_substrate.core.sentence.sampling.VerifiedCorpus`,
+    the proof type whose constructor replays once. A hit enforces every per-call predicate the
+    miss path enforces (the expected SHA-256, a positive ``max_bytes``, the byte limit against
+    the size the miss path measured) and skips ONLY the replay. TRUST BOUNDARY, as for
+    :class:`SealMemo`: a hit does no filesystem access, so a file rewritten after admission but
+    asked for under the SAME digest is still served; a rewrite under another digest is a miss
+    (the key is the digest, never the path). The counters are measured, not derived.
+    """
+
+    def __init__(self) -> None:
+        self._root: Path | None = None
+        self._entries: dict[str, tuple[VerifiedCorpus, int]] = {}
+        self.read_replays = 0  # read_prepared_corpus calls this memo made
+        self.proof_replays = 0  # prepare_documents replays minted into proofs (separate row)
+        self.hits = 0
+
+    def read(self, root: Path, expected: ContentHash, *, max_bytes: int) -> VerifiedCorpus:
+        if type(expected) is not ContentHash or expected.algorithm != "sha256":
+            raise ValueError("source capture requires an expected SHA-256 digest")
+        if type(max_bytes) is not int or max_bytes < 1:
+            raise ValueError("source capture requires a positive byte limit")
+        resolved = Path(root).resolve()
+        if self._root is None:
+            self._root = resolved
+        elif self._root != resolved:
+            raise ValueError("a corpus memo serves exactly one source root")
+        hit = self._entries.get(expected.digest)
+        if hit is not None:
+            proof, size = hit
+            if size > max_bytes:
+                raise D1ArtifactSnapshotError("H prepared source artifact exceeds its byte limit")
+            self.hits += 1
+            return proof
+        corpus = read_prepared_corpus(root, expected, max_bytes=max_bytes)
+        self.read_replays += 1
+        size = (resolved / "prepared-corpus.json").stat().st_size
+        proof = VerifiedCorpus(corpus)
+        self.proof_replays += 1
+        self._entries[expected.digest] = (proof, size)
+        return proof
 
 
 @contextmanager
@@ -311,8 +373,13 @@ def read_seal(
     max_bytes: int,
     max_source_bytes: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> SealedStep:
     """Validate every ancestor; full tensor admission still occurs when resuming.
+
+    ``corpora`` (FOR-1693) is the process's :class:`CorpusMemo` of ``source_root``; it is
+    the memo ARGUMENT only: with it the prepared corpus is replayed once instead of once per
+    node, and every other predicate is unchanged.
 
     ``memo``, when given, is trusted ONLY for seal identities THIS SAME
     PROCESS has already verified for THIS artifact root (see
@@ -338,6 +405,7 @@ def read_seal(
             max_bytes=max_bytes,
             max_source_bytes=max_source_bytes,
             memo=None,
+            corpora=corpora,
         )
     with memo.timed_read():
         return _walk_seal(
@@ -348,6 +416,7 @@ def read_seal(
             max_bytes=max_bytes,
             max_source_bytes=max_source_bytes,
             memo=memo,
+            corpora=corpora,
         )
 
 
@@ -360,9 +429,16 @@ def _walk_seal(
     max_bytes: int,
     max_source_bytes: int,
     memo: SealMemo | None,
+    corpora: CorpusMemo | None,
 ) -> SealedStep:
-    corpus = read_prepared_corpus(
-        source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+    corpus = (
+        read_prepared_corpus(
+            source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+        )
+        if corpora is None
+        else corpora.read(
+            source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+        )
     )
     nodes: list[tuple[SealedStep, int, ArtifactIdentity, bool]] = []
     seen: set[str] = set()
@@ -412,6 +488,7 @@ def _walk_seal(
                 source_root,
                 max_bytes=max_bytes,
                 max_source_bytes=max_source_bytes,
+                corpora=corpora,
             )
             if memo is not None:
                 memo.journals_read += 1
@@ -476,6 +553,9 @@ def _walk_seal(
         root_kind: SealRoot = (
             "handoff" if handoff else "initial" if previous is None else previous.root_kind
         )
+        warmup_final = None if previous is None else previous.warmup_final
+        if node.phase == "codec_warmup" and node.step == profile.schedule.warmup_steps:
+            warmup_final = artifact_from_mapping(artifact_reference(root, node_artifact))
         sealed = SealedStep(
             node.phase,
             node.step,
@@ -484,6 +564,8 @@ def _walk_seal(
             chain_length,
             seal_hashes,
             root_kind,
+            warmup_final,
+            node.journal.content_hash.digest if previous is None else previous.root_journal,
         )
         if memo is not None:
             memo.remember(node_artifact, sealed)
@@ -526,6 +608,7 @@ def seal_step(
             max_bytes=max_bytes,
             max_source_bytes=engine.max_source_bytes,
             memo=memo,
+            corpora=engine.corpora,
         )
     )
     start = rows[0]["step"]
@@ -591,6 +674,7 @@ def resume_seal(
         max_bytes=max_bytes,
         max_source_bytes=engine.max_source_bytes,
         memo=memo,
+        corpora=engine.corpora,
     )
     engine.resume(
         root,

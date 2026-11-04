@@ -16,14 +16,19 @@ from entropic_substrate.kernel.artifacts import (
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.ladder.run.generation import read_generation
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
-from entropic_substrate.ladder.run.runner import read_training_progress
-from entropic_substrate.ladder.run.seals import SealMemo
+from entropic_substrate.ladder.run.runner import (
+    PROGRESS_SCHEMA_V1,
+    read_training_progress,
+    refuse_progress_version,
+)
+from entropic_substrate.ladder.run.seals import CorpusMemo, SealMemo
 from entropic_substrate.ladder.run.span_diagnostics import read_span_diagnostics
 
 _SCHEMAS = frozenset(
     (
         "h-run-profile-v3",
-        "h-probe-training-progress-v1",
+        "h-probe-training-progress-v1",  # FOR-1693: listed so it is REFUSED BY NAME in _collect
+        "h-probe-training-progress-v2",
         "h-checkpoint-seal-v1",
         "h-codec-handoff-seal-v1",
         "h-codec-handoff-v1",
@@ -88,6 +93,8 @@ def _collect(
         collected[name] = normalized
         if name.endswith(".json"):
             payload = read_json(root, normalized, max_bytes=max_bytes)
+            if payload.get("schema") == PROGRESS_SCHEMA_V1:
+                refuse_progress_version(PROGRESS_SCHEMA_V1)
             if payload.get("schema") not in _SCHEMAS:
                 raise ValueError("capture encountered an unknown producer artifact schema")
             if payload.get("schema") == "h-run-profile-v3":
@@ -141,6 +148,7 @@ def capture_model_trace(
     forensic_roots: tuple[ArtifactIdentity, ...] = (),
     diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
     memo: SealMemo | None,
+    corpora: CorpusMemo | None = None,
 ) -> ArtifactIdentity: ...
 
 
@@ -159,6 +167,7 @@ def capture_model_trace(
     forensic_roots: tuple[ArtifactIdentity, ...] = (),
     diagnostic_roots: tuple[ArtifactIdentity, ...] = (),
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> ArtifactIdentity:
     """Copy verified bytes unchanged; publish the capture manifest last.
 
@@ -167,7 +176,8 @@ def capture_model_trace(
 
     ``memo`` is the admission memo of the ``root`` (the worker's ``/run``
     directory) and only of it; the CAPTURE root that :func:`read_model_trace`
-    reads receives a memo of its own, never this one.
+    reads receives a memo of its own, never this one. ``corpora`` (FOR-1693, DH-41) is the process's
+    corpus memo of ``source_root`` (the memo ARGUMENT only).
     """
     _limits(max_bytes, max_source_bytes, max_total_bytes, max_artifacts)
     target = normalize_d1_artifact_root(destination)
@@ -181,6 +191,7 @@ def capture_model_trace(
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
         memo=memo,
+        corpora=corpora,
     )
     if train["status"] != "training_complete":
         raise ValueError("model trace capture requires complete training")
@@ -193,6 +204,7 @@ def capture_model_trace(
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
         memo=memo,
+        corpora=corpora,
     )
     if generated["status"] != "generation_complete":
         raise ValueError("model trace capture requires a complete generation outcome")
@@ -208,6 +220,7 @@ def capture_model_trace(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_bytes,
             memo=memo,
+            corpora=corpora,
         )
     collected, total = _collect(
         root,
@@ -410,6 +423,7 @@ def read_model_trace(
     max_total_bytes: int,
     max_artifacts: int,
     memo: SealMemo | None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]: ...
 
 
@@ -422,6 +436,7 @@ def read_model_trace(
     max_total_bytes: int,
     max_artifacts: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     """Verify byte custody and run native model/source/RNG/numerical admission.
 
@@ -429,6 +444,8 @@ def read_model_trace(
     of the ``/run`` seals, and the memo is keyed by digest): pass a memo created
     for the capture root, never the ``/run`` memo, or the seal readers would
     never run on the captured bytes and the native receipt would attest less.
+    ``corpora`` (FOR-1693, DH-41) belongs to the capture root's own ``source/`` likewise: the
+    memo ARGUMENT only, never the workspace source root's memo.
     """
     inventory = _trace_inventory(
         root,
@@ -447,6 +464,7 @@ def read_model_trace(
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
         memo=memo,
+        corpora=corpora,
     )
     gen = read_generation(
         root,
@@ -457,6 +475,7 @@ def read_model_trace(
         max_source_bytes=max_source_bytes,
         max_artifact_bytes=max_bytes,
         memo=memo,
+        corpora=corpora,
     )
     if train["status"] != "training_complete" or gen["status"] != "generation_complete":
         raise ValueError("capture does not contain a completed model trace")
@@ -470,6 +489,7 @@ def read_model_trace(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_bytes,
             memo=memo,
+            corpora=corpora,
         )
     for item in inventory.artifacts.values():
         if item.path.endswith(".json") and item != generation:
@@ -490,5 +510,6 @@ def read_model_trace(
                     max_source_bytes=max_source_bytes,
                     max_artifact_bytes=max_bytes,
                     memo=memo,
+                    corpora=corpora,
                 )
     return inventory.manifest

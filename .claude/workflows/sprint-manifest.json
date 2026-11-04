@@ -305,7 +305,7 @@
     },
     {
       "id": "h1-l4b-pair-admission",
-      "title": "L4b scientific pair admission: pair request wire, progress v2, cell namespace, pilot admission row, per-cell MLflow runs, corpus memo (DG-A re-pin row 2)",
+      "title": "L4b scientific pair admission: pair request wire, progress v2, cell namespace, pilot admission row, per-cell MLflow runs, corpus memo, result and completion v2, stop marker cell (DG-A re-pin row 2)",
       "issues": [
         "FOR-1693"
       ],
@@ -351,6 +351,21 @@
           "name": "pair-failure-isolation",
           "kind": "contract",
           "frozen_after": true
+        },
+        {
+          "name": "worker-result-v2",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "host-completion-v2",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "stop-marker-cell",
+          "kind": "door",
+          "frozen_after": true
         }
       ],
       "contracts_consumed": [
@@ -378,7 +393,21 @@
         "tests/test_h_run_admission_sites.py",
         "tests/test_h_probe_operator_stop.py",
         "tests/test_identity_epoch.py",
-        "docs/identity/read-old-table.md"
+        "docs/identity/read-old-table.md",
+        "src/entropic_substrate/ladder/run/object_worker.py",
+        "src/entropic_substrate/ladder/run/worker_completion.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_stop.py",
+        "src/entropic_substrate/ladder/capture/reader/capture_results.py",
+        "tests/test_sentence_worker_completion.py",
+        "tests/test_h_probe_collection.py",
+        "tests/test_sentence_object_worker.py",
+        "tests/test_h_worker_command_observability.py",
+        "tests/test_capture_results.py",
+        "src/entropic_substrate/ladder/analyze/h_aggregate.py",
+        "src/entropic_substrate/ladder/capture/reader/h_telemetry.py",
+        "tests/test_h_aggregate.py",
+        "tests/test_h_telemetry.py",
+        "tests/test_h1_observations.py"
       ],
       "conflict_edges": [
         {
@@ -396,7 +425,7 @@
         {
           "with": "h1-l4c-remote-pair",
           "type": "file",
-          "evidence": "worker_command.py, worker_execution.py, runner.py, trace_capture.py, worker_snapshot.py, h_probe_collection.py (:132,:172,:196-200), h_probe_resume.py (:95,:109), tests/test_identity_epoch.py",
+          "evidence": "worker_command.py, worker_execution.py, runner.py, trace_capture.py, worker_snapshot.py, h_probe_collection.py (:132,:172,:196-200), h_probe_resume.py (:95,:109), tests/test_identity_epoch.py; DH-44 (2026-11-01): worker-result-v2, host-completion-v2 and stop-marker-cell moved to L4b, so object_worker.py, worker_completion.py, worker/h_probe_stop.py and capture_results.py are L4b's here",
           "resolution": "hub-owner"
         }
       ],
@@ -406,7 +435,7 @@
     },
     {
       "id": "h1-l4c-remote-pair",
-      "title": "L4c carry a pair through the remote path: launch bump with sealed ceiling, result/completion v2, stop marker cell, capture-by-reference, pair collection and resume (DG-A re-pin row 3)",
+      "title": "L4c carry a pair through the remote path: launch bump with sealed ceiling, capture-by-reference, pair collection and resume (DG-A re-pin row 3)",
       "issues": [
         "FOR-1694"
       ],
@@ -422,21 +451,6 @@
       "contracts_owned": [
         {
           "name": "probe-launch-v5",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "worker-result-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "host-completion-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "stop-marker-cell",
           "kind": "door",
           "frozen_after": true
         },
@@ -458,6 +472,9 @@
         }
       ],
       "contracts_consumed": [
+        "worker-result-v2",
+        "host-completion-v2",
+        "stop-marker-cell",
         "worker-request-pair-v3",
         "training-progress-v2",
         "worker-cell-namespace",
@@ -501,7 +518,7 @@
         {
           "with": "h1-l4b-pair-admission",
           "type": "contract",
-          "evidence": "consumes worker-request-pair-v3, training-progress-v2, worker-cell-namespace, pair-failure-isolation",
+          "evidence": "consumes worker-request-pair-v3, training-progress-v2, worker-cell-namespace, pair-failure-isolation, worker-result-v2, host-completion-v2, stop-marker-cell (DH-44)",
           "resolution": "rails-before"
         },
         {
@@ -525,7 +542,7 @@
       ],
       "parallel_group": null,
       "status": "queued",
-      "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph."
+      "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph. DH-44 (2026-11-01, pull-forward): worker-result-v2, host-completion-v2 and stop-marker-cell are L4b's doors; L4c consumes them and keeps launch v5, the pod name, capture-by-reference, pair collection and resume, the wave-monitor cell arms and the deploy-doc launch schema."
     },
     {
       "id": "h1-l4d-evaluation-instruments",

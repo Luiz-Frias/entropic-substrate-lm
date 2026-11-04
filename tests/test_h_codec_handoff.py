@@ -1100,8 +1100,14 @@ PUBLISHED_SCHEMAS = frozenset(
 
 
 def test_the_capture_vocabulary_gains_exactly_the_two_handoff_names() -> None:
+    """FOR-1693 amendment (house rule 4): progress v2 joins the two hand-off names. The v1
+    progress name stays in the vocabulary only so ``_collect`` can refuse it BY NAME."""
     schemas = trace_capture_module._SCHEMAS  # pyright: ignore[reportPrivateUsage]
-    assert schemas == PUBLISHED_SCHEMAS | {"h-codec-handoff-v1", "h-codec-handoff-seal-v1"}
+    assert schemas == PUBLISHED_SCHEMAS | {
+        "h-codec-handoff-v1",
+        "h-codec-handoff-seal-v1",
+        "h-probe-training-progress-v2",
+    }
 
 
 # ------------------------------------------------------------------- the analysis seam

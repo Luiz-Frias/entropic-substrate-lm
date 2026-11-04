@@ -31,7 +31,7 @@ from entropic_substrate.ladder.run.worker_log_events import (
     PUBLISH_VERIFY_READ,
     render,
 )
-from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
+from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, parse_probe_request
 
 
 @dataclass
@@ -221,7 +221,7 @@ def _input(root: Path, artifact: ArtifactIdentity, maximum: int) -> bytes:
 
 
 def publish_probe_request(
-    objects: D1TrainerMailboxObjectPort, request: ProbeRequest, root: Path
+    objects: D1TrainerMailboxObjectPort, request: AnyProbeRequest, root: Path
 ) -> D1TrainerMailboxObjectIdentity:
     """Preflight the whole input budget, then publish the request commit marker last."""
     request.__post_init__()
@@ -248,7 +248,7 @@ def read_published_probe_request(
     marker: D1TrainerMailboxObjectIdentity,
     *,
     max_request_bytes: int,
-) -> ProbeRequest:
+) -> AnyProbeRequest:
     """Admit the canonical request marker before acting on its input graph."""
     if (
         type(max_request_bytes) is not int
@@ -271,7 +271,7 @@ def materialize_probe_request(
     root: Path,
     *,
     max_request_bytes: int,
-) -> ProbeRequest:
+) -> AnyProbeRequest:
     """Use an empty owned workspace; a partial transfer has no local request marker."""
     request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
     limits = request.limits

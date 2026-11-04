@@ -10,11 +10,13 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import TextIO, cast
+from typing import Literal, TextIO, cast
 
+from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
+from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.capture.ports.run_descriptor import TrackingRunDescriptor
 from entropic_substrate.ladder.capture.reader.sinks import CONFIG_HASH_TAG, EXP_TAG, h_config_hash
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
@@ -35,7 +37,15 @@ from entropic_substrate.ladder.run.transport.d1_trainer_s3_object_adapter import
 )
 from entropic_substrate.ladder.run.worker_completion import receive_worker_completion
 from entropic_substrate.ladder.run.worker_log_events import WORKER_END, WORKER_START, render
-from entropic_substrate.ladder.run.worker_request import ProbeRequest, parse_probe_request
+from entropic_substrate.ladder.run.worker_request import (
+    RESULT_SCHEMA_V1,
+    RESULT_SCHEMA_V2,
+    AnyProbeRequest,
+    PairProbeRequest,
+    ProbeRequest,
+    parse_probe_request,
+    refuse_pair,
+)
 from entropic_substrate.ladder.run.worker_transport import (
     publish_probe_request,
     read_published_probe_request,
@@ -105,9 +115,103 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _scope(request: ProbeRequest, local: bool, object_limit: int, count_limit: int) -> None:
+class _PairCellSinks:
+    """The per-cell sink provider of a pair run (FOR-1693, D11, DH-40).
+
+    One MLflow run, one metrics file and one worker log PER CELL, under
+    ``<observability>/<cell>/``. ``begin`` is the ONE re-point of the substrate's JSON sink for a
+    cell: after it, ``worker.start``, ``mlflow.run`` and every later line (including that cell's
+    ``checkpoint.seal`` and ``evaluation.start`` events) land in that cell's log, so each log
+    carries exactly one ``worker.start`` and only its own cell's seals. The run name stays
+    ``h-worker-<cell profile identity>`` (``h_wave_monitor`` searches by it); the tags add
+    ``block``, ``pair``, ``cell`` and ``run_authority``; ``tiny`` stays derived from the authority.
+    """
+
+    def __init__(self, request: PairProbeRequest, observability_root: Path) -> None:
+        self._request = request
+        self._root = observability_root
+        self._opened: dict[str, MetricSink] = {}
+        self._began: dict[str, float] = {}
+        self._finished: set[str] = set()
+
+    def begin(self, cell: str, profile: HProfile) -> MetricSink:
+        request = self._request
+        directory = self._root / cell
+        log = directory / "worker-log.jsonl"
+        configure_logging(json_path=log)
+        started = {
+            "request_sha256": request.digest,
+            "image": request.image,
+            "code_commit": request.code_commit,
+        }
+        logger.bind(event=WORKER_START, **started).info(render(WORKER_START, **started))
+        chash = h_config_hash(profile)
+        params: dict[str, str | int] = {
+            EXP_TAG: profile.name,
+            "seed": profile.seed,
+            CONFIG_HASH_TAG: chash,
+            "run_class": profile.run_class,
+            "precision": profile.precision,
+        }
+        if request.code_commit is not None:
+            params["git_sha"] = request.code_commit
+        if request.image is not None:
+            params["image"] = request.image
+        tags: dict[str, str | int] = {
+            "schema": RESULT_SCHEMA_V2,
+            EXP_TAG: profile.name,
+            CONFIG_HASH_TAG: chash,
+            "request_sha256": request.digest,
+            "block": request.binding.block_id,
+            "pair": request.binding.pair_id,
+            "cell": cell,
+        }
+        if request.authority is not None:
+            params["run_authority"] = request.authority.digest
+            tags["run_authority"] = request.authority.digest
+        sink = build_sink_for_run(
+            TrackingRunDescriptor(
+                run_name=f"h-worker-{profile.identity}",
+                tiny=request.authority is None,
+                params=params,
+                tags=tags,
+            ),
+            results_path=directory / "metrics.jsonl",
+            log_path=log,
+            metric_extractor=HTrainingStepExtractor(warmup_steps=profile.schedule.warmup_steps),
+        )
+        self._opened[cell] = sink
+        self._began[cell] = time.perf_counter()
+        return sink
+
+    def finish(self, cell: str, status: Literal["FINISHED", "FAILED"]) -> None:
+        if cell in self._finished:
+            return
+        self._finished.add(cell)
+        self._opened[cell].finish(status=status)
+        # each cell's log closes with its OWN worker.end, written before the next cell
+        # re-points the substrate's sink (after sink.finish, exactly as for a single profile)
+        ended = {
+            "status": "ok" if status == "FINISHED" else "failed",
+            "seconds": time.perf_counter() - self._began[cell],
+        }
+        logger.bind(event=WORKER_END, **ended).info(render(WORKER_END, **ended))
+
+    def finish_open(self) -> None:
+        """Terminate every cell run still open as FAILED (an exit that bypassed its cell's end)."""
+        for cell in self._opened:
+            self.finish(cell, "FAILED")
+
+
+def _scope(request: AnyProbeRequest, local: bool, object_limit: int, count_limit: int) -> None:
     expected = "local_worker" if local else "remote_worker"
-    if RUN_ADMISSION.worker_surface(request.profile.run_class) != expected:
+    # a pair is scoped by its cells' shared run class (PairProbeRequest refuses two classes)
+    run_class = (
+        request.donor.run_class
+        if isinstance(request, PairProbeRequest)
+        else request.profile.run_class
+    )
+    if RUN_ADMISSION.worker_surface(run_class) != expected:
         raise ValueError("worker command scope differs from the request")
     if request.limits.max_object_bytes > object_limit or request.limits.max_objects > count_limit:
         raise ValueError("worker request exceeds the configured transport envelope")
@@ -169,93 +273,114 @@ def run_worker_command(
             observability_root = (
                 args.workspace_root.parent / f"{args.workspace_root.name}.observability"
             )
-            # FOR-1637 (G5): the ONE re-point of the substrate's JSON sink, here
-            # and nowhere else -- after admission, before build_sink_for_run, so
-            # worker.start, mlflow.run and every later line land in the file the
-            # MlflowSink uploads at finish(). configure_logging() removes every
-            # handler first, so nothing is printed twice.
-            worker_log = observability_root / "worker-log.jsonl"
-            configure_logging(json_path=worker_log)
-            worker_started = time.perf_counter()
-            logger.bind(
-                event=WORKER_START,
-                request_sha256=request.digest,
-                image=request.image,
-                code_commit=request.code_commit,
-            ).info(
-                render(
-                    WORKER_START,
+            if isinstance(request, PairProbeRequest):
+                # FOR-1693 (D11, DH-40): one MLflow run, metrics file and worker log PER CELL,
+                # each built by the provider as its cell begins (the one log re-point happens
+                # inside it); the run terminates per cell, and a cell the pair loop never closed
+                # (an exit that bypassed it) is finished FAILED here.
+                # no command-level worker.start/worker.end: each cell's log carries its own pair
+                stage = "worker_execution"
+                provider = _PairCellSinks(request, observability_root)
+                try:
+                    result = run_object_worker(
+                        selected,
+                        marker,
+                        args.workspace_root,
+                        max_request_bytes=args.max_object_bytes,
+                        repo_root=args.repo_root,
+                        cell_sinks=provider,
+                    )
+                finally:
+                    provider.finish_open()
+            else:
+                # FOR-1637 (G5): the ONE re-point of the substrate's JSON sink, here
+                # and nowhere else -- after admission, before build_sink_for_run, so
+                # worker.start, mlflow.run and every later line land in the file the
+                # MlflowSink uploads at finish(). configure_logging() removes every
+                # handler first, so nothing is printed twice.
+                worker_log = observability_root / "worker-log.jsonl"
+                configure_logging(json_path=worker_log)
+                worker_started = time.perf_counter()
+                logger.bind(
+                    event=WORKER_START,
                     request_sha256=request.digest,
                     image=request.image,
                     code_commit=request.code_commit,
+                ).info(
+                    render(
+                        WORKER_START,
+                        request_sha256=request.digest,
+                        image=request.image,
+                        code_commit=request.code_commit,
+                    )
                 )
-            )
-            # FOR-1642: the H run surface. `config_hash` (the seed-aggregation grouping
-            # key) is `h_config_hash(profile)`, identical in params and tags. `git_sha`
-            # and `image` come from the VERIFIED request, unswapped, and are OMITTED when
-            # the request has none (a local_tiny request forbids both): MLflow params
-            # cannot be None, and a local `git_sha()` would put an unverified HEAD under
-            # a verified key.
-            chash = h_config_hash(request.profile)
-            params: dict[str, str | int] = {
-                EXP_TAG: request.profile.name,
-                "seed": request.profile.seed,
-                CONFIG_HASH_TAG: chash,
-                "run_class": request.profile.run_class,
-                "precision": request.profile.precision,
-            }
-            if request.code_commit is not None:
-                params["git_sha"] = request.code_commit
-            if request.image is not None:
-                params["image"] = request.image
-            # Rung B: a smoke run stays behind the tiny MLflow opt-in
-            # (``ENTROPIC_MLFLOW_TINY=1`` in its launch template); a scientific run is
-            # tracked whenever a tracking URI is set, because its eight-key template
-            # carries no tiny opt-in and ``tiny=True`` would drop its mirror SILENTLY
-            # (``sinks.mlflow_enabled``). It tags the sealed authority it runs under.
-            if request.authority is not None:
-                params["run_authority"] = request.authority.digest
-            sink = build_sink_for_run(
-                TrackingRunDescriptor(
-                    run_name=f"h-worker-{request.profile.identity}",
-                    tiny=request.authority is None,
-                    params=params,
-                    tags={
-                        "schema": "h-probe-worker-result-v1",
-                        EXP_TAG: request.profile.name,
-                        CONFIG_HASH_TAG: chash,
-                        "request_sha256": request.digest,
-                    },
-                ),
-                results_path=observability_root / "metrics.jsonl",
-                log_path=worker_log,
-                metric_extractor=HTrainingStepExtractor(
-                    warmup_steps=request.profile.schedule.warmup_steps
-                ),
-            )
-            # DN-1643-PORT: the run terminates FINISHED iff run_object_worker RETURNED.
-            # Every raised exit, BaseException included (KeyboardInterrupt, SystemExit),
-            # leaves the FAILED default in place and finishes the sink FAILED exactly
-            # once; the exception itself is untouched and still reaches the handler
-            # below (stage worker_execution, exit 2). Finishing here, not after the try,
-            # keeps sink.finish before worker.end on both exits.
-            terminal_status = "FAILED"
-            try:
-                stage = "worker_execution"
-                result = run_object_worker(
-                    selected,
-                    marker,
-                    args.workspace_root,
-                    max_request_bytes=args.max_object_bytes,
-                    repo_root=args.repo_root,
-                    sink=sink,
+                # FOR-1642: the H run surface. `config_hash` (the seed-aggregation grouping
+                # key) is `h_config_hash(profile)`, identical in params and tags. `git_sha`
+                # and `image` come from the VERIFIED request, unswapped, and are OMITTED when
+                # the request has none (a local_tiny request forbids both): MLflow params
+                # cannot be None, and a local `git_sha()` would put an unverified HEAD under
+                # a verified key.
+                chash = h_config_hash(request.profile)
+                params: dict[str, str | int] = {
+                    EXP_TAG: request.profile.name,
+                    "seed": request.profile.seed,
+                    CONFIG_HASH_TAG: chash,
+                    "run_class": request.profile.run_class,
+                    "precision": request.profile.precision,
+                }
+                if request.code_commit is not None:
+                    params["git_sha"] = request.code_commit
+                if request.image is not None:
+                    params["image"] = request.image
+                # Rung B: a smoke run stays behind the tiny MLflow opt-in
+                # (``ENTROPIC_MLFLOW_TINY=1`` in its launch template); a scientific run is
+                # tracked whenever a tracking URI is set, because its eight-key template
+                # carries no tiny opt-in and ``tiny=True`` would drop its mirror SILENTLY
+                # (``sinks.mlflow_enabled``). It tags the sealed authority it runs under.
+                if request.authority is not None:
+                    params["run_authority"] = request.authority.digest
+                sink = build_sink_for_run(
+                    TrackingRunDescriptor(
+                        run_name=f"h-worker-{request.profile.identity}",
+                        tiny=request.authority is None,
+                        params=params,
+                        tags={
+                            "schema": RESULT_SCHEMA_V1,
+                            EXP_TAG: request.profile.name,
+                            CONFIG_HASH_TAG: chash,
+                            "request_sha256": request.digest,
+                        },
+                    ),
+                    results_path=observability_root / "metrics.jsonl",
+                    log_path=worker_log,
+                    metric_extractor=HTrainingStepExtractor(
+                        warmup_steps=request.profile.schedule.warmup_steps
+                    ),
                 )
-                terminal_status = "FINISHED"
-            finally:
-                sink.finish(status=terminal_status)
+                # DN-1643-PORT: the run terminates FINISHED iff run_object_worker RETURNED.
+                # Every raised exit, BaseException included (KeyboardInterrupt, SystemExit),
+                # leaves the FAILED default in place and finishes the sink FAILED exactly
+                # once; the exception itself is untouched and still reaches the handler
+                # below (stage worker_execution, exit 2). Finishing here, not after the try,
+                # keeps sink.finish before worker.end on both exits.
+                terminal_status = "FAILED"
+                try:
+                    stage = "worker_execution"
+                    result = run_object_worker(
+                        selected,
+                        marker,
+                        args.workspace_root,
+                        max_request_bytes=args.max_object_bytes,
+                        repo_root=args.repo_root,
+                        sink=sink,
+                    )
+                    terminal_status = "FINISHED"
+                finally:
+                    sink.finish(status=terminal_status)
             worker_ended = True
-            ended = {"status": "ok", "seconds": time.perf_counter() - worker_started}
-            logger.bind(event=WORKER_END, **ended).info(render(WORKER_END, **ended))
+            if worker_started is not None:
+                ended = {"status": "ok", "seconds": time.perf_counter() - worker_started}
+                logger.bind(event=WORKER_END, **ended).info(render(WORKER_END, **ended))
             response = {
                 "status": "worker_returned",
                 "scientific_authority": "none",
@@ -272,6 +397,10 @@ def run_worker_command(
             request = parse_probe_request(payload, max_bytes=args.max_object_bytes)
             if args.command == "publish":
                 stage = "request_publish"
+                if type(request) is not ProbeRequest:
+                    # a pair's launch and publication belong to FOR-1694; refused by name
+                    # BEFORE any field access or side effect
+                    refuse_pair("worker_command publish")
                 if (
                     request.limits.max_object_bytes > args.max_object_bytes
                     or request.limits.max_objects > args.max_objects

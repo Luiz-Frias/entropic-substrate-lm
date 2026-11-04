@@ -53,8 +53,10 @@ from typing import cast
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.worker_request import (
+    PairProbeRequest,
     ProbeRequest,
     parse_probe_request,
+    refuse_pair,
 )
 
 RUNPODCTL_VERSION = "runpodctl 3.0.1-551d6a4"
@@ -199,9 +201,13 @@ class H0ProbeLaunch:
     manifest_schema: str = LAUNCH_SCHEMA_V4
 
     def __post_init__(self) -> None:
+        if isinstance(self.request, PairProbeRequest):
+            refuse_pair("h-probe-launch")
         if type(self.request) is not ProbeRequest:
             raise TypeError("H0 deployment requires a validated worker request")
         request = parse_probe_request(self.request.payload, max_bytes=len(self.request.payload))
+        if type(request) is not ProbeRequest:
+            refuse_pair("h-probe-launch")
         run_class, stage = request.profile.run_class, request.profile.stage
         authority = request.authority
         refusal = RUN_ADMISSION.authority_refusal(run_class, stage, authority)
@@ -501,6 +507,8 @@ def parse_probe_launch(payload: bytes, *, max_bytes: int) -> H0ProbeLaunch:
         decoded, keys + ("" if schema == LAUNCH_SCHEMA_V2 else " extensions")
     ).copy()
     request = parse_probe_request(_json(row["request"]), max_bytes=max_bytes)
+    if type(request) is not ProbeRequest:
+        refuse_pair("h-probe-launch")
     row["request"] = request
     mandate = request.manifest["spending_authority"]
     if (

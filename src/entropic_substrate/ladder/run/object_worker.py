@@ -3,20 +3,29 @@
 import json
 import math
 import time
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal, cast
 
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
+from entropic_substrate.core.sentence.profile import HProfile, RunSchedule
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
+from entropic_substrate.ladder.register.h_preservation import H1ExclusionReason
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.native_verification import read_native_verification
-from entropic_substrate.ladder.run.runner import read_training_progress
-from entropic_substrate.ladder.run.seals import SealMemo, narrated_admission
+from entropic_substrate.ladder.run.runner import (
+    PROGRESS_SCHEMA_V2,
+    CellScope,
+    ReceiptBinding,
+    read_training_progress,
+)
+from entropic_substrate.ladder.run.seals import CorpusMemo, SealMemo, narrated_admission, read_seal
 from entropic_substrate.ladder.run.span_states import SpanPopulationGap
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
@@ -24,14 +33,31 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import (
     D1TrainerMailboxObjectPort,
 )
-from entropic_substrate.ladder.run.worker_execution import execute_probe_request, narrated_stage
+from entropic_substrate.ladder.run.worker_execution import (
+    CellHooks,
+    CellSinks,
+    execute_probe_request,
+    narrated_stage,
+    verdict_record,
+)
 from entropic_substrate.ladder.run.worker_log_events import (
     COMPLETION_WRITTEN,
     STOP_MARKER_OBSERVED,
     STOP_MARKER_RETRY,
     render,
 )
-from entropic_substrate.ladder.run.worker_request import ProbeRequest, worker_artifact
+from entropic_substrate.ladder.run.worker_request import (
+    RESULT_SCHEMA_V1,
+    RESULT_SCHEMA_V2,
+    AnyProbeRequest,
+    PairProbeRequest,
+    ProbeRequest,
+    parse_pair_result,
+    refuse_pair_result_for_single,
+    refuse_version,
+    worker_artifact,
+    worker_cell_artifact,
+)
 from entropic_substrate.ladder.run.worker_snapshot import PublicationLedger, publish_worker_snapshot
 from entropic_substrate.ladder.run.worker_transport import (
     VerificationReadRetry,
@@ -51,6 +77,10 @@ def _canonical(value: dict[str, object]) -> bytes:
 # which would close an import cycle through worker_command.py -- and
 # imported by the verb, never duplicated.
 STOP_MARKER_SCHEMA = "h-probe-stop-marker-v1"
+# FOR-1693 (DH-44, D10): a pair's marker names the CELL it stops, target {phase, step, cell}.
+# A single-profile marker stays byte-identical v1; a v1 marker on a pair and a v2 marker on a
+# single-profile request are each refused by name.
+STOP_MARKER_SCHEMA_V2 = "h-probe-stop-marker-v2"
 
 # h-run-lifecycle-v1 (FOR-1639): the run_start / run_end records this worker
 # writes through its MetricSink. Read back by
@@ -58,8 +88,10 @@ STOP_MARKER_SCHEMA = "h-probe-stop-marker-v1"
 # of the literal (the capture layer never imports from ladder/run).
 LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
 
+type StopTarget = tuple[str, int] | tuple[str, int, str]
 
-def stop_marker_key(request: ProbeRequest) -> str:
+
+def stop_marker_key(request: AnyProbeRequest) -> str:
     return f"{request.prefix}/control/stop.json"
 
 
@@ -76,32 +108,90 @@ def _valid_target(target: object) -> tuple[str, int]:
     return target[0], target[1]
 
 
-def encode_stop_marker(request: ProbeRequest, target: tuple[str, int] | None = None) -> bytes:
+def _require_seal(schedule: RunSchedule, phase: str, step: int) -> None:
+    """Same coordinate rule as ``ProbeRequest.pause``: the marker is immutable once published,
+    so a target the runner never reaches must be refused here, at the verb, rather than
+    discovered as a timeout."""
+    budget = schedule.warmup_steps if phase == "codec_warmup" else schedule.steps
+    is_seal = step == budget or step % schedule.checkpoint_interval == 0
+    if phase == "prediction":
+        is_seal = is_seal or step % schedule.evaluation_interval == 0
+    if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget or not is_seal:
+        raise ValueError("stop marker target is outside the request schedule")
+
+
+def _cell_target(target: object, request: PairProbeRequest) -> tuple[str, int, str]:
+    """``(phase, step, cell)`` with a declared cell token; the schedule is checked by the caller."""
+    if type(target) is not tuple or len(target) != 3 or target[2] not in request.tokens:
+        raise ValueError("a pair stop marker target must be (non-empty phase, positive step, cell)")
+    phase, step = _valid_target(target[:2])
+    return phase, step, cast(str, target[2])
+
+
+def _cell_schedule(request: PairProbeRequest, cell: str) -> RunSchedule:
+    return request.cells[request.tokens.index(cell)].profile.schedule
+
+
+def encode_stop_marker(request: AnyProbeRequest, target: StopTarget | None = None) -> bytes:
     """A pure function of (schema, request digest, target): no `at`, no nonce.
 
     ``target`` names the one seal ``(phase, step)`` at which the worker stops;
     ``None`` omits the key, so the bytes equal the pre-target marker and the
-    worker stops at the next seal it polls.
+    worker stops at the next seal it polls. A pair (FOR-1693) always names its cell,
+    ``(phase, step, cell)``, validated against THAT cell's schedule, and the marker is
+    ``h-probe-stop-marker-v2``.
     """
+    if isinstance(request, PairProbeRequest):
+        if target is None:
+            raise ValueError("a pair stop marker names its cell: (phase, step, cell)")
+        phase, step, cell = _cell_target(target, request)
+        _require_seal(_cell_schedule(request, cell), phase, step)
+        return _canonical(
+            {
+                "schema": STOP_MARKER_SCHEMA_V2,
+                "request_sha256": request.digest,
+                "target": {"phase": phase, "step": step, "cell": cell},
+            }
+        )
     row: dict[str, object] = {"schema": STOP_MARKER_SCHEMA, "request_sha256": request.digest}
     if target is not None:
         phase, step = _valid_target(target)
-        # Same coordinate rule as ``ProbeRequest.pause``: the marker is immutable
-        # once published, so a target the runner never reaches must be refused
-        # here, at the verb, rather than discovered as a timeout.
-        schedule = request.profile.schedule
-        budget = schedule.warmup_steps if phase == "codec_warmup" else schedule.steps
-        is_seal = step == budget or step % schedule.checkpoint_interval == 0
-        if phase == "prediction":
-            is_seal = is_seal or step % schedule.evaluation_interval == 0
-        if phase not in ("codec_warmup", "prediction") or not 1 <= step <= budget or not is_seal:
-            raise ValueError("stop marker target is outside the request schedule")
+        _require_seal(request.profile.schedule, phase, step)
         row["target"] = {"phase": phase, "step": step}
     return _canonical(row)
 
 
-def _read_stop_marker(payload: bytes, request: ProbeRequest) -> tuple[bool, tuple[str, int] | None]:
+def _read_stop_marker(payload: bytes, request: AnyProbeRequest) -> tuple[bool, StopTarget | None]:
     value = json.loads(payload)
+    schema = value.get("schema") if type(value) is dict else None
+    if isinstance(request, PairProbeRequest):
+        if schema == STOP_MARKER_SCHEMA:
+            refuse_version(STOP_MARKER_SCHEMA, STOP_MARKER_SCHEMA_V2, "stop marker")
+        pair_row = recovery_record(value, "schema request_sha256 target")
+        if pair_row["schema"] != STOP_MARKER_SCHEMA_V2:
+            raise ValueError("stop marker schema is foreign")
+        pair_digest = pair_row["request_sha256"]
+        if type(pair_digest) is not str:
+            raise ValueError("stop marker request digest is invalid")
+        raw_target = pair_row["target"]
+        if type(raw_target) is not dict or set(raw_target) != {"phase", "step", "cell"}:
+            raise ValueError(
+                "a pair stop marker target must be (non-empty phase, positive step, cell)"
+            )
+        cell_target = _cell_target(
+            (raw_target["phase"], raw_target["step"], raw_target["cell"]), request
+        )
+        if pair_digest != request.digest:
+            return False, None
+        if _canonical(pair_row) != payload:
+            raise ValueError("stop marker is not canonical JSON")
+        _require_seal(_cell_schedule(request, cell_target[2]), cell_target[0], cell_target[1])
+        return True, cell_target
+    if schema == STOP_MARKER_SCHEMA_V2:
+        raise ValueError(
+            f"stop marker schema {STOP_MARKER_SCHEMA_V2!r} names a cell; "
+            f"a single-profile request admits {STOP_MARKER_SCHEMA}"
+        )
     keys = "schema request_sha256 target" if "target" in value else "schema request_sha256"
     row = recovery_record(value, keys)
     if row["schema"] != STOP_MARKER_SCHEMA:
@@ -122,7 +212,7 @@ def _read_stop_marker(payload: bytes, request: ProbeRequest) -> tuple[bool, tupl
     return True, target
 
 
-def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
+def classify_stop_marker(payload: bytes, request: AnyProbeRequest) -> bool:
     """True: this marker is this request's own. False: another request's, ignored.
 
     Everything else -- bad JSON/UTF-8, non-canonical bytes, a missing or
@@ -132,10 +222,22 @@ def classify_stop_marker(payload: bytes, request: ProbeRequest) -> bool:
     return _read_stop_marker(payload, request)[0]
 
 
-def stop_marker_hits(payload: bytes, request: ProbeRequest, seal: tuple[str, int]) -> bool:
-    """True when the marker is this request's own AND names no target or ``seal``."""
+def stop_marker_hits(
+    payload: bytes, request: AnyProbeRequest, seal: tuple[str, int], cell: str | None = None
+) -> bool:
+    """True when the marker is this request's own AND names no target or ``seal``.
+
+    A pair's poll names its ``cell``: a v2 marker stops exactly the named cell at exactly its
+    named seal, and a pair marker always carries a target.
+    """
     own, target = _read_stop_marker(payload, request)
-    return own and (target is None or target == seal)
+    if not own:
+        return False
+    if isinstance(request, PairProbeRequest):
+        if cell is None:
+            raise ValueError("a pair stop poll names its cell")
+        return target == (seal[0], seal[1], cell)
+    return target is None or target == seal
 
 
 def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
@@ -156,17 +258,29 @@ def _paths(root: Path, sections: tuple[str, ...]) -> tuple[str, ...]:
 
 # Terminal outcome markers (G12): `complete` is the contract; the others carry the
 # marker name so a stopped/paused/failed run leaves a diagnosable receipt too.
-_TERMINAL_MARKERS = frozenset({"complete", "paused", "stopped", "failure"})
+#
+# FOR-1693: `excluded` is the pair's one NEW non-failure terminal. A training-phase scientific
+# exclusion (a recorded MISSING_ENDPOINT or NONFINITE_ENDPOINT) returns normally and must be neither
+# `complete` with another status (a false completion) nor `failure` (a relabelled v1 status); its
+# status is `pair_excluded`, and the event schema stays `h-worker-event-v1` with its key set.
+_TERMINAL_MARKERS = frozenset({"complete", "paused", "stopped", "failure", "excluded"})
 
 
 def _event(
-    objects: D1TrainerMailboxObjectPort, request: ProbeRequest, name: str, value: dict[str, object]
+    objects: D1TrainerMailboxObjectPort,
+    request: AnyProbeRequest,
+    name: str,
+    value: dict[str, object],
+    *,
+    run_identity: str | None = None,
 ) -> D1TrainerMailboxObjectIdentity:
+    """``run_identity`` defaults to the request's own (one profile's identity, or a pair's pair
+    id); a CELL-scoped event of a pair passes that cell's profile identity (FOR-1693, P5-19)."""
     payload = _canonical(
         {
             "schema": "h-worker-event-v1",
             "request_sha256": request.digest,
-            "run_identity": request.profile.identity,
+            "run_identity": request.run_identity if run_identity is None else run_identity,
             "scientific_authority": "none",
             "at": datetime.now(UTC).isoformat(),
             **value,
@@ -189,7 +303,7 @@ def _publication(
     paths: tuple[str, ...],
     l3_seconds: float,
     retry: VerificationReadRetry,
-    timing: dict[str, float],
+    timing: Mapping[str, float],
 ) -> dict[str, object]:
     """The ONE `publication`-block builder shared by every leg that calls
     :func:`~entropic_substrate.ladder.run.worker_snapshot.publish_worker_snapshot`
@@ -212,15 +326,149 @@ def _publication(
     }
 
 
+def _checkpoint_callback(
+    objects: D1TrainerMailboxObjectPort,
+    request: AnyProbeRequest,
+    root: Path,
+    *,
+    ledger: PublicationLedger,
+    publication_timing: MutableMapping[str, float],
+    sink: MetricSink | None,
+    maximum: int,
+    cell: str | None,
+    run_identity: str,
+) -> Callable[[ArtifactIdentity], None]:
+    """The ONE checkpoint publisher: single-profile (``cell is None``) or one cell of a pair.
+
+    Names differ only by the cell token (``checkpoint-<cell>-<total>``), so donor and recipient
+    sealing at the same global step never collide; the event carries ``run_identity``.
+    """
+    prefix = "" if cell is None else f"{cell}-"
+
+    def checkpoint(artifact: ArtifactIdentity) -> None:
+        row = read_json(root, artifact, max_bytes=maximum)
+        total = row["successful_optimizer_steps"]
+        if type(total) is not int or total < 1:
+            raise ValueError("worker checkpoint must report measured successful steps")
+        name = f"checkpoint-{prefix}{total:08d}"
+        paths = _paths(root, ("run", "worker"))
+        retry = VerificationReadRetry()
+        ledgered_before = len(ledger)
+        l3_started = time.perf_counter()
+        snapshot = publish_worker_snapshot(
+            objects,
+            request,
+            root,
+            paths,
+            name=name,
+            ledger=ledger,
+            retry=retry,
+        )
+        l3_seconds = time.perf_counter() - l3_started
+        publication = _publication(
+            ledger, ledgered_before, paths, l3_seconds, retry, publication_timing
+        )
+        _event(
+            objects,
+            request,
+            name,
+            {
+                "status": "checkpoint",
+                "successful_optimizer_steps": total,
+                "training": artifact_reference(root, artifact),
+                "snapshot": asdict(snapshot),
+                "publication": publication,
+            },
+            run_identity=run_identity,
+        )
+        if sink is not None:
+            # FOR-1642 (DN-1643-PORT): the sealed checkpoint's custody evidence on the
+            # run itself, so the MLflow run answers "which checkpoints exist and where"
+            # without an R2 listing. Only after the checkpoint event was published, and
+            # only here: never for ``started`` or the final snapshot. The values are the
+            # snapshot MARKER identity publish_worker_snapshot returned (the identity
+            # materialize_worker_snapshot accepts, binding the sealed files' sha256s),
+            # and the SAME l3_seconds float the event's ``publication`` block carries
+            # (``float(tag) == publication.l3_seconds``): no new clock. Tag values are
+            # strings (MetricSink.annotate refuses anything else).
+            evidence = f"checkpoint/{total:08d}"
+            sink.annotate(
+                {
+                    f"{evidence}/key": snapshot.key,
+                    f"{evidence}/sha256": snapshot.sha256,
+                    f"{evidence}/size_bytes": str(snapshot.size_bytes),
+                    f"{evidence}/publication_seconds": repr(l3_seconds),
+                }
+            )
+
+    return checkpoint
+
+
+def _stop_poll(
+    objects: D1TrainerMailboxObjectPort, request: AnyProbeRequest, cell: str | None
+) -> Callable[[str, int], bool]:
+    """The ONE operator-stop poll: single-profile (``cell is None``) or one cell of a pair."""
+
+    def stop_requested(phase: str, step: int) -> bool:
+        """One bounded read per call site; never retries an absent marker.
+
+        Reuses rung 1's :class:`VerificationReadRetry` for its attempt
+        count and backoff schedule only (its public fields), never its
+        private ``_verified_read`` (which needs an expected identity and
+        payload this poll does not have). A raised exception is retried
+        up to ``attempts`` total and then re-raised unchanged; a clean
+        ``None`` (absent) or an object read is never retried.
+        """
+        retry = VerificationReadRetry()
+        key = stop_marker_key(request)
+        received = None
+        for index in range(retry.attempts):
+            try:
+                received = objects.read(key)
+                break
+            except Exception as poll_error:
+                if index == retry.attempts - 1:
+                    raise
+                # FOR-1637: a re-attempted poll is a WARNING of its own event
+                # (not publish.retry, and no event for a clean/absent poll).
+                polled = {
+                    "key": key,
+                    "attempt": index + 1,
+                    "max_attempts": retry.attempts,
+                    "reason": type(poll_error).__name__,
+                }
+                logger.bind(event=STOP_MARKER_RETRY, **polled).warning(
+                    render(STOP_MARKER_RETRY, **polled)
+                )
+                retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
+        if received is None:
+            return False
+        stop = stop_marker_hits(received.payload, request, (phase, step), cell)
+        if stop:
+            logger.bind(event=STOP_MARKER_OBSERVED, key=key).info(
+                render(STOP_MARKER_OBSERVED, key=key)
+            )
+        return stop
+
+    return stop_requested
+
+
 def _admit_result(
-    root: Path, request: ProbeRequest, value: object, memo: SealMemo | None = None
+    root: Path,
+    request: ProbeRequest,
+    value: object,
+    memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
+    if type(value) is dict and value.get("schema") == RESULT_SCHEMA_V2:
+        # FOR-1693: result v2 belongs to a pair; a single-profile request admits v1 only.
+        refuse_pair_result_for_single()
     row = recovery_record(
         value,
         "schema request_sha256 run_identity scientific_authority status runtime successful_optimizer_steps training generation diagnostics capture verification wall_seconds",
     )
     if (
-        row["schema"] != "h-probe-worker-result-v1"
+        row["schema"] != RESULT_SCHEMA_V1
         or row["request_sha256"] != request.digest
         or row["run_identity"] != request.profile.identity
         or row["scientific_authority"] != "none"
@@ -247,6 +495,7 @@ def _admit_result(
             max_source_bytes=maximum,
             max_artifact_bytes=maximum,
             memo=memo,
+            corpora=corpora,
         )
     if (
         type(row["successful_optimizer_steps"]) is not int
@@ -293,6 +542,286 @@ def _admit_result(
     return row
 
 
+def _schema_files(output: Path, schema: str) -> list[dict[str, object]]:
+    """Every JSON file of a cell's run root whose ``schema`` IS ``schema`` (never a name glob)."""
+    rows: list[dict[str, object]] = []
+    for path in sorted(output.glob("*.json")):
+        row = json.loads(path.read_bytes())
+        if type(row) is dict and row.get("schema") == schema:
+            rows.append(cast(dict[str, object], row))
+    return rows
+
+
+def _execution_stop_confirmed(
+    output: Path, cell: str, profile: HProfile, failure: dict[str, object] | None
+) -> bool:
+    """P5-13's closed derivation sources for an execution-class cell, in order: the cell's own
+    on-disk ``h-probe-training-failure-v2`` record (status ``execution_defect``); else the
+    donor's missing warm-up-final seal; else the recipient root holding no progress receipt."""
+    if failure is not None:
+        return failure.get("status") == "execution_defect"
+    if cell == "donor":
+        warmup_final = [
+            seal
+            for seal in _schema_files(output, "h-checkpoint-seal-v1")
+            if seal.get("phase") == "codec_warmup"
+            and seal.get("step") == profile.schedule.warmup_steps
+        ]
+        return not warmup_final
+    return not _schema_files(output, PROGRESS_SCHEMA_V2)
+
+
+def _admit_pair_result(
+    root: Path,
+    request: PairProbeRequest,
+    value: object,
+    memos: Mapping[str, SealMemo],
+    corpora: CorpusMemo | None = None,
+) -> dict[str, object]:
+    """Re-derive every cell outcome and the pair verdict FROM DISK (FOR-1693, P5-16).
+
+    The structure is :func:`parse_pair_result`'s (a v1 result for a pair is refused by name
+    there). Each cell's training is re-read through ``read_training_progress`` against ITS OWN
+    root, memo and expected binding; each completed cell's native verification is re-read from
+    ``capture/<cell>/`` and ``verification/<cell>/``; a scientific or execution stop is
+    confirmed against the training failure record the runner wrote. The verdict the result
+    claims must equal the one those facts derive, so it cannot drift from the evidence.
+    """
+    row = parse_pair_result(value, request)
+    maximum = request.limits.max_object_bytes
+    entries = cast(list[dict[str, object]], row["cells"])
+    derived_scientific: tuple[H1ExclusionReason, str] | None = None
+    derived_defect: str | None = None
+    for entry, cell in zip(entries, request.cells, strict=True):
+        token, profile, outcome = cell.token, cell.profile, entry["outcome"]
+        output = root / "run" / token
+        expected = ReceiptBinding.of(
+            CellScope(request.binding.block_id, request.binding.pair_id, token), request.authority
+        )
+        report = None
+        if entry["training"] is not None:
+            training = worker_cell_artifact(entry["training"], "run", token)
+            memo = memos.get(f"run/{token}")
+            with narrated_admission("result_admission", "run", memo):
+                report = read_training_progress(
+                    output,
+                    training,
+                    profile,
+                    root / "source",
+                    max_source_bytes=maximum,
+                    max_artifact_bytes=maximum,
+                    memo=memo,
+                    expected=expected,
+                    corpora=corpora,
+                )
+        steps = entry["successful_optimizer_steps"]
+        if steps != (0 if report is None else report["successful_optimizer_steps"]):
+            raise ValueError("worker result step count differs from admitted training")
+        failure = None
+        if entry["failure"] is not None:
+            failure = read_json(
+                output, worker_cell_artifact(entry["failure"], "run", token), max_bytes=maximum
+            )
+            if (
+                failure.get("schema") != "h-probe-training-failure-v2"
+                or failure.get("run_identity") != profile.identity
+            ):
+                raise ValueError("worker result failure record belongs to another run")
+        if outcome in ("paused", "stopped_by_operator"):
+            if report is None or report["status"] != "paused":
+                raise ValueError("paused worker result cannot claim later stages")
+        elif outcome == "complete":
+            if report is None or report["status"] != "training_complete":
+                raise ValueError("worker completion lacks complete training")
+            captured = worker_cell_artifact(entry["capture"], "capture", token)
+            verified = worker_cell_artifact(entry["verification"], "verification", token)
+            read_native_verification(
+                root / "verification" / token,
+                verified,
+                root / "capture" / token,
+                captured,
+                expected_request=ContentHash("sha256", request.digest),
+                max_bytes=maximum,
+                max_source_bytes=maximum,
+                max_total_bytes=request.limits.max_total_bytes,
+                max_artifacts=request.limits.max_objects,
+            )
+            manifest = read_json(root / "capture" / token, captured, max_bytes=maximum)
+            diagnostics = manifest["diagnostic_roots"]
+            if (
+                type(diagnostics) is not list
+                or artifact_from_mapping(manifest["training"])
+                != worker_cell_artifact(entry["training"], "run", token)
+                or artifact_from_mapping(manifest["generation"])
+                != worker_cell_artifact(entry["generation"], "run", token)
+                or worker_cell_artifact(entry["diagnostics"], "run", token)
+                not in tuple(artifact_from_mapping(a) for a in diagnostics)
+            ):
+                raise ValueError("worker result is not the verified capture lineage")
+        elif outcome == "scientific_gap":
+            if failure is None or failure.get("status") != "scientific_gap":
+                raise ValueError("a scientific cell outcome needs its scientific failure record")
+            last_seal = failure["last_seal"]
+            warmed = (
+                None
+                if last_seal is None
+                else read_seal(
+                    output,
+                    artifact_from_mapping(last_seal),
+                    profile,
+                    root / "source",
+                    max_bytes=maximum,
+                    max_source_bytes=maximum,
+                    corpora=corpora,
+                ).warmup_final
+            )
+            if derived_scientific is None:
+                derived_scientific = (
+                    H1ExclusionReason.NONFINITE_ENDPOINT
+                    if warmed is not None
+                    else H1ExclusionReason.MISSING_ENDPOINT,
+                    token,
+                )
+        elif outcome == "execution_defect":
+            if not _execution_stop_confirmed(output, token, profile, failure):
+                raise ValueError("an execution cell outcome needs its failure evidence on disk")
+            if derived_defect is None:
+                derived_defect = token
+    outcomes = [entry["outcome"] for entry in entries]
+    derived: dict[str, object]
+    if derived_defect is not None:
+        derived = verdict_record("excluded", H1ExclusionReason.READER_REFUSAL, derived_defect)
+    elif derived_scientific is not None:
+        derived = verdict_record("excluded", derived_scientific[0], derived_scientific[1])
+    elif outcomes == ["complete", "complete"]:
+        derived = verdict_record("complete")
+    else:
+        derived = verdict_record("none")
+    if row["verdict"] != derived:
+        raise ValueError("worker result verdict differs from the verdict its cells derive")
+    return row
+
+
+class _PairObserver:
+    """The per-cell side channels of one pair run (FOR-1693): lifecycle, events, stop poll.
+
+    Implements :class:`~entropic_substrate.ladder.run.worker_execution.CellObserver`. Exactly one
+    ``run_start`` and one ``run_end`` per constructed cell, each bound to THAT cell's own
+    on-disk outcome and written to THAT cell's sink; the cell's MLflow run terminates FINISHED
+    iff the cell's training returned complete, paused or stopped and its workload returned.
+    """
+
+    def __init__(
+        self,
+        objects: D1TrainerMailboxObjectPort,
+        request: PairProbeRequest,
+        root: Path,
+        *,
+        ledger: PublicationLedger,
+        publication_timing: MutableMapping[str, float],
+        sinks: CellSinks | None,
+        maximum: int,
+    ) -> None:
+        self._objects, self._request, self._root = objects, request, root
+        self._ledger, self._timing, self._sinks = ledger, publication_timing, sinks
+        self._maximum = maximum
+        self._logged: dict[str, MetricSink] = {}
+        self._began: dict[str, float] = {}
+        self.focused: str | None = None
+        self.open: str | None = None
+
+    def identity_of(self, cell: str) -> str:
+        return self._request.cells[self._request.tokens.index(cell)].profile.identity
+
+    @property
+    def run_identity(self) -> str:
+        """The failing cell's identity while a cell is in scope, else the pair's."""
+        scoped = self.open or self.focused
+        return self._request.run_identity if scoped is None else self.identity_of(scoped)
+
+    def focus(self, cell: str) -> None:
+        self.focused = cell
+
+    def begin(self, cell: str, profile: HProfile, runtime: dict[str, object]) -> CellHooks:
+        request = self._request
+        sink = None if self._sinks is None else self._sinks.begin(cell, profile)
+        if sink is not None:
+            sink.log(
+                {
+                    "schema": LIFECYCLE_SCHEMA,
+                    "event": "run_start",
+                    "request_sha256": request.digest,
+                    "image": request.image,
+                    "code_commit": request.code_commit,
+                    "profile_identity": profile.identity,
+                    "run_class": profile.run_class,
+                    "runtime": runtime,
+                }
+            )
+            self._logged[cell] = sink
+        self._began[cell] = time.perf_counter()
+        self.open = cell
+        return CellHooks(
+            sink,
+            _checkpoint_callback(
+                self._objects,
+                request,
+                self._root,
+                ledger=self._ledger,
+                publication_timing=self._timing,
+                sink=sink,
+                maximum=self._maximum,
+                cell=cell,
+                run_identity=profile.identity,
+            ),
+            _stop_poll(self._objects, request, cell),
+        )
+
+    def end(
+        self,
+        cell: str,
+        *,
+        status: Literal["ok", "failed"],
+        result_status: str,
+        wall_seconds: float,
+        steps: int | None,
+    ) -> None:
+        sink = self._logged.pop(cell, None)
+        if self.open == cell:
+            self.open = None
+        if self.focused == cell and status == "ok":
+            # a cell that ended well leaves its scope: a later pair-level failure (the final
+            # snapshot) names the pair. A cell that ended FAILED keeps it: the execution stop
+            # that follows is that cell's own.
+            self.focused = None
+        if sink is None:
+            return
+        sink.log(
+            {
+                "schema": LIFECYCLE_SCHEMA,
+                "event": "run_end",
+                "status": status,
+                "result_status": result_status,
+                "wall_seconds": wall_seconds,
+                "successful_optimizer_steps": steps,
+            }
+        )
+        if self._sinks is not None:
+            self._sinks.finish(cell, "FINISHED" if status == "ok" else "FAILED")
+
+    def fail_open(self, result_status: str) -> None:
+        """A post-training stage of the open cell raised: close THAT cell as failed (DH-45)."""
+        if self.open is not None:
+            cell = self.open
+            self.end(
+                cell,
+                status="failed",
+                result_status=result_status,
+                wall_seconds=time.perf_counter() - self._began[cell],
+                steps=None,
+            )
+
+
 def run_object_worker(
     objects: D1TrainerMailboxObjectPort,
     marker: D1TrainerMailboxObjectIdentity,
@@ -301,6 +830,7 @@ def run_object_worker(
     max_request_bytes: int,
     repo_root: Path | None = None,
     sink: MetricSink | None = None,
+    cell_sinks: CellSinks | None = None,
 ) -> D1TrainerMailboxObjectIdentity:
     """Publish terminal status only after its snapshot is externally readable.
 
@@ -313,8 +843,22 @@ def run_object_worker(
     unchanged -- an additive observability mirror (RUNG 2b), never part of
     this function's own custody/snapshot contract. Its lifecycle (including
     ``finish()``) belongs to the caller that built it.
+
+    FOR-1693 (DH-40, DH-44, DH-45, DH-47): a PAIR request (v3) is observed per cell. ``cell_sinks``
+    is the provider ``worker_command`` owns (one sink per cell; a pair handed ``sink`` is refused
+    and so is a single-profile request handed ``cell_sinks``). The pair publishes
+    ``h-probe-worker-result-v2`` under the terminals ``complete``, ``paused``, ``stopped`` and the
+    new ``excluded``; its events carry the failing cell's identity (cell-scoped) or the pair id
+    (pair-level). A training-phase or hand-off EXECUTION stop leaves result v2 beside the v1
+    failure record in the failure snapshot; a post-training stage failure of either cell raises
+    through the v1 failure arm exactly as a single profile's does, with no result v2.
     """
     request = read_published_probe_request(objects, marker, max_request_bytes=max_request_bytes)
+    pair = request if isinstance(request, PairProbeRequest) else None
+    if pair is not None and sink is not None:
+        raise ValueError("a pair is observed per cell: hand it a cell sink provider, not one sink")
+    if pair is None and cell_sinks is not None:
+        raise ValueError("a single-profile request has no cells to give sinks to")
     maximum = request.limits.max_object_bytes
     stage = "materialization"
     # Owned by exactly this ONE run_object_worker invocation (never
@@ -326,7 +870,24 @@ def run_object_worker(
     # FOR-1662: the /run root's admission memo, handed back by
     # execute_probe_request (a caller-owned out-parameter, like
     # publication_timing). Owned by this ONE invocation, never module-level.
+    # A pair keeps one memo per cell root, keyed `run/<cell>`.
     admission_memos: dict[str, SealMemo] = {}
+    # DH-41: the process's corpus memos, one per source root (`source`, `capture[/<cell>]`), owned
+    # by this ONE invocation and shared by execution and result admission.
+    corpus_memos: dict[str, CorpusMemo] = {}
+    observer = (
+        None
+        if pair is None
+        else _PairObserver(
+            objects,
+            pair,
+            root,
+            ledger=ledger,
+            publication_timing=publication_timing,
+            sinks=cell_sinks,
+            maximum=maximum,
+        )
+    )
     # h-run-lifecycle-v1 pairing (FOR-1639): run_end is written only for a
     # run_start that start() logged earlier in THIS invocation, and the failed
     # run_end's clock starts immediately before execute_probe_request.
@@ -364,7 +925,7 @@ def run_object_worker(
                     "snapshot": asdict(snapshot),
                 },
             )
-            if sink is not None:
+            if sink is not None and isinstance(request, ProbeRequest):
                 sink.log(
                     {
                         "schema": LIFECYCLE_SCHEMA,
@@ -379,125 +940,64 @@ def run_object_worker(
                 )
                 started_logged = True
 
-        def checkpoint(artifact: ArtifactIdentity) -> None:
-            row = read_json(root, artifact, max_bytes=maximum)
-            total = row["successful_optimizer_steps"]
-            if type(total) is not int or total < 1:
-                raise ValueError("worker checkpoint must report measured successful steps")
-            paths = _paths(root, ("run", "worker"))
-            retry = VerificationReadRetry()
-            ledgered_before = len(ledger)
-            l3_started = time.perf_counter()
-            snapshot = publish_worker_snapshot(
-                objects,
-                request,
-                root,
-                paths,
-                name=f"checkpoint-{total:08d}",
-                ledger=ledger,
-                retry=retry,
-            )
-            l3_seconds = time.perf_counter() - l3_started
-            publication = _publication(
-                ledger, ledgered_before, paths, l3_seconds, retry, publication_timing
-            )
-            _event(
-                objects,
-                request,
-                f"checkpoint-{total:08d}",
-                {
-                    "status": "checkpoint",
-                    "successful_optimizer_steps": total,
-                    "training": artifact_reference(root, artifact),
-                    "snapshot": asdict(snapshot),
-                    "publication": publication,
-                },
-            )
-            if sink is not None:
-                # FOR-1642 (DN-1643-PORT): the sealed checkpoint's custody evidence on the
-                # run itself, so the MLflow run answers "which checkpoints exist and where"
-                # without an R2 listing. Only after the checkpoint event was published, and
-                # only here: never for `started` or the final snapshot. The values are the
-                # snapshot MARKER identity publish_worker_snapshot returned (the identity
-                # materialize_worker_snapshot accepts, binding the sealed files' sha256s),
-                # and the SAME l3_seconds float the event's `publication` block carries
-                # (`float(tag) == publication.l3_seconds`): no new clock. Tag values are
-                # strings (MetricSink.annotate refuses anything else).
-                evidence = f"checkpoint/{total:08d}"
-                sink.annotate(
-                    {
-                        f"{evidence}/key": snapshot.key,
-                        f"{evidence}/sha256": snapshot.sha256,
-                        f"{evidence}/size_bytes": str(snapshot.size_bytes),
-                        f"{evidence}/publication_seconds": repr(l3_seconds),
-                    }
-                )
-
-        def stop_requested(phase: str, step: int) -> bool:
-            """One bounded read per call site; never retries an absent marker.
-
-            Reuses rung 1's :class:`VerificationReadRetry` for its attempt
-            count and backoff schedule only (its public fields), never its
-            private ``_verified_read`` (which needs an expected identity and
-            payload this poll does not have). A raised exception is retried
-            up to ``attempts`` total and then re-raised unchanged; a clean
-            ``None`` (absent) or an object read is never retried.
-            """
-            retry = VerificationReadRetry()
-            key = stop_marker_key(request)
-            received = None
-            for index in range(retry.attempts):
-                try:
-                    received = objects.read(key)
-                    break
-                except Exception as poll_error:
-                    if index == retry.attempts - 1:
-                        raise
-                    # FOR-1637: a re-attempted poll is a WARNING of its own event
-                    # (not publish.retry, and no event for a clean/absent poll).
-                    polled = {
-                        "key": key,
-                        "attempt": index + 1,
-                        "max_attempts": retry.attempts,
-                        "reason": type(poll_error).__name__,
-                    }
-                    logger.bind(event=STOP_MARKER_RETRY, **polled).warning(
-                        render(STOP_MARKER_RETRY, **polled)
-                    )
-                    retry.sleep(retry.backoff_seconds[min(index, len(retry.backoff_seconds) - 1)])
-            if received is None:
-                return False
-            stop = stop_marker_hits(received.payload, request, (phase, step))
-            if stop:
-                logger.bind(event=STOP_MARKER_OBSERVED, key=key).info(
-                    render(STOP_MARKER_OBSERVED, key=key)
-                )
-            return stop
-
         stage = "execution"
         executed_at = time.perf_counter()
-        result = execute_probe_request(
-            request,
-            root,
-            repo_root=repo_root,
-            on_checkpoint=checkpoint,
-            on_start=start,
-            sink=sink,
-            publication_timing=publication_timing,
-            operator_stop=stop_requested,
-            admission_memos=admission_memos,
-        )
+        if observer is not None:
+            result = execute_probe_request(
+                request,
+                root,
+                repo_root=repo_root,
+                on_start=start,
+                publication_timing=publication_timing,
+                admission_memos=admission_memos,
+                cells=observer,
+                corpus_memos=corpus_memos,
+            )
+        else:
+            result = execute_probe_request(
+                request,
+                root,
+                repo_root=repo_root,
+                on_checkpoint=_checkpoint_callback(
+                    objects,
+                    request,
+                    root,
+                    ledger=ledger,
+                    publication_timing=publication_timing,
+                    sink=sink,
+                    maximum=maximum,
+                    cell=None,
+                    run_identity=request.run_identity,
+                ),
+                on_start=start,
+                sink=sink,
+                publication_timing=publication_timing,
+                operator_stop=_stop_poll(objects, request, None),
+                admission_memos=admission_memos,
+                corpus_memos=corpus_memos,
+            )
         with narrated_stage("result_admission"):
-            result = _admit_result(root, request, result, admission_memos.get("run"))
+            if pair is not None:
+                result = _admit_pair_result(
+                    root, pair, result, admission_memos, corpus_memos.get("source")
+                )
+            else:
+                if not isinstance(request, ProbeRequest):
+                    raise TypeError("a single-profile result admission reads a ProbeRequest")
+                result = _admit_result(
+                    root,
+                    request,
+                    result,
+                    admission_memos.get("run"),
+                    corpus_memos.get("source"),
+                )
         result_artifact = write_json(root, "worker/result.json", result, max_bytes=maximum)
         stage = "final_snapshot"
-        name = (
-            "paused"
-            if result["status"] == "paused"
-            else "stopped"
-            if result["status"] == "stopped_by_operator"
-            else "complete"
-        )
+        name = {
+            "paused": "paused",
+            "stopped_by_operator": "stopped",
+            "pair_excluded": "excluded",
+        }.get(cast(str, result["status"]), "complete")
         final_paths = _paths(root, ("run", "capture", "verification", "worker"))
         final_retry = VerificationReadRetry()
         final_ledgered_before = len(ledger)
@@ -545,7 +1045,7 @@ def run_object_worker(
             "snapshot": asdict(snapshot),
             "publication": publication,
         }
-        if result["status"] == "stopped_by_operator":
+        if result["status"] == "stopped_by_operator" and pair is None:
             event_value["successful_optimizer_steps"] = result["successful_optimizer_steps"]
         terminal = _event(objects, request, name, event_value)
     except Exception as error:
@@ -566,10 +1066,23 @@ def run_object_worker(
             "error_code": getattr(error, "code", type(error).__name__),
             "detail": str(error),
         }
+        # P5-19: the failure EVENT names the failing cell (a hand-off failure is the
+        # recipient's); the failure RECORD keeps its v1 key set.
+        failing_identity = request.run_identity if observer is None else observer.run_identity
         try:
             try:
                 (root / "worker").mkdir(exist_ok=True)
                 write_json(root, "worker/failure.json", failure, max_bytes=maximum)
+                if pair is not None and (root / "worker" / "result.json").is_file():
+                    # P5-13: the result v2 an execution stop left is read back through the same
+                    # v2 admission before the snapshot that carries it is published.
+                    _admit_pair_result(
+                        root,
+                        pair,
+                        json.loads((root / "worker" / "result.json").read_bytes()),
+                        admission_memos,
+                        corpus_memos.get("source"),
+                    )
                 snapshot = publish_worker_snapshot(
                     objects,
                     request,
@@ -592,6 +1105,7 @@ def run_object_worker(
                             "evidence_delivery": "failed",
                             "delivery_error_type": type(delivery_error).__name__,
                         },
+                        run_identity=failing_identity,
                     )
                 except Exception as notification_error:
                     raise ExceptionGroup(
@@ -614,6 +1128,7 @@ def run_object_worker(
                         "snapshot": asdict(snapshot),
                         "evidence_delivery": "captured",
                     },
+                    run_identity=failing_identity,
                 )
             except Exception as notification_error:
                 raise ExceptionGroup(
@@ -626,6 +1141,15 @@ def run_object_worker(
             # full. A sink defect surfaces beside the original error, never
             # replaces it, and a healthy sink leaves the propagated exception
             # exactly as the arm raised it.
+            if observer is not None:
+                # a pair's cell still open (a post-training stage raised) is closed as failed
+                # with THIS error's v1 status; a cell the loop already closed is left alone
+                try:
+                    observer.fail_open(status)
+                except Exception as sink_error:
+                    raise ExceptionGroup(
+                        "worker failure and lifecycle sink defect", [propagated, sink_error]
+                    ) from propagated
             if started_logged and sink is not None:
                 try:
                     sink.log(
@@ -646,6 +1170,7 @@ def run_object_worker(
     # Written only after the terminal marker above was published, and outside
     # the try: a sink defect here must not publish a failure marker after a
     # complete/paused/stopped one, so it propagates as the sink's own error.
+    # (A pair's cells wrote their own run_end as each cell's workload returned.)
     if started_logged and sink is not None:
         sink.log(
             {

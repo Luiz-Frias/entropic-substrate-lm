@@ -22,7 +22,13 @@ from entropic_substrate.ladder.capture.resource.resource_meter_models import Res
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress
-from entropic_substrate.ladder.run.seals import SealedStep, SealMemo, read_seal, resume_seal
+from entropic_substrate.ladder.run.seals import (
+    CorpusMemo,
+    SealedStep,
+    SealMemo,
+    read_seal,
+    resume_seal,
+)
 from entropic_substrate.ladder.run.span_probe_artifacts import (
     SpanProbeBundle,
     capture_span_probes,
@@ -44,6 +50,7 @@ def _trained(
     source_limit: int,
     artifact_limit: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> tuple[dict[str, object], SealedStep]:
     row = read_training_progress(
         root,
@@ -53,6 +60,7 @@ def _trained(
         max_source_bytes=source_limit,
         max_artifact_bytes=artifact_limit,
         memo=memo,
+        corpora=corpora,
     )
     if row["status"] != "training_complete":
         raise ValueError("span diagnostics require complete sealed training")
@@ -64,6 +72,7 @@ def _trained(
         max_bytes=artifact_limit,
         max_source_bytes=source_limit,
         memo=memo,
+        corpora=corpora,
     )
     return row, seal
 
@@ -153,6 +162,7 @@ def read_span_diagnostics(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]: ...
 
 
@@ -166,15 +176,18 @@ def read_span_diagnostics(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> dict[str, object]:
     """Verify checkpoint/source bindings and replay frozen scores, not model forward states.
 
     The selected model states are content-bound producer evidence. This reader
     does not claim a second forward execution or grant scientific eligibility.
     ``memo`` is the same-process, same-root admission memo or ``None`` (full walk).
+    ``corpora`` (FOR-1693, DH-41) is the process's corpus memo of ``source_root``: the memo
+    ARGUMENT only.
     """
     _, seal = _trained(
-        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo, corpora
     )
     row = recovery_record(
         read_json(root, artifact, max_bytes=max_artifact_bytes),
@@ -201,8 +214,11 @@ def read_span_diagnostics(
     )
     if bundle.train.split != "train" or bundle.heldout.split != "validation":
         raise ValueError("diagnostic producer split protocol mismatch")
-    corpus = read_prepared_corpus(
-        source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+    expected_source = ContentHash("sha256", profile.source_digest)
+    corpus = (
+        read_prepared_corpus(source_root, expected_source, max_bytes=max_source_bytes)
+        if corpora is None
+        else corpora.read(source_root, expected_source, max_bytes=max_source_bytes).corpus
     )
     collection = recovery_record(row["collection"], "train validation")
     for states in (bundle.train, bundle.heldout):
@@ -245,6 +261,7 @@ def run_span_diagnostics(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None,
+    corpora: CorpusMemo | None = None,
 ) -> ArtifactIdentity: ...
 
 
@@ -258,18 +275,25 @@ def run_span_diagnostics(
     max_source_bytes: int,
     max_artifact_bytes: int,
     memo: SealMemo | None = None,
+    corpora: CorpusMemo | None = None,
 ) -> ArtifactIdentity:
-    """Restore the actual trained checkpoint before collecting any fitting states."""
+    """Restore the actual trained checkpoint before collecting any fitting states.
+
+    ``corpora`` (FOR-1693, DH-41) is the process's corpus memo of ``source_root``: the memo
+    ARGUMENT only.
+    """
     config.__post_init__()
     row, seal = _trained(
-        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo
+        root, training, profile, source_root, max_source_bytes, max_artifact_bytes, memo, corpora
     )
     prefix = uuid4().hex
     stage = "restore"
     bundle_artifact = None
     try:
         with torch.random.fork_rng(devices=[0] if profile.device == "cuda" else []):
-            execution = SentenceExecution(profile, source_root, max_source_bytes=max_source_bytes)
+            execution = SentenceExecution(
+                profile, source_root, max_source_bytes=max_source_bytes, corpora=corpora
+            )
             resume_seal(
                 root,
                 artifact_from_mapping(row["last_seal"]),
@@ -355,6 +379,7 @@ def run_span_diagnostics(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
             memo=memo,
+            corpora=corpora,
         )
         return receipt
     except Exception as error:

@@ -61,6 +61,29 @@ class SentenceBatch:
     identity: str
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedCorpus:
+    """A prepared corpus whose independent replay THIS constructor performed (FOR-1693, DH-41).
+
+    ``SentenceSampler`` replays ``prepare_documents`` on every construction because it cannot
+    otherwise trust a ``PreparedCorpus`` it was handed. A caller that has already replayed one
+    (the corpus memo in ``ladder.run.seals`` replays it once per process, per root and per
+    digest) hands the sampler THIS proof instead, and the sampler skips the second replay. The
+    proof can only be built by running the replay, so it cannot be forged by passing a corpus
+    through: ``__post_init__`` raises the sampler's own message on a mismatch. Import layering
+    (``.importlinter``: core never imports ladder) is why the type lives here, beside the
+    sampler that consumes it.
+    """
+
+    corpus: PreparedCorpus
+
+    def __post_init__(self) -> None:
+        if type(self.corpus) is not PreparedCorpus:
+            raise TypeError("sentence sampler requires prepared source and explicit sampling spec")
+        if prepare_documents(self.corpus.candidates, self.corpus.spec) != self.corpus:
+            raise ValueError("prepared source fails independent replay")
+
+
 class SentenceSampler:
     """Uniform target-sentence marginals, batching equal history lengths.
 
@@ -74,17 +97,25 @@ class SentenceSampler:
 
     def __init__(
         self,
-        corpus: PreparedCorpus,
+        corpus: PreparedCorpus | VerifiedCorpus,
         spec: SamplingSpec,
         codec: SentenceByteCodec,
         device: torch.device,
     ) -> None:
-        if type(corpus) is not PreparedCorpus or type(spec) is not SamplingSpec:
+        """A bare ``PreparedCorpus`` is replayed here, exactly as before. A ``VerifiedCorpus``
+        carries a replay already performed by its own constructor, so none is repeated."""
+        if type(spec) is not SamplingSpec:
             raise TypeError("sentence sampler requires prepared source and explicit sampling spec")
-        if prepare_documents(corpus.candidates, corpus.spec) != corpus:
-            raise ValueError("prepared source fails independent replay")
+        if type(corpus) is VerifiedCorpus:
+            prepared = corpus.corpus
+        elif type(corpus) is PreparedCorpus:
+            if prepare_documents(corpus.candidates, corpus.spec) != corpus:
+                raise ValueError("prepared source fails independent replay")
+            prepared = corpus
+        else:
+            raise TypeError("sentence sampler requires prepared source and explicit sampling spec")
         examples: list[SentenceExample] = []
-        for record in corpus.records:
+        for record in prepared.records:
             if record.split != spec.split:
                 continue
             spans = record.segmentation.spans
@@ -104,7 +135,7 @@ class SentenceSampler:
         self.order_identity = content_identity(
             (
                 "h-uniform-target-length-buckets-v1",
-                corpus.identity,
+                prepared.identity,
                 spec.split,
                 str(spec.batch_size),
                 str(spec.max_history),

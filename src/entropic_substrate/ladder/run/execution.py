@@ -4,12 +4,12 @@ import math
 import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
-from entropic_substrate.core.sentence.corpus import CorpusSplit
+from entropic_substrate.core.sentence.corpus import CorpusSplit, PreparedCorpus
 from entropic_substrate.core.sentence.model import SentencePredictor
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.objective import (
@@ -24,6 +24,7 @@ from entropic_substrate.core.sentence.sampling import (
     SamplingSpec,
     SentenceBatch,
     SentenceSampler,
+    VerifiedCorpus,
 )
 from entropic_substrate.core.sentence.scoring import importance_evaluate
 from entropic_substrate.core.sentence.spine import CarrierBlock
@@ -42,6 +43,9 @@ from entropic_substrate.ladder.run.training import (
     apply_sentence_step,
     build_sentence_optimizer,
 )
+
+if TYPE_CHECKING:  # seals imports this module, so the memo type is named for the checker only
+    from entropic_substrate.ladder.run.seals import CorpusMemo
 
 
 def batch_coordinates(batch: SentenceBatch) -> list[dict[str, object]]:
@@ -63,12 +67,31 @@ class SentenceExecution:
     engine does not allocate a pod or mint scientific/spending authorization.
     """
 
-    def __init__(self, profile: HProfile, source_root: Path, *, max_source_bytes: int) -> None:
+    def __init__(
+        self,
+        profile: HProfile,
+        source_root: Path,
+        *,
+        max_source_bytes: int,
+        corpora: "CorpusMemo | None" = None,
+    ) -> None:
         require_execution_precision()
         self.profile = profile
         self.source_root, self.max_source_bytes = source_root, max_source_bytes
-        self.corpus = read_prepared_corpus(
-            source_root, ContentHash("sha256", profile.source_digest), max_bytes=max_source_bytes
+        # FOR-1693 (DH-41): the process's memo of this source root, when the caller owns one.
+        # With it the corpus is replayed once per process and root, and every sampler this
+        # engine builds receives the proof instead of replaying again.
+        self.corpora = corpora
+        expected = ContentHash("sha256", profile.source_digest)
+        self._verified: VerifiedCorpus | None = (
+            None
+            if corpora is None
+            else corpora.read(source_root, expected, max_bytes=max_source_bytes)
+        )
+        self.corpus: PreparedCorpus = (
+            read_prepared_corpus(source_root, expected, max_bytes=max_source_bytes)
+            if self._verified is None
+            else self._verified.corpus
         )
         if any(
             len(s.source) > profile.codec.max_sentence_bytes
@@ -109,7 +132,7 @@ class SentenceExecution:
 
     def _sampler(self, split: CorpusSplit, history: int) -> SentenceSampler:
         return SentenceSampler(
-            self.corpus,
+            self.corpus if self._verified is None else self._verified,
             SamplingSpec(
                 split, self.profile.schedule.batch_size, history, self.profile.source_seed
             ),
