@@ -1,0 +1,38 @@
+# FOR-1704 [h1-l4d] Evaluation instruments: prior and mixture proposals with a ratio-of-sums headline, prior/q radius and cosine, latent usage per evaluation, through the extractor to MLflow and telemetry (DG-A re-pin row 4)
+
+Fourth serial W2 slice, after L4c (h1-l4c-remote-pair); arch mode (owns the evaluation-record door); Opus xhigh at the design gate and the implementation; the lane cannot commit member edits, so it stages the patch, the proposed message and the evidence as a DG-A handoff and the conductor lands patch plus `tools/regime_rows.py` re-pin plus the read-old-table row as one commit. Rulings: DH-32 (operator 2026-10-28, aligned with the recs plus the 0.15 and 0.35 ESS/k readings) and DH-33 (add the instrument and metrics capture to the MLflow sink and telemetry; verify what exists first). Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read every new key from the captured records alone. Every anchor below was re-measured at main e3d1524b (v0.10.0) on 2026-10-31; none of the anchored files changed between v0.9.1 and v0.10.0.
+
+## Touch-set
+
+- members (DG-A, move the five checkpoint digest rows at tests/test_identity_epoch.py:904-931): src/entropic_substrate/core/sentence/scoring.py (`importance_statistics` :22, `log_estimate` and ESS at :49-50 with the `[:k]` slice applied by the caller at :142; `ImportanceEvaluation` :58-75 with `meaning` at :67 and the eight listed fields at :68-75; `importance_evaluate` :79, proposal drawn from `model.codec.posterior(complete)` at :110, `log_weights = decoder_log + prior_log - proposal_log` at :132); src/entropic_substrate/ladder/run/execution.py (`evaluate` :305, fork_rng :330, step-keyed seed :340, `evaluation_batches` :341, the `examples[]` block :364-378 with `source_bytes` :368, `boundary_symbols` :369, `by_sample_count` :370-373 and four log-prob arrays :374-377); src/entropic_substrate/ladder/run/trace_capture.py (`_SCHEMAS` :23-40, 14 entries, `h-predictive-evaluation-v1` at :30; the refusal at :89-90) if the evaluation schema name bumps.
+- non-members: src/entropic_substrate/ladder/run/h_metric_extractor.py (not a reader member; keys at :195-202: `eval/log_marginal_k{k}`, `eval/ess_k{k}`, `eval/gap_rows_k{k}`, `eval/wall_seconds`, `eval/cuda_seconds`; wired by `worker_command.py:22` and used at :232); src/entropic_substrate/ladder/analyze/h_elm_projection.py (`project_elm`: ESS guard :174-175 admits ESS = 1 within `_ESS_SLACK` 1e-9 at :59; mean of per-row `log_estimate / source_bytes` at :176; `eval/ess_ratio_median_k{k}` at :200 for every k, headline k = 64 at :52); src/entropic_substrate/ladder/capture/adapters/mlflow.py (`MlflowSink` :279, `log` :542) only if the record shape needs it; the strict adapter mlflow_strict.py (`_RECORD_FIELDS` :64, `_has_exact_keys` :116) must still hold.
+- tests: tests/test_sentence_scoring.py; tests/test_h_metric_routing.py (the extractor's eval keys are tested here, :249-253; there is no tests/test_h_metric_extractor.py, create it test-first or extend routing); tests/test_h_elm_projection.py; tests/test_mlflow_async_sink.py; tests/test_identity_epoch.py and docs/identity/read-old-table.md (conductor re-pin).
+- NOT touched: the ruled 0.25 gate; the pilot's future_weight (core/sentence/profile.py:251-254 requires 0 at H1); tests/test_observability_conformance.py frozen counts (PRINT_ALLOWLIST 10 at :95, 11 mapping rows at :176) unless a new entrypoint or print is added.
+
+## Why (FOR-1703 recon, verdict B)
+
+With future_weight = 0 the prior head drifts from the encoder posterior q, the q-proposal importance weights go one-hot (log_w sd 107 to 157 nats across draws) and ESS/k reads about 1/k by construction, so the ruled 0.25 gate would exclude every H1 block; sampling from the prior on the same checkpoint gives ESS 64/64. The per-byte headline is a mean of per-row ratios, so a 2-byte sentence supplied 92.6 percent of one reading. The dev-width codec is near latent-blind after the 250 warm-up steps (2.69 vs 2.71 nats per byte with a null latent). Nothing in the evaluation record or in MLflow exposes any of this today.
+
+## Scope
+
+1. Second and third proposals in the evaluation record: for every example and k, beside the q-proposal rows, rows drawn from the PRIOR (`prediction.law`) and from a q plus prior mixture (equal weights, exact mixture log density), each with its own importance rows; `meaning` extended or a `proposal` field added so the record names the proposal; the q rows stay byte-identical in shape so every existing reader keeps its names.
+2. Diagnostics per example: prior log-radius mean, q log-radius mean, cos(prior mean direction, q mean direction), log-weight spread (sd across draws) per proposal.
+3. Latent usage per example (DH-33): decoder nats per byte with the q latent versus a near-zero latent (radius 1e-4) on the same bytes; the difference is the latent-usage figure.
+4. Extractor keys, k-suffixed where applicable (FOR-1664): `eval/ess_prior_k{k}`, `eval/ess_mixture_k{k}`, `eval/log_marginal_prior_k{k}`, `eval/log_marginal_mixture_k{k}`, `eval/log_marginal_per_byte_ratio_of_sums_k{k}` per proposal, `eval/prior_log_radius_mean`, `eval/q_log_radius_mean`, `eval/prior_q_cosine_mean`, `eval/log_weight_sd_k{k}` per proposal, `eval/latent_usage_nats_per_byte`; all through the existing extractor into the MetricSink port (`ladder/capture/ports/metric_sink.py`, class :40, `log` :43) and the MLflow sink unchanged, and logged as loguru telemetry events on the worker in the existing eval event family.
+5. Projection: `project_elm` reports the ratio-of-sums headline beside the mean of ratios and selects the proposal by a parameter (default q); L3's adapter already reads the gate metric key as a parameter (merged in #416).
+
+## RED-first tests
+
+tests/test_sentence_scoring.py: prior and mixture rows present with the exact mixture density; on a fixture where the prior equals q all three proposals agree; q rows unchanged byte for byte; latent usage non-negative on a trained fixture and zero when the decoder ignores the latent by construction. Extractor tests (routing file or a new file): every new key emitted, k-suffixed, absent when the record lacks the rows, never invented. tests/test_h_elm_projection.py: ratio of sums and mean of ratios differ on a two-row fixture with unequal byte counts; the proposal selector; old keys unchanged. tests/test_mlflow_async_sink.py extended with the new keys. The H0 fixtures (results/h0-plumbing-1k-v3-HEpP7g, results/h0-final-probe-1k-v4-92c9db) carry `h-predictive-evaluation-v1` events and suit the reader-side tests here.
+
+## Guard teeth (mutation, each RED)
+
+drop the mixture normalization; compute the cosine on raw states instead of means; count boundary symbols in the ratio of sums; emit a bare (non-k-suffixed) `eval/ess_prior`; read the null latent with the q radius.
+
+## Handoff
+
+DG-A as in L4a: members scoring.py, execution.py and trace_capture.py (if the schema bumps); a 54th reader member is NOT expected here (h_metric_extractor stays a non-member), so the re-pin is the five checkpoint rows only (tests/test_identity_epoch.py:904-931; `_FROZEN_CHECKPOINT_READER_MODULES` :827-881 stays at 53). The attempt record `h-evaluation-attempt-v1` (execution.py:316) is not in `_SCHEMAS` today; leave it unless the slice captures it.
+
+## Out of scope
+
+changing the ruled 0.25 gate; the pilot's future_weight; the interim image re-pin and the DH-34 quote re-run pods (separate GO); the non_checkpoint_bytes dev-width measurement (taken on the DH-34 pods, sealed by L8).

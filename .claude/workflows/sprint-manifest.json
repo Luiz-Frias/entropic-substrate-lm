@@ -2,10 +2,10 @@
   "spec_version": "1",
   "sprint": "H1 preservation pilot groundwork (FOR-1685..1700; W1-W4)",
   "trunk": "main",
-  "verified_at": "453302199feee3c026ff68f0cf0645de7dc44565",
-  "generated_by": "helmsman:sprint-preflight brief assembler (final), premises re-measured at 45330219 (tag v0.9.1) on 2026-10-28; task stamp 2026-10-28T09:54:15Z carried in launch-queue verifiedAt because the schema's verified_at pattern ^[0-9a-f]{7,40}$ admits only a SHA | RATIFIED 2026-10-28 by the conductor under the operator mandate of 2026-10-28 ('implement the plan in full'; plan of record harmonic-juggling-hejlsberg.md approved 2026-10-27): the manifest mechanizes that plan with one addition, the W1 prelude h1-p0 (conductor ruling DH-23). Below-the-seam defaults Q1, Q2, Q5, Q6, Q18, Q19, Q20, Q22, Q23, Q24, Q25 are conductor-ruled; the door questions Q7-Q11, Q15, Q16, Q17, Q21, Q28 and the gate questions Q3, Q4b stay open on the H1 Sprint Chain ledger (DH-21, DH-25..DH-31) for the operator at each wave's design gate.",
+  "verified_at": "e3d1524bbf2901a3aba8ae80ec72197e7b1ea464",
+  "generated_by": "helmsman:sprint-preflight brief assembler (final), premises re-measured at 45330219 (tag v0.9.1) on 2026-10-28; task stamp 2026-10-28T09:54:15Z carried in launch-queue verifiedAt because the schema's verified_at pattern ^[0-9a-f]{7,40}$ admits only a SHA | RATIFIED 2026-10-28 by the conductor under the operator mandate of 2026-10-28 ('implement the plan in full'; plan of record harmonic-juggling-hejlsberg.md approved 2026-10-27): the manifest mechanizes that plan with one addition, the W1 prelude h1-p0 (conductor ruling DH-23). Below-the-seam defaults Q1, Q2, Q5, Q6, Q18, Q19, Q20, Q22, Q23, Q24, Q25 are conductor-ruled; the door questions Q7-Q11, Q15, Q16, Q17, Q21, Q28 and the gate questions Q3, Q4b stay open on the H1 Sprint Chain ledger (DH-21, DH-25..DH-31) for the operator at each wave's design gate. | AMENDED 2026-10-31 at the W1 boundary by the conductor (main e3d1524b, tag v0.10.0, W1 phases done): W2 gains h1-l4d (FOR-1704, DH-32/DH-33) and h1-l4e (FOR-1706, DH-35) after L4c; the W2 phases' premises hold (their touch sets are disjoint from the W1 diff, verified by git diff ce18bc60..e3d1524b); the two new slices' anchors re-measured at e3d1524b by a read-only lane. The W3 DVC pointer results/h1-dev-quote-v4.499aca.dvc stays parked for the W3 base (DH-26). L4a starts from the W2 prelaunch commit, which carries this amendment, the two briefs and the launch queue.",
   "ratified": true,
-  "merge_topology": "Per-wave linear stacks off main, each based on main AFTER the previous wave merges (plan of record harmonic-juggling-hejlsberg.md:86-91, :248-250; consistent with the 2026-10-12 ruling 'stack linearly off the trunk' because no two unmerged stacks ever fork from main). W1 = one stack [h1-p0 prelude, then the K=3 fanout zip L3, L1, L2], one just ship-it. W2 = serial stack L4a, L4b, L4c; every reader-member edit lands only as a conductor DG-A commit with a tools/regime_rows.py re-pin, re-pinned once more at the final restack; one just ship-it. W3 = K=3 fanout zip L7, L6, L5 from main, one just ship-it. W4 = serial: L8 (own PR), release tag, L9 from the tag (own PR), then L10 (operator GO; authority commit, DVC captures, amendment commit). For fanout lanes, `parent` records the zip's serial reading order; lanes fork from the wave base (W1: h1-p0 tip; W3: main). Operator owns every merge.",
+  "merge_topology": "Per-wave linear stacks off main, each based on main AFTER the previous wave merges (plan of record harmonic-juggling-hejlsberg.md:86-91, :248-250; consistent with the 2026-10-12 ruling 'stack linearly off the trunk' because no two unmerged stacks ever fork from main). W1 = one stack [h1-p0 prelude, then the K=3 fanout zip L3, L1, L2], one just ship-it. W2 = serial stack L4a, L4b, L4c, L4d, L4e (L4d and L4e added 2026-10-31); every reader-member edit lands only as a conductor DG-A commit with a tools/regime_rows.py re-pin, re-pinned once more at the final restack; one just ship-it. W3 = K=3 fanout zip L7, L6, L5 from main, one just ship-it. W4 = serial: L8 (own PR), release tag, L9 from the tag (own PR), then L10 (operator GO; authority commit, DVC captures, amendment commit). For fanout lanes, `parent` records the zip's serial reading order; lanes fork from the wave base (W1: h1-p0 tip; W3: main). Operator owns every merge.",
   "sequence": [
     "h1-p0-design-identity",
     "h1-l3-observations",
@@ -14,6 +14,8 @@
     "h1-l4a-codec-handoff",
     "h1-l4b-pair-admission",
     "h1-l4c-remote-pair",
+    "h1-l4d-evaluation-instruments",
+    "h1-l4e-segmenter-alignment",
     "h1-l7-sensitivity",
     "h1-l6-block-cost",
     "h1-l5-block-launch",
@@ -64,8 +66,8 @@
       ],
       "conflict_edges": [],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "Resolves the consumed-before-owned HALT: FOR-1691 maps `independent_warmup` to exclusion, but that name is owned by FOR-1692's CodecHandoffDefect, which lands in W2. Also resolves the digest that plan:101-102 rules 'before W1' but no issue owns. The digest is profile identity minus name and seed, per plan:101-102. It is distinct from _shared_profile, which removes name, law.mode and spine.carrier and keeps seed (h_preservation.py:20-25). It is also distinct from L4a's pair predicate. h_preservation.py is non-member: it is absent from checkpoint.py:72-126. ladder.analyze already imports ladder.register (d1_factorial.py:33). The phase adds functions only. It must not change the h1-preservation-block-v1 manifest bytes (h_preservation.py:85-90). Retire this phase if the operator rules decision Q1(b), a conductor trunk commit. MEASURED: no module under src/ imports h_preservation or H1PreservationBlock; the only importer is tests/test_h_preservation.py (grep). The edit therefore changes no reader member, and grouping lens D4 is closed for this phase."
+      "status": "done",
+      "notes": "Resolves the consumed-before-owned HALT: FOR-1691 maps `independent_warmup` to exclusion, but that name is owned by FOR-1692's CodecHandoffDefect, which lands in W2. Also resolves the digest that plan:101-102 rules 'before W1' but no issue owns. The digest is profile identity minus name and seed, per plan:101-102. It is distinct from _shared_profile, which removes name, law.mode and spine.carrier and keeps seed (h_preservation.py:20-25). It is also distinct from L4a's pair predicate. h_preservation.py is non-member: it is absent from checkpoint.py:72-126. ladder.analyze already imports ladder.register (d1_factorial.py:33). The phase adds functions only. It must not change the h1-preservation-block-v1 manifest bytes (h_preservation.py:85-90). Retire this phase if the operator rules decision Q1(b), a conductor trunk commit. MEASURED: no module under src/ imports h_preservation or H1PreservationBlock; the only importer is tests/test_h_preservation.py (grep). The edit therefore changes no reader member, and grouping lens D4 is closed for this phase. | DONE 2026-10-31: merged to main as #414 255c1187 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
     },
     {
       "id": "h1-l3-observations",
@@ -114,8 +116,8 @@
         }
       ],
       "parallel_group": "h1-w1",
-      "status": "queued",
-      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1691 scope or acceptance text, and the phase owns no door, so the stated verdict is direct. Corrections: last_k_mean EXISTS (d1_clause_policy.py:165-166,:176,:267; d1_factorial.py:408). The gate reads eval/ess_ratio_median_k64 (h_elm_projection.py:200), which is already a ratio. It does not read eval/ess_k64 (h_metric_extractor.py:197, the raw mean). The refusal is at ladder_registration.py:276, not :275. The ESS default 0.25 is RULED (plan:55) and stays a parameter; see decision Q4. The adapter must expose per-threshold PilotContrasts for L7. scripts/h1_pilot_sizing.py is optional."
+      "status": "done",
+      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1691 scope or acceptance text, and the phase owns no door, so the stated verdict is direct. Corrections: last_k_mean EXISTS (d1_clause_policy.py:165-166,:176,:267; d1_factorial.py:408). The gate reads eval/ess_ratio_median_k64 (h_elm_projection.py:200), which is already a ratio. It does not read eval/ess_k64 (h_metric_extractor.py:197, the raw mean). The refusal is at ladder_registration.py:276, not :275. The ESS default 0.25 is RULED (plan:55) and stays a parameter; see decision Q4. The adapter must expose per-threshold PilotContrasts for L7. scripts/h1_pilot_sizing.py is optional. | DONE 2026-10-31: merged to main as #416 8d5b5a7f (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
     },
     {
       "id": "h1-l1-enwik8-documents",
@@ -157,8 +159,8 @@
       ],
       "conflict_edges": [],
       "parallel_group": "h1-w1",
-      "status": "queued",
-      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1689 scope or acceptance text. The page to source-id scheme and the single revision string are classified as a CONTRACT that L8's h1-corpus-identity door freezes at the seal, so the stated verdict is direct, matching plan:248 'direct-mode lanes'. Decision Q18 offers the door reading, under which L1 would run in arch mode. max_sentence_bytes is consumed from trunk (codec.py:22 = 4096 = the profile.py:242 cap), which removes the L1 x L2 parameter edge (grouping D12) without a channel. data/enwik8 must be pulled with dvc pull (R2 credentials in .env) before the 10 MB bounded capture; the lane brief owns that step. The new custody module is not in capture._READER_MODULES (capture.py:29, 7 members), so there is no source-reader re-pin."
+      "status": "done",
+      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1689 scope or acceptance text. The page to source-id scheme and the single revision string are classified as a CONTRACT that L8's h1-corpus-identity door freezes at the seal, so the stated verdict is direct, matching plan:248 'direct-mode lanes'. Decision Q18 offers the door reading, under which L1 would run in arch mode. max_sentence_bytes is consumed from trunk (codec.py:22 = 4096 = the profile.py:242 cap), which removes the L1 x L2 parameter edge (grouping D12) without a channel. data/enwik8 must be pulled with dvc pull (R2 credentials in .env) before the 10 MB bounded capture; the lane brief owns that step. The new custody module is not in capture._READER_MODULES (capture.py:29, 7 members), so there is no source-reader re-pin. | DONE 2026-10-31: merged to main as #417 97c88599 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
     },
     {
       "id": "h1-l2-pilot-generator",
@@ -202,8 +204,8 @@
         }
       ],
       "parallel_group": "h1-w1",
-      "status": "queued",
-      "notes": "Floor matches nothing in the FOR-1690 text, and the phase owns no door, so the stated verdict is direct. The Q7 mutation targets core/sentence/codec.py, numerics.py and spine.py, which are reader members (checkpoint.py:72-126). Run them on a scratch copy or by monkeypatch inside the lane's own worktree, never as an in-tree edit. Reader identity is hashed from file bytes at runtime (checkpoint.py:129-140). Placed last in W1 as the largest hazard footprint (R-train). The issue already carries the 2026-10-28 retraction of the '~182 MB' figure; checkpoint bytes are issue-quoted (524,752,197 and 1,149,203,227) and were not re-derived here."
+      "status": "done",
+      "notes": "Floor matches nothing in the FOR-1690 text, and the phase owns no door, so the stated verdict is direct. The Q7 mutation targets core/sentence/codec.py, numerics.py and spine.py, which are reader members (checkpoint.py:72-126). Run them on a scratch copy or by monkeypatch inside the lane's own worktree, never as an in-tree edit. Reader identity is hashed from file bytes at runtime (checkpoint.py:129-140). Placed last in W1 as the largest hazard footprint (R-train). The issue already carries the 2026-10-28 retraction of the '~182 MB' figure; checkpoint bytes are issue-quoted (524,752,197 and 1,149,203,227) and were not re-derived here. | DONE 2026-10-31: merged to main as #415 e23595d0 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
     },
     {
       "id": "h1-l4a-codec-handoff",
@@ -524,6 +526,139 @@
       "parallel_group": null,
       "status": "queued",
       "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph."
+    },
+    {
+      "id": "h1-l4d-evaluation-instruments",
+      "title": "L4d evaluation instruments: prior and mixture proposals beside the q proposal with their own ESS keys, ratio-of-sums per-byte headline, prior/q log-radius and cosine, latent-usage per evaluation, through the extractor to the MLflow sink and telemetry (DG-A re-pin row 4)",
+      "issues": [
+        "FOR-1704"
+      ],
+      "branch": "h1-l4d-evaluation-instruments",
+      "parent": "h1-l4c-remote-pair",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "Opus xhigh (design gate and implementer); DG-A conductor commits for members",
+      "contracts_owned": [
+        {
+          "name": "h-evaluation-record-proposals-v2",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "eval-metric-keys-prior-mixture-latent-usage",
+          "kind": "contract"
+        },
+        {
+          "name": "elm-projection-proposal-selector-and-ratio-of-sums",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "trunk:MetricSink port (ladder/capture/ports/metric_sink.py) and the mlflow_strict exact-record rule",
+        "trunk:HTrainingStepExtractor wiring (ladder/run/worker_command.py)",
+        "trunk:L3 gate metric key as a parameter (ladder/analyze/h1_observations.py, merged #416)",
+        "worker-cell-namespace",
+        "training-progress-v2",
+        "h-codec-handoff-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/core/sentence/scoring.py",
+        "src/entropic_substrate/ladder/run/execution.py",
+        "src/entropic_substrate/ladder/run/trace_capture.py",
+        "src/entropic_substrate/ladder/run/h_metric_extractor.py",
+        "src/entropic_substrate/ladder/analyze/h_elm_projection.py",
+        "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
+        "tests/test_sentence_scoring.py",
+        "tests/test_h_elm_projection.py",
+        "tests/test_mlflow_async_sink.py",
+        "tests/test_identity_epoch.py",
+        "docs/identity/read-old-table.md",
+        "tests/test_h_metric_routing.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "h1-l4c-remote-pair",
+          "type": "file",
+          "evidence": "execution.py, trace_capture.py, tests/test_identity_epoch.py, docs/identity/read-old-table.md",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "h1-l4b-pair-admission",
+          "type": "contract",
+          "evidence": "consumes worker-cell-namespace and training-progress-v2 (per-cell MLflow runs carry the new keys)",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "h1-l4a-codec-handoff",
+          "type": "file",
+          "evidence": "execution.py, trace_capture.py (_SCHEMAS), tests/test_identity_epoch.py",
+          "resolution": "serial-after"
+        }
+      ],
+      "status": "queued",
+      "notes": "Added 2026-10-31 at the W1 boundary under DH-32 and DH-33 (operator, 2026-10-28; FOR-1704 filed then) as the fourth serial W2 slice. Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read the new keys from the captured records alone. Anchors re-measured at main e3d1524b (v0.10.0) by the conductor's read-only lane before the brief was written; the q rows stay byte-identical in shape so every existing reader keeps its names. The dev-width non_checkpoint_bytes allowance that L2's pilot_transfer_limits now requires (#415) is measured on the same DH-34 pods before L8 seals the limits.",
+      "brief": ".claude/workflows/briefs/h1-l4d-evaluation-instruments.md"
+    },
+    {
+      "id": "h1-l4e-segmenter-alignment",
+      "title": "L4e align pysbd sentence spans sequentially from the cursor in segment_document, keeping every enwik8 page; segmentation identity bump with golden replay on every fixture (DG-A re-pin row 5)",
+      "issues": [
+        "FOR-1706"
+      ],
+      "branch": "h1-l4e-segmenter-alignment",
+      "parent": "h1-l4d-evaluation-instruments",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "model_tier": "Opus xhigh (design gate and implementer); DG-A conductor commits for members",
+      "contracts_owned": [
+        {
+          "name": "segmentation-identity-v2",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "source-reader-identity-after-l4e",
+          "kind": "contract"
+        }
+      ],
+      "contracts_consumed": [
+        "trunk:segment_document fail-loud invariant (core/sentence/segmentation.py:118-121: monotone, non-overlapping, text-identical spans)",
+        "trunk:source reader identity (ladder/capture/capture.py, pysbd plus the member files)",
+        "trunk:enwik8 document adapter and capture script (W1 L1, merged #417; three measurements exhausted-pending until this slice)"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/core/sentence/segmentation.py",
+        "tests/test_sentence_segmentation.py",
+        "tests/test_sentence_sampling.py",
+        "tests/test_enwik8_documents.py",
+        "tests/test_identity_epoch.py",
+        "docs/identity/read-old-table.md"
+      ],
+      "conflict_edges": [
+        {
+          "with": "h1-l4d-evaluation-instruments",
+          "type": "file",
+          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md (identity re-pin rows)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "h1-l4a-codec-handoff",
+          "type": "file",
+          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
+          "resolution": "serial-after"
+        }
+      ],
+      "status": "queued",
+      "notes": "Added 2026-10-31 at the W1 boundary under DH-35 (operator, 2026-10-28: the fix, explicitly NOT an exclusion; FOR-1706 filed then) as the fifth and last serial W2 slice. It moves the segmentation identity and therefore the source reader identity, so the W4 enwik8 capture stays after it. Golden replay: every existing prepared-corpus fixture re-segments byte-identically under the new alignment. Anchors re-measured at main e3d1524b (v0.10.0) before the brief was written. Correction carried from the anchor lane: segment_document lives in core/sentence/segmentation.py (not corpus.py); both files are members of both readers, so the fix moves five checkpoint rows and four source rows.",
+      "brief": ".claude/workflows/briefs/h1-l4e-segmenter-alignment.md"
     },
     {
       "id": "h1-l7-sensitivity",
@@ -893,6 +1028,6 @@
       "notes": "HOLDING until the operator GO with the balance said aloud (FOR-1700 Class: SPEND). Floor matches nothing in the FOR-1700 text, and the phase owns no door, so the stated verdict is direct. It is stated only because the brief requires engine_mode; this phase is an operator-gated spend runbook. Reframes: 'signed' means a sealed integrity digest (run_authority.py:19-20); scripts/h1_launch_block.py comes from L5, so L10 makes no source edit; preflight.sh is absent from the repo, so it must be an out-of-repo kit file (decision Q21) because nothing under scripts/ may land after L9. The authority file path is TBD (operator commit; registration_sha = the L8 commit). needs-recon before GO: the RunPod balance and A100 SXM stock at launch, and the ESS degeneracy (decision Q4). The $60 arithmetic ($3.75/pod, ~2.1 h/pod) is an ESTIMATE from plan:25 pricing, not measured."
     }
   ],
-  "lifecycle": "queued",
+  "lifecycle": "active",
   "ledger": ".claude/workflows/launch-queue.jsonl"
 }
