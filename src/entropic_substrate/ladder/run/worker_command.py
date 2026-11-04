@@ -23,6 +23,12 @@ from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
 from entropic_substrate.ladder.run.object_worker import run_object_worker
+from entropic_substrate.ladder.run.pair_run_tags import (
+    LIFECYCLE_TAG,
+    PAIR_OUTCOME_TAG,
+    CellLifecycle,
+    PairOutcome,
+)
 from entropic_substrate.ladder.run.transport.d1_dvc_remote_config import load_d1_dvc_s3_remote
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
@@ -123,6 +129,12 @@ class _PairCellSinks:
     carries exactly one ``worker.start`` and only its own cell's seals. The run name stays
     ``h-worker-<cell profile identity>`` (``h_wave_monitor`` searches by it); the tags add
     ``block``, ``pair``, ``cell`` and ``run_authority``; ``tiny`` stays derived from the authority.
+
+    DH-50 (operator ruling 2026-11-03): every cell run is CREATED tagged ``esl.lifecycle = live``
+    (every begin, so every resume, which opens a run of its own); ``lifecycle`` replaces it on
+    that cell's run and ``pair_outcome`` sets ``esl.pair_outcome`` on the donor's run, both
+    through the cell sink's ``annotate`` (the donor's run may already be terminated: the hand-off
+    is decided after the donor's close).
     """
 
     def __init__(self, request: PairProbeRequest, observability_root: Path) -> None:
@@ -163,6 +175,7 @@ class _PairCellSinks:
             "block": request.binding.block_id,
             "pair": request.binding.pair_id,
             "cell": cell,
+            LIFECYCLE_TAG: "live",
         }
         if request.authority is not None:
             params["run_authority"] = request.authority.digest
@@ -181,6 +194,12 @@ class _PairCellSinks:
         self._opened[cell] = sink
         self._began[cell] = time.perf_counter()
         return sink
+
+    def lifecycle(self, cell: str, value: CellLifecycle) -> None:
+        self._opened[cell].annotate({LIFECYCLE_TAG: value})
+
+    def pair_outcome(self, value: PairOutcome) -> None:
+        self._opened[self._request.tokens[0]].annotate({PAIR_OUTCOME_TAG: value})
 
     def finish(self, cell: str, status: Literal["FINISHED", "FAILED"]) -> None:
         if cell in self._finished:

@@ -24,6 +24,7 @@ from entropic_substrate.ladder.run.journal import (
     write_json,
 )
 from entropic_substrate.ladder.run.native_verification import read_native_verification
+from entropic_substrate.ladder.run.pair_run_tags import CellLifecycle, PairOutcome
 from entropic_substrate.ladder.run.runner import (
     PROGRESS_SCHEMA_V2,
     CellScope,
@@ -711,6 +712,27 @@ def _admit_pair_result(
     return row
 
 
+def _cell_lifecycle(result_status: str) -> CellLifecycle | None:
+    """The DH-50 ``esl.lifecycle`` value a cell's close writes; ``None`` writes none.
+
+    A paused cell is ``paused``; an operator stop and every scientific-class stop (a DH-42
+    training gap, a DH-45 post-training scientific or diagnostic gap) is ``stopped``; a complete
+    workload is ``completed``. An execution-class close writes nothing, so the cell keeps the
+    ``live`` it opened with: the ruling's "a crash never resumed keeps live".
+    """
+    match result_status:
+        case "probe_workload_complete":
+            return "completed"
+        case "paused":
+            return "paused"
+        case "stopped_by_operator" | "scientific_gap" | "diagnostic_gap":
+            return "stopped"
+        case "execution_defect":
+            return None
+        case other:
+            raise ValueError(f"cell result status {other!r} has no DH-50 lifecycle value")
+
+
 class _PairObserver:
     """The per-cell side channels of one pair run (FOR-1693): lifecycle, events, stop poll.
 
@@ -718,6 +740,8 @@ class _PairObserver:
     ``run_start`` and one ``run_end`` per constructed cell, each bound to THAT cell's own
     on-disk outcome and written to THAT cell's sink; the cell's MLflow run terminates FINISHED
     iff the cell's training returned complete, paused or stopped and its workload returned.
+    DH-50: each close replaces the cell's ``esl.lifecycle`` tag (``_cell_lifecycle``) before its
+    run terminates, and the pair's hand-off decision lands ONCE on the donor's run.
     """
 
     def __init__(
@@ -736,6 +760,7 @@ class _PairObserver:
         self._maximum = maximum
         self._logged: dict[str, MetricSink] = {}
         self._began: dict[str, float] = {}
+        self._settled = False
         self.focused: str | None = None
         self.open: str | None = None
 
@@ -819,7 +844,28 @@ class _PairObserver:
             }
         )
         if self._sinks is not None:
+            lifecycle = _cell_lifecycle(result_status)
+            if lifecycle is not None:
+                self._sinks.lifecycle(cell, lifecycle)
             self._sinks.finish(cell, "FINISHED" if status == "ok" else "FAILED")
+
+    def pair_outcome(self, value: PairOutcome) -> None:
+        """Record the pair's hand-off decision on the donor's run (DH-50), exactly once.
+
+        Settled BEFORE the write, so a failing write is not retried by the failure arm's
+        :meth:`stop_before_handoff`. No donor run (no provider, or the donor never began) has
+        nothing to tag.
+        """
+        if self._settled:
+            raise ValueError(f"the pair's DH-50 outcome is already recorded, refusing {value!r}")
+        self._settled = True
+        if self._sinks is not None and self._request.tokens[0] in self._began:
+            self._sinks.pair_outcome(value)
+
+    def stop_before_handoff(self) -> None:
+        """The pair failed before its decision was recorded: the donor never handed off."""
+        if not self._settled:
+            self.pair_outcome("stopped_before_handoff")
 
     def fail_open(self, result_status: str) -> None:
         """A post-training stage of the open cell raised: close THAT cell as failed (DH-45)."""
@@ -1168,6 +1214,9 @@ def run_object_worker(
                 # with THIS error's v1 status; a cell the loop already closed is left alone
                 try:
                     observer.fail_open(status)
+                    # DH-50: a raise before the hand-off decision (a donor execution-class or
+                    # DH-45 stop, a failed hand-off, a recipient that never opened) stops the pair
+                    observer.stop_before_handoff()
                 except Exception as sink_error:
                     raise ExceptionGroup(
                         "worker failure and lifecycle sink defect", [propagated, sink_error]

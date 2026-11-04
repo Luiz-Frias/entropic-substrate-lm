@@ -895,3 +895,258 @@ def test_a_recipient_receipt_is_a_handoff_only_when_all_three_marks_agree(
     resumed = build_pair_resume_request(request, forged, nonce="2" * 64)
     assert resumed.cells[1].resume is not None
     assert resumed.cells[1].resume.path.endswith("-prediction-00000002-progress.json")
+
+
+# ---------------------------------------------------------------------------------------------
+# DH-50 (operator ruling 2026-11-03): the per-cell ``esl.lifecycle`` tag on each cell's run and
+# the donor's ``esl.pair_outcome`` tag, observed at the sink PORT (every run open, DH-50 tag
+# write and finish, in order) through the real worker command.
+# ---------------------------------------------------------------------------------------------
+class TagLog:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from entropic_substrate.ladder.run import worker_command
+
+        self.events: list[tuple[str, str, Any]] = []
+        real = worker_command.build_sink_for_run
+        events = self.events
+
+        class Spy:
+            def __init__(self, sink: Any, cell: str) -> None:
+                self._sink, self._cell = sink, cell
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self._sink, name)
+
+            def annotate(self, tags: Any) -> None:
+                dh50 = {k: v for k, v in tags.items() if k.startswith("esl.")}
+                if dh50:
+                    events.append(("tag", self._cell, dh50))
+                self._sink.annotate(tags)
+
+            def finish(self, *, status: str = "FINISHED") -> None:
+                events.append(("finish", self._cell, status))
+                self._sink.finish(status=status)
+
+        def spy(descriptor: Any, **kwargs: Any) -> Any:
+            cell = descriptor.tags["cell"]
+            dh50 = {k: v for k, v in descriptor.tags.items() if k.startswith("esl.")}
+            events.append(("open", cell, dh50))
+            return Spy(real(descriptor, **kwargs), cell)
+
+        monkeypatch.setattr(worker_command, "build_sink_for_run", spy)
+
+
+LIVE = {"esl.lifecycle": "live"}
+
+
+def life(value: str) -> dict[str, str]:
+    return {"esl.lifecycle": value}
+
+
+def outcome(value: str) -> dict[str, str]:
+    return {"esl.pair_outcome": value}
+
+
+HANDED_OFF_COMPLETE = [
+    ("open", "recipient", LIVE),
+    ("tag", "donor", outcome("handed_off")),  # only once the recipient's run is open
+    ("tag", "recipient", life("completed")),
+    ("finish", "recipient", "FINISHED"),
+]
+
+
+def test_a_complete_pair_tags_both_cells_live_then_completed_and_the_donor_handed_off(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = TagLog(monkeypatch)
+    _, objects, marker = pair_world(tmp_path, pair)
+    status, error, _, observability = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("completed")),
+        ("finish", "donor", "FINISHED"),
+        *HANDED_OFF_COMPLETE,
+    ]
+    # the authoritative JSONL carries the same annotate rows (no schema key, so no reader counts
+    # them); the donor's hand-off row lands after its run_end
+    rows = [
+        json.loads(line)
+        for line in (observability / "donor" / "metrics.jsonl").read_text().splitlines()
+    ]
+    tail = [r for r in rows if r.get("event") in ("run_end", "annotate") and "schema" not in r]
+    assert [r for r in rows if r.get("event") == "annotate" and "esl.pair_outcome" in r] == [
+        {"event": "annotate", "esl.pair_outcome": "handed_off"}
+    ]
+    assert rows[-1] == {"event": "annotate", "esl.pair_outcome": "handed_off"}
+    assert {"event": "annotate", "esl.lifecycle": "completed"} in tail
+
+
+def test_a_donor_without_a_warmup_final_seal_is_stopped_before_the_handoff(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_h_pair_request import Fault
+
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.analyze.h_aggregate import load_h_run
+
+    log = TagLog(monkeypatch)
+    _, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))  # DH-42 row 1: MISSING_ENDPOINT
+    status, error, _, observability = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("stopped")),
+        ("finish", "donor", "FAILED"),
+        ("tag", "donor", outcome("stopped_before_handoff")),
+    ]
+    # control: the post-run_end annotate row stays invisible to the L3 loader
+    load_h_run(
+        observability / "donor" / "metrics.jsonl", observability / "donor" / "worker-log.jsonl"
+    )
+
+
+def test_a_donor_with_a_nonfinite_endpoint_hands_off_only_once_the_recipient_run_is_open(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_h_pair_request import Fault
+
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+
+    log = TagLog(monkeypatch)
+    _, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "prediction", 1, UndefinedDirection(2))  # DH-42 row 2: NONFINITE
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("stopped")),
+        ("finish", "donor", "FAILED"),
+        *HANDED_OFF_COMPLETE,
+    ]
+
+
+def test_a_d10_operator_stop_of_the_donor_is_stopped_before_the_handoff(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = TagLog(monkeypatch)
+    request = pair_request(pair)
+    objects = marker_store(request, encode_stop_marker(request, ("prediction", 2, "donor")))
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("stopped")),
+        ("finish", "donor", "FINISHED"),
+        ("tag", "donor", outcome("stopped_before_handoff")),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fault", "lifecycle"),
+    [
+        # an execution-class training stop: the crash clause keeps the cell's ``live``
+        ("execution_defect", None),
+        # DH-45: a post-training stage of the donor raised (the span-diagnostics gap)
+        ("diagnostic_gap", "stopped"),
+    ],
+)
+def test_a_donor_failure_before_the_handoff_is_stopped_before_the_handoff(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, fault: str, lifecycle: str | None
+) -> None:
+    from tests.test_h_pair_request import Fault
+
+    from entropic_substrate.ladder.run import worker_execution
+    from entropic_substrate.ladder.run.span_states import SpanPopulationGap
+
+    log = TagLog(monkeypatch)
+    _, objects, marker = pair_world(tmp_path, pair)
+    if fault == "execution_defect":
+        Fault(monkeypatch, "warmup", 1, RuntimeError("injected reader refusal"))
+    else:
+
+        def diagnostics(*args: Any, **kwargs: Any) -> Any:
+            raise SpanPopulationGap({2: 1}, {2: 0})
+
+        monkeypatch.setattr(worker_execution, "run_span_diagnostics", diagnostics)
+    status, _, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 2
+    assert log.events == [
+        ("open", "donor", LIVE),
+        *([] if lifecycle is None else [("tag", "donor", life(lifecycle))]),
+        ("finish", "donor", "FAILED"),
+        ("tag", "donor", outcome("stopped_before_handoff")),
+    ]
+
+
+def test_a_paused_donor_is_paused_before_the_handoff_and_its_resume_is_live_again(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = TagLog(monkeypatch)
+    request = pair_request(
+        pair,
+        cells=(PairCell(pair.donor, None, ("prediction", 2)), PairCell(pair.recipient, None, None)),
+    )
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("paused")),
+        ("finish", "donor", "FINISHED"),
+        ("tag", "donor", outcome("paused_before_handoff")),
+    ]
+    report = collect(tmp_path, objects, request, "collected-pause")
+    assert report is not None and report["capture_status"] == "pause_bytes_verified"
+    evidence = tmp_path / "collected-pause"
+    resumed = build_pair_resume_request(request, evidence, nonce="2" * 64, collection=report)
+    log.events.clear()
+    result, _, _ = run_resumed(tmp_path, pair, resumed, evidence, "pod-resumed")
+    assert result["status"] == "probe_workload_complete"
+    # the resume opens a run of its own: ``live`` again, then the decisions of THIS pod
+    assert log.events == [
+        ("open", "donor", LIVE),
+        ("tag", "donor", life("completed")),
+        ("finish", "donor", "FINISHED"),
+        *HANDED_OFF_COMPLETE,
+    ]
+
+
+def test_a_paused_recipient_is_paused_after_the_donor_handed_off(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = TagLog(monkeypatch)
+    request = pair_request(
+        pair,
+        cells=(PairCell(pair.donor, None, None), PairCell(pair.recipient, None, ("prediction", 2))),
+    )
+    objects = _ObjectStore()
+    marker = publish_probe_request(objects, request, tmp_path)
+    status, error, _, _ = run_command(tmp_path, objects, marker)
+    assert status == 0, error
+    assert log.events[3:] == [
+        ("open", "recipient", LIVE),
+        ("tag", "donor", outcome("handed_off")),
+        ("tag", "recipient", life("paused")),
+        ("finish", "recipient", "FINISHED"),
+    ]
+
+
+def test_a_failed_handoff_is_stopped_before_the_handoff_and_opens_no_recipient_run(
+    tmp_path: Path, pair: Pair
+) -> None:
+    from tests.test_h_pair_request import RemovingSinks
+
+    from entropic_substrate.ladder.run.object_worker import run_object_worker
+
+    _, objects, marker = pair_world(tmp_path, pair)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sinks = RemovingSinks(tmp_path / "obs", workspace)
+    with pytest.raises(ValueError):
+        run_object_worker(objects, marker, workspace, max_request_bytes=MAX, cell_sinks=sinks)
+    assert sinks.begun == ["donor"]
+    assert sinks.tags == [("donor", "completed"), ("pair", "stopped_before_handoff")]

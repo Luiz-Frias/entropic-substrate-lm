@@ -27,6 +27,7 @@ from entropic_substrate.ladder.run.codec_handoff import materialize_codec_handof
 from entropic_substrate.ladder.run.generation import run_probe_generation
 from entropic_substrate.ladder.run.journal import artifact_reference, schema_records, write_json
 from entropic_substrate.ladder.run.native_verification import verify_native_capture
+from entropic_substrate.ladder.run.pair_run_tags import CellLifecycle, PairOutcome
 from entropic_substrate.ladder.run.runner import (
     CellScope,
     ReceiptBinding,
@@ -380,10 +381,16 @@ class CellSinks(Protocol):
 
     ``begin`` builds the cell's sink (re-pointing the worker log once, inside the provider);
     ``finish`` terminates that cell's run exactly once. This module never builds or finishes a
-    sink (FOR-1693, P5-15).
+    sink (FOR-1693, P5-15). DH-50 (operator ruling 2026-11-03): ``begin`` opens the run tagged
+    ``esl.lifecycle = live``; ``lifecycle`` replaces that cell's tag when it pauses, stops or
+    completes; ``pair_outcome`` sets ``esl.pair_outcome`` on the DONOR's run.
     """
 
     def begin(self, cell: str, profile: HProfile) -> MetricSink: ...
+
+    def lifecycle(self, cell: str, value: CellLifecycle) -> None: ...
+
+    def pair_outcome(self, value: PairOutcome) -> None: ...
 
     def finish(self, cell: str, status: Literal["FINISHED", "FAILED"]) -> None: ...
 
@@ -402,10 +409,13 @@ class CellObserver(Protocol):
 
     ``focus`` names the cell the loop is entering, BEFORE anything of it can fail (so a hand-off
     failure is the recipient's); ``begin`` opens the cell (its ``run_start`` and sink) and returns
-    its hooks; ``end`` closes it with its own on-disk outcome (its ``run_end`` and run status).
+    its hooks; ``end`` closes it with its own on-disk outcome (its ``run_end`` and run status);
+    ``pair_outcome`` records the pair's hand-off decision on the donor's run (DH-50), once.
     """
 
     def focus(self, cell: str) -> None: ...
+
+    def pair_outcome(self, value: PairOutcome) -> None: ...
 
     def begin(self, cell: str, profile: HProfile, runtime: dict[str, object]) -> CellHooks: ...
 
@@ -835,6 +845,10 @@ def _execute_pair(
             if cells is None
             else cells.begin(cell.token, cell.profile, runtime)
         )
+        if index == 1 and cells is not None:
+            # DH-50: the donor handed off once the recipient STARTS, i.e. its run is open; never
+            # before (a hand-off or recipient-open failure leaves the pair stopped before it)
+            cells.pair_outcome("handed_off")
         try:
             trained, operator_stopped = train(cell, index, resume, hooks)
         except Exception as error:
@@ -862,6 +876,17 @@ def _execute_pair(
     handed_off = donor.outcome == "complete" or (
         donor.outcome == "scientific_gap" and donor.reason is H1ExclusionReason.NONFINITE_ENDPOINT
     )
+    if not handed_off and cells is not None:
+        # DH-50: the pair's decision when the donor returned without a hand-off. A raise out of
+        # the donor (an execution-class stop, a DH-45 post-training failure) or out of the
+        # hand-off never reaches here: object_worker's failure arm records it as stopped.
+        match donor.outcome:
+            case "paused":
+                cells.pair_outcome("paused_before_handoff")
+            case "stopped_by_operator" | "scientific_gap":
+                cells.pair_outcome("stopped_before_handoff")
+            case other:
+                raise ValueError(f"a donor that returned {other!r} has no DH-50 pair outcome")
     if handed_off and recipient_resume is not None:
         # C-L4c-2 case 3: the recipient resumes from its OWN receipt (never the hand-off receipt:
         # R3); its root came with the inputs, the donor's root too, and no hand-off is made again

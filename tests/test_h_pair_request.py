@@ -883,10 +883,17 @@ class RemovingSinks:
         self.observability, self.workspace = observability, workspace
         self.begun: list[str] = []
         self.finished: list[tuple[str, str]] = []
+        self.tags: list[tuple[str, str]] = []
 
     def begin(self, cell: str, profile: Any) -> Any:
         self.begun.append(cell)
         return self._sink(self.observability / cell / "metrics.jsonl")
+
+    def lifecycle(self, cell: str, value: str) -> None:
+        self.tags.append((cell, value))
+
+    def pair_outcome(self, value: str) -> None:
+        self.tags.append(("pair", value))
 
     def finish(self, cell: str, status: str) -> None:
         self.finished.append((cell, status))

@@ -849,6 +849,12 @@ def test_a_failed_cells_run_is_finished_failed_through_the_pair_observer_end(
         def begin(self, cell: str, profile: object) -> object:
             return JsonlSink(tmp_path / "obs" / cell / "metrics.jsonl")
 
+        def lifecycle(self, cell: str, value: str) -> None:
+            return None
+
+        def pair_outcome(self, value: str) -> None:
+            return None
+
         def finish(self, cell: str, status: str) -> None:
             self.finished.append((cell, status))
 

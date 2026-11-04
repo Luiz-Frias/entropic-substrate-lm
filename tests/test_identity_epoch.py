@@ -977,19 +977,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "18507f7e422cbfe6131185d5ee3cc9377c0c8befa6bcead6bfe55a3570cdedac",  # pragma: allowlist secret
+    ): "dbdf1253fead4fb28a9cefd23f2c7716b5ca7519633eb2f8ad6b0f0a2906ab91",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "ce0fead879831014c97be39050da7768b8c45fca97078659e468a97a043b5ba4",  # pragma: allowlist secret
+    ): "427f02d119402a99b3e5ea2290395244ded184c5fc889058d45af015eba95a97",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "5fd2492d55b0a28f09f22d2acd052d709ed7f66ce250beb045fa58a4b46de8f2",  # pragma: allowlist secret
+    ): "da88c0cefa372ad9b071fae3a23e3772f37cbc91c09249bb9119f81523212834",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "2b352631e025586e16e93ce476dd1f55313bb10d387c0b1da3a55d33e106d7d8",  # pragma: allowlist secret
+    ): "ba7b8f27b1b0075a3aedf0009b20c192d4ef4f9220712f637257105c98f42822",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -999,7 +999,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "fe819996592a3ac24f2a5faf5972024933452d19a13881b4e31a1ba9a2223dda",  # pragma: allowlist secret
+    ): "41c07d99016bca8cfed47023337afd8cdedfeddc41ce7dbd60341f4fca130518",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {
