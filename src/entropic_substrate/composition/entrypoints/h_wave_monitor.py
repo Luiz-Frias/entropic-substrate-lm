@@ -58,8 +58,19 @@ adds ``tags.cell`` beside the shared ``request_sha256`` filter. A single-profile
 run name, total and filter string byte for byte (its run carries no cell tag, so a cell clause
 there would match nothing and read as "no progress" without saying why).
 
+Never-started recipient (DH-50, operator ruling 2026-11-03, PR #431 comment 4460563985): a
+pair's recipient run exists only once the donor handed off, so a pair that stopped before the
+hand-off leaves a recipient arm reading ``run_not_found`` for ever. The worker tags the donor's
+run ``esl.pair_outcome`` (``ladder.run.pair_run_tags``; ``RunReading`` carries it and the cell's
+``esl.lifecycle``, from the displayed attempt, parsed against their closed vocabularies). A
+recipient arm reading ``run_not_found`` is TERMINAL iff the donor arm's reading of the SAME
+tick carries ``stopped_before_handoff``; ``paused_before_handoff``, ``handed_off``, ``live``, a
+missing tag or a missing donor run keep it pending (a resume may still start it, or its pod is
+still allocating). No read is added: the donor arm's own reading is reused.
+
 Exit codes (three honest exits plus usage and interrupt): 0 every arm's run reached
-a terminal MLflow status; 3 the tick budget was exhausted with arms still running; 1
+a terminal MLflow status, or is a recipient retired by its donor's
+``stopped_before_handoff``; 3 the tick budget was exhausted with arms still running; 1
 failure (unusable launch, tracking URI or source); 2 usage; 130 interrupt. Nothing
 runs and no environment is read at import.
 """
@@ -85,6 +96,12 @@ from typing import Any, Protocol, cast
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.run.h_probe_launch import H_SERIES_EXPERIMENT, parse_probe_launch
+from entropic_substrate.ladder.run.pair_run_tags import (
+    CELL_LIFECYCLES,
+    LIFECYCLE_TAG,
+    PAIR_OUTCOME_TAG,
+    PAIR_OUTCOMES,
+)
 from entropic_substrate.ladder.run.worker.h_probe_host_log import emit
 from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     HOST_MONITOR_END,
@@ -143,7 +160,9 @@ class RunReading:
 
     ``step`` and ``run_status`` are the displayed attempt's. ``attempts`` (same-named runs
     seen) and ``arm_terminal`` (every attempt terminal; ``None`` = judge ``run_status``
-    alone) are additive facts that never take part in equality.
+    alone) are additive facts that never take part in equality, and so are the displayed
+    attempt's DH-50 tags ``lifecycle`` (``esl.lifecycle``) and ``pair_outcome``
+    (``esl.pair_outcome``), each ``None`` when the run carries no such tag.
     """
 
     state: str
@@ -151,6 +170,8 @@ class RunReading:
     run_status: str | None = None
     attempts: int | None = field(default=None, compare=False)
     arm_terminal: bool | None = field(default=None, compare=False)
+    lifecycle: str | None = field(default=None, compare=False)
+    pair_outcome: str | None = field(default=None, compare=False)
 
 
 class RunSource(Protocol):
@@ -283,6 +304,32 @@ class MlflowRestSource:
             return RunReading(STATE_READ_FAILED)
 
 
+def _dh50_tags(tags: object) -> tuple[str | None, str | None]:
+    """The two DH-50 tags of one run row, each checked against its closed vocabulary.
+
+    MLflow serves ``data.tags`` as a list of ``{"key", "value"}`` strings; other keys are not
+    read. A malformed list, a repeated DH-50 key or a value outside its vocabulary raises.
+    """
+    if type(tags) is not list:
+        raise ValueError("run tags must be a list")
+    found: dict[str, str] = {}
+    for tag in cast(list[object], tags):
+        if type(tag) is not dict:
+            raise ValueError("a run tag must be an object")
+        entry = cast(dict[str, object], tag)
+        key, value = entry["key"], entry["value"]
+        if type(key) is not str or type(value) is not str:
+            raise ValueError("a run tag maps text to text")
+        if key not in (LIFECYCLE_TAG, PAIR_OUTCOME_TAG):
+            continue
+        if key in found:
+            raise ValueError(f"run tag {key!r} appears twice")
+        if value not in (CELL_LIFECYCLES if key == LIFECYCLE_TAG else PAIR_OUTCOMES):
+            raise ValueError(f"run tag {key!r} is outside its closed vocabulary")
+        found[key] = value
+    return found.get(LIFECYCLE_TAG), found.get(PAIR_OUTCOME_TAG)
+
+
 def _arm_reading(runs: object) -> RunReading:
     """One arm from its same-named runs (attempts); none at all is 'not found'.
 
@@ -313,12 +360,17 @@ def _arm_reading(runs: object) -> RunReading:
         ]
         if any(type(step) is not int or step < 1 for step in steps):
             raise ValueError("metric steps must be positive integers")
+        lifecycle, outcome = _dh50_tags(cast(dict[str, object], row["data"]).get("tags", []))
         readings.append(
             (
                 started,
-                RunReading(STATE_STEP, max(steps), status)
+                RunReading(
+                    STATE_STEP, max(steps), status, lifecycle=lifecycle, pair_outcome=outcome
+                )
                 if steps
-                else RunReading(STATE_NO_PROGRESS, None, status),
+                else RunReading(
+                    STATE_NO_PROGRESS, None, status, lifecycle=lifecycle, pair_outcome=outcome
+                ),
             )
         )
     newest_first = [reading for _, reading in sorted(readings, key=lambda item: -item[0])]  # stable
@@ -331,6 +383,8 @@ def _arm_reading(runs: object) -> RunReading:
         shown.run_status,
         attempts=len(newest_first),
         arm_terminal=all(r.run_status in _TERMINAL_RUN_STATUSES for r in newest_first),
+        lifecycle=shown.lifecycle,
+        pair_outcome=shown.pair_outcome,
     )
 
 
@@ -340,6 +394,7 @@ class _Arm:
     total: int | None
     request_sha256: str | None = None
     cell: str | None = None  # a pair arm only (FOR-1694)
+    donor: int | None = None  # a recipient arm only (DH-50): the index of its donor's arm
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -368,8 +423,10 @@ def _arms(args: argparse.Namespace) -> list[_Arm]:
         )
         request = parse_probe_launch(payload, max_bytes=args.max_launch_bytes).request
         if isinstance(request, PairProbeRequest):
-            # one arm per (request, cell): each cell is its own run, named by its own identity
-            for cell in request.cells:
+            # one arm per (request, cell): each cell is its own run, named by its own identity;
+            # the recipient arm (cells[1], after the donor's hand-off) points at its donor's arm
+            donor_arm = len(arms)
+            for index, cell in enumerate(request.cells):
                 schedule = cell.profile.schedule
                 arms.append(
                     _Arm(
@@ -377,6 +434,7 @@ def _arms(args: argparse.Namespace) -> list[_Arm]:
                         schedule.warmup_steps + schedule.steps,
                         request.digest,
                         cell.token,
+                        None if index == 0 else donor_arm,
                     )
                 )
             continue
@@ -397,6 +455,21 @@ def _arms(args: argparse.Namespace) -> list[_Arm]:
     if len({arm.run_name for arm in arms}) != len(arms):
         raise ValueError("arms must be distinct")
     return arms
+
+
+def _arm_is_terminal(arm: _Arm, reading: RunReading, tick: Sequence[RunReading]) -> bool:
+    """One arm's verdict for this tick; a recipient's missing run defers to its donor (DH-50)."""
+    if (
+        arm.donor is not None
+        and reading.state == STATE_RUN_NOT_FOUND
+        and tick[arm.donor].pair_outcome == "stopped_before_handoff"
+    ):
+        return True
+    return (
+        reading.arm_terminal
+        if reading.arm_terminal is not None
+        else reading.run_status in _TERMINAL_RUN_STATUSES
+    )
 
 
 def _default_source(environ: Mapping[str, str], timeout_seconds: float) -> RunSource:
@@ -441,7 +514,7 @@ def run_wave_monitor(
         arms = _arms(args)
         source = source_factory(environ, timeout)
         for done in range(1, ticks + 1):
-            terminal = 0
+            readings: list[RunReading] = []
             for arm in arms:
                 try:
                     if arm.request_sha256 is None:
@@ -470,11 +543,10 @@ def run_wave_monitor(
                 if reading.attempts is not None:
                     fields["attempts"] = reading.attempts
                 emit("info", HOST_MONITOR_TICK, run_name=arm.run_name, tick=done, **fields)
-                terminal += (
-                    reading.arm_terminal
-                    if reading.arm_terminal is not None
-                    else reading.run_status in _TERMINAL_RUN_STATUSES
-                )
+                readings.append(reading)
+            terminal = sum(
+                _arm_is_terminal(arm, readings[i], readings) for i, arm in enumerate(arms)
+            )
             if terminal == len(arms):
                 emit("info", HOST_MONITOR_END, outcome="all_runs_terminal", ticks=done)
                 return EXIT_OK

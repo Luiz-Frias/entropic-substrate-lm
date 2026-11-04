@@ -949,3 +949,149 @@ def test_a_cell_that_could_break_the_filter_is_refused_before_any_request(cell: 
     with pytest.raises(ValueError, match="safe token and its request digest"):
         rest(opener).latest("h-series", "h-worker-abc", cell="donor")  # a cell needs its digest
     assert not opener.requests
+
+
+# ---------------------------------------------------------------------------
+# DH-50 (operator ruling 2026-11-03): a never-started recipient arm retires only on the donor's
+# ``esl.pair_outcome = stopped_before_handoff``; paused, live, a missing tag or a missing donor run
+# keep it pending (the FOR-1657 run_not_found-keeps-ticking behaviour).
+# ---------------------------------------------------------------------------
+class CellSource:
+    """A scripted client keyed by the pair cell searched: each cell repeats its own reading."""
+
+    def __init__(self, **readings: RunReading) -> None:
+        self.readings, self.calls = readings, []
+
+    def latest(self, experiment: str, run_name: str, **keywords: str) -> RunReading:
+        self.calls.append(keywords.get("cell"))
+        return self.readings[keywords["cell"]]
+
+
+def pair_wave(
+    tmp_path: Path, source: CellSource, *, ticks: str
+) -> tuple[int, list[dict[str, Any]]]:
+    from tests.test_h_pair_remote import pilot_pair_launch
+
+    (tmp_path / "launch.json").write_bytes(pilot_pair_launch(tmp_path).payload)
+    return go(
+        source,
+        "--launch-file",
+        str(tmp_path / "launch.json"),
+        "--max-launch-bytes",
+        "1000000",
+        ticks=ticks,
+    )
+
+
+NOT_FOUND = RunReading("run_not_found")
+
+
+def test_a_donor_stopped_before_the_handoff_retires_the_never_started_recipient(
+    tmp_path: Path,
+) -> None:
+    """The lane-430 repro (comment 4460563985): a donor that stopped at warm-up-final with no
+    hand-off left a recipient run that will never exist; the wave now ends with exit 0."""
+    donor = RunReading(
+        "step", 2, "FAILED", lifecycle="stopped", pair_outcome="stopped_before_handoff"
+    )
+    source = CellSource(donor=donor, recipient=NOT_FOUND)
+    code, records = pair_wave(tmp_path, source, ticks="3")
+    assert code == EXIT_OK
+    assert records[-1]["outcome"] == "all_runs_terminal" and records[-1]["ticks"] == 1
+    # the recipient's tick still renders its own explicit state, never the donor's
+    ticks = [r for r in records if r["event"] == "host.monitor.tick"]
+    assert [t["state"] for t in ticks] == ["step", "run_not_found"]
+
+
+@pytest.mark.parametrize(
+    "donor",
+    [
+        # paused before the hand-off: a resume launch may still start the recipient
+        RunReading("step", 2, "FINISHED", lifecycle="paused", pair_outcome="paused_before_handoff"),
+        # live with no pair outcome yet: the hand-off decision has not been taken
+        RunReading("step", 2, "RUNNING", lifecycle="live"),
+        # a terminal donor with no tag at all (a crash, or a pre-DH-50 image) proves nothing
+        RunReading("step", 2, "FAILED"),
+        # the hand-off happened: the recipient's pod may still be allocating
+        RunReading("step", 6, "FINISHED", lifecycle="completed", pair_outcome="handed_off"),
+        # no donor run at all
+        NOT_FOUND,
+    ],
+    ids=["paused", "live-no-outcome", "untagged", "handed-off", "donor-not-found"],
+)
+def test_any_other_donor_evidence_keeps_the_never_started_recipient_pending(
+    tmp_path: Path, donor: RunReading
+) -> None:
+    source = CellSource(donor=donor, recipient=NOT_FOUND)
+    code, records = pair_wave(tmp_path, source, ticks="3")
+    assert code == EXIT_EXHAUSTED
+    assert records[-1]["outcome"] == "budget_exhausted" and records[-1]["ticks"] == 3
+    assert source.calls == ["donor", "recipient"] * 3
+
+
+@pytest.mark.parametrize("state", ["list_failed", "read_failed", "no_progress_yet"])
+def test_only_a_missing_recipient_run_is_retired_never_a_failed_read_or_a_live_run(
+    tmp_path: Path, state: str
+) -> None:
+    donor = RunReading("step", 2, "FAILED", pair_outcome="stopped_before_handoff")
+    recipient = RunReading(state, None, "RUNNING" if state == "no_progress_yet" else None)
+    code, _ = pair_wave(tmp_path, CellSource(donor=donor, recipient=recipient), ticks="2")
+    assert code == EXIT_EXHAUSTED
+
+
+def test_a_live_donor_holding_the_stopped_outcome_still_has_to_end_its_own_run(
+    tmp_path: Path,
+) -> None:
+    """The tag retires the RECIPIENT arm only; the donor arm stays judged by its own status."""
+    donor = RunReading("step", 2, "RUNNING", pair_outcome="stopped_before_handoff")
+    code, _ = pair_wave(tmp_path, CellSource(donor=donor, recipient=NOT_FOUND), ticks="2")
+    assert code == EXIT_EXHAUSTED
+
+
+def test_the_two_tags_ride_the_reading_without_taking_part_in_equality() -> None:
+    tagged = RunReading("step", 3, "RUNNING", lifecycle="live", pair_outcome="handed_off")
+    assert tagged == RunReading("step", 3, "RUNNING")
+    assert (tagged.lifecycle, tagged.pair_outcome) == ("live", "handed_off")
+
+
+def tagged_row(status: str, step: int, start_time: int, **tags: str) -> dict[str, Any]:
+    row = run_row(status, ("phase_index", step), start_time=start_time)
+    row["data"]["tags"] = [{"key": k, "value": v} for k, v in tags.items()]
+    return row
+
+
+def test_the_rest_source_reads_both_tags_from_the_shown_attempt() -> None:
+    older = tagged_row(
+        "FAILED",
+        2,
+        1000,
+        **{"esl.lifecycle": "stopped", "esl.pair_outcome": "stopped_before_handoff"},
+    )
+    shown = tagged_row("RUNNING", 4, 2000, **{"esl.lifecycle": "live", "request_sha256": "x"})
+    reading = rest(Opener(EXPERIMENT, {"runs": [older, shown]})).latest("h-series", "h-worker-a")
+    assert (reading.lifecycle, reading.pair_outcome) == ("live", None)
+    untagged = rest(Opener(EXPERIMENT, {"runs": [run_row("RUNNING", ("phase_index", 4))]}))
+    reading = untagged.latest("h-series", "h-worker-a")
+    assert (reading.lifecycle, reading.pair_outcome) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        [{"key": "esl.pair_outcome", "value": "stopped"}],  # outside its closed vocabulary
+        [{"key": "esl.lifecycle", "value": "handed_off"}],  # the other tag's vocabulary
+        [
+            {"key": "esl.pair_outcome", "value": "handed_off"},
+            {"key": "esl.pair_outcome", "value": "stopped_before_handoff"},
+        ],  # one key twice
+        [{"key": "esl.lifecycle", "value": 1}],
+        [{"key": "esl.lifecycle"}],
+        ["esl.lifecycle"],
+        {"esl.lifecycle": "live"},
+    ],
+)
+def test_a_tag_the_closed_vocabulary_does_not_admit_is_a_failed_read(tags: object) -> None:
+    row = run_row("FINISHED", ("phase_index", 4))
+    row["data"]["tags"] = tags
+    reading = rest(Opener(EXPERIMENT, {"runs": [row]})).latest("h-series", "h-worker-a")
+    assert reading == RunReading("read_failed")
