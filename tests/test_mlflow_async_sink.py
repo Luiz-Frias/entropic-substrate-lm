@@ -225,6 +225,41 @@ def test_finish_drains_every_queued_metric_batched_in_the_per_metric_shape() -> 
     assert run.data.tags["mlflow.status"] == "FINISHED"
 
 
+def test_the_v2_evaluation_instruments_reach_the_sink_under_their_exact_keys() -> None:
+    """FOR-1704: the existing extractor -> MetricSink -> MLflow path delivers every new key, on the
+    global step axis, and delivers NOTHING the extractor did not emit (never invented)."""
+    from tests import evaluation_v2_fixtures as fx
+
+    from entropic_substrate.ladder.run.h_metric_extractor import (
+        HTrainingStepExtractor,
+        project_evaluation,
+    )
+
+    example = fx.example(
+        source_bytes=[2, 6],
+        q={2: [fx.row(-4.0, 1.5), fx.row(-12.0, 1.0)]},
+        prior={2: [fx.row(-5.0, 2.0), fx.row(-18.0, 2.0)]},
+        mixture={2: [fx.row(-4.5, 2.0), fx.row(-13.0, 1.5)]},
+        sd={"q": {2: [0.5, 1.5]}, "prior": {2: [0.1, 0.3]}, "mixture": {2: [0.2, 0.6]}},
+        prior_log_radius=[0.1, 0.3],
+        q_log_radius=[0.2, 0.4],
+        cosine=[0.5, 0.9],
+        usage=([-3.0, -9.0], [-4.0, -8.0]),
+    )
+    report = fx.event([example], step=500)
+    expected = project_evaluation(report)
+    assert expected is not None and "eval/ess_prior_k2" in expected
+    client = _GatedClient()
+    client.gate.set()
+    sink = _sink(client, metric_extractor=HTrainingStepExtractor(warmup_steps=250))
+    sink.log(report)
+    sink.finish()
+    delivered = [metric for batch in client.batches for metric in batch]
+    assert {key: value for key, value, _ in delivered} == pytest.approx(expected)
+    assert {step for _, _, step in delivered} == {750}
+    assert sink.failed_writes == 0
+
+
 def test_a_record_larger_than_the_mlflow_batch_limit_is_chunked_at_1000() -> None:
     class _Wide:
         def extract(self, event: object) -> ExtractedMetrics | None:
