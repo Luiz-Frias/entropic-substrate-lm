@@ -1,5 +1,94 @@
 # Changelog
 
+## [0.12.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.11.0...v0.12.0) (2026-11-04)
+
+
+### Features
+
+* **analyze:** admit a scientifically stopped warm-up-only stream ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **analyze:** admit a scientifically stopped warm-up-only stream ([d38c5b6](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d38c5b65d8c6438bc35b426b81b8c06ec927700f))
+* **analyze:** admit codec hand-off recipients to load_h_run ([443056c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/443056c106b5b44190db2a0d8b18f82994ab9f7d))
+* **analyze:** admit codec hand-off recipients to load_h_run ([cc09105](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cc091059034a35fe3433af9321e6a25d517b783e))
+* **analyze:** admit codec hand-off recipients to load_h_run ([#429](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/429)) ([443056c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/443056c106b5b44190db2a0d8b18f82994ab9f7d))
+* **run:** admit a codec-sharing pair on one worker ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **run:** admit a codec-sharing pair on one worker ([3bfe389](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3bfe389d4f9ca3b134c7ef183a0608e8680412d6))
+* **run:** carry a pair by reference and resume it per cell ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** carry a pair by reference and resume it per cell ([1706779](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/1706779326e6a8d4315b48f2ebab9f0dda64a0fa))
+* **run:** hand the warmed codec to a pair recipient by seal ([443056c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/443056c106b5b44190db2a0d8b18f82994ab9f7d))
+* **run:** hand the warmed codec to a pair recipient by seal ([323c5ff](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/323c5ff5db7f4be8821dfcbedef6f7a711a99f76))
+* **run:** retire a never-started recipient arm on the donor's outcome ([d827316](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d827316884dba54ba962886b5fea045c0dc4a7c0))
+* **run:** seal the launch price and collect a pair by cell ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** seal the launch price and collect a pair by cell ([be222a4](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/be222a468c07f7752a0568afae943807f34557d1))
+* **run:** tag each pair cell's lifecycle and the donor's pair outcome ([0bfe395](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0bfe395a3e9910a9acca48e42092f473113a20f2))
+* **run:** verify a pair on the host, put big objects in parts ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** verify a pair on the host, put big objects in parts ([889ba11](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/889ba11159645ee546966d785de6bf8492d7efa7))
+
+
+### Bug Fixes
+
+* **analyze:** refuse a zero-row pod under either warm-up override ([5a0cfd3](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5a0cfd32dabd9bcf67c5e21de5bde584ec990ec4))
+* **deps:** raise the botocore and boto3 floors to 1.35.2 ([0a6e827](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0a6e8275f53738cf41b5cb191fd98b15ada8caef))
+* **run:** collect a pair that fails at final_snapshot as evidence ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** collect a pair that fails at final_snapshot as evidence ([e297e7b](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e297e7b75071c538abf404b92a1b2b6bc7818cea))
+* **run:** count each stopped key once when a reference repeats its twin ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** count each stopped key once when a reference repeats its twin ([5d5691f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5d5691f89e5734119985a2073e69beed71e5596b))
+* **run:** declare the multipart checksum, guard K3 against odd digests ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** declare the multipart checksum, guard K3 against odd digests ([5ab6891](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5ab6891a6e7c3b119f0389665e4ee4b4d175edce))
+* **run:** one receipt-name rule, real warm-up phase (FOR-1694) ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** one receipt-name rule, real warm-up phase (FOR-1694) ([af4be33](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/af4be33e5d62cb35ae2d057dbb6aede0631249bd))
+* **run:** refuse recipient warm-up targets, keep resume-refusal evidence ([3676dfb](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3676dfb3f4d6d77e114c28477242f25f6196c28e))
+* **run:** require --max-hourly-rate for every launch class ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** require --max-hourly-rate for every launch class ([5726d7d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5726d7d0bd9ec59d1be95ff9f406b82b3389ba08))
+* **run:** restore the smoke-class missing-rate refusal bytes ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** restore the smoke-class missing-rate refusal bytes ([b673310](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/b6733104c6c7cdd93e7ea2c0e62f5538b7369dae))
+* **transport:** abort a lost-race multipart upload exactly once ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **transport:** abort a lost-race multipart upload exactly once ([91ed567](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/91ed567d9c6388d8fd1135a0c9a8aa41553e9202))
+
+
+### Code Refactoring
+
+* **run:** slice multipart parts inside the upload loop ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** slice multipart parts inside the upload loop ([7b0047f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/7b0047f183c193662f8616248c28a96de5b9cccf))
+
+
+### Documentation
+
+* **domain:** add DH-48 null future term admission ([abb608a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/abb608ae5cbe534fad07be5b63c1eff02103c4b0))
+* **domain:** add DH-48 null future term admission ([86c2683](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/86c2683455147703dd80619bb6a9ac6812fe828a))
+* **domain:** add DH-48 null future term admission ([#432](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/432)) ([abb608a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/abb608ae5cbe534fad07be5b63c1eff02103c4b0))
+* **identity:** retract the stale L4c refusal clause for v3 requests ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **identity:** retract the stale L4c refusal clause for v3 requests ([ea1a9d3](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/ea1a9d382a7a9fb8ad236413cd93d4afe2fce0e6))
+* **run:** correct the stop-verb cell semantics and touch set ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** correct the stop-verb cell semantics and touch set ([b3ed3ca](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/b3ed3ca5257bddb0cd1499d3632c1e163f43cdbd))
+* **run:** drop stale line numbers from the pair-resume retraction ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** drop stale line numbers from the pair-resume retraction ([1200217](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/120021797bc373c76847f5d35122e2a319d11173))
+* **run:** name the real S3 adapter class in worker_log_events ([e0620ac](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/e0620ac0f3243d0301552d551b879dd3f02a8393))
+* **run:** retire the v2 launch read and annotate the notes ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** retire the v2 launch read and annotate the notes ([5d37a1a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5d37a1a90fc91415e56cf79b4b7ec8d3f9008f17))
+* **run:** retract false pair status claims in docs and comments ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** retract false pair status claims in docs and comments ([53302fc](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/53302fc7aadc0819085b9bb767f7658b69ef9045))
+* **run:** sync the L4c touch set and record the abort-warning ruling ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **run:** sync the L4c touch set and record the abort-warning ruling ([02e69b7](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/02e69b7aa6b9ce573f4ef9d97557ebb8a8ea336f))
+* **scripts:** document the optional k3 pair_requests key ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **scripts:** document the optional k3 pair_requests key ([8a41859](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8a418597d8d1f333431d731028aae6610c9ad176))
+* **workflows:** brief L4c from the certified L4b tip ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **workflows:** brief L4c from the certified L4b tip ([2eb834e](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/2eb834ea948034a2c33bdac4e490813f42f32870))
+* **workflows:** brief L4c from the certified L4b tip ([#431](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/431)) ([3760679](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/3760679d232e19f6163ec2e39e8d7ff70ed4a23e))
+* **workflows:** carry the L4b design-gate rulings in its brief ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **workflows:** carry the L4b design-gate rulings in its brief ([8713a40](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/8713a401ac625bef3688f0bd2752eb1f35e0e2dd))
+* **workflows:** correct the L4d and L4e briefs from the W2 review ([abb608a](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/abb608ae5cbe534fad07be5b63c1eff02103c4b0))
+* **workflows:** correct the L4d and L4e briefs from the W2 review ([5950dc2](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/5950dc280daa526a5caf198a02386d471018d223))
+* **workflows:** keep the v1 failure path for pair post-training stages ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **workflows:** keep the v1 failure path for pair post-training stages ([34163a3](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/34163a37955f6df7cec846204333a23c04f6177e))
+* **workflows:** pull result v2 and the stop-marker cell into L4b ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **workflows:** pull result v2 and the stop-marker cell into L4b ([0688f0f](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/0688f0f8e70b004b301976477010cfaac3e7ddaa))
+* **workflows:** record the pod-only pair check in the L4a brief ([443056c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/443056c106b5b44190db2a0d8b18f82994ab9f7d))
+* **workflows:** record the pod-only pair check in the L4a brief ([19f03e4](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/19f03e4a03011fce44b883412e77872316095241))
+* **workflows:** record trunk drift and landing order in the L4a brief ([443056c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/443056c106b5b44190db2a0d8b18f82994ab9f7d))
+* **workflows:** record trunk drift and landing order in the L4a brief ([900dc17](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/900dc177fda5798af54177ed6046bea047d81bb8))
+* **workflows:** widen the loader for stopped donors, carry refusal v2 ([cd7429c](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/cd7429c1cf110f134c1b58e5d6e3b5dd72ff5c4b))
+* **workflows:** widen the loader for stopped donors, carry refusal v2 ([db6d5e5](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/db6d5e53d2f3987c18cdc6e99584d07117528ffa))
+
 ## [0.11.0](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.10.0...v0.11.0) (2026-10-31)
 
 
