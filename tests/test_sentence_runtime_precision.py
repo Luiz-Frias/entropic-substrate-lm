@@ -8,6 +8,7 @@ from typing import NoReturn
 
 import pytest
 import torch
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_execution import engine
 from tests.test_sentence_profile import profile
 from tests.test_sentence_worker_execution import prepared
@@ -81,6 +82,7 @@ def test_initialization_refuses_before_rng_change_and_records_failure(
             output,
             max_source_bytes=1_000_000,
             max_artifact_bytes=10_000_000,
+            latent_usage=POSTERIOR_MEAN,
         )
     failure = json.loads(next(output.glob("*-failure.json")).read_text())
     assert failure["phase"] == "initialization" and failure["step"] == 0
@@ -113,7 +115,7 @@ def test_evaluation_defect_halts_and_retains_partial_attempt(
         raise RuntimeError("injected evaluation defect")
 
     if where == "scoring":
-        monkeypatch.setattr(runtime, "importance_evaluate", fail)
+        monkeypatch.setattr(runtime, "evaluate_proposals", fail)
     elif where == "sampler":
         monkeypatch.setattr(run.validation_sampler, "restore", fail)
     else:
@@ -129,7 +131,7 @@ def test_evaluation_defect_halts_and_retains_partial_attempt(
 
         run.timer = Timer()
     with pytest.raises(RuntimeError, match="injected evaluation defect"):
-        run.evaluate()
+        run.evaluate(POSTERIOR_MEAN)
     assert run.failed and run.last_evaluation["status"] == "execution_defect"
     if where in ("scoring", "timer_stop"):
         assert run.last_evaluation["current_source_examples"]
@@ -149,9 +151,9 @@ def test_evaluation_zero_direction_remains_a_scientific_gap(
     def gap(*args: object, **kwargs: object) -> NoReturn:
         raise UndefinedDirection(2)
 
-    monkeypatch.setattr(runtime, "importance_evaluate", gap)
+    monkeypatch.setattr(runtime, "evaluate_proposals", gap)
     with pytest.raises(UndefinedDirection):
-        run.evaluate()
+        run.evaluate(POSTERIOR_MEAN)
     assert run.last_evaluation["status"] == "scientific_gap"
     assert run.last_evaluation["affected_positions"] == 2
 
@@ -166,7 +168,7 @@ def test_training_driver_retains_evaluation_gap_classification(
     def gap(*args: object, **kwargs: object) -> NoReturn:
         raise UndefinedDirection(2)
 
-    monkeypatch.setattr(runtime, "importance_evaluate", gap)
+    monkeypatch.setattr(runtime, "evaluate_proposals", gap)
     with pytest.raises(UndefinedDirection):
         run_probe_training(
             template.profile,
@@ -174,6 +176,7 @@ def test_training_driver_retains_evaluation_gap_classification(
             output,
             max_source_bytes=1_000_000,
             max_artifact_bytes=10_000_000,
+            latent_usage=POSTERIOR_MEAN,
         )
     failure = json.loads(next(output.glob("*-failure.json")).read_text())
     assert failure["status"] == "scientific_gap"

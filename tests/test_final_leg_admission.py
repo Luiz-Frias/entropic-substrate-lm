@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_worker_log_lines import bind_logs, of, read_log
 from tests.test_sentence_worker_execution import prepared
@@ -115,7 +116,7 @@ def test_final_leg_admits_each_artifact_root_with_one_fresh_walk(
     """(a) The run root is walked ONCE (the completion walk), the capture root once."""
     request, root = prepared(tmp_path)
     walks = _instrument(monkeypatch)
-    result = execute_probe_request(request, root)
+    result = execute_probe_request(request, root, latent_usage=POSTERIOR_MEAN)
     # Artifacts and status are unchanged by the reuse.
     assert result["status"] == "probe_workload_complete"
     assert result["scientific_authority"] == "none"
@@ -162,7 +163,9 @@ def test_the_object_worker_result_admission_reuses_the_same_walk(
     workspace = tmp_path / "object-worker"
     workspace.mkdir()
     walks = _instrument(monkeypatch)
-    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert walks.progress == ["runner", "runner", "trace_capture"], walks.progress
     assert "object_worker" not in walks.progress
     assert walks.resume == [] and walks.bare == [], (walks.resume, walks.bare)
@@ -173,7 +176,7 @@ def test_a_paused_leg_still_hands_its_walk_to_the_readback(
 ) -> None:
     request, root = prepared(tmp_path, pause=("prediction", 2))
     walks = _instrument(monkeypatch)
-    result = execute_probe_request(request, root)
+    result = execute_probe_request(request, root, latent_usage=POSTERIOR_MEAN)
     assert result["status"] == "paused"
     assert walks.progress == ["runner"], walks.progress
 
@@ -192,7 +195,9 @@ def test_one_admission_pair_per_caller_with_the_ruled_memo_provenance(tmp_path: 
     workspace = tmp_path / "object-worker"
     workspace.mkdir()
     before = len(read_log(log))
-    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     rows = read_log(log)[before:]
     starts, ends = of(rows, "admission.start"), of(rows, "admission.end")
     callers = [
@@ -272,7 +277,7 @@ def test_a_paused_run_emits_the_completion_pair_and_the_readback_pair_only(
     log = tmp_path / "obs" / "worker-log.jsonl"
     bind_logs(log)
     request, root = prepared(tmp_path, pause=("prediction", 2))
-    execute_probe_request(request, root)
+    execute_probe_request(request, root, latent_usage=POSTERIOR_MEAN)
     rows = _admission_rows(read_log(log))
     assert [(r["event"], r["caller"], r["memo"]) for r in rows] == [
         ("admission.start", "completion", "fresh"),
@@ -287,7 +292,9 @@ def test_mid_training_checkpoint_walks_emit_no_admission_event(tmp_path: Path) -
     log = tmp_path / "obs" / "worker-log.jsonl"
     bind_logs(log)
     request, root = prepared(tmp_path, pause=("prediction", 2))
-    execute_probe_request(request, root, on_checkpoint=lambda _artifact: None)
+    execute_probe_request(
+        request, root, on_checkpoint=lambda _artifact: None, latent_usage=POSTERIOR_MEAN
+    )
     callers = [r["caller"] for r in of(read_log(log), "admission.start")]
     assert callers == ["completion", "training_readback"]
 

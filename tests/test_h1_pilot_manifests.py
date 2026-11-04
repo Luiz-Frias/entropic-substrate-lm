@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import tests.test_span_state_collection as span_fixture
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_worker_command_observability import MAX_REQUEST, _worker
 from tests.test_sentence_worker_execution import prepared
@@ -434,7 +435,9 @@ def test_object_floor_matches_a_real_tiny_object_worker_run(
     base = span_fixture.profile
     monkeypatch.setattr(span_fixture, "profile", lambda: _with_continuations(base(), continuations))
     request, objects, marker, root = _worker(tmp_path)
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, latent_usage=POSTERIOR_MEAN
+    )
     assert request.profile.schedule.generation_continuations == continuations
     written = {key for key in objects.publishes if "/outputs/" in key}
     assert required_checkpoint_floor(request.profile.schedule).max_objects == len(written) + 1
@@ -531,7 +534,9 @@ def measured_final_snapshot(tmp_path_factory: pytest.TempPathFactory) -> Measure
     1,181,538 against 1,181,501 on two runs).
     """
     request, objects, marker, root = _worker(tmp_path_factory.mktemp("real-final-snapshot"))
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, latent_usage=POSTERIOR_MEAN
+    )
     outputs = f"{request.prefix}/outputs/"
     sizes = {
         key.removeprefix(outputs): len(payload)
@@ -627,7 +632,9 @@ def test_a_real_worker_refuses_a_cell_sized_without_the_allowance_at_its_final_s
     root = tmp_path / "object-worker"
     root.mkdir()
     with pytest.raises(ExceptionGroup) as raised:
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST)
+        run_object_worker(
+            objects, marker, root, max_request_bytes=MAX_REQUEST, latent_usage=POSTERIOR_MEAN
+        )
     # The worker failure and the failure snapshot's delivery fail the same byte check.
     assert [str(error) for error in raised.value.exceptions] == [
         "worker snapshot byte budget exceeded"

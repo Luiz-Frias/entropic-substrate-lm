@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_execution import engine
 from tests.test_sentence_rollout import scripted_tokens
 
@@ -35,6 +36,7 @@ def trained(root: Path) -> tuple[SentenceExecution, Path, ArtifactIdentity]:
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     return template, output, result.receipt
 
@@ -154,6 +156,7 @@ def test_generation_rejects_a_partial_training_receipt(tmp_path: Path) -> None:
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         stop_after_seal=lambda phase, step: phase == "codec_warmup",
+        latent_usage=POSTERIOR_MEAN,
     )
     with pytest.raises(ValueError, match="complete training"):
         run_probe_generation(
@@ -521,6 +524,7 @@ def test_the_continuation_count_comes_from_the_profile(tmp_path: Path) -> None:
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     ).receipt
     result = run_probe_generation(output, training, profile, three.source_root, **ARGS)
     raw = read_json(output, result.receipt, max_bytes=LIMIT)

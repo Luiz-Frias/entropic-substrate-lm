@@ -44,6 +44,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_execution import engine
 from tests.test_sentence_worker_execution import prepared
@@ -110,6 +111,7 @@ def test_live_worker_log_is_uploaded_as_a_run_artifact(tmp_path: Path) -> None:
             max_source_bytes=1_000_000,
             max_artifact_bytes=10_000_000,
             sink=sink,
+            latent_usage=POSTERIOR_MEAN,
         )
     finally:
         sink.finish()

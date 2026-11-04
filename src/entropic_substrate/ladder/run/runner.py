@@ -11,6 +11,7 @@ from uuid import uuid4
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.scoring import LatentUsageEstimator
 from entropic_substrate.kernel.artifacts import artifact_from_mapping, normalize_d1_artifact_root
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
 from entropic_substrate.kernel.runtime.logging import logger
@@ -18,6 +19,7 @@ from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.run.admission import RUN_ADMISSION
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution
+from entropic_substrate.ladder.run.h_metric_extractor import project_evaluation
 from entropic_substrate.ladder.run.journal import (
     artifact_reference,
     json_identity,
@@ -400,7 +402,8 @@ def _read_training_progress(
         if (
             point_state.phase != "prediction"
             or point_state.step != step
-            or evaluation.get("schema") != "h-predictive-evaluation-v1"
+            or evaluation.get("schema")
+            not in ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
             or evaluation.get("run_identity") != profile.identity
             or type(evaluation.get("step")) is not int
             or evaluation["step"] != step
@@ -453,8 +456,13 @@ def run_probe_training(
     authority: RunAuthority | None = None,
     scope: CellScope | None = None,
     corpora: CorpusMemo | None = None,
+    latent_usage: LatentUsageEstimator,
 ) -> TrainingProgress:
     """Run all declared training steps; this result is not a full flywheel verdict.
+
+    ``latent_usage`` (FOR-1704, DH-52) is the injected q-side operand of every evaluation's
+    latent-usage instrument. It is required and has no default: the runner holds no instance, and
+    the composition seam above it chooses the one registered operand.
 
     ``scope`` (FOR-1693) names the pair cell this run is; every receipt it writes binds it
     beside the authority's digest (progress v2). A resume must present a receipt carrying the
@@ -631,7 +639,7 @@ def run_probe_training(
                 logger.bind(event=EVALUATION_START, global_step=evaluation_global_step).info(
                     render(EVALUATION_START, global_step=evaluation_global_step)
                 )
-                report = execution.evaluate()
+                report = execution.evaluate(latent_usage)
                 report["checkpoint_seal"] = artifact_reference(root, last_seal)
                 evaluation = write_json(
                     root,
@@ -650,10 +658,18 @@ def run_probe_training(
                     corpora=corpora,
                 )
                 evaluation_seconds = time.perf_counter() - evaluation_clock
+                # FOR-1704: the instruments ride the SAME projection the sink's extractor reads,
+                # as fields of this one event (appended after global_step and seconds; the
+                # rendered sentence is unchanged). An admitted report that does not project is a
+                # defect, not a quiet omission.
+                instruments = project_evaluation(report)
+                if instruments is None:
+                    raise ValueError("an admitted evaluation report did not project")
                 logger.bind(
                     event=EVALUATION_END,
                     global_step=evaluation_global_step,
                     seconds=evaluation_seconds,
+                    **instruments,
                 ).info(
                     render(
                         EVALUATION_END,

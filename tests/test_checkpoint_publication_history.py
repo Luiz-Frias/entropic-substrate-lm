@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_request import request
@@ -154,7 +155,9 @@ def test_final_snapshot_puts_only_files_new_since_the_last_checkpoint(tmp_path: 
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
 
     # The last checkpoint's own EVENT (never its marker, which is published
     # one step earlier and would leave that event itself in the tail) is the

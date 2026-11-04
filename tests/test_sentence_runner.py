@@ -4,9 +4,11 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_execution import engine
 
 import entropic_substrate.ladder.run.seals as seals_module
+from entropic_substrate.core.sentence.scoring import LatentUsageEstimator
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from entropic_substrate.ladder.run.journal import read_json
 from entropic_substrate.ladder.run.runner import (
@@ -30,6 +32,7 @@ def test_training_driver_completes_declared_budgets_and_evaluation_grid(tmp_path
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert result.status == "training_complete"
     seal = read_seal(
@@ -58,6 +61,7 @@ def test_pause_and_resume_finish_without_restarting_the_codec(tmp_path: Path) ->
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         stop_after_seal=lambda phase, step: phase == "prediction" and step == 2,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert paused.status == "paused"
     completed = run_probe_training(
@@ -67,6 +71,7 @@ def test_pause_and_resume_finish_without_restarting_the_codec(tmp_path: Path) ->
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         resume=paused.receipt,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert completed.status == "training_complete"
     last = read_seal(
@@ -92,6 +97,7 @@ def test_fresh_run_never_overwrites_an_existing_output(tmp_path: Path) -> None:
             tmp_path,
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
+            latent_usage=POSTERIOR_MEAN,
         )
 
 
@@ -118,6 +124,7 @@ def test_numerical_failure_retains_evidence_and_does_not_emit_completion(
             output,
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
+            latent_usage=POSTERIOR_MEAN,
         )
     failures = list(output.glob("*-failure.json"))
     assert len(failures) == 1
@@ -161,6 +168,7 @@ def test_probe_driver_refuses_scientific_authority_and_remote_successors(tmp_pat
                 output,
                 max_source_bytes=1_000_000,
                 max_artifact_bytes=LIMIT,
+                latent_usage=POSTERIOR_MEAN,
             )
     assert not list(output.iterdir())
 
@@ -175,8 +183,8 @@ def test_empty_evaluation_cannot_satisfy_the_completion_grid(
     output.mkdir()
     original = SentenceExecution.evaluate
 
-    def empty(self: SentenceExecution) -> dict[str, object]:
-        result = original(self)
+    def empty(self: SentenceExecution, latent_usage: LatentUsageEstimator) -> dict[str, object]:
+        result = original(self, latent_usage)
         result["examples"] = []
         return result
 
@@ -188,6 +196,7 @@ def test_empty_evaluation_cannot_satisfy_the_completion_grid(
             output,
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
+            latent_usage=POSTERIOR_MEAN,
         )
 
 
@@ -203,6 +212,7 @@ def test_completed_receipt_is_idempotent_without_reinitializing_training(
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     files = sorted(p.name for p in output.iterdir())
 
@@ -217,6 +227,7 @@ def test_completed_receipt_is_idempotent_without_reinitializing_training(
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         resume=first.receipt,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert second == first and sorted(p.name for p in output.iterdir()) == files
 
@@ -232,6 +243,7 @@ def _paused(tmp_path: Path) -> tuple[TrainingProgress, Path, SentenceExecution]:
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         stop_after_seal=lambda phase, step: phase == "prediction" and step == 2,
+        latent_usage=POSTERIOR_MEAN,
     )
     return paused, output, template
 
@@ -246,6 +258,7 @@ def test_the_completion_walk_hands_its_populated_memo_to_the_caller(tmp_path: Pa
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     memo = result.admission_memo
     assert memo is not None and memo.populated
@@ -269,6 +282,7 @@ def test_training_progress_keeps_its_value_semantics_with_the_memo_riding_along(
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     bare = replace(result, admission_memo=None)
     assert result == bare and hash(result) == hash(bare)
@@ -280,6 +294,7 @@ def test_training_progress_keeps_its_value_semantics_with_the_memo_riding_along(
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         resume=result.receipt,
+        latent_usage=POSTERIOR_MEAN,
     )
     # An already-complete resume ran no completion walk here: nothing to hand on.
     assert again == result and again.admission_memo is None
@@ -326,6 +341,7 @@ def test_a_tampered_journal_is_refused_by_a_fresh_process_resume(tmp_path: Path)
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
             resume=paused.receipt,
+            latent_usage=POSTERIOR_MEAN,
         )
 
 
@@ -345,9 +361,9 @@ def test_evaluations_at_different_steps_draw_different_importance_samples(tmp_pa
     also moves with training, so it cannot attribute the difference)."""
     run = _prediction_run(tmp_path)
     run.advance()
-    first = run.evaluate()
+    first = run.evaluate(POSTERIOR_MEAN)
     run.advance()
-    second = run.evaluate()
+    second = run.evaluate(POSTERIOR_MEAN)
     assert (first["step"], second["step"]) == (1, 2)
     for before, after in zip(first["examples"], second["examples"], strict=True):
         assert before["source_batch"] == after["source_batch"]  # control: same batch
@@ -357,8 +373,8 @@ def test_evaluations_at_different_steps_draw_different_importance_samples(tmp_pa
 def test_repeated_evaluation_at_one_step_reproduces_exactly(tmp_path: Path) -> None:
     run = _prediction_run(tmp_path)
     run.advance()
-    first = run.evaluate()
-    again = run.evaluate()
+    first = run.evaluate(POSTERIOR_MEAN)
+    again = run.evaluate(POSTERIOR_MEAN)
     assert first["examples"]
     for key in ("log_weights", "proposal_log_prob", "decoder_log_prob", "prior_log_prob"):
         assert [e[key] for e in first["examples"]] == [e[key] for e in again["examples"]]
@@ -388,12 +404,22 @@ def test_evaluation_seed_is_the_documented_step_keyed_mixing(
     run.advance()
     with monkeypatch.context() as patch:
         patch.setattr(torch, "manual_seed", spy)
-        run.evaluate()
+        run.evaluate(POSTERIOR_MEAN)
     run.advance()
     with monkeypatch.context() as patch:
         patch.setattr(torch, "manual_seed", spy)
-        run.evaluate()
-    assert seeds == [(run.profile.seed * 0x9E3779B1 + step) % 2**32 for step in (1, 2)]
+        run.evaluate(POSTERIOR_MEAN)
+    # AMENDED 2026-11-04 (FOR-1704): the evaluation also seeds two DERIVED streams per batch
+    # (prior and mixture, inside nested fork_rng blocks), so the old expectation
+    # `seeds == [key(1), key(2)]` is RETRACTED. The q key is still the FIRST seed of each
+    # evaluation and still the documented mixing; the derived seeds never equal a q key or each
+    # other.
+    per_evaluation = 1 + 2 * run.profile.schedule.evaluation_batches
+    assert len(seeds) == 2 * per_evaluation
+    assert [seeds[0], seeds[per_evaluation]] == [
+        (run.profile.seed * 0x9E3779B1 + step) % 2**32 for step in (1, 2)
+    ]
+    assert len(set(seeds)) == len(seeds)
 
 
 def test_step_keyed_seed_survives_the_cpu_generators_32_bit_truncation() -> None:

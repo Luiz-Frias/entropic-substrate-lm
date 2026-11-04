@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_codec_handoff import Pair, make_pair
 from tests.test_h_pair_request import (
@@ -864,7 +865,9 @@ def test_a_single_profile_collection_stays_v1_with_exactly_its_key_set(tmp_path:
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "executed"
     worker.mkdir()
-    object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    object_worker.run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     destination = tmp_path / "collected"
     destination.mkdir()
     report = collect_probe_terminal(
@@ -903,7 +906,9 @@ def test_a_single_profile_collection_refuses_a_destination_that_is_not_fresh_and
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "executed"
     worker.mkdir()
-    object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    object_worker.run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     occupied = tmp_path / "occupied"
     occupied.mkdir()
     (occupied / "earlier.txt").write_text("already here")

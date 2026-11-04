@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_codec_handoff import Pair, make_pair
 from tests.test_h_probe_launch import pilot_request
@@ -442,6 +443,7 @@ def trained_cell(pair: Pair, subject: Any, root: Path, scope: Any = None, **opti
         max_artifact_bytes=LIMIT,
         scope=scope,
         **options,
+        latent_usage=POSTERIOR_MEAN,
     )
 
 
@@ -798,6 +800,7 @@ PARENT_TIP_SCHEMAS = frozenset(
         "h-journal-shard-v1",
         "h-journal-shard-v2",
         "h-predictive-evaluation-v1",
+        "h-predictive-evaluation-v2",
         "h-generation-receipt-v3",
         "h-probe-training-failure-v2",
         "h-generation-failure-v1",
@@ -912,7 +915,14 @@ def test_a_handoff_failure_is_the_recipients_reader_refusal_and_leaves_no_recipi
     workspace.mkdir()
     sinks = RemovingSinks(tmp_path / "obs", workspace)
     with pytest.raises(ValueError):
-        run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000, cell_sinks=sinks)
+        run_object_worker(
+            objects,
+            marker,
+            workspace,
+            max_request_bytes=1_000_000,
+            cell_sinks=sinks,
+            latent_usage=POSTERIOR_MEAN,
+        )
     assert sinks.begun == ["donor"]  # the recipient has no sink, no MLflow run, no metrics, no log
     assert sinks.finished == [("donor", "FINISHED")]
     assert not (tmp_path / "obs" / "recipient").exists()
@@ -1255,7 +1265,9 @@ def test_a_single_profile_request_still_produces_v1_bytes_and_refuses_a_result_v
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     result = json.loads((worker / "worker/result.json").read_text())
     assert result["schema"] == "h-probe-worker-result-v1"
     assert set(result) == {
@@ -1710,7 +1722,9 @@ def test_one_worker_run_replays_each_source_root_once_and_no_sampler_replays(
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     by_root = {r: sum(1 for _, x in roots if x == r) for r in {x for _, x in roots}}
     assert by_root == {"object-worker/source": 1, "capture/source": 1}, roots
     assert replays == []
@@ -1781,25 +1795,70 @@ def test_pair_level_events_carry_the_pair_id_and_cell_events_their_cells_identit
 def test_a_completed_h1_cells_files_are_measured_against_the_analysis_reader(
     tmp_path: Path, pair: Pair
 ) -> None:
-    """P5-15: ``load_h_run`` is run on each completed cell's (metrics, log) and the outcome is
-    REPORTED, not assumed. MEASURED 2026-11-01 on the pair tracer: it REFUSES both cells with a
-    typed ``TelemetryGap`` at the first prediction row, because an H1 cell trains with
-    ``future_weight = 0`` and its prediction rows carry a null ``future_nll_per_dimension``, which
-    the reader admits only in the codec warm-up. That is a latent risk for the analysis lane (not
-    a crash, so not this slice's to fix); the pin below makes a change to either side loud."""
-    from entropic_substrate.ladder.analyze.h_aggregate import load_h_run
-    from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
+    """P5-15, FLIPPED 2026-11-04 (FOR-1716, DH-48 under DH-51): ``load_h_run`` loads each completed
+    cell's (metrics, log) through, with ``future_nll_per_dimension`` summarized as absent.
+
+    RETRACTED (house rule 4): the earlier expectation, MEASURED 2026-11-01, was that the reader
+    REFUSES both cells with a ``TelemetryGap`` at the first prediction row, because an H1 cell
+    trains with ``future_weight = 0``, its prediction rows carry a null
+    ``future_nll_per_dimension``, and the reader admitted that null only in the codec warm-up.
+    Now ``run_start`` carries the authenticated profile manifest and the reader admits the null
+    iff the RECORDED weight is zero. The donor loads on the default path. The recipient commits
+    no ``codec_warmup`` row (its codec came from the donor's warm-up-final seal), so it loads
+    with the hand-off evidence the host verifier admits; loading it on the default path would
+    refuse on warm-up coverage, which is a different, correct refusal."""
+    from dataclasses import asdict
+
+    from tests.test_h_codec_handoff import identity_of, warmup_final
+
+    from entropic_substrate.core.sentence.profile import HProfile
+    from entropic_substrate.ladder.analyze.h_aggregate import CodecHandoffEvidence, load_h_run
+    from entropic_substrate.ladder.run.host_pair_verifier import admit_codec_pair_on_host
 
     _, objects, marker = pair_world(tmp_path, pair)
-    status, error, _, observability = run_command(tmp_path, objects, marker)
+    status, error, workspace, observability = run_command(tmp_path, objects, marker)
     assert status == 0, error
-    for token in ("donor", "recipient"):
-        with pytest.raises(
-            TelemetryGap, match=r"step 1 \(prediction\) has a null future_nll_per_dimension"
-        ):
-            load_h_run(
-                observability / token / "metrics.jsonl", observability / token / "worker-log.jsonl"
-            )
+    donor = load_h_run(
+        observability / "donor" / "metrics.jsonl", observability / "donor" / "worker-log.jsonl"
+    )
+    seals = sorted((workspace / "run" / "recipient").glob("*-prediction-*-seal.json"))
+    verified = admit_codec_pair_on_host(
+        workspace / "run" / "donor",
+        warmup_final(workspace / "run" / "donor"),
+        pair.donor,
+        workspace / "run" / "recipient",
+        identity_of(seals[-1]),
+        pair.recipient,
+        workspace / "source",
+        max_source_bytes=1_000_000,
+        max_artifact_bytes=10_000_000,
+    )
+    recipient = load_h_run(
+        observability / "recipient" / "metrics.jsonl",
+        observability / "recipient" / "worker-log.jsonl",
+        handoff=CodecHandoffEvidence(**asdict(verified)),
+    )
+    for run, profile in ((donor, pair.donor), (recipient, pair.recipient)):
+        assert run.profile_identity == profile.identity
+        assert run.run_start["profile"] == profile.manifest
+        prediction = [scalars for _, phase, scalars in run.training if phase == "prediction"]
+        assert prediction and all("future_nll_per_dimension" not in s for s in prediction)
+    # each cell's manifest is its OWN profile: the two differ, and each authenticates itself
+    assert donor.run_start["profile"] != recipient.run_start["profile"]
+    for run in (donor, recipient):
+        assert HProfile.from_manifest(run.run_start["profile"]).identity == run.profile_identity
+        # the pair site's exact record: the single-profile eight keys plus the manifest (runtime
+        # is held apart by HRun)
+        assert set(run.run_start) == {
+            "schema",
+            "event",
+            "request_sha256",
+            "image",
+            "code_commit",
+            "profile_identity",
+            "run_class",
+            "profile",
+        }
 
 
 def test_the_nonfinite_donors_files_on_the_default_path_are_measured_not_claimed(

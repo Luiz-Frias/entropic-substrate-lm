@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_execution import engine
 
 from entropic_substrate.ladder.run.h_metric_extractor import HTrainingStepExtractor
@@ -63,6 +64,7 @@ def test_committed_training_steps_reach_the_sink_unmodified(tmp_path: Path) -> N
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         sink=sink,
+        latent_usage=POSTERIOR_MEAN,
     )
 
     assert result.status == "training_complete"
@@ -73,9 +75,10 @@ def test_committed_training_steps_reach_the_sink_unmodified(tmp_path: Path) -> N
     # on the training schema instead of assuming the sink sees nothing else.
     training = [row for row in sink.records if row["schema"] == "h-training-step-v2"]
     assert [row["step"] for row in training] == [1, 2, 1, 2, 3, 4]
+    # FOR-1704: a fresh run now writes the v2 evaluation report (v1 stays readable, read-old)
     assert {row["schema"] for row in sink.records} == {
         "h-training-step-v2",
-        "h-predictive-evaluation-v1",
+        "h-predictive-evaluation-v2",
     }
     assert all(row["status"] == "committed" for row in training)
     assert {"objective", "aggregate_norm", "decoder_ce"} <= training[0].keys()
@@ -94,6 +97,7 @@ def test_no_sink_is_the_default_and_training_still_completes(tmp_path: Path) -> 
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
 
     assert result.status == "training_complete"
@@ -308,10 +312,11 @@ def test_evaluation_reports_reach_the_sink_after_their_receipt(tmp_path: Path) -
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
         sink=sink,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert result.status == "training_complete"
     kinds = [row["schema"] for row in sink.records]
-    evaluations = [row for row in sink.records if row["schema"] == "h-predictive-evaluation-v1"]
+    evaluations = [row for row in sink.records if row["schema"] == "h-predictive-evaluation-v2"]
     assert evaluations, kinds
     # The pinned test profile evaluates at every evaluation_interval of its 4
     # prediction steps and at the final step; each report follows its own step's
@@ -377,7 +382,9 @@ def test_the_workers_lifecycle_records_are_not_projected_either(tmp_path: Path) 
     root.mkdir()
     sink = _FakeSink()
 
-    run_object_worker(objects, marker, root, max_request_bytes=1_000_000, sink=sink)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=1_000_000, sink=sink, latent_usage=POSTERIOR_MEAN
+    )
 
     extractor = HTrainingStepExtractor(warmup_steps=request.profile.schedule.warmup_steps)
     lifecycle = [r for r in sink.records if r.get("schema") == "h-run-lifecycle-v1"]

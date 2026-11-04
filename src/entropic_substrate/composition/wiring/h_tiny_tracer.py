@@ -46,6 +46,7 @@ from entropic_substrate.core.sentence.corpus import (
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.records import SourceDocument
+from entropic_substrate.core.sentence.scoring import LatentUsageOperand, latent_usage_estimator
 from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
 from entropic_substrate.kernel.artifacts import normalize_d1_artifact_root
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity
@@ -192,6 +193,7 @@ def run_tiny_trace(
             max_source_bytes=max_source_bytes,
             max_artifact_bytes=max_artifact_bytes,
             sink=sink,
+            latent_usage=latent_usage_estimator(LatentUsageOperand.posterior_mean),
         )
         terminal_status = "FINISHED"
     finally:

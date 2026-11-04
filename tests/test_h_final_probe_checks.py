@@ -22,6 +22,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_aggregate import (
     IDENTITY_A,
@@ -142,6 +143,7 @@ class _Chain:
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
             stop_after_seal=lambda phase, step: phase == "prediction" and step == 2,
+            latent_usage=POSTERIOR_MEAN,
         )
         assert paused.status == "paused"
         completed = run_probe_training(
@@ -151,6 +153,7 @@ class _Chain:
             max_source_bytes=1_000_000,
             max_artifact_bytes=LIMIT,
             resume=paused.receipt,
+            latent_usage=POSTERIOR_MEAN,
         )
         assert completed.status == "training_complete"
         self.stopped = paused.receipt
@@ -315,7 +318,9 @@ class TestResumeRequestBuilder:
         marker = publish_probe_request(objects, request, root)
         worker = tmp_path / "worker-a"
         worker.mkdir()
-        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
         collected = tmp_path / "collected-a"
         collected.mkdir()
         report = collect_probe_terminal(
@@ -340,7 +345,7 @@ class TestResumeRequestBuilder:
         destination = tmp_path / "worker-b"
         destination.mkdir()
         materialize_probe_request(store, published, destination, max_request_bytes=1_000_000)
-        completed = execute_probe_request(resumed, destination)
+        completed = execute_probe_request(resumed, destination, latent_usage=POSTERIOR_MEAN)
         assert completed["status"] == "probe_workload_complete"
         training = completed["training"]
         assert isinstance(training, dict)

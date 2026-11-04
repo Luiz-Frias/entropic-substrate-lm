@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_profile import profile
 from tests.test_sentence_sampling import corpus
 
@@ -66,7 +67,7 @@ def test_evaluation_preserves_training_rng_and_weights(tmp_path: Path) -> None:
     run.advance()
     rng = torch.get_rng_state()
     before = [p.detach().clone() for p in run.model.parameters()]
-    evaluation = run.evaluate()
+    evaluation = run.evaluate(POSTERIOR_MEAN)
     assert evaluation["meaning"] == "importance_weighted_log_marginal_estimate"
     assert evaluation["step"] == 1 and evaluation["examples"]
     torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)

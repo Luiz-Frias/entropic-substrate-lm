@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Literal, TextIO, cast
 
 from entropic_substrate.core.sentence.profile import HProfile
+from entropic_substrate.core.sentence.scoring import LatentUsageOperand, latent_usage_estimator
 from entropic_substrate.kernel.artifacts import read_d1_artifact_bytes
 from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
@@ -58,6 +59,13 @@ from entropic_substrate.ladder.run.worker_transport import (
 
 class UnresolvedWorkerCredentials(ValueError):
     """A provider reference reached the process without secret substitution."""
+
+
+# FOR-1704 (DH-52): the one registered latent-usage operand, chosen HERE, at the worker's
+# composition seam beside the other injected ports (the metric extractor), and nowhere below it.
+# The factory refuses 'draw_average' by name; adding that operand (FOR-1721) is a decision made
+# at this line and in the reader, never a default in the runner or the engine.
+_LATENT_USAGE_OPERAND = LatentUsageOperand.posterior_mean
 
 
 def build_worker_objects(
@@ -306,6 +314,7 @@ def run_worker_command(
                         max_request_bytes=args.max_object_bytes,
                         repo_root=args.repo_root,
                         cell_sinks=provider,
+                        latent_usage=latent_usage_estimator(_LATENT_USAGE_OPERAND),
                     )
                 finally:
                     provider.finish_open()
@@ -390,6 +399,7 @@ def run_worker_command(
                         max_request_bytes=args.max_object_bytes,
                         repo_root=args.repo_root,
                         sink=sink,
+                        latent_usage=latent_usage_estimator(_LATENT_USAGE_OPERAND),
                     )
                     terminal_status = "FINISHED"
                 finally:
