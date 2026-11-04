@@ -19,7 +19,9 @@ Plan sections (paths as given, absolute or relative to the working directory)::
                    "resumed_request": request.json}
     "k1_seam":    {"segments": [[metrics.jsonl, worker-log.jsonl], ...]}
     "k2":         {"records": [controller-result.json, ...], "requests": [request.json, ...]}
-    "k3":         {"metrics": [metrics.jsonl, ...], "request_digests": [hex, ...]}
+    "k3":         {"metrics": [metrics.jsonl, ...], "request_digests": [hex, ...],
+                   optional "pair_requests": [request.json, ...] (a pair request is keyed
+                   by its digest and its donor and recipient identities)}
     "k4":         {"worker_logs": [worker-log.jsonl, ...]}
     "k5":         {"receipts": [generation.json, ...]}
     "k6":         {"metrics": [metrics.jsonl, ...], and one of
@@ -52,9 +54,9 @@ from entropic_substrate.ladder.analyze.h_final_probe_checks import (
     evaluated_samples_from_manifest,
 )
 from entropic_substrate.ladder.run.worker_request import (
+    PairProbeRequest,
     ProbeRequest,
     parse_probe_request,
-    refuse_pair,
 )
 
 _MAX_REQUEST_BYTES = 1_000_000
@@ -75,9 +77,32 @@ def _json(path: object) -> dict[str, Any]:
 def _request(path: object) -> ProbeRequest:
     request = parse_probe_request(Path(str(path)).read_bytes(), max_bytes=_MAX_REQUEST_BYTES)
     if type(request) is not ProbeRequest:
-        # FOR-1693: the H0 checks read single-profile arms; a pair's checks belong to FOR-1694
-        refuse_pair("h0_final_probe_checks")
+        # K1 and K2 read single-profile arms (one receipt chain, one controller record per
+        # request). FOR-1694 carries a pair through K3 only, keyed per (request, cell).
+        raise ValueError(
+            "h0_final_probe_checks K1 and K2 read single-profile arms and do not carry a pair "
+            "request (h-probe-worker-request-v3); a pair's K3 check is keyed per (request, cell) "
+            "through the plan's pair_requests"
+        )
     return request
+
+
+def _pair_cells(paths: Sequence[object]) -> dict[str, tuple[str, str]]:
+    """Pair request digest -> its two cells' profile identities, read from the PARSED request."""
+    cells: dict[str, tuple[str, str]] = {}
+    for path in paths:
+        request = parse_probe_request(Path(str(path)).read_bytes(), max_bytes=_MAX_REQUEST_BYTES)
+        if type(request) is not PairProbeRequest:
+            raise ValueError(f"{path}: k3 pair_requests names a single-profile request")
+        cells[request.digest] = (request.donor.identity, request.recipient.identity)
+    return cells
+
+
+def _k3(spec: Mapping[str, Any]) -> CheckResult:
+    cells = _pair_cells(spec.get("pair_requests", []))
+    digests = [str(d) for d in spec["request_digests"]]
+    digests.extend(digest for digest in cells if digest not in digests)
+    return check_capture([Path(p) for p in spec["metrics"]], digests, cells or None)
 
 
 def _pairs(value: Sequence[Sequence[str]]) -> list[tuple[Path, Path]]:
@@ -134,9 +159,7 @@ CHECKS: dict[str, Callable[[Mapping[str, Any]], CheckResult]] = {
     "k2": lambda spec: check_completion(
         [_json(p) for p in spec["records"]], [_request(p) for p in spec["requests"]]
     ),
-    "k3": lambda spec: check_capture(
-        [Path(p) for p in spec["metrics"]], [str(d) for d in spec["request_digests"]]
-    ),
+    "k3": _k3,
     "k4": lambda spec: check_read_floor([Path(p) for p in spec["worker_logs"]]),
     "k5": lambda spec: check_generation([_json(p) for p in spec["receipts"]]),
     "k6": _k6,

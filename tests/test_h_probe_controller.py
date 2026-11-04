@@ -13,7 +13,7 @@ from botocore.exceptions import (
     ParamValidationError,
     ReadTimeoutError,
 )
-from tests.test_h_probe_launch import launch, pilot_launch
+from tests.test_h_probe_launch import PILOT_CEILING, launch, pilot_launch, pilot_launch_v4
 
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.h_probe_process import ProbeWatchdogProcess
@@ -177,9 +177,11 @@ def setup(
 def test_a_pilot_ceiling_past_its_spend_cap_never_reaches_allocation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rate: float, admitted: bool
 ) -> None:
-    """Rung B: 37 USD/h over the fixture's 3900 s watchdog is past the 40 USD cap."""
+    """Rung B: 37 USD/h over the fixture's 3900 s watchdog is past the 40 USD cap. An UNSEALED
+    (v4) scientific launch keeps this flag-semantics cap check; a v5 launch seals its ceiling
+    (see the sealed tests below)."""
     guard, provider, calls, _clock, _run = setup(tmp_path, monkeypatch, {})
-    guard.launch = pilot_launch()
+    guard.launch = pilot_launch_v4()
     destination = tmp_path / "pilot-capture"
     destination.mkdir()
 
@@ -850,3 +852,85 @@ def test_an_absent_pod_with_a_recoverable_read_every_tick_defers_to_the_deadline
     assert clock[0] == 3 and record["failure_stages"] == ["deadline"]
     assert record["terminal_probe_transient_count"] == 3
     assert not [r for r in records if r.get("event") == "host.provider_absent.observed"]
+
+
+# ---------------------------------------------------------------------------
+# FOR-1694 (launch v5): the controller's price check reads the SEALED hourly ceiling.
+# ---------------------------------------------------------------------------
+def sealed_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    argument: float | None,
+    cost: float,
+) -> tuple[Provider, list[str], Callable[[], dict[str, object]]]:
+    outcome = {"workload_verified": True, "reported_outcome": "probe_workload_complete"}
+    guard, provider, calls, clock, _run = setup(tmp_path, monkeypatch, outcome)
+    guard.launch = pilot_launch()
+    provider.pod = replace(provider.pod, name=guard.launch.pod_name, cost_per_hour=cost)
+    destination = tmp_path / "sealed-capture"
+    destination.mkdir()
+
+    def run() -> dict[str, object]:
+        return run_probe_controller(
+            cast(ProbeWatchdogProcess, guard),
+            provider,
+            cast(D1TrainerMailboxObjectPort, object()),
+            destination,
+            poll_seconds=1,
+            max_hourly_rate=argument,
+            monotonic=lambda: clock[0],
+            wait=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+        )
+
+    return provider, calls, run
+
+
+@pytest.mark.parametrize("argument", [37.0, 36.0, 0.6, PILOT_CEILING + 1e-9])
+def test_a_controller_argument_that_disagrees_with_the_sealed_ceiling_never_reaches_allocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argument: float
+) -> None:
+    _provider, calls, run = sealed_run(tmp_path, monkeypatch, argument, cost=1.0)
+    with pytest.raises(ValueError, match="differs from the launch's sealed hourly price"):
+        run()
+    assert calls == []  # no create, no collect: refused before any provider call
+
+
+@pytest.mark.parametrize("argument", [None, PILOT_CEILING])
+def test_the_measured_price_is_held_to_the_sealed_ceiling_not_to_a_typed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argument: float | None
+) -> None:
+    # exactly at the sealed ceiling: admitted and collected, with or without the argument
+    _provider, calls, run = sealed_run(tmp_path, monkeypatch, argument, cost=PILOT_CEILING)
+    result = run()
+    assert result["status"] == "terminal_collected" and calls == ["create", "collect"]
+
+
+@pytest.mark.parametrize("argument", [None, PILOT_CEILING])
+def test_a_pod_quoted_past_the_sealed_ceiling_is_refused_and_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argument: float | None
+) -> None:
+    provider, calls, run = sealed_run(tmp_path, monkeypatch, argument, cost=PILOT_CEILING + 0.01)
+    with pytest.raises(ProbeControllerFailure) as caught:
+        run()
+    assert calls == ["create"] and provider.deleted == ["owned-pod"]
+    assert caught.value.record["failure_stages"] == ["price_admission"]
+
+
+def test_an_unsealed_launch_without_an_argument_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard, _provider, calls, clock, _run = setup(tmp_path, monkeypatch, {})
+    destination = tmp_path / "unsealed-capture"
+    destination.mkdir()
+    with pytest.raises(ValueError, match="seals no hourly price ceiling"):
+        run_probe_controller(
+            cast(ProbeWatchdogProcess, guard),
+            Provider(guard),
+            cast(D1TrainerMailboxObjectPort, object()),
+            destination,
+            poll_seconds=1,
+            max_hourly_rate=None,
+            monotonic=lambda: clock[0],
+            wait=lambda _: None,
+        )
+    assert calls == []

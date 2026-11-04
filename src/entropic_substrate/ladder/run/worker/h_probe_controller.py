@@ -58,7 +58,7 @@ from entropic_substrate.ladder.run.worker.h_probe_log_events import (
     checkpoint_steps,
     progress_fields,
 )
-from entropic_substrate.ladder.run.worker_request import ProbeRequest
+from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, PairProbeRequest
 
 # Provider codes the poll treats as transient: logged as a named host event and the
 # poll continues at the existing cadence, adding no fast-fail path. This duplicates
@@ -91,7 +91,21 @@ class ProbeProviderAbsent(RuntimeError):
         super().__init__("provider reports the attributed pod absent without terminal evidence")
 
 
-_RESUME_RECEIPT = re.compile(r"-(warmup|prediction)-(\d{8})-progress\.json")
+# RETRACTED 2026-11-02: this regex used to read ``(warmup|prediction)``. ``runner.py`` names a
+# receipt with ``execution.phase`` and ``SentencePhase`` is ``codec_warmup | prediction``
+# (training.py), so a real warm-up receipt never matched and the advisory progress tick turned
+# the refusal into ``read_failed``. The pair path carried the right alternation in a second
+# regex; there is now one rule for both.
+# Measured 2026-11-02 at 1e9e6fd3: the hand-off receipt ``handoff-codec_warmup-00000002-progress.json``
+# DOES match this pattern (old ``(warmup|prediction)`` form: False; this form: True), so the regex
+# alone never refuses a hand-off. The hand-off is kept from being a resume target by the resume
+# request gate in ``worker_request._check_resumes`` (refuses a ``handoff-`` name) and by
+# ``h_probe_resume``'s paused-status check (R3). This regex is not the R3 guard.
+# RETRACTED 2026-11-02: the parenthetical "that gate and its pin ship in the staged DG-A patch,
+# not on this tip" was false. The gate is on this tip (``worker_request.py``, the ``handoff-``
+# check at line 472), and ``tests/test_h_pair_remote_dga.py`` pins that the hand-off receipt is
+# never a resume target.
+_RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 
 
 def _stopped_global_step(path: str, warmup_steps: int) -> int:
@@ -101,6 +115,20 @@ def _stopped_global_step(path: str, warmup_steps: int) -> int:
         raise ValueError(f"resume receipt name {path!r} carries no stopped step")
     phase, step = match.group(1), int(match.group(2))
     return step + (warmup_steps if phase == "prediction" else 0)
+
+
+@dataclass
+class _Ladder:
+    """One cell's (or the one profile's) seal ladder and how far presence has been proven."""
+
+    cell: str | None
+    steps: tuple[int, ...]
+    known: int = 0
+
+    def event(self, step: int) -> str:
+        return (
+            f"checkpoint-{step:08d}" if self.cell is None else f"checkpoint-{self.cell}-{step:08d}"
+        )
 
 
 class _CheckpointProgress:
@@ -123,54 +151,92 @@ class _CheckpointProgress:
     receipt name ``...-{phase}-{step:08d}-progress.json`` (the receipt's ``step`` is
     phase-local, so a prediction stop adds ``warmup_steps``). A stop that is not on the
     seal ladder is refused, never rounded.
+
+    FOR-1694: a PAIR request has no single profile; it keeps one ladder PER CELL, over that
+    cell's own schedule and its cell-named events (``checkpoint-<cell>-<total:08d>``). The
+    recipient's ladder starts after its inherited warm-up (its hand-off is not a checkpoint
+    event), a resumed cell's ladder starts after its resume step, and ``advance`` returns
+    the newest global step ANY cell has been proven to have published, naming the event it
+    read in ``last_event``: a step is never claimed that no event was read for.
     """
 
-    def __init__(self, request: ProbeRequest) -> None:
+    def __init__(self, request: AnyProbeRequest) -> None:
         self._request = request
-        self._steps: tuple[int, ...] | None = None
-        self._known = 0
+        self._ladders: list[_Ladder] | None = None
+        self.last_event: str | None = None
 
     @property
     def total(self) -> int:
-        schedule = self._request.profile.schedule
-        return schedule.warmup_steps + schedule.steps
+        request = self._request
+        profile = request.donor if isinstance(request, PairProbeRequest) else request.profile
+        return profile.schedule.warmup_steps + profile.schedule.steps
+
+    def _build(self) -> list[_Ladder]:
+        request = self._request
+        if isinstance(request, PairProbeRequest):
+            ladders: list[_Ladder] = []
+            for index, cell in enumerate(request.cells):
+                schedule = cell.profile.schedule
+                steps = checkpoint_steps(
+                    warmup_steps=schedule.warmup_steps,
+                    steps=schedule.steps,
+                    checkpoint_interval=schedule.checkpoint_interval,
+                    evaluation_interval=schedule.evaluation_interval,
+                )
+                floor = 0
+                if index == 1:  # the recipient arrives warmed: no checkpoint of its own before
+                    floor = schedule.warmup_steps
+                if cell.resume is not None:
+                    stopped = _stopped_global_step(cell.resume.path, schedule.warmup_steps)
+                    if stopped not in steps:
+                        raise ValueError(
+                            f"resume stop at global step {stopped} is not on the seal ladder"
+                        )
+                    floor = max(floor, stopped)
+                ladders.append(_Ladder(cell.token, tuple(s for s in steps if s > floor)))
+            return ladders
+        schedule = request.profile.schedule
+        steps = checkpoint_steps(
+            warmup_steps=schedule.warmup_steps,
+            steps=schedule.steps,
+            checkpoint_interval=schedule.checkpoint_interval,
+            evaluation_interval=schedule.evaluation_interval,
+        )
+        resume = request.resume
+        if resume is not None:
+            stopped = _stopped_global_step(resume.path, schedule.warmup_steps)
+            if stopped not in steps:
+                raise ValueError(f"resume stop at global step {stopped} is not on the seal ladder")
+            steps = tuple(step for step in steps if step > stopped)
+        return [_Ladder(None, steps)]
 
     def advance(self, objects: D1TrainerMailboxObjectPort) -> int | None:
         """Probe forward and return the newest proven global step, or None if none yet."""
-        if self._steps is None:
-            schedule = self._request.profile.schedule
-            self._steps = checkpoint_steps(
-                warmup_steps=schedule.warmup_steps,
-                steps=schedule.steps,
-                checkpoint_interval=schedule.checkpoint_interval,
-                evaluation_interval=schedule.evaluation_interval,
-            )
-            resume = self._request.resume
-            if resume is not None:
-                stopped = _stopped_global_step(resume.path, schedule.warmup_steps)
-                if stopped not in self._steps:
-                    raise ValueError(
-                        f"resume stop at global step {stopped} is not on the seal ladder"
-                    )
-                self._steps = tuple(step for step in self._steps if step > stopped)
-        steps = self._steps
-        if self._known < len(steps) and self._present(objects, steps[self._known]):
-            self._known += 1
-            low, high = self._known, len(steps)
-            while low < high:
-                middle = (low + high) // 2
-                if self._present(objects, steps[middle]):
-                    low = middle + 1
-                    self._known = low
-                else:
-                    high = middle
-        return steps[self._known - 1] if self._known else None
+        if self._ladders is None:
+            self._ladders = self._build()
+        newest: tuple[int, str] | None = None
+        for ladder in self._ladders:
+            steps = ladder.steps
+            if ladder.known < len(steps) and self._present(objects, ladder, steps[ladder.known]):
+                ladder.known += 1
+                low, high = ladder.known, len(steps)
+                while low < high:
+                    middle = (low + high) // 2
+                    if self._present(objects, ladder, steps[middle]):
+                        low = middle + 1
+                        ladder.known = low
+                    else:
+                        high = middle
+            if ladder.known and (newest is None or steps[ladder.known - 1] >= newest[0]):
+                newest = (steps[ladder.known - 1], ladder.event(steps[ladder.known - 1]))
+        self.last_event = None if newest is None else newest[1]
+        return None if newest is None else newest[0]
 
-    def _present(self, objects: D1TrainerMailboxObjectPort, step: int) -> bool:
+    def _present(self, objects: D1TrainerMailboxObjectPort, ladder: _Ladder, step: int) -> bool:
         event = read_probe_event(
             objects,
             self._request,
-            f"checkpoint-{step:08d}",
+            ladder.event(step),
             expected_pod_id=None,
             max_bytes=self._request.limits.max_object_bytes,
         )
@@ -344,7 +410,7 @@ def _progress_tick(
             total=progress.total,
         )
         if step is not None:
-            fields["last_event"] = f"checkpoint-{step:08d}"
+            fields["last_event"] = progress.last_event
         emit("info", HOST_POLL_TICK, pod_name=pod_name, **fields)
     except Exception as error:
         fields = progress_fields(source=SOURCE_R2_CHECKPOINT, state=STATE_READ_FAILED)
@@ -364,7 +430,7 @@ def run_probe_controller(
     destination: Path,
     *,
     poll_seconds: float,
-    max_hourly_rate: float,
+    max_hourly_rate: float | None,
     monotonic: Callable[[], float] = time.monotonic,
     wait: Callable[[float], None] = time.sleep,
 ) -> dict[str, object]:
@@ -376,12 +442,17 @@ def run_probe_controller(
     Emergency cleanup retains its own scope and cannot turn a failed guardian
     into success. Callers must inspect unresolved cleanup before further launches.
     """
-    for value in (poll_seconds, max_hourly_rate):
+    # FOR-1694: an absent ``max_hourly_rate`` is admitted only for a launch that seals its
+    # ceiling (``hourly_ceiling`` below refuses it for any other launch, by name).
+    for value in (poll_seconds, *(() if max_hourly_rate is None else (max_hourly_rate,))):
         if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
             raise ValueError("controller polling and price ceiling must be finite and positive")
     # Rung B: every caller, not only the command, keeps a scientific run inside the
     # spend cap its sealed authority grants (a no-op for a smoke launch).
-    guard.launch.require_hourly_rate_within_cap(max_hourly_rate)
+    # FOR-1694: ``ceiling`` is the ONE value the price check below compares against: the
+    # launch's sealed hourly price ceiling when it has one (an argument that is present and
+    # not exactly equal to it is refused by name, before any provider call), else the argument.
+    ceiling = guard.launch.hourly_ceiling(max_hourly_rate)
     if guard.ready is None:
         raise ValueError("controller requires the admitted live watchdog readiness record")
     deadline, cleanup_deadline = (
@@ -479,7 +550,7 @@ def run_probe_controller(
         stage = "price_admission"
         if (
             type(pod.cost_per_hour) is not int and type(pod.cost_per_hour) is not float
-        ) or not 0 <= pod.cost_per_hour <= max_hourly_rate:
+        ) or not 0 <= pod.cost_per_hour <= ceiling:
             raise ValueError("measured allocation price is missing or exceeds the approved ceiling")
         while clock() < deadline:
             stage = "watchdog_liveness"

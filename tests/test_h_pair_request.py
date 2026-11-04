@@ -324,7 +324,11 @@ def test_one_sealed_authority_covers_the_pair_and_binds_the_digest() -> None:
         ("pair_id", "pair identifier is not the identity of its two cells"),
         ("block_id_format", "block and pair identifiers are 64 lowercase hex digests"),
         ("binding_seed", "pair block binding differs from its cells' source or seed"),
-        ("resume", "pair resume is not admitted before per-cell resume lands"),
+        # RETRACTED 2026-11-02 (FOR-1694, C-L4c-2): this pinned the L4b refusal "pair resume is
+        # not admitted before per-cell resume lands". A resume is admitted now, but only as a
+        # progress receipt among the inputs under its own cell's run/<cell>/; this payload names
+        # one that is no input at all, so it is refused by the new rule
+        ("resume", "a pair cell's resume must bind its own training receipt in run/<cell>/"),
     ],
 )
 def test_the_pair_reader_refuses_every_mandate_and_binding_out_of_family(
@@ -879,10 +883,17 @@ class RemovingSinks:
         self.observability, self.workspace = observability, workspace
         self.begun: list[str] = []
         self.finished: list[tuple[str, str]] = []
+        self.tags: list[tuple[str, str]] = []
 
     def begin(self, cell: str, profile: Any) -> Any:
         self.begun.append(cell)
         return self._sink(self.observability / cell / "metrics.jsonl")
+
+    def lifecycle(self, cell: str, value: str) -> None:
+        self.tags.append((cell, value))
+
+    def pair_outcome(self, value: str) -> None:
+        self.tags.append(("pair", value))
 
     def finish(self, cell: str, status: str) -> None:
         self.finished.append((cell, status))
@@ -1110,7 +1121,7 @@ def test_a_pair_marker_names_its_cell_and_is_validated_against_that_cells_schedu
         encode_stop_marker(pair_request(pair), target)
 
 
-def test_the_stop_verb_refuses_a_pair_and_a_cell_for_a_single_request_before_publishing(
+def test_the_stop_verb_refuses_a_pair_without_a_cell_and_a_cell_for_a_single_request_before_publishing(
     tmp_path: Path, pair: Pair
 ) -> None:
     from tests.test_sentence_worker_request import request as single_request
@@ -1125,7 +1136,10 @@ def test_the_stop_verb_refuses_a_pair_and_a_cell_for_a_single_request_before_pub
         "monotonic": lambda: float(next(ticks)),
         "sleep": lambda _: None,
     }
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    # RETRACTED 2026-11-02 (FOR-1694): this refused EVERY pair ("does not carry a pair request").
+    # A pair is stopped now, but only at a named cell and seal; without one it stays refused,
+    # by name, before anything is published.
+    with pytest.raises(ValueError, match="a pair stop names its cell: pass --at-cell"):
         request_stop(objects, pair_request(pair), target=("prediction", 2), **kwargs)
     with pytest.raises(ValueError, match="a cell is given for a single-profile request"):
         request_stop(objects, single_request(), target=("prediction", 2), cell="donor", **kwargs)
@@ -1422,7 +1436,7 @@ def test_pair_outputs_are_admitted_only_under_a_declared_cell_token(pair: Pair) 
         worker_artifact(ref, "run")  # the v1/v2 two-part rule and its message are unchanged
 
 
-def test_a_pair_is_refused_by_name_at_the_publish_verb_the_launch_and_the_collector(
+def test_a_pair_is_published_by_the_verb_and_a_local_pair_is_still_no_launch(
     tmp_path: Path, pair: Pair
 ) -> None:
     from tests.test_h_probe_launch import launch
@@ -1433,6 +1447,7 @@ def test_a_pair_is_refused_by_name_at_the_publish_verb_the_launch_and_the_collec
     request = pair_request(pair)
     (tmp_path / "pair-request.json").write_bytes(request.payload)
     output, error = StringIO(), StringIO()
+    store = _ObjectStore()
     status = run_worker_command(
         [
             "publish",
@@ -1448,18 +1463,27 @@ def test_a_pair_is_refused_by_name_at_the_publish_verb_the_launch_and_the_collec
             "pair-request.json",
         ],
         environ={},
-        objects=_ObjectStore(),
+        objects=store,
         stdout=output,
         stderr=error,
     )
-    assert status == 2 and output.getvalue() == ""
-    assert json.loads(error.getvalue())["stage"] == "request_publish"
-    # the launch: constructing one and parsing one that embeds a pair are both named refusals
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    # RETRACTED 2026-11-02 (FOR-1694): this pinned "refused by name at the publish verb" (stage
+    # request_publish, exit 2). The verb publishes a pair now: the request marker and its inputs
+    # reach the port, and the response names the marker the allocation's byte check compares
+    assert status == 0, error.getvalue()
+    response = json.loads(output.getvalue())
+    assert response["status"] == "request_published"
+    assert response["object"]["key"] == f"{request.prefix}/request.json"
+    assert store.values[f"{request.prefix}/request.json"] == request.payload
+    # the launch (RETRACTED 2026-11-02, FOR-1694: a pair launch is carried now, so the old
+    # "does not carry a pair request" refusal is gone): this local_tiny pair is still no launch,
+    # because the class gate admits only remote tiny and scientific classes at the launch, and a
+    # v5 payload that embeds a pair under a manifest that says it carries none is a mismatch
+    with pytest.raises(ValueError, match="restricted to remote H0 tiny probes"):
         replace(launch(), request=request)
     row = json.loads(launch().payload)
     row["request"] = request.manifest
-    with pytest.raises(ValueError, match="does not carry a pair request"):
+    with pytest.raises(ValueError, match="scope or authority mismatch"):
         parse_probe_launch(reencode(row), max_bytes=1_000_000)
 
 
@@ -1905,24 +1929,37 @@ def test_an_execution_defect_is_confirmed_only_by_its_own_on_disk_evidence(
     donor_root.mkdir()
     recipient_root.mkdir()
     # source 1, donor: no warm-up-final seal on disk is the donor's execution evidence
-    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is True
+    assert _execution_stop_confirmed(donor_root, "donor", donor, None, max_bytes=LIMIT) is True
     seal = {
         "schema": "h-checkpoint-seal-v1",
         "phase": "codec_warmup",
         "step": donor.schedule.warmup_steps,
     }
     (donor_root / "seal.json").write_text(json.dumps(seal))
-    assert _execution_stop_confirmed(donor_root, "donor", donor, None) is False  # refused
+    assert (
+        _execution_stop_confirmed(donor_root, "donor", donor, None, max_bytes=LIMIT) is False
+    )  # refused
     # source 2, recipient: a recipient root holding no progress receipt is the evidence
-    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is True
+    assert (
+        _execution_stop_confirmed(recipient_root, "recipient", recipient, None, max_bytes=LIMIT)
+        is True
+    )
     (recipient_root / "progress.json").write_text(json.dumps({"schema": PROGRESS_SCHEMA_V2}))
-    assert _execution_stop_confirmed(recipient_root, "recipient", recipient, None) is False
+    assert (
+        _execution_stop_confirmed(recipient_root, "recipient", recipient, None, max_bytes=LIMIT)
+        is False
+    )
     # source 3, the cell's own training failure record: its status decides
     assert (
-        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "scientific_gap"}) is False
+        _execution_stop_confirmed(
+            donor_root, "donor", donor, {"status": "scientific_gap"}, max_bytes=LIMIT
+        )
+        is False
     )
     assert (
-        _execution_stop_confirmed(donor_root, "donor", donor, {"status": "execution_defect"})
+        _execution_stop_confirmed(
+            donor_root, "donor", donor, {"status": "execution_defect"}, max_bytes=LIMIT
+        )
         is True
     )
 
@@ -2327,3 +2364,25 @@ def test_the_failure_arm_refuses_a_bad_result_v2_before_it_publishes_the_snapsho
     assert failure["delivery_error_type"] == "ValueError"
     assert failure["snapshot"] is None
     assert f"{request.prefix}/snapshots/failure.json" not in objects.values  # nothing published
+
+
+@pytest.mark.parametrize("free_reason", ["not a member of the closed set", ""])
+def test_an_excluded_verdict_whose_reason_is_a_free_string_is_refused_by_the_enum_member_guard(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, free_reason: str
+) -> None:
+    """Sacred invariant (DH-45/DH-46/DH-47): the recorded exclusion reason is an H1ExclusionReason
+    member, never a free string. The membership guard in parse_pair_result must name the enum, so
+    removing it changes the refusal (a status/verdict message alone would also refuse, but not
+    by naming the closed set)."""
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run.worker_request import parse_pair_result
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))
+    code, error, workspace, _ = run_command(tmp_path, objects, marker)
+    assert code == 0, error
+    result = json.loads((workspace / "worker/result.json").read_text())
+    assert result["verdict"]["reason"] == "missing_endpoint"
+    forged = result | {"verdict": result["verdict"] | {"reason": free_reason}}
+    with pytest.raises(ValueError, match="H1ExclusionReason"):
+        parse_pair_result(forged, request)

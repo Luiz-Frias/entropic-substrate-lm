@@ -13,7 +13,7 @@ JSON keys. Field values are limited to keys, sizes, digests, counts,
 durations, run ids, names and exception TYPE names, never ``str(exception)``
 of a provider error.
 
-Two vocabulary decisions are recorded here because the set is a frozen door:
+Three vocabulary decisions are recorded here because the set is a frozen door:
 
 * ``sink.finish.end`` carries ``settled`` (did the metric drain finish inside its
   budget) and ``stranded``, NOT the ``drained`` the brief first named. The
@@ -27,6 +27,11 @@ Two vocabulary decisions are recorded here because the set is a frozen door:
   so the closed set is not widened for it;
   ``test_a_declared_log_that_is_missing_warns_without_counting_or_raising`` pins
   the warning text and that it carries no ``event`` key.
+* The multipart-abort-failed WARNING in ``Boto3D1TrainerMailboxObjectAdapter`` (FOR-1694)
+  binds no event either. A failed ``abort_multipart_upload`` is an exceptional-path cleanup of
+  a transport adapter, logged by exception TYPE only, never a key, upload id or message; it
+  narrates no milestone of a run, so the closed set is not widened for it.
+  ``test_a_failing_abort_is_logged_by_type_and_never_masks_the_cause`` pins the text.
 
 Adapters under ``ladder.capture`` cannot import this module (layer edge
 ``capture -> run`` is not admitted), so they emit the literal names below;

@@ -1,5 +1,6 @@
 """Immutable numerical journal shards; journals alone grant no scientific authority."""
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -52,13 +53,44 @@ def _nonfinite(value: str) -> NoReturn:
     raise ValueError(f"nonfinite H artifact JSON constant: {value}")
 
 
-def write_json(root: Path, name: str, value: object, *, max_bytes: int) -> ArtifactIdentity:
+def _json_payload(value: object, *, max_bytes: int) -> bytes:
     if type(max_bytes) is not int or max_bytes < 1:
         raise ValueError("H artifact byte limit must be positive")
     payload = json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
     if len(payload) > max_bytes:
         raise ValueError("H artifact exceeds its byte limit")
-    return publish_d1_atomic_bytes(root, name, payload, label="H JSON artifact")
+    return payload
+
+
+def write_json(root: Path, name: str, value: object, *, max_bytes: int) -> ArtifactIdentity:
+    return publish_d1_atomic_bytes(
+        root, name, _json_payload(value, max_bytes=max_bytes), label="H JSON artifact"
+    )
+
+
+def json_identity(root: Path, name: str, value: object, *, max_bytes: int) -> ArtifactIdentity:
+    """The identity :func:`write_json` returns for ``value`` at ``root/name``, without writing:
+    the same canonical bytes, so a reference to an artifact every writer emits byte for byte
+    (a run root's ``profile.json``) never depends on reading it back."""
+    digest = hashlib.sha256(_json_payload(value, max_bytes=max_bytes)).hexdigest()
+    relative = normalize_d1_relative_artifact_path(name, label="H JSON artifact")
+    return ArtifactIdentity(str(root.joinpath(relative)), ContentHash("sha256", digest))
+
+
+def schema_records(
+    output: Path, schema: str, *, max_bytes: int
+) -> list[tuple[Path, dict[str, object]]]:
+    """Every ``*.json`` of ``output`` whose ``schema`` IS ``schema`` (never a name glob alone),
+    read no-follow and bounded by ``max_bytes`` like every other read of a run root."""
+    found: list[tuple[Path, dict[str, object]]] = []
+    for path in sorted(output.glob("*.json")):
+        _, payload, _ = read_d1_artifact_bytes(
+            output, path.name, label="H JSON artifact", max_bytes=max_bytes
+        )
+        row = json.loads(payload)
+        if type(row) is dict and row.get("schema") == schema:
+            found.append((path, cast(dict[str, object], row)))
+    return found
 
 
 def read_json(root: Path, artifact: ArtifactIdentity, *, max_bytes: int) -> dict[str, object]:

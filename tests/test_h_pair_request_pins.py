@@ -19,6 +19,7 @@ Two limits are stated, not hidden (house rule 4):
 
 import ast
 import copy
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass, replace
@@ -771,7 +772,7 @@ def test_the_h0_checks_script_refuses_a_pair_request_file_by_name(
     path.write_bytes(pair_request(pair).payload)
     refused(
         "pair-request-file",
-        "h0_final_probe_checks does not carry a pair request",
+        "h0_final_probe_checks K1 and K2 read single-profile arms and do not carry a pair request",
         lambda: module._request(path),  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -847,6 +848,12 @@ def test_a_failed_cells_run_is_finished_failed_through_the_pair_observer_end(
 
         def begin(self, cell: str, profile: object) -> object:
             return JsonlSink(tmp_path / "obs" / cell / "metrics.jsonl")
+
+        def lifecycle(self, cell: str, value: str) -> None:
+            return None
+
+        def pair_outcome(self, value: str) -> None:
+            return None
 
         def finish(self, cell: str, status: str) -> None:
             self.finished.append((cell, status))
@@ -995,9 +1002,9 @@ def test_two_training_failure_records_in_one_cell_root_are_a_defect(tmp_path: Pa
     with pytest.raises(
         ValueError, match=r"^a cell root holds more than one training failure record$"
     ):
-        _training_failure_record(tmp_path)
+        _training_failure_record(tmp_path, max_bytes=LIMIT)
     (tmp_path / "b.json").unlink()
-    found = _training_failure_record(tmp_path)
+    found = _training_failure_record(tmp_path, max_bytes=LIMIT)
     assert found is not None and found[0].name == "a.json"
 
 
@@ -1018,3 +1025,187 @@ def test_the_probe_envelope_and_remote_proof_refusal_texts_are_exact() -> None:
         ValueError, match=r"^remote worker source proof or project image is invalid$"
     ):
         replace(remote_request(), image="ghcr.io/other/x@sha256:" + "d" * 64)
+
+
+# ------------------------------------------------- PR #430 review round 1 (member patch A, B, C)
+# A (row 4460569096): the recipient's codec arrives at the donor's warm-up-final seal and the
+# runner begins its prediction before the first advance, so a recipient warm-up target is never
+# reached. It is refused by name, at the request and at the stop verb, before any execution.
+_RECIPIENT_WARMUP = "the pair recipient runs no codec_warmup of its own"
+
+
+def test_a_recipient_warmup_pause_is_refused_by_name_and_a_donor_one_is_not(pair: Pair) -> None:
+    from entropic_substrate.ladder.run.worker_request import PairCell, parse_probe_request
+
+    donor, recipient = PairCell(pair.donor, None, None), PairCell(pair.recipient, None, None)
+    with pytest.raises(ValueError, match=_RECIPIENT_WARMUP):
+        pair_request(pair, cells=(donor, PairCell(pair.recipient, None, ("codec_warmup", 2))))
+    # controls: a donor warm-up pause and a recipient prediction pause are admitted
+    pair_request(pair, cells=(PairCell(pair.donor, None, ("codec_warmup", 2)), recipient))
+    admitted = pair_request(pair, cells=(donor, PairCell(pair.recipient, None, ("prediction", 2))))
+    # the wire path constructs the same value, so a published request is refused the same way
+    row = json.loads(admitted.payload)
+    row["cells"][1]["pause"] = ["codec_warmup", 2]
+    forged = json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
+    with pytest.raises(ValueError, match=_RECIPIENT_WARMUP):
+        parse_probe_request(forged, max_bytes=10_000_000)
+    # a target outside the schedule keeps the schedule's own refusal
+    with pytest.raises(ValueError, match="must select a declared seal boundary"):
+        pair_request(pair, cells=(donor, PairCell(pair.recipient, None, ("codec_warmup", 3))))
+
+
+def test_a_recipient_warmup_stop_target_is_refused_by_name_at_encode_and_at_read(
+    pair: Pair,
+) -> None:
+    from entropic_substrate.ladder.run.object_worker import (
+        STOP_MARKER_SCHEMA_V2,
+        classify_stop_marker,
+        encode_stop_marker,
+    )
+
+    request = pair_request(pair)
+    with pytest.raises(ValueError, match=_RECIPIENT_WARMUP):
+        encode_stop_marker(request, ("codec_warmup", 2, "recipient"))
+    # controls: the donor's warm-up target and the recipient's prediction target are admitted
+    encode_stop_marker(request, ("codec_warmup", 2, "donor"))
+    encode_stop_marker(request, ("prediction", 2, "recipient"))
+    with pytest.raises(ValueError, match="outside the request schedule"):
+        encode_stop_marker(request, ("codec_warmup", 3, "recipient"))
+    # a canonical marker published by anything else is refused the same way when it is read
+    forged = json.dumps(
+        {
+            "schema": STOP_MARKER_SCHEMA_V2,
+            "request_sha256": request.digest,
+            "target": {"phase": "codec_warmup", "step": 2, "cell": "recipient"},
+        },
+        sort_keys=True,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode()
+    with pytest.raises(ValueError, match=_RECIPIENT_WARMUP):
+        classify_stop_marker(forged, request)
+
+
+# B (rows 4460649072, 4460649127): a refused resume admission is a training-phase execution stop
+# and writes the runner's own failure record, so the derivation confirms it from disk and the
+# failure snapshot carries the evidence (DH-47).
+_FAILURE_KEYS = {
+    "schema",
+    "run_identity",
+    "run_class",
+    "scientific_authority",
+    "profile",
+    "status",
+    "error_type",
+    "error_code",
+    "phase",
+    "step",
+    "error",
+    "last_attempt",
+    "last_evaluation",
+    "unsealed_rows",
+    "last_seal",
+    "last_receipt",
+}
+
+
+def test_a_refused_handoff_resume_admission_still_delivers_the_failure_snapshot(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from entropic_substrate.ladder.run import runner
+
+    real = runner.read_training_progress
+    refused_receipts: list[str] = []
+
+    def refuse_handoff(root: Path, artifact: ArtifactIdentity, *args: Any, **kwargs: Any) -> Any:
+        if Path(artifact.path).name.startswith("handoff-"):
+            refused_receipts.append(artifact.path)
+            raise ValueError("injected resume admission refusal")
+        return real(root, artifact, *args, **kwargs)
+
+    monkeypatch.setattr(runner, "read_training_progress", refuse_handoff)
+    request, objects, marker = pair_world(tmp_path, pair)
+    status, _, workspace, _ = run_command(tmp_path, objects, marker)
+    assert status == 2  # the ORIGINAL exception still propagates
+    assert len(refused_receipts) == 1
+    failure = failure_terminal(objects, request)
+    assert failure["status"] == "execution_defect" and failure["error_type"] == "ValueError"
+    assert failure["evidence_delivery"] == "captured"
+    assert failure["snapshot"] is not None
+    files = failure_snapshot_files(objects, request)
+    result = json.loads(files["worker/result.json"])
+    assert result["status"] == "execution_defect"
+    assert result["verdict"] == {
+        "verdict": "excluded",
+        "reason": "reader_refusal",
+        "cell": "recipient",
+    }
+    assert [c["outcome"] for c in result["cells"]] == ["complete", "execution_defect"]
+    reference = result["cells"][1]["failure"]
+    assert reference is not None
+    record = json.loads(files[reference["path"]])
+    assert set(record) == _FAILURE_KEYS
+    assert record["schema"] == "h-probe-training-failure-v2"
+    assert record["run_identity"] == request.recipient.identity
+    assert record["status"] == "execution_defect" and record["phase"] == "initialization"
+    assert record["error"] == "injected resume admission refusal"
+    assert Path(record["last_receipt"]["path"]).name == Path(refused_receipts[0]).name
+    assert record["last_seal"] is None and record["step"] == 0
+    # the profile it cites is the one the hand-off wrote for this cell, byte for byte
+    profile = (workspace / "run" / "recipient" / record["profile"]["path"]).read_bytes()
+    assert hashlib.sha256(profile).hexdigest() == record["profile"]["sha256"]
+
+
+def test_the_cell_root_scan_is_bounded_by_the_object_limit(tmp_path: Path) -> None:
+    from entropic_substrate.ladder.run.journal import schema_records
+
+    small = json.dumps({"schema": "h-probe-training-failure-v2", "status": "execution_defect"})
+    (tmp_path / "a.json").write_text(small)
+    (tmp_path / "other.json").write_text(json.dumps({"schema": "h-checkpoint-seal-v1"}))
+    found = schema_records(tmp_path, "h-probe-training-failure-v2", max_bytes=len(small))
+    assert [(path.name, row["status"]) for path, row in found] == [("a.json", "execution_defect")]
+    # a well-formed record one byte over the bound: only the bound can refuse it
+    padded = json.dumps({"schema": "h-checkpoint-seal-v1", "pad": "x" * len(small)})
+    (tmp_path / "b.json").write_text(padded)
+    with pytest.raises(Exception, match="H JSON artifact artifact exceeds its byte limit"):
+        schema_records(tmp_path, "h-probe-training-failure-v2", max_bytes=len(small))
+    assert len(schema_records(tmp_path, "h-checkpoint-seal-v1", max_bytes=len(padded))) == 2
+
+
+# C (row 4460649079): a cell that stopped SCIENTIFICALLY leaves the observer's focus, because the
+# pair goes on to its verdict; a later pair-level failure then names the pair, not that cell.
+@pytest.mark.parametrize("variant", ["missing_donor", "nonfinite_donor_then_recipient"])
+def test_a_pair_level_failure_after_a_scientific_stop_names_the_pair(
+    tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, variant: str
+) -> None:
+    from entropic_substrate.core.sentence.numerics import UndefinedDirection
+    from entropic_substrate.ladder.run import object_worker
+
+    request, objects, marker = pair_world(tmp_path, pair)
+    if variant == "missing_donor":
+        Fault(monkeypatch, "warmup", 1, UndefinedDirection(2))
+    else:
+        # the second Fault wraps the first: the donor's first prediction step (call 1) and the
+        # recipient's first prediction step (call 2) each diverge
+        Fault(monkeypatch, "prediction", 1, UndefinedDirection(2))
+        Fault(monkeypatch, "prediction", 2, UndefinedDirection(2))
+    real = object_worker.publish_worker_snapshot
+
+    def flaky(objs: Any, req: Any, root: Any, paths: Any, *, name: str, **kwargs: Any) -> Any:
+        if name == "excluded":
+            raise RuntimeError("excluded snapshot injected")
+        return real(objs, req, root, paths, name=name, **kwargs)
+
+    monkeypatch.setattr(object_worker, "publish_worker_snapshot", flaky)
+    status, _, workspace, _ = run_command(tmp_path, objects, marker)
+    assert status == 2
+    result = json.loads((workspace / "worker/result.json").read_text())
+    expected = (
+        ["scientific_gap", "not_run"]
+        if variant == "missing_donor"
+        else ["scientific_gap", "scientific_gap"]
+    )
+    assert [c["outcome"] for c in result["cells"]] == expected
+    failure = failure_terminal(objects, request)
+    assert failure["run_identity"] == request.run_identity
+    assert failure["run_identity"] not in (request.donor.identity, request.recipient.identity)

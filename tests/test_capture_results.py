@@ -1294,10 +1294,11 @@ def test_cleanup_after_a_clean_pass_never_raises_and_never_deletes_uncommitted_c
 _FAILED_H_PREFIX = "ffffffff"
 
 
-def _h_failed_lines() -> str:
-    """An H run that committed a step and then failed: a ``failed`` run_end."""
-    rows = [json.loads(line) for line in _h_lines().splitlines()]
-    rows[-1] = rows[-1] | {"status": "failed", "result_status": "execution_defect"}
+def _h_failed_lines(result_status: str = "execution_defect", *, with_step: bool = True) -> str:
+    """An H run whose run_end is ``failed`` with ``result_status``; by default it committed a
+    step first, ``with_step=False`` gives the zero-row stream."""
+    rows = [json.loads(line) for line in _h_lines(with_step=with_step).splitlines()]
+    rows[-1] = rows[-1] | {"status": "failed", "result_status": result_status}
     return "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
 
 
@@ -1364,9 +1365,7 @@ def test_a_failed_h_run_with_a_recorded_scientific_stop_and_no_rows_is_captured(
     a ``failed``/``scientific_gap`` run_end. The pass admits it instead of exiting 2."""
     client = _h_client()
     run_id = f"{_FAILED_H_PREFIX}-0006"
-    rows = [json.loads(line) for line in _h_lines(with_step=False).splitlines()]
-    rows[-1] = rows[-1] | {"status": "failed", "result_status": "scientific_gap"}
-    stopped = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    stopped = _h_failed_lines("scientific_gap", with_step=False)
     _add_h_run(client, run_id, status="FAILED", metrics=stopped)
     captured = capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")
     assert f"{H_RUN}-{_FAILED_H_PREFIX}-metrics.jsonl" in {p.name for p in captured}
@@ -1380,9 +1379,7 @@ def test_a_failed_h_run_with_zero_rows_and_another_record_is_still_refused(
     refused with the unchanged message."""
     client = _h_client()
     run_id = f"{_FAILED_H_PREFIX}-0006"
-    rows = [json.loads(line) for line in _h_lines(with_step=False).splitlines()]
-    rows[-1] = rows[-1] | {"status": "failed", "result_status": result_status}
-    truncated = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    truncated = _h_failed_lines(result_status, with_step=False)
     _add_h_run(client, run_id, status="FAILED", metrics=truncated)
     with pytest.raises(TelemetryGap, match=r"metrics\.jsonl.*at least one committed"):
         capture_finished_runs(client, ["entropic-substrate-lm"], tmp_path / "cap")

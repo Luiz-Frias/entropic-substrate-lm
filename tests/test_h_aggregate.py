@@ -1239,11 +1239,43 @@ class TestScientificallyStoppedStream:
             "must exist and agree on global_step - step, found offsets []"
         )
 
-    def test_the_override_and_handoff_paths_are_byte_unchanged(self, tmp_path: Path) -> None:
+    def test_an_override_with_committed_rows_still_loads(self, tmp_path: Path) -> None:
         """The widened branch never combines with ``warmup_steps=`` or ``handoff=``: with an
-        override the existing check still decides."""
+        override and a committed row the existing check still decides."""
         run = load_h_run(*write_stopped_run(tmp_path, committed=1), warmup_steps=2)
         assert run.warmup_steps == 2
+
+    @pytest.mark.parametrize("override", ["warmup_steps", "handoff"])
+    def test_a_zero_row_pod_is_refused_under_either_override(
+        self, tmp_path: Path, override: str
+    ) -> None:
+        """A stopped pod with no committed row, whose worker log holds one prediction seal, never
+        trained. Both overrides derive the warm-up from that seal and would load it with an
+        empty training axis; each refuses it with the reader's never-trained text."""
+        seal = (_log("checkpoint.seal", phase="prediction", step=1, global_step=3),)
+        if override == "warmup_steps":
+            paths = write_stopped_run(tmp_path, committed=0, extra_log=seal)
+            with pytest.raises(TelemetryGap) as raised:
+                load_h_run(*paths, warmup_steps=2)
+        else:
+            paths = write_stopped_run(
+                tmp_path, identity=IDENTITY_B, request=REQUEST_B, committed=0, extra_log=seal
+            )
+            with pytest.raises(TelemetryGap) as raised:
+                load_h_run(*paths, handoff=_evidence())
+        assert str(raised.value) == (
+            f"{paths[0]}: an admissible H run holds at least one committed "
+            "h-training-step-v2 row, found none — the run never trained"
+        )
+
+    def test_a_zero_row_recipient_without_a_prediction_seal_keeps_the_derivation_refusal(
+        self, tmp_path: Path
+    ) -> None:
+        """Control: with no prediction seal the hand-off path refuses earlier, at the warm-up
+        derivation, with the message it always had."""
+        paths = write_stopped_run(tmp_path, identity=IDENTITY_B, request=REQUEST_B, committed=0)
+        with pytest.raises(TelemetryGap, match="the warm-up length cannot be derived"):
+            load_h_run(*paths, handoff=_evidence())
 
 
 @pytest.mark.unit

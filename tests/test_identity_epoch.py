@@ -740,6 +740,21 @@ rows: (3.12.13, 2.13.0) ``0e9055d5...``, (3.12.14, 2.13.0+cpu) ``0da34156...``,
 checkpoint values (``40965967``, ``c3faddf5``, ``0e4f24b7``, ``002e9c8c``, ``c4b22899``). Source
 rows untouched (recomputed and equal).
 
+L4c remote pair re-pin (house rule 4, MEASURED 2026-11-02, branch
+``h1-l4c-remote-pair`` on ``h1-l4b-pair-admission`` on main ``b0dcdcc9``, FOR-1694, conductor
+DG-A commit, re-pin row 3 of W2): no member is added (54 stays 54) and 6 members move bytes
+(``ladder.run.worker_request``, ``worker_snapshot``, ``worker_transport``, ``worker_command``,
+``worker_execution``, ``object_worker``); no source member moved. Control first:
+``tools/regime_rows.py`` over the tree at ``3f6595c4`` WITHOUT the patch (trunk unmoved since the
+L4a restack, so no restack) reproduced all nine L4b rows and both live identities under
+``.venv/bin/python`` 3.12.15, torch 2.13.0, pysbd 0.3.4; over the patched tree it equals
+``checkpoint._reader_identity()`` (the (3.12.15, 2.13.0) row below). New checkpoint rows:
+(3.12.13, 2.13.0) ``3e6c3604...``, (3.12.14, 2.13.0+cpu) ``248a6c9b...``,
+(3.12.15, 2.13.0) ``e4d0e926...``, (3.12.15, 2.13.0+cpu) ``201703dd...``,
+(3.12.16, 2.13.0+cpu) ``7b3c4bbb...``. Retracted for this tree: the L4b values (``f60682f4``,
+``7110caf2``, ``f90ae059``, ``8b54f83c``, ``b6a8015e``). Source rows untouched
+(recomputed and equal).
+
 L4b pair admission re-pin (house rule 4, MEASURED 2026-11-01, branch
 ``h1-l4b-pair-admission`` on ``h1-l4a-codec-handoff`` on main ``b0dcdcc9``, FOR-1693, conductor
 DG-A commit, re-pin row 2 of W2): no member is added (54 stays 54) and 19 members move bytes
@@ -962,19 +977,19 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.13",
         "2.13.0",
-    ): "f60682f4842b97fbe5bc023e47c060b1b6ce88b42428deff2f1bb77a98c90134",  # pragma: allowlist secret
+    ): "dbdf1253fead4fb28a9cefd23f2c7716b5ca7519633eb2f8ad6b0f0a2906ab91",  # pragma: allowlist secret
     (
         "3.12.14",
         "2.13.0+cpu",
-    ): "7110caf2b542d61127a8accd3f9a83739498efe8921d7aa432a854d0a3088e3e",  # pragma: allowlist secret
+    ): "427f02d119402a99b3e5ea2290395244ded184c5fc889058d45af015eba95a97",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0",
-    ): "f90ae0593d225703743d1631023974c2cd298cdf6148cd91d82fca4387fc92ae",  # pragma: allowlist secret
+    ): "da88c0cefa372ad9b071fae3a23e3772f37cbc91c09249bb9119f81523212834",  # pragma: allowlist secret
     (
         "3.12.15",
         "2.13.0+cpu",
-    ): "8b54f83c0a1a0f7a451f34f4de546d541772e1fb37e32770b022dd7d93e54eeb",  # pragma: allowlist secret
+    ): "ba7b8f27b1b0075a3aedf0009b20c192d4ef4f9220712f637257105c98f42822",  # pragma: allowlist secret
     # MEASURED 2026-10-27: the floating `uv python install 3.12` in ci.yaml resolved CPython
     # 3.12.16 on the runners after the Actions budget was restored (runs 40519114224,
     # 40538710441, 40540752238), the third drift of this kind; ci.yaml now pins 3.12.15 to
@@ -984,7 +999,7 @@ _CHECKPOINT_REGIME_TABLE: dict[tuple[str, str], str] = {
     (
         "3.12.16",
         "2.13.0+cpu",
-    ): "b6a8015e4a9ed083f0077fcc4e51a540425a3a97076abc0ea1d3c649f409d73f",  # pragma: allowlist secret
+    ): "41c07d99016bca8cfed47023337afd8cdedfeddc41ce7dbd60341f4fca130518",  # pragma: allowlist secret
 }
 
 _SOURCE_REGIME_TABLE: dict[tuple[str, str], str] = {

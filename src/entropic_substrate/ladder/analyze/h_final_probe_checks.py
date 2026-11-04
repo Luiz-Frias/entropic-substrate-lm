@@ -52,7 +52,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
@@ -67,6 +67,7 @@ from entropic_substrate.ladder.analyze.h_report import h_report_from_run
 from entropic_substrate.ladder.analyze.h_resumed_run import load_h_resumed_run
 from entropic_substrate.ladder.capture.reader.h_telemetry import final_h_run_end
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
+from entropic_substrate.ladder.run.h_probe_collection import COLLECTION_SCHEMA_V1
 from entropic_substrate.ladder.run.journal import artifact_reference
 from entropic_substrate.ladder.run.runner import read_training_progress
 from entropic_substrate.ladder.run.seals import SealMemo
@@ -95,7 +96,6 @@ __all__ = [
 
 type Verdict = Literal["PASS", "FAIL", "UNPROVEN"]
 
-_COLLECTION_SCHEMA = "h-probe-terminal-collection-v1"
 _RESUMABLE_CAPTURES = ("pause_bytes_verified", "stop_bytes_verified")
 _CONTROLLER_SCHEMA = "h-probe-controller-result-v1"
 _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
@@ -244,7 +244,7 @@ def check_resume_request(
     """K1 request: the resumed request continues the collected stop through ``resume``."""
     failures: list[str] = []
     if (
-        collection.get("schema") != _COLLECTION_SCHEMA
+        collection.get("schema") != COLLECTION_SCHEMA_V1
         or collection.get("request_sha256") != previous.digest
     ):
         failures.append(
@@ -352,14 +352,29 @@ def check_completion(
 
 
 # ------------------------------------------------------------------ K3
-def check_capture(metrics: Sequence[Path], request_digests: Sequence[str]) -> CheckResult:
-    """K3: each captured metrics file is admissible and bound to a declared request."""
+def check_capture(
+    metrics: Sequence[Path],
+    request_digests: Sequence[str],
+    pair_cells: Mapping[str, Sequence[str]] | None = None,
+) -> CheckResult:
+    """K3: each captured metrics file is admissible and bound to a declared request.
+
+    FOR-1694: a codec-sharing PAIR request owns TWO metrics files (one MLflow run, metrics file
+    and worker log per cell), so "each request exactly once" is keyed per (request, cell) for it.
+    ``pair_cells`` maps a pair request's digest to its two cells' profile identities, taken from
+    the PARSED pair request by the caller (never from plan labels or file order); a file is then
+    matched on ``(run_start.request_sha256, run_start.profile_identity)``. A digest absent from
+    ``pair_cells`` is keyed on the request alone, exactly as before, and a single-profile
+    result document is byte-identical to the one this check always produced (the pair arm adds
+    a ``profile_identity`` entry to ITS files only). The ``run_start`` record is unchanged.
+    """
+    cells = {} if pair_cells is None else {k: tuple(v) for k, v in pair_cells.items()}
     failures: list[str] = []
     if not metrics:
         failures.append("no metrics files were given")
     if not request_digests:
         failures.append("no request digests were given")
-    observed: list[str] = []
+    observed: list[tuple[str, str | None]] = []
     files: list[dict[str, Any]] = []
     for path in metrics:
         try:
@@ -373,24 +388,46 @@ def check_capture(metrics: Sequence[Path], request_digests: Sequence[str]) -> Ch
             failures.append(str(gap))
             continue
         digest = start.get("request_sha256")
+        identity = start.get("profile_identity")
+        is_pair = type(digest) is str and digest in cells  # a non-text digest is no pair's
         if digest not in request_digests:
             failures.append(
                 f"{path}: run_start.request_sha256 {digest!r} is not a declared request"
             )
-        observed.append(str(digest))
-        files.append(
-            {
-                "path": str(path),
-                "request_sha256": digest,
-                "result_status": run_end.get("result_status"),
-                "status": run_end.get("status"),
-            }
-        )
-    for digest, count in sorted(Counter(observed).items()):
+        elif is_pair and identity not in cells[cast(str, digest)]:
+            failures.append(
+                f"{path}: run_start.profile_identity {identity!r} is not a declared cell of "
+                f"pair request {digest}"
+            )
+        observed.append((str(digest), str(identity) if is_pair else None))
+        entry: dict[str, Any] = {
+            "path": str(path),
+            "request_sha256": digest,
+            "result_status": run_end.get("result_status"),
+            "status": run_end.get("status"),
+        }
+        if is_pair:
+            entry["profile_identity"] = identity
+        files.append(entry)
+    for (digest, identity), count in sorted(Counter(observed).items()):
         if count > 1:
-            failures.append(f"request {digest} has {count} captured metrics files")
-    for digest in sorted(set(request_digests) - set(observed)):
-        failures.append(f"declared request {digest} has no admissible capture")
+            failures.append(
+                f"request {digest} has {count} captured metrics files"
+                if identity is None
+                else f"request {digest} cell {identity} has {count} captured metrics files"
+            )
+    declared: list[tuple[str, str | None]] = []
+    for digest in sorted(set(request_digests)):
+        declared.extend(
+            [(digest, None)] if digest not in cells else [(digest, c) for c in cells[digest]]
+        )
+    for digest, identity in declared:
+        if (digest, identity) not in set(observed):
+            failures.append(
+                f"declared request {digest} has no admissible capture"
+                if identity is None
+                else f"declared request {digest} cell {identity} has no admissible capture"
+            )
     return _result("k3", failures, {"files": files})
 
 

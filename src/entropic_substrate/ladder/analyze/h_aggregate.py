@@ -446,9 +446,18 @@ def load_h_run(
     ``phase.start`` event; and the metrics hold no prediction step row, no evaluation row and
     committed warm-up rows exactly ``1..k`` with ``k < W`` (zero rows allowed). Such a run
     loads with its warm-up rows only and no evaluations. Every other stream with no prediction
-    seal raises the unchanged messages, and the ``warmup_steps=`` and ``handoff=`` paths are
-    byte-unchanged and never combine with this branch. A stopped stream that HAS its warm-up
-    final seal stays refused.
+    seal raises the unchanged messages, and the ``warmup_steps=`` and ``handoff=`` paths never
+    combine with this branch. A stopped stream that HAS its warm-up final seal stays refused.
+
+    RETRACTION (house rule 4, 2026-11-03, PR #430 review): the sentence above said the
+    ``warmup_steps=`` and ``handoff=`` paths were "byte-unchanged" by DH-46. They were not:
+    :func:`final_h_run_end` waives its committed-row check for every caller once the run_end
+    records a scientific stop, so a stopped pod with ZERO committed rows and one prediction
+    seal loaded under EITHER override with an empty training axis (measured on both paths).
+    Without a prediction seal the ``handoff=`` path refused, but with "the warm-up length
+    cannot be derived", not "the run never trained". Both overrides now refuse a pod with no
+    committed row with the reader's never-trained text; the seal-less hand-off case keeps its
+    earlier derivation refusal.
     """
     if handoff is not None and type(handoff) is not CodecHandoffEvidence:
         raise TypeError("handoff evidence must be a CodecHandoffEvidence")
@@ -595,6 +604,13 @@ def load_h_run(
         _gap(
             f"{metrics}: the worker log puts the warm-up at {warmup_steps} steps, but the "
             f"committed codec_warmup rows number {warmup_rows} and end at {warmup_max}"
+        )
+    if (handoff is not None or declared_warmup is not None) and not training:
+        # the scientific-stop waiver in final_h_run_end lets a zero-row stream reach here; an
+        # override derives the warm-up from a prediction seal and must not admit it empty
+        _gap(
+            f"{metrics}: an admissible H run holds at least one committed {_STEP_SCHEMA} "
+            "row, found none — the run never trained"
         )
     evaluation_steps = [step for step, _ in evaluations]
     if any(later <= earlier for earlier, later in pairwise(evaluation_steps)):

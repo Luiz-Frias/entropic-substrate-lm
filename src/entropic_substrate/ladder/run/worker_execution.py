@@ -1,7 +1,6 @@
 """One admitted H probe lineage; no allocation and no scientific successor authority."""
 
 import hashlib
-import json
 import os
 import time
 from collections.abc import Callable, Generator, MutableMapping, Sequence
@@ -26,8 +25,9 @@ from entropic_substrate.ladder.run.admission import RUN_ADMISSION, RUNTIME_KIND
 from entropic_substrate.ladder.run.campaign.d1_operator_values import require_d1_pod_id
 from entropic_substrate.ladder.run.codec_handoff import materialize_codec_handoff
 from entropic_substrate.ladder.run.generation import run_probe_generation
-from entropic_substrate.ladder.run.journal import artifact_reference, write_json
+from entropic_substrate.ladder.run.journal import artifact_reference, schema_records, write_json
 from entropic_substrate.ladder.run.native_verification import verify_native_capture
+from entropic_substrate.ladder.run.pair_run_tags import CellLifecycle, PairOutcome
 from entropic_substrate.ladder.run.runner import (
     CellScope,
     ReceiptBinding,
@@ -381,10 +381,16 @@ class CellSinks(Protocol):
 
     ``begin`` builds the cell's sink (re-pointing the worker log once, inside the provider);
     ``finish`` terminates that cell's run exactly once. This module never builds or finishes a
-    sink (FOR-1693, P5-15).
+    sink (FOR-1693, P5-15). DH-50 (operator ruling 2026-11-03): ``begin`` opens the run tagged
+    ``esl.lifecycle = live``; ``lifecycle`` replaces that cell's tag when it pauses, stops or
+    completes; ``pair_outcome`` sets ``esl.pair_outcome`` on the DONOR's run.
     """
 
     def begin(self, cell: str, profile: HProfile) -> MetricSink: ...
+
+    def lifecycle(self, cell: str, value: CellLifecycle) -> None: ...
+
+    def pair_outcome(self, value: PairOutcome) -> None: ...
 
     def finish(self, cell: str, status: Literal["FINISHED", "FAILED"]) -> None: ...
 
@@ -403,10 +409,13 @@ class CellObserver(Protocol):
 
     ``focus`` names the cell the loop is entering, BEFORE anything of it can fail (so a hand-off
     failure is the recipient's); ``begin`` opens the cell (its ``run_start`` and sink) and returns
-    its hooks; ``end`` closes it with its own on-disk outcome (its ``run_end`` and run status).
+    its hooks; ``end`` closes it with its own on-disk outcome (its ``run_end`` and run status);
+    ``pair_outcome`` records the pair's hand-off decision on the donor's run (DH-50), once.
     """
 
     def focus(self, cell: str) -> None: ...
+
+    def pair_outcome(self, value: PairOutcome) -> None: ...
 
     def begin(self, cell: str, profile: HProfile, runtime: dict[str, object]) -> CellHooks: ...
 
@@ -495,18 +504,17 @@ def pair_result(
     }
 
 
-def _training_failure_record(output: Path) -> tuple[Path, dict[str, object]] | None:
+def _training_failure_record(
+    output: Path, *, max_bytes: int
+) -> tuple[Path, dict[str, object]] | None:
     """The one ``h-probe-training-failure-v2`` record in a cell's run root, or ``None``.
 
-    Located by reading every ``*.json`` of the root and keeping those whose ``schema`` IS that
-    name (never a file-name glob alone); two is a defect and raises, none is ``None`` (the
-    runner raised before its own record could be written).
+    Located by :func:`~entropic_substrate.ladder.run.journal.schema_records` (every ``*.json``
+    of the root, read bounded and no-follow, kept when its ``schema`` IS that name); two is a
+    defect and raises, none is ``None`` (the runner raised before its own record could be
+    written).
     """
-    found: list[tuple[Path, dict[str, object]]] = []
-    for path in sorted(output.glob("*.json")):
-        row = json.loads(path.read_bytes())
-        if type(row) is dict and row.get("schema") == "h-probe-training-failure-v2":
-            found.append((path, cast(dict[str, object], row)))
+    found = schema_records(output, "h-probe-training-failure-v2", max_bytes=max_bytes)
     if len(found) > 1:
         raise ValueError("a cell root holds more than one training failure record")
     return found[0] if found else None
@@ -669,7 +677,7 @@ def _execute_pair(
         on to its verdict); ``False``: an execution-class stop (result v2 written; the caller
         re-raises the original exception)."""
         output = root / "run" / cell.token
-        found = _training_failure_record(output)
+        found = _training_failure_record(output, max_bytes=limits.max_object_bytes)
         scientific = isinstance(error, UndefinedDirection)
         if found is not None:
             record_path, record = found
@@ -837,6 +845,10 @@ def _execute_pair(
             if cells is None
             else cells.begin(cell.token, cell.profile, runtime)
         )
+        if index == 1 and cells is not None:
+            # DH-50: the donor handed off once the recipient STARTS, i.e. its run is open; never
+            # before (a hand-off or recipient-open failure leaves the pair stopped before it)
+            cells.pair_outcome("handed_off")
         try:
             trained, operator_stopped = train(cell, index, resume, hooks)
         except Exception as error:
@@ -846,16 +858,42 @@ def _execute_pair(
         workload(cell, trained, operator_stopped, began)
 
     # ---------------------------------------------------------------------- the donor
+    # a cell's resume names ``run/<cell>/<receipt>`` in the REQUEST (its inputs' own paths); the
+    # runner reads it relative to that cell's run root, exactly as a hand-off receipt is named
+    donor_resume, recipient_resume = (
+        None
+        if cell.resume is None
+        else ArtifactIdentity(PurePosixPath(cell.resume.path).name, cell.resume.content_hash)
+        for cell in request.cells
+    )
     if cells is not None:
         cells.focus(donor.token)
-    (root / "run" / donor.token).mkdir(parents=True)
-    run_cell(donor, 0, None)
+    # a resuming donor's root exists already (materialized from its inputs); a fresh one must not
+    (root / "run" / donor.token).mkdir(parents=True, exist_ok=donor_resume is not None)
+    run_cell(donor, 0, donor_resume)
 
     # ----------------------------------------------- the hand-off, then the recipient
     handed_off = donor.outcome == "complete" or (
         donor.outcome == "scientific_gap" and donor.reason is H1ExclusionReason.NONFINITE_ENDPOINT
     )
-    if handed_off:
+    if not handed_off and cells is not None:
+        # DH-50: the pair's decision when the donor returned without a hand-off. A raise out of
+        # the donor (an execution-class stop, a DH-45 post-training failure) or out of the
+        # hand-off never reaches here: object_worker's failure arm records it as stopped.
+        match donor.outcome:
+            case "paused":
+                cells.pair_outcome("paused_before_handoff")
+            case "stopped_by_operator" | "scientific_gap":
+                cells.pair_outcome("stopped_before_handoff")
+            case other:
+                raise ValueError(f"a donor that returned {other!r} has no DH-50 pair outcome")
+    if handed_off and recipient_resume is not None:
+        # C-L4c-2 case 3: the recipient resumes from its OWN receipt (never the hand-off receipt:
+        # R3); its root came with the inputs, the donor's root too, and no hand-off is made again
+        if cells is not None:
+            cells.focus(recipient.token)
+        run_cell(recipient, 1, recipient_resume)
+    elif handed_off:
         if cells is not None:
             cells.focus(recipient.token)
         donor_root = root / "run" / donor.token

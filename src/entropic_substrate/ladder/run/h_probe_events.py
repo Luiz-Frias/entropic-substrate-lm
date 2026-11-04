@@ -4,8 +4,9 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
+from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
@@ -16,8 +17,11 @@ from entropic_substrate.ladder.run.transport.d1_trainer_object_transport import 
 )
 from entropic_substrate.ladder.run.worker_completion import admit_publication, admit_worker_runtime
 from entropic_substrate.ladder.run.worker_request import (
+    AnyProbeRequest,
+    PairProbeRequest,
     ProbeRequest,
     worker_artifact,
+    worker_cell_artifact,
 )
 
 _COMMON = "schema request_sha256 run_identity scientific_authority at status snapshot"
@@ -36,6 +40,13 @@ _STATUS = {
     "paused": "paused",
     "stopped": "stopped_by_operator",
 }
+# FOR-1694: a PAIR's events (written by ``object_worker``). The set adds ``excluded`` (the pair's
+# one non-failure scientific terminal, status ``pair_excluded``); a stopped pair event carries no
+# ``successful_optimizer_steps`` (each cell has its own, inside the result v2 it cites), and a
+# checkpoint event is named for its CELL: ``checkpoint-<cell>-<total:08d>``.
+_PAIR_FIELDS = {**_FIELDS, "stopped": "result", "excluded": "result"}
+_PAIR_STATUS = {**_STATUS, "excluded": "pair_excluded"}
+_PAIR_CHECKPOINT = re.compile(r"checkpoint-([a-z0-9][a-z0-9-]*)-([0-9]{8,})")
 # FOR-1567/pre-for-1567c, design-gate rulings DG-C and DN-1567-C: a
 # `publication` block records per-leg seconds and object/retry counts. It
 # first appeared on checkpoint-* events only (DG-C); DN-1567-C (operator,
@@ -50,7 +61,7 @@ _STATUS = {
 # `worker_completion.py` (reused, not copied): this module already imports
 # `admit_worker_runtime` from there, so importing `admit_publication` too
 # adds no new edge, while the reverse import would close a cycle.
-_PUBLICATION_KINDS = ("checkpoint", "complete", "paused", "stopped")
+_PUBLICATION_KINDS = ("checkpoint", "complete", "paused", "stopped", "excluded")
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +83,7 @@ class ObservedProbeEvent:
         return False
 
 
-def _snapshot(value: object, request: ProbeRequest, name: str) -> D1TrainerMailboxObjectIdentity:
+def _snapshot(value: object, request: AnyProbeRequest, name: str) -> D1TrainerMailboxObjectIdentity:
     row = recovery_record(value, "key size_bytes sha256")
     key, size, digest = row["key"], row["size_bytes"], row["sha256"]
     if (
@@ -106,7 +117,7 @@ def _admit_failure(row: dict[str, object]) -> None:
 
 def read_probe_event(
     objects: D1TrainerMailboxObjectPort,
-    request: ProbeRequest,
+    request: AnyProbeRequest,
     name: str,
     *,
     expected_pod_id: str | None,
@@ -118,14 +129,29 @@ def read_probe_event(
     pass receive_worker_completion before the host admits workload completion.
     The object adapter must also bound network reads; this reader validates the
     returned bytes and never interprets a snapshot marker as verified contents.
+
+    FOR-1694: a pair request reads the pair's event vocabulary (``_PAIR_FIELDS``): its own
+    terminal names and cell-named checkpoints, with the run identity each event carries
+    (pair-level events the pair id, a checkpoint its cell's profile identity, a failure the pair
+    id or the failing cell's). A single-profile request keeps every byte of its reader.
     """
-    if type(request) is not ProbeRequest:
+    if type(request) is not ProbeRequest and type(request) is not PairProbeRequest:
         raise ValueError("worker observation requires a validated probe request")
     if type(name) is not str:
         raise ValueError("worker event name must be text")
-    checkpoint = re.fullmatch(r"checkpoint-([0-9]{8,})", name)
+    pair = request if isinstance(request, PairProbeRequest) else None
+    fields_by_kind = _FIELDS if pair is None else _PAIR_FIELDS
+    cell: str | None = None
+    if pair is None:
+        checkpoint = re.fullmatch(r"checkpoint-([0-9]{8,})", name)
+    else:
+        checkpoint = _PAIR_CHECKPOINT.fullmatch(name)
+        if checkpoint is not None:
+            cell = checkpoint.group(1)
+            if cell not in pair.tokens:
+                raise ValueError("worker event names a cell outside its pair")
     kind = "checkpoint" if checkpoint else name
-    if kind not in _FIELDS or name == "checkpoint":
+    if kind not in fields_by_kind or name == "checkpoint":
         raise ValueError("worker event name is unsupported")
     if type(max_bytes) is not int or not 1 <= max_bytes <= request.limits.max_object_bytes:
         raise ValueError("worker event requires a positive bounded byte budget")
@@ -145,11 +171,26 @@ def read_probe_event(
         extra = " delivery_error_type"
     if type(value) is dict and kind in _PUBLICATION_KINDS and "publication" in value:
         extra += " publication"
-    row = recovery_record(value, f"{_COMMON} {_FIELDS[kind]}{extra}")
+    row = recovery_record(value, f"{_COMMON} {fields_by_kind[kind]}{extra}")
+    if pair is None:
+        run_identity_ok = row["run_identity"] == _single_profile(request).identity
+    elif kind == "checkpoint":
+        run_identity_ok = (
+            row["run_identity"] == pair.cells[pair.tokens.index(cast(str, cell))].profile.identity
+        )
+    elif kind == "failure":
+        # the failing cell's identity (a hand-off failure is the recipient's) or the pair's own
+        run_identity_ok = row["run_identity"] in (
+            pair.run_identity,
+            pair.donor.identity,
+            pair.recipient.identity,
+        )
+    else:
+        run_identity_ok = row["run_identity"] == pair.run_identity
     if (
         row["schema"] != "h-worker-event-v1"
         or row["request_sha256"] != request.digest
-        or row["run_identity"] != request.profile.identity
+        or not run_identity_ok
         or row["scientific_authority"] != "none"
         or json.dumps(row, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
         != received.payload
@@ -159,7 +200,8 @@ def read_probe_event(
     if type(at) is not str or datetime.fromisoformat(at).utcoffset() != UTC.utcoffset(None):
         raise ValueError("worker event time must be UTC")
     status = row["status"]
-    if type(status) is not str or (kind != "failure" and status != _STATUS[kind]):
+    statuses = _STATUS if pair is None else _PAIR_STATUS
+    if type(status) is not str or (kind != "failure" and status != statuses[kind]):
         raise ValueError("worker event status differs from its role")
     steps = None
     if kind == "failure":
@@ -169,24 +211,27 @@ def read_probe_event(
         worker_artifact(row["record"], "worker")
     elif kind == "checkpoint":
         count = row["successful_optimizer_steps"]
+        schedule = (
+            _single_profile(request).schedule
+            if pair is None
+            else pair.cells[pair.tokens.index(cast(str, cell))].profile.schedule
+        )
         if (
             type(count) is not int
-            or not 1
-            <= count
-            <= request.profile.schedule.warmup_steps + request.profile.schedule.steps
-            or name != f"checkpoint-{count:08d}"
+            or not 1 <= count <= schedule.warmup_steps + schedule.steps
+            or name
+            != (f"checkpoint-{count:08d}" if cell is None else f"checkpoint-{cell}-{count:08d}")
         ):
             raise ValueError("worker checkpoint count differs from event or workload")
         steps = count
-        worker_artifact(row["training"], "run")
-    elif kind == "stopped":
+        if pair is None:
+            worker_artifact(row["training"], "run")
+        else:
+            worker_cell_artifact(row["training"], "run", cast(str, cell))
+    elif kind == "stopped" and pair is None:
         count = row["successful_optimizer_steps"]
-        if (
-            type(count) is not int
-            or not 1
-            <= count
-            <= request.profile.schedule.warmup_steps + request.profile.schedule.steps
-        ):
+        schedule = _single_profile(request).schedule
+        if type(count) is not int or not 1 <= count <= schedule.warmup_steps + schedule.steps:
             raise ValueError("worker stopped step differs from workload bounds")
         steps = count
         worker_artifact(row["result"], "worker")
@@ -200,3 +245,10 @@ def read_probe_event(
         else _snapshot(row["snapshot"], request, name)
     )
     return ObservedProbeEvent(received.identity, received.payload, status, snapshot, steps)
+
+
+def _single_profile(request: AnyProbeRequest) -> HProfile:
+    """The one profile of a single-profile request (never called for a pair)."""
+    if not isinstance(request, ProbeRequest):
+        raise ValueError("a pair has no single profile")
+    return request.profile

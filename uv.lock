@@ -1211,8 +1211,8 @@ analysis = [
     { name = "scipy", specifier = ">=1.15.0" },
 ]
 deploy = [
-    { name = "boto3", specifier = ">=1.34.0" },
-    { name = "botocore", specifier = ">=1.34.0" },
+    { name = "boto3", specifier = ">=1.35.2" },
+    { name = "botocore", specifier = ">=1.35.2" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "pynvml", specifier = ">=12.0.0" },
@@ -1222,8 +1222,8 @@ dev = [
     { name = "alembic", specifier = "!=1.10.0,<2" },
     { name = "bandit", specifier = ">=1.8.0" },
     { name = "basedpyright", specifier = ">=1.37.0" },
-    { name = "boto3", specifier = ">=1.34.0" },
-    { name = "botocore", specifier = ">=1.34.0" },
+    { name = "boto3", specifier = ">=1.35.2" },
+    { name = "botocore", specifier = ">=1.35.2" },
     { name = "deptry", specifier = ">=0.20.0" },
     { name = "dvc", extras = ["s3"], specifier = ">=3.59.0" },
     { name = "geoopt", git = "https://github.com/geoopt/geoopt.git" },

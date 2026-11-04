@@ -96,8 +96,10 @@ def run_probe_command(
             max_bytes=args.max_launch_bytes,
         )
         launch = parse_probe_launch(payload, max_bytes=args.max_launch_bytes)
-        # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap.
-        launch.require_hourly_rate_within_cap(args.max_hourly_rate)
+        # Rung B: a scientific launch's ceiling must keep the run inside its sealed cap; a flag
+        # that disagrees with a sealed ceiling is refused here, before any workspace creation or
+        # provider call.
+        max_hourly_rate = launch.hourly_ceiling(args.max_hourly_rate)
         root = normalize_d1_artifact_root(args.workspace)
         metadata = root.stat()
         if (
@@ -134,7 +136,7 @@ def run_probe_command(
                     objects,
                     capture,
                     poll_seconds=settings.poll_seconds,
-                    max_hourly_rate=args.max_hourly_rate,
+                    max_hourly_rate=max_hourly_rate,
                 )
             except ProbeControllerFailure as error:
                 evidence = error.record

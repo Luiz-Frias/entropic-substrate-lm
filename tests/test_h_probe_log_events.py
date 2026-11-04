@@ -400,7 +400,11 @@ def test_a_resumed_request_with_nothing_published_probes_only_above_the_stop() -
 
 
 def test_a_warmup_stop_maps_to_the_global_axis_without_the_warmup_offset() -> None:
-    request = _resumed_request("h0-warmup-00000250-progress.json")
+    """RETRACTED 2026-11-02: this fixture was named ``h0-warmup-...`` and the controller
+    regex matched it, but ``runner.py`` names receipts with ``execution.phase`` and
+    ``SentencePhase`` is ``codec_warmup | prediction``, so no real warm-up receipt ever
+    matched. The fixture now carries the name the runner writes."""
+    request = _resumed_request("h0-codec_warmup-00000250-progress.json")
     reads, fake = _probe_log({"checkpoint-00000500"})
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(controller, "read_probe_event", fake)
@@ -423,6 +427,7 @@ def test_a_request_without_resume_still_probes_from_the_first_candidate() -> Non
         "h0-prediction-00000200-progress.json",  # global 450: not on the seal ladder
         "h0-prediction-00000250-receipt.json",  # not a progress receipt name
         "h0-cooldown-00000250-progress.json",  # unknown phase
+        "h0-warmup-00000250-progress.json",  # the pre-retraction fixture name is no phase
     ],
 )
 def test_a_resume_whose_stop_is_not_on_the_seal_ladder_is_refused(name: str) -> None:

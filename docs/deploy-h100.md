@@ -180,7 +180,8 @@ any authority on a smoke request. The worker request carries the authority as
 byte-identically, so every captured `request_sha256` re-derives. A codec-sharing PAIR is its own
 request, `h-probe-worker-request-v3` (FOR-1693): two cells donor first (the magnitude-spine arm, then
 the sphere-spine arm), a block binding and one authority for both; v1 and v2 keep their bytes and
-meaning, and no launch carries a pair before FOR-1694. The launch manifest
+meaning (RETRACTED 2026-11-02: "no launch carries a pair before FOR-1694"; launch v5 below carries
+one). The launch manifest
 `h-probe-launch-v4` names the authority digest as both `scientific_authority` and
 `spending_authority` (`"none"` for smoke). A scientific launch declares the cost guard
 `host_watchdog_budgeted` (smoke keeps `host_watchdog_tiny_only`, the only kind it may declare),
@@ -200,9 +201,61 @@ for a request that carries an authority, so a tracking URI alone enables its mir
 eight-key template is created at the image rebuild ceremony for the first image that carries
 this schema; none exists yet and no template id is recorded here until that ceremony measures one.
 `validate_template` compares the whole environment, so a nine-key smoke template is refused for a
-pilot and the converse. READ-OLD: a `h0-probe-launch-v3` (or v2) payload reads as the same class,
-re-renders its own bytes and never compares equal to a v4 launch; a pre-v4 payload carries no
-authority, so a v3 launch of a scientific request is refused. v1 stays refused.
+pilot and the converse. READ-OLD: a `h0-probe-launch-v3` payload reads as the same class, re-renders its own bytes and
+never compares equal to a v4 launch; a pre-v4 payload carries no authority, so a v3 launch of a
+scientific request is refused. v1 stays refused. (The v2 read this paragraph described was RETIRED
+by v5 below: a v2 payload is refused by name.)
+
+LAUNCH SCHEMA v5 (2026-11-02, FOR-1694, h1-l4c). One bump, three moves. (1) The launch SEALS its
+hourly price: a scientific launch declares `hourly_price_ceiling` (USD per hour) at construction, an
+explicit field with no default that is never derived from the authority (`RunAuthority` carries a
+USD cap and an hours cap and no hourly price, so `usd / hours` would replace the ceiling the invoker
+approved with a looser number nobody typed). The product rule of rung B is unchanged and now runs at
+construction and at parse: `ceiling * watchdog_timeout_seconds / 3600 <= spend_cap.usd`. The
+manifest also records `hours_cap`, copied from `spend_cap.hours` and re-derived at parse; a smoke
+launch carries explicit `null` for both. `h_probe_command` and the controller read the ceiling from
+the launch. `--max-hourly-rate` is REQUIRED for every launch class (C-L4c-4, the parent's required
+flag): the argparse refusal (exit 2) comes before the launch is read. For a sealed launch the flag
+must equal the sealed value exactly (no tolerance), else it is refused by name before any workspace
+or provider call; the controller's `cost_per_hour` check compares against the sealed value. A smoke,
+v4 or v3 launch has no sealed ceiling and keeps the flag with its v3 semantics. (2) The launch
+carries a codec-sharing pair (`h-probe-worker-request-v3`): the manifest records `pair` and both
+cell identities (`cells`, donor first), re-derived from the embedded request at parse; a pair under
+a v3 or v4 manifest is refused by name. (3) The v2 read retires, as the v3 section promised: a
+`h0-probe-launch-v2` payload is refused naming `h0-probe-launch-v3` as the minimum supported
+version. READ-OLD: v4 and v3 payloads (every H0 launch file sealed on R2 is v3) read as the same
+class, re-render their own bytes and never compare equal to a v5 launch. Every launch built in
+process renders v5, so its digest, pod name and workspace moved; the pod name rule
+`<stage>-<class>-<digest prefix>` (smoke `h0-tiny-...`) is unchanged, and the pod listing filter
+matches that exact name. The scientific pod environment is the same eight keys as v4.
+
+Host side of a pair (FOR-1694). A pair is collected as `h-probe-terminal-collection-v2`: one entry
+per cell (receipt, result entry, capture and verification roots), the pair verdict and the terminal
+it was collected under (`complete`, `paused`, `stopped`, `excluded`, `failure`); result v2 is read
+under every terminal that can carry it, the failure terminal included, and `workload_verified` is
+keyed on the verdict, never on a status. A failure at `final_snapshot` happens after the worker
+wrote result v2, so its failure snapshot carries an admitted complete, excluded, paused or stopped
+result: the host records it as `failure_bytes_verified` with that verdict, and a pair so collected
+is a resumable source unless the verdict is an exclusion. A pair whose pod never began a cell
+collects as a typed `pair_not_started` failure. A single-profile request keeps
+`h-probe-terminal-collection-v1` byte for byte. The wave monitor lists one arm per (request, cell),
+each searched by the `request_sha256` and `cell` run tags; `h_probe_stop --at-cell donor|recipient`
+(with `--at-phase` and `--at-step`) publishes the write-once `h-probe-stop-marker-v2`: a recipient
+target stops the recipient only, a donor target stops the pair with no hand-off, and a pair without
+`--at-cell` is refused by name. Objects above 64 MiB are published as
+verified multipart uploads (`d1_trainer_s3_object_adapter`); Cloudflare R2's handling of conditional
+completion and part checksums is UNMEASURED, so the first live pair run is the measurement.
+
+Capture by reference (FOR-1694). RETRACTED 2026-11-02: the phrase "lands with the staged
+reader-member DG-A patch, not on this branch tip" was false at the tip; the DG-A patch is landed
+at this tip and `worker_snapshot` writes `h-worker-snapshot-v2` reference entries. A pair's completion snapshot is `h-worker-snapshot-v2`: a `capture/<cell>/<file>`
+whose bytes equal the snapshot's own `run/<cell>/<file>` is a reference entry (`reference`, and
+`key` naming the referenced object) with no second upload, so a pair pays for each large object
+once. The host resolves a reference to the run twin's bytes and refuses a digest disagreement; a
+reference that is not an equal run twin of its own cell is refused. Every consumer that lists a
+snapshot's keys (for example `h_probe_stop.request_stop`) therefore reads a reference's twin key
+once. A single-profile request keeps `h-worker-snapshot-v1` byte for byte, and a pre-L4c pair's
+v1 markers still read.
 
 Publication capture used a fresh task-private DVC site cache through
 `DVC_SITE_CACHE_DIR`; the pre-existing world-writable site cache was not trusted

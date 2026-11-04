@@ -1,13 +1,37 @@
-"""Strict S3-compatible object adapter for the D1 trainer mailbox port."""
+"""Strict S3-compatible object adapter for the D1 trainer mailbox port.
+
+FOR-1694 (h1-l4c): an object above ``MULTIPART_THRESHOLD_BYTES`` is published as a verified
+MULTIPART upload instead of one ``put_object``. MEASURED 2026-10-28 (quote v4, pod
+qkfduyfla3b6rt): one single PUT of a 1,149,203,227-byte checkpoint raised a
+``ReadTimeoutError`` that three retries did not recover, and a complete 1000-step workload ended
+``execution_defect`` at ``final_snapshot``. The multipart path keeps the single-PUT contract:
+
+1. an existing key is never overwritten: identical bytes are an idempotent success, different
+   bytes raise ``immutable_collision``;
+2. the ``sha256`` metadata is set, so ``_read`` and ``_head`` admit the object unchanged;
+3. success is reported only once the STORED bytes are proven equal to the payload (a full
+   readback, exactly as the single PUT does);
+4. every part is sent with its own SHA-256 (``ChecksumSHA256``) and the provider's echo of it is
+   compared; a part whose digest disagrees, or whose echo is absent, is refused with
+   ``part_digest`` and the upload is aborted;
+5. any failure after the upload began aborts it (best effort, never masking the cause).
+
+No retry loop is added and no timeout or retry budget is raised (house rule 3). UNMEASURED:
+Cloudflare R2's handling of ``IfNoneMatch`` on ``complete_multipart_upload`` and of
+``ChecksumSHA256`` on ``upload_part``; no gate runs multipart against R2 (``compose.yaml`` has no
+S3 service), so the first live use is the measurement.
+"""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import re
 from collections.abc import Mapping
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from entropic_substrate.kernel.artifacts import normalize_d1_relative_artifact_path
+from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import (
     D1TrainerMailboxObjectIdentity,
     D1TrainerMailboxObjectRead,
@@ -16,6 +40,16 @@ from entropic_substrate.ladder.run.transport.d1_trainer_mailbox_contracts import
 __all__ = ["Boto3D1TrainerMailboxObjectAdapter", "D1TrainerS3ObjectError"]
 
 _BUCKET = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+# Sizes. MEASURED: the dev-width checkpoint is 182 MB (2026-10-27) and the quote-v4 pilot-width one
+# is 1,149,203,227 bytes (2026-10-28), so a 64 MiB threshold sends both multipart while every
+# small journal, seal and receipt stays one PUT. PROVIDER RULE (S3 and R2 documentation, not
+# measured here): a part is 5 MiB to 5 GiB, an upload has at most 10,000 parts, and R2 requires
+# every part but the last to be the same size; 64 MiB parts put the 1.15 GB checkpoint in 18 parts
+# and keep any object under 640 GB inside the part cap.
+MULTIPART_THRESHOLD_BYTES = 64 * 1024 * 1024
+MULTIPART_PART_BYTES = 64 * 1024 * 1024
+_MAX_PARTS = 10_000
 
 
 class D1S3BodyPort(Protocol):
@@ -102,6 +136,8 @@ class D1TrainerS3ObjectError(RuntimeError):
             "row_invalid",
             "object_limit",
             "continuation_invalid",
+            "part_digest",
+            "multipart_unsupported",
         }
         cause_name = type(cause).__name__ if cause is not None else None
         cause_names = {
@@ -216,6 +252,8 @@ class Boto3D1TrainerMailboxObjectAdapter:
         bucket: str,
         max_objects: int,
         max_object_bytes: int | None = None,
+        multipart_threshold_bytes: int = MULTIPART_THRESHOLD_BYTES,
+        multipart_part_bytes: int = MULTIPART_PART_BYTES,
     ) -> None:
         methods = ("put_object", "get_object", "head_object", "list_objects_v2")
         if not all(callable(getattr(client, method, None)) for method in methods):
@@ -228,10 +266,15 @@ class Boto3D1TrainerMailboxObjectAdapter:
             type(max_object_bytes) is not int or max_object_bytes < 1
         ):
             raise ValueError("S3 object byte limit must be a positive integer")
+        for value in (multipart_threshold_bytes, multipart_part_bytes):
+            if type(value) is not int or value < 1:
+                raise ValueError("S3 multipart sizes must be positive integers")
         self._client = client
         self._bucket = bucket
         self._max_objects = max_objects
         self._max_object_bytes = max_object_bytes
+        self._multipart_threshold = multipart_threshold_bytes
+        self._multipart_part = multipart_part_bytes
 
     def _read(self, key: str) -> D1TrainerMailboxObjectRead | None:
         try:
@@ -285,6 +328,8 @@ class Boto3D1TrainerMailboxObjectAdapter:
             raise _error("publish", "payload_hash")
         if self._max_object_bytes is not None and len(payload) > self._max_object_bytes:
             raise _error("publish", "byte_limit")
+        if len(payload) > self._multipart_threshold:
+            return self._publish_multipart(normalized, payload, expected)
         try:
             self._client.put_object(
                 Body=payload,
@@ -302,6 +347,119 @@ class Boto3D1TrainerMailboxObjectAdapter:
                 raise _error("publish", "immutable_collision") from cause
             return expected
         observed = self._read(normalized)
+        if observed is None or observed.identity != expected or observed.payload != payload:
+            raise _error("publish", "readback_mismatch")
+        return expected
+
+    def _abort(self, client: Any, key: str, upload_id: str) -> None:
+        """Best-effort cleanup of an unfinished upload; it never masks the cause that led here."""
+        try:
+            client.abort_multipart_upload(Bucket=self._bucket, Key=key, UploadId=upload_id)
+        except Exception as cleanup:
+            # an unfinished upload is an orphan the provider may bill: say so, by TYPE only (never
+            # a message, key or upload id), and let the cause that led here propagate. The line
+            # binds no ``event``: the worker log vocabulary is a closed, frozen door
+            # (``worker_log_events``), and this is a transport adapter's exceptional-path warning,
+            # the same precedent as the missing-declared-log warning that module records. The text
+            # is pinned by test_a_failing_abort_is_logged_by_type_and_never_masks_the_cause.
+            logger.warning(
+                "multipart abort failed: {error_type}", error_type=type(cleanup).__name__
+            )
+
+    def _publish_multipart(
+        self, key: str, payload: bytes, expected: D1TrainerMailboxObjectIdentity
+    ) -> D1TrainerMailboxObjectIdentity:
+        """The verified multipart path; see the module docstring for its five promises."""
+        client = cast(Any, self._client)
+        methods = (
+            "create_multipart_upload",
+            "upload_part",
+            "complete_multipart_upload",
+            "abort_multipart_upload",
+        )
+        if not all(callable(getattr(client, name, None)) for name in methods):
+            raise _error("publish", "multipart_unsupported")
+        # Parts are sliced one at a time inside the upload loop; materializing them all up front
+        # held a full copy of the payload in part-sized pieces beside the payload itself.
+        part_count = -(-len(payload) // self._multipart_part)
+        if part_count > _MAX_PARTS:
+            raise _error("publish", "multipart_unsupported")
+        # (1) never overwrite: the key is probed BEFORE any upload starts
+        try:
+            client.head_object(Bucket=self._bucket, Key=key)
+        except Exception as cause:
+            if not _not_found(cause):
+                raise _error("publish", "head_failure") from cause
+        else:
+            current = self._read(key)
+            if current is None or current.identity != expected or current.payload != payload:
+                raise _error("publish", "immutable_collision")
+            return expected
+        try:
+            started = client.create_multipart_upload(
+                Bucket=self._bucket,
+                Key=key,
+                Metadata={"sha256": expected.sha256},
+                # declared here because every part carries a ChecksumSHA256 (S3 requires the
+                # upload's algorithm to match its parts)
+                ChecksumAlgorithm="SHA256",
+            )
+        except Exception as cause:
+            raise _error("publish", "provider_failure") from cause
+        upload_id = _response(started, operation="publish").get("UploadId")
+        if type(upload_id) is not str or not upload_id:
+            raise _error("publish", "response_invalid")
+        completed: list[dict[str, object]] = []
+        aborted = False  # the upload is aborted exactly once, on whichever path ends it
+        try:
+            for number in range(1, part_count + 1):
+                start = (number - 1) * self._multipart_part
+                part = payload[start : start + self._multipart_part]
+                digest = base64.b64encode(hashlib.sha256(part).digest()).decode()
+                try:
+                    sent = client.upload_part(
+                        Bucket=self._bucket,
+                        Key=key,
+                        UploadId=upload_id,
+                        PartNumber=number,
+                        Body=part,
+                        ContentLength=len(part),
+                        ChecksumSHA256=digest,
+                    )
+                except Exception as cause:
+                    raise _error("publish", "provider_failure") from cause
+                echoed = _response(sent, operation="publish")
+                # (4) the provider's echo of THIS part's digest, compared; absent is a refusal
+                if echoed.get("ChecksumSHA256") != digest or type(echoed.get("ETag")) is not str:
+                    raise _error("publish", "part_digest")
+                completed.append(
+                    {"PartNumber": number, "ETag": echoed["ETag"], "ChecksumSHA256": digest}
+                )
+            try:
+                client.complete_multipart_upload(
+                    Bucket=self._bucket,
+                    Key=key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": completed},
+                    IfNoneMatch="*",
+                )
+            except Exception as cause:
+                if not _precondition_failed(cause):
+                    raise _error("publish", "provider_failure") from cause
+                # lost a race: another writer's object holds the key. Clean up OUR upload, then
+                # read and compare; never overwrite.
+                aborted = True
+                self._abort(client, key, upload_id)
+                current = self._read(key)
+                if current is None or current.identity != expected or current.payload != payload:
+                    raise _error("publish", "immutable_collision") from cause
+                return expected
+        except BaseException:
+            if not aborted:
+                self._abort(client, key, upload_id)
+            raise
+        # (3) success only once the stored bytes are proven equal to the payload
+        observed = self._read(key)
         if observed is None or observed.identity != expected or observed.payload != payload:
             raise _error("publish", "readback_mismatch")
         return expected

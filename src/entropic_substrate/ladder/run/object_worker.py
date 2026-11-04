@@ -17,8 +17,14 @@ from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
 from entropic_substrate.ladder.capture.ports.metric_sink import MetricSink
 from entropic_substrate.ladder.register.h_preservation import H1ExclusionReason
-from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.journal import (
+    artifact_reference,
+    read_json,
+    schema_records,
+    write_json,
+)
 from entropic_substrate.ladder.run.native_verification import read_native_verification
+from entropic_substrate.ladder.run.pair_run_tags import CellLifecycle, PairOutcome
 from entropic_substrate.ladder.run.runner import (
     PROGRESS_SCHEMA_V2,
     CellScope,
@@ -54,6 +60,7 @@ from entropic_substrate.ladder.run.worker_request import (
     ProbeRequest,
     parse_pair_result,
     refuse_pair_result_for_single,
+    refuse_recipient_warmup_target,
     refuse_version,
     worker_artifact,
     worker_cell_artifact,
@@ -128,8 +135,12 @@ def _cell_target(target: object, request: PairProbeRequest) -> tuple[str, int, s
     return phase, step, cast(str, target[2])
 
 
-def _cell_schedule(request: PairProbeRequest, cell: str) -> RunSchedule:
-    return request.cells[request.tokens.index(cell)].profile.schedule
+def _require_cell_seal(request: PairProbeRequest, phase: str, step: int, cell: str) -> None:
+    """The named cell's schedule rule, then the recipient's prediction-only rule (the request
+    gate's own, so a target the recipient never reaches is refused here, at the verb)."""
+    _require_seal(request.cells[request.tokens.index(cell)].profile.schedule, phase, step)
+    if cell == request.tokens[1]:
+        refuse_recipient_warmup_target(phase)
 
 
 def encode_stop_marker(request: AnyProbeRequest, target: StopTarget | None = None) -> bytes:
@@ -145,7 +156,7 @@ def encode_stop_marker(request: AnyProbeRequest, target: StopTarget | None = Non
         if target is None:
             raise ValueError("a pair stop marker names its cell: (phase, step, cell)")
         phase, step, cell = _cell_target(target, request)
-        _require_seal(_cell_schedule(request, cell), phase, step)
+        _require_cell_seal(request, phase, step, cell)
         return _canonical(
             {
                 "schema": STOP_MARKER_SCHEMA_V2,
@@ -185,7 +196,7 @@ def _read_stop_marker(payload: bytes, request: AnyProbeRequest) -> tuple[bool, S
             return False, None
         if _canonical(pair_row) != payload:
             raise ValueError("stop marker is not canonical JSON")
-        _require_seal(_cell_schedule(request, cell_target[2]), cell_target[0], cell_target[1])
+        _require_cell_seal(request, cell_target[0], cell_target[1], cell_target[2])
         return True, cell_target
     if schema == STOP_MARKER_SCHEMA_V2:
         raise ValueError(
@@ -542,33 +553,32 @@ def _admit_result(
     return row
 
 
-def _schema_files(output: Path, schema: str) -> list[dict[str, object]]:
-    """Every JSON file of a cell's run root whose ``schema`` IS ``schema`` (never a name glob)."""
-    rows: list[dict[str, object]] = []
-    for path in sorted(output.glob("*.json")):
-        row = json.loads(path.read_bytes())
-        if type(row) is dict and row.get("schema") == schema:
-            rows.append(cast(dict[str, object], row))
-    return rows
-
-
 def _execution_stop_confirmed(
-    output: Path, cell: str, profile: HProfile, failure: dict[str, object] | None
+    output: Path,
+    cell: str,
+    profile: HProfile,
+    failure: dict[str, object] | None,
+    *,
+    max_bytes: int,
 ) -> bool:
     """P5-13's closed derivation sources for an execution-class cell, in order: the cell's own
     on-disk ``h-probe-training-failure-v2`` record (status ``execution_defect``); else the
-    donor's missing warm-up-final seal; else the recipient root holding no progress receipt."""
+    donor's missing warm-up-final seal; else the recipient root holding no progress receipt.
+
+    A refused resume admission (a donor resuming from its own receipt, a recipient from the
+    hand-off receipt or from its own) writes the first source since PR #430 round 1, so its
+    present receipt never reads as "did not stop"."""
     if failure is not None:
         return failure.get("status") == "execution_defect"
     if cell == "donor":
         warmup_final = [
             seal
-            for seal in _schema_files(output, "h-checkpoint-seal-v1")
+            for _, seal in schema_records(output, "h-checkpoint-seal-v1", max_bytes=max_bytes)
             if seal.get("phase") == "codec_warmup"
             and seal.get("step") == profile.schedule.warmup_steps
         ]
         return not warmup_final
-    return not _schema_files(output, PROGRESS_SCHEMA_V2)
+    return not schema_records(output, PROGRESS_SCHEMA_V2, max_bytes=max_bytes)
 
 
 def _admit_pair_result(
@@ -683,7 +693,7 @@ def _admit_pair_result(
                     token,
                 )
         elif outcome == "execution_defect":
-            if not _execution_stop_confirmed(output, token, profile, failure):
+            if not _execution_stop_confirmed(output, token, profile, failure, max_bytes=maximum):
                 raise ValueError("an execution cell outcome needs its failure evidence on disk")
             if derived_defect is None:
                 derived_defect = token
@@ -702,6 +712,27 @@ def _admit_pair_result(
     return row
 
 
+def _cell_lifecycle(result_status: str) -> CellLifecycle | None:
+    """The DH-50 ``esl.lifecycle`` value a cell's close writes; ``None`` writes none.
+
+    A paused cell is ``paused``; an operator stop and every scientific-class stop (a DH-42
+    training gap, a DH-45 post-training scientific or diagnostic gap) is ``stopped``; a complete
+    workload is ``completed``. An execution-class close writes nothing, so the cell keeps the
+    ``live`` it opened with: the ruling's "a crash never resumed keeps live".
+    """
+    match result_status:
+        case "probe_workload_complete":
+            return "completed"
+        case "paused":
+            return "paused"
+        case "stopped_by_operator" | "scientific_gap" | "diagnostic_gap":
+            return "stopped"
+        case "execution_defect":
+            return None
+        case other:
+            raise ValueError(f"cell result status {other!r} has no DH-50 lifecycle value")
+
+
 class _PairObserver:
     """The per-cell side channels of one pair run (FOR-1693): lifecycle, events, stop poll.
 
@@ -709,6 +740,8 @@ class _PairObserver:
     ``run_start`` and one ``run_end`` per constructed cell, each bound to THAT cell's own
     on-disk outcome and written to THAT cell's sink; the cell's MLflow run terminates FINISHED
     iff the cell's training returned complete, paused or stopped and its workload returned.
+    DH-50: each close replaces the cell's ``esl.lifecycle`` tag (``_cell_lifecycle``) before its
+    run terminates, and the pair's hand-off decision lands ONCE on the donor's run.
     """
 
     def __init__(
@@ -727,6 +760,7 @@ class _PairObserver:
         self._maximum = maximum
         self._logged: dict[str, MetricSink] = {}
         self._began: dict[str, float] = {}
+        self._settled = False
         self.focused: str | None = None
         self.open: str | None = None
 
@@ -789,10 +823,13 @@ class _PairObserver:
         sink = self._logged.pop(cell, None)
         if self.open == cell:
             self.open = None
-        if self.focused == cell and status == "ok":
-            # a cell that ended well leaves its scope: a later pair-level failure (the final
-            # snapshot) names the pair. A cell that ended FAILED keeps it: the execution stop
-            # that follows is that cell's own.
+        if self.focused == cell and result_status != "execution_defect":
+            # a cell that ended well, or stopped SCIENTIFICALLY, leaves its scope: the pair goes
+            # on to its verdict, and a later pair-level failure (result admission, the final
+            # snapshot) names the pair. Only an EXECUTION stop keeps it: the raise that follows
+            # is that cell's own. RETRACTION (house rule 4, PR #430 round 1): this was keyed on
+            # ``status == "ok"``, which kept a scientifically stopped cell in scope, so a later
+            # pair-level failure named that cell's identity instead of the pair's.
             self.focused = None
         if sink is None:
             return
@@ -807,7 +844,28 @@ class _PairObserver:
             }
         )
         if self._sinks is not None:
+            lifecycle = _cell_lifecycle(result_status)
+            if lifecycle is not None:
+                self._sinks.lifecycle(cell, lifecycle)
             self._sinks.finish(cell, "FINISHED" if status == "ok" else "FAILED")
+
+    def pair_outcome(self, value: PairOutcome) -> None:
+        """Record the pair's hand-off decision on the donor's run (DH-50), exactly once.
+
+        Settled BEFORE the write, so a failing write is not retried by the failure arm's
+        :meth:`stop_before_handoff`. No donor run (no provider, or the donor never began) has
+        nothing to tag.
+        """
+        if self._settled:
+            raise ValueError(f"the pair's DH-50 outcome is already recorded, refusing {value!r}")
+        self._settled = True
+        if self._sinks is not None and self._request.tokens[0] in self._began:
+            self._sinks.pair_outcome(value)
+
+    def stop_before_handoff(self) -> None:
+        """The pair failed before its decision was recorded: the donor never handed off."""
+        if not self._settled:
+            self.pair_outcome("stopped_before_handoff")
 
     def fail_open(self, result_status: str) -> None:
         """A post-training stage of the open cell raised: close THAT cell as failed (DH-45)."""
@@ -912,7 +970,14 @@ def run_object_worker(
                 max_bytes=maximum,
             )
             snapshot = publish_worker_snapshot(
-                objects, request, root, ("worker/start.json",), name="started"
+                objects,
+                request,
+                root,
+                ("worker/start.json",),
+                name="started",
+                # FOR-1694: a pair's later snapshots re-list worker/start.json; ledgering it here
+                # keeps the failure snapshot from re-PUTting what the run already published
+                ledger=ledger if pair is not None else None,
             )
             _event(
                 objects,
@@ -1089,6 +1154,9 @@ def run_object_worker(
                     root,
                     _paths(root, ("run", "capture", "verification", "worker")),
                     name="failure",
+                    # FOR-1694: a pair's failure snapshot must not re-PUT what this run already
+                    # published and verified (measured: 62 files re-published for 1,382.7 s)
+                    ledger=ledger if pair is not None else None,
                 )
             except Exception as delivery_error:
                 try:
@@ -1146,6 +1214,9 @@ def run_object_worker(
                 # with THIS error's v1 status; a cell the loop already closed is left alone
                 try:
                     observer.fail_open(status)
+                    # DH-50: a raise before the hand-off decision (a donor execution-class or
+                    # DH-45 stop, a failed hand-off, a recipient that never opened) stops the pair
+                    observer.stop_before_handoff()
                 except Exception as sink_error:
                     raise ExceptionGroup(
                         "worker failure and lifecycle sink defect", [propagated, sink_error]

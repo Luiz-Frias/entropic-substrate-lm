@@ -1,7 +1,19 @@
-"""H0 deployment pins cannot become broader experiment or spending authority."""
+"""H0 deployment pins cannot become broader experiment or spending authority.
+
+RE-FROZEN 2026-11-02 (FOR-1694, h1-l4c, C-L4c-1, launch schema v5). Every launch these helpers
+build in-process now renders ``h-probe-launch-v5`` (write-new), so each frozen launch digest and
+pod name moved once. RETRACTION (house rule 4): the digest, pod name and workspace the v4
+fixtures pinned before this commit (every ``launch()``, ``launch_nine()``, ``pilot_launch()``
+and ``pilot_launch_eight()`` value, whose manifests carried ``"schema":"h-probe-launch-v4"``)
+are retracted, not renamed: the v4 manifest bytes still parse and re-render as the same class
+(``test_a_v4_payload_reads_old_as_the_same_class_and_never_equals_v5``), but no in-process
+launch equals one. The legacy ``h0-probe-launch-v2`` payload below keeps its byte and name
+pins and is now REFUSED BY NAME (its read retired at this bump).
+"""
 
 import hashlib
 import json
+import re
 import shlex
 import sys
 from dataclasses import fields, replace
@@ -27,6 +39,7 @@ from entropic_substrate.ladder.run.h_probe_launch import (
     LAUNCH_SCHEMA_V2,
     LAUNCH_SCHEMA_V3,
     LAUNCH_SCHEMA_V4,
+    LAUNCH_SCHEMA_V5,
     H0ProbeLaunch,
     LaunchExtension,
     named_experiment,
@@ -98,8 +111,25 @@ def pilot_request(**authority_changes: object) -> ProbeRequest:
     return replace(value, profile=profile, authority=sealed_authority(**authority_changes))
 
 
+# The fixture's sealed hourly price ceiling: 36.9 USD/h over the 3900 s watchdog is 39.975 USD,
+# inside the authority's 40 USD cap (37.0 is 40.083 USD, past it).
+PILOT_CEILING = 36.9
+
+
 def pilot_launch() -> H0ProbeLaunch:
-    return replace(launch(), request=pilot_request(), cost_guard="host_watchdog_budgeted")
+    """A v5 scientific launch: it SEALS ``PILOT_CEILING``."""
+    return replace(
+        launch(),
+        request=pilot_request(),
+        cost_guard="host_watchdog_budgeted",
+        hourly_price_ceiling=PILOT_CEILING,
+    )
+
+
+def pilot_launch_v4() -> H0ProbeLaunch:
+    """The same scientific launch under the v4 manifest: it seals no ceiling, so the
+    ``--max-hourly-rate`` flag keeps its v3 semantics (the rung B cap check)."""
+    return replace(pilot_launch(), manifest_schema=LAUNCH_SCHEMA_V4, hourly_price_ceiling=None)
 
 
 def pilot_launch_eight() -> H0ProbeLaunch:
@@ -115,7 +145,7 @@ def test_roundtrip_binds_every_deployment_choice_without_authority() -> None:
     assert value.manifest["scientific_authority"] == "none"
     assert value.manifest["spending_authority"] == "none"
     assert value.manifest["provider_deadline"] is None
-    assert value.manifest["schema"] == "h-probe-launch-v4"
+    assert value.manifest["schema"] == "h-probe-launch-v5"
     assert value.manifest["runpodctl_version"] == "runpodctl 3.0.1-551d6a4"
     assert len(value.manifest["runpodctl_sha256"]) == 64
     for updated in (
@@ -423,32 +453,25 @@ _BASE_KEYS = (
 )
 
 
-def test_a_parent_v2_payload_reads_as_the_same_launch_with_no_extensions() -> None:
-    """C1: read-old preserves identity. Payload, digest, pod name and workspace are
-    the v2 bytes' own; the schema marker is state, so it never equals a v3 launch."""
+def test_a_v2_payload_is_refused_by_name_and_the_refusal_names_v3_as_the_minimum() -> None:
+    """C-L4c-1: the v2 read the v3 section promised to retire at the next bump is closed. The
+    legacy bytes, digest and name pin stay as a record (the rule ``<h0-tiny>-<digest[:24]>`` that
+    named a v2 pod is unchanged), but ``parse_probe_launch`` refuses them naming the minimum."""
     assert hashlib.sha256(_PARENT_V2_PAYLOAD).hexdigest() == _PARENT_V2_DIGEST
-    read = parse_probe_launch(_PARENT_V2_PAYLOAD, max_bytes=1_000_000)
-    assert type(read) is H0ProbeLaunch
-    assert read.payload == _PARENT_V2_PAYLOAD
-    assert read.digest == _PARENT_V2_DIGEST
-    assert read.pod_name == _PARENT_V2_POD_NAME
-    assert read.workspace == f"/app/h-probe-{_PARENT_V2_DIGEST}"
-    assert read.manifest_schema == LAUNCH_SCHEMA_V2 and read.extensions == ()
-    assert read.manifest["schema"] == LAUNCH_SCHEMA_V2 and "extensions" not in read.manifest
-    assert tuple(read.template_environment) == _BASE_KEYS
-    args = read.create_arguments
-    assert args[args.index("--name") + 1] == _PARENT_V2_POD_NAME
-    assert args[args.index("--template-id") + 1] == "template-fixture"
-    # write-new: the same choices built in-process render v4 and a different identity
-    built = launch()
-    assert built.manifest_schema == LAUNCH_SCHEMA_V4 and built != read
-    assert built.digest != read.digest and built.pod_name != read.pod_name
-    assert parse_probe_launch(read.payload, max_bytes=1_000_000) == read
+    assert f"h0-tiny-{_PARENT_V2_DIGEST[:24]}" == _PARENT_V2_POD_NAME
+    with pytest.raises(ValueError) as raised:
+        parse_probe_launch(_PARENT_V2_PAYLOAD, max_bytes=1_000_000)
+    message = str(raised.value)
+    assert LAUNCH_SCHEMA_V2 in message and "minimum supported version" in message
+    assert LAUNCH_SCHEMA_V3 in message and "not admitted" in message
+    # in-process construction under the retired name is refused too, never rendered
+    with pytest.raises(ValueError, match="manifest schema is not admitted"):
+        replace(launch(), manifest_schema=LAUNCH_SCHEMA_V2)
 
 
-def test_the_v4_manifest_records_extension_names_and_parameters_and_roundtrips() -> None:
+def test_the_v5_manifest_records_extension_names_and_parameters_and_roundtrips() -> None:
     value = launch_nine()
-    assert value.manifest["schema"] == LAUNCH_SCHEMA_V4
+    assert value.manifest["schema"] == LAUNCH_SCHEMA_V5
     assert value.manifest["extensions"] == [
         {"name": "named_experiment", "params": {"name": "h-series"}},
         {"name": "system_metrics", "params": {}},
@@ -569,13 +592,24 @@ def test_extension_parameters_obey_the_declared_shape_and_identifier_discipline(
         build()  # type: ignore[operator]
 
 
-def test_a_v2_launch_cannot_declare_extensions_and_unknown_schemas_are_refused() -> None:
+def test_unknown_launch_schemas_are_refused() -> None:
+    """RETRACTION (house rule 4, FOR-1694): this test used to pin ``h-probe-launch-v5`` as an
+    unknown schema and a v2 launch as unable to declare extensions. v5 is now the schema every
+    launch renders, and v2 is retired, so the tooth moves to names that stay unknown: a
+    schema one past v5, the legacy rendering of v4's name, and a v2 launch of any extensions."""
+    for name in ("h-probe-launch-v6", "h0-probe-launch-v4", "h-probe-launch-v1"):
+        with pytest.raises(ValueError, match="manifest schema is not admitted"):
+            replace(launch(), manifest_schema=name)
     with pytest.raises(ValueError):
         replace(launch(), manifest_schema=LAUNCH_SCHEMA_V2, extensions=(system_metrics(),))
-    with pytest.raises(ValueError):
-        replace(launch(), manifest_schema="h0-probe-launch-v4")
-    with pytest.raises(ValueError):
-        replace(launch(), manifest_schema="h-probe-launch-v5")
+    for name in ("h-probe-launch-v6", "h0-probe-launch-v4"):
+        row = launch().manifest
+        row["schema"] = name
+        # the parse site's own text, whole: the later refusals of this function share its tail
+        with pytest.raises(
+            ValueError, match=f"^{re.escape('H0 deployment scope or authority mismatch')}$"
+        ):
+            parse_probe_launch(_reencode(row), max_bytes=1_000_000)
 
 
 def _reencode(row: dict[str, object]) -> bytes:
@@ -584,8 +618,8 @@ def _reencode(row: dict[str, object]) -> bytes:
 
 @pytest.mark.parametrize("mutation", ["unknown", "v3_missing", "v2_extra", "extra_param", "order"])
 def test_the_manifest_reader_refuses_unknown_or_unfilled_extensions(mutation: str) -> None:
-    """C2: unknown names are refused at parse (M4 teeth), a v3 payload never gets an empty
-    extension set filled in, and the v2 branch accepts no extension key."""
+    """C2: unknown names are refused at parse (M4 teeth), a payload never gets an empty
+    extension set filled in, and a v2 label is refused by name (its read retired at v5)."""
     row = launch_nine().manifest
     extensions = row["extensions"]
     assert isinstance(extensions, list)
@@ -604,26 +638,31 @@ def test_the_manifest_reader_refuses_unknown_or_unfilled_extensions(mutation: st
 
 
 @pytest.mark.parametrize(
-    "variant", ["v2_read", "v3_read", "v4_base", "v4_nine", "v4_pilot", "v4_pilot_eight"]
+    "variant", ["v3_read", "v4_read", "v5_base", "v5_nine", "v5_pilot", "v5_pilot_eight"]
 )
 def test_every_launch_variant_survives_the_reparse_sites_outside_this_module(
     tmp_path: Path, variant: str
 ) -> None:
     """G7: the control directory, the provider transport and the process child each re-parse
-    ``launch.payload`` and require the nominal class. A v2-read launch is the same class, so all
-    three keep working for it, and parse(x.payload) == x holds for every variant."""
+    ``launch.payload`` and require the nominal class. A v3- or v4-read launch is the same class, so
+    all three keep working for it, and parse(x.payload) == x holds for every variant."""
     from entropic_substrate.ladder.run.h_probe_control import own_probe_role, read_probe_control
     from entropic_substrate.ladder.run.h_runpod_transport import HRunpodTransport
 
     value = {
-        "v2_read": lambda: parse_probe_launch(_PARENT_V2_PAYLOAD, max_bytes=1_000_000),
         "v3_read": lambda: parse_probe_launch(
             replace(launch_nine(), manifest_schema=LAUNCH_SCHEMA_V3).payload, max_bytes=1_000_000
         ),
-        "v4_base": launch,
-        "v4_nine": launch_nine,
-        "v4_pilot": pilot_launch,
-        "v4_pilot_eight": pilot_launch_eight,
+        "v4_read": lambda: parse_probe_launch(
+            replace(
+                pilot_launch_eight(), manifest_schema=LAUNCH_SCHEMA_V4, hourly_price_ceiling=None
+            ).payload,
+            max_bytes=1_000_000,
+        ),
+        "v5_base": launch,
+        "v5_nine": launch_nine,
+        "v5_pilot": pilot_launch,
+        "v5_pilot_eight": pilot_launch_eight,
     }[variant]()
     assert type(value) is H0ProbeLaunch
     assert parse_probe_launch(value.payload, max_bytes=1_000_000) == value
@@ -649,19 +688,50 @@ def test_every_launch_variant_survives_the_reparse_sites_outside_this_module(
 # binds the authority's GPU class and hours, and drops the tiny MLflow opt-in.
 # v3 and v2 payloads read old as the same class and never equal a v4 launch.
 # ---------------------------------------------------------------------------
-def test_a_v3_payload_reads_old_as_the_same_class_and_never_equals_v4() -> None:
+V5_ONLY_KEYS = ("hourly_price_ceiling", "hours_cap", "pair", "cells")
+
+
+def test_a_v3_payload_reads_old_as_the_same_class_and_never_equals_v5() -> None:
     v3 = replace(launch_nine(), manifest_schema=LAUNCH_SCHEMA_V3)
     assert v3.manifest["schema"] == "h0-probe-launch-v3"
     read = parse_probe_launch(v3.payload, max_bytes=1_000_000)
     assert type(read) is H0ProbeLaunch and read == v3
     assert read.payload == v3.payload and read.manifest_schema == LAUNCH_SCHEMA_V3
-    v4 = launch_nine()
-    assert read != v4 and read.digest != v4.digest and read.pod_name != v4.pod_name
-    assert read.template_environment == v4.template_environment
-    # the v3 and v4 smoke manifests differ in the schema marker alone
+    v5 = launch_nine()
+    assert read != v5 and read.digest != v5.digest and read.pod_name != v5.pod_name
+    assert read.template_environment == v5.template_environment
+    # a v3 manifest carries no v5 key; otherwise the two smoke manifests differ in the schema
+    # marker alone
+    assert not set(V5_ONLY_KEYS) & set(read.manifest)
     assert {k: v for k, v in read.manifest.items() if k != "schema"} == {
-        k: v for k, v in v4.manifest.items() if k != "schema"
+        k: v for k, v in v5.manifest.items() if k != "schema" and k not in V5_ONLY_KEYS
     }
+    # a v3 payload that smuggles a v5 key is refused (the key list is chosen by the schema)
+    smuggled = {**v3.manifest, "hourly_price_ceiling": None}
+    with pytest.raises(ValueError):
+        parse_probe_launch(_reencode(smuggled), max_bytes=1_000_000)
+
+
+def test_a_v4_payload_reads_old_as_the_same_class_and_never_equals_v5() -> None:
+    """The v4 pilot launch (flag-semantics ceiling) re-renders its own bytes; its pod name is
+    ``<stage>-<class>-<digest prefix>`` of ITS digest, and the rule is unchanged."""
+    v4 = pilot_launch_v4()
+    assert v4.manifest["schema"] == "h-probe-launch-v4" and not set(V5_ONLY_KEYS) & set(v4.manifest)
+    read = parse_probe_launch(v4.payload, max_bytes=1_000_000)
+    assert type(read) is H0ProbeLaunch and read == v4 and read.payload == v4.payload
+    assert read.manifest_schema == LAUNCH_SCHEMA_V4 and read.hourly_price_ceiling is None
+    assert read.pod_name == f"h1-pilot-{read.digest[:24]}"
+    v5 = pilot_launch()
+    assert read != v5 and read.digest != v5.digest and read.pod_name != v5.pod_name
+    # a v4 payload that smuggles a v5 key, and a v5 payload that drops one, are refused
+    with pytest.raises(ValueError):
+        parse_probe_launch(
+            _reencode({**v4.manifest, "hourly_price_ceiling": PILOT_CEILING}), max_bytes=1_000_000
+        )
+    dropped = v5.manifest
+    del dropped["hourly_price_ceiling"]
+    with pytest.raises(ValueError):
+        parse_probe_launch(_reencode(dropped), max_bytes=1_000_000)
 
 
 def test_a_v1_payload_stays_refused() -> None:
@@ -675,7 +745,7 @@ def test_a_pilot_launch_names_its_authority_and_roundtrips() -> None:
     value = pilot_launch_eight()
     authority = value.request.authority
     assert authority is not None
-    assert value.manifest["schema"] == LAUNCH_SCHEMA_V4
+    assert value.manifest["schema"] == LAUNCH_SCHEMA_V5
     assert value.manifest["scientific_authority"] == authority.digest
     assert value.manifest["spending_authority"] == authority.digest
     assert value.manifest["cost_guard"] == "host_watchdog_budgeted"
@@ -721,7 +791,8 @@ def test_the_scientific_template_is_eight_keys_without_the_tiny_opt_in() -> None
             "watchdog outlasts the run authority's hours",
         ),
         ({"manifest_schema": LAUNCH_SCHEMA_V3}, "a pre-v4 launch carries no run authority"),
-        ({"manifest_schema": LAUNCH_SCHEMA_V2}, "a pre-v4 launch carries no run authority"),
+        ({"manifest_schema": LAUNCH_SCHEMA_V2}, "manifest schema is not admitted"),
+        ({"manifest_schema": LAUNCH_SCHEMA_V4}, "a pre-v5 launch seals no hourly price ceiling"),
     ],
 )
 def test_a_pilot_launch_is_bound_by_its_authority(changes: dict[str, object], message: str) -> None:
@@ -730,10 +801,16 @@ def test_a_pilot_launch_is_bound_by_its_authority(changes: dict[str, object], me
 
 
 def test_the_watchdog_may_use_exactly_the_authority_hours() -> None:
+    # the sealed ceiling is re-bounded by the longer window: 6 USD/h x 6 h = 36 USD <= 40 USD
     value = replace(
-        pilot_launch(), controller_timeout_seconds=21_000, watchdog_timeout_seconds=21_600
+        pilot_launch(),
+        controller_timeout_seconds=21_000,
+        watchdog_timeout_seconds=21_600,
+        hourly_price_ceiling=6.0,
     )
     assert value.watchdog_timeout_seconds == 6 * 3600
+    with pytest.raises(ValueError, match="exceeds the spend cap"):
+        replace(value, hourly_price_ceiling=7.0)  # 7 x 6 = 42 USD
 
 
 def test_a_budgeted_guard_on_a_smoke_launch_is_refused_with_the_tiny_message() -> None:
@@ -787,7 +864,7 @@ def test_the_launch_reader_refuses_a_mandate_that_differs_from_the_request(
 def test_a_pilot_hourly_ceiling_must_keep_the_run_inside_its_spend_cap(
     rate: float, admitted: bool
 ) -> None:
-    value = pilot_launch()
+    value = pilot_launch_v4()  # unsealed: the flag keeps its rung B cap semantics
     if admitted:
         value.require_hourly_rate_within_cap(rate)
     else:
@@ -797,3 +874,120 @@ def test_a_pilot_hourly_ceiling_must_keep_the_run_inside_its_spend_cap(
 
 def test_a_smoke_ceiling_is_the_invokers_approval_alone() -> None:
     launch().require_hourly_rate_within_cap(1_000_000.0)
+
+
+# ---------------------------------------------------------------------------
+# FOR-1694 (C-L4c-1, launch schema v5): the SEALED hourly price ceiling and hours cap.
+# ---------------------------------------------------------------------------
+def test_a_v5_scientific_launch_seals_its_ceiling_and_the_authoritys_hours() -> None:
+    value = pilot_launch()
+    manifest = value.manifest
+    assert manifest["hourly_price_ceiling"] == PILOT_CEILING
+    assert manifest["hours_cap"] == 6.0  # copied from authority.spend_cap.hours, never typed
+    assert manifest["pair"] is False and manifest["cells"] is None
+    assert parse_probe_launch(value.payload, max_bytes=1_000_000) == value
+    # the digest, and with it the pod name and workspace, binds the ceiling and the hours
+    assert replace(value, hourly_price_ceiling=30.0).digest != value.digest
+    assert replace(value, hourly_price_ceiling=30.0).pod_name != value.pod_name
+    other_hours = replace(
+        pilot_launch(),
+        request=replace(
+            pilot_request(), authority=sealed_authority(spend_cap=replace_cap(hours=7.0))
+        ),
+    )
+    assert other_hours.manifest["hours_cap"] == 7.0 and other_hours.digest != value.digest
+
+
+def replace_cap(**changes: float) -> object:
+    from entropic_substrate.ladder.run.run_authority import SpendCap
+
+    return SpendCap(**{"usd": 40.0, "hours": 6.0, **changes})  # type: ignore[arg-type]
+
+
+def test_a_smoke_v5_launch_carries_explicit_null_for_both_sealed_fields() -> None:
+    value = launch()
+    manifest = value.manifest
+    assert manifest["schema"] == LAUNCH_SCHEMA_V5
+    assert manifest["hourly_price_ceiling"] is None and manifest["hours_cap"] is None
+    assert manifest["pair"] is False and manifest["cells"] is None
+    # and a smoke launch seals nothing: a ceiling on it is refused, never silently ignored
+    with pytest.raises(ValueError, match="only a v5 scientific launch seals"):
+        replace(launch(), hourly_price_ceiling=1.0)
+
+
+@pytest.mark.parametrize("ceiling", [None, 0, -1.0, float("inf"), float("nan"), True, "36.9"])
+def test_a_v5_scientific_launch_needs_a_real_ceiling_inside_its_cap(ceiling: object) -> None:
+    with pytest.raises(ValueError):
+        replace(pilot_launch(), hourly_price_ceiling=ceiling)
+    with pytest.raises(ValueError, match="exceeds the spend cap"):
+        replace(pilot_launch(), hourly_price_ceiling=37.0)  # 37 x 3900 / 3600 = 40.08 USD > 40
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        {"hours_cap": 7.0},
+        {"hours_cap": None},
+        {"pair": True},
+        {"cells": ["a" * 64, "b" * 64]},
+        {"hourly_price_ceiling": 37.0},  # past the cap: the product rule re-runs at parse
+        {"hourly_price_ceiling": None},
+        {"hourly_price_ceiling": "36.9"},
+    ],
+)
+def test_the_v5_reader_re_derives_every_copied_field_and_refuses_a_disagreement(
+    tamper: dict[str, object],
+) -> None:
+    row = {**pilot_launch().manifest, **tamper}
+    with pytest.raises(ValueError):
+        parse_probe_launch(_reencode(row), max_bytes=1_000_000)
+
+
+def test_a_sealed_ceiling_admits_only_itself_and_refuses_every_other_value_by_name() -> None:
+    value = pilot_launch()
+    value.require_hourly_rate_within_cap(PILOT_CEILING)
+    assert value.hourly_ceiling(None) == PILOT_CEILING
+    assert value.hourly_ceiling(PILOT_CEILING) == PILOT_CEILING
+    # no tolerance in either direction: a lower flag is as unsealed as a higher one
+    for flag in (PILOT_CEILING - 1e-9, PILOT_CEILING + 1e-9, 1.0, 37.0, 0, float("nan"), True):
+        with pytest.raises(ValueError, match="differs from the launch's sealed hourly price"):
+            value.require_hourly_rate_within_cap(flag)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="differs from the launch's sealed hourly price"):
+            value.hourly_ceiling(flag)  # type: ignore[arg-type]
+
+
+def test_an_unsealed_launch_keeps_the_flag_with_its_v3_semantics_and_refuses_its_absence() -> None:
+    for unsealed in (launch(), pilot_launch_v4()):
+        assert unsealed.hourly_price_ceiling is None
+        with pytest.raises(ValueError, match="seals no hourly price ceiling"):
+            unsealed.hourly_ceiling(None)
+    assert launch().hourly_ceiling(0.6) == 0.6
+    assert pilot_launch_v4().hourly_ceiling(36.9) == 36.9
+    with pytest.raises(ValueError, match="exceeds the spend cap"):
+        pilot_launch_v4().hourly_ceiling(37.0)
+
+
+def test_the_pod_name_rule_is_unchanged_for_v5_and_every_read_old_launch() -> None:
+    """D8 (verify-and-close): ``<stage>-<class>-<digest[:24]>`` for a scientific launch,
+    ``h0-tiny-<digest[:24]>`` for a smoke one, in every schema, with no two launches sharing one."""
+    pilot, smoke = pilot_launch(), launch()
+    assert pilot.pod_name == f"h1-pilot-{pilot.digest[:24]}"
+    assert smoke.pod_name == f"h0-tiny-{smoke.digest[:24]}"
+    v4, v3 = pilot_launch_v4(), replace(launch(), manifest_schema=LAUNCH_SCHEMA_V3)
+    assert v4.pod_name == f"h1-pilot-{v4.digest[:24]}"
+    assert v3.pod_name == f"h0-tiny-{v3.digest[:24]}"
+    names = {pilot.pod_name, smoke.pod_name, v4.pod_name, v3.pod_name}
+    assert len(names) == 4
+    # two ceilings, two authorities, two nonces: three more launches, three more names
+    other_authority = sealed_authority(spend_cap=replace_cap(hours=7.0))
+    assert other_authority != pilot.request.authority
+    other_nonce = "2" * 64
+    assert other_nonce != pilot.request.nonce
+    launches = (
+        pilot,
+        replace(pilot, hourly_price_ceiling=30.0),
+        replace(pilot, request=replace(pilot.request, authority=other_authority)),
+        replace(pilot, request=replace(pilot.request, nonce=other_nonce)),
+    )
+    assert all(value.pod_name.startswith("h1-pilot-") for value in launches)
+    assert len({value.pod_name for value in launches}) == 4

@@ -166,6 +166,24 @@ def _check_pause(pause: tuple[str, int] | None, profile: HProfile) -> None:
         raise ValueError("worker pause must select a declared seal boundary")
 
 
+def refuse_recipient_warmup_target(phase: str) -> None:
+    """A pair recipient's pause or stop target is a prediction seal, never a warm-up one.
+
+    The recipient's codec arrives at the donor's warm-up-final seal (D12), and the runner calls
+    ``begin_prediction`` on that seal before its first advance, so a recipient ``codec_warmup``
+    seal is never reached and a target on one would be silent: the run would spend its whole
+    remaining budget against the declared stop. Honouring it at the hand-off boundary would make
+    the hand-off receipt a pause/resume target, which R3 forbids, so it is refused by name here,
+    the one rule the request gate and the stop verb share. Called after the schedule check, so a
+    target outside the schedule keeps that refusal.
+    """
+    if phase == "codec_warmup":
+        raise ValueError(
+            "the pair recipient runs no codec_warmup of its own (its codec arrives at the donor's "
+            "warm-up-final seal): its pause or stop target must be a prediction seal"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProbeRequest:
     profile: HProfile
@@ -328,7 +346,12 @@ class BlockBinding:
 
 @dataclass(frozen=True, slots=True)
 class PairCell:
-    """One cell of a pair with its own pause; resume is a wire slot L4b admits as ``None`` only."""
+    """One cell of a pair with its own pause and (FOR-1694, C-L4c-2) its own resume receipt.
+
+    The ``resume`` slot has been on the wire and in the canonical form since request v3, so
+    admitting it changes no byte and no digest of any existing payload; a pod running the
+    previous image refuses a resume-bearing request by name, the fail-closed direction.
+    """
 
     profile: HProfile
     resume: ArtifactIdentity | None
@@ -394,8 +417,6 @@ class PairProbeRequest:
             raise ValueError("pair block binding differs from its cells' source or seed")
         if self.binding.pair_id != pair_identity(donor, recipient):
             raise ValueError("pair identifier is not the identity of its two cells")
-        if any(cell.resume is not None for cell in self.cells):
-            raise ValueError("pair resume is not admitted before per-cell resume lands (FOR-1694)")
         ContentHash("sha256", self.nonce)
         _check_probe(self.probe)
         if (
@@ -405,13 +426,24 @@ class PairProbeRequest:
         ):
             raise ValueError("worker inputs must be a bounded explicit tuple")
         names: set[str] = set()
+        resumes = {c.token for c in self.cells if c.resume is not None}
         for item in self.inputs:
             if type(item) is not ArtifactIdentity or item.content_hash.algorithm != "sha256":
                 raise ValueError("worker inputs require SHA-256 identities")
             path = normalize_d1_relative_artifact_path(item.path, label="worker input")
             if path != item.path or path in names:
                 raise ValueError("worker input paths must be unique and canonical")
-            if path not in ("source/prepared-corpus.json", "code.bundle"):
+            parts = PurePosixPath(path).parts
+            owner = (
+                parts[1]
+                if len(parts) == 3
+                and parts[0] == "run"
+                and PurePosixPath(path).suffix in (".json", ".pt")
+                else None
+            )
+            # a cell's own ``run/<cell>/`` files are inputs only when THAT cell resumes: a root the
+            # worker would never read is a hidden input, refused rather than ignored
+            if path not in ("source/prepared-corpus.json", "code.bundle") and owner not in resumes:
                 raise ValueError("worker input is outside the declared input namespace")
             names.add(path)
         source = ArtifactIdentity(
@@ -422,8 +454,51 @@ class PairProbeRequest:
         _check_remote_proof(
             surface, self.inputs, names, self.code_commit, self.code_bundle, self.image
         )
+        self._check_resumes()
         for cell in self.cells:
             _check_pause(cell.pause, cell.profile)
+        recipient_pause = self.cells[1].pause
+        if recipient_pause is not None:
+            refuse_recipient_warmup_target(recipient_pause[0])
+
+    def _check_resumes(self) -> None:
+        """Per-cell resume (C-L4c-2). The rules, by NAME (the content of a receipt is read by the
+        host builder and by the worker's own receipt admission, never by this gate):
+
+        * a cell's resume is a progress receipt (``*-progress.json``) among the inputs under
+          ``run/<its own token>/``;
+        * the recipient's resume requires the donor's root among the inputs (so the donor carries
+          its own resume) and NEVER names its hand-off receipt (``handoff-*``): R3, a recipient
+          that died before its first prediction seal is re-materialized from the donor root, and
+          that request carries no recipient resume at all.
+        """
+        for cell in self.cells:
+            resume = cell.resume
+            if resume is None:
+                continue
+            parts = PurePosixPath(resume.path).parts
+            if (
+                type(resume) is not ArtifactIdentity
+                or resume.content_hash.algorithm != "sha256"
+                or resume not in self.inputs
+                or len(parts) != 3
+                or parts[:2] != ("run", cell.token)
+                or not parts[2].endswith("-progress.json")
+            ):
+                raise ValueError(
+                    "a pair cell's resume must bind its own training receipt in run/<cell>/"
+                )
+        donor, recipient = self.cells
+        if recipient.resume is not None:
+            if PurePosixPath(recipient.resume.path).name.startswith("handoff-"):
+                raise ValueError(
+                    "a recipient resume never names its hand-off receipt: a recipient that died "
+                    "before its first prediction seal is re-materialized from the donor root"
+                )
+            if donor.resume is None or not any(
+                PurePosixPath(item.path).parts[:2] == ("run", donor.token) for item in self.inputs
+            ):
+                raise ValueError("a recipient resume requires the donor's root among its inputs")
 
     @property
     def donor(self) -> HProfile:
@@ -486,14 +561,6 @@ class PairProbeRequest:
 
 
 type AnyProbeRequest = ProbeRequest | PairProbeRequest
-
-
-def refuse_pair(where: str) -> NoReturn:
-    """The named refusal of every single-cell site that cannot carry a pair (never a field access)."""
-    raise ValueError(
-        f"{where} does not carry a pair request (h-probe-worker-request-v3); "
-        "pair launch, collection and stop belong to FOR-1694"
-    )
 
 
 def refuse_pair_result_for_single() -> NoReturn:
