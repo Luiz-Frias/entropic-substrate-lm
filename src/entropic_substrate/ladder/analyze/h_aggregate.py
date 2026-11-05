@@ -99,6 +99,9 @@ _DIAGNOSTIC_KEYS = (
     "log_weight_sd",
 )
 _NULLABLE_DIAGNOSTICS = ("prior_log_radius_mean", "q_log_radius_mean")
+# the diagnostics that are one number per target row; log_weight_sd is per proposal per k per row
+_ROW_DIAGNOSTICS = ("prior_log_radius_mean", "q_log_radius_mean", "prior_q_cosine")
+_SPREAD_PROPOSALS = ("q", *_PROPOSAL_BLOCKS)
 _USAGE_KEYS = ("q_decoder_log_prob", "null_decoder_log_prob")
 _COMMITTED = "committed"
 _WARMUP = "codec_warmup"
@@ -453,10 +456,29 @@ def _check_importance_rows(by_count: Mapping[str, Any], path: Path, where: str) 
             require_importance_entry(entry, f"{path}: {where}")  # pyright: ignore[reportUnknownArgumentType]
 
 
+def _require_row_count(value: object, size: int, what: str, at: str = "") -> None:
+    """Refuse ``value`` unless it is a list of exactly ``size`` entries, one per target row."""
+    have = len(value) if isinstance(value, list) else "no"  # pyright: ignore[reportUnknownArgumentType]
+    if have != size:
+        _gap(f"{what} has {have} entries{at} for {size} target rows")
+
+
 def _check_instrument_fields(
-    example: Mapping[str, Any], schema: object, path: Path, where: str
+    example: Mapping[str, Any],
+    schema: object,
+    q_by_count: Mapping[str, Any],
+    path: Path,
+    where: str,
 ) -> None:
-    """The v2 ``diagnostics`` and ``latent_usage`` fields: both present on v2, neither on v1."""
+    """The v2 ``diagnostics`` and ``latent_usage`` fields: both present on v2, neither on v1.
+
+    Presence is not enough (PR #435 review round 2): every recorded array is one entry per
+    target row, the population the q importance rows are over. An array that lost an entry would
+    otherwise report its mean over a different population, so a short array, a ``log_weight_sd``
+    block without every proposal and every sample count, and q rows whose count differs across
+    sample counts all void the run. A ``None`` entry inside ``log_weight_sd`` stays admissible
+    (a zero-density row has no sd); only the count is checked here.
+    """
     diagnostics = example.get("diagnostics")
     usage = example.get("latent_usage")
     if schema != _EVALUATION_V2:
@@ -479,6 +501,36 @@ def _check_instrument_fields(
     for name in _USAGE_KEYS:
         if usage[name] is None:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
             _gap(f"{path}: {where} has a null latent_usage {name}")
+    sizes = {len(rows) for rows in q_by_count.values()}
+    if len(sizes) != 1:
+        _gap(f"{path}: {where} q rows per sample count differ: {sorted(sizes)}")
+    size = next(iter(sizes))
+    for name in _ROW_DIAGNOSTICS:
+        value: object = diagnostics[name]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+        if value is not None:  # the two radius entries are null in a sphere-law cell
+            _require_row_count(value, size, f"{path}: {where} diagnostics {name}")
+    spread: object = diagnostics["log_weight_sd"]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+    if not isinstance(spread, dict) or set(spread) != set(_SPREAD_PROPOSALS):  # pyright: ignore[reportUnknownArgumentType]
+        _gap(
+            f"{path}: {where} diagnostics log_weight_sd is not a mapping over exactly "
+            f"{list(_SPREAD_PROPOSALS)}"
+        )
+    for name in _SPREAD_PROPOSALS:
+        by_k: object = spread[name]  # pyright: ignore[reportUnknownVariableType]
+        if not isinstance(by_k, dict) or set(by_k) != set(q_by_count):  # pyright: ignore[reportUnknownArgumentType]
+            _gap(
+                f"{path}: {where} diagnostics log_weight_sd {name} sample counts differ from "
+                "the q proposal's"
+            )
+        for k in q_by_count:
+            _require_row_count(
+                by_k[k],  # pyright: ignore[reportUnknownArgumentType]
+                size,
+                f"{path}: {where} diagnostics log_weight_sd {name}",
+                f" at k={k}",
+            )
+    for name in _USAGE_KEYS:
+        _require_row_count(usage[name], size, f"{path}: {where} latent_usage {name}")  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
 
 
 def _check_latent_operand(row: Mapping[str, Any], path: Path, where: str) -> None:
@@ -513,7 +565,7 @@ def _check_proposal_blocks(
     if blocks is None:
         if schema == _EVALUATION_V2:
             _gap(f"{path}: {where} is {_EVALUATION_V2} but an example carries no proposals")
-        _check_instrument_fields(example, schema, path, where)
+        _check_instrument_fields(example, schema, q_by_count, path, where)
         return
     if schema != _EVALUATION_V2 or not isinstance(blocks, dict):
         _gap(f"{path}: {where} has proposals on schema {schema!r} or as a non-object")
@@ -537,7 +589,7 @@ def _check_proposal_blocks(
                     f"{path}: {where} {name} proposal has {have} rows at k={k} where q has {len(q_rows)}"
                 )
         _check_importance_rows(by_count, path, f"{where} {name} proposal")  # pyright: ignore[reportUnknownArgumentType]
-    _check_instrument_fields(example, schema, path, where)
+    _check_instrument_fields(example, schema, q_by_count, path, where)
 
 
 def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int) -> None:

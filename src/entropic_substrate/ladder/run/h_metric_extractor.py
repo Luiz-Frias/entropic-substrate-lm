@@ -221,6 +221,12 @@ def _rows(by_count: object) -> dict[str, list[dict[str, object]]] | None:
     return out
 
 
+def _row_count(by_count: dict[str, list[dict[str, object]]]) -> int | None:
+    """The one target-row count every k of the q proposal shares; ``None`` when they differ."""
+    sizes = {len(rows) for rows in by_count.values()}
+    return next(iter(sizes)) if len(sizes) == 1 else None
+
+
 def _bytes(value: object, rows: int) -> list[int] | None:
     """Canonical source-byte counts aligned with ``rows``; ``None`` when unusable."""
     # the in-memory report the runner mirrors carries tuples; a JSON round trip carries lists
@@ -350,19 +356,24 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             if not isinstance(diagnostics, dict):
                 return None
             d = cast(dict[str, object], diagnostics)
+            # every diagnostic array is one entry per target row (PR #435 review round 2): a
+            # list that lost an entry would otherwise put its mean over a shorter population
+            size = _row_count(q_rows)
+            if size is None:
+                return None
             for index, field, bucket in (
                 (0, "prior_log_radius_mean", prior_radius),
                 (1, "q_log_radius_mean", q_radius),
             ):
                 if d.get(field) is not None:
                     values = _finite_list(d.get(field))
-                    if values is None:
+                    if values is None or len(values) != size:
                         return None
                     bucket.extend(values)
                     radius_seen[index] += 1
             if d.get("prior_q_cosine") is not None:
                 values = _finite_list(d.get("prior_q_cosine"))
-                if values is None:
+                if values is None or len(values) != size:
                     return None
                 cosines.extend(values)
                 cosine_seen += 1
@@ -374,7 +385,8 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
                     if name not in PROPOSALS or not isinstance(by_k, dict):
                         return None
                     for k, sds in cast(dict[object, object], by_k).items():
-                        if not isinstance(sds, list):
+                        # a None entry stays (a zero-density row has no sd); the count does not
+                        if not isinstance(sds, list) or len(cast(list[object], sds)) != size:
                             return None
                         bucket_k = sd_values[name].setdefault(str(k), [])
                         for item in cast(list[object], sds):

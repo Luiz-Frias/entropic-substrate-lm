@@ -260,6 +260,36 @@ def test_a_diagnostic_on_some_examples_and_not_others_is_refused_by_its_own_guar
     assert project_evaluation(fx.event([_full_example(), _full_example()])) is not None
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("diagnostics", "prior_log_radius_mean"),
+        ("diagnostics", "q_log_radius_mean"),
+        ("diagnostics", "prior_q_cosine"),
+        ("diagnostics", "log_weight_sd", "q", "2"),
+        ("diagnostics", "log_weight_sd", "prior", "4"),
+        ("diagnostics", "log_weight_sd", "mixture", "2"),
+    ],
+    ids=lambda path: "-".join(path[1:]),
+)
+def test_a_diagnostic_array_shorter_than_the_target_rows_voids_the_projection(
+    path: tuple[str, ...],
+) -> None:
+    """PR #435 review round 2 (Codex): the projection took a diagnostic list of any length, so a
+    record that lost one entry emitted a mean over a shorter population than its importance rows.
+    MEASURED 2026-11-05: without the length check each case below projects. The log-weight sd
+    keeps its ``None`` entries (a zero-density row has no sd); only the COUNT is pinned."""
+    example = _full_example()
+    node: Any = example
+    for key in path:
+        node = node[key]
+    assert len(node) == 2
+    del node[-1]
+    assert project_evaluation(fx.event([example])) is None
+    # the control: the untouched example projects, so the refusal above is the one short array
+    assert project_evaluation(fx.event([_full_example()])) is not None
+
+
 def test_log_weight_sd_skips_rows_without_an_sd_and_never_invents_one() -> None:
     sd = {"q": {2: [None, 1.5], 4: [None, None]}}
     m = _metrics(fx.event([_full_example(sd=sd)]))
