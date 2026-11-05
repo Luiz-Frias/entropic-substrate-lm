@@ -2446,3 +2446,57 @@ def test_an_excluded_verdict_whose_reason_is_a_free_string_is_refused_by_the_enu
     forged = result | {"verdict": result["verdict"] | {"reason": free_reason}}
     with pytest.raises(ValueError, match="H1ExclusionReason"):
         parse_pair_result(forged, request)
+
+
+# ---- FOR-1718 (h1 hardening): the test-shaped L4b residuals, one disposition each
+# Measured in the lane's own worktree by flipping the guard, running the named suites and restoring
+# the source byte-identical (sha256); no source changed. The progress-v2 one-writer pin lives in
+# tests/test_progress_writer_structure.py. The three DH-46 defence-in-depth conditions already
+# have teeth in tests/test_h_aggregate.py (measured at this tip, not at the ticket's), so they
+# are cited, not duplicated: each flip went RED there.
+FOR_1718: dict[str, str] = {
+    "one-writer (T6j2)": (
+        "pinned by tests/test_progress_writer_structure.py::"
+        "test_the_runner_is_the_only_writer_of_a_progress_v2_receipt (an inline dict, an import "
+        "alias and a subscript assignment each go RED; the older pin in this file misses the "
+        "alias and the subscript)"
+    ),
+    "DH-46 T10k": (
+        "pinned by tests/test_h_aggregate.py::TestScientificallyStoppedStream::"
+        "test_everything_else_keeps_the_existing_refusals (row: a prediction seal already gives "
+        "the warm-up length; dropping 'not offsets' from the widened branch goes RED)"
+    ),
+    "DH-46 T10l": (
+        "pinned by tests/test_h_aggregate.py::TestScientificallyStoppedStream::"
+        "test_a_non_positive_warmup_declaration_is_never_a_derived_length (dropping or loosening "
+        "the 'declared < 1' bound goes RED)"
+    ),
+    "DH-46 V11a": (
+        "pinned by tests/test_h_aggregate.py::TestScientificallyStoppedStream::"
+        "test_everything_else_keeps_the_existing_refusals (row: warm-up-final seal present beside "
+        "fewer committed rows; the row-count check shadows only the equal-count row)"
+    ),
+    "READER_REFUSAL dead write": (
+        "measured dead, not changed: worker_execution's 'cell.reason = READER_REFUSAL' on the "
+        "execution-defect arm (and its sibling on the hand-off failure arm) is never read, since "
+        "the verdict lookup takes only scientific_gap cells and _Cell.entry() does not serialize "
+        "the reason; swapping either write (flips RR1, RR3) or deleting it (RR2) stays GREEN "
+        "across the ten worker test files (361 passed); for FOR-1717 delete both writes or make "
+        "_write_defect_result read the cell's reason, and keep the verdict pinned by "
+        "test_a_donor_scientific_gap_then_a_recipient_execution_defect_is_the_execution_class"
+    ),
+}
+
+
+def test_every_for_1718_residual_names_a_disposition_whose_pin_exists() -> None:
+    import re
+
+    assert len(FOR_1718) == 5
+    for residual, text in FOR_1718.items():
+        assert "\n" not in text and text.startswith(("pinned", "measured")), residual
+        for filename, name in re.findall(
+            r"tests/([a-z0-9_]+\.py)::(?:[A-Za-z0-9]+::)?(test_[a-z0-9_]+)", text.replace('" "', "")
+        ):
+            assert f"def {name}(" in (Path(__file__).parent / filename).read_text(), name
+    own = re.findall(r"by (test_[a-z0-9_]+)", FOR_1718["READER_REFUSAL dead write"])
+    assert own and all(f"def {n}(" in Path(__file__).read_text() for n in own)

@@ -9,12 +9,15 @@ an independent recipient warms up for itself as the control. Every equality is b
 """
 
 import ast
+import copy
 import json
 import re
+import shutil
 from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError, asdict, dataclass, fields, replace
 from hashlib import sha256
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import pytest
@@ -1390,3 +1393,560 @@ def test_the_digest_stream_frames_every_field_by_length_and_types_every_tensor()
         stream.value("x", value)
         digests.add(stream.hexdigest())
     assert len(digests) == 3
+
+
+# ======================================================================================
+# FOR-1713 (h1 hardening, tests only): the residual guards the L4a adversarial sweep left
+# without a tooth. Every residual ends in ONE disposition, recorded in ``FOR_1713`` at the
+# foot of this file and checked by ``test_every_for_1713_residual_has_exactly_one_disposition``:
+# a pin (a test here goes RED under the named flip, the source restored byte-identical), or a
+# one-line reason (redundant, unreachable, measurement-gated, superseded by the FOR-1712
+# fold). No member source changed; the flips were measured in the lane's own worktree.
+# ======================================================================================
+def defect_of(call: Callable[[], object]) -> CodecHandoffDefect:
+    with pytest.raises(CodecHandoffDefect) as raised:
+        call()
+    return raised.value
+
+
+def materialize_refused(
+    world: World,
+    name: str,
+    *,
+    recipient: HProfile | None = None,
+    seal: ArtifactIdentity | None = None,
+) -> CodecHandoffDefect:
+    """The defect ``materialize_codec_handoff`` raises, with the recipient root still empty."""
+    pair = world.pair
+    root = pair.root(name)
+    defect = defect_of(
+        lambda: materialize_codec_handoff(
+            world.donor,
+            warmup_final(world.donor) if seal is None else seal,
+            pair.donor,
+            root,
+            pair.recipient if recipient is None else recipient,
+            pair.source,
+            max_source_bytes=SOURCE_LIMIT,
+            max_artifact_bytes=LIMIT,
+        )
+    )
+    assert listing(root) == []
+    return defect
+
+
+# ---------------------------------------------------- the detail text of every typed refusal
+SAME_CARRIER = "a pair needs two different spine carriers"
+OTHER_MANIFEST = "donor and recipient manifests differ beyond their name and spine carrier"
+
+
+@pytest.mark.parametrize("kind", sorted(PAIR_BREAKS))
+def test_each_refusal_names_why_in_its_detail_for_the_pair_predicate(
+    world: World, kind: str
+) -> None:
+    pair = world.pair
+    defect = materialize_refused(world, f"detail-pair-{kind}", recipient=PAIR_BREAKS[kind](pair))
+    expected = SAME_CARRIER if kind == "same-carrier" else OTHER_MANIFEST
+    assert (defect.code, defect.detail) == ("pair_predicate", expected), kind
+
+
+def test_each_refusal_names_why_in_its_detail_for_a_chained_donor(world: World) -> None:
+    pair = world.pair
+    first, second = pair.root("detail-chain-first"), pair.root("detail-chain-second")
+    handoff = materialize(pair, world.donor, first)
+    defect = defect_of(
+        lambda: materialize_codec_handoff(
+            first,
+            handoff.seal,
+            pair.recipient,
+            second,
+            pair.donor,
+            pair.source,
+            max_source_bytes=SOURCE_LIMIT,
+            max_artifact_bytes=LIMIT,
+        )
+    )
+    assert (defect.code, defect.detail) == (
+        "chained_handoff",
+        "the donor's own codec arrived by hand-off; a donor warms up for itself",
+    )
+
+
+def test_each_refusal_names_why_in_its_detail_for_a_donor_seal_that_is_not_the_warmup_final(
+    world: World,
+) -> None:
+    defect = materialize_refused(world, "detail-foreign", seal=prediction_seal(world.donor))
+    assert (defect.code, defect.detail) == (
+        "foreign_donor",
+        "a hand-off cites the donor's warm-up-final seal and no other",
+    )
+
+
+def head_parameter_name(pair: Pair) -> str:
+    engine = SentenceExecution(pair.recipient, pair.source, max_source_bytes=SOURCE_LIMIT)
+    return f"head.{next(iter(engine.model.head.named_parameters()))[0]}"
+
+
+@pytest.mark.parametrize("kind", sorted(CONSTRUCTION_CHANGES))
+def test_each_refusal_names_why_in_its_detail_for_each_arm_of_the_construction_guard(
+    world: World, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    pair = world.pair
+    monkeypatch.setattr(
+        handoff_module, "SentenceExecution", changed_recipient(CONSTRUCTION_CHANGES[kind])
+    )
+    expected = {
+        "binding": "donor and recipient bindings differ beyond the run identity and spine carrier",
+        "inventory": "model inventories differ",
+        "dtype": f"non-codec state {head_parameter_name(pair)} differs from the donor's",
+    }[kind]
+    defect = materialize_refused(world, f"detail-changed-{kind}")
+    assert (defect.code, defect.detail) == ("construction_divergence", expected), kind
+
+
+@pytest.mark.parametrize("key", NON_CODEC_KEYS)
+def test_each_refusal_names_the_non_codec_tensor_that_differs(
+    world: World, monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    monkeypatch.setattr(handoff_module, "SentenceExecution", perturbed_recipient(key))
+    defect = materialize_refused(world, f"detail-divergent-{key}")
+    assert (defect.code, defect.detail) == (
+        "construction_divergence",
+        f"non-codec state {key} differs from the donor's",
+    )
+
+
+@pytest.mark.parametrize("copy_step", ["_adopt_codec", "_adopt_optimizer"])
+def test_each_refusal_names_why_in_its_detail_for_a_copy_that_did_not_reproduce(
+    world: World, monkeypatch: pytest.MonkeyPatch, copy_step: str
+) -> None:
+    monkeypatch.setattr(handoff_module, copy_step, lambda recipient, donor: None)
+    defect = materialize_refused(world, f"detail-mismatch-{copy_step}")
+    assert (defect.code, defect.detail) == (
+        "payload_mismatch",
+        "the recipient's copied warm-up differs from the donor's",
+    )
+
+
+def test_each_refusal_names_why_in_its_detail_for_an_rng_restore_that_did_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(handoff_module, "restore_rng", lambda payload: None)
+    defect = materialize_refused(world, "detail-rng")
+    assert (defect.code, defect.detail) == (
+        "payload_mismatch",
+        "the donor's RNG state was not restored",
+    )
+
+
+def test_each_refusal_names_why_in_its_detail_for_an_independent_recipient(world: World) -> None:
+    defect = defect_of(
+        lambda: admit(world.pair, world.donor, world.independent, world.independent_seal)
+    )
+    assert (defect.code, defect.detail) == (
+        "independent_warmup",
+        "the recipient's chain starts with an ordinary warm-up step-one seal",
+    )
+
+
+def test_each_refusal_names_why_in_its_detail_for_a_record_that_cites_another_donor(
+    world: World,
+) -> None:
+    pair = world.pair
+    root = pair.root("detail-other-donor")
+    handoff = materialize(pair, world.donor, root)
+    defect = defect_of(lambda: admit(pair, world.other_donor, root, handoff.seal))
+    assert (defect.code, defect.detail) == (
+        "foreign_donor",
+        "the record cites evidence that is not this donor's warm-up-final",
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "nudge", "claim_own", "who"),
+    [
+        ("recipient", nudge_codec, False, "recipient"),
+        ("donor", nudge_codec, True, "donor"),
+    ],
+)
+def test_each_refusal_names_the_side_whose_payload_differs_from_the_record(
+    world: World, kind: str, nudge: Any, claim_own: bool, who: str
+) -> None:
+    pair = world.pair
+    root, seal = forged_root(world, f"detail-payload-{kind}", nudge=nudge, claim_own=claim_own)
+    defect = defect_of(lambda: admit(pair, world.donor, root, seal))
+    assert (defect.code, defect.detail) == (
+        "payload_mismatch",
+        f"the {who}'s warm-up payload differs from the record's",
+    )
+
+
+# ------------------------------------------------ the digests, against an independent oracle
+def framed(tag: str, data: bytes) -> bytes:
+    """The digest stream's frame, restated here so a change of framing is a visible event."""
+    label = tag.encode()
+    return len(label).to_bytes(4, "little") + label + len(data).to_bytes(8, "little") + data
+
+
+def tensor_frames(name: str, value: torch.Tensor) -> bytes:
+    head = f"{value.dtype}:{list(value.shape)}".encode()
+    body = value.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+    return framed(f"{name}:tensor", head) + framed(f"{name}:bytes", body)
+
+
+def json_frame(name: str, value: object) -> bytes:
+    text = json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":"))
+    return framed(f"{name}:json", text.encode())
+
+
+def test_the_optimizer_digest_is_the_framed_stream_of_groups_hyperparameters_and_named_state() -> (
+    None
+):
+    """CH004 (the ``groups`` feed) and CH005 (the ``hyperparameters`` feed), with the state
+    labelled by PARAMETER NAME in group order and keys sorted. The expected bytes are built here
+    from the optimizer's own ``state_dict`` and the stream framing, never from the member's
+    helpers. Group order is b then a, so name order, index order and group order all differ."""
+    model = torch.nn.ModuleDict(
+        {"a": torch.nn.Linear(1, 1, bias=False), "b": torch.nn.Linear(1, 1, bias=False)}
+    )
+    a, b = model["a"].weight, model["b"].weight
+    optimizer = torch.optim.SGD([{"params": [b]}, {"params": [a], "lr": 0.2}], lr=0.1, momentum=0.9)
+    for parameter in (a, b):
+        parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    optimizer.state[b]["extra"] = 5  # a non-tensor value takes the json path, and sorts first
+    engine: Any = SimpleNamespace(model=model, optimizer=optimizer)
+    saved = optimizer.state_dict()
+    hyper = [{k: v for k, v in g.items() if k != "params"} for g in saved["param_groups"]]
+    expected = sha256(
+        framed("groups", json.dumps(["b.weight", "a.weight"], separators=(",", ":")).encode())
+        + framed(
+            "hyperparameters",
+            json.dumps(hyper, sort_keys=True, allow_nan=False, separators=(",", ":")).encode(),
+        )
+        + json_frame("b.weight/extra", 5)
+        + tensor_frames("b.weight/momentum_buffer", saved["state"][0]["momentum_buffer"])
+        + tensor_frames("a.weight/momentum_buffer", saved["state"][1]["momentum_buffer"])
+    )
+    assert handoff_module.optimizer_digest(engine) == expected.hexdigest()
+
+
+def test_the_optimizer_digest_follows_the_group_order_and_the_hyperparameters_alone() -> None:
+    """With no state yet, only the two feeds can tell these engines apart: the same parameters in
+    another group order, and the same order under another learning rate."""
+
+    def digest(order: tuple[str, ...], lr: float) -> str:
+        model = torch.nn.ModuleDict(
+            {"a": torch.nn.Linear(1, 1, bias=False), "b": torch.nn.Linear(1, 1, bias=False)}
+        )
+        optimizer = torch.optim.SGD([model[name].weight for name in order], lr=lr)
+        engine: Any = SimpleNamespace(model=model, optimizer=optimizer)
+        return handoff_module.optimizer_digest(engine)
+
+    base = digest(("a", "b"), 0.1)
+    assert digest(("a", "b"), 0.1) == base
+    assert digest(("b", "a"), 0.1) != base  # the groups feed
+    assert digest(("a", "b"), 0.2) != base  # the hyperparameters feed
+
+
+def test_the_rng_digest_is_the_framed_cpu_state_then_every_cuda_state_in_order() -> None:
+    """CH006 (the loop over CUDA states), CH032 (its ``cuda:<index>`` labels) and CH033 (the
+    tuple requirement), pinned on CPU with synthetic states: the CPU fixtures carry an empty
+    CUDA tuple, so no other test reaches these lines. This is the pure function only; the
+    states of a REAL device are the measurement-gated test below."""
+    cpu = torch.arange(6, dtype=torch.uint8)
+    first, second = torch.arange(3, dtype=torch.uint8), torch.arange(4, dtype=torch.uint8) + 7
+    payload = {"schema": "h-torch-rng-v1", "cpu": cpu, "cuda": (first, second)}
+    expected = sha256(
+        tensor_frames("cpu", cpu) + tensor_frames("cuda:0", first) + tensor_frames("cuda:1", second)
+    )
+    assert handoff_module.rng_digest(payload) == expected.hexdigest()
+    swapped = {**payload, "cuda": (second, first)}
+    assert handoff_module.rng_digest(swapped) != expected.hexdigest()
+    with pytest.raises(ValueError, match="RNG payload must carry a tuple of CUDA states"):
+        handoff_module.rng_digest({**payload, "cuda": [first, second]})
+
+
+def test_the_digest_stream_frames_a_non_tensor_value_as_sorted_compact_finite_json() -> None:
+    stream = handoff_module._Stream()  # pyright: ignore[reportPrivateUsage]
+    stream.value("k", {"b": [1, 2.5], "a": None})
+    assert stream.hexdigest() == sha256(json_frame("k", {"a": None, "b": [1, 2.5]})).hexdigest()
+    assert json_frame("k", {"a": None, "b": [1, 2.5]}).endswith(b'{"a":null,"b":[1,2.5]}')
+    for value in (float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            handoff_module._Stream().value("k", value)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_the_tensor_digest_refuses_a_big_endian_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ``pragma: no cover`` branch of ``_Stream.value``: no supported host reaches it, so the
+    host byte order is the one thing this test stands in for."""
+    monkeypatch.setattr(handoff_module.sys, "byteorder", "big")
+    with pytest.raises(RuntimeError, match="little-endian"):
+        handoff_module._Stream().value("x", torch.zeros(1))  # pyright: ignore[reportPrivateUsage]
+
+
+# ---------------------------------------------------------- ``_same_value``, arm by arm
+def test_same_value_compares_a_tensor_by_dtype_and_bits_and_anything_else_canonically() -> None:
+    """CH034, CH073 and CH074: the tensor arm's dtype and bit comparison, the tensor-versus-other
+    guard in each direction, and the canonical arm. ``guard_construction`` reaches only the
+    tensor arm (a ``state_dict`` holds tensors), so the rest is exercised directly."""
+    same = handoff_module._same_value  # pyright: ignore[reportPrivateUsage]
+    base = torch.tensor([1.0, 2.0])
+    assert same(base, base.clone()) is True
+    assert same(base, base.double()) is False  # equal values, another dtype: dtype alone differs
+    assert same(base, torch.tensor([1.0, 2.0000002])) is False  # one ulp: only the bits differ
+    # the shape comparison is redundant with ``torch.equal`` (False for unequal sizes), which is why
+    # removing it alone (flip S02) stays GREEN; the outcome is what is pinned, with its reason
+    assert torch.equal(torch.zeros(2, 1), torch.zeros(2)) is False
+    assert same(torch.zeros(2, 1), torch.zeros(2)) is False
+    assert same(base, [1.0, 2.0]) is False  # a tensor is never a list, whatever its values
+    assert same([1.0, 2.0], base) is False  # and a list is never a tensor
+    assert same({"a": 1, "b": 2}, {"b": 2, "a": 1}) is True  # canonical: key order is not a value
+    assert same({"a": 1}, {"a": 2}) is False
+    assert same(1, 1.0) is False  # canonical text, so an int is not its float
+
+
+# --------------------------------------------------------- the pair predicate's JSON flags
+class _Shaped:
+    """What ``require_pair`` reads of a profile: ``spine.carrier`` and a fresh ``manifest``."""
+
+    def __init__(self, carrier: str, manifest: dict[str, object]) -> None:
+        self.spine = SimpleNamespace(carrier=carrier)
+        self._manifest = manifest
+
+    @property
+    def manifest(self) -> dict[str, object]:
+        return copy.deepcopy(self._manifest)
+
+
+def shaped_pair(donor: dict[str, object], recipient: dict[str, object]) -> tuple[Any, Any]:
+    return _Shaped("magnitude", donor), _Shaped("sphere", recipient)
+
+
+def test_the_pair_predicate_ignores_key_order_and_refuses_what_it_cannot_serialize() -> None:
+    """The flags of ``_pair_shape``'s ``json.dumps``. No real ``HProfile`` reaches them
+    (``HProfile.manifest`` is a ``json.loads(json.dumps(..., allow_nan=False))`` round trip of
+    one field order), so the profiles here are stand-ins for the two attributes read."""
+    donor, recipient = shaped_pair(
+        {"name": "d", "law": {"mode": "m", "k": 1}, "spine": {"carrier": "a", "width": 4}},
+        {"spine": {"width": 4, "carrier": "b"}, "name": "r", "law": {"k": 1, "mode": "m"}},
+    )
+    handoff_module.require_pair(donor, recipient)  # the same content in another key order
+    other = shaped_pair(
+        {"name": "d", "law": {"k": 1}, "spine": {"carrier": "a"}},
+        {"name": "r", "law": {"k": 2}, "spine": {"carrier": "b"}},
+    )
+    assert defect_of(lambda: handoff_module.require_pair(*other)).detail == OTHER_MANIFEST
+    nan = shaped_pair(
+        {"name": "d", "x": float("nan"), "spine": {"carrier": "a"}},
+        {"name": "r", "x": float("nan"), "spine": {"carrier": "b"}},
+    )
+    with pytest.raises(ValueError, match="not JSON compliant") as raised:
+        handoff_module.require_pair(*nan)
+    assert not isinstance(raised.value, CodecHandoffDefect)
+
+
+def test_the_pair_predicate_refuses_a_manifest_whose_spine_is_not_a_section() -> None:
+    """The ``pragma: no cover`` branch of ``_pair_shape``: a real manifest always nests it."""
+    donor, recipient = shaped_pair({"name": "d", "spine": ["a"]}, {"name": "r", "spine": ["b"]})
+    with pytest.raises(ValueError, match="profile manifest lacks its spine section") as raised:
+        handoff_module.require_pair(donor, recipient)
+    assert not isinstance(raised.value, CodecHandoffDefect)
+
+
+# --------------------------------------------------------- the devices a fork guards
+def test_the_devices_a_hand_off_forks_are_the_one_cuda_device_for_a_cuda_profile_and_none(
+    world: World,
+) -> None:
+    """CH077 and CH110, the PURE mapping only: whether the fork then protects a real generator is
+    the measurement-gated test below."""
+    recipient = world.pair.recipient
+    cuda = replace(recipient, run_class="remote_tiny", device="cuda", precision="bf16")
+    assert handoff_module._devices(recipient) == []  # pyright: ignore[reportPrivateUsage]
+    assert handoff_module._devices(cuda) == [0]  # pyright: ignore[reportPrivateUsage]
+
+
+needs_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason=(
+        "measurement-gated (FOR-1713 CH006, CH032, CH033, CH077, CH110): needs a cuda host; "
+        "this lane ran on a host without one, so the body below has never been executed"
+    ),
+)
+
+
+@needs_cuda
+def test_the_rng_digest_follows_a_real_cuda_generator() -> None:
+    """CH006, CH032, CH033 on a device: ``capture_rng`` reads one state per visible device once
+    CUDA is initialized, and the digest moves when the device generator does."""
+    torch.zeros(1, device="cuda")  # initializes the CUDA context, as a pod's engine has
+    payload = capture_rng()
+    cuda = payload["cuda"]
+    assert isinstance(cuda, tuple) and len(cuda) == torch.cuda.device_count() >= 1  # pyright: ignore[reportUnknownArgumentType]
+    before = handoff_module.rng_digest(payload)
+    torch.rand(1, device="cuda")
+    assert handoff_module.rng_digest(capture_rng()) != before
+
+
+@needs_cuda
+def test_the_devices_a_cuda_hand_off_forks_leave_the_callers_cuda_generator_untouched(
+    world: World,
+) -> None:
+    """CH077 and CH110 on a device: ``fork_rng(devices=_devices(cuda profile))`` restores the
+    device generator, which ``devices=[]`` (the CPU arm) would leave advanced."""
+    recipient = world.pair.recipient
+    cuda = replace(recipient, run_class="remote_tiny", device="cuda", precision="bf16")
+    devices = handoff_module._devices(cuda)  # pyright: ignore[reportPrivateUsage]
+    torch.zeros(1, device="cuda")
+    before = torch.cuda.get_rng_state(0)
+    with torch.random.fork_rng(devices=devices):
+        torch.rand(1, device="cuda")
+    assert torch.equal(torch.cuda.get_rng_state(0), before)
+
+
+# --------------------------------------------- the older journal checks of the seal walk
+def forged_donor_seal(
+    world: World, name: str, edit: Callable[[Path, dict[str, Any]], dict[str, Any]]
+) -> tuple[Path, ArtifactIdentity]:
+    """A copy of the donor root with one extra seal: the warm-up-final row after ``edit``.
+
+    The copy keeps every hash honest, so the walk reaches the check under test and no earlier
+    one; ``world.donor`` itself is read-only evidence (a test lists it to prove nothing writes
+    there)."""
+    root = world.pair.base / name
+    shutil.copytree(world.donor, root)
+    row = edit(root, seal_row(root, warmup_final(root)))
+    write_json(root, f"{name}-seal.json", row, max_bytes=LIMIT)
+    return root, identity_of(root / f"{name}-seal.json")
+
+
+def read_donor_seal(world: World, root: Path, seal: ArtifactIdentity) -> SealedStep:
+    pair = world.pair
+    return read_seal(
+        root, seal, pair.donor, pair.source, max_bytes=LIMIT, max_source_bytes=SOURCE_LIMIT
+    )
+
+
+def as_legacy_journal(root: Path, row: dict[str, Any]) -> dict[str, Any]:
+    """The same shard under the v1 schema names (rows without their ``mechanism`` block)."""
+    journal = dict(read_json(root, artifact_from_mapping(row["journal"]), max_bytes=LIMIT))
+    legacy = {
+        **journal,
+        "schema": "h-journal-shard-v1",
+        "rows": [
+            {**{k: v for k, v in r.items() if k != "mechanism"}, "schema": "h-training-step-v1"}
+            for r in journal["rows"]
+        ],
+    }
+    reference = write_json(root, "legacy-journal.json", legacy, max_bytes=LIMIT)
+    return {**row, "journal": artifact_reference(root, reference)}
+
+
+def test_a_seal_over_a_v1_journal_is_refused_by_the_walk(world: World) -> None:
+    """U1: the walk admits only v2 shards for a current seal (the v1 reader is a different one).
+    The v1 shard is otherwise valid, so the version check is the first thing to refuse it."""
+    root, seal = forged_donor_seal(world, "u1-v1-journal", as_legacy_journal)
+    with pytest.raises(ValueError, match="current restart seals require journal v2"):
+        read_donor_seal(world, root, seal)
+
+
+@pytest.mark.parametrize(
+    "change", [{"phase": "prediction"}, {"step": 1}], ids=["phase-half", "end-step-half"]
+)
+def test_a_seal_whose_endpoints_disagree_with_its_journal_is_refused_by_the_walk(
+    world: World, change: dict[str, object]
+) -> None:
+    """U2: the seal's phase and step must equal the journal's phase and END step; each half is a
+    tooth of its own (a wrong phase or a wrong step alone would otherwise be refused later, by a
+    checkpoint check with another message)."""
+    root, seal = forged_donor_seal(
+        world, f"u2-{'-'.join(change)}", lambda _root, row: {**row, **change}
+    )
+    with pytest.raises(ValueError, match="seal and journal endpoints disagree"):
+        read_donor_seal(world, root, seal)
+
+
+# --------------------------------------------------------- FOR-1713: one disposition per residual
+# The flips named here are the lane's measurement ids (evidence file of the lane handoff). The
+# ticket's own CH numbers come from the sweep's ``mutations.txt``, which this lane did not have,
+# so each residual is keyed by the ticket's GROUP and the flips are this lane's. HRun frozen
+# flag (HA020) predates the hand-off and is not in this lane's scope.
+FOR_1713: dict[str, str] = {
+    "defect-detail-texts": (
+        "pinned by test_each_refusal_names_why_in_its_detail_for_* (flips D01 to D12 RED); "
+        "the two texts raised only from _resolve_warmup_final and the redundant post-resolve "
+        "check are not pinned: superseded by the FOR-1712 fold (FOR-1717) and redundant"
+    ),
+    "optimizer-digest-feeds (CH004, CH005)": (
+        "pinned by test_the_optimizer_digest_is_the_framed_stream_of_groups_hyperparameters_and_"
+        "named_state and test_the_optimizer_digest_follows_the_group_order_and_the_hyperparameters"
+        "_alone (flips O01 to O05 RED)"
+    ),
+    "cuda-rng-arms (CH006, CH032, CH033)": (
+        "pinned on CPU by test_the_rng_digest_is_the_framed_cpu_state_then_every_cuda_state_in_"
+        "order (flips R01 to R03 RED); the states of a real device are measurement-gated: "
+        "test_the_rng_digest_follows_a_real_cuda_generator needs a cuda host"
+    ),
+    "same-value-internals (CH034, CH073, CH074)": (
+        "pinned by test_same_value_compares_a_tensor_by_dtype_and_bits_and_anything_else_"
+        "canonically (flips S01, S03 to S06 RED); redundant: the shape comparison, because "
+        "torch.equal is already False for unequal sizes (flip S02 GREEN)"
+    ),
+    "devices-cuda-arm (CH077, CH110)": (
+        "pinned for the mapping by test_the_devices_a_hand_off_forks_are_the_one_cuda_device_"
+        "for_a_cuda_profile_and_none (flips V01, V02 RED); the fork's effect on a real generator "
+        "is measurement-gated: test_the_devices_a_cuda_hand_off_forks_leave_the_callers_cuda_"
+        "generator_untouched needs a cuda host"
+    ),
+    "post-resolve-check (CH049, CH089)": (
+        "redundant: _resolve_warmup_final returns a node whose raw row already has the "
+        "warm-up-final phase and step, and read_seal derives the SealedStep from that same row "
+        "(flip X01, deleting the check, stays GREEN across all five hand-off test files); "
+        "FOR-1717's fold keeps or drops it with the traversal"
+    ),
+    "json-flags": (
+        "pinned by test_the_digest_stream_frames_a_non_tensor_value_as_sorted_compact_finite_json "
+        "and test_the_pair_predicate_ignores_key_order_and_refuses_what_it_cannot_serialize "
+        "(flips J01, J02, J04 to J06 RED); unobservable: the separators of _pair_shape, whose "
+        "string is only compared with its twin built by the same function (flip J03 GREEN)"
+    ),
+    "pragma-branches": (
+        "pinned by test_the_pair_predicate_refuses_a_manifest_whose_spine_is_not_a_section and "
+        "test_the_tensor_digest_refuses_a_big_endian_host (flips P01, P02 RED)"
+    ),
+    "journal-checks (U1, U2)": (
+        "pinned by test_a_seal_over_a_v1_journal_is_refused_by_the_walk and "
+        "test_a_seal_whose_endpoints_disagree_with_its_journal_is_refused_by_the_walk "
+        "(flips U01, U02a, U02b RED)"
+    ),
+    "handoff-node-step-and-cursor": (
+        "pinned as a pair by test_a_handoff_checkpoint_at_another_step_is_refused_by_the_seal_walk "
+        "(flips HS1, HS2 GREEN alone, HS3 RED together); each alone is redundant with the other "
+        "because save_checkpoint keeps a checkpoint's step equal to its source cursor"
+    ),
+    "binding-type (H6)": (
+        "redundant: a non-string binding is refused one line later by the binding comparison "
+        "with 'checkpoint construction differs from sealed profile' (flip H06 stays GREEN "
+        "across all five hand-off test files); no public writer produces one"
+    ),
+}
+
+
+def test_every_for_1713_residual_has_exactly_one_disposition() -> None:
+    kinds = (
+        "pinned",
+        "redundant",
+        "unobservable",
+        "unreachable",
+        "measurement-gated",
+        "superseded",
+    )
+    assert len(FOR_1713) == 11
+    names = {k for k, v in globals().items() if k.startswith("test_") and callable(v)}
+    for residual, text in FOR_1713.items():
+        assert "\n" not in text and text.startswith(kinds), residual
+        cited = re.findall(r"test_[a-z0-9_]+", text)
+        assert bool(cited) == (text.startswith("pinned") or "measurement-gated" in text), residual
+        for name in cited:  # a trailing underscore names the family, not one test
+            assert name.endswith("_") or name in names, (residual, name)
+    assert any(n.startswith("test_each_refusal_names_why_in_its_detail_for_") for n in names)
