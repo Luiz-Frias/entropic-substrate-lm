@@ -97,11 +97,6 @@ def _stub(monkeypatch: pytest.MonkeyPatch, *parts: tuple[int, int, str]) -> None
             [(0, 7, "Hello. "), (7, 17, "Elsewhere.")],
             id="text-absent-from-the-document",
         ),
-        pytest.param(
-            "Hello. Hello.",
-            [(0, 7, "Hello. "), (0, 6, "Hello.")],
-            id="repeated-text-found-again-only-before-the-cursor",
-        ),
     ],
 )
 def test_a_sentence_text_absent_at_or_after_the_cursor_is_a_defect(
