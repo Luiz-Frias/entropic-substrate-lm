@@ -553,3 +553,19 @@ def test_the_writer_refuses_a_zero_density_at_a_sample_drawn_from_the_mixture(
     with pytest.raises(ValueError) as caught:
         _proposals(model)
     assert str(caught.value) == "nonfinite density at a sample drawn from the mixture"
+
+
+def test_the_writer_refuses_a_zero_density_at_a_sample_drawn_from_the_q_proposal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The q twin of the two above, now that three populations share the refusal: a zero q
+    density at q's own draw makes the weight +inf, and without the writer's own refusal a LATER,
+    generic ``nonfinite importance arithmetic`` fires instead. The exact message pins the guard.
+    MEASURED 2026-11-05 at 0c1d3a35: with the refusal replaced by ``pass`` the message was
+    ``nonfinite importance arithmetic``, so a ``match="nonfinite"`` would have stayed GREEN."""
+    model = _frozen("sphere")
+    assert _proposals(model).q is not None  # control: the unmodified draws are admitted
+    _zero_density_at(monkeypatch, 1)
+    with pytest.raises(ValueError) as caught:
+        _proposals(model)
+    assert str(caught.value) == "nonfinite density at a sample drawn from the proposal"

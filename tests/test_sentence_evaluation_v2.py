@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import inspect
 import json
 import math
 from collections.abc import Callable
@@ -30,7 +31,14 @@ from entropic_substrate.core.sentence.scoring import (
     importance_statistics,
 )
 from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
-from entropic_substrate.ladder.run import evaluation_records, execution, runner, trace_capture
+from entropic_substrate.ladder.run import (
+    evaluation_records,
+    execution,
+    object_worker,
+    runner,
+    trace_capture,
+    worker_execution,
+)
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution, _log_rows
 from entropic_substrate.ladder.run.h_metric_extractor import (
@@ -294,6 +302,25 @@ def test_evaluate_has_no_default_estimator() -> None:
     run_signature = SentenceExecution.evaluate.__code__
     assert run_signature.co_varnames[: run_signature.co_argcount] == ("self", "latent_usage")
     assert SentenceExecution.evaluate.__defaults__ is None
+
+
+@pytest.mark.parametrize(
+    "seam",
+    [
+        runner.run_probe_training,
+        object_worker.run_object_worker,
+        worker_execution.execute_probe_request,
+    ],
+    ids=lambda seam: seam.__name__,
+)
+def test_every_seam_takes_the_estimator_as_a_required_keyword(seam: Callable[..., Any]) -> None:
+    """A6, DH-52: the estimator is injected at the composition root, so no seam on the way to
+    ``SentenceExecution.evaluate`` may hold a default, not even ``None``. MEASURED 2026-11-05 at
+    0c1d3a35: a ``= None`` default on any one of the three left 153 tests GREEN (L4d review,
+    round 5); with this pin each such mutant turns exactly its own case RED."""
+    parameter = inspect.signature(seam).parameters["latent_usage"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is inspect.Parameter.empty
 
 
 def test_the_record_names_the_operand_the_injected_implementation_declares(
@@ -566,6 +593,115 @@ def test_the_reader_refuses_a_consistently_forged_positive_decoder_log_prob(
     forged = _rederived_positive_decoder(template.profile, block, forge=True)
     with pytest.raises(ValueError, match=f"{block} importance terms"):
         _read(template, output, _tampered(template, output, artifact, forged))
+
+
+def _weights(rows: list[list[Any]]) -> torch.Tensor:
+    """A recorded weight matrix as the reader parses it: the string ``"-inf"`` is a zero density."""
+    return torch.tensor(
+        [[-math.inf if v == "-inf" else v for v in row] for row in rows], dtype=torch.float64
+    )
+
+
+def _resummarize(example: dict[str, Any], terms: dict[str, Any], name: str, profile: Any) -> None:
+    """Recompute one population's k-prefix summaries and log-weight sds from its recorded weights;
+    a column holding a zero-density weight gets the honest ``None`` sd."""
+    weights = _weights(terms["log_weights"])
+    for k in profile.schedule.evaluated_samples:
+        terms["by_sample_count"][str(k)] = [
+            asdict(row) for row in importance_statistics(weights[:k])
+        ]
+        example["diagnostics"]["log_weight_sd"][name][str(k)] = [
+            float(column.std(unbiased=True)) if bool(torch.isfinite(column).all()) else None
+            for column in weights[:k].unbind(dim=1)
+        ]
+
+
+def _rederived_extreme_mixture(profile: Any, *, forge: bool) -> Callable[[dict[str, Any]], None]:
+    """A SELF-CONSISTENT mixture block whose first draw has both component densities far below
+    float64's exp floor (about -745): ``exp`` of either is exactly 0, so only a logsumexp keeps
+    the mixture density finite. The weight, every k-prefix summary and every sd are recomputed."""
+
+    def apply(payload: dict[str, Any]) -> None:
+        example = payload["examples"][0]
+        mixture = example["proposals"]["mixture"]
+        if forge:
+            mixture["q_log_prob"][0][0] = -1000.0
+            mixture["prior_log_prob"][0][0] = -2500.0
+            both = torch.tensor([-1000.0, -2500.0], dtype=torch.float64)
+            density = float(torch.logsumexp(both, 0)) - math.log(2)
+            mixture["log_weights"][0][0] = mixture["decoder_log_prob"][0][0] - 2500.0 - density
+        _resummarize(example, mixture, "mixture", profile)
+
+    return apply
+
+
+def test_the_reader_admits_a_mixture_draw_with_both_components_below_the_exp_floor(
+    tmp_path: Path,
+) -> None:
+    """The reader re-derives the mixture density itself; it must be a logsumexp there too, not
+    only in the writer. The control re-derives without forging: the helper is faithful.
+    MEASURED 2026-11-05 at 0c1d3a35: replacing the reader's logsumexp with a log of a sum left
+    351 tests GREEN (L4d review, round 5); with this pin it is RED, ``evaluation mixture
+    importance terms do not reconcile``."""
+    assert float(torch.tensor([-1000.0, -2500.0], dtype=torch.float64).exp().sum()) == 0.0
+    template, output, artifact = _run(tmp_path, mode="sphere")
+    control = _rederived_extreme_mixture(template.profile, forge=False)
+    assert _read(template, output, _tampered(template, output, artifact, control))
+    extreme = _rederived_extreme_mixture(template.profile, forge=True)
+    tampered = _tampered(template, output, artifact, extreme)
+    mixture = read_json(output, tampered, max_bytes=LIMIT)["examples"][0]["proposals"]["mixture"]
+    assert (mixture["q_log_prob"][0][0], mixture["prior_log_prob"][0][0]) == (-1000.0, -2500.0)
+    assert _read(template, output, tampered)["schema"] == "h-predictive-evaluation-v2"
+
+
+def _rederived_zero_density_column(
+    profile: Any, block: str, *, sd: float | None
+) -> Callable[[dict[str, Any]], None]:
+    """A SELF-CONSISTENT record whose first ``block`` weight is a genuine zero density (-inf):
+    the prior density there is zero while the producing density is finite, so the weight is
+    ``"-inf"`` and its column has no sample sd. Every k-prefix summary and sd is recomputed, and
+    the first column's sd is then set to ``sd`` (``None`` is the honest value)."""
+
+    def apply(payload: dict[str, Any]) -> None:
+        example = payload["examples"][0]
+        terms = example if block == "q" else example["proposals"][block]
+        terms["prior_log_prob"][0][0] = "-inf"
+        if block == "mixture":
+            terms["component"][0][0] = 0  # drawn from q, whose density there is finite
+        terms["log_weights"][0][0] = "-inf"
+        _resummarize(example, terms, block, profile)
+        for k in profile.schedule.evaluated_samples:
+            example["diagnostics"]["log_weight_sd"][block][str(k)][0] = sd
+
+    return apply
+
+
+@pytest.mark.parametrize("block", ["q", "mixture"])
+def test_a_log_weight_sd_on_a_zero_density_row_is_refused(tmp_path: Path, block: str) -> None:
+    """A numeric sd on a column whose weights include -inf is a fabricated diagnostic, and the
+    projection would average it into ``eval/log_weight_sd_*``. The honest ``None`` is admitted.
+    MEASURED 2026-11-05 at 0c1d3a35: with the zero-density refusal replaced by ``pass`` the
+    forged sd was admitted (DID NOT RAISE) for both q and the mixture."""
+    template, output, artifact = _run(tmp_path, mode="sphere")
+    honest = _rederived_zero_density_column(template.profile, block, sd=None)
+    assert _read(template, output, _tampered(template, output, artifact, honest))
+    forged = _rederived_zero_density_column(template.profile, block, sd=0.5)
+    with pytest.raises(ValueError, match="zero-density row"):
+        _read(template, output, _tampered(template, output, artifact, forged))
+
+
+def test_a_gap_label_on_a_finite_prior_row_is_refused(tmp_path: Path) -> None:
+    """Relabelling a finite row as ``zero_importance_weight_mass`` would drop it out of the
+    projection's means and ratios. Only the gap field changes, so only the gap check can fire.
+    MEASURED 2026-11-05 at 0c1d3a35: the guard was GREEN on 445 tests when removed (L4d review,
+    round 5); with the refusal replaced by ``pass`` this relabel is admitted (DID NOT RAISE)."""
+    template, output, artifact = _run(tmp_path)
+    assert _read(template, output, artifact)  # the untouched record is admitted
+    relabel = _mut(
+        ("proposals", "prior", "by_sample_count", "2", 0, "gap"), "zero_importance_weight_mass"
+    )
+    with pytest.raises(ValueError, match="gap differs from measured weight mass"):
+        _read(template, output, _tampered(template, output, artifact, relabel))
 
 
 def test_a_v1_named_record_with_v2_keys_and_a_v2_record_missing_one_are_refused(

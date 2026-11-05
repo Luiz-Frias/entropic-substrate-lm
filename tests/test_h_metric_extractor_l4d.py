@@ -7,6 +7,7 @@ and these tests need no engine bytes. Each case is a guard with a named mutation
 from __future__ import annotations
 
 import re
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -283,3 +284,82 @@ def test_the_in_memory_report_with_tuple_byte_counts_projects_like_its_json_form
     }
     assert project_evaluation(tupled) == project_evaluation(event)
     assert project_evaluation(tupled) is not None
+
+
+# ------------------------------------------------------------------------------ type guards
+# One malformed input per ``return None`` type guard in the extractor (L4d review, round 5).
+# A MappingProxyType or a tuple is a well-formed mapping or sequence of the wrong type: with the
+# guard removed the projection would read it and emit metrics; a list or a bool where a number
+# belongs crashes later instead of returning None. Keys name the guarded line at 0c1d3a35.
+# MEASURED 2026-11-05: each guard's ``return None`` replaced by ``pass`` turned its own case RED.
+# Silent admission (metrics emitted) at 232, 288, 310, 325, 335, 341, 370, 376, 389 and 190;
+# a later crash at 193 and 359 (TypeError), 329 (AttributeError) and 383 (TypeError in the mean).
+# The zero-byte row at 232 put -16/2 = -8.0 into the q ratio of sums instead of voiding it.
+def _sd(example: dict[str, Any]) -> dict[str, Any]:
+    return example["diagnostics"]["log_weight_sd"]
+
+
+def _set(example: dict[str, Any], path: tuple[str, ...], value: object) -> None:
+    node: Any = example
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = value
+
+
+_PROJECTION_GUARDS: dict[str, Any] = {
+    "bytes-zero-232": lambda ev: _set(ev["examples"][0], ("source_bytes",), [2, 0]),
+    "bytes-bool-232": lambda ev: _set(ev["examples"][0], ("source_bytes",), [True, 6]),
+    "finite-list-tuple-288": lambda ev: _set(
+        ev["examples"][0], ("diagnostics", "prior_q_cosine"), (0.5, 0.9)
+    ),
+    "examples-tuple-310": lambda ev: _set(ev, ("examples",), tuple(ev["examples"])),
+    "example-mapping-325": lambda ev: _set(
+        ev, ("examples",), [MappingProxyType(ev["examples"][0])]
+    ),
+    "q-rows-list-329": lambda ev: _set(ev["examples"][0], ("by_sample_count",), []),
+    "proposals-mapping-335": lambda ev: _set(
+        ev["examples"][0], ("proposals",), MappingProxyType(ev["examples"][0]["proposals"])
+    ),
+    "block-mapping-341": lambda ev: _set(
+        ev["examples"][0],
+        ("proposals", "prior"),
+        MappingProxyType(ev["examples"][0]["proposals"]["prior"]),
+    ),
+    "radius-bool-359": lambda ev: _set(
+        ev["examples"][0], ("diagnostics", "q_log_radius_mean"), [0.2, True]
+    ),
+    "sd-mapping-370": lambda ev: _set(
+        ev["examples"][0],
+        ("diagnostics", "log_weight_sd"),
+        MappingProxyType(_sd(ev["examples"][0])),
+    ),
+    "sd-tuple-376": lambda ev: _sd(ev["examples"][0])["q"].update({"2": (0.5, 1.5)}),
+    "sd-bool-383": lambda ev: _sd(ev["examples"][0])["q"].update({"2": [0.5, True]}),
+    "usage-mapping-389": lambda ev: _set(
+        ev["examples"][0], ("latent_usage",), MappingProxyType(ev["examples"][0]["latent_usage"])
+    ),
+}
+
+
+@pytest.mark.parametrize("guard", list(_PROJECTION_GUARDS))
+def test_each_type_guard_voids_the_projection_of_a_wrong_typed_field(guard: str) -> None:
+    event = fx.event([_full_example()])
+    assert project_evaluation(event) is not None  # control: the well-typed record projects
+    _PROJECTION_GUARDS[guard](event)
+    assert project_evaluation(event) is None
+
+
+def test_an_evaluation_with_a_bool_step_is_refused_not_placed_on_the_axis() -> None:
+    """Guard 190: ``True`` is an int to arithmetic, so without the guard it lands on step 1."""
+    extractor = HTrainingStepExtractor(warmup_steps=0)
+    assert extractor.extract(fx.event([_full_example()], step=1000)) is not None  # control
+    assert extractor.extract(fx.event([_full_example()], step=True)) is None
+
+
+def test_a_malformed_evaluation_is_refused_by_extract_not_wrapped() -> None:
+    """Guard 193: a record whose projection is ``None`` yields no ``ExtractedMetrics`` at all."""
+    extractor = HTrainingStepExtractor(warmup_steps=0)
+    event = fx.event([_full_example()])
+    assert extractor.extract(event) is not None  # control
+    event["examples"] = "not a list"
+    assert extractor.extract(event) is None
