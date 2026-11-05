@@ -467,6 +467,14 @@ def test_derived_stream_keys_are_pure_distinct_and_refuse_a_collision() -> None:
             seen.add(key)
     assert len(seen) == 1 + 2 * 20
     assert derived_stream_keys(seed=43, step=3, batch=0, q_key=q_key) != first
+    # The step is part of the label: the prior and mixture noise must not replay identically at
+    # every evaluation step while q stays step-keyed. Same q_key isolates the label from the
+    # q key; the second form is the key a real evaluation at the next step would carry.
+    # MEASURED 2026-11-05: with {step} dropped from the label the keys at steps 3 and 4 are both
+    # (2184516250, 1738744932) and the suite stayed green until this pin (now RED on step=4).
+    assert derived_stream_keys(seed=42, step=4, batch=0, q_key=q_key) != first
+    next_q_key = (42 * 0x9E3779B1 + 4) % 2**32
+    assert derived_stream_keys(seed=42, step=4, batch=0, q_key=next_q_key) != first
     with pytest.raises(ValueError, match="collide"):
         derived_stream_keys(seed=42, step=3, batch=0, q_key=first[0])
 

@@ -600,6 +600,35 @@ def test_a_v1_record_is_read_old_when_its_keys_are_exactly_the_v1_set(tmp_path: 
     assert "latent_operand" not in observed
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema", "h-predictive-evaluation-v0"),
+        ("meaning", "not_the_importance_weighted_log_marginal_estimate"),
+        ("run_identity", "0" * 64),
+    ],
+)
+def test_a_record_with_a_foreign_schema_meaning_or_run_identity_is_refused(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    """The admission chain ``evaluation construction or scoring meaning mismatch`` had no test
+    (MEASURED 2026-11-05: ``grep -rn "meaning mismatch" tests`` was empty at the tip and at
+    main; replacing the schema term with ``False`` left 43 tests GREEN). The record is the exact
+    v1 shape so ``recovery_record`` admits it and only the admission chain can refuse it."""
+    template, output, artifact = _run(tmp_path)
+
+    def foreign(payload: dict[str, Any]) -> None:
+        payload["schema"] = "h-predictive-evaluation-v1"
+        del payload["latent_operand"]
+        for example in payload["examples"]:
+            for key in ("proposals", "diagnostics", "latent_usage"):
+                del example[key]
+        payload[field] = value
+
+    with pytest.raises(ValueError, match="meaning mismatch"):
+        _read(template, output, _tampered(template, output, artifact, foreign))
+
+
 @pytest.mark.parametrize("operand", ["draw_average", "q_draw", 3])
 def test_only_the_posterior_mean_operand_is_readable(tmp_path: Path, operand: object) -> None:
     template, output, artifact = _run(tmp_path)

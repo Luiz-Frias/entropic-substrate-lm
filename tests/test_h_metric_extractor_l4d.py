@@ -188,6 +188,12 @@ def test_latent_usage_without_a_recorded_operand_is_a_malformed_record() -> None
         lambda e: e["proposals"]["prior"].update(by_sample_count="x"),
         lambda e: e["proposals"]["mixture"].update(proposal="prior"),
         lambda e: e["proposals"].update(extra={}),
+        # The two cases below are well-formed blocks under a name that is not prior or mixture:
+        # `extra={}` above is refused earlier by the block_rows guard, so only these reach (and
+        # pin) the closed-name guard. MEASURED 2026-11-05 with that guard removed: a block named
+        # q PROJECTED and folded a second copy into the q tally, and foo raised KeyError.
+        lambda e: e["proposals"].update(q={**e["proposals"]["prior"], "proposal": "q"}),
+        lambda e: e["proposals"].update(extra={**e["proposals"]["prior"], "proposal": "extra"}),
         lambda e: e["diagnostics"].update(prior_q_cosine=["nan"]),
         lambda e: e["diagnostics"]["log_weight_sd"]["q"].update({"2": "x"}),
         lambda e: e["latent_usage"].update(null_decoder_log_prob=[-1.0]),
