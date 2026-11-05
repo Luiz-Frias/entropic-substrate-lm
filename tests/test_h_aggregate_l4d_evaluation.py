@@ -15,7 +15,7 @@ from tests import evaluation_v2_fixtures as fx
 from tests.test_h_aggregate import REQUEST_A, write_h_run
 
 from entropic_substrate.ladder.analyze import h_aggregate, h_final_probe_checks
-from entropic_substrate.ladder.analyze.h_aggregate import load_h_run
+from entropic_substrate.ladder.analyze.h_aggregate import HRun, load_h_run
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 from entropic_substrate.ladder.run import h_metric_extractor
 
@@ -58,7 +58,7 @@ def _v2_rows(rows: list[dict[str, Any]], mutate: Callable[[dict[str, Any]], None
             mutate(row)
 
 
-def _load(tmp_path: Path, mutate: Callable[[dict[str, Any]], None] | None = None):  # type: ignore[no-untyped-def]
+def _load(tmp_path: Path, mutate: Callable[[dict[str, Any]], None] | None = None) -> HRun:
     return load_h_run(*write_h_run(tmp_path, mutate_metrics=lambda rows: _v2_rows(rows, mutate)))
 
 
@@ -80,6 +80,22 @@ def test_a_malformed_prior_row_voids_the_run_instead_of_being_dropped(tmp_path: 
         ] = None
 
     with pytest.raises(TelemetryGap, match=r"prior proposal.*non-finite effective_sample_size"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize("name", ["prior", "mixture"])
+def test_a_proposal_whose_row_list_is_shorter_than_q_is_refused(tmp_path: Path, name: str) -> None:
+    """PR #435 review (Codex): the sample-count KEY sets were compared but not the population
+    behind each key, so a captured proposal that lost one row at one k while keeping its keys
+    projected into ordinary log-marginal and ESS metrics over a different target population.
+    MEASURED 2026-11-05: without the length check this test admits the truncated block."""
+
+    def bad(row: dict[str, Any]) -> None:
+        rows = row["examples"][0]["proposals"][name]["by_sample_count"]["4"]
+        assert len(rows) >= 2
+        del rows[-1]
+
+    with pytest.raises(TelemetryGap, match=f"{name} proposal has .* rows at k=4 where q has"):
         _load(tmp_path, bad)
 
 

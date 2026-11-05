@@ -118,6 +118,18 @@ def _tampered(
 
 
 # ------------------------------------------------------------------------------ record shape
+_V2_EXAMPLE_KEYS = ("proposals", "diagnostics", "latent_usage")
+
+
+def _to_v1(payload: dict[str, Any]) -> None:
+    """Downgrade a written v2 report to the exact v1 shape in place (the read-old fixtures)."""
+    payload["schema"] = "h-predictive-evaluation-v1"
+    del payload["latent_operand"]
+    for example in payload["examples"]:
+        for key in _V2_EXAMPLE_KEYS:
+            del example[key]
+
+
 @pytest.mark.parametrize("mode", ["magnitude", "sphere"])
 def test_the_v2_record_has_exact_key_sets_with_q_at_its_v1_keys(tmp_path: Path, mode: str) -> None:
     template, output, artifact = _run(tmp_path, mode=mode)
@@ -724,12 +736,7 @@ def test_a_v1_record_is_read_old_when_its_keys_are_exactly_the_v1_set(tmp_path: 
     """The H0 evaluation records are v1; the reader keeps admitting exactly that shape."""
     template, output, artifact = _run(tmp_path)
 
-    def to_v1(payload: dict[str, Any]) -> None:
-        payload["schema"] = "h-predictive-evaluation-v1"
-        del payload["latent_operand"]
-        for example in payload["examples"]:
-            for key in ("proposals", "diagnostics", "latent_usage"):
-                del example[key]
+    to_v1 = _to_v1
 
     observed = _read(template, output, _tampered(template, output, artifact, to_v1))
     assert observed["schema"] == "h-predictive-evaluation-v1"
@@ -754,11 +761,7 @@ def test_a_record_with_a_foreign_schema_meaning_or_run_identity_is_refused(
     template, output, artifact = _run(tmp_path)
 
     def foreign(payload: dict[str, Any]) -> None:
-        payload["schema"] = "h-predictive-evaluation-v1"
-        del payload["latent_operand"]
-        for example in payload["examples"]:
-            for key in ("proposals", "diagnostics", "latent_usage"):
-                del example[key]
+        _to_v1(payload)
         payload[field] = value
 
     with pytest.raises(ValueError, match="meaning mismatch"):
@@ -929,12 +932,7 @@ def test_a_resume_admits_a_receipt_whose_evaluation_row_was_written_as_v1(tmp_pa
     template, output, receipt = _run_with_receipt(tmp_path)
     progress = copy.deepcopy(read_json(output, receipt, max_bytes=LIMIT))
 
-    def to_v1(payload: dict[str, Any]) -> None:
-        payload["schema"] = "h-predictive-evaluation-v1"
-        del payload["latent_operand"]
-        for example in payload["examples"]:
-            for key in ("proposals", "diagnostics", "latent_usage"):
-                del example[key]
+    to_v1 = _to_v1
 
     # every roster entry becomes a v1-written row, so the whole roster is read-old
     progress["evaluations"] = [

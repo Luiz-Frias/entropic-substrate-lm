@@ -230,7 +230,13 @@ def test_a_proposal_block_on_some_examples_and_not_others_is_refused_by_its_own_
 
 @pytest.mark.parametrize(
     "absent",
-    ["log_weight_sd", "latent_usage", "prior_log_radius_mean", "q_log_radius_mean"],
+    [
+        "log_weight_sd",
+        "latent_usage",
+        "prior_log_radius_mean",
+        "q_log_radius_mean",
+        "prior_q_cosine",
+    ],
 )
 def test_a_diagnostic_on_some_examples_and_not_others_is_refused_by_its_own_guard(
     absent: str,
@@ -238,7 +244,9 @@ def test_a_diagnostic_on_some_examples_and_not_others_is_refused_by_its_own_guar
     """X15 (L3 review): removing the whole partial-presence guard, or any one of its flags, left
     every test GREEN, because the proposal guard above already refuses the sibling fixtures. Here
     the second example is a COMPLETE example that differs from the first ONLY in the one named
-    diagnostic, so the proposal guard cannot be the one that fires."""
+    diagnostic, so the proposal guard cannot be the one that fires. prior_q_cosine added after the
+    PR #435 review: MEASURED 2026-11-05, with no cosine counter the partial record projected a mean
+    over the one example that carried it while h_aggregate refused the same record."""
     second = _full_example()
     if absent == "latent_usage":
         del second["latent_usage"]

@@ -504,7 +504,7 @@ def _check_proposal_blocks(
 
     The v2 loader REFUSES rather than drops: a block that is present but malformed, a v2 example
     with no ``proposals``, no ``diagnostics`` or no ``latent_usage``, or a proposal whose sample
-    counts differ from q's voids the run, so a truncated or tampered capture never reads as
+    counts or per-k row counts differ from q's voids the run, so a truncated or tampered capture never reads as
     "instrument absent". A v1 example carries none of the four fields and nothing is checked or
     invented; a v1 row that carries ``diagnostics`` or ``latent_usage`` is refused like a v1 row
     that carries ``proposals``.
@@ -526,6 +526,16 @@ def _check_proposal_blocks(
         by_count = block.get("by_sample_count")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         if not isinstance(by_count, dict) or set(by_count) != set(q_by_count):  # pyright: ignore[reportUnknownArgumentType]
             _gap(f"{path}: {where} {name} proposal sample counts differ from the q proposal's")
+        # the same TARGET POPULATION at every k, not only the same keys (PR #435 review): a
+        # proposal that lost a row while keeping its keys would otherwise project its
+        # log-marginal and ESS over a shorter population than q's
+        for k, q_rows in q_by_count.items():
+            rows = by_count[k]  # pyright: ignore[reportUnknownVariableType]
+            have = len(rows) if isinstance(rows, list) else "no"  # pyright: ignore[reportUnknownArgumentType]
+            if have != len(q_rows):
+                _gap(
+                    f"{path}: {where} {name} proposal has {have} rows at k={k} where q has {len(q_rows)}"
+                )
         _check_importance_rows(by_count, path, f"{where} {name} proposal")  # pyright: ignore[reportUnknownArgumentType]
     _check_instrument_fields(example, schema, path, where)
 

@@ -314,6 +314,7 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
     q_radius: list[float] = []
     cosines: list[float] = []
     radius_seen = [0, 0]
+    cosine_seen = 0
     sd_values: dict[str, dict[str, list[float]]] = {name: {} for name in PROPOSALS}
     sd_seen = 0
     usage_gain = 0.0
@@ -364,6 +365,7 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
                 if values is None:
                     return None
                 cosines.extend(values)
+                cosine_seen += 1
             spread = d.get("log_weight_sd")
             if spread is not None:
                 if not isinstance(spread, dict):
@@ -401,7 +403,7 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
     for name in ("prior", "mixture"):
         if seen[name] not in (0, count):
             return None
-    for flag in (*radius_seen, sd_seen, usage_seen):
+    for flag in (*radius_seen, cosine_seen, sd_seen, usage_seen):
         if flag not in (0, count):
             return None
     metrics: dict[str, float] = {}
