@@ -28,15 +28,15 @@ from entropic_substrate.core.sentence.scoring import (
     importance_evaluate,
 )
 from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
-from entropic_substrate.ladder.run import evaluation_records, trace_capture
+from entropic_substrate.ladder.run import evaluation_records, runner, trace_capture
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution, _log_rows
 from entropic_substrate.ladder.run.h_metric_extractor import (
     EVALUATION_SCHEMAS,
     project_evaluation,
 )
-from entropic_substrate.ladder.run.journal import read_json, write_json
-from entropic_substrate.ladder.run.runner import run_probe_training
+from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
+from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
 
 pytestmark = pytest.mark.unit
 
@@ -56,6 +56,15 @@ V1_EXAMPLE = {
 
 def _run(root: Path, *, mode: str = "magnitude", batches: int = 1) -> tuple[Any, Path, Any]:
     """One finished run; ``(engine template, output root, first evaluation artifact)``."""
+    template, output, receipt = _run_with_receipt(root, mode=mode, batches=batches)
+    progress = read_json(output, receipt, max_bytes=LIMIT)
+    return template, output, artifact_from_mapping(progress["evaluations"][0]["artifact"])
+
+
+def _run_with_receipt(
+    root: Path, *, mode: str = "magnitude", batches: int = 1
+) -> tuple[Any, Path, Any]:
+    """One finished run; ``(engine template, output root, training receipt)``."""
     run = engine(root)
     base = run.profile
     changed = replace(
@@ -74,8 +83,7 @@ def _run(root: Path, *, mode: str = "magnitude", batches: int = 1) -> tuple[Any,
         max_artifact_bytes=LIMIT,
         latent_usage=POSTERIOR_MEAN,
     )
-    progress = read_json(output, result.receipt, max_bytes=LIMIT)
-    return template, output, artifact_from_mapping(progress["evaluations"][0]["artifact"])
+    return template, output, result.receipt
 
 
 def _read(template: Any, output: Path, artifact: Any) -> dict[str, Any]:
@@ -533,3 +541,62 @@ def test_the_instruments_ride_the_one_evaluation_end_event(tmp_path: Path) -> No
         metrics["eval/latent_usage_posterior_mean_nats_per_byte"]
     )
     assert math.isfinite(first["eval/ess_prior_k4"])
+
+
+def test_an_admitted_report_that_does_not_project_fails_loud_not_with_empty_instruments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T2 (L3 review): the runner's fail-LOUD guard is the only thing between a defect and a quiet
+    omission. Without the raise, ``instruments = {}`` leaves 51 tests GREEN (a fail-open
+    measurement path), so the guard is pinned by forcing the projection to refuse."""
+    template = engine(tmp_path)
+    output = tmp_path / "run"
+    output.mkdir()
+    monkeypatch.setattr(runner, "project_evaluation", lambda report: None)
+    with pytest.raises(ValueError, match="did not project"):
+        run_probe_training(
+            template.profile,
+            template.source_root,
+            output,
+            max_source_bytes=1_000_000,
+            max_artifact_bytes=LIMIT,
+            latent_usage=POSTERIOR_MEAN,
+        )
+
+
+def test_a_resume_admits_a_receipt_whose_evaluation_row_was_written_as_v1(tmp_path: Path) -> None:
+    """R3b (L3 review): a run paused by pre-L4d code carries v1 evaluation rows, and the resume
+    gate must keep admitting them, as ``read_evaluation`` does by design. Dropping the v1 arm of
+    the gate's exact-string check left 258 tests GREEN; the other three exact-string gates and
+    ``trace_capture._SCHEMAS`` all go RED on such a drop."""
+    template, output, receipt = _run_with_receipt(tmp_path)
+    progress = copy.deepcopy(read_json(output, receipt, max_bytes=LIMIT))
+
+    def to_v1(payload: dict[str, Any]) -> None:
+        payload["schema"] = "h-predictive-evaluation-v1"
+        del payload["latent_operand"]
+        for example in payload["examples"]:
+            for key in ("proposals", "diagnostics", "latent_usage"):
+                del example[key]
+
+    # every roster entry becomes a v1-written row, so the whole roster is read-old
+    progress["evaluations"] = [
+        {
+            "step": entry["step"],
+            "artifact": artifact_reference(
+                output,
+                _tampered(template, output, artifact_from_mapping(entry["artifact"]), to_v1),
+            ),
+        }
+        for entry in progress["evaluations"]
+    ]
+    written = write_json(output, "v1-roster-progress.json", progress, max_bytes=LIMIT)
+    admitted = read_training_progress(
+        output,
+        written,
+        template.profile,
+        template.source_root,
+        max_source_bytes=1_000_000,
+        max_artifact_bytes=LIMIT,
+    )
+    assert admitted["evaluations"] == progress["evaluations"]

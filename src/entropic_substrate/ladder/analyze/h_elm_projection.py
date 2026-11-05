@@ -1,14 +1,17 @@
 """The H1 E-LM projection: per-canonical-byte log-marginal and ESS/k per sample count.
 
-A pure function of ONE captured ``h-predictive-evaluation-v1`` event. The H1
+A pure function of ONE captured ``h-predictive-evaluation-v1`` or ``-v2`` event. The H1
 preregistration skeleton (section 5, E-LM row; section 10.1, Q2/Q4/Q8) names the
 deciding estimand as the importance-weighted log-marginal at k = 64 in nats per
 canonical byte, and the Q4 admissibility reading as the per-row MEDIAN of ESS/k. The
 runtime extractor projects ``eval/log_marginal_k{k}`` per SENTENCE and ``eval/ess_k{k}``
-as a mean; it is not changed. This module is the analysis-side projection beside it.
+as a mean. Since L4d it also emits ``eval/log_marginal_per_byte_ratio_of_sums_k{k}``, the same
+key name and the same formula as this module's ratio of sums; the two are pinned equal on one
+record by ``test_the_q_ratio_of_sums_equals_the_extractors_on_the_same_record``. This module
+is the analysis-side projection beside the extractor.
 
 What the captured row counts, read from the code that writes it
-(``core/sentence/scoring.py`` ``importance_evaluate``):
+(``core/sentence/scoring.py`` ``evaluate_proposals``, whose q rows come from ``_q_population``):
 
 * ``log_estimate`` sums the decoder log-probability over every non-pad position of the
   complete target, so it INCLUDES the scored boundary symbol (``sentence_end`` 256 or

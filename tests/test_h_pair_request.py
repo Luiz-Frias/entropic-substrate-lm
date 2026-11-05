@@ -789,8 +789,9 @@ def failure_snapshot_files(objects: _ObjectStore, request: PairProbeRequest) -> 
 
 
 # The schema ids a pair's failure snapshot may hold: the parent tip's known set, plus the two of
-# the slice's five new names that ride a snapshot (progress v2 and result v2). A sixth name, a
-# pair-failure artifact, would be a new door nobody ruled (DH-47).
+# the slice's five new names that ride a snapshot (progress v2 and result v2), plus
+# h-predictive-evaluation-v2, the L4d addition (FOR-1704) that is not at the parent tip. A sixth
+# name, a pair-failure artifact, would be a new door nobody ruled (DH-47).
 PARENT_TIP_SCHEMAS = frozenset(
     {
         "h-run-profile-v3",

@@ -206,6 +206,21 @@ def test_a_block_on_some_examples_and_not_others_is_malformed() -> None:
     assert project_evaluation(fx.event([_full_example(), plain])) is None
 
 
+@pytest.mark.parametrize("dropped", ["all", "prior", "mixture"])
+def test_a_proposal_block_on_some_examples_and_not_others_is_refused_by_its_own_guard(
+    dropped: str,
+) -> None:
+    """E16 (L3 review): ``plain`` above also lacks the diagnostics and latent usage, so the
+    sibling guards refuse it and the proposal guard is never the one tested (removing it left 159
+    tests GREEN). Here the second example differs from the first ONLY in its proposal blocks."""
+    second = _full_example()
+    if dropped == "all":
+        del second["proposals"]
+    else:
+        del second["proposals"][dropped]
+    assert project_evaluation(fx.event([_full_example(), second])) is None
+
+
 def test_log_weight_sd_skips_rows_without_an_sd_and_never_invents_one() -> None:
     sd = {"q": {2: [None, 1.5], 4: [None, None]}}
     m = _metrics(fx.event([_full_example(sd=sd)]))

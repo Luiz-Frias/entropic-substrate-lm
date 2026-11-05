@@ -9,9 +9,12 @@ wording edits here must not re-pin the reader identity.
 
 The human line is ``<event> <field>=<value> ...`` (the substrate prepends its
 own ``<ts> | LEVEL |``); the structured record carries the same fields as flat
-JSON keys. Field values are limited to keys, sizes, digests, counts,
-durations, run ids, names and exception TYPE names, never ``str(exception)``
-of a provider error.
+JSON keys, with one exception: ``evaluation.end`` binds the projected ``eval/*``
+instrument floats (FOR-1704) onto the structured record only, while its human
+line still renders ``global_step`` and ``seconds`` alone. Field values are limited
+to keys, sizes, digests, counts, durations, run ids, names, exception TYPE names
+and, for ``evaluation.end`` only, those finite metric floats, never
+``str(exception)`` of a provider error.
 
 Three vocabulary decisions are recorded here because the set is a frozen door:
 

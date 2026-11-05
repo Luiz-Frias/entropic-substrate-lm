@@ -99,9 +99,12 @@ class HTrainingStepExtractor:
     every other proposal's k-suffixed key carries the proposal segment before ``_k``. See
     :func:`project_evaluation`.
 
-    Keys are ALWAYS k-suffixed (FOR-1664): a bare ``eval/log_marginal`` or ``eval/ess``
-    is never emitted, because an estimate without its k reads as converged when it is
-    not. The k set is the profile's whole evaluated population: the importance-sample
+    Every k-DEPENDENT estimate key is k-suffixed (FOR-1664): a bare ``eval/log_marginal`` or
+    ``eval/ess`` is never emitted, because an estimate without its k reads as converged when it is
+    not. The k-free keys are per-evaluation quantities with no sample count:
+    ``eval/prior_log_radius_mean``, ``eval/q_log_radius_mean``, ``eval/prior_q_cosine_mean``,
+    ``eval/latent_usage_<operand>_nats_per_byte`` (FOR-1704) and ``eval/wall_seconds`` and
+    ``eval/cuda_seconds``. The k set is the profile's whole evaluated population: the importance-sample
     curve AND the fixed diagnostic count (``RunSchedule.evaluated_samples``), so the
     diagnostic rows arrive under their own k (for example ``eval/ess_k256``) exactly as
     the curve rows do. An effective sample size is bounded by its k, so the smoke

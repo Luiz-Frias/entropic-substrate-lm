@@ -41,6 +41,19 @@ def _v2_rows(rows: list[dict[str, Any]], mutate: Callable[[dict[str, Any]], None
                     "by_sample_count": copy.deepcopy(q),
                 },
             }
+            size = len(example["source_bytes"])
+            example["diagnostics"] = {
+                "prior_log_radius_mean": [0.0] * size,
+                "q_log_radius_mean": [0.0] * size,
+                "prior_q_cosine": [0.5] * size,
+                "log_weight_sd": {
+                    name: {k: [1.0] * size for k in q} for name in ("q", "prior", "mixture")
+                },
+            }
+            example["latent_usage"] = {
+                "q_decoder_log_prob": [-1.0] * size,
+                "null_decoder_log_prob": [-2.0] * size,
+            }
         if mutate is not None:
             mutate(row)
 
@@ -83,6 +96,100 @@ def test_a_v2_example_without_proposals_is_refused(tmp_path: Path) -> None:
         del row["examples"][0]["proposals"]
 
     with pytest.raises(TelemetryGap, match="carries no proposals"):
+        _load(tmp_path, bad)
+
+
+# S2 (L3 review): the loader refuses what the in-process reader (evaluation_records.read_evaluation)
+# refuses, so a truncated or tampered capture never reads as "instrument absent".
+@pytest.mark.parametrize("field", ["diagnostics", "latent_usage"])
+def test_a_v2_example_without_an_instrument_block_is_refused(tmp_path: Path, field: str) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        del row["examples"][0][field]
+
+    with pytest.raises(TelemetryGap, match=rf"{field}.*missing"):
+        _load(tmp_path, bad)
+
+
+def test_a_v2_row_without_a_latent_operand_is_refused(tmp_path: Path) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        del row["latent_operand"]
+
+    with pytest.raises(TelemetryGap, match="latent operand None is not readable"):
+        _load(tmp_path, bad)
+
+
+def test_a_v2_row_with_the_draw_average_operand_is_refused(tmp_path: Path) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["latent_operand"] = "draw_average"
+
+    with pytest.raises(TelemetryGap, match="latent operand 'draw_average' is not readable"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize("field", ["diagnostics", "latent_usage"])
+def test_an_instrument_block_on_a_v1_row_is_refused(tmp_path: Path, field: str) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["schema"] = "h-predictive-evaluation-v1"
+        del row["latent_operand"]
+        for example in row["examples"]:
+            del example["proposals"]
+            if field == "diagnostics":
+                del example["latent_usage"]
+            else:
+                del example["diagnostics"]
+
+    with pytest.raises(TelemetryGap, match="diagnostics or latent_usage on schema"):
+        _load(tmp_path, bad)
+
+
+def test_a_latent_operand_on_a_v1_row_is_refused(tmp_path: Path) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["schema"] = "h-predictive-evaluation-v1"
+        for example in row["examples"]:
+            del example["proposals"]
+            del example["diagnostics"]
+            del example["latent_usage"]
+
+    with pytest.raises(TelemetryGap, match="latent_operand on schema"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d.pop("prior_q_cosine"),
+        lambda d: d.update(extra=1),
+        lambda d: d.update(prior_q_cosine=None),
+        lambda d: d.update(log_weight_sd=None),
+    ],
+    ids=["missing-key", "extra-key", "null-cosine", "null-spread"],
+)
+def test_a_malformed_diagnostics_block_is_refused(
+    tmp_path: Path, mutate: Callable[[dict[str, Any]], object]
+) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        mutate(row["examples"][0]["diagnostics"])
+
+    with pytest.raises(TelemetryGap, match="diagnostics"):
+        _load(tmp_path, bad)
+
+
+def test_the_two_log_radius_entries_may_be_null_in_a_sphere_law_cell(tmp_path: Path) -> None:
+    def sphere(row: dict[str, Any]) -> None:
+        for example in row["examples"]:
+            example["diagnostics"]["prior_log_radius_mean"] = None
+            example["diagnostics"]["q_log_radius_mean"] = None
+
+    _, metrics = _load(tmp_path, sphere).evaluations[0]
+    assert "eval/prior_log_radius_mean" not in metrics
+    assert "eval/latent_usage_posterior_mean_nats_per_byte" in metrics
+
+
+def test_a_null_latent_usage_value_is_refused(tmp_path: Path) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["examples"][0]["latent_usage"]["q_decoder_log_prob"] = None
+
+    with pytest.raises(TelemetryGap, match="null latent_usage"):
         _load(tmp_path, bad)
 
 

@@ -231,6 +231,29 @@ def test_prior_and_mixture_proposals_sit_beside_the_q_rows(interface: str) -> No
     assert result.latent_operand is LatentUsageOperand.posterior_mean
 
 
+@pytest.mark.parametrize("interface", ["sphere", "magnitude"])
+def test_the_mixture_allocation_is_half_and_half_not_just_recorded_as_such(
+    interface: str,
+) -> None:
+    """S10 (L3 review): the record says ``bernoulli_half`` and the weights use the 1/2-1/2 density.
+
+    Both would be false if the component mask were drawn at another rate, and the reader cannot
+    tell (the mask is recorded, not re-derived). Two pins: the prior-component fraction, and
+    ``E_mix[p / q_mix] = 1``, which holds only when the draws really come from the equal mixture
+    (p / q_mix <= 2, so the average converges fast). MEASURED 2026-11-04 at the tip: fraction
+    0.5002 and log-mean ratios 0.0049 / -0.0042; with the rate flipped to 0.9, 0.8998 and
+    0.5855 / 0.5896.
+    """
+    model = _frozen(interface)
+    result = _proposals(model, counts=(4000,), chunk=500)
+    mixture = result.mixture
+    assert mixture.component is not None
+    fraction = float(mixture.component.double().mean())
+    assert fraction == pytest.approx(0.5, abs=0.03)  # sd 0.0056 over 8000 draws
+    ratio = torch.exp(mixture.prior_log_prob - mixture.proposal_log_prob).mean(dim=0)
+    assert bool((torch.log(ratio).abs() < 0.1).all())
+
+
 def test_the_extra_proposals_never_move_the_callers_random_stream() -> None:
     model = _frozen()
     torch.manual_seed(9)

@@ -102,6 +102,8 @@ estimated into the registration.
 
 DG-A as in L4a: members scoring.py, execution.py, trace_capture.py (the schema bumps to v2), evaluation_records.py, runner.py and object_worker.py (DH-51); a 55th reader member is NOT expected here (h_metric_extractor stays a non-member), so the re-pin is the five checkpoint rows only (`_CHECKPOINT_REGIME_TABLE` and `_FROZEN_CHECKPOINT_READER_MODULES` in tests/test_identity_epoch.py, located by name; the set is 54 since L4a added `codec_handoff`; RETRACTED 2026-11-03: "stays at 53" and the :827-881 / :904-931 anchors, measured stale at 3e6f6ecb). The attempt record `h-evaluation-attempt-v1` (execution.py:316) is not in `_SCHEMAS` today; leave it unless the slice captures it.
 
+Amended 2026-11-04 (L3 review, landed commit 98110e21): RETRACTED, "members scoring.py, execution.py, trace_capture.py, evaluation_records.py, runner.py and object_worker.py" (six, here and in the touch-set above). The landed patch carries NINE members: those six plus `worker_command`, `worker_execution` and `composition.cli`, which joined once the latent-usage estimator became a required keyword with no default (A6). `composition.wiring.h_tiny_tracer` is touched but is not a tuple member. The read-old-table row for this slice records nine; this brief now agrees with the ledger.
+
 ## Out of scope
 
 changing the ruled 0.25 gate; the pilot's future_weight; the interim image re-pin and the DH-34 quote re-run pods (separate GO); the non_checkpoint_bytes dev-width measurement (taken on the DH-34 pods, sealed by L8).

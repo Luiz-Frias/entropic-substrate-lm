@@ -87,6 +87,19 @@ _STEP_SCHEMA = "h-training-step-v2"
 _EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
 _EVALUATION_V2 = "h-predictive-evaluation-v2"
 _PROPOSAL_BLOCKS = ("prior", "mixture")
+# The v2 instrument fields, mirrored from the writer's record door as literals (never imported from
+# a reader member): the only latent-usage operand that re-derives from recorded rows, the four
+# diagnostics keys (only the two log-radius entries may be None: sphere-law cells), the two
+# latent-usage keys.
+_V2_OPERAND = "posterior_mean"
+_DIAGNOSTIC_KEYS = (
+    "prior_log_radius_mean",
+    "q_log_radius_mean",
+    "prior_q_cosine",
+    "log_weight_sd",
+)
+_NULLABLE_DIAGNOSTICS = ("prior_log_radius_mean", "q_log_radius_mean")
+_USAGE_KEYS = ("q_decoder_log_prob", "null_decoder_log_prob")
 _COMMITTED = "committed"
 _WARMUP = "codec_warmup"
 _PREDICTION = "prediction"
@@ -440,6 +453,46 @@ def _check_importance_rows(by_count: Mapping[str, Any], path: Path, where: str) 
             require_importance_entry(entry, f"{path}: {where}")  # pyright: ignore[reportUnknownArgumentType]
 
 
+def _check_instrument_fields(
+    example: Mapping[str, Any], schema: object, path: Path, where: str
+) -> None:
+    """The v2 ``diagnostics`` and ``latent_usage`` fields: both present on v2, neither on v1."""
+    diagnostics = example.get("diagnostics")
+    usage = example.get("latent_usage")
+    if schema != _EVALUATION_V2:
+        if diagnostics is not None or usage is not None:
+            _gap(f"{path}: {where} has diagnostics or latent_usage on schema {schema!r}")
+        return
+    if not isinstance(diagnostics, dict) or set(diagnostics) != set(_DIAGNOSTIC_KEYS):  # pyright: ignore[reportUnknownArgumentType]
+        _gap(
+            f"{path}: {where} is {_EVALUATION_V2} but an example's diagnostics are missing "
+            f"or not exactly {list(_DIAGNOSTIC_KEYS)}"
+        )
+    for name in _DIAGNOSTIC_KEYS:
+        if diagnostics[name] is None and name not in _NULLABLE_DIAGNOSTICS:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+            _gap(f"{path}: {where} has a null diagnostics {name}")
+    if not isinstance(usage, dict) or set(usage) != set(_USAGE_KEYS):  # pyright: ignore[reportUnknownArgumentType]
+        _gap(
+            f"{path}: {where} is {_EVALUATION_V2} but an example's latent_usage is missing "
+            f"or not exactly {list(_USAGE_KEYS)}"
+        )
+    for name in _USAGE_KEYS:
+        if usage[name] is None:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+            _gap(f"{path}: {where} has a null latent_usage {name}")
+
+
+def _check_latent_operand(row: Mapping[str, Any], path: Path, where: str) -> None:
+    """A v2 row names the one readable operand; a v1 row names none (FOR-1721 owns draw_average)."""
+    if row.get("schema") == _EVALUATION_V2:
+        if row.get("latent_operand") != _V2_OPERAND:
+            _gap(
+                f"{path}: {where} latent operand {row.get('latent_operand')!r} is not "
+                f"readable: only {_V2_OPERAND!r} re-derives from recorded rows"
+            )
+    elif "latent_operand" in row:
+        _gap(f"{path}: {where} has a latent_operand on schema {row.get('schema')!r}")
+
+
 def _check_proposal_blocks(
     example: Mapping[str, Any],
     schema: object,
@@ -450,13 +503,17 @@ def _check_proposal_blocks(
     """Every proposal's importance rows pass the one row predicate (FOR-1704, A8(b)).
 
     The v2 loader REFUSES rather than drops: a block that is present but malformed, a v2 example
-    with no ``proposals``, or a proposal whose sample counts differ from q's voids the run.
-    A v1 example carries no ``proposals`` and nothing is checked or invented.
+    with no ``proposals``, no ``diagnostics`` or no ``latent_usage``, or a proposal whose sample
+    counts differ from q's voids the run, so a truncated or tampered capture never reads as
+    "instrument absent". A v1 example carries none of the four fields and nothing is checked or
+    invented; a v1 row that carries ``diagnostics`` or ``latent_usage`` is refused like a v1 row
+    that carries ``proposals``.
     """
     blocks = example.get("proposals")
     if blocks is None:
         if schema == _EVALUATION_V2:
             _gap(f"{path}: {where} is {_EVALUATION_V2} but an example carries no proposals")
+        _check_instrument_fields(example, schema, path, where)
         return
     if schema != _EVALUATION_V2 or not isinstance(blocks, dict):
         _gap(f"{path}: {where} has proposals on schema {schema!r} or as a non-object")
@@ -470,6 +527,7 @@ def _check_proposal_blocks(
         if not isinstance(by_count, dict) or set(by_count) != set(q_by_count):  # pyright: ignore[reportUnknownArgumentType]
             _gap(f"{path}: {where} {name} proposal sample counts differ from the q proposal's")
         _check_importance_rows(by_count, path, f"{where} {name} proposal")  # pyright: ignore[reportUnknownArgumentType]
+    _check_instrument_fields(example, schema, path, where)
 
 
 def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int) -> None:
@@ -489,6 +547,7 @@ def _check_evaluation_numbers(row: dict[str, Any], path: Path, warmup_steps: int
             _gap(f"{path}: {where} has an example without by_sample_count")
         _check_importance_rows(by_count, path, where)  # pyright: ignore[reportUnknownArgumentType]
         _check_proposal_blocks(example, row.get("schema"), by_count, path, where)  # pyright: ignore[reportUnknownArgumentType]
+    _check_latent_operand(row, path, where)
 
 
 def load_h_run(
